@@ -1,0 +1,146 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/a-failed-check-of-your-own-counts-against-the-request",
+  "title": "A failed check of the integrator's own method counts against the request's attempts as a wrong secret does, and the last one fails it",
+  "rules": [
+    "§11.7.2",
+    "§11.7.5",
+    "§9.2"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/verification.py; tests/test_identity_verification.py::test_a_failed_check_of_your_own_counts_against_the_request (RMK-1171).",
+  "setup": {
+    "kit": {
+      "verification_policy": {
+        "max_attempts": 2
+      }
+    },
+    "rooms": [
+      {
+        "id": "room-1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "ended",
+        "trigger": "on_verification_ended",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "request_verification",
+      "identity_id": "alice",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "as": "req"
+    },
+    {
+      "call": "record_failed_attempt",
+      "request_id": "$req",
+      "expect": {
+        "result": {
+          "id": "$e1",
+          "status": "open",
+          "attempts": 1
+        }
+      }
+    },
+    {
+      "call": "record_failed_attempt",
+      "request_id": "$req",
+      "expect": {
+        "result": {
+          "status": "failed",
+          "attempts": 2
+        }
+      }
+    },
+    {
+      "call": "record_failed_attempt",
+      "request_id": "$req",
+      "expect": {
+        "error": {
+          "name": "verification_refused",
+          "reason": "not_open"
+        }
+      }
+    },
+    {
+      "call": "record_failed_attempt",
+      "request_id": "nope",
+      "expect": {
+        "error": {
+          "name": "verification_refused",
+          "reason": "not_found"
+        }
+      }
+    },
+    {
+      "call": "complete_verification",
+      "request_id": "$req",
+      "secret": "$req.secret",
+      "expect": {
+        "error": {
+          "name": "verification_refused",
+          "reason": "not_open"
+        }
+      }
+    },
+    {
+      "call": "verification_of",
+      "identity_id": "alice",
+      "expect": {
+        "result": {
+          "status": "unverified",
+          "ended_reason": "failed"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "framework_events": {
+      "room-1": [
+        {
+          "event": "verification_requested",
+          "identity_id": "alice",
+          "request_id": "$e1",
+          "channel_id": "sms"
+        },
+        {
+          "event": "verification_ended",
+          "identity_id": "alice",
+          "request_id": "$e1",
+          "channel_id": "sms",
+          "reason": "failed",
+          "ended": "request"
+        }
+      ]
+    },
+    "hooks": {
+      "ended": [
+        {
+          "trigger": "on_verification_ended",
+          "room_id": "room-1",
+          "event": {
+            "type": "system",
+            "source": {
+              "channel_id": "system"
+            },
+            "content": {
+              "type": "system",
+              "code": "on_verification_ended",
+              "data": {
+                "identity_id": "alice",
+                "request_id": "$e1",
+                "channel_id": "sms",
+                "reason": "failed",
+                "ended": "request"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

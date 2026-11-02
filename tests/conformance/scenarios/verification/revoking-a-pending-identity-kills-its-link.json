@@ -1,0 +1,86 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/revoking-a-pending-identity-kills-its-link",
+  "title": "Revoked before it was verified, an identity's open request is cancelled: the link already sent never verifies it, and it reads unverified",
+  "rules": [
+    "§11.7.5",
+    "§11.7.7"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/verification.py; tests/test_identity_verification.py::test_revoking_a_pending_identity_kills_its_link (RMK-1171).",
+  "setup": {
+    "rooms": [
+      {
+        "id": "room-1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "ended",
+        "trigger": "on_verification_ended",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "request_verification",
+      "identity_id": "alice",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "as": "req"
+    },
+    {
+      "call": "revoke_verification",
+      "identity_id": "alice",
+      "reason": "fraud suspected",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "complete_verification",
+      "request_id": "$req",
+      "secret": "$req.secret",
+      "expect": {
+        "error": {
+          "name": "verification_refused",
+          "reason": "not_open"
+        }
+      }
+    },
+    {
+      "call": "verification_of",
+      "identity_id": "alice",
+      "expect": {
+        "result": {
+          "status": "unverified",
+          "request_id": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "framework_events": {
+      "room-1": [
+        {
+          "event": "verification_requested",
+          "identity_id": "alice",
+          "request_id": "$e1",
+          "channel_id": "sms"
+        },
+        {
+          "event": "verification_ended",
+          "identity_id": "alice",
+          "request_id": "$e1",
+          "channel_id": "sms",
+          "reason": "cancelled",
+          "ended": "request"
+        }
+      ],
+      "*": []
+    },
+    "hooks": {
+      "ended": []
+    }
+  }
+}

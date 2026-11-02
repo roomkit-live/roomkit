@@ -1,0 +1,73 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/asking-a-verified-identity-again-keeps-it-verified",
+  "title": "Opening a request for a verified identity keeps it verified meanwhile, the new request open",
+  "rules": [
+    "§11.7.2"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/verification.py; tests/test_identity_verification.py::test_asking_a_verified_identity_again_keeps_it_verified_meanwhile (RMK-1171).",
+  "setup": {
+    "rooms": [
+      {
+        "id": "room-1"
+      }
+    ],
+    "hooks": []
+  },
+  "steps": [
+    {
+      "call": "request_verification",
+      "identity_id": "alice",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "as": "first"
+    },
+    {
+      "call": "complete_verification",
+      "request_id": "$first",
+      "secret": "$first.secret"
+    },
+    {
+      "call": "request_verification",
+      "identity_id": "alice",
+      "room_id": "room-1",
+      "channel_id": "whatsapp",
+      "as": "again"
+    },
+    {
+      "call": "verification_of",
+      "identity_id": "alice",
+      "expect": {
+        "result": {
+          "status": "verified",
+          "request_id": "$e2",
+          "verified_via": "sms"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "framework_events": {
+      "room-1": [
+        {
+          "event": "verification_requested",
+          "identity_id": "alice",
+          "request_id": "$e1",
+          "channel_id": "sms"
+        },
+        {
+          "event": "verification_completed",
+          "identity_id": "alice",
+          "request_id": "$e1",
+          "channel_id": "sms"
+        },
+        {
+          "event": "verification_requested",
+          "identity_id": "alice",
+          "request_id": "$e2",
+          "channel_id": "whatsapp"
+        }
+      ]
+    }
+  }
+}

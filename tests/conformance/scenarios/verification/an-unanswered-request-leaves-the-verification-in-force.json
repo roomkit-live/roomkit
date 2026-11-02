@@ -1,0 +1,128 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/an-unanswered-request-leaves-the-verification-in-force",
+  "title": "A verified person asked again who does not answer stays verified once the request expires, with no request open",
+  "rules": [
+    "§11.7.2",
+    "§11.7.5",
+    "§9.2"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/verification.py; tests/test_identity_verification.py::test_an_unanswered_request_leaves_the_verification_in_force, tests/test_verification_lifecycle.py::test_a_verified_person_s_unanswered_request_leaves_the_verification (RMK-1171). The verification in force is the store's, so that the request's short lifetime is the only one at play.",
+  "setup": {
+    "kit": {
+      "verification_policy": {
+        "request_ttl_ms": 30
+      }
+    },
+    "rooms": [
+      {
+        "id": "room-1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "ended",
+        "trigger": "on_verification_ended",
+        "execution": "async",
+        "reactions": [
+          {
+            "gate": "ended"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.put_verification",
+      "verification": {
+        "identity_id": "alice",
+        "status": "verified",
+        "method": "link",
+        "verified_via": "sms",
+        "verified_at": "2030-01-01T00:00:00Z",
+        "expires_at": "2100-01-01T00:00:00Z"
+      }
+    },
+    {
+      "call": "request_verification",
+      "identity_id": "alice",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "as": "again"
+    },
+    {
+      "wait_for": "ended"
+    },
+    {
+      "open": "ended"
+    },
+    {
+      "call": "complete_verification",
+      "request_id": "$again",
+      "secret": "$again.secret",
+      "expect": {
+        "error": {
+          "name": "verification_refused",
+          "reason": "expired"
+        }
+      }
+    },
+    {
+      "call": "verification_of",
+      "identity_id": "alice",
+      "expect": {
+        "result": {
+          "status": "verified",
+          "request_id": null,
+          "method": "link"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "framework_events": {
+      "room-1": [
+        {
+          "event": "verification_requested",
+          "identity_id": "alice",
+          "request_id": "$e1",
+          "channel_id": "sms"
+        },
+        {
+          "event": "verification_ended",
+          "identity_id": "alice",
+          "request_id": "$e1",
+          "channel_id": "sms",
+          "reason": "expired",
+          "ended": "request"
+        }
+      ]
+    },
+    "hooks": {
+      "ended": [
+        {
+          "trigger": "on_verification_ended",
+          "room_id": "room-1",
+          "event": {
+            "type": "system",
+            "source": {
+              "channel_id": "system"
+            },
+            "content": {
+              "type": "system",
+              "code": "on_verification_ended",
+              "data": {
+                "identity_id": "alice",
+                "request_id": "$e1",
+                "channel_id": "sms",
+                "reason": "expired",
+                "ended": "request"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

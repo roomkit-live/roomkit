@@ -1,0 +1,97 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/a-new-request-cancels-the-open-one",
+  "title": "Opening a request cancels the identity's open one, whose secret no longer completes it; the cancellation is announced, not heard as an end",
+  "rules": [
+    "§11.7.2",
+    "§11.7.5"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/verification.py; tests/test_identity_verification.py::test_a_new_request_cancels_the_open_one (RMK-1171).",
+  "setup": {
+    "rooms": [
+      {
+        "id": "room-1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "ended",
+        "trigger": "on_verification_ended",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "request_verification",
+      "identity_id": "alice",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "as": "first"
+    },
+    {
+      "call": "request_verification",
+      "identity_id": "alice",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "as": "second"
+    },
+    {
+      "call": "complete_verification",
+      "request_id": "$first",
+      "secret": "$first.secret",
+      "expect": {
+        "error": {
+          "name": "verification_refused",
+          "reason": "not_open"
+        }
+      }
+    },
+    {
+      "call": "complete_verification",
+      "request_id": "$second",
+      "secret": "$second.secret",
+      "expect": {
+        "result": {
+          "status": "verified",
+          "completed_request_id": "$e2"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "framework_events": {
+      "room-1": [
+        {
+          "event": "verification_requested",
+          "identity_id": "alice",
+          "request_id": "$e1",
+          "channel_id": "sms"
+        },
+        {
+          "event": "verification_ended",
+          "identity_id": "alice",
+          "request_id": "$e1",
+          "channel_id": "sms",
+          "reason": "cancelled",
+          "ended": "request"
+        },
+        {
+          "event": "verification_requested",
+          "identity_id": "alice",
+          "request_id": "$e2",
+          "channel_id": "sms"
+        },
+        {
+          "event": "verification_completed",
+          "identity_id": "alice",
+          "request_id": "$e2",
+          "channel_id": "sms"
+        }
+      ]
+    },
+    "hooks": {
+      "ended": []
+    }
+  }
+}

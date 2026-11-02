@@ -1,0 +1,153 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/a-revocation-ends-the-verification-and-its-open-request",
+  "title": "Revoking ends the verification in force with the integrator's reason and cancels the identity's open request; a second revocation ends nothing",
+  "rules": [
+    "§11.7.5",
+    "§11.7.7",
+    "§9.2"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/verification.py; tests/test_identity_verification.py::test_revoking_ends_the_verification_and_its_open_request, tests/test_verification_lifecycle.py::test_a_revocation_fires_the_end_once_and_stops_the_timer (its hook heard once; the timer stopped is in each implementation's own tests) (RMK-1171). The end of a verification names no room as a framework event; its hook is heard in the room of the request that completed it.",
+  "setup": {
+    "rooms": [
+      {
+        "id": "room-1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "ended",
+        "trigger": "on_verification_ended",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "request_verification",
+      "identity_id": "alice",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "as": "first"
+    },
+    {
+      "call": "complete_verification",
+      "request_id": "$first",
+      "secret": "$first.secret"
+    },
+    {
+      "call": "request_verification",
+      "identity_id": "alice",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "as": "later"
+    },
+    {
+      "call": "revoke_verification",
+      "identity_id": "alice",
+      "reason": "advisor",
+      "expect": {
+        "result": {
+          "identity_id": "alice",
+          "status": "revoked",
+          "ended_reason": "advisor",
+          "request_id": null,
+          "completed_request_id": "$e1"
+        }
+      }
+    },
+    {
+      "call": "complete_verification",
+      "request_id": "$later",
+      "secret": "$later.secret",
+      "expect": {
+        "error": {
+          "name": "verification_refused",
+          "reason": "not_open"
+        }
+      }
+    },
+    {
+      "call": "verification_of",
+      "identity_id": "alice",
+      "expect": {
+        "result": {
+          "status": "revoked",
+          "ended_reason": "advisor"
+        }
+      }
+    },
+    {
+      "call": "revoke_verification",
+      "identity_id": "alice",
+      "expect": {
+        "result": null
+      }
+    }
+  ],
+  "expect": {
+    "framework_events": {
+      "room-1": [
+        {
+          "event": "verification_requested",
+          "identity_id": "alice",
+          "request_id": "$e1",
+          "channel_id": "sms"
+        },
+        {
+          "event": "verification_completed",
+          "identity_id": "alice",
+          "request_id": "$e1",
+          "channel_id": "sms"
+        },
+        {
+          "event": "verification_requested",
+          "identity_id": "alice",
+          "request_id": "$e2",
+          "channel_id": "sms"
+        },
+        {
+          "event": "verification_ended",
+          "identity_id": "alice",
+          "request_id": "$e2",
+          "channel_id": "sms",
+          "reason": "cancelled",
+          "ended": "request"
+        }
+      ],
+      "*": [
+        {
+          "event": "verification_ended",
+          "identity_id": "alice",
+          "reason": "advisor",
+          "ended": "verification"
+        }
+      ]
+    },
+    "hooks": {
+      "ended": [
+        {
+          "trigger": "on_verification_ended",
+          "room_id": "room-1",
+          "event": {
+            "type": "system",
+            "source": {
+              "channel_id": "system"
+            },
+            "content": {
+              "type": "system",
+              "code": "on_verification_ended",
+              "data": {
+                "identity_id": "alice",
+                "request_id": "$e1",
+                "channel_id": "sms",
+                "reason": "advisor",
+                "ended": "verification"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

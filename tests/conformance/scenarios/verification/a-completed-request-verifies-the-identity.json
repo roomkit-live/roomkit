@@ -1,0 +1,173 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/a-completed-request-verifies-the-identity",
+  "title": "A request opens PENDING and returns its secret once, its hash alone stored; completing it with the secret verifies the identity on the request's channel, announced and heard in the request's room",
+  "rules": [
+    "§11.7.1",
+    "§11.7.2",
+    "§8.2",
+    "§9.2"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/verification.py; tests/test_identity_verification.py::test_a_completed_request_verifies_the_identity, tests/test_verification_lifecycle.py::test_a_completion_fires_its_hook_in_the_request_room (RMK-1171). A secret is random: `$req.secret` names the one the call returned. The verification's lifetime, the policy's ttl from its completion, is in each implementation's own tests.",
+  "setup": {
+    "rooms": [
+      {
+        "id": "room-1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "completed",
+        "trigger": "on_verification_completed",
+        "execution": "async"
+      },
+      {
+        "name": "ended",
+        "trigger": "on_verification_ended",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "request_verification",
+      "identity_id": "alice",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "as": "req",
+      "expect": {
+        "result": {
+          "request": {
+            "id": "$e1",
+            "identity_id": "alice",
+            "organization_id": null,
+            "room_id": "room-1",
+            "channel_id": "sms",
+            "method": "link",
+            "secret_hash": {
+              "$contains": "scrypt$"
+            },
+            "attempts": 0,
+            "max_attempts": 3,
+            "status": "open"
+          },
+          "secret": {
+            "$present": true
+          }
+        }
+      }
+    },
+    {
+      "call": "verification_of",
+      "identity_id": "alice",
+      "expect": {
+        "result": {
+          "identity_id": "alice",
+          "status": "pending",
+          "request_id": "$e1",
+          "verified_at": null
+        }
+      }
+    },
+    {
+      "call": "complete_verification",
+      "request_id": "$req",
+      "secret": "$req.secret",
+      "expect": {
+        "result": {
+          "identity_id": "alice",
+          "organization_id": null,
+          "status": "verified",
+          "method": "link",
+          "verified_via": "sms",
+          "verified_at": {
+            "$present": true
+          },
+          "expires_at": {
+            "$present": true
+          },
+          "ended_reason": null,
+          "request_id": null,
+          "completed_request_id": "$e1"
+        }
+      }
+    },
+    {
+      "call": "verification_of",
+      "identity_id": "alice",
+      "expect": {
+        "result": {
+          "status": "verified",
+          "completed_request_id": "$e1"
+        }
+      }
+    },
+    {
+      "call": "store.get_verification_request",
+      "request_id": "$req",
+      "expect": {
+        "result": {
+          "id": "$e1",
+          "status": "completed",
+          "attempts": 0
+        }
+      }
+    }
+  ],
+  "expect": {
+    "framework_events": {
+      "room-1": [
+        {
+          "event": "verification_requested",
+          "identity_id": "alice",
+          "request_id": "$e1",
+          "channel_id": "sms",
+          "method": "link",
+          "expires_at": {
+            "$present": true
+          }
+        },
+        {
+          "event": "verification_completed",
+          "identity_id": "alice",
+          "request_id": "$e1",
+          "channel_id": "sms",
+          "method": "link",
+          "expires_at": {
+            "$present": true
+          }
+        }
+      ],
+      "*": []
+    },
+    "hooks": {
+      "completed": [
+        {
+          "trigger": "on_verification_completed",
+          "room_id": "room-1",
+          "event": {
+            "type": "system",
+            "source": {
+              "channel_id": "system"
+            },
+            "content": {
+              "type": "system",
+              "code": "on_verification_completed",
+              "data": {
+                "identity_id": "alice",
+                "organization_id": null,
+                "request_id": "$e1",
+                "channel_id": "sms",
+                "method": "link",
+                "expires_at": {
+                  "$present": true
+                }
+              }
+            }
+          }
+        }
+      ],
+      "ended": []
+    }
+  }
+}

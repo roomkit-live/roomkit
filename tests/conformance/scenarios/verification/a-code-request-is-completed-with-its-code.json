@@ -1,0 +1,70 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/a-code-request-is-completed-with-its-code",
+  "title": "A code request's secret is its code, and completing it with that code records the method as code",
+  "rules": [
+    "§11.7.2",
+    "§11.7.4"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/verification.py; tests/test_identity_verification.py::test_a_code_request_sends_digits_and_lives_shorter (RMK-1171): the code's form and its request's shorter lifetime are in each implementation's own tests.",
+  "setup": {
+    "rooms": [
+      {
+        "id": "room-1"
+      }
+    ],
+    "hooks": []
+  },
+  "steps": [
+    {
+      "call": "request_verification",
+      "identity_id": "alice",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "method": "code",
+      "as": "req",
+      "expect": {
+        "result": {
+          "request": {
+            "method": "code",
+            "status": "open"
+          },
+          "secret": {
+            "$present": true
+          }
+        }
+      }
+    },
+    {
+      "call": "complete_verification",
+      "request_id": "$req",
+      "secret": "$req.secret",
+      "expect": {
+        "result": {
+          "status": "verified",
+          "method": "code"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "framework_events": {
+      "room-1": [
+        {
+          "event": "verification_requested",
+          "identity_id": "alice",
+          "request_id": "$e1",
+          "channel_id": "sms",
+          "method": "code"
+        },
+        {
+          "event": "verification_completed",
+          "identity_id": "alice",
+          "request_id": "$e1",
+          "channel_id": "sms",
+          "method": "code"
+        }
+      ]
+    }
+  }
+}

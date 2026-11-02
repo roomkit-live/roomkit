@@ -1,0 +1,81 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/organizations-are-kept-apart",
+  "title": "A request of one organization is not found by a caller acting for another, and the verification it completes holds in its organization alone",
+  "rules": [
+    "§11.7.7",
+    "§17.2"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/verification.py; tests/test_identity_verification.py::test_organizations_are_kept_apart (RMK-1171).",
+  "setup": {
+    "rooms": [
+      {
+        "id": "room-1",
+        "organization_id": "org-a"
+      }
+    ],
+    "hooks": []
+  },
+  "steps": [
+    {
+      "call": "request_verification",
+      "identity_id": "alice",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "organization_id": "org-a",
+      "as": "req",
+      "expect": {
+        "result": {
+          "request": {
+            "organization_id": "org-a"
+          }
+        }
+      }
+    },
+    {
+      "call": "complete_verification",
+      "request_id": "$req",
+      "secret": "$req.secret",
+      "organization_id": "org-b",
+      "expect": {
+        "error": {
+          "name": "verification_refused",
+          "reason": "not_found"
+        }
+      }
+    },
+    {
+      "call": "complete_verification",
+      "request_id": "$req",
+      "secret": "$req.secret",
+      "organization_id": "org-a",
+      "expect": {
+        "result": {
+          "status": "verified",
+          "organization_id": "org-a"
+        }
+      }
+    },
+    {
+      "call": "verification_of",
+      "identity_id": "alice",
+      "expect": {
+        "result": {
+          "status": "verified"
+        }
+      },
+      "organization_id": "org-a"
+    },
+    {
+      "call": "verification_of",
+      "identity_id": "alice",
+      "expect": {
+        "result": {
+          "status": "unverified",
+          "organization_id": null
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

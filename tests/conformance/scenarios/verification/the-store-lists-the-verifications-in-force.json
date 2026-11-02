@@ -1,0 +1,61 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/the-store-lists-the-verifications-in-force",
+  "title": "The store lists the verifications in force the kit completed, not one the kit revoked",
+  "rules": [
+    "§11.7.1",
+    "§11.7.5",
+    "§14.1"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/verification.py; tests/test_identity_verification.py::test_the_store_lists_the_verifications_in_force (RMK-1171).",
+  "setup": {
+    "rooms": [
+      {
+        "id": "room-1"
+      }
+    ],
+    "hooks": []
+  },
+  "steps": [
+    {
+      "call": "request_verification",
+      "identity_id": "alice",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "as": "a"
+    },
+    {
+      "call": "complete_verification",
+      "request_id": "$a",
+      "secret": "$a.secret"
+    },
+    {
+      "call": "request_verification",
+      "identity_id": "bob",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "as": "b"
+    },
+    {
+      "call": "complete_verification",
+      "request_id": "$b",
+      "secret": "$b.secret"
+    },
+    {
+      "call": "revoke_verification",
+      "identity_id": "bob"
+    },
+    {
+      "call": "store.list_verifications_in_force",
+      "expect": {
+        "result": [
+          {
+            "identity_id": "alice",
+            "status": "verified"
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {}
+}

@@ -1,0 +1,78 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/a-request-takes-its-room-s-organization",
+  "title": "A request takes the organization of its room, whose messages it verifies; a caller acting for another organization does not find the room",
+  "rules": [
+    "§11.7.2",
+    "§11.7.7",
+    "§17.2"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/verification.py; tests/test_identity_verification.py::test_a_request_is_scoped_to_its_rooms_organization (RMK-1171).",
+  "setup": {
+    "rooms": [
+      {
+        "id": "room-1",
+        "organization_id": "org-a"
+      }
+    ],
+    "hooks": []
+  },
+  "steps": [
+    {
+      "call": "request_verification",
+      "identity_id": "alice",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "organization_id": "org-b",
+      "as": "other",
+      "expect": {
+        "error": "room_not_found"
+      }
+    },
+    {
+      "call": "request_verification",
+      "identity_id": "alice",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "as": "req",
+      "expect": {
+        "result": {
+          "request": {
+            "organization_id": "org-a"
+          }
+        }
+      }
+    },
+    {
+      "call": "complete_verification",
+      "request_id": "$req",
+      "secret": "$req.secret",
+      "expect": {
+        "result": {
+          "status": "verified",
+          "organization_id": "org-a"
+        }
+      }
+    },
+    {
+      "call": "verification_of",
+      "identity_id": "alice",
+      "expect": {
+        "result": {
+          "status": "verified"
+        }
+      },
+      "organization_id": "org-a"
+    },
+    {
+      "call": "verification_of",
+      "identity_id": "alice",
+      "expect": {
+        "result": {
+          "status": "unverified"
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

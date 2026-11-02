@@ -1,0 +1,126 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/a-verification-ends-when-its-time-runs-out",
+  "title": "A verification ends at its expiry, by a timer, not on the next message: it reads expired, and its end is announced and heard in the room of the request that completed it",
+  "rules": [
+    "§11.7.5",
+    "§9.2",
+    "§8.2"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/verification.py; tests/test_identity_verification.py::test_a_verification_reads_expired_once_its_time_passed, tests/test_verification_lifecycle.py::test_a_verification_ends_when_it_expires_not_on_the_next_message (RMK-1171).",
+  "setup": {
+    "kit": {
+      "verification_policy": {
+        "ttl_ms": 30
+      }
+    },
+    "rooms": [
+      {
+        "id": "room-1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "ended",
+        "trigger": "on_verification_ended",
+        "execution": "async",
+        "reactions": [
+          {
+            "gate": "ended"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "request_verification",
+      "identity_id": "alice",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "as": "req"
+    },
+    {
+      "call": "complete_verification",
+      "request_id": "$req",
+      "secret": "$req.secret"
+    },
+    {
+      "wait_for": "ended"
+    },
+    {
+      "open": "ended"
+    },
+    {
+      "call": "verification_of",
+      "identity_id": "alice",
+      "expect": {
+        "result": {
+          "status": "expired",
+          "ended_reason": "expired"
+        }
+      }
+    },
+    {
+      "call": "store.get_verification",
+      "identity_id": "alice",
+      "expect": {
+        "result": {
+          "status": "expired",
+          "ended_reason": "expired"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "framework_events": {
+      "room-1": [
+        {
+          "event": "verification_requested",
+          "identity_id": "alice",
+          "request_id": "$e1",
+          "channel_id": "sms"
+        },
+        {
+          "event": "verification_completed",
+          "identity_id": "alice",
+          "request_id": "$e1",
+          "channel_id": "sms"
+        }
+      ],
+      "*": [
+        {
+          "event": "verification_ended",
+          "identity_id": "alice",
+          "reason": "expired",
+          "ended": "verification"
+        }
+      ]
+    },
+    "hooks": {
+      "ended": [
+        {
+          "trigger": "on_verification_ended",
+          "room_id": "room-1",
+          "event": {
+            "type": "system",
+            "source": {
+              "channel_id": "system"
+            },
+            "content": {
+              "type": "system",
+              "code": "on_verification_ended",
+              "data": {
+                "identity_id": "alice",
+                "request_id": "$e1",
+                "channel_id": "sms",
+                "reason": "expired",
+                "ended": "verification"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,133 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/a-request-that-fails-while-verified-ends-the-verification",
+  "title": "A verified person asked again who gives wrong secrets until the request fails loses the verification in force: fail closed",
+  "rules": [
+    "§11.7.2",
+    "§11.7.5",
+    "§9.2"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/verification.py; tests/test_identity_verification.py::test_a_failed_request_ends_the_verification_in_force, tests/test_verification_lifecycle.py::test_a_request_that_fails_while_verified_ends_the_verification (RMK-1171). A code is digits: a secret with letters never matches one.",
+  "setup": {
+    "kit": {
+      "verification_policy": {
+        "max_attempts": 1
+      }
+    },
+    "rooms": [
+      {
+        "id": "room-1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "ended",
+        "trigger": "on_verification_ended",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "request_verification",
+      "identity_id": "alice",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "as": "first"
+    },
+    {
+      "call": "complete_verification",
+      "request_id": "$first",
+      "secret": "$first.secret"
+    },
+    {
+      "call": "request_verification",
+      "identity_id": "alice",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "method": "code",
+      "as": "again"
+    },
+    {
+      "call": "complete_verification",
+      "request_id": "$again",
+      "secret": "not-the-code",
+      "expect": {
+        "error": {
+          "name": "verification_refused",
+          "reason": "failed"
+        }
+      }
+    },
+    {
+      "call": "verification_of",
+      "identity_id": "alice",
+      "expect": {
+        "result": {
+          "status": "unverified",
+          "ended_reason": "failed",
+          "request_id": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "framework_events": {
+      "room-1": [
+        {
+          "event": "verification_requested",
+          "identity_id": "alice",
+          "request_id": "$e1",
+          "channel_id": "sms",
+          "method": "link"
+        },
+        {
+          "event": "verification_completed",
+          "identity_id": "alice",
+          "request_id": "$e1",
+          "channel_id": "sms"
+        },
+        {
+          "event": "verification_requested",
+          "identity_id": "alice",
+          "request_id": "$e2",
+          "channel_id": "sms",
+          "method": "code"
+        },
+        {
+          "event": "verification_ended",
+          "identity_id": "alice",
+          "request_id": "$e2",
+          "channel_id": "sms",
+          "reason": "failed",
+          "ended": "verification"
+        }
+      ]
+    },
+    "hooks": {
+      "ended": [
+        {
+          "trigger": "on_verification_ended",
+          "room_id": "room-1",
+          "event": {
+            "type": "system",
+            "source": {
+              "channel_id": "system"
+            },
+            "content": {
+              "type": "system",
+              "code": "on_verification_ended",
+              "data": {
+                "identity_id": "alice",
+                "request_id": "$e2",
+                "channel_id": "sms",
+                "reason": "failed",
+                "ended": "verification"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
