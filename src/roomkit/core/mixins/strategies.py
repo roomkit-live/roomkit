@@ -14,6 +14,7 @@ strategies too.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -59,6 +60,9 @@ class _Installed:
     keys: list[str] = field(default_factory=list)
     installing: bool = False
     """The record claims the room while the install runs."""
+    ended: asyncio.Event = field(default_factory=asyncio.Event)
+    """Set once the install that claimed the room with this record is over,
+    whatever its end: what an uninstall called meanwhile waits for."""
 
 
 class StrategyMixin(HelpersMixin):
@@ -174,7 +178,7 @@ class StrategyMixin(HelpersMixin):
         where no host installed it included (RFC §19.7.5 rule 16). Whether a
         strategy was installed."""
         room = await self.get_room(room_id, organization_id=organization_id)
-        installed = self._room_strategies.get(room_id)
+        installed = await self._installed_once_over(room_id)
         if installed is None:
             return await self._uninstall_stored_discussion(room)
         await installed.strategy.uninstall(self, room_id)  # ty: ignore[invalid-argument-type]
@@ -185,6 +189,17 @@ class StrategyMixin(HelpersMixin):
         await self._take_back(room_id, installed)
         del self._room_strategies[room_id]
         return True
+
+    async def _installed_once_over(self, room_id: str) -> _Installed | None:
+        """The record of *room_id*'s strategy once no install of it runs: an
+        install under way is waited for, so an uninstall called meanwhile
+        takes back what it installed rather than let it record itself again
+        (RFC §19.7)."""
+        installed = self._room_strategies.get(room_id)
+        while installed is not None and installed.installing:
+            await installed.ended.wait()
+            installed = self._room_strategies.get(room_id)
+        return installed
 
     async def claim_room_strategy(
         self, room_id: str, strategy: Orchestration, *, organization_id: str | None = None
@@ -265,24 +280,28 @@ class StrategyMixin(HelpersMixin):
         self, room_id: str, strategy: Orchestration, *, organization_id: str | None
     ) -> None:
         replacing, held = self._claim_install(room_id, strategy, organization_id)
-        # Under the room lock, what changes in the room meanwhile is the install's.
-        async with self._lock_manager.locked(room_id):
-            before = await self._snapshot(room_id)
-            try:
-                if not replacing:
-                    # A discussion taking another's place binds its new agents
-                    # itself, once it holds the room (RFC §19.7.5 rule 1).
-                    await self._attach_agents(room_id, strategy)
-                await strategy.install(self, room_id)  # ty: ignore[invalid-argument-type]
-            except BaseException:
-                await self._undo_install(
-                    room_id, strategy, organization_id, before, replacing, held
-                )
-                raise
-            installed, bound = await self._recorded(room_id, strategy, organization_id, before)
-        self._room_strategies[room_id] = (
-            installed if held is None else _joined(held, installed, bound)
-        )
+        claimed = self._room_strategies[room_id]
+        try:
+            # Under the room lock, what changes in the room meanwhile is the install's.
+            async with self._lock_manager.locked(room_id):
+                before = await self._snapshot(room_id)
+                try:
+                    if not replacing:
+                        # A discussion taking another's place binds its new agents
+                        # itself, once it holds the room (RFC §19.7.5 rule 1).
+                        await self._attach_agents(room_id, strategy)
+                    await strategy.install(self, room_id)  # ty: ignore[invalid-argument-type]
+                except BaseException:
+                    await self._undo_install(
+                        room_id, strategy, organization_id, before, replacing, held
+                    )
+                    raise
+                installed, bound = await self._recorded(room_id, strategy, organization_id, before)
+            self._room_strategies[room_id] = (
+                installed if held is None else _joined(held, installed, bound)
+            )
+        finally:
+            claimed.ended.set()
 
     def _claim_install(
         self, room_id: str, strategy: Orchestration, organization_id: str | None

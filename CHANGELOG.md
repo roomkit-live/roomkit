@@ -115,6 +115,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shown to the model]`, a note that counts as a text. roomkit-rs holds the
   same bounds.
 
+- **`uninstall_strategy` during an install waits for it** (RFC §19.7,
+  RMK-1247). Called while an install ran, it answered `True`, then the
+  install recorded itself again: the room kept the strategy and its agents.
+  It now waits for the install's end, then takes it back whole.
 - **A strategy's live agent under a transport's id is refused** (RMK-1233).
   `install_strategy` and `create_room(orchestration=...)` kept the channel the
   kit held under a live agent's id and attached it as an intelligence channel,
