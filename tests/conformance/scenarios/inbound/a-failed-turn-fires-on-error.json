@@ -90,7 +90,8 @@
           "trigger": "on_error",
           "event": {
             "source": {
-              "channel_id": "ai"
+              "channel_id": "ai",
+              "direction": "inbound"
             },
             "chain_depth": 1,
             "visibility": "all",
@@ -105,6 +106,10 @@
                 "$contains": "model unavailable"
               },
               "error_category": "generation"
+            },
+            "type": "message",
+            "correlation_id": {
+              "$absent": true
             }
           }
         }

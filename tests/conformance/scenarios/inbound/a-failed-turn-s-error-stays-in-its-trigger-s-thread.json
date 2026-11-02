@@ -1,0 +1,114 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-failed-turn-s-error-stays-in-its-trigger-s-thread",
+  "title": "The ON_ERROR payload of a turn that failed on a reply is a message from the agent in the reply's thread: it answers the reply and names the reply's parent, as the turn's answer would",
+  "rules": [
+    "§9.2",
+    "§9.2 ON_ERROR payload"
+  ],
+  "notes": "Python: core/mixins/helpers.py _fire_error_hook builds a RoomEvent (type message, its source's direction the model's default, inbound) with the trigger's parent_event_id and responds_to the trigger (lane_execution.py _report_intelligence_errors, inbound_streaming.py _fire_stream_error_hook); a turn that raised carries no correlation_id. RMK-1183.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Reply"
+            },
+            "fail": "model unavailable"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "errors",
+        "trigger": "on_error",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Root"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Reply"
+        },
+        "parent_event_id": "room-1#0"
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "errors": [
+        {
+          "trigger": "on_error",
+          "room_id": "room-1",
+          "event": {
+            "type": "message",
+            "source": {
+              "channel_id": "ai",
+              "channel_type": "ai",
+              "direction": "inbound"
+            },
+            "chain_depth": 1,
+            "responds_to": "room-1#1",
+            "parent_event_id": "room-1#0",
+            "correlation_id": {
+              "$absent": true
+            },
+            "content": {
+              "type": "text",
+              "body": "model unavailable"
+            },
+            "metadata": {
+              "error": "model unavailable",
+              "error_category": "generation"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -165,7 +165,20 @@
       "errors": [
         {
           "trigger": "on_error",
-          "room_id": "room-1"
+          "room_id": "room-1",
+          "event": {
+            "type": "message",
+            "source": {
+              "channel_id": "agent",
+              "direction": "inbound"
+            },
+            "correlation_id": {
+              "$present": true
+            },
+            "metadata": {
+              "error_category": "streaming"
+            }
+          }
         }
       ]
     },
