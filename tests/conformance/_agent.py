@@ -185,10 +185,15 @@ def _tool_handler(tools: list[Mapping[str, Any]], gates: Gates) -> Any:
     return handler
 
 
-def scripted_agent(spec: Mapping[str, Any], gates: Gates) -> tuple[AIChannel, ScriptedModel]:
-    """The AI channel of a scripted agent, and its model; a round or a tool
-    with a ``gate`` holds at it."""
+def scripted_agent(
+    spec: Mapping[str, Any], gates: Gates
+) -> tuple[AIChannel, dict[str, ScriptedModel]]:
+    """The AI channel of a scripted agent, and its models by the name
+    ``expect.models`` gives them: its own under its id, its memory's
+    summarizer under ``<id>/summarizer``; a round or a tool with a ``gate``
+    holds at it."""
     model = ScriptedModel(spec["model"]["rounds"], gates)
+    models = {spec["id"]: model}
     tools = spec.get("tools", [])
     kwargs: dict[str, Any] = {}
     if "tool_policy" in spec:
@@ -204,7 +209,12 @@ def scripted_agent(spec: Mapping[str, Any], gates: Gates) -> tuple[AIChannel, Sc
         if flag in spec:
             kwargs[flag] = bool(spec[flag])
     if "memory" in spec:
-        kwargs["memory"] = scripted_memory(spec["memory"], spec.get("max_context_events", 50))
+        memory = spec["memory"]
+        summarizer = None
+        if "summarizer" in memory:
+            summarizer = ScriptedModel(memory["summarizer"]["rounds"], gates)
+            models[f"{spec['id']}/summarizer"] = summarizer
+        kwargs["memory"] = scripted_memory(memory, spec.get("max_context_events", 50), summarizer)
     if "human_input" in spec:
         kwargs["human_input_handler"] = _human_input(spec["human_input"])
     channel = AIChannel(
@@ -221,7 +231,7 @@ def scripted_agent(spec: Mapping[str, Any], gates: Gates) -> tuple[AIChannel, Sc
         tool_handler=_tool_handler(tools, gates),
         **kwargs,
     )
-    return channel, model
+    return channel, models
 
 
 def _human_input(spec: Mapping[str, Any]) -> HumanInputToolHandler:

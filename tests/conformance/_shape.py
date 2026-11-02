@@ -85,9 +85,27 @@ RAISES = {"kind", "message"}
 HUMAN_INPUT = {"tool_names", "timeout_ms", "tools"}
 HUMAN_TOOL = {"name", "description", "parameters"}
 POLICY = {"allow", "deny"}
-MEMORY = {"max_events", "messages", "notes", "speakers", "budget_aware"}
+MEMORY = {
+    "max_events",
+    "messages",
+    "notes",
+    "speakers",
+    "budget_aware",
+    "compacting",
+    "summarizing",
+    "summarizer",
+}
 MEMORY_MESSAGE = {"role", "text"}
 BUDGET_AWARE = {"max_context_tokens", "safety_margin_ratio", "min_events", "reserved_tokens"}
+COMPACTING = {"max_context_tokens", "summary_ratio", "safety_margin_ratio", "min_events"}
+SUMMARIZING = {
+    "max_context_tokens",
+    "tier1_ratio",
+    "tier2_ratio",
+    "truncate_chars",
+    "summary_max_tokens",
+    "min_events",
+}
 ROOM = {"id", "organization_id", "metadata", "timers", "bindings", "participants", "status"}
 BINDING = {"channel_id", "category", "access", "muted", "visibility", "metadata", "participant_id"}
 HOOK = {
@@ -310,6 +328,12 @@ def _memory(memory: Mapping[str, Any], path: str, found: list[str]) -> None:
         _members(message, MEMORY_MESSAGE, f"{path}.messages[{index}]", found)
     if "budget_aware" in memory:
         _members(memory["budget_aware"], BUDGET_AWARE, f"{path}.budget_aware", found)
+    if "compacting" in memory:
+        _members(memory["compacting"], COMPACTING, f"{path}.compacting", found)
+    if "summarizing" in memory:
+        _members(memory["summarizing"], SUMMARIZING, f"{path}.summarizing", found)
+    if "summarizer" in memory:
+        _model(memory["summarizer"], f"{path}.summarizer", found)
 
 
 def _model(model: Mapping[str, Any], path: str, found: list[str]) -> None:

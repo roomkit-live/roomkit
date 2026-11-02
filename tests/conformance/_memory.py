@@ -11,10 +11,17 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from roomkit.memory import BudgetAwareMemory, MemoryProvider, MemoryResult, SlidingWindowMemory
+from roomkit.memory import (
+    BudgetAwareMemory,
+    CompactingMemory,
+    MemoryProvider,
+    MemoryResult,
+    SlidingWindowMemory,
+    SummarizingMemory,
+)
 from roomkit.models.context import RoomContext
 from roomkit.models.event import RoomEvent
-from roomkit.providers.ai.base import AIMessage
+from roomkit.providers.ai.base import AIMessage, AIProvider
 
 
 class ScriptedMemory(MemoryProvider):
@@ -53,9 +60,12 @@ class ScriptedMemory(MemoryProvider):
         )
 
 
-def scripted_memory(spec: Mapping[str, Any], max_events: int) -> MemoryProvider:
-    """The memory *spec* describes; *max_events* is its window by default,
-    the agent's ``max_context_events``."""
+def scripted_memory(
+    spec: Mapping[str, Any], max_events: int, summarizer: AIProvider | None
+) -> MemoryProvider:
+    """The memory *spec* describes, its wrappers from the innermost; *max_events*
+    is its window by default, the agent's ``max_context_events``, and
+    *summarizer* the model a compacting or summarizing memory summarizes with."""
     memory: MemoryProvider = ScriptedMemory(spec, max_events)
     if (budget := spec.get("budget_aware")) is not None:
         memory = BudgetAwareMemory(
@@ -65,4 +75,30 @@ def scripted_memory(spec: Mapping[str, Any], max_events: int) -> MemoryProvider:
             min_events=budget.get("min_events", 3),
             reserved_tokens=budget.get("reserved_tokens", 0),
         )
+    if (compacting := spec.get("compacting")) is not None:
+        memory = CompactingMemory(
+            memory,
+            _summarizer(summarizer),
+            compacting["max_context_tokens"],
+            summary_ratio=compacting.get("summary_ratio", 0.10),
+            safety_margin_ratio=compacting.get("safety_margin_ratio", 0.15),
+            min_events=compacting.get("min_events", 5),
+        )
+    if (summarizing := spec.get("summarizing")) is not None:
+        memory = SummarizingMemory(
+            memory,
+            _summarizer(summarizer),
+            summarizing["max_context_tokens"],
+            tier1_ratio=summarizing.get("tier1_ratio", 0.50),
+            tier2_ratio=summarizing.get("tier2_ratio", 0.85),
+            truncate_chars=summarizing.get("truncate_chars", 2000),
+            summary_max_tokens=summarizing.get("summary_max_tokens", 1000),
+            min_events=summarizing.get("min_events", 5),
+        )
     return memory
+
+
+def _summarizer(summarizer: AIProvider | None) -> AIProvider:
+    if summarizer is None:
+        raise ValueError("a compacting or summarizing memory needs its summarizer")
+    return summarizer
