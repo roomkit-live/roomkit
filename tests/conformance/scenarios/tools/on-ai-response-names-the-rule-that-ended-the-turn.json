@@ -1,0 +1,143 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/on-ai-response-names-the-rule-that-ended-the-turn",
+  "title": "ON_AI_RESPONSE names the rule that ended the turn: a turn cut at its round bound reports max_rounds, the calls it ran counted",
+  "rules": [
+    "§6.4",
+    "§9.2",
+    "Appendix A.9"
+  ],
+  "notes": "Python's AIResponseEvent carries the loop's end reason (test_ai_response_loop_end_reason.py): counting calls never told a cut-off turn from a finished one.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "t0",
+                  "name": "lookup_order",
+                  "arguments": {
+                    "order": "1"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t1",
+                  "name": "lookup_order",
+                  "arguments": {
+                    "order": "2"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup_order",
+            "description": "Find an order by its number",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "order": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "order"
+              ]
+            },
+            "returns": "{\"order\": \"42\", \"status\": \"shipped\"}"
+          }
+        ],
+        "max_tool_rounds": 1
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "report",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Where is order 42?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "report": [
+        {
+          "response": {
+            "loop_end_reason": "max_rounds",
+            "tool_calls_count": 1,
+            "round_count": 1
+          }
+        }
+      ]
+    },
+    "ai_events": {
+      "room-1": [
+        {
+          "event": "before_ai_generation",
+          "channel_id": "agent",
+          "allowed": true,
+          "blocked_by": null
+        },
+        {
+          "event": "ai_response",
+          "channel_id": "agent",
+          "tool_calls_count": 1,
+          "streaming": true,
+          "latency_ms": "$any"
+        }
+      ]
+    }
+  }
+}

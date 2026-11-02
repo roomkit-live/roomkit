@@ -1,0 +1,181 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/before-ai-generation-sees-the-turn-s-context",
+  "title": "BEFORE_AI_GENERATION fires once per turn, before the first generation, with the context the turn starts from and the event it answers; an observer sees it too, and the framework says the generation went ahead",
+  "rules": [
+    "§6.4",
+    "§9.2",
+    "§8.2"
+  ],
+  "notes": "Python fires the room's hooks through the turn's before-generation callback (turns/_wiring.py build_before_generation_hook), which emits before_ai_generation with allowed and blocked_by (§8.2). Its tools are the turn's toolset as the tool policy leaves it (§6.4, What the generation hooks see).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "lookup_order",
+                  "arguments": {
+                    "order": "42"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Order 42 shipped."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup_order",
+            "description": "Find an order by its number",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "order": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "order"
+              ]
+            },
+            "returns": "{\"order\": \"42\", \"status\": \"shipped\"}"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "gate",
+        "trigger": "before_ai_generation"
+      },
+      {
+        "name": "watch",
+        "trigger": "before_ai_generation",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Where is order 42?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "gate": [
+        {
+          "trigger": "before_ai_generation",
+          "room_id": "room-1",
+          "generation": {
+            "channel_id": "agent",
+            "purpose": "answer",
+            "trigger": "room-1#0",
+            "provider_name": {
+              "$present": true
+            },
+            "tools": [
+              "lookup_order"
+            ],
+            "messages": [
+              {
+                "role": "user",
+                "text": {
+                  "$contains": "Where is order 42?"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "watch": [
+        {
+          "trigger": "before_ai_generation",
+          "room_id": "room-1",
+          "generation": {
+            "channel_id": "agent",
+            "trigger": "room-1#0",
+            "tools": [
+              "lookup_order"
+            ]
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "lookup_order": 0
+          }
+        },
+        {
+          "tools": {
+            "lookup_order": 0
+          }
+        }
+      ]
+    },
+    "ai_events": {
+      "room-1": [
+        {
+          "event": "before_ai_generation",
+          "channel_id": "agent",
+          "allowed": true,
+          "blocked_by": null
+        },
+        {
+          "event": "ai_response",
+          "channel_id": "agent",
+          "tool_calls_count": 1,
+          "streaming": true,
+          "latency_ms": "$any"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,218 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-block-after-a-round-stops-the-hooks-after-it",
+  "title": "An AFTER_TOOL_ROUND block ends the chain, as on any SYNC trigger: the hooks after it do not run, and the round it judged has run",
+  "rules": [
+    "§6.4",
+    "§9.2",
+    "§9.4"
+  ],
+  "notes": "Python runs the room's SYNC hooks on the round's event (turns/_wiring.py build_after_tool_round_hook): a block stops the chain and changes nothing of the round.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "l1",
+                  "name": "lookup_order",
+                  "arguments": {
+                    "order": "42"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "l2",
+                  "name": "lookup_order",
+                  "arguments": {
+                    "order": "43"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "ok"
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup_order",
+            "description": "Find an order by its number",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "order": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "order"
+              ]
+            },
+            "returns": "{\"order\": \"42\", \"status\": \"shipped\"}"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "judge",
+        "trigger": "after_tool_round",
+        "priority": 0,
+        "reactions": [
+          {
+            "repeat": true,
+            "result": {
+              "action": "block",
+              "reason": "seen enough"
+            }
+          }
+        ]
+      },
+      {
+        "name": "withdraw",
+        "trigger": "after_tool_round",
+        "priority": 10,
+        "reactions": [
+          {
+            "result": {
+              "action": "modify",
+              "event": {
+                "withdrawn": [
+                  "lookup_order"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Where is order 42?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "judge": [
+        {
+          "tool_round": {
+            "round_index": 0
+          }
+        },
+        {
+          "tool_round": {
+            "round_index": 1
+          }
+        }
+      ],
+      "withdraw": []
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message"
+        },
+        {
+          "index": 1,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 2,
+          "type": "tool_call_end",
+          "source": {
+            "channel_id": "agent",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "tool_call",
+            "tool_name": "lookup_order",
+            "tool_id": "l1",
+            "outcome": "served",
+            "result": "$any",
+            "arguments": {
+              "order": "42"
+            }
+          }
+        },
+        {
+          "index": 3,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 4,
+          "type": "tool_call_end",
+          "source": {
+            "channel_id": "agent",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "tool_call",
+            "tool_name": "lookup_order",
+            "tool_id": "l2",
+            "outcome": "served",
+            "result": "$any",
+            "arguments": {
+              "order": "43"
+            }
+          }
+        },
+        {
+          "index": 5,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "ok"
+          }
+        }
+      ]
+    }
+  }
+}

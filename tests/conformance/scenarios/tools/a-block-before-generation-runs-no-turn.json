@@ -1,0 +1,141 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-block-before-generation-runs-no-turn",
+  "title": "A BEFORE_AI_GENERATION block runs no generation: the model is never asked, the agent answers nothing, the framework names the hook that blocked, and ON_AI_RESPONSE does not fire",
+  "rules": [
+    "§6.4",
+    "§9.2",
+    "§8.2",
+    "§9.4"
+  ],
+  "notes": "Python's channel returns an empty output on a block (_ai_streaming.py _start_streaming_tool_response), so no loop runs and no response is reported.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "never"
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup_order",
+            "description": "Find an order by its number",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "order": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "order"
+              ]
+            },
+            "returns": "{\"order\": \"42\", \"status\": \"shipped\"}"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "budget",
+        "trigger": "before_ai_generation",
+        "reactions": [
+          {
+            "result": {
+              "action": "block",
+              "reason": "over budget"
+            }
+          }
+        ]
+      },
+      {
+        "name": "report",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Where is order 42?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message",
+          "source": {
+            "channel_id": "ws"
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "budget": [
+        {
+          "trigger": "before_ai_generation",
+          "room_id": "room-1"
+        }
+      ],
+      "report": []
+    },
+    "models": {
+      "agent": []
+    },
+    "ai_events": {
+      "room-1": [
+        {
+          "event": "before_ai_generation",
+          "channel_id": "agent",
+          "allowed": false,
+          "blocked_by": "budget"
+        }
+      ]
+    }
+  }
+}

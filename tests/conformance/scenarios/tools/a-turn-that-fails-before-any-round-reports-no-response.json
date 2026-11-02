@@ -1,0 +1,107 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-turn-that-fails-before-any-round-reports-no-response",
+  "title": "A turn whose model fails before any round of calls reaches no end: ON_AI_RESPONSE does not fire and no ai_response is emitted",
+  "rules": [
+    "§6.4",
+    "§9.2"
+  ],
+  "notes": "Python reports a turn only once its loop reached its end (AIResponseEvent.loop_end_reason): one that raised before a round is the error itself.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Let me",
+              "fails": "the model is down"
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup_order",
+            "description": "Find an order by its number",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "order": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "order"
+              ]
+            },
+            "returns": "{\"order\": \"42\", \"status\": \"shipped\"}"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "report",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Where is order 42?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "report": []
+    },
+    "ai_events": {
+      "room-1": [
+        {
+          "event": "before_ai_generation",
+          "channel_id": "agent",
+          "allowed": true,
+          "blocked_by": null
+        }
+      ]
+    }
+  }
+}

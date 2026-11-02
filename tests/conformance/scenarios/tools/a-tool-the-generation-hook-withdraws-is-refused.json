@@ -1,0 +1,178 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-tool-the-generation-hook-withdraws-is-refused",
+  "title": "A tool a BEFORE_AI_GENERATION hook takes out of the turn's toolset is declared at no round of the turn, and a call naming it is refused",
+  "rules": [
+    "§6.4",
+    "§9.2",
+    "§8.2"
+  ],
+  "notes": "Python makes what the hook left the turn's base toolset (_ai_generation.py _adopt_hook_toolset): a tool it removed is withdrawn for the turn (§6.4, What the generation hooks see).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "lookup_order",
+                  "arguments": {
+                    "order": "42"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "I cannot look it up."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup_order",
+            "description": "Find an order by its number",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "order": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "order"
+              ]
+            },
+            "returns": "{\"order\": \"42\", \"status\": \"shipped\"}"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "narrow",
+        "trigger": "before_ai_generation",
+        "reactions": [
+          {
+            "result": {
+              "action": "modify",
+              "event": {
+                "tools": []
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Where is order 42?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message"
+        },
+        {
+          "index": 1,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 2,
+          "type": "tool_call_end",
+          "source": {
+            "channel_id": "agent",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "tool_call",
+            "tool_name": "lookup_order",
+            "tool_id": "call-1",
+            "outcome": "refused",
+            "result": "{\"error\": \"Tool 'lookup_order' is not available in this turn.\"}",
+            "arguments": {
+              "order": "42"
+            }
+          }
+        },
+        {
+          "index": 3,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "I cannot look it up."
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "lookup_order": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "lookup_order": {
+              "$absent": true
+            }
+          },
+          "tool_results": [
+            {
+              "tool_call_id": "call-1",
+              "content": "{\"error\": \"Tool 'lookup_order' is not available in this turn.\"}",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

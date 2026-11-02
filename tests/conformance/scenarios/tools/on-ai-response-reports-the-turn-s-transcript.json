@@ -1,0 +1,230 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/on-ai-response-reports-the-turn-s-transcript",
+  "title": "ON_AI_RESPONSE reports the completed turn: its text one segment per stretch between calls, joined by a blank line, the calls and rounds it ran, why it ended, what its generations used, and the tools it declared; an observer that fails changes nothing of it",
+  "rules": [
+    "§6.4",
+    "§9.2",
+    "§8.2"
+  ],
+  "notes": "Python reports the turn once its loop ended (_ai_streaming.py _finish_streaming_tool_turn): response_transcript drops the empty stretches, the usage counts from zero, every declared tool is `always` without Tool Search; ai_response follows its observers.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Let me look.",
+              "calls": [
+                {
+                  "id": "tc1",
+                  "name": "search",
+                  "arguments": {}
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 3
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "tc2",
+                  "name": "search",
+                  "arguments": {}
+                }
+              ],
+              "usage": {
+                "input_tokens": 12,
+                "output_tokens": 2
+              }
+            },
+            {
+              "text": "Done.",
+              "usage": {
+                "input_tokens": 14,
+                "output_tokens": 4
+              }
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "search",
+            "description": "Search",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "returns": "result"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "report",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      },
+      {
+        "name": "broken",
+        "trigger": "on_ai_response",
+        "execution": "async",
+        "reactions": [
+          {
+            "fail": "observer unavailable"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Where is order 42?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message"
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "Let me look."
+          }
+        },
+        {
+          "index": 2,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 3,
+          "type": "tool_call_end"
+        },
+        {
+          "index": 4,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 5,
+          "type": "tool_call_end"
+        },
+        {
+          "index": 6,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "Done."
+          },
+          "metadata": {
+            "loop_end_reason": "completed"
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "broken": [
+        {
+          "trigger": "on_ai_response"
+        }
+      ],
+      "report": [
+        {
+          "trigger": "on_ai_response",
+          "room_id": "room-1",
+          "response": {
+            "channel_id": "agent",
+            "response_content": "Let me look.\n\nDone.",
+            "segments": [
+              "Let me look.",
+              "Done."
+            ],
+            "tool_calls_count": 2,
+            "round_count": 2,
+            "loop_end_reason": "completed",
+            "usage": {
+              "input_tokens": 36,
+              "output_tokens": 9
+            },
+            "streaming": true,
+            "thinking": "",
+            "declared_tools": {
+              "search": {
+                "position": 0,
+                "description": "Search",
+                "parameters": {
+                  "type": "object",
+                  "properties": {}
+                },
+                "origin": "always"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "ai_events": {
+      "room-1": [
+        {
+          "event": "before_ai_generation",
+          "channel_id": "agent",
+          "allowed": true,
+          "blocked_by": null
+        },
+        {
+          "event": "ai_response",
+          "channel_id": "agent",
+          "tool_calls_count": 2,
+          "streaming": true,
+          "latency_ms": "$any"
+        }
+      ]
+    }
+  }
+}

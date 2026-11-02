@@ -1,0 +1,160 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/after-tool-round-reads-the-round-whole",
+  "title": "AFTER_TOOL_ROUND fires once per round in which the agent ran calls, with the round's index, its calls and their results in call order, and the turn's toolset; a round with no call fires nothing",
+  "rules": [
+    "§6.4",
+    "§9.2"
+  ],
+  "notes": "Python hands the round to the room's SYNC hooks once its calls ended (_ai_streaming.py _after_tool_round; turns/_wiring.py build_after_tool_round_hook).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c0",
+                  "name": "safe_read",
+                  "arguments": {}
+                },
+                {
+                  "id": "c1",
+                  "name": "lookup_order",
+                  "arguments": {
+                    "order": "42"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "safe_read",
+            "description": "Read a record",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "returns": "record"
+          },
+          {
+            "name": "lookup_order",
+            "description": "Find an order by its number",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "order": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "order"
+              ]
+            },
+            "returns": "{\"order\": \"42\", \"status\": \"shipped\"}"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "round",
+        "trigger": "after_tool_round"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Where is order 42?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "round": [
+        {
+          "trigger": "after_tool_round",
+          "room_id": "room-1",
+          "tool_round": {
+            "channel_id": "agent",
+            "round_index": 0,
+            "calls": [
+              {
+                "tool_call_id": "c0",
+                "name": "safe_read",
+                "arguments": {}
+              },
+              {
+                "tool_call_id": "c1",
+                "name": "lookup_order",
+                "arguments": {
+                  "order": "42"
+                }
+              }
+            ],
+            "results": [
+              {
+                "tool_call_id": "c0",
+                "content": "record",
+                "is_error": false
+              },
+              {
+                "tool_call_id": "c1",
+                "content": "{\"order\": \"42\", \"status\": \"shipped\"}",
+                "is_error": false
+              }
+            ],
+            "tools": [
+              "safe_read",
+              "lookup_order"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

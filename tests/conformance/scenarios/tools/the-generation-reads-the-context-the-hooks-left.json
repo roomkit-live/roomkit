@@ -1,0 +1,192 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/the-generation-reads-the-context-the-hooks-left",
+  "title": "A BEFORE_AI_GENERATION hook that hands back a replacement event changes what the turn reads: the next hook sees it, and every generation of the turn reads its system prompt and its messages, the rounds' messages after them",
+  "rules": [
+    "§6.4",
+    "§9.2",
+    "§8.2",
+    "§9.4"
+  ],
+  "notes": "Python reads a modify's event as the generation's (RMK-565, _ai_generation.py _fire_before_generation_hook): a redaction hook's replacement is what the provider sees, and the hooks after it read it in chain order.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "lookup_order",
+                  "arguments": {
+                    "order": "42"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Arr, it shipped."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup_order",
+            "description": "Find an order by its number",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "order": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "order"
+              ]
+            },
+            "returns": "{\"order\": \"42\", \"status\": \"shipped\"}"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "pirate",
+        "trigger": "before_ai_generation",
+        "priority": 0,
+        "reactions": [
+          {
+            "result": {
+              "action": "modify",
+              "event": {
+                "system_prompt": "You are a pirate.",
+                "messages": [
+                  {
+                    "role": "user",
+                    "text": "My code is [redacted]"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "after",
+        "trigger": "before_ai_generation",
+        "priority": 10
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "My code is 4417"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "after": [
+        {
+          "trigger": "before_ai_generation",
+          "room_id": "room-1",
+          "generation": {
+            "system_prompt": "You are a pirate.",
+            "messages": [
+              {
+                "role": "user",
+                "text": "My code is [redacted]"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "system_prompt": "You are a pirate.",
+          "messages": [
+            {
+              "role": "user",
+              "text": "My code is [redacted]"
+            }
+          ]
+        },
+        {
+          "system_prompt": "You are a pirate.",
+          "messages": [
+            {
+              "role": "user",
+              "text": "My code is [redacted]"
+            },
+            {
+              "role": "assistant",
+              "text": ""
+            },
+            {
+              "role": "tool",
+              "text": ""
+            }
+          ]
+        }
+      ]
+    },
+    "ai_events": {
+      "room-1": [
+        {
+          "event": "before_ai_generation",
+          "channel_id": "agent",
+          "allowed": true,
+          "blocked_by": null
+        },
+        {
+          "event": "ai_response",
+          "channel_id": "agent",
+          "tool_calls_count": 1,
+          "streaming": true,
+          "latency_ms": "$any"
+        }
+      ]
+    }
+  }
+}
