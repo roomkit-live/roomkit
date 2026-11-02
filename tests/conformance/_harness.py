@@ -62,6 +62,12 @@ from tests.conformance._members import MEMBER_CALLS, store_identities
 from tests.conformance._normalize import Observed, is_lifecycle_record
 from tests.conformance._script import GATE_BOUND_S, Gates, ScriptedRouter
 from tests.conformance._store import STORE_CALLS
+from tests.conformance._strategies import (
+    STRATEGY_CALLS,
+    ScriptedStrategy,
+    kit_orchestration,
+    strategies,
+)
 from tests.conformance._tasks import TASK_CALLS
 from tests.conformance._verification import (
     VERIFICATION_CALLS,
@@ -136,6 +142,7 @@ class Harness:
         self._problems: list[str] = []
         self.models: dict[str, ScriptedModel] = {}
         setup = scenario.get("setup", {})
+        self.strategies = strategies(setup, self)
         kit_setup = setup.get("kit", {})
         kwargs: dict[str, Any] = {}
         if "max_chain_depth" in kit_setup:
@@ -153,7 +160,14 @@ class Harness:
         kwargs |= delivery_options(kit_setup)
         kwargs |= verification_options(kit_setup)
         kwargs |= media_options(kit_setup, self)
+        kwargs |= kit_orchestration(kit_setup, self)
         self.kit = RoomKit(**kwargs)
+
+    def strategy(self, strategy_id: str) -> ScriptedStrategy:
+        """The scripted strategy *strategy_id* names (README, \"Setup\")."""
+        if strategy_id not in self.strategies:
+            raise UnreadableError(f"no scripted strategy {strategy_id!r}")
+        return self.strategies[strategy_id]
 
     # -- recording --------------------------------------------------------
 
@@ -409,7 +423,7 @@ class Harness:
     async def invoke(self, spec: Mapping[str, Any], scope: Mapping[str, str]) -> dict[str, Any]:
         """Makes one call; returns its outcome, its error named, never raising."""
         resolved = await self.resolve(dict(spec), scope)
-        calls = CALLS | STORE_CALLS | TASK_CALLS | MEMBER_CALLS | INPUT_CALLS
+        calls = CALLS | STORE_CALLS | TASK_CALLS | MEMBER_CALLS | INPUT_CALLS | STRATEGY_CALLS
         call = (calls | VERIFICATION_CALLS)[spec["call"]]
         try:
             result = await asyncio.wait_for(call(self.kit, self, resolved), CALL_BOUND_S)

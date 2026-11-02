@@ -16,11 +16,12 @@ from tests.conformance._inputs import INPUT_ARGUMENTS
 from tests.conformance._media import ATTACHED_MEDIA, MEDIA_RESOLVER
 from tests.conformance._members import MEMBER_ARGUMENTS
 from tests.conformance._store import READ_MARKER_ARGUMENTS, STORE_ARGUMENTS
+from tests.conformance._strategies import STRATEGY, STRATEGY_ARGUMENTS, STRATEGY_STEP
 from tests.conformance._tasks import TASK_ARGUMENTS
 from tests.conformance._verification import VERIFICATION_ARGUMENTS
 
 TOP = {"$schema", "id", "title", "rules", "reentrancy", "notes", "setup", "steps", "expect"}
-SETUP = {"kit", "channels", "rooms", "hooks", "identity_hooks", "identities"}
+SETUP = {"kit", "channels", "rooms", "hooks", "identity_hooks", "identities", "strategies"}
 KIT = {
     "max_chain_depth",
     "process_timeout_ms",
@@ -32,6 +33,7 @@ KIT = {
     "verification_policy",
     "media_resolver",
     "attached_media",
+    "orchestration",
 }
 DELIVERY_BACKEND = {
     "retry_delay_ms",
@@ -233,7 +235,7 @@ CALLS: dict[str, set[str]] = {
     "commit_event": {"room_id", "event"},
     "update_event": {"room_id", "event_id", "content", "source", "metadata"},
     "delete_event": {"room_id", "event_id", "cascade_replies"},
-    "create_room": {"room"},
+    "create_room": {"room", "orchestration"},
     "attach_channel": {
         "room_id",
         "channel_id",
@@ -279,6 +281,7 @@ CALLS: dict[str, set[str]] = {
 CALLS |= STORE_ARGUMENTS | READ_MARKER_ARGUMENTS | TASK_ARGUMENTS | MEMBER_ARGUMENTS
 CALLS |= INPUT_ARGUMENTS
 CALLS |= VERIFICATION_ARGUMENTS
+CALLS |= STRATEGY_ARGUMENTS
 STEPS = {"await": {"await", "expect"}, "concurrent": {"concurrent"}, "wait_for": {"wait_for"}}
 STEPS |= {"open": {"open"}, "idle": {"idle"}, "wait_for_lock": {"wait_for_lock", "waiters"}}
 
@@ -307,6 +310,8 @@ def unknown_members(scenario: Mapping[str, Any]) -> list[str]:
             _members(binding, BINDING, f"{path}.bindings[{index}]", found)
     for position, hook in enumerate(setup.get("hooks", [])):
         _hook(hook, f"setup.hooks[{position}]", found)
+    for position, strategy in enumerate(setup.get("strategies", [])):
+        _strategy(strategy, f"setup.strategies[{position}]", found)
     for position, step in enumerate(scenario.get("steps", [])):
         _step(step, f"steps[{position}]", found)
     expect = scenario.get("expect", {})
@@ -316,6 +321,16 @@ def unknown_members(scenario: Mapping[str, Any]) -> list[str]:
         for index, outcome in enumerate(listed):
             _outcome(outcome, f"expect.actions.{label}[{index}]", found)
     return found
+
+
+def _strategy(strategy: Mapping[str, Any], path: str, found: list[str]) -> None:
+    """The members of a scripted strategy, and of its install and uninstall."""
+    _members(strategy, STRATEGY, path, found)
+    for member in ("install", "uninstall"):
+        step = strategy.get(member, {})
+        _members(step, STRATEGY_STEP, f"{path}.{member}", found)
+        for index, action in enumerate(step.get("do", [])):
+            _call(action, {"as", "expect"}, f"{path}.{member}.do[{index}]", found)
 
 
 def _identity(setup: Mapping[str, Any], found: list[str]) -> None:

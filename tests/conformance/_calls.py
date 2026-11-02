@@ -53,6 +53,7 @@ from tests.conformance._script import (
     complete_participant,
     hook_handler,
 )
+from tests.conformance._strategies import room_orchestration
 
 if TYPE_CHECKING:
     from tests.conformance._harness import Harness
@@ -267,11 +268,13 @@ async def _delete_event(kit: RoomKit, harness: Harness, spec: Mapping[str, Any])
 
 
 async def _create_room(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
-    return await create_room(kit, spec["room"])
+    return await create_room(kit, spec["room"], room_orchestration(spec, harness))
 
 
-async def create_room(kit: RoomKit, room: Mapping[str, Any]) -> Room:
-    kwargs: dict[str, Any] = {"room_id": room["id"]}
+async def create_room(
+    kit: RoomKit, room: Mapping[str, Any], extra: Mapping[str, Any] | None = None
+) -> Room:
+    kwargs: dict[str, Any] = {"room_id": room["id"], **(extra or {})}
     if "metadata" in room:
         kwargs["metadata"] = room["metadata"]
     if room.get("organization_id") is not None:
