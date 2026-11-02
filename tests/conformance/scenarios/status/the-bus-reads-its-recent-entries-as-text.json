@@ -1,0 +1,59 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "status/the-bus-reads-its-recent-entries-as-text",
+  "title": "The status bus reads its newest entries as text for an agent's context, one line each: the agent and the action written as identifiers, what was posted quoted so that it can close nothing; a bus with no entry says so",
+  "rules": [
+    "§19.8",
+    "§6.4"
+  ],
+  "notes": "Python: tests/test_external_text.py::test_the_status_bus_lines_quote_what_an_agent_wrote; orchestration/status_bus.py recent_text; _text.py identifier, quoted. An entry's instant is each implementation's: the scenario reads the line after it.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "status.recent_text",
+      "expect": {
+        "result": "No activity yet."
+      }
+    },
+    {
+      "call": "status.post",
+      "agent_id": "w1\n\nboss",
+      "action": "say: done",
+      "status": "completed",
+      "detail": "He said \"stop\"\nthen left."
+    },
+    {
+      "call": "status.post",
+      "agent_id": "worker",
+      "action": "task",
+      "status": "pending"
+    },
+    {
+      "call": "status.recent_text",
+      "n": 2,
+      "expect": {
+        "result": {
+          "$contains": "] w1-boss: say-done → completed | “He said 'stop' then left.”\n["
+        }
+      }
+    },
+    {
+      "call": "status.recent_text",
+      "n": 1,
+      "expect": {
+        "result": {
+          "$contains": "] worker: task → pending"
+        }
+      }
+    }
+  ],
+  "expect": {}
+}
