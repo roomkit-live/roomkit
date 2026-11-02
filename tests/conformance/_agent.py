@@ -83,22 +83,29 @@ class ScriptedModel(AIProvider):
 
     async def generate_structured_stream(self, context: AIContext) -> AsyncIterator[StreamEvent]:
         """The round's text as its deltas, then its calls and its end; a round
-        that ``fails`` raises once its deltas are written. The model waits
-        between two deltas, so each reaches the reader apart: deltas yielded
-        without waiting may cross as one (RFC §10.6.4)."""
+        that ``fails`` raises once its deltas are written, or once its calls
+        are with ``failure_after_calls``. The model waits between two deltas,
+        so each reaches the reader apart: deltas yielded without waiting may
+        cross as one (RFC §10.6.4)."""
         round_ = self._next_round(context)
         await self._hold(round_)
         for position, delta in enumerate(_deltas(round_)):
             if position:
                 await asyncio.sleep(0)
             yield StreamTextDelta(text=delta)
+        # The calls and the end as generate()'s whole response gives them.
+        response = _response(round_, self._labelled)
+        events = list(response_stream_events(response.model_copy(update={"content": ""})))
+        if round_.get("failure_after_calls"):
+            for event in events:
+                if not isinstance(event, StreamDone):
+                    yield event
+            events = [event for event in events if isinstance(event, StreamDone)]
         if (message := round_.get("fails")) is not None:
             raise ModelFailedError(message)
         _refuse(round_)
-        # The calls and the end as generate()'s whole response gives them; a
-        # round that ends without its done event stops after its calls.
-        response = _response(round_, self._labelled)
-        for event in response_stream_events(response.model_copy(update={"content": ""})):
+        # A round that ends without its done event stops after its calls.
+        for event in events:
             if isinstance(event, StreamDone) and round_.get("done") is False:
                 return
             yield event

@@ -88,6 +88,7 @@ MODEL_ROUND = {
     "done",
     "gate",
     "refuses",
+    "failure_after_calls",
 }
 REFUSES = {"status", "message", "context_overflow"}
 MODEL_CALL = {"id", "name", "arguments", "cut"}
