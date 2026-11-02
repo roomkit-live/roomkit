@@ -1,0 +1,204 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/only-the-request-s-window-is-released",
+  "title": "A completed request releases only what was written in its own window: a message held during an earlier request that failed stays held",
+  "rules": [
+    "§11.7.6"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/verification.py (_release_held, _restore_held, _held_window), src/roomkit/core/mixins/regenerate.py (_rerun_agents_on); tests/test_verification_release.py::test_only_the_requests_window_is_released (RMK-1173). The windows start when each request opens; the message held during the first is before the second's.",
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "when": {
+              "sender_id": "+15551234567"
+            },
+            "repeat": true,
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "alice-id"
+              }
+            }
+          }
+        ]
+      },
+      "verification_policy": {
+        "max_attempts": 1
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "on_event": [
+          {
+            "when": {
+              "text": "What are my card limits?"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "updated",
+        "trigger": "on_event_updated",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "request_verification",
+      "identity_id": "alice-id",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "as": "first"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Send my statement to mallory@example.com"
+        }
+      }
+    },
+    {
+      "call": "complete_verification",
+      "request_id": "$first",
+      "secret": "wrong",
+      "expect": {
+        "error": {
+          "name": "verification_refused",
+          "reason": "failed"
+        }
+      }
+    },
+    {
+      "call": "request_verification",
+      "identity_id": "alice-id",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "as": "second"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "What are my card limits?"
+        }
+      }
+    },
+    {
+      "call": "complete_verification",
+      "request_id": "$second",
+      "secret": "$second.secret"
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "Send my statement to mallory@example.com"
+          },
+          "visibility": "transport",
+          "source": {
+            "participant_id": "alice-id",
+            "verification": "pending"
+          },
+          "metadata": {
+            "roomkit:verification_held": {
+              "visibility": "all",
+              "identity_id": "alice-id",
+              "organization_id": null
+            }
+          }
+        },
+        {
+          "index": 1,
+          "content": {
+            "body": "What are my card limits?"
+          },
+          "visibility": "all",
+          "source": {
+            "channel_id": "sms",
+            "participant_id": "alice-id",
+            "verification": "pending"
+          },
+          "metadata": {
+            "roomkit:verification_held": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "index": 2,
+          "content": {
+            "body": "answer"
+          },
+          "source": {
+            "channel_id": "ai",
+            "direction": "outbound"
+          },
+          "responds_to": "room-1#1"
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "ai": [
+          {
+            "content": {
+              "body": "What are my card limits?"
+            },
+            "visibility": "intelligence"
+          }
+        ]
+      }
+    }
+  }
+}

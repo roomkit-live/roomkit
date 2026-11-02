@@ -1,0 +1,362 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/a-hook-updating-a-released-message-again-stops-at-the-cap",
+  "title": "The release's ON_EVENT_UPDATED runs on the budget of the work it is made in, one of its own from outside: a hook that updates the released message on every update draws a hook call each, and its eleventh update is refused at the cap of ten",
+  "rules": [
+    "§11.7.6",
+    "§10.3",
+    "§8.3"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/verification.py (_release_held, _restore_held, _held_window), src/roomkit/core/mixins/regenerate.py (_rerun_agents_on); tests/test_verification_release.py::test_a_hook_updating_a_released_message_again_stops_at_the_cap (RMK-1173). With a depth limit of 1 the budget holds ten hook calls; the release's own write draws none. Run on no budget, the first update would start one of its own, and the twelfth would be refused.",
+  "setup": {
+    "kit": {
+      "max_chain_depth": 1,
+      "identity_resolver": {
+        "answers": [
+          {
+            "when": {
+              "sender_id": "+15551234567"
+            },
+            "repeat": true,
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "alice-id"
+              }
+            }
+          }
+        ]
+      },
+      "verification_policy": {}
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "again",
+        "trigger": "on_event_updated",
+        "execution": "async",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "$event",
+                "metadata": {
+                  "n": 1
+                },
+                "as": "update"
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "$event",
+                "metadata": {
+                  "n": 2
+                },
+                "as": "update"
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "$event",
+                "metadata": {
+                  "n": 3
+                },
+                "as": "update"
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "$event",
+                "metadata": {
+                  "n": 4
+                },
+                "as": "update"
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "$event",
+                "metadata": {
+                  "n": 5
+                },
+                "as": "update"
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "$event",
+                "metadata": {
+                  "n": 6
+                },
+                "as": "update"
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "$event",
+                "metadata": {
+                  "n": 7
+                },
+                "as": "update"
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "$event",
+                "metadata": {
+                  "n": 8
+                },
+                "as": "update"
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "$event",
+                "metadata": {
+                  "n": 9
+                },
+                "as": "update"
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "$event",
+                "metadata": {
+                  "n": 10
+                },
+                "as": "update"
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "update_event",
+                "room_id": "$room",
+                "event_id": "$event",
+                "metadata": {
+                  "n": 11
+                },
+                "as": "update"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Did my transfer go through?"
+        }
+      }
+    },
+    {
+      "call": "request_verification",
+      "identity_id": "alice-id",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "as": "req",
+      "window_start": "2000-01-01T00:00:00Z"
+    },
+    {
+      "call": "complete_verification",
+      "request_id": "$req",
+      "secret": "$req.secret"
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "again": [
+        {
+          "trigger": "on_event_updated",
+          "room_id": "room-1"
+        },
+        {
+          "trigger": "on_event_updated",
+          "room_id": "room-1"
+        },
+        {
+          "trigger": "on_event_updated",
+          "room_id": "room-1"
+        },
+        {
+          "trigger": "on_event_updated",
+          "room_id": "room-1"
+        },
+        {
+          "trigger": "on_event_updated",
+          "room_id": "room-1"
+        },
+        {
+          "trigger": "on_event_updated",
+          "room_id": "room-1"
+        },
+        {
+          "trigger": "on_event_updated",
+          "room_id": "room-1"
+        },
+        {
+          "trigger": "on_event_updated",
+          "room_id": "room-1"
+        },
+        {
+          "trigger": "on_event_updated",
+          "room_id": "room-1"
+        },
+        {
+          "trigger": "on_event_updated",
+          "room_id": "room-1"
+        },
+        {
+          "trigger": "on_event_updated",
+          "room_id": "room-1"
+        }
+      ]
+    },
+    "actions": {
+      "update": [
+        {
+          "result": {
+            "metadata": {
+              "n": 1
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "n": 2
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "n": 3
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "n": 4
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "n": 5
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "n": 6
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "n": 7
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "n": 8
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "n": 9
+            }
+          }
+        },
+        {
+          "result": {
+            "metadata": {
+              "n": 10
+            }
+          }
+        },
+        {
+          "error": "reentry_loop_cap"
+        }
+      ]
+    }
+  }
+}
