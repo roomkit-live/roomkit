@@ -1,0 +1,149 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-buffered-reply-s-end-goes-under-the-caller-s-turns",
+  "title": "A buffered reply's end and usage go under the caller's turns, by its channel, read off its record or else its last message; the rest of its record is the caller's, its turn keys not",
+  "rules": [
+    "§6.4",
+    "§10.1 step 18"
+  ],
+  "notes": "Python: core/mixins/lane_execution.py record_buffered_reply (merge_channel_record, then add_turn_entry with reply_turn_entry), core/event_router.py reply_turn_entry (turn_summary of the output's record, then of its messages' metadata, last first), models/response_metadata.py merge_channel_record (every key but turns, loop_end_reason, ai_usage). bot's record names its end and usage beside x; aide's record names none, its last message does.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "bot",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "hi"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Done."
+                }
+              }
+            ],
+            "output": {
+              "response_metadata": {
+                "loop_end_reason": "completed",
+                "ai_usage": {
+                  "input_tokens": 3,
+                  "output_tokens": 2
+                },
+                "x": 1
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "aide",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "hi"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "First."
+                },
+                "metadata": {
+                  "loop_end_reason": "completed"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Last."
+                },
+                "metadata": {
+                  "loop_end_reason": "max_rounds"
+                }
+              }
+            ],
+            "output": {
+              "response_metadata": {
+                "y": 2
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "bot"
+          },
+          {
+            "channel_id": "aide"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "response_metadata": {
+            "x": 1,
+            "y": 2,
+            "loop_end_reason": {
+              "$absent": true
+            },
+            "ai_usage": {
+              "$absent": true
+            },
+            "turns": {
+              "bot": {
+                "loop_end_reason": "completed",
+                "ai_usage": {
+                  "input_tokens": 3,
+                  "output_tokens": 2
+                }
+              },
+              "aide": {
+                "loop_end_reason": "max_rounds",
+                "ai_usage": {
+                  "$absent": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ]
+}

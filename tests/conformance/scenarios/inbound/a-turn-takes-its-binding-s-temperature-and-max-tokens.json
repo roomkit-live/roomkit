@@ -1,0 +1,113 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-turn-takes-its-binding-s-temperature-and-max-tokens",
+  "title": "An agent's turn takes the temperature and the max tokens its binding's metadata sets, over the channel's own; a null temperature there is not set",
+  "rules": [
+    "§6.4",
+    "Appendix A.9"
+  ],
+  "notes": "Python: channels/_ai_context.py _turn_settings, _turn_source (binding metadata, then the config provider's result, then the channel default; None is not set at every level, an explicit null included). The channel's own temperature is 0.7, its max tokens none. room-1 binds main with temperature 0.2 and max_tokens 64; room-2 with both null: its temperature is the channel's 0.7; its max tokens, none on the channel too, does not tell a null set from one not set.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "main",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "ok"
+            },
+            {
+              "text": "ok"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "main",
+            "category": "intelligence",
+            "metadata": {
+              "temperature": 0.2,
+              "max_tokens": 64
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "main",
+            "category": "intelligence",
+            "metadata": {
+              "temperature": null,
+              "max_tokens": null
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "main": [
+        {
+          "temperature": 0.2,
+          "max_tokens": 64
+        },
+        {
+          "temperature": 0.7,
+          "max_tokens": null
+        }
+      ]
+    }
+  }
+}
