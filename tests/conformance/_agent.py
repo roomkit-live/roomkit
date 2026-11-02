@@ -218,6 +218,12 @@ def scripted_agent(
         kwargs["max_tool_rounds"] = spec["max_tool_rounds"]
     if "max_context_events" in spec:
         kwargs["max_context_events"] = spec["max_context_events"]
+    if "tool_timeout_ms" in spec:
+        kwargs["tool_timeout_seconds"] = _seconds(spec["tool_timeout_ms"])
+    if "tool_timeouts_ms" in spec:
+        kwargs["tool_timeouts"] = {
+            name: _seconds(bound) for name, bound in spec["tool_timeouts_ms"].items()
+        }
     for flag in ("serialize_room_turns", "steer_room_turns"):
         if flag in spec:
             kwargs[flag] = bool(spec[flag])
@@ -246,6 +252,11 @@ def scripted_agent(
         **kwargs,
     )
     return channel, models
+
+
+def _seconds(milliseconds: int | None) -> float | None:
+    """A bound in milliseconds as the channel takes it, in seconds."""
+    return None if milliseconds is None else milliseconds / 1000
 
 
 def _kit_tools(names: list[str], kit: RoomKit) -> list[Any]:

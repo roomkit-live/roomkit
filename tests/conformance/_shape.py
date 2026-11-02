@@ -58,6 +58,8 @@ CHANNEL = {
     "tool_policy",
     "max_tool_rounds",
     "max_context_events",
+    "tool_timeout_ms",
+    "tool_timeouts_ms",
     "serialize_room_turns",
     "steer_room_turns",
     "human_input",
