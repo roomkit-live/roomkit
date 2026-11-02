@@ -61,6 +61,7 @@ CHANNEL = {
     "streams_in",
     "recent_events_window",
     "sender_is_participant",
+    "memory",
 }
 ADDRESSES = {"normalizes", "conversation_key"}
 MODEL = {"rounds"}
@@ -80,6 +81,9 @@ TOOL = {
 }
 RAISES = {"kind", "message"}
 POLICY = {"allow", "deny"}
+MEMORY = {"max_events", "messages", "notes", "speakers", "budget_aware"}
+MEMORY_MESSAGE = {"role", "text"}
+BUDGET_AWARE = {"max_context_tokens", "safety_margin_ratio", "min_events", "reserved_tokens"}
 ROOM = {"id", "organization_id", "metadata", "timers", "bindings", "participants", "status"}
 BINDING = {"channel_id", "category", "access", "muted", "visibility", "metadata", "participant_id"}
 HOOK = {
@@ -286,6 +290,16 @@ def _channel(channel: Mapping[str, Any], path: str, found: list[str]) -> None:
         _members(channel["tool_policy"], POLICY, f"{path}.tool_policy", found)
     if "addresses" in channel:
         _members(channel["addresses"], ADDRESSES, f"{path}.addresses", found)
+    if "memory" in channel:
+        _memory(channel["memory"], f"{path}.memory", found)
+
+
+def _memory(memory: Mapping[str, Any], path: str, found: list[str]) -> None:
+    _members(memory, MEMORY, path, found)
+    for index, message in enumerate(memory.get("messages", [])):
+        _members(message, MEMORY_MESSAGE, f"{path}.messages[{index}]", found)
+    if "budget_aware" in memory:
+        _members(memory["budget_aware"], BUDGET_AWARE, f"{path}.budget_aware", found)
 
 
 def _model(model: Mapping[str, Any], path: str, found: list[str]) -> None:

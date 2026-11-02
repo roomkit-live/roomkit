@@ -25,6 +25,7 @@ from roomkit.providers.ai.base import (
     response_stream_events,
 )
 from roomkit.tools.policy import ToolPolicy
+from tests.conformance._memory import scripted_memory
 
 if TYPE_CHECKING:
     from tests.conformance._script import Gates
@@ -201,6 +202,8 @@ def scripted_agent(spec: Mapping[str, Any], gates: Gates) -> tuple[AIChannel, Sc
     for flag in ("serialize_room_turns", "steer_room_turns"):
         if flag in spec:
             kwargs[flag] = bool(spec[flag])
+    if "memory" in spec:
+        kwargs["memory"] = scripted_memory(spec["memory"], spec.get("max_context_events", 50))
     channel = AIChannel(
         spec["id"],
         provider=model,
