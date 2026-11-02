@@ -117,6 +117,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A supervisor stamp that is no list asks no one more** (RFC §19.4,
+  RMK-1233). `_always_process` written as a `str` solicited every agent
+  whose id it contains, a `dict` its keys, and `None` failed the broadcast
+  with a `TypeError`; only a list names agents now, as roomkit-rs reads it.
 - **An MCP tool's result the model sees an image of is bounded** (RFC §21.2,
   RMK-1249). `MCPToolProvider.as_tool_handler()` handed such a result's parts
   to the model whole: a server answering 30 screenshots of 1 MB put 40 MB of

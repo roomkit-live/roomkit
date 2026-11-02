@@ -124,6 +124,14 @@ class TestSolicitation:
         assert _solicits(event, "supervisor") is True
         assert _solicits(event, "claude-code") is False
 
+    @pytest.mark.parametrize("stamp", ["supervisor", {"super": True}, None])
+    def test_a_supervisor_stamp_that_is_no_list_asks_no_one_more(self, stamp: object) -> None:
+        # The router writes a list; a stamp a hook wrote otherwise names no
+        # one: no substring of a str, no key of a dict, and no TypeError.
+        event = _event(addressed_to=["codex"], metadata={"_always_process": stamp})
+        assert _solicits(event, "super") is False
+        assert _solicits(event, "codex") is True
+
     def test_router_still_decides_when_unaddressed(self) -> None:
         event = _event(metadata={"_routed_to": "claude-code", "_always_process": ["supervisor"]})
         assert _solicits(event, "claude-code") is True

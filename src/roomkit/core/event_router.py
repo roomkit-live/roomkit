@@ -88,7 +88,9 @@ def _solicits(
         # It says a turn was cut, nothing to act on (RFC §19.3 rule 5)
         return False
     metadata = event.metadata or {}
-    always_process = metadata.get("_always_process", [])
+    # A router writes a list; a stamp written otherwise names no one.
+    listed = metadata.get("_always_process")
+    always_process = listed if isinstance(listed, list) else []
 
     addressed = event.addressed_to
     if addressed is not None:
