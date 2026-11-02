@@ -1,0 +1,209 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-sender-s-routing-stamps-are-dropped",
+  "title": "The routing stamps a sender writes into its message are dropped before the hooks run: its address and the room's router decide which agents are asked",
+  "rules": [
+    "§19.4",
+    "§19.3",
+    "§9.5.1"
+  ],
+  "notes": "Only a hook writes _routed_to and _always_process. A sender's _routed_to would otherwise pick the agent that answers it, and its _always_process add an agent to its address. A router that leaves the message alone leaves no stamp of the sender's; one off the lock (§9.5.1) keeps its own.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence"
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a"
+          },
+          {
+            "channel_id": "b"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550001111",
+        "content": {
+          "type": "text",
+          "body": "one"
+        },
+        "metadata": {
+          "_routed_to": "b"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550001111",
+        "content": {
+          "type": "text",
+          "body": "two"
+        },
+        "metadata": {
+          "_always_process": [
+            "b"
+          ]
+        },
+        "addressed_to": [
+          "a"
+        ]
+      }
+    },
+    {
+      "call": "add_room_hook",
+      "room_id": "r1",
+      "hook": {
+        "name": "router",
+        "trigger": "before_broadcast",
+        "priority": -100,
+        "router": {}
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550001111",
+        "content": {
+          "type": "text",
+          "body": "three"
+        },
+        "metadata": {
+          "_routed_to": "b"
+        }
+      }
+    },
+    {
+      "call": "remove_room_hook",
+      "room_id": "r1",
+      "name": "router",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "add_room_hook",
+      "room_id": "r1",
+      "hook": {
+        "name": "router",
+        "trigger": "before_broadcast",
+        "priority": -100,
+        "router": {
+          "default_agent_id": "b"
+        },
+        "needs_lock": false
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550001111",
+        "content": {
+          "type": "text",
+          "body": "four"
+        },
+        "metadata": {
+          "_routed_to": "a",
+          "_always_process": [
+            "a"
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "turns": {
+      "r1": {
+        "a": [
+          {
+            "id": "r1#0"
+          },
+          {
+            "id": "r1#1"
+          },
+          {
+            "id": "r1#2"
+          }
+        ],
+        "b": [
+          {
+            "id": "r1#0"
+          },
+          {
+            "id": "r1#2"
+          },
+          {
+            "id": "r1#3"
+          }
+        ]
+      }
+    },
+    "timeline": {
+      "r1": [
+        {
+          "metadata": {
+            "_routed_to": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "metadata": {
+            "_always_process": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "metadata": {
+            "_routed_to": {
+              "$absent": true
+            },
+            "_always_process": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "metadata": {
+            "_routed_to": "b",
+            "_always_process": []
+          }
+        }
+      ]
+    }
+  }
+}
