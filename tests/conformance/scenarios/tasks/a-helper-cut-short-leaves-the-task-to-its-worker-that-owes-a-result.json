@@ -1,0 +1,245 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-helper-cut-short-leaves-the-task-to-its-worker-that-owes-a-result",
+  "title": "In a delegated room another agent is shared into, that agent's turns cut short on each prompt are its own: the delegated worker owing a result is re-prompted and the task completes with what it submitted, whether a transport is shared into the child room or not",
+  "rules": [
+    "§23.3 step 6",
+    "§6.4"
+  ],
+  "notes": "Python: tests/tasks/test_worker_cut_short.py::test_a_cut_helper_leaves_a_worker_that_owes_its_result[transport], [trace]; core/mixins/_child_execution.py _collect_answer (the end is the delegated agent's alone, RMK-834), _run_with_structured_result. helper answers each of the child room's prompts (the task, then the re-prompt) with a message its turn's record says ended max_rounds, for the transport alone, so that worker is never handed it: Python's helper is an agent looping past its round cap, whose narration the worker would answer. worker answers in text, is re-prompted, submits, then says it sent it.",
+  "setup": {
+    "channels": [
+      {
+        "id": "email",
+        "type": "email",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Working on it."
+            },
+            {
+              "calls": [
+                {
+                  "id": "s",
+                  "name": "submit_result",
+                  "arguments": {
+                    "status": "completed",
+                    "summary": "Found it.",
+                    "data": {
+                      "x": 1
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Sent."
+            },
+            {
+              "text": "Working on it."
+            },
+            {
+              "calls": [
+                {
+                  "id": "s",
+                  "name": "submit_result",
+                  "arguments": {
+                    "status": "completed",
+                    "summary": "Found it.",
+                    "data": {
+                      "x": 1
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Sent."
+            }
+          ]
+        }
+      },
+      {
+        "id": "helper",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "source_channel_id": "system"
+            },
+            "repeat": true,
+            "respond": [
+              {
+                "visibility": "transport",
+                "content": {
+                  "type": "text",
+                  "body": "Still checking."
+                },
+                "metadata": {
+                  "loop_end_reason": "max_rounds"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "parent",
+        "bindings": [
+          {
+            "channel_id": "email"
+          },
+          {
+            "channel_id": "helper",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "worker",
+      "task": "Find it.",
+      "share_channels": [
+        "helper",
+        "email"
+      ],
+      "wait": true,
+      "require_structured_result": true,
+      "expect": {
+        "result": {
+          "status": "completed",
+          "result": {
+            "status": "completed",
+            "output": "{\"status\": \"completed\", \"summary\": \"Found it.\", \"data\": {\"x\": 1}, \"deliverables\": [], \"reason\": \"\"}",
+            "error": null
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "worker",
+      "task": "Find it.",
+      "share_channels": [
+        "helper"
+      ],
+      "wait": true,
+      "require_structured_result": true,
+      "expect": {
+        "result": {
+          "status": "completed",
+          "result": {
+            "status": "completed",
+            "output": "{\"status\": \"completed\", \"summary\": \"Found it.\", \"data\": {\"x\": 1}, \"deliverables\": [], \"reason\": \"\"}",
+            "error": null
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "$r1": [
+        {
+          "source": {
+            "channel_id": "system"
+          },
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "Find it."
+          }
+        },
+        {
+          "source": {
+            "channel_id": "helper"
+          },
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "Still checking."
+          },
+          "metadata": {
+            "loop_end_reason": "max_rounds"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "worker"
+          },
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "Working on it."
+          }
+        },
+        {
+          "source": {
+            "channel_id": "system"
+          },
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": {
+              "$contains": "submit_result"
+            }
+          }
+        },
+        {
+          "source": {
+            "channel_id": "helper"
+          },
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "Still checking."
+          },
+          "metadata": {
+            "loop_end_reason": "max_rounds"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "worker"
+          },
+          "type": "tool_call_start"
+        },
+        {
+          "source": {
+            "channel_id": "worker"
+          },
+          "type": "tool_call_end"
+        },
+        {
+          "source": {
+            "channel_id": "worker"
+          },
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "Sent."
+          }
+        }
+      ]
+    }
+  }
+}

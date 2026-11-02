@@ -1,0 +1,71 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-re-prompted-worker-s-task-carries-its-last-turn-s-record-only",
+  "title": "A task whose worker a result tool re-prompted carries its last turn's record only: a re-prompt that failed before any round leaves no end of the first turn under turns",
+  "rules": [
+    "§23.3 step 6",
+    "§6.4"
+  ],
+  "notes": "Python: tests/tasks/test_task_turn_record.py::test_a_re_prompted_worker_carries_its_last_turn_only; core/mixins/_child_execution.py _run_with_structured_result (the last attempt's record). The worker answers in text without the result, then its re-prompt asks a generation past its script, which fails the turn before any round.",
+  "setup": {
+    "channels": [
+      {
+        "id": "email",
+        "type": "email",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Draft.",
+              "usage": {
+                "input_tokens": 3,
+                "output_tokens": 7
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "parent",
+        "bindings": [
+          {
+            "channel_id": "email"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "worker",
+      "task": "Find it.",
+      "require_structured_result": true,
+      "max_result_retries": 1,
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "failed",
+          "result": {
+            "status": "failed",
+            "metadata": {
+              "turns": {
+                "$absent": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ]
+}

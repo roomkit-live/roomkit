@@ -1,0 +1,231 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-delegation-keeps-its-agent-s-answer-when-another-agent-answers-first",
+  "title": "In a delegated room another agent is shared into, the task keeps its delegated agent's answer though the other agent's turn returned first, whether a transport is shared into the child room or not",
+  "rules": [
+    "§23.3 step 6"
+  ],
+  "notes": "Python: tests/tasks/test_worker_cut_short.py::test_a_delegation_keeps_its_agent_s_answer_when_another_returns_first[transport-generates], [trace-generates]; core/mixins/_child_execution.py _collect_answer (the answer is the delegated agent's, whatever the order its responders returned in, RMK-834). worker's turn is held at a gate until the step opens it; helper answers the task at once. Both answer buffered: a streaming agent's turn returns its stream before its model writes, so a gate on its model holds no turn's return (Python's streams parameter is not varied).",
+  "setup": {
+    "channels": [
+      {
+        "id": "email",
+        "type": "email",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "source_channel_id": "system"
+            },
+            "gate": "first",
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "From the worker."
+                }
+              }
+            ]
+          },
+          {
+            "when": {
+              "source_channel_id": "system"
+            },
+            "gate": "second",
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "From the worker."
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "helper",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "source_channel_id": "system"
+            },
+            "repeat": true,
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "From the helper."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "parent",
+        "bindings": [
+          {
+            "channel_id": "email"
+          },
+          {
+            "channel_id": "helper",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "worker",
+      "task": "Find it.",
+      "share_channels": [
+        "helper",
+        "email"
+      ],
+      "wait": true,
+      "background": true,
+      "as": "d1"
+    },
+    {
+      "wait_for": "first"
+    },
+    {
+      "open": "first"
+    },
+    {
+      "await": "d1",
+      "expect": {
+        "result": {
+          "status": "completed",
+          "result": {
+            "status": "completed",
+            "output": "From the worker.",
+            "error": null
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "worker",
+      "task": "Find it.",
+      "share_channels": [
+        "helper"
+      ],
+      "wait": true,
+      "background": true,
+      "as": "d2"
+    },
+    {
+      "wait_for": "second"
+    },
+    {
+      "open": "second"
+    },
+    {
+      "await": "d2",
+      "expect": {
+        "result": {
+          "status": "completed",
+          "result": {
+            "status": "completed",
+            "output": "From the worker.",
+            "error": null
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "$r1": {
+        "$unordered": [
+          {
+            "source": {
+              "channel_id": "system"
+            },
+            "type": "message",
+            "content": {
+              "type": "text",
+              "body": "Find it."
+            }
+          },
+          {
+            "source": {
+              "channel_id": "helper"
+            },
+            "type": "message",
+            "content": {
+              "type": "text",
+              "body": "From the helper."
+            }
+          },
+          {
+            "source": {
+              "channel_id": "worker"
+            },
+            "type": "message",
+            "content": {
+              "type": "text",
+              "body": "From the worker."
+            }
+          }
+        ]
+      },
+      "$r2": {
+        "$unordered": [
+          {
+            "source": {
+              "channel_id": "system"
+            },
+            "type": "message",
+            "content": {
+              "type": "text",
+              "body": "Find it."
+            }
+          },
+          {
+            "source": {
+              "channel_id": "helper"
+            },
+            "type": "message",
+            "content": {
+              "type": "text",
+              "body": "From the helper."
+            }
+          },
+          {
+            "source": {
+              "channel_id": "worker"
+            },
+            "type": "message",
+            "content": {
+              "type": "text",
+              "body": "From the worker."
+            }
+          }
+        ]
+      }
+    }
+  }
+}

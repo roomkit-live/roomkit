@@ -1,0 +1,93 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-room-turn-its-reader-stopped-tells-its-caller-cancelled",
+  "title": "A room turn whose streaming channel stopped reading its answer tells the caller it ended cancelled, under turns in the result's response_metadata, keyed by the agent",
+  "rules": [
+    "§12.2 step 13s",
+    "§6.4",
+    "§10.1 step 18"
+  ],
+  "notes": "Python: tests/tasks/test_stopped_stream_turn_end.py::test_a_room_turn_its_transport_stopped_tells_its_caller_cancelled[after-text] (while-thinking needs thinking deltas, which a scripted model does not write; acp-finished needs an ACP agent); core/mixins/lane_execution.py (each stream's turns entry merged into the caller's record). streaming/reader-stops.json's setup, its result's record asserted.",
+  "setup": {
+    "channels": [
+      {
+        "id": "web",
+        "type": "webhook",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true,
+        "deliver_stream": [
+          {
+            "stop_after": "answer "
+          }
+        ]
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "The ",
+                "answer ",
+                "is 42."
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "web",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "What is the answer?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null,
+          "response_metadata": {
+            "turns": {
+              "agent": {
+                "loop_end_reason": "cancelled"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ]
+}

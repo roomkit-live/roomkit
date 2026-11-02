@@ -1,0 +1,410 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-failed-task-keeps-the-error-its-worker-s-turn-raised",
+  "title": "A task whose worker's turn failed keeps the error the turn raised, its kind and its message, whether it failed before or after a tool round, inline or in the background, a transport shared into the child room or not; reported in the child room, the failure is marked so on the task",
+  "rules": [
+    "§23.3 step 6",
+    "§6.4",
+    "§10.6.5"
+  ],
+  "notes": "Python: tests/tasks/test_task_turn_record.py::test_a_failed_task_keeps_the_error_its_turn_raised; tasks/models.py finished_task_fields (exception, error_reported), core/_turn_host.py _wait_task ({result, exception}, the exception as its error record). The provider refuses with status 503, an error it does not retry: a ProviderError, as in Python's test. first fails at its first generation, after once a tool round is done; each runs inline on the trace and with email shared, then in the background, delegated by boss's turn, whose host reads the failure itself. DelegatedTaskResult.exception is never serialized: only wait_task carries it, as an error record whose kind each implementation's codec writes (roomkit qualifies it with its module): the scenario reads the class's name in it. Python's status_code 503 is an attribute of its ProviderError, which an error record does not carry. A scripted model has one provider path: Python's buffered/stream parameter is not varied.",
+  "setup": {
+    "channels": [
+      {
+        "id": "email",
+        "type": "email",
+        "category": "transport"
+      },
+      {
+        "id": "first",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "refuses": {
+                "status": 503,
+                "message": "upstream unavailable"
+              }
+            },
+            {
+              "refuses": {
+                "status": 503,
+                "message": "upstream unavailable"
+              }
+            },
+            {
+              "refuses": {
+                "status": 503,
+                "message": "upstream unavailable"
+              }
+            },
+            {
+              "refuses": {
+                "status": 503,
+                "message": "upstream unavailable"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "after",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Checking.",
+              "calls": [
+                {
+                  "id": "c",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "refuses": {
+                "status": 503,
+                "message": "upstream unavailable"
+              }
+            },
+            {
+              "text": "Checking.",
+              "calls": [
+                {
+                  "id": "c",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "refuses": {
+                "status": 503,
+                "message": "upstream unavailable"
+              }
+            },
+            {
+              "text": "Checking.",
+              "calls": [
+                {
+                  "id": "c",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "refuses": {
+                "status": 503,
+                "message": "upstream unavailable"
+              }
+            },
+            {
+              "text": "Checking.",
+              "calls": [
+                {
+                  "id": "c",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "refuses": {
+                "status": 503,
+                "message": "upstream unavailable"
+              }
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "look up",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found"
+          }
+        ]
+      },
+      {
+        "id": "boss",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "go"
+            },
+            "do": [
+              {
+                "call": "host.delegate",
+                "room_id": "parent",
+                "agent_id": "first",
+                "task": "Find it.",
+                "as": "d1",
+                "expect": {
+                  "result": {
+                    "$present": true
+                  }
+                }
+              },
+              {
+                "call": "host.wait_task",
+                "task_id": "$d1",
+                "as": "d1_waited",
+                "expect": {
+                  "result": {
+                    "result": {
+                      "status": "failed",
+                      "error": "upstream unavailable",
+                      "metadata": {
+                        "error_reported": true
+                      }
+                    },
+                    "exception": {
+                      "kind": {
+                        "$contains": "ProviderError"
+                      },
+                      "message": "upstream unavailable"
+                    }
+                  }
+                }
+              },
+              {
+                "call": "host.delegate",
+                "room_id": "parent",
+                "agent_id": "first",
+                "task": "Find it.",
+                "as": "d2",
+                "expect": {
+                  "result": {
+                    "$present": true
+                  }
+                },
+                "share_channels": [
+                  "email"
+                ]
+              },
+              {
+                "call": "host.wait_task",
+                "task_id": "$d2",
+                "as": "d2_waited",
+                "expect": {
+                  "result": {
+                    "result": {
+                      "status": "failed",
+                      "error": "upstream unavailable",
+                      "metadata": {
+                        "error_reported": true
+                      }
+                    },
+                    "exception": {
+                      "kind": {
+                        "$contains": "ProviderError"
+                      },
+                      "message": "upstream unavailable"
+                    }
+                  }
+                }
+              },
+              {
+                "call": "host.delegate",
+                "room_id": "parent",
+                "agent_id": "after",
+                "task": "Find it.",
+                "as": "d3",
+                "expect": {
+                  "result": {
+                    "$present": true
+                  }
+                }
+              },
+              {
+                "call": "host.wait_task",
+                "task_id": "$d3",
+                "as": "d3_waited",
+                "expect": {
+                  "result": {
+                    "result": {
+                      "status": "failed",
+                      "error": "upstream unavailable",
+                      "metadata": {
+                        "error_reported": true
+                      }
+                    },
+                    "exception": {
+                      "kind": {
+                        "$contains": "ProviderError"
+                      },
+                      "message": "upstream unavailable"
+                    }
+                  }
+                }
+              },
+              {
+                "call": "host.delegate",
+                "room_id": "parent",
+                "agent_id": "after",
+                "task": "Find it.",
+                "as": "d4",
+                "expect": {
+                  "result": {
+                    "$present": true
+                  }
+                },
+                "share_channels": [
+                  "email"
+                ]
+              },
+              {
+                "call": "host.wait_task",
+                "task_id": "$d4",
+                "as": "d4_waited",
+                "expect": {
+                  "result": {
+                    "result": {
+                      "status": "failed",
+                      "error": "upstream unavailable",
+                      "metadata": {
+                        "error_reported": true
+                      }
+                    },
+                    "exception": {
+                      "kind": {
+                        "$contains": "ProviderError"
+                      },
+                      "message": "upstream unavailable"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "parent",
+        "bindings": [
+          {
+            "channel_id": "email"
+          },
+          {
+            "channel_id": "boss"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "first",
+      "task": "Find it.",
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "failed",
+          "result": {
+            "status": "failed",
+            "error": "upstream unavailable",
+            "metadata": {
+              "error_reported": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "first",
+      "task": "Find it.",
+      "share_channels": [
+        "email"
+      ],
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "failed",
+          "result": {
+            "status": "failed",
+            "error": "upstream unavailable",
+            "metadata": {
+              "error_reported": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "after",
+      "task": "Find it.",
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "failed",
+          "result": {
+            "status": "failed",
+            "error": "upstream unavailable",
+            "metadata": {
+              "error_reported": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "after",
+      "task": "Find it.",
+      "share_channels": [
+        "email"
+      ],
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "failed",
+          "result": {
+            "status": "failed",
+            "error": "upstream unavailable",
+            "metadata": {
+              "error_reported": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "parent",
+      "message": {
+        "channel_id": "email",
+        "sender_id": "alice@example.com",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ]
+}

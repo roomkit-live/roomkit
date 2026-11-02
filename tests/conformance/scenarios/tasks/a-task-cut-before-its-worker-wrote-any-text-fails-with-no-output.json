@@ -1,0 +1,369 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-task-cut-before-its-worker-wrote-any-text-fails-with-no-output",
+  "title": "A task whose worker's round cap cut its turn before it wrote any text fails with no output, its error and its metadata naming how the turn ended, as ON_TASK_COMPLETED says, inline or in the background, whether a transport is shared into the child room or not",
+  "rules": [
+    "§23.3 step 6",
+    "§23.3 step 7",
+    "§6.4"
+  ],
+  "notes": "Python: tests/tasks/test_worker_cut_short.py::test_a_task_cut_before_any_text_fails_naming_the_end; core/mixins/_child_execution.py _cut_short (TaskCutShortError with no narration), tasks/models.py finished_task_fields. worker runs inline on the trace, writer inline with email shared, seeker in the background on the trace, finder in the background with email shared.",
+  "setup": {
+    "channels": [
+      {
+        "id": "email",
+        "type": "email",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c",
+                  "name": "lookup"
+                }
+              ]
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "look up",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found"
+          }
+        ],
+        "max_tool_rounds": 1
+      },
+      {
+        "id": "writer",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c",
+                  "name": "lookup"
+                }
+              ]
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "look up",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found"
+          }
+        ],
+        "max_tool_rounds": 1
+      },
+      {
+        "id": "seeker",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c",
+                  "name": "lookup"
+                }
+              ]
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "look up",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found"
+          }
+        ],
+        "max_tool_rounds": 1
+      },
+      {
+        "id": "finder",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c",
+                  "name": "lookup"
+                }
+              ]
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "look up",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found"
+          }
+        ],
+        "max_tool_rounds": 1
+      }
+    ],
+    "rooms": [
+      {
+        "id": "parent",
+        "bindings": [
+          {
+            "channel_id": "email"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "done",
+        "trigger": "on_task_completed",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "worker",
+      "task": "Find it.",
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "failed",
+          "result": {
+            "status": "failed",
+            "error": "The worker's turn ended max_rounds before its answer",
+            "output": null,
+            "metadata": {
+              "loop_end_reason": "max_rounds"
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "writer",
+      "task": "Find it.",
+      "share_channels": [
+        "email"
+      ],
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "failed",
+          "result": {
+            "status": "failed",
+            "error": "The worker's turn ended max_rounds before its answer",
+            "output": null,
+            "metadata": {
+              "loop_end_reason": "max_rounds"
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "seeker",
+      "task": "Find it.",
+      "as": "s"
+    },
+    {
+      "call": "task.wait",
+      "task_id": "$s",
+      "expect": {
+        "result": {
+          "status": "failed",
+          "error": "The worker's turn ended max_rounds before its answer",
+          "output": null,
+          "metadata": {
+            "loop_end_reason": "max_rounds"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "finder",
+      "task": "Find it.",
+      "as": "f",
+      "share_channels": [
+        "email"
+      ]
+    },
+    {
+      "call": "task.wait",
+      "task_id": "$f",
+      "expect": {
+        "result": {
+          "status": "failed",
+          "error": "The worker's turn ended max_rounds before its answer",
+          "output": null,
+          "metadata": {
+            "loop_end_reason": "max_rounds"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "done": [
+        {
+          "trigger": "on_task_completed",
+          "room_id": "parent",
+          "event": {
+            "type": "task_completed",
+            "metadata": {
+              "agent_id": "worker",
+              "task_status": "failed",
+              "error": "The worker's turn ended max_rounds before its answer",
+              "loop_end_reason": "max_rounds"
+            }
+          }
+        },
+        {
+          "trigger": "on_task_completed",
+          "room_id": "parent",
+          "event": {
+            "type": "task_completed",
+            "metadata": {
+              "agent_id": "writer",
+              "task_status": "failed",
+              "error": "The worker's turn ended max_rounds before its answer",
+              "loop_end_reason": "max_rounds"
+            }
+          }
+        },
+        {
+          "trigger": "on_task_completed",
+          "room_id": "parent",
+          "event": {
+            "type": "task_completed",
+            "metadata": {
+              "agent_id": "seeker",
+              "task_status": "failed",
+              "error": "The worker's turn ended max_rounds before its answer",
+              "loop_end_reason": "max_rounds"
+            }
+          }
+        },
+        {
+          "trigger": "on_task_completed",
+          "room_id": "parent",
+          "event": {
+            "type": "task_completed",
+            "metadata": {
+              "agent_id": "finder",
+              "task_status": "failed",
+              "error": "The worker's turn ended max_rounds before its answer",
+              "loop_end_reason": "max_rounds"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

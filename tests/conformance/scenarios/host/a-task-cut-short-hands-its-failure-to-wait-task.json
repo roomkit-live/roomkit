@@ -7,7 +7,7 @@
     "§10.6.5",
     "§10.6.8"
   ],
-  "notes": "Python: tests/tasks/test_worker_cut_short.py; tests/test_turns_host.py::test_wait_task_answers_a_failed_task_with_its_exception; tasks/models.py finished_task_fields and _as_raised; core/_turn_host.py _wait_task, which answers {result, exception}, the exception as its error record. DelegatedTaskResult.exception is never serialized: only wait_task carries it. An error's kind is written as each implementation's codec writes it (roomkit qualifies it with its module): the scenario reads the class's name in it. A turn cut short is no failure its turn reported: its result carries no error_reported (tasks/models.py finished_task_fields).",
+  "notes": "Python: tests/tasks/test_worker_cut_short.py::test_a_background_task_fails_with_its_narration; tests/test_turns_host.py::test_wait_task_answers_a_failed_task_with_its_exception; tasks/models.py finished_task_fields and _as_raised; core/_turn_host.py _wait_task, which answers {result, exception}, the exception as its error record. DelegatedTaskResult.exception is never serialized: only wait_task carries it. An error's kind is written as each implementation's codec writes it (roomkit qualifies it with its module): the scenario reads the class's name in it. A turn cut short is no failure its turn reported: its result carries no error_reported (tasks/models.py finished_task_fields).",
   "setup": {
     "channels": [
       {

@@ -1,0 +1,180 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-worker-owing-a-result-is-held-to-what-it-submitted-before-its-cut",
+  "title": "A worker owing a result that submitted it before its round cap cut its turn completes the task with it; one cut without submitting it fails the task with its narration, its error and its metadata naming how the turn ended, never re-prompted",
+  "rules": [
+    "§23.3 step 6",
+    "§6.4"
+  ],
+  "notes": "Python: tests/tasks/test_worker_cut_short.py::test_a_result_submitted_before_the_cut_counts, test_a_worker_owing_a_result_fails_when_cut_without_one; core/mixins/_child_execution.py _run_with_structured_result (a cut turn is not re-prompted; _scan_for_submitted_result reads a served call whatever the turn's end). submitter submits on its first round, then loops on lookup past max_tool_rounds 1; looper loops without submitting: its model is asked twice, no re-prompt.",
+  "setup": {
+    "channels": [
+      {
+        "id": "email",
+        "type": "email",
+        "category": "transport"
+      },
+      {
+        "id": "submitter",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "s1",
+                  "name": "submit_result",
+                  "arguments": {
+                    "status": "completed",
+                    "summary": "found it",
+                    "data": {}
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Still checking.",
+              "calls": [
+                {
+                  "id": "c",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "text": "Still checking.",
+              "calls": [
+                {
+                  "id": "c",
+                  "name": "lookup"
+                }
+              ]
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "look up",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found"
+          }
+        ],
+        "max_tool_rounds": 1
+      },
+      {
+        "id": "looper",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Still checking.",
+              "calls": [
+                {
+                  "id": "c",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "text": "Still checking.",
+              "calls": [
+                {
+                  "id": "c",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "text": "Still checking.",
+              "calls": [
+                {
+                  "id": "c",
+                  "name": "lookup"
+                }
+              ]
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "look up",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found"
+          }
+        ],
+        "max_tool_rounds": 1
+      }
+    ],
+    "rooms": [
+      {
+        "id": "parent",
+        "bindings": [
+          {
+            "channel_id": "email"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "submitter",
+      "task": "Find it.",
+      "require_structured_result": true,
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "completed",
+          "result": {
+            "status": "completed",
+            "output": "{\"status\": \"completed\", \"summary\": \"found it\", \"data\": {}, \"deliverables\": [], \"reason\": \"\"}",
+            "error": null
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "looper",
+      "task": "Find it.",
+      "require_structured_result": true,
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "failed",
+          "result": {
+            "status": "failed",
+            "error": "The worker's turn ended max_rounds before its answer",
+            "output": "Still checking.",
+            "metadata": {
+              "loop_end_reason": "max_rounds"
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "looper": [
+        {},
+        {}
+      ]
+    }
+  }
+}
