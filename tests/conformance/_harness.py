@@ -470,6 +470,18 @@ class Harness:
             return await self._reference(value, scope)
         return value
 
+    def labelled(self, value: Any) -> Any:
+        """*value* with each ``$<label>`` a call's ``as`` named read as what
+        it names: a scripted model's call arguments, as the model writes
+        the call (README, "Scripted agents")."""
+        if isinstance(value, dict):
+            return {key: self.labelled(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [self.labelled(item) for item in value]
+        if isinstance(value, str) and value.startswith("$") and self._labels.get(value[1:]):
+            return self._labels[value[1:]]
+        return value
+
     async def _reference(self, value: str, scope: Mapping[str, str]) -> str:
         if value in ("$room", "$event"):
             return scope[value[1:]]

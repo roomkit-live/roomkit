@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
 from roomkit.channels.ai import AIChannel
@@ -45,14 +45,21 @@ class ModelFailedError(Exception):
 
 class ScriptedModel(AIProvider):
     """A provider answering each generation with the next round of a script,
-    and keeping what each request carried."""
+    and keeping what each request carried; *labelled* reads a call's
+    arguments as it is written, each ``$<label>`` naming what the run made."""
 
     def __init__(
-        self, rounds: list[Mapping[str, Any]], gates: Gates, *, vision: bool = False
+        self,
+        rounds: list[Mapping[str, Any]],
+        gates: Gates,
+        *,
+        vision: bool = False,
+        labelled: Callable[[Any], Any] | None = None,
     ) -> None:
         self._rounds = list(rounds)
         self._gates = gates
         self._vision = vision
+        self._labelled = labelled
         self.requests: list[dict[str, Any]] = []
 
     @property
@@ -67,7 +74,7 @@ class ScriptedModel(AIProvider):
         round_ = self._next_round(context)
         await self._hold(round_)
         _refuse(round_)
-        return _response(round_)
+        return _response(round_, self._labelled)
 
     async def _hold(self, round_: Mapping[str, Any]) -> None:
         """Hold the round at its ``gate``, before it writes anything."""
@@ -90,7 +97,8 @@ class ScriptedModel(AIProvider):
         _refuse(round_)
         # The calls and the end as generate()'s whole response gives them; a
         # round that ends without its done event stops after its calls.
-        for event in response_stream_events(_response(round_).model_copy(update={"content": ""})):
+        response = _response(round_, self._labelled)
+        for event in response_stream_events(response.model_copy(update={"content": ""})):
             if isinstance(event, StreamDone) and round_.get("done") is False:
                 return
             yield event
@@ -132,12 +140,15 @@ def _deltas(round_: Mapping[str, Any]) -> list[str]:
     return [text] if text else []
 
 
-def _response(round_: Mapping[str, Any]) -> AIResponse:
+def _response(
+    round_: Mapping[str, Any], labelled: Callable[[Any], Any] | None = None
+) -> AIResponse:
+    written = labelled or (lambda arguments: arguments)
     calls = [
         AIToolCall(
             id=call["id"],
             name=call["name"],
-            arguments=dict(call.get("arguments", {})),
+            arguments=written(dict(call.get("arguments", {}))),
             partial=bool(call.get("cut", False)),
         )
         for call in round_.get("calls", [])
@@ -240,14 +251,21 @@ def _tool_handler(tools: list[Mapping[str, Any]], gates: Gates) -> Any:
 
 
 def scripted_agent(
-    spec: Mapping[str, Any], gates: Gates, kit: RoomKit
+    spec: Mapping[str, Any],
+    gates: Gates,
+    kit: RoomKit,
+    labelled: Callable[[Any], Any] | None = None,
 ) -> tuple[AIChannel, dict[str, ScriptedModel]]:
     """The AI channel of a scripted agent, and its models by the name
     ``expect.models`` gives them: its own under its id, its memory's
     summarizer under ``<id>/summarizer``; a round or a tool with a ``gate``
-    holds at it; the tools *kit* makes that it is given, after its own."""
+    holds at it; the tools *kit* makes that it is given, after its own; its
+    calls' arguments read by *labelled* as the model writes them."""
     model = ScriptedModel(
-        spec["model"]["rounds"], gates, vision=bool(spec["model"].get("vision", False))
+        spec["model"]["rounds"],
+        gates,
+        vision=bool(spec["model"].get("vision", False)),
+        labelled=labelled,
     )
     models = {spec["id"]: model}
     tools = spec.get("tools", [])
