@@ -29,7 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   before its next round, under its speaker's label when several people speak.
   No second turn starts; the room's turns run one after the other
   (`serialize_room_turns`, which it implies). `ChannelDeclaration` takes
-  `steers_room_turns`, `Channel` has the property. Runnable:
+  `steers_room_turns`, `Channel` has the property, and any channel that
+  steers its room turns takes them one at a time: its
+  `serializes_room_turns` defaults to it, and the kit holding a channel by a
+  declaration that steers them serializes them (RMK-1253). Runnable:
   `examples/agent_steered_turn.py`.
 
 - **`AIChannel(tool_call_intents_required=True)` lists a call's intent as
@@ -121,15 +124,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   RMK-1233). `_always_process` written as a `str` solicited every agent
   whose id it contains, a `dict` its keys, and `None` failed the broadcast
   with a `TypeError`; only a list names agents now, as roomkit-rs reads it.
-
-- **A channel that steers its room turns takes them one at a time** (RFC
-  §6.4, §10.6.2, RMK-1253). A hand-written channel whose `steers_room_turns`
-  said `True`, or a `ChannelDeclaration(steers_room_turns=True)`, read
-  `serializes_room_turns` as `False`: its turns ran side by side and no
-  message was ever handed to its running turn. A channel's
-  `serializes_room_turns` now defaults to whether it steers them, and a
-  declaration that steers them reads `True`, as an `AIChannel`'s with
-  `steer_room_turns` does; roomkit-rs's channels read the same.
 
 - **A binding's max tokens in text runs a budget-aware memory's turn**
   (RFC §6.4, Appendix A.9, RMK-1255). A room binding an agent with
