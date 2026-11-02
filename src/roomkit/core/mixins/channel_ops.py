@@ -206,13 +206,11 @@ class ChannelOpsMixin(HelpersMixin):
             ValueError: a channel id a visibility could not name (a
                 keyword, a comma, surrounding whitespace; RFC §7.3), a
                 channel that steers its room turns but does not serialize
-                them (RFC §6.4), a
-                channel of the type ``SYSTEM``, reserved to the framework's
-                own records (RFC §5.3), or a
-                declaration of a channel that is not an
-                intelligence channel, or of one a turn hook registered on
-                the kit could fire (its turns run on another executor, RFC
-                §10.6.6).
+                them (RFC §6.4), a channel of the type ``SYSTEM``, reserved
+                to the framework's own records (RFC §5.3), or a declaration
+                of a channel that is not an intelligence channel, or of one
+                a turn hook registered on the kit could fire (its turns run
+                on another executor, RFC §10.6.6).
             pydantic.ValidationError: an intelligence channel whose own
                 declaration is invalid (an empty id, a negative window).
         """
