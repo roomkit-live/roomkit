@@ -244,6 +244,38 @@ class TestEveryReaderCountsSources:
         assert reader(context, turn)
 
     @pytest.mark.parametrize("reader", _READERS.values(), ids=_READERS.keys())
+    def test_the_agent_s_own_reply_is_no_speaker(
+        self, reader: Callable[[RoomContext, RoomEvent], bool]
+    ) -> None:
+        """The runtime's own turns are no speaker (RFC §6.4): a one-to-one
+        conversation the agent answered once stays unlabelled."""
+        first = _turn("u-alice", "Hi", 1)
+        reply = RoomEvent(
+            room_id=ROOM,
+            index=2,
+            source=EventSource(channel_id="ai1", channel_type=ChannelType.AI),
+            content=TextContent(body="Hello."),
+        )
+        turn = _turn("u-alice", "wait", 3)
+        context = _context([_person("u-alice", "Alice")], [first, reply, turn])
+
+        assert not reader(context, turn)
+
+    def test_the_second_nameless_sender_carries_its_rank(self) -> None:
+        """The second source under a channel's label reads ``@sms1 (2)``
+        (the conversation's is pinned by the shared scenario
+        memory/two-senders-with-no-name-on-one-channel-are-two-speakers)."""
+        first = _turn("+15550001", "Refund me", 1)
+        turn = _turn("+15550002", "Do not refund them", 2)
+        context = _context([], [first, turn])
+
+        steered = steered_message(turn, context, "ai1")
+
+        assert isinstance(steered, InjectMessage)
+        assert steered.content == '@sms1 (2): "Do not refund them"'
+        assert asking_label(turn, context, "ai1") == "@sms1 (2)"
+
+    @pytest.mark.parametrize("reader", _READERS.values(), ids=_READERS.keys())
     def test_one_sender_under_two_names_is_one_speaker(
         self, reader: Callable[[RoomContext, RoomEvent], bool]
     ) -> None:
