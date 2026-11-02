@@ -1,0 +1,173 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-round-tried-again-ends-its-segment",
+  "title": "A round whose call the provider could not parse is tried again, and its text is a message of its own: the next round's text never runs on from it",
+  "rules": [
+    "§6.4",
+    "Appendix A.9"
+  ],
+  "notes": "Python's loop yields a SegmentBreakMarker when it asks the model again (_ai_streaming.py, _round_outcome's retry), and the kit stores the text before it as its own message (_streaming_segments.py). The next generation reads the round's text as the assistant's, then the word to the model (MALFORMED_CALL_NUDGE).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Let me check.",
+              "finish_reason": "malformed_function_call"
+            },
+            {
+              "text": "Order 42 shipped."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": []
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Where is order 42?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message",
+          "source": {
+            "channel_id": "ws"
+          },
+          "content": {
+            "type": "text",
+            "body": "Where is order 42?"
+          }
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "source": {
+            "channel_id": "agent",
+            "direction": "outbound"
+          },
+          "chain_depth": 1,
+          "content": {
+            "type": "text",
+            "body": "Let me check."
+          },
+          "metadata": {
+            "loop_end_reason": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "index": 2,
+          "type": "message",
+          "source": {
+            "channel_id": "agent",
+            "direction": "outbound"
+          },
+          "chain_depth": 1,
+          "content": {
+            "type": "text",
+            "body": "Order 42 shipped."
+          },
+          "metadata": {
+            "loop_end_reason": "completed"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "type": "text",
+              "body": "Let me check."
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Order 42 shipped."
+            }
+          }
+        ]
+      }
+    },
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$contains": "Where is order 42?"
+              }
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$contains": "Where is order 42?"
+              }
+            },
+            {
+              "role": "assistant",
+              "text": "Let me check."
+            },
+            {
+              "role": "user",
+              "text": "Your last tool call could not be parsed, so it did not run. Call the tool again with arguments that are valid JSON matching its parameters, or answer in plain text."
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
