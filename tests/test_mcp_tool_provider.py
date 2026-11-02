@@ -276,13 +276,14 @@ async def test_tool_handler_returns_an_image_as_an_image_part() -> None:
     ]
 
 
-async def _parts(content: list[Any]) -> list[Any]:
-    """What the tool handler answers for a result holding *content*."""
+async def _parts(content: list[Any], name: str = "search") -> list[Any]:
+    """What the tool handler answers for a result holding *content*, the
+    call made under *name*."""
     provider = _make_provider_connected(
         [SEARCH_TOOL],
         call_tool_side_effect=lambda name, args: MockCallToolResult(content),
     )
-    result = await provider.as_tool_handler()("search", {"query": "hello"})
+    result = await provider.as_tool_handler()(name, {"query": "hello"})
     assert isinstance(result, list)
     return result
 
@@ -339,12 +340,13 @@ async def test_a_held_back_image_s_note_counts_within_the_texts_bound(
 ) -> None:
     """The note of an image held back counts as a text: a result whose text
     fills the bound shows its first four images and no note past it, an
-    empty text still fitting, and the part left out is logged once."""
+    empty text still fitting, and the part left out is logged once, under
+    the name of the tool the server serves, not the alias called."""
     content: list[Any] = [MockTextContent("x" * 100_000), MockTextContent("")]
     content += [MockImageContent(_TINY_PNG, "image/png") for _ in range(5)]
 
     with caplog.at_level(logging.WARNING, logger="roomkit.tools.mcp"):
-        parts = await _parts(content)
+        parts = await _parts(content, "mcp__srv__search")
 
     assert _shown(parts) == ["x" * 100_000, ""] + ["image"] * 4
     assert [r.getMessage() for r in caplog.records] == [
