@@ -23,6 +23,7 @@ from roomkit.models.event import EventSource, RoomEvent
 from roomkit.models.hook import HookResult, InjectedEvent
 from roomkit.models.identity import Identity
 from roomkit.models.participant import Participant
+from roomkit.models.pending_input import PendingInputEvent
 from roomkit.models.task import Observation, Task
 from roomkit.models.tool_call import ToolCallEvent
 from tests.conformance._agent import patched_tool_call
@@ -390,6 +391,8 @@ def hook_handler(spec: Mapping[str, Any], harness: Harness) -> HookHandler:
         scope = {"room": room_id}
         if isinstance(payload, RoomEvent):
             scope["event"] = payload.id
+        if isinstance(payload, PendingInputEvent):
+            scope["request"] = payload.pending_id
         await perform(harness, reaction, scope)
         return hook_result(reaction.get("result"), payload, room_id)
 

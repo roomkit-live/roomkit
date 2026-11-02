@@ -57,6 +57,7 @@ class Observed:
     models: dict[str, list[Any]] = field(default_factory=dict)
     participants: dict[str, list[Any]] = field(default_factory=dict)
     resolver: list[dict[str, Any]] = field(default_factory=list)
+    requests: list[str] = field(default_factory=list)
 
 
 class Normalizer:
@@ -78,6 +79,10 @@ class Normalizer:
                     index = self.index(room_id, event["index"])
                     self._events[event["id"]] = f"{self.room(room_id)}#{index}"
         self._others: dict[str, str] = {}
+        # Human-input requests are $p1, $p2... in the order the run showed them.
+        self._requests = {
+            pending_id: f"$p{number}" for number, pending_id in enumerate(observed.requests, 1)
+        }
         self._instants = sorted(set(_instants(observed)))
         # The ids of no timeline are named in the order the step outcomes,
         # then the framework events, show them first.
@@ -151,6 +156,8 @@ class Normalizer:
             return self._events[value]
         if value in self._others:
             return self._others[value]
+        if value in self._requests:
+            return self._requests[value]
         if key in _ID_KEYS:
             if value not in self._others:
                 self._others[value] = f"$e{len(self._others) + 1}"

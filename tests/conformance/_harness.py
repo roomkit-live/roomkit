@@ -20,6 +20,7 @@ from roomkit.models.context import RoomContext
 from roomkit.models.delivery import DeliveryStatus
 from roomkit.models.event import RoomEvent
 from roomkit.models.framework_event import FrameworkEvent
+from roomkit.models.pending_input import PendingInputEvent
 from roomkit.models.store_filter import EventFilter
 from roomkit.models.task import Observation
 from roomkit.models.tool_call import ToolCallEvent
@@ -43,6 +44,7 @@ from tests.conformance._calls import (
 from tests.conformance._compare import Check, compare
 from tests.conformance._delivery import backend_busy, delivery_options, start_backend
 from tests.conformance._identity import kit_options, register_identity_hook
+from tests.conformance._inputs import INPUT_CALLS, request_record
 from tests.conformance._members import MEMBER_CALLS, store_identities
 from tests.conformance._normalize import Observed, is_lifecycle_record
 from tests.conformance._script import GATE_BOUND_S, Gates, ScriptedRouter
@@ -79,11 +81,15 @@ LEVEL_0_EVENTS = (
 # status bus's (§19.8) and a feedback's (§15.9).
 LEVEL_2_EVENTS = ("status_posted", "feedback")
 
+# The framework event of a human-input request's decision (§8.2, §9.3).
+INPUT_EVENTS = ("user_input_required",)
+
 # A call that has not returned by then fails the scenario instead of hanging
 # it; so does a kit that does not go idle.
 CALL_BOUND_S = 10.0
 _EVENT_ALIAS = re.compile(r"^(.+)#(\d+)$")
 _CREATED_ROOM = re.compile(r"^\$r(\d+)$")
+_REQUEST = re.compile(r"^\$p(\d+)$")
 
 
 class Harness:
@@ -161,6 +167,9 @@ class Harness:
             call["status_entry"] = payload.model_dump(mode="json")
         if isinstance(payload, Observation):
             call["observation"] = payload.model_dump(mode="json")
+        if isinstance(payload, PendingInputEvent):
+            self.saw_request(payload.pending_id)
+            call["request"] = request_record(payload)
         self.observed.hooks.setdefault(name, []).append(call)
         self.observed.hook_order.append(name)
 
@@ -191,9 +200,16 @@ class Harness:
         self.observed.hooks.setdefault(name, []).append(call)
         self.observed.hook_order.append(name)
 
+    def saw_request(self, pending_id: str) -> None:
+        """A human-input request the run shows: the next ``$p<n>``."""
+        if pending_id not in self.observed.requests:
+            self.observed.requests.append(pending_id)
+
     async def _on_framework_event(self, event: FrameworkEvent) -> None:
         if event.type == "room_created" and event.room_id is not None:
             self.observed.created_rooms.append(event.room_id)
+        if event.type == "user_input_required":
+            self.saw_request(str(event.data.get("pending_id")))
         if not self._recording:
             return
         # The members the RFC's Data column names, flat; `data` kept whole
@@ -226,7 +242,7 @@ class Harness:
 
     async def _setup(self) -> None:
         setup = self.scenario.get("setup", {})
-        for event_type in LEVEL_0_EVENTS + LEVEL_2_EVENTS:
+        for event_type in LEVEL_0_EVENTS + LEVEL_2_EVENTS + INPUT_EVENTS:
             self.kit.on(event_type)(self._on_framework_event)
         for channel in setup.get("channels", []):
             register_channel(self.kit, self, channel)
@@ -327,7 +343,7 @@ class Harness:
     async def invoke(self, spec: Mapping[str, Any], scope: Mapping[str, str]) -> dict[str, Any]:
         """Makes one call; returns its outcome, its error named, never raising."""
         resolved = await self.resolve(dict(spec), scope)
-        call = (CALLS | STORE_CALLS | TASK_CALLS | MEMBER_CALLS)[spec["call"]]
+        call = (CALLS | STORE_CALLS | TASK_CALLS | MEMBER_CALLS | INPUT_CALLS)[spec["call"]]
         try:
             result = await asyncio.wait_for(call(self.kit, self, resolved), CALL_BOUND_S)
         except TimeoutError:
@@ -404,6 +420,12 @@ class Harness:
     async def _reference(self, value: str, scope: Mapping[str, str]) -> str:
         if value in ("$room", "$event"):
             return scope[value[1:]]
+        if value == "$request" and "request" in scope:
+            return scope["request"]
+        if match := _REQUEST.match(value):
+            number = int(match[1])
+            requests = self.observed.requests
+            return requests[number - 1] if number <= len(requests) else value
         if match := _CREATED_ROOM.match(value):
             return self._created_room(int(match[1]))
         if value.startswith("$") and value[1:] in self._labels:

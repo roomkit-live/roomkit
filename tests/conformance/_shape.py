@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from tests.conformance._inputs import INPUT_ARGUMENTS
 from tests.conformance._members import MEMBER_ARGUMENTS
 from tests.conformance._store import READ_MARKER_ARGUMENTS, STORE_ARGUMENTS
 from tests.conformance._tasks import TASK_ARGUMENTS
@@ -57,6 +58,7 @@ CHANNEL = {
     "max_context_events",
     "serialize_room_turns",
     "steer_room_turns",
+    "human_input",
     "addresses",
     "streams_in",
     "recent_events_window",
@@ -80,6 +82,8 @@ TOOL = {
     "gate",
 }
 RAISES = {"kind", "message"}
+HUMAN_INPUT = {"tool_names", "timeout_ms", "tools"}
+HUMAN_TOOL = {"name", "description", "parameters"}
 POLICY = {"allow", "deny"}
 MEMORY = {"max_events", "messages", "notes", "speakers", "budget_aware"}
 MEMORY_MESSAGE = {"role", "text"}
@@ -216,6 +220,7 @@ CALLS: dict[str, set[str]] = {
     },
 }
 CALLS |= STORE_ARGUMENTS | READ_MARKER_ARGUMENTS | TASK_ARGUMENTS | MEMBER_ARGUMENTS
+CALLS |= INPUT_ARGUMENTS
 STEPS = {"await": {"await", "expect"}, "concurrent": {"concurrent"}, "wait_for": {"wait_for"}}
 STEPS |= {"open": {"open"}, "idle": {"idle"}}
 
@@ -292,6 +297,11 @@ def _channel(channel: Mapping[str, Any], path: str, found: list[str]) -> None:
         _members(channel["addresses"], ADDRESSES, f"{path}.addresses", found)
     if "memory" in channel:
         _memory(channel["memory"], f"{path}.memory", found)
+    if "human_input" in channel:
+        human = channel["human_input"]
+        _members(human, HUMAN_INPUT, f"{path}.human_input", found)
+        for index, tool in enumerate(human.get("tools", [])):
+            _members(tool, HUMAN_TOOL, f"{path}.human_input.tools[{index}]", found)
 
 
 def _memory(memory: Mapping[str, Any], path: str, found: list[str]) -> None:

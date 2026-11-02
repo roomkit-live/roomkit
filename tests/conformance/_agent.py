@@ -24,6 +24,7 @@ from roomkit.providers.ai.base import (
     StreamTextDelta,
     response_stream_events,
 )
+from roomkit.tools.human_input import HumanInputToolHandler
 from roomkit.tools.policy import ToolPolicy
 from tests.conformance._memory import scripted_memory
 
@@ -204,6 +205,8 @@ def scripted_agent(spec: Mapping[str, Any], gates: Gates) -> tuple[AIChannel, Sc
             kwargs[flag] = bool(spec[flag])
     if "memory" in spec:
         kwargs["memory"] = scripted_memory(spec["memory"], spec.get("max_context_events", 50))
+    if "human_input" in spec:
+        kwargs["human_input_handler"] = _human_input(spec["human_input"])
     channel = AIChannel(
         spec["id"],
         provider=model,
@@ -219,6 +222,22 @@ def scripted_agent(spec: Mapping[str, Any], gates: Gates) -> tuple[AIChannel, Sc
         **kwargs,
     )
     return channel, model
+
+
+def _human_input(spec: Mapping[str, Any]) -> HumanInputToolHandler:
+    """A scripted agent's human-input tools (README, "Scripted agents")."""
+    return HumanInputToolHandler(
+        set(spec["tool_names"]),
+        timeout=spec.get("timeout_ms", 300_000) / 1000,
+        tool_definitions=[
+            AITool(
+                name=tool["name"],
+                description=tool.get("description", ""),
+                parameters=dict(tool.get("parameters", {})),
+            )
+            for tool in spec.get("tools", [])
+        ],
+    )
 
 
 def tool_call_record(payload: ToolCallEvent) -> dict[str, Any]:
