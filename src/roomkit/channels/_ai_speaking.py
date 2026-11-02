@@ -175,8 +175,8 @@ def _people(
             if e.source.channel_id != channel_id
             and e.source.channel_type != ChannelType.AI
             and e.id in speakers
-            # A sender with no name is no voice of their own: several on one
-            # channel read alike (@sms1).
+            # A sender with no name is no voice of their own: their label is
+            # their channel's, ranked only within the turns read (@sms1 (2)).
             and author_name(e, context) is not None
         )
     )
