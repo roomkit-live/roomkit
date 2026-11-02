@@ -945,6 +945,23 @@ async def test_an_agent_the_room_never_delivers_to_learns_nothing_and_is_not_que
     await kit.close()
 
 
+async def test_two_nameless_senders_of_one_channel_leave_its_name_ambiguous() -> None:
+    """Two senders with no name write through chat (``@chat``, then
+    ``@chat (2)``, RMK-1221): ``@chat`` names neither alone, so the agent's
+    ask records no one, rather than whoever spoke first."""
+    a = _provider("@chat can you confirm?")
+    kit = RoomKit()
+    await _room(kit, {"a": a}, addressed_only=True)
+    for sender, body in (("m", "the deploy failed"), ("n", "@a please check the deploy")):
+        said = InboundMessage(channel_id="chat", sender_id=sender, content=TextContent(body=body))
+        await kit.process_inbound(said, room_id="r1")
+        await _settle(kit)
+
+    assert len(a.calls) == 1
+    assert _queue(kit).asked == ()
+    await kit.close()
+
+
 async def test_a_name_a_sender_stamped_before_the_participant_records_no_ask() -> None:
     """A sender stamps ``Alice`` before the room records its participant
     Alice: two sources behind one name. Neither may answer for the other, so

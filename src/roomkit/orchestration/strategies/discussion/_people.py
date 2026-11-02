@@ -70,8 +70,11 @@ def records_people(context: RoomContext) -> bool:
 
 
 def person_label(event: RoomEvent, context: RoomContext) -> str:
-    """The person a message is from, as the transcript labels them."""
-    return turn_labels([event], context).get(event.id) or channel_label(event.source.channel_id)
+    """The person a message is from, as the transcript labels them: ranked
+    among the room's recent turns, so a second nameless sender of a channel
+    reads ``@chat (2)`` here too (RFC §6.4)."""
+    labels = turn_labels([*context.recent_events, event], context)
+    return labels.get(event.id) or channel_label(event.source.channel_id)
 
 
 def people_index(
@@ -83,7 +86,9 @@ def people_index(
     those. A name is kept to a name's characters (``@AliceMartin``), never an
     agent's handle (one of *handles*) nor longer than :data:`NAME_LIMIT`; two labels behind
     one name (``Alice Martin``, ``AliceMartin``) make it ambiguous, and a
-    look-alike's ranked label (``Alice (2)``) is addressed by no name."""
+    look-alike's ranked label (``Alice (2)``) is addressed by no name, and
+    two nameless senders of a channel (``@chat``, ``@chat (2)``) make its
+    name ambiguous."""
     people = People(context.participants)
     entries: list[tuple[str, Source]] = [
         (_label_of(p), ("participant", p.id)) for p in context.participants if _active_person(p)
@@ -92,8 +97,11 @@ def people_index(
     labels = turn_labels(spoken_events, context)
     for event in spoken_events:
         label = labels.get(event.id)
-        if label and label == label_name(label):
-            entries.append((label, tuple(source_of(event, people))))
+        # A nameless sender's rank (``@chat (2)``) is filed under its
+        # channel's name, which then names neither alone; a look-alike's
+        # ranked name is addressed by none.
+        if label and (label == label_name(label) or label.startswith("@")):
+            entries.append((label_name(label), tuple(source_of(event, people))))
     allowed = None if listed is None else {name_key(p).casefold() for p in listed}
     taken = {handle.casefold() for handle in handles}
     index: PeopleIndex = {}

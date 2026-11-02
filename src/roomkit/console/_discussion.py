@@ -465,8 +465,11 @@ class DiscussionConsole:
     def _author(event: RoomEvent, context: RoomContext) -> str:
         """The label the transcript gives *event*'s author: their name kept to
         a name's characters, with the rank a look-alike of an earlier source
-        carries, or their channel (``@sms1``) when they have none."""
-        return turn_labels([event], context).get(event.id) or f"@{event.source.channel_id}"
+        carries, or their channel (``@sms1``, ``@sms1 (2)`` for a second
+        nameless sender) when they have none, ranked among the room's recent
+        turns."""
+        labels = turn_labels([*context.recent_events, event], context)
+        return labels.get(event.id) or f"@{event.source.channel_id}"
 
     def _refresh(self) -> None:
         if self._screen is not None:
