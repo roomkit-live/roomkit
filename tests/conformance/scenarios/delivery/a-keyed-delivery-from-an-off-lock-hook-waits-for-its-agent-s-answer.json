@@ -1,0 +1,135 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-keyed-delivery-from-an-off-lock-hook-waits-for-its-agent-s-answer",
+  "title": "A keyed delivery an off-lock hook's body makes publishes ahead of the hook's event, and its turn's answer commits before the delivery returns; the event then commits",
+  "rules": [
+    "§22.1",
+    "§9.5.1",
+    "§13.5"
+  ],
+  "notes": "The publication's call is nested under the lock its section holds, not adopted beside the event whose off-lock hook made it: its cascade's later passes, its agent's answer among them, take the room lock as any section does while that hook still waits for the turn.",
+  "setup": {
+    "channels": [
+      {
+        "id": "human",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "done"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "noted"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "human"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "check",
+        "trigger": "before_broadcast",
+        "needs_lock": false,
+        "reactions": [
+          {
+            "when": {
+              "text": "go"
+            },
+            "do": [
+              {
+                "call": "deliver",
+                "room_id": "$room",
+                "content": "done",
+                "idempotency_key": "k",
+                "addressed_to": [
+                  "a"
+                ],
+                "as": "early"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "human",
+        "sender_id": "u",
+        "content": {
+          "type": "text",
+          "body": "go"
+        },
+        "addressed_to": []
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "id": "room-1#2"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "idempotency_key": "roomkit:publication:k"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "noted"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "go"
+          }
+        }
+      ]
+    },
+    "actions": {
+      "early": [
+        {
+          "result": {
+            "status": "sent",
+            "event_id": "room-1#0",
+            "turn_complete": true
+          }
+        }
+      ]
+    }
+  }
+}

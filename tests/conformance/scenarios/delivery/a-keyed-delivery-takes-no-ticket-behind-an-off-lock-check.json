@@ -1,0 +1,131 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-keyed-delivery-takes-no-ticket-behind-an-off-lock-check",
+  "title": "A keyed delivery made while an arrival's off-lock check holds the room's admission ticket publishes at once; the arrival commits after it",
+  "rules": [
+    "§22.1",
+    "§9.5.1",
+    "§13.5"
+  ],
+  "notes": "The publication's section holds the room lock: its call is nested under that lock, takes no admission ticket and runs its off-lock hook under the lock. It never waits behind the ticket of the arrival held in its off-lock check, which commits once released.",
+  "setup": {
+    "channels": [
+      {
+        "id": "human",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "human"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "check",
+        "trigger": "before_broadcast",
+        "needs_lock": false,
+        "reactions": [
+          {
+            "when": {
+              "text": "hold"
+            },
+            "gate": "held"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "human",
+        "sender_id": "u",
+        "content": {
+          "type": "text",
+          "body": "hold"
+        },
+        "addressed_to": []
+      },
+      "background": true,
+      "as": "hold"
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "done",
+      "idempotency_key": "k",
+      "addressed_to": [
+        "a"
+      ],
+      "expect": {
+        "result": {
+          "status": "sent",
+          "event_id": "room-1#0",
+          "duplicate": false
+        }
+      }
+    },
+    {
+      "open": "held"
+    },
+    {
+      "await": "hold",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "id": "room-1#1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "idempotency_key": "roomkit:publication:k"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "hold"
+          }
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "a": [
+          {
+            "content": {
+              "type": "text",
+              "body": "done"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

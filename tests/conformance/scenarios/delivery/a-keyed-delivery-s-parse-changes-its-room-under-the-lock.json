@@ -1,0 +1,96 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-keyed-delivery-s-parse-changes-its-room-under-the-lock",
+  "title": "A keyed delivery's transport whose parse changes the room's metadata takes the lock the publication's section holds; the delivery is sent",
+  "rules": [
+    "§22.1",
+    "§9.5.1",
+    "§13.5"
+  ],
+  "notes": "The publication's call is nested under the lock its section holds from the call's start: its channel's parse runs under that lock, where a change of the room takes the lock again at once rather than wait for the section that runs it.",
+  "setup": {
+    "channels": [
+      {
+        "id": "relay",
+        "type": "websocket",
+        "category": "transport",
+        "parse": [
+          {
+            "when": {
+              "text": "keyed"
+            },
+            "do": [
+              {
+                "call": "update_room_metadata",
+                "room_id": "$room",
+                "metadata": {
+                  "parsed": "yes"
+                },
+                "as": "meta"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "relay"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "keyed",
+      "channel_id": "relay",
+      "idempotency_key": "k",
+      "addressed_to": [
+        "a"
+      ],
+      "expect": {
+        "result": {
+          "status": "sent",
+          "event_id": "room-1#0",
+          "duplicate": false
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "idempotency_key": "roomkit:publication:k",
+          "status": "delivered"
+        }
+      ]
+    },
+    "actions": {
+      "meta": [
+        {
+          "result": {
+            "metadata": {
+              "parsed": "yes"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

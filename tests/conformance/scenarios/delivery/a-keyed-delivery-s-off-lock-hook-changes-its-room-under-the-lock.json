@@ -1,0 +1,110 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-keyed-delivery-s-off-lock-hook-changes-its-room-under-the-lock",
+  "title": "An off-lock hook that mutes the agent of the room a keyed delivery publishes in takes the lock the publication's section holds; the delivery is sent and the agent still acts",
+  "rules": [
+    "§22.1",
+    "§9.5.1",
+    "§13.5"
+  ],
+  "notes": "The publication's call is nested under the lock its section holds: its off-lock hook runs under that lock, where a lifecycle change takes the lock again at once rather than wait for the section that runs it.",
+  "setup": {
+    "channels": [
+      {
+        "id": "human",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "human"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "moderator",
+        "trigger": "before_broadcast",
+        "needs_lock": false,
+        "reactions": [
+          {
+            "when": {
+              "text": "done"
+            },
+            "do": [
+              {
+                "call": "mute",
+                "room_id": "$room",
+                "channel_id": "a",
+                "as": "mute"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "done",
+      "idempotency_key": "k",
+      "addressed_to": [
+        "a"
+      ],
+      "expect": {
+        "result": {
+          "status": "sent",
+          "event_id": "room-1#0",
+          "duplicate": false
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "idempotency_key": "roomkit:publication:k",
+          "status": "delivered"
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "a": [
+          {
+            "content": {
+              "type": "text",
+              "body": "done"
+            }
+          }
+        ]
+      }
+    },
+    "actions": {
+      "mute": [
+        {
+          "result": {
+            "muted": true
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,118 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-keyed-delivery-s-parse-sends-into-its-room-within-its-section",
+  "title": "A keyed delivery whose transport's parse sends into the room commits that event and the publication in one section: a detach waiting for the lock meanwhile comes after both",
+  "rules": [
+    "§22.1",
+    "§9.5.1",
+    "§13.5"
+  ],
+  "notes": "The publication's section holds the room lock from the key's lookup to the publication's commit; what its parse sends into the room is nested in it and commits ahead of the publication, never letting the lock go in between, so the transport's detach queued behind it cannot make the publication unbound.",
+  "setup": {
+    "channels": [
+      {
+        "id": "relay",
+        "type": "websocket",
+        "category": "transport",
+        "parse": [
+          {
+            "when": {
+              "text": "keyed"
+            },
+            "gate": "parsing",
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "relay",
+                "content": {
+                  "type": "text",
+                  "body": "from parse"
+                },
+                "as": "sent"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "relay"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "keyed",
+      "channel_id": "relay",
+      "idempotency_key": "k",
+      "addressed_to": [
+        "a"
+      ],
+      "background": true,
+      "as": "keyed"
+    },
+    {
+      "wait_for": "parsing"
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "room-1",
+      "channel_id": "relay",
+      "background": true,
+      "as": "detach"
+    },
+    {
+      "wait_for_lock": "room-1"
+    },
+    {
+      "open": "parsing"
+    },
+    {
+      "await": "keyed",
+      "expect": {
+        "result": {
+          "status": "sent",
+          "event_id": "room-1#1",
+          "duplicate": false
+        }
+      }
+    },
+    {
+      "await": "detach"
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "from parse"
+          }
+        },
+        {
+          "idempotency_key": "roomkit:publication:k",
+          "status": "delivered"
+        }
+      ]
+    }
+  }
+}
