@@ -49,7 +49,7 @@ from roomkit.channels._ai_speaking import _people
 from roomkit.channels._author_images import _mention
 from roomkit.channels._compaction import summary_text
 from roomkit.channels._instruction import INSTRUCTION_MARKER
-from roomkit.channels._mark_copies import COPIED_MARK, without_mark_copies
+from roomkit.channels._mark_copies import COPIED_MARK, compile_mark_patterns, without_mark_copies
 from roomkit.channels._realtime_host_hooks import broadcast_text
 from roomkit.channels._realtime_tool_recovery import recovered_result_text
 from roomkit.channels._server_instructions import server_instructions_block
@@ -583,10 +583,12 @@ def test_a_header_copy_with_an_invisible_character_is_found(hidden: str) -> None
     ],
 )
 @pytest.mark.wallclock  # a second's budget on a million characters: the ReDoS guard
-def test_tags_are_read_in_linear_time(read: Callable[[], object]) -> None:
+async def test_tags_are_read_in_linear_time(read: Callable[[], object]) -> None:
     """A run of characters after a tag's name, or a text of names never
     closed by ``>``, is read once: about a million characters, well within a
-    second."""
+    second. The mark patterns are compiled first, as attaching an agent
+    compiles them: once per process, which is no reading (RMK-1224)."""
+    await compile_mark_patterns()
     started = time.perf_counter()
 
     read()
