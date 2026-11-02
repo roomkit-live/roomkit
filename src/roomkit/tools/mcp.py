@@ -719,7 +719,10 @@ class MCPToolProvider:
 
         Returns:
             Result string. Single TextContent → plain text; multi-part → JSON array;
-            error results → ``{"error": "..."}``.
+            error results → ``{"error": "..."}``. A text resource reads as its
+            text; an image, audio, a blob resource or a resource link reads as
+            a one-line note, ``[image content (image/png) not shown to the
+            model]``, never its base64.
 
         The error envelope is this method's contract and does not change. A tool
         loop reads :meth:`as_tool_handler` instead, which raises

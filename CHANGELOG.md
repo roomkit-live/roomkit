@@ -45,6 +45,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`MCPToolProvider.call_tool()` notes what is not text, and reads a text
+  resource as its text** (RFC §21.2, RMK-1251). An image the server
+  returned came back as its object's printing, base64 included (`type='image'
+  data='iVBOR…' mimeType='image/png' annotations=None meta=None`), and an
+  embedded text resource or a resource link as its pydantic printing, in
+  `call_tool()`'s string and, for the resource and the link, in what the
+  tool handler hands the model. An image, audio and a blob resource now read
+  `[image content (image/png) not shown to the model]`, as the handler
+  already noted them; a text resource reads as its text, and a resource link
+  as `[resource_link content (text/plain) not shown to the model]`. A note
+  keeps only the characters a media type has of the type the server named.
+  The bytes are still read with `call_tool_result()`. roomkit-rs reads them
+  the same.
+
 - **BREAKING — a sender the identity step leaves pending gets a record of its
   own** (RFC §11.2, RMK-1138). Its record took the id the channel gave: on a
   channel whose senders choose it, a sender naming itself `alice-id` held

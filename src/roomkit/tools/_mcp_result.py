@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import string
 from typing import Any
 
 from roomkit.providers.ai.base import AIImagePart, AITextPart
@@ -18,6 +19,10 @@ logger = logging.getLogger("roomkit.tools.mcp")
 # a note instead of an image.
 _MODEL_IMAGE_TYPES = frozenset({"image/png", "image/jpeg", "image/gif", "image/webp"})
 
+# The characters a note keeps of the media type a server named, and how many.
+_MEDIA_TYPE_CHARS = frozenset(string.ascii_letters + string.digits + "/.+-_")
+_MEDIA_TYPE_LIMIT = 64
+
 # The bounds of a result the model sees an image of (RFC §21.2): its texts,
 # the notes of the images held back among them, within this many characters
 # in all; at most this many of its images, within this many bytes of data URL
@@ -27,8 +32,26 @@ _MODEL_IMAGES_MAX = 4
 _MODEL_IMAGE_BYTES_MAX = 5 * 1024 * 1024
 
 
-def _content_text(content: Any) -> str:
-    return content.text if hasattr(content, "text") else str(content)
+def _text_of(content: Any) -> str:
+    """One content of a result as text: its words, a text resource's text, or
+    a one-line note for what is not text (an image, audio, a blob resource, a
+    link to a resource), never its printing or its base64 (RFC §21.2)."""
+    if hasattr(content, "text"):
+        return content.text
+    kind = getattr(content, "type", None)
+    mime = getattr(content, "mimeType", None)
+    if kind == "image":
+        return _note("image", mime, "image/png").text
+    if kind == "audio":
+        return _note("audio", mime, "audio").text
+    if kind == "resource":
+        resource = getattr(content, "resource", None)
+        if hasattr(resource, "text"):
+            return resource.text
+        return _note("resource", getattr(resource, "mimeType", None), "binary").text
+    if kind == "resource_link":
+        return _note("resource_link", mime).text
+    return str(content)
 
 
 def _join(texts: list[str]) -> str:
@@ -49,31 +72,27 @@ def _decodes(url: str) -> bool:
 def _model_part(content: Any) -> AITextPart | AIImagePart:
     """One content of a result as the model reads it.
 
-    Text stays text, and an image the vendors accept becomes an image part.
-    Other binary content (an image in another format or with a corrupt
-    payload, audio, a blob resource) becomes a one-line note: its repr would
-    hand the model kilobytes of base64, and a bad image would fail the request.
-    Anything else keeps the text it has in :func:`text_body`.
+    An image the vendors accept becomes an image part. Anything else reads
+    as in :func:`text_body`: other binary content (an image in another format
+    or with a corrupt payload, audio, a blob resource) becomes a one-line
+    note, since its base64 would hand the model kilobytes of noise and a bad
+    image would fail the request.
     """
-    if hasattr(content, "text"):
-        return AITextPart(text=content.text)
-    kind = getattr(content, "type", None)
-    if kind == "image":
+    if not hasattr(content, "text") and getattr(content, "type", None) == "image":
         mime = getattr(content, "mimeType", None) or "image/png"
         url = f"data:{mime};base64,{getattr(content, 'data', '')}"
         if mime in _MODEL_IMAGE_TYPES and _decodes(url):
             return AIImagePart(url=url, mime_type=mime)
-    elif kind == "audio":
-        mime = getattr(content, "mimeType", None) or "audio"
-    elif kind == "resource" and hasattr(getattr(content, "resource", None), "blob"):
-        mime = getattr(content.resource, "mimeType", None) or "binary"
-    else:
-        return AITextPart(text=_content_text(content))
-    return _note(kind, mime)
+    return AITextPart(text=_text_of(content))
 
 
-def _note(kind: str, mime: str) -> AITextPart:
-    return AITextPart(text=f"[{kind} content ({mime}) not shown to the model]")
+def _note(kind: str, mime: str | None, unnamed: str = "unknown") -> AITextPart:
+    """The note standing for a content the model is not shown, naming its
+    kind and its media type, *unnamed* for none. The type is kept to the
+    characters a media type has, at most 64, so that the note carries no
+    text of the server's, as roomkit-rs keeps it."""
+    named = "".join(c for c in mime or "" if c in _MEDIA_TYPE_CHARS)[:_MEDIA_TYPE_LIMIT]
+    return AITextPart(text=f"[{kind} content ({named or unnamed}) not shown to the model]")
 
 
 def _bounded_parts(
@@ -100,7 +119,7 @@ def _bounded_parts(
                 image_bytes += size
                 kept.append(part)
                 continue
-            part = _note("image", part.mime_type or "image/png")
+            part = _note("image", part.mime_type, "image/png")
         if len(part.text) <= left:
             left -= len(part.text)
             kept.append(part)
@@ -116,12 +135,12 @@ def _bounded_parts(
 
 def error_text(result: Any) -> str:
     """The words of a result the server flagged ``isError``."""
-    return " ".join(_content_text(c) for c in result.content)
+    return " ".join(_text_of(c) for c in result.content)
 
 
 def text_body(result: Any) -> str:
     """A successful result as :meth:`MCPToolProvider.call_tool` returns it."""
-    return _join([_content_text(c) for c in result.content])
+    return _join([_text_of(c) for c in result.content])
 
 
 def handler_result(result: Any, name: str) -> ToolResult:
