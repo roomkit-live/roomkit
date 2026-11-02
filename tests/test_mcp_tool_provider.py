@@ -393,7 +393,7 @@ _LINK_NOTE = "[resource_link content (text/plain) not shown to the model]"
     ],
     ids=["image", "text-resource", "resource-link"],
 )
-async def test_call_tool_keeps_its_string_contract_for_an_image(
+async def test_call_tool_reads_what_is_not_text_as_a_note(
     content: Any, text: str, handled: Any
 ) -> None:
     """``call_tool`` returns a string whatever the server sent: an image as
@@ -418,6 +418,8 @@ async def test_call_tool_keeps_its_string_contract_for_an_image(
         (MockImageContent("PHN2Zz4=", "image/svg+xml"), "[image content (image/svg+xml)"),
         (MockAudioContent("UklGRg==", "audio/wav"), "[audio content (audio/wav)"),
         (MockBlobResource("JVBERi0=", "application/pdf"), "[resource content (application/pdf)"),
+        (MockImageContent("!!", ""), "[image content (image/png)"),
+        (type("Widget", (), {"type": "widget"})(), "[other content (unknown)"),
         (MockAudioContent("UklGRg==", ""), "[audio content (audio)"),
         (MockBlobResource("JVBERi0=", ""), "[resource content (binary)"),
         (MockResourceLink(""), "[resource_link content (unknown)"),
@@ -431,6 +433,8 @@ async def test_call_tool_keeps_its_string_contract_for_an_image(
         "svg",
         "audio",
         "blob",
+        "untyped-image",
+        "unknown-kind",
         "untyped-audio",
         "untyped-blob",
         "untyped-link",

@@ -35,7 +35,8 @@ _MODEL_IMAGE_BYTES_MAX = 5 * 1024 * 1024
 def _text_of(content: Any) -> str:
     """One content of a result as text: its words, a text resource's text, or
     a one-line note for what is not text (an image, audio, a blob resource, a
-    link to a resource), never its printing or its base64 (RFC §21.2)."""
+    link to a resource, a kind a later protocol adds), never its printing or
+    its base64 (RFC §21.2)."""
     if hasattr(content, "text"):
         return content.text
     kind = getattr(content, "type", None)
@@ -51,7 +52,7 @@ def _text_of(content: Any) -> str:
         return _note("resource", getattr(resource, "mimeType", None), "binary").text
     if kind == "resource_link":
         return _note("resource_link", mime).text
-    return str(content)
+    return _note("other", None).text
 
 
 def _join(texts: list[str]) -> str:
