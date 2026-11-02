@@ -108,8 +108,10 @@ class _StreamTurnState:
 
     def end(self, reason: LoopEndReason) -> LoopEndMarker:
         """End the loop on *reason*: the marker the consumer reads it from,
-        with the tool rounds that ran and the limits the turn ran under."""
+        with the tool rounds that ran and the limits the turn ran under. The
+        loop reads its steering queue no more (RFC §21.3)."""
         self.reason = reason
+        self.loop_ctx.steering_closed = True
         budget = self.loop_ctx.turn_budget
         return LoopEndMarker(
             reason=reason,
@@ -655,6 +657,11 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                 if outcome == "retry":
                     yield SegmentBreakMarker()
                     continue
+                if outcome == "completed" and index < self._max_tool_rounds:
+                    context, again = self._steered_after_answer(context, round_.state, loop_ctx)
+                    if again:
+                        yield SegmentBreakMarker()
+                        continue
                 if outcome is not None:
                     yield _answered_end(context, turn, outcome)
                     return
@@ -672,6 +679,28 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
 
             # An empty-response retry can consume the final generation slot.
             yield _answered_end(context, turn, "max_rounds")
+
+    def _steered_after_answer(
+        self, context: AIContext, state: _StreamRoundState, loop_ctx: _ToolLoopContext
+    ) -> tuple[AIContext, bool]:
+        """Whether a message steered in while the model answered asks it again
+        (RFC §21.3): the answer joins the conversation, then the message, and
+        the same turn goes on, a round more. With none, the loop reads its
+        queue no more, nothing awaited in between, so a message that comes
+        after reaches no loop that would not read it."""
+        if loop_ctx.steering_queue.empty() or state.provider_calls:
+            loop_ctx.steering_closed = True
+            return context, False
+        answer = AIMessage(role="assistant", content=state.transcript.parts([]))
+        answered = [*context.messages, answer]
+        steered, cancelled = self._drain_steering_queue(
+            context.model_copy(update={"messages": answered}), loop_ctx
+        )
+        # The drain appends what it injects to the copy's messages.
+        if cancelled or len(steered.messages) == len(context.messages) + 1:
+            loop_ctx.steering_closed = True
+            return context, False
+        return steered, True
 
     def _external_stream_tools(self, turn: _StreamTurnState) -> _ExternalStreamTools:
         """The turn's routing of the calls its provider serves."""

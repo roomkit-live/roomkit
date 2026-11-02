@@ -25,6 +25,13 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from functools import partial
 from typing import Any
 
+from roomkit._media import text_form
+from roomkit.channels._speaker import (
+    labelled_lines,
+    people_taking_part,
+    several_speakers,
+    turn_labels,
+)
 from roomkit.channels.base import Channel
 from roomkit.core._changes import for_channels
 from roomkit.core.lanes import anchor_index
@@ -33,12 +40,17 @@ from roomkit.models.channel import ChannelBinding, ChannelOutput
 from roomkit.models.context import RoomContext
 from roomkit.models.event import RoomEvent
 from roomkit.models.response_metadata import ResponseMetadata
+from roomkit.models.steering import InjectMessage, SteeringDirective
 from roomkit.providers.utils import _aclose_stream
 from roomkit.telemetry.context import get_current_span, restored_span
 from roomkit.turns.owner import drop_unread, read_as_trace
 
 Reaction = Callable[[Channel, RoomEvent, ChannelBinding, RoomContext], Awaitable[ChannelOutput]]
 """How the room's owner runs a channel's turn: ``EventRouter.react``."""
+
+Steer = Callable[..., Awaitable[int]]
+"""How the room's owner steers a channel's running turns in a room:
+``TurnClient.steer(directive, channel_id, room_id=...)``, how many it reached."""
 
 _HELD: contextvars.ContextVar[tuple[_Place, ...]] = contextvars.ContextVar(
     "roomkit_room_turn_places", default=()
@@ -94,10 +106,12 @@ class RoomTurns:
         react: Reaction,
         context_of: Callable[..., Awaitable[RoomContext]] | None,
         telemetry: Any,
+        steer: Steer | None = None,
     ) -> None:
         self._react = react
         self._context_of = context_of
         self._telemetry = telemetry
+        self._steer = steer
         self._lines: dict[tuple[str, str], list[_Place]] = {}
 
     def join(self, room_id: str, channel_id: str) -> _Place:
@@ -127,12 +141,32 @@ class RoomTurns:
     ) -> ChannelOutput:
         """*channel*'s answer to *event*: a turn that takes its place now and
         starts once the turns asked before it are over, when its stream is
-        first read."""
+        first read; none when the turn *channel* runs in the room reads
+        *event* instead (:meth:`_steered`)."""
+        if await self._steered(channel, event, context):
+            return ChannelOutput.empty()
         place = self.join(context.room.id, channel.channel_id)
         record = ResponseMetadata()
         start = partial(self._start, channel, event, binding, context, get_current_span())
         turn = QueuedTurn(place, start, record)
         return ChannelOutput(responded=True, response_stream=turn, response_metadata=record)
+
+    async def _steered(self, channel: Channel, event: RoomEvent, context: RoomContext) -> bool:
+        """Whether *event* was handed to the turn *channel* runs in the room,
+        which reads it at its next stop rather than a turn of its own (RFC
+        §6.4, §21.3): for a channel that steers its room turns, when its line
+        in the room holds that one turn alone, so no turn asked before
+        *event* is passed over, and the turn takes it (``steer`` reached it)."""
+        if self._steer is None or not channel.steers_room_turns:
+            return False
+        line = self._lines.get((context.room.id, channel.channel_id))
+        if line is None or len(line) != 1:
+            return False
+        message = steered_message(event, context, channel.channel_id)
+        if message is None:
+            return False
+        reached = await self._steer(message, channel.channel_id, room_id=context.room.id)
+        return reached > 0
 
     async def _start(
         self,
@@ -171,6 +205,23 @@ class RoomTurns:
             limit = min(len(asked.recent_events) + latest - horizon, _RECENT_EVENTS_LIMIT)
             now = await self._context_of(room_id, recent_limit=limit)
         return for_channels(now)
+
+
+def steered_message(
+    event: RoomEvent, context: RoomContext, channel_id: str
+) -> SteeringDirective | None:
+    """*event* as the turn it is handed to reads it (RFC §6.4): the text its
+    content reads as, a participant's words under their label when the room
+    has several speakers, as the turn's history labels them; none for an
+    event that reads as no text, which waits a turn of its own."""
+    text = text_form(event.content)
+    if not text:
+        return None
+    labels = turn_labels([*context.recent_events, event], context)
+    label = labels.get(event.id)
+    if label and several_speakers(labels.values(), people_taking_part(context, channel_id)):
+        text = labelled_lines(text, label)
+    return InjectMessage(content=text)
 
 
 def _refuse_unstreamed(channel: Channel, output: ChannelOutput) -> None:

@@ -473,7 +473,7 @@ class EventRouter:
         self._runner_of = runner_of
         # The lines of the channels that take a room's turns one at a time
         # (RFC §6.4), which read the room as it is when they start.
-        self._room_turns = RoomTurns(self.react, context_of, telemetry)
+        self._room_turns = RoomTurns(self.react, context_of, telemetry, self._turns.steer)
         # Set by RoomKit after construction — the router owns the breakers,
         # the framework owns the event surface (RFC §13.1 / §8.2).
         self._framework_emitter: Any = None

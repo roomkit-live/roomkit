@@ -349,6 +349,16 @@ class Channel(ABC):
         """
         return False
 
+    @property
+    def steers_room_turns(self) -> bool:
+        """Whether a message for a room where this channel's turn runs is
+        handed to that turn, which reads it at its next stop (between two
+        rounds of tool calls, or once it has answered) rather than a turn of
+        its own (RFC §6.4, §21.3). Such a channel serializes its room turns.
+        False here.
+        """
+        return False
+
     @abstractmethod
     async def handle_inbound(self, message: InboundMessage, context: RoomContext) -> RoomEvent:
         """Process an inbound message into a RoomEvent."""
@@ -546,6 +556,7 @@ class Channel(ABC):
             takes_owner_tools=False,
             recent_events_window=self.recent_events_window,
             serializes_room_turns=self.serializes_room_turns,
+            steers_room_turns=self.steers_room_turns,
         )
 
     async def close(self) -> None:

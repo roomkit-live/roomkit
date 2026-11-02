@@ -135,11 +135,12 @@ class AISteeringMixin(_AIChannelContract):
         room_id: str | None,
         turn_id: str | None = None,
     ) -> list[_ToolLoopContext]:
-        """The running loops *directive* reaches, as :meth:`steer` addresses them."""
+        """The running loops *directive* reaches, as :meth:`steer` addresses
+        them: none that has read its queue for the last time."""
         if loop_id is not None:
             ctx = self._active_loops.get(loop_id)
-            return [ctx] if ctx is not None else []
-        loops = list(self._active_loops.values())
+            return [ctx] if ctx is not None and not ctx.steering_closed else []
+        loops = [ctx for ctx in self._active_loops.values() if not ctx.steering_closed]
         if turn_id is not None:
             addressed = [ctx for ctx in loops if ctx.turn_id == turn_id]
         elif room_id is not None:

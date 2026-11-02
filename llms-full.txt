@@ -2295,6 +2295,32 @@ worker = Agent("worker", provider=provider, serialize_room_turns=True)
 
 Runnable: `examples/agent_turns_in_order.py`.
 
+### Writing to an agent while it works (`steer_room_turns`)
+
+With `steer_room_turns=True`, a message that comes while the agent's turn runs
+in the room is read by that turn rather than waiting a turn of its own. The
+host sends it as any message (`kit.process_inbound`): it is stored, passes the
+hooks and the permissions, and is in the room's history.
+
+```python
+coder = Agent("coder", provider=provider, tools=[list_files], steer_room_turns=True)
+```
+
+- The turn reads it at its next stop: before its next round of tool calls,
+  or, when it came while the model wrote its answer, once that answer is
+  done: the same turn asks the model again, the answer then the message.
+- No second turn starts beside the running one. The turns of the room run one
+  after the other, as with `serialize_room_turns=True`, which it implies: a
+  message that comes before the turn's loop is reachable, or behind another
+  waiting turn, waits its own turn.
+- The turn reads its text, under its speaker's label when the room has
+  several speakers. A message that reads as no text (an image alone) waits a
+  turn of its own.
+- An agent the kit holds by its declaration says so with
+  `ChannelDeclaration(..., steers_room_turns=True)`.
+
+Runnable: `examples/agent_steered_turn.py`.
+
 ## Steering a Running Turn
 
 `steer()` hands a running tool loop a directive (`Cancel`, `InjectMessage`,
@@ -2313,7 +2339,10 @@ agent.steer(Cancel(reason="timeout"), loop_id="loop-abc123")   # one loop
 Without `loop_id` or `room_id`, a directive reaches the channel's most
 recent loop, whatever its room. A loop is reachable once its turn has started
 (its response stream is read): a directive that comes before reaches none, and
-`steer()` returns 0. See `examples/ai_shared_agent_rooms.py`.
+`steer()` returns 0. A loop reads its directives before each round and once
+the model has answered: an `InjectMessage` that came during the answer has the
+same turn ask the model again. Once the loop has read its queue for the last
+time it is reached no more, so what `steer()` counts is read. See `examples/ai_shared_agent_rooms.py`.
 
 The agent's turns run through the kit's turn backend (RFC §10.6), so a host
 that may run them in another process steers through the kit, which reaches

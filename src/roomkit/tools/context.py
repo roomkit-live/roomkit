@@ -242,6 +242,10 @@ class _ToolLoopContext:
     # nothing will carry.
     has_turn: bool = True
     steering_queue: asyncio.Queue[SteeringDirective] = field(default_factory=asyncio.Queue)
+    # Set once the loop reads its queue for the last time (RFC §21.3): a
+    # directive that comes after would never be read, so steer() reaches the
+    # loop no more.
+    steering_closed: bool = False
     cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
     # Set by the channel's close (RFC §9.3): the calls the turn runs are
     # cancelled, each reported cancelled, and no further round is asked.

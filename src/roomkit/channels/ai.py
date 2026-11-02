@@ -216,6 +216,7 @@ class AIChannel(
         *,
         publish_text_deltas: bool = False,
         serialize_room_turns: bool = False,
+        steer_room_turns: bool = False,
         tool_call_intents: bool = False,
         tool_call_intents_required: bool = False,
     ) -> None:
@@ -258,8 +259,11 @@ class AIChannel(
         # delegation reads as its trace: BEFORE_BROADCAST does not see this
         # stream, so no turn it judges has its text published (RFC §23.3).
         self._publish_text_deltas = publish_text_deltas
-        # A room's turns one after the other, each reading the answers before it (RFC §6.4).
-        self._serialize_room_turns = serialize_room_turns
+        # A room's turns one after the other, each reading the answers before
+        # it (RFC §6.4); with steering, a message that comes while a turn runs
+        # is read by that turn instead (§21.3).
+        self._serialize_room_turns = serialize_room_turns or steer_room_turns
+        self._steer_room_turns = steer_room_turns
         self._text_coalesce_ms = text_coalesce_ms
         self._text_coalesce_chars = text_coalesce_chars
         self._retry_policy = retry_policy
@@ -808,8 +812,15 @@ class AIChannel(
 
     @property
     def serializes_room_turns(self) -> bool:
-        """Whether its turns in a room run one after the other (``serialize_room_turns``)."""
+        """Whether its turns in a room run one after the other
+        (``serialize_room_turns``, or ``steer_room_turns``)."""
         return self._serialize_room_turns
+
+    @property
+    def steers_room_turns(self) -> bool:
+        """Whether a message that comes while its turn runs in the room is
+        read by that turn (``steer_room_turns``)."""
+        return self._steer_room_turns
 
     async def close(self) -> None:
         """Close the channel: its running turns first (their calls cancelled

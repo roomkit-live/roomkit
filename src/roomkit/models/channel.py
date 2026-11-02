@@ -139,6 +139,10 @@ class ChannelDeclaration(BaseModel):
     serializes_room_turns: bool = False
     """Its turns in a room run one after the other, in the order they were
     asked, which the room's owner keeps (RFC §6.4)."""
+    steers_room_turns: bool = False
+    """A message for a room where its turn runs is handed to that turn, read
+    at its next stop, rather than waiting a turn of its own (RFC §6.4,
+    §21.3). It implies ``serializes_room_turns``."""
 
 
 class ChannelBinding(BaseModel):

@@ -69,6 +69,10 @@ class DeclaredChannel(Channel):
     def serializes_room_turns(self) -> bool:
         return self._declaration.serializes_room_turns
 
+    @property
+    def steers_room_turns(self) -> bool:
+        return self._declaration.steers_room_turns
+
     # -- What a strategy reads of an agent, as it reads it of a live one --
 
     @property

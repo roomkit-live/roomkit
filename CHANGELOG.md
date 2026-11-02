@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`AIChannel(steer_room_turns=True)`: write to an agent while it works**
+  (RFC §6.4, §21.3, RMK-1160). A person's second message during an agent's
+  turn started a second turn beside the first, which did not read the answer
+  under way; `kit.steer(InjectMessage(...))` reached the turn but left the
+  room's history without the message. With `steer_room_turns`, the host sends
+  the message as any message: it is stored, passes the hooks and the
+  permissions, and is handed to the turn running in the room, which reads it
+  before its next round, under its speaker's label when several people speak.
+  No second turn starts; the room's turns run one after the other
+  (`serialize_room_turns`, which it implies). `ChannelDeclaration` takes
+  `steers_room_turns`, `Channel` has the property. Runnable:
+  `examples/agent_steered_turn.py`.
+
 - **`AIChannel(tool_call_intents_required=True)` lists a call's intent as
   required** (RFC §6.4, RMK-1067). A model that leaves optional properties
   out wrote no intent with its calls, whatever `tool_call_intents` asked.
@@ -71,6 +84,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `is_member()` answered `True` for a sender the inbound pipeline resolved
   again. The re-join now keeps the identification and the identity the
   record had; one naming an identity identifies them as it.
+
+- **A message steered while the model answers is read** (RFC §21.3,
+  RMK-1160). An `InjectMessage` that reached a turn during its final
+  generation was counted by `steer()` and never read: the loop ended without
+  reading its queue again. Once the model has answered, the loop now reads it:
+  with a message, the same turn asks the model again, the answer then the
+  message; with none, the loop is reached no more, so what `steer()` counts
+  is read.
 
 - **A resolver's `REJECTED` holds the message when no identity hook answers**
   (RFC §11.2, RMK-1151). `IdentityResult(status=REJECTED, message="not
