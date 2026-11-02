@@ -1,0 +1,149 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-room-s-task-is-created-with-the-event-that-made-it",
+  "title": "ON_TASK_CREATED is handed, for a hook's task and an agent's alike, an internal task_created event of the room carrying the source and the content of the event the task was made for, the task named in its metadata",
+  "rules": [
+    "§10.1 step 15",
+    "§9.2",
+    "§26.1"
+  ],
+  "notes": "Python: core/mixins/helpers.py _persist_side_effects (RoomEvent(type=TASK_CREATED, source=event.source, content=event.content, status=DELIVERED, visibility=INTERNAL, metadata={task_id, task_title})). The two tasks are persisted together; their hooks' order is left open.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "output": {
+              "tasks": [
+                {
+                  "title": "Send the brochure"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "triage",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "result": {
+              "action": "allow",
+              "tasks": [
+                {
+                  "title": "Call the customer back"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "tasks",
+        "trigger": "on_task_created",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Send me the brochure"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "tasks": {
+        "$unordered": [
+          {
+            "trigger": "on_task_created",
+            "room_id": "room-1",
+            "event": {
+              "type": "task_created",
+              "room_id": "room-1",
+              "status": "delivered",
+              "visibility": "internal",
+              "source": {
+                "channel_id": "sms",
+                "channel_type": "sms",
+                "direction": "inbound",
+                "participant_id": "+15551234567"
+              },
+              "content": {
+                "type": "text",
+                "body": "Send me the brochure"
+              },
+              "metadata": {
+                "task_id": {
+                  "$present": true
+                },
+                "task_title": "Call the customer back"
+              }
+            }
+          },
+          {
+            "trigger": "on_task_created",
+            "room_id": "room-1",
+            "event": {
+              "type": "task_created",
+              "room_id": "room-1",
+              "status": "delivered",
+              "visibility": "internal",
+              "source": {
+                "channel_id": "sms",
+                "channel_type": "sms",
+                "direction": "inbound",
+                "participant_id": "+15551234567"
+              },
+              "content": {
+                "type": "text",
+                "body": "Send me the brochure"
+              },
+              "metadata": {
+                "task_id": {
+                  "$present": true
+                },
+                "task_title": "Send the brochure"
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}
