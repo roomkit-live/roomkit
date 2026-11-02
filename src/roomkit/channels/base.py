@@ -344,10 +344,11 @@ class Channel(ABC):
         after the other, in the order they were asked (RFC §6.4): a turn waits
         until the one before it is over, then reads the room as it stood when
         it was asked, plus what the channel wrote since. Such a channel answers
-        through its stream. False here: the turns run side by side. An ACP
-        agent's channel orders its own, one prompt per session at a time.
+        through its stream. Here, whether it steers its room turns, which
+        implies it: by default the turns run side by side. An ACP agent's
+        channel orders its own, one prompt per session at a time.
         """
-        return False
+        return self.steers_room_turns
 
     @property
     def steers_room_turns(self) -> bool:

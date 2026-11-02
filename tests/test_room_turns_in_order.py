@@ -371,10 +371,43 @@ class _Buffered(AILikeChannel):
         return True
 
 
-async def test_a_turn_that_waited_its_place_and_answers_beside_its_stream_fails() -> None:
+class _Steering(AILikeChannel):
+    """A channel that declares it steers its room turns, which takes them one
+    at a time (RFC §6.4), and answers beside a stream."""
+
+    @property
+    def steers_room_turns(self) -> bool:
+        return True
+
+
+async def test_a_channel_that_steers_its_room_turns_says_it_serializes_them() -> None:
+    """What a host reads of a registered channel and what its owner knows of
+    it (RFC §6.4, §10.6.2): a hand-written channel or a declaration that
+    steers its room turns takes them one at a time."""
+    kit = RoomKit()
+    kit.register_channel(_Steering("agent"))
+    kit.register_channel(ChannelDeclaration(channel_id="ana", steers_room_turns=True))
+    try:
+        read = [
+            (channel.serializes_room_turns, channel.steers_room_turns)
+            for channel in (kit.get_channel("agent"), kit.get_channel("ana"))
+            if channel is not None
+        ]
+        declared = _Steering("agent").declaration()
+
+        assert read == [(True, True), (True, True)]
+        assert (declared.serializes_room_turns, declared.steers_room_turns) == (True, True)
+    finally:
+        await kit.close()
+
+
+@pytest.mark.parametrize("channel_class", [_Buffered, _Steering], ids=["serializes", "steers"])
+async def test_a_turn_that_waited_its_place_and_answers_beside_its_stream_fails(
+    channel_class: type[AILikeChannel],
+) -> None:
     kit = RoomKit()
     kit.register_channel(SimpleChannel("sms"))
-    kit.register_channel(_Buffered("agent"))
+    kit.register_channel(channel_class("agent"))
     await kit.create_room(room_id="r")
     await kit.attach_channel("r", "sms")
     await kit.attach_channel("r", "agent", category=ChannelCategory.INTELLIGENCE)

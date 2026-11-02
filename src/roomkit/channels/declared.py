@@ -67,7 +67,9 @@ class DeclaredChannel(Channel):
 
     @property
     def serializes_room_turns(self) -> bool:
-        return self._declaration.serializes_room_turns
+        # Steering its room turns implies it (RFC §6.4), as a live channel's.
+        declared = self._declaration
+        return declared.serializes_room_turns or declared.steers_room_turns
 
     @property
     def steers_room_turns(self) -> bool:
