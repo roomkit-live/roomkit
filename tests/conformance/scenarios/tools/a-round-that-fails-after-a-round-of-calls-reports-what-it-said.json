@@ -1,0 +1,113 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-round-that-fails-after-a-round-of-calls-reports-what-it-said",
+  "title": "A provider that fails mid-round after a round of calls ends the turn error: ON_AI_RESPONSE fires, its segments both rounds' words as the room has them",
+  "rules": [
+    "§6.4",
+    "§9.2"
+  ],
+  "notes": "RFC §6.4, A turn that did not complete: a turn the provider interrupted after a round reaches its end on the error. The kit reads the turn's end before the error and fires the hook; the failed round's words, delivered as they streamed, are the turn's last segment.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Let me look.",
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "search"
+                }
+              ]
+            },
+            {
+              "deltas": [
+                "Partial ",
+                "answer"
+              ],
+              "fails": "the provider broke"
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "search",
+            "description": "Search",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "seen",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "seen": [
+        {
+          "trigger": "on_ai_response",
+          "room_id": "room-1",
+          "response": {
+            "channel_id": "agent",
+            "segments": [
+              "Let me look.",
+              "Partial answer"
+            ],
+            "response_content": "Let me look.\n\nPartial answer",
+            "tool_calls_count": 1,
+            "round_count": 1,
+            "loop_end_reason": "error",
+            "streaming": true
+          }
+        }
+      ]
+    }
+  }
+}
