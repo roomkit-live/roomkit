@@ -1,0 +1,142 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "author-images/a-data-uri-goes-as-written",
+  "title": "A data URI an author sent goes to a model that sees as written, its scheme, type and parameters in lower case: whatever its header's parameters and its data's form, only its data's presence and its size are read",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python's _inline and canonical_data_uri: a data URI is refused only when its data is empty or past 5 MiB, read off its length; a parameter beside base64, a header without it, unpadded or URL-safe base64 and a line break in the data are the provider's to judge (RMK-1197, HITL 9dc47ced).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "vision": true,
+          "rounds": [
+            {
+              "text": "Seen."
+            }
+          ]
+        },
+        "max_author_images": null
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "composite",
+          "parts": [
+            {
+              "type": "text",
+              "body": "look"
+            },
+            {
+              "type": "media",
+              "url": "data:image/png;Name=Lamp.png;BASE64,AQIDBA==",
+              "mime_type": "image/png",
+              "filename": "p0.png"
+            },
+            {
+              "type": "media",
+              "url": "data:image/png;base64,AQIDBA",
+              "mime_type": "image/png",
+              "filename": "p1.png"
+            },
+            {
+              "type": "media",
+              "url": "data:image/png;base64,AQ-_BA==",
+              "mime_type": "image/png",
+              "filename": "p2.png"
+            },
+            {
+              "type": "media",
+              "url": "data:image/png;base64,AQID\nBA==",
+              "mime_type": "image/png",
+              "filename": "p3.png"
+            },
+            {
+              "type": "media",
+              "url": "data:image/png,AQIDBA==",
+              "mime_type": "image/png",
+              "filename": "p4.png"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "look",
+              "parts": [
+                {
+                  "text": "look"
+                },
+                {
+                  "image": "data:image/png;name=lamp.png;base64,AQIDBA==",
+                  "mime_type": "image/png"
+                },
+                {
+                  "image": "data:image/png;base64,AQIDBA",
+                  "mime_type": "image/png"
+                },
+                {
+                  "image": "data:image/png;base64,AQ-_BA==",
+                  "mime_type": "image/png"
+                },
+                {
+                  "image": "data:image/png;base64,AQID\nBA==",
+                  "mime_type": "image/png"
+                },
+                {
+                  "image": "data:image/png,AQIDBA==",
+                  "mime_type": "image/png"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

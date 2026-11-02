@@ -1,0 +1,122 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "author-images/a-link-goes-as-written",
+  "title": "A link an author sent goes to a model that sees as written: a '..' segment, a backslash or a control character is the provider's to judge",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python's _inline sends a link (http or https) as it is; only a reference is held to is_safe_reference, when its content is built (RMK-1197, HITL 9dc47ced).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "vision": true,
+          "rounds": [
+            {
+              "text": "Seen."
+            }
+          ]
+        },
+        "max_author_images": null
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "composite",
+          "parts": [
+            {
+              "type": "text",
+              "body": "look"
+            },
+            {
+              "type": "media",
+              "url": "https://cdn.example.com/a/../lamp.png",
+              "mime_type": "image/png",
+              "filename": "p0.png"
+            },
+            {
+              "type": "media",
+              "url": "https://cdn.example.com/a\\lamp.png",
+              "mime_type": "image/png",
+              "filename": "p1.png"
+            },
+            {
+              "type": "media",
+              "url": "https://cdn.example.com/lamp\u0001.png",
+              "mime_type": "image/png",
+              "filename": "p2.png"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "look",
+              "parts": [
+                {
+                  "text": "look"
+                },
+                {
+                  "image": "https://cdn.example.com/a/../lamp.png",
+                  "mime_type": "image/png"
+                },
+                {
+                  "image": "https://cdn.example.com/a\\lamp.png",
+                  "mime_type": "image/png"
+                },
+                {
+                  "image": "https://cdn.example.com/lamp\u0001.png",
+                  "mime_type": "image/png"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
