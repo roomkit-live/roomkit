@@ -1,13 +1,13 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "tasks/a-delegated-turn-s-trace-is-stored-as-its-responses",
-  "title": "A delegated agent's buffered answers are kept in the child room's trace as the pipeline writes a response: its responder's, one deeper than the description it answers and answering it, under no idempotency key, a key in the framework's publication namespace included; an instruction among them is dropped",
+  "title": "A delegated agent's buffered answers, a tool call's end among them, are kept in the child room's trace as the pipeline writes a response: its responder's, one deeper than the description it answers and answering it, under no idempotency key, a key in the framework's publication namespace included; an instruction among them is dropped",
   "rules": [
     "§23.3 step 5",
     "§8.5",
     "§22.1"
   ],
-  "notes": "Python: core/event_router.py _answering, which writes a buffered output's response events back as the pipeline commits them (_as_response: the responder's source, the trigger's room, one deeper, responds_to the trigger unless named, a fresh id, no idempotency key; a typed INSTRUCTION dropped), so that a delegated turn reads them so (core/mixins/_child_execution.py _persist_response_events, which also drops a key under roomkit:publication:, core/_publication_keys.py without_reserved_key).",
+  "notes": "Python: tests/tasks/test_child_room_trace.py::TestRunAgentNonStreaming::test_persists_all_response_events_not_just_final_text; core/event_router.py _answering, which writes a buffered output's response events back as the pipeline commits them (_as_response: the responder's source, the trigger's room, one deeper, responds_to the trigger unless named, a fresh id, no idempotency key; a typed INSTRUCTION dropped), so that a delegated turn reads them so (core/mixins/_child_execution.py _persist_response_events, which also drops a key under roomkit:publication:, core/_publication_keys.py without_reserved_key).",
   "setup": {
     "channels": [
       {
@@ -32,6 +32,15 @@
                 },
                 "idempotency_key": "roomkit:publication:k1",
                 "chain_depth": 5
+              },
+              {
+                "type": "tool_call_end",
+                "content": {
+                  "type": "tool_call",
+                  "tool_name": "WebSearch",
+                  "tool_id": "t1",
+                  "status": "completed"
+                }
               },
               {
                 "type": "instruction",
@@ -115,6 +124,22 @@
         },
         {
           "index": 2,
+          "type": "tool_call_end",
+          "source": {
+            "channel_id": "worker",
+            "direction": "outbound"
+          },
+          "chain_depth": 1,
+          "responds_to": "$r1#0",
+          "content": {
+            "type": "tool_call",
+            "tool_name": "WebSearch",
+            "tool_id": "t1",
+            "status": "completed"
+          }
+        },
+        {
+          "index": 3,
           "type": "message",
           "source": {
             "channel_id": "worker",

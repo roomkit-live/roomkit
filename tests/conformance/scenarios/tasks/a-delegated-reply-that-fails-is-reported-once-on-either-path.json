@@ -1,0 +1,250 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-delegated-reply-that-fails-is-reported-once-on-either-path",
+  "title": "A delegated agent that answers at once and fails fires ON_ERROR once in its child room, from that agent, whether a transport is shared into the room or not: one that answers then carries its error, one that carries its error without answering, one that raises; each task fails",
+  "rules": [
+    "§23.3 step 6",
+    "§10.2 step 3c",
+    "§9.3"
+  ],
+  "notes": "Python: tests/tasks/test_delegated_turn_on_error.py::test_a_failed_delegated_reply_fires_on_error_once; core/mixins/_child_execution.py _broadcast_and_collect (_report_intelligence_errors, before the answer takes the trace's path or the room's). Rooms $r1, $r3 and $r5 share email, $r2, $r4 and $r6 share nothing; tasks/a-delegated-turn-s-returned-error-is-reported-in-its-child-room and tasks/a-delegated-turn-s-failure-is-reported-in-its-child-room pin the payload of each kind.",
+  "setup": {
+    "channels": [
+      {
+        "id": "email",
+        "type": "email",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Answer, then fail."
+            },
+            "repeat": true,
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Partial work."
+                },
+                "metadata": {
+                  "loop_end_reason": "error"
+                }
+              }
+            ],
+            "output": {
+              "error": "upstream 400"
+            }
+          },
+          {
+            "when": {
+              "text": "Return your error."
+            },
+            "repeat": true,
+            "output": {
+              "error": "upstream 400"
+            }
+          },
+          {
+            "when": {
+              "text": "Raise."
+            },
+            "repeat": true,
+            "fail": "upstream 400"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "parent",
+        "bindings": [
+          {
+            "channel_id": "email"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "errors",
+        "trigger": "on_error",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "worker",
+      "task": "Answer, then fail.",
+      "share_channels": [
+        "email"
+      ],
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "failed"
+        }
+      }
+    },
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "worker",
+      "task": "Answer, then fail.",
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "failed"
+        }
+      }
+    },
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "worker",
+      "task": "Return your error.",
+      "share_channels": [
+        "email"
+      ],
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "failed"
+        }
+      }
+    },
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "worker",
+      "task": "Return your error.",
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "failed"
+        }
+      }
+    },
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "worker",
+      "task": "Raise.",
+      "share_channels": [
+        "email"
+      ],
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "failed"
+        }
+      }
+    },
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "worker",
+      "task": "Raise.",
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "failed"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "errors": [
+        {
+          "trigger": "on_error",
+          "room_id": "$r1",
+          "event": {
+            "source": {
+              "channel_id": "worker"
+            },
+            "content": {
+              "type": "text",
+              "body": "upstream 400"
+            }
+          }
+        },
+        {
+          "trigger": "on_error",
+          "room_id": "$r2",
+          "event": {
+            "source": {
+              "channel_id": "worker"
+            },
+            "content": {
+              "type": "text",
+              "body": "upstream 400"
+            }
+          }
+        },
+        {
+          "trigger": "on_error",
+          "room_id": "$r3",
+          "event": {
+            "source": {
+              "channel_id": "worker"
+            },
+            "content": {
+              "type": "text",
+              "body": "upstream 400"
+            }
+          }
+        },
+        {
+          "trigger": "on_error",
+          "room_id": "$r4",
+          "event": {
+            "source": {
+              "channel_id": "worker"
+            },
+            "content": {
+              "type": "text",
+              "body": "upstream 400"
+            }
+          }
+        },
+        {
+          "trigger": "on_error",
+          "room_id": "$r5",
+          "event": {
+            "source": {
+              "channel_id": "worker"
+            },
+            "content": {
+              "type": "text",
+              "body": "upstream 400"
+            }
+          }
+        },
+        {
+          "trigger": "on_error",
+          "room_id": "$r6",
+          "event": {
+            "source": {
+              "channel_id": "worker"
+            },
+            "content": {
+              "type": "text",
+              "body": "upstream 400"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

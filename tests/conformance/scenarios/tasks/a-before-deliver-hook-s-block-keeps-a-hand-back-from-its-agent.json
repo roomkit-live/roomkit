@@ -1,0 +1,111 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-before-deliver-hook-s-block-keeps-a-hand-back-from-its-agent",
+  "title": "A background result handed back crosses the room's BEFORE_DELIVER hooks as any proactive delivery does: one that blocks it keeps it from the notified agent, whose turn is never asked",
+  "rules": [
+    "§23.3 step 8",
+    "§22.1"
+  ],
+  "notes": "Python: tests/tasks/test_delegation_result_delivery.py::test_a_before_deliver_hook_gates_the_result; tasks/handback.py hand_back (through deliver(), whose BEFORE_DELIVER hooks gate it).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Findings."
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "main",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "main"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "quiet_hours",
+        "trigger": "before_deliver",
+        "reactions": [
+          {
+            "result": {
+              "action": "block",
+              "reason": "quiet hours"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "task",
+      "notify": "main",
+      "as": "t"
+    },
+    {
+      "call": "task.wait",
+      "task_id": "$t",
+      "expect": {
+        "result": {
+          "status": "completed",
+          "output": "Findings."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "turns": {
+      "room-1": {
+        "main": []
+      }
+    },
+    "hooks": {
+      "quiet_hours": [
+        {
+          "trigger": "before_deliver",
+          "room_id": "room-1"
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": []
+      }
+    }
+  }
+}

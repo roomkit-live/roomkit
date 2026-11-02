@@ -1,0 +1,127 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-delegated-agent-s-failed-stream-fails-its-task-once-every-stream-is-kept",
+  "title": "In a delegated room no transport is shared into, a delegated agent whose stream fails after its text fails the task with that error, once the stream of another agent shared there is read to its end too: the trace keeps both agents' text",
+  "rules": [
+    "§23.3 step 5",
+    "§23.3 step 6",
+    "§8.3",
+    "§12.2 step 13s"
+  ],
+  "notes": "Python: tests/tasks/test_child_room_trace.py::TestEveryResponseIsRead::test_a_failed_response_fails_the_turn_once_all_are_read; core/mixins/_child_execution.py _collect_answer (a failed stream is kept, then the next is read; the delegated agent's failure is raised once all are). The Python test reads two streams of one agent through the private _collect_answer; the public form is another agent shared into the room. The two rows come in either order: the scenario names neither row's index.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "Looking."
+              ],
+              "fails": "upstream 500"
+            }
+          ]
+        }
+      },
+      {
+        "id": "observer",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "Done."
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "observer",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "Do the task.",
+      "share_channels": [
+        "observer"
+      ],
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "failed",
+          "result": {
+            "status": "failed",
+            "error": "upstream 500"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [],
+      "$r1": {
+        "$unordered": [
+          {
+            "index": 0,
+            "source": {
+              "channel_id": "system"
+            },
+            "content": {
+              "type": "text",
+              "body": "Do the task."
+            }
+          },
+          {
+            "source": {
+              "channel_id": "worker"
+            },
+            "chain_depth": 1,
+            "responds_to": "$r1#0",
+            "content": {
+              "type": "text",
+              "body": "Looking."
+            }
+          },
+          {
+            "source": {
+              "channel_id": "observer"
+            },
+            "chain_depth": 1,
+            "responds_to": "$r1#0",
+            "content": {
+              "type": "text",
+              "body": "Done."
+            }
+          }
+        ]
+      }
+    }
+  }
+}

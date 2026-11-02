@@ -1,0 +1,135 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-hand-back-leaves-the-notified-agent-s-prompt-as-its-binding-holds-it",
+  "title": "Background delegations that hand their results back to an agent whose binding holds its system prompt leave that binding as it was: each turn they open reads the binding's prompt, and is told its result",
+  "rules": [
+    "§23.3 step 8",
+    "§6.4"
+  ],
+  "notes": "Python: tests/tasks/test_delegation_result_delivery.py::test_delegations_leave_the_notified_agent_s_prompt_as_configured; tasks/handback.py hand_back (the result an instruction through deliver(), never the binding's metadata); channels/_ai_context.py (a binding's metadata system_prompt is the turn's prompt over the channel's own). The prompt is matched by what it holds: a turn's notes may follow it.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "repeat": true,
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Findings."
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "main",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "ok"
+            },
+            {
+              "text": "ok"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "main",
+            "category": "intelligence",
+            "metadata": {
+              "system_prompt": "You are Marie, the host's persona."
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "task 0",
+      "notify": "main",
+      "as": "t1"
+    },
+    {
+      "call": "task.wait",
+      "task_id": "$t1",
+      "expect": {
+        "result": {
+          "status": "completed"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "task 1",
+      "notify": "main",
+      "as": "t2"
+    },
+    {
+      "call": "task.wait",
+      "task_id": "$t2",
+      "expect": {
+        "result": {
+          "status": "completed"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "room-1": {
+        "main": {
+          "metadata": {
+            "system_prompt": "You are Marie, the host's persona."
+          }
+        }
+      }
+    },
+    "models": {
+      "main": [
+        {
+          "system_prompt": {
+            "$contains": "You are Marie, the host's persona."
+          }
+        },
+        {
+          "system_prompt": {
+            "$contains": "You are Marie, the host's persona."
+          }
+        }
+      ]
+    }
+  }
+}

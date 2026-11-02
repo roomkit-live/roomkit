@@ -1,0 +1,104 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-buffered-turn-cut-short-fails-its-task-with-its-narration",
+  "title": "A delegated agent that answers at once with a message its turn's record says ended before its answer, its round cap reached, fails the task: its error names that end, its output is the message, its narration",
+  "rules": [
+    "§23.3 step 6",
+    "§6.4"
+  ],
+  "notes": "Python: tests/tasks/test_child_room_trace.py::TestRunAgentNonStreaming::test_a_buffered_turn_cut_short_fails_with_its_narration; core/mixins/_child_execution.py _buffered_outcome (_turn_end reads the end off the last message's loop_end_reason when the output's record names none), _collect_answer (_cut_short: a TaskCutShortError carrying the narration); tasks/models.py finished_task_fields. The trace keeps the message.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Check orders 1 to 3."
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Still checking."
+                },
+                "metadata": {
+                  "loop_end_reason": "max_rounds"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "Check orders 1 to 3.",
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "failed",
+          "result": {
+            "status": "failed",
+            "error": "The worker's turn ended max_rounds before its answer",
+            "output": "Still checking.",
+            "metadata": {
+              "loop_end_reason": "max_rounds"
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "$r1": [
+        {
+          "index": 0,
+          "source": {
+            "channel_id": "system"
+          },
+          "content": {
+            "type": "text",
+            "body": "Check orders 1 to 3."
+          }
+        },
+        {
+          "index": 1,
+          "source": {
+            "channel_id": "worker"
+          },
+          "responds_to": "$r1#0",
+          "content": {
+            "type": "text",
+            "body": "Still checking."
+          }
+        }
+      ]
+    }
+  }
+}

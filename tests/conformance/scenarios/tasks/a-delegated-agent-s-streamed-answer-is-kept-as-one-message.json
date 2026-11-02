@@ -1,0 +1,96 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-delegated-agent-s-streamed-answer-is-kept-as-one-message",
+  "title": "A delegated agent's answer streamed in pieces is kept in the child room's trace as one message, its pieces joined, answering the task it was handed, and is the task's output",
+  "rules": [
+    "§23.3 step 5",
+    "§8.5"
+  ],
+  "notes": "Python: tests/tasks/test_child_room_trace.py::TestPersistChildStream::test_text_only_stream_persists_single_message; core/mixins/_child_execution.py _persist_child_stream (the turn's text segment, one row, responds_to the task's message; its text the answer). No transport is shared: the trace's path.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "just ",
+                "text"
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "Do the task.",
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "completed",
+          "result": {
+            "status": "completed",
+            "output": "just text"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [],
+      "$r1": [
+        {
+          "index": 0,
+          "type": "message",
+          "source": {
+            "channel_id": "system"
+          },
+          "content": {
+            "type": "text",
+            "body": "Do the task."
+          }
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "source": {
+            "channel_id": "worker",
+            "direction": "outbound"
+          },
+          "chain_depth": 1,
+          "responds_to": "$r1#0",
+          "content": {
+            "type": "text",
+            "body": "just text"
+          }
+        }
+      ]
+    }
+  }
+}

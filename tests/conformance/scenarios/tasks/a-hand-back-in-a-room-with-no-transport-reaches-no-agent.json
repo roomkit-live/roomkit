@@ -1,0 +1,106 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-hand-back-in-a-room-with-no-transport-reaches-no-agent",
+  "title": "A background result handed back in a room that binds no transport, only the notified agent, reaches no agent: its turn is never asked, its binding is left as it was, and the result is ON_TASK_COMPLETED's alone",
+  "rules": [
+    "§23.3 step 8",
+    "§22.1"
+  ],
+  "notes": "Python: tests/tasks/test_delegation_result_delivery.py::test_a_room_without_transport_leaves_the_result_to_the_hook; tasks/handback.py hand_back (deliver() answers unavailable, no_transport; _log_not_delivered logs it, which the scenario cannot see).",
+  "setup": {
+    "channels": [
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Findings."
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "main",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "main",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "completed",
+        "trigger": "on_task_completed",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "task",
+      "notify": "main",
+      "as": "t"
+    },
+    {
+      "call": "task.wait",
+      "task_id": "$t",
+      "expect": {
+        "result": {
+          "status": "completed",
+          "output": "Findings."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "turns": {
+      "room-1": {
+        "main": []
+      }
+    },
+    "bindings": {
+      "room-1": {
+        "main": {
+          "metadata": {
+            "system_prompt": {
+              "$absent": true
+            }
+          }
+        }
+      }
+    },
+    "hooks": {
+      "completed": [
+        {
+          "trigger": "on_task_completed",
+          "room_id": "room-1"
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": []
+    }
+  }
+}

@@ -1,0 +1,99 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-hand-back-to-a-channel-the-room-does-not-bind-tells-nothing",
+  "title": "A background delegation with no notified channel named hands its result back to its worker, which the room does not bind: nothing is delivered, no hook is called and no agent of the room is asked",
+  "rules": [
+    "§23.3 step 8"
+  ],
+  "notes": "Python: tests/tasks/test_delegation_result_delivery.py::test_a_notify_channel_outside_the_room_is_told_nothing; core/mixins/delegation.py delegate (notify defaults to the worker); tasks/handback.py hand_back (a channel the room does not bind is told nothing).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Findings."
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "main",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "main"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "watch",
+        "trigger": "before_broadcast"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "task",
+      "as": "t"
+    },
+    {
+      "call": "task.wait",
+      "task_id": "$t",
+      "expect": {
+        "result": {
+          "status": "completed",
+          "output": "Findings."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "watch": []
+    },
+    "turns": {
+      "room-1": {
+        "main": []
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": []
+      }
+    },
+    "timeline": {
+      "room-1": []
+    }
+  }
+}

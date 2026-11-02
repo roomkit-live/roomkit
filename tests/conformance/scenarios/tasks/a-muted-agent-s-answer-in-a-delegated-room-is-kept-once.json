@@ -1,0 +1,141 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-muted-agent-s-answer-in-a-delegated-room-is-kept-once",
+  "title": "A muted agent shared into a delegated room no transport is shared into answers the task at once: the trace keeps its answer once, beside the delegated agent's",
+  "rules": [
+    "§23.3 step 3",
+    "§23.3 step 5",
+    "§7.5"
+  ],
+  "notes": "Python: tests/tasks/test_child_room_trace.py::test_a_muted_worker_answer_is_committed_once; core/mixins/delegation.py _open_child_room (a shared binding keeps its muted), core/event_router.py (a muted channel's buffered answer re-enters, never stored by the router itself), core/mixins/_child_execution.py _collect_answer (_buffered_outcome commits each buffered answer once). The Python test mutes the delegated agent itself through the private _broadcast_and_collect; the public form mutes an agent shared into the room. The timeline holds BLOCKED records: the observer's answer is one row, whatever its status.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Do the task."
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "W1"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "observer",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Do the task."
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "O1"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "observer",
+            "category": "intelligence",
+            "muted": true
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "Do the task.",
+      "share_channels": [
+        "observer"
+      ],
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "completed",
+          "result": {
+            "output": "W1"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "$r1": {
+        "observer": {
+          "muted": true
+        }
+      }
+    },
+    "timeline": {
+      "$r1": {
+        "$unordered": [
+          {
+            "index": 0,
+            "source": {
+              "channel_id": "system"
+            },
+            "content": {
+              "type": "text",
+              "body": "Do the task."
+            }
+          },
+          {
+            "source": {
+              "channel_id": "worker"
+            },
+            "content": {
+              "type": "text",
+              "body": "W1"
+            }
+          },
+          {
+            "source": {
+              "channel_id": "observer"
+            },
+            "content": {
+              "type": "text",
+              "body": "O1"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,167 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-delegated-stream-failing-after-a-tool-round-is-reported-once",
+  "title": "A delegated agent whose stream fails on the generation after a tool round fires ON_ERROR once in its child room, from that agent, whether a transport is shared into the room or not, and the task fails",
+  "rules": [
+    "§23.3 step 6",
+    "§12.2 step 13s",
+    "§9.3"
+  ],
+  "notes": "Python: tests/tasks/test_delegated_turn_on_error.py::test_a_failed_delegated_stream_fires_on_error_once; core/mixins/_child_execution.py _persist_child_stream (_report_turn_failure) on the trace, _deliver_answer (the room's reader) with a shared transport: one loop, one report, whichever path. worker's room shares email, writer's shares nothing.",
+  "setup": {
+    "channels": [
+      {
+        "id": "email",
+        "type": "email",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Still checking.",
+              "calls": [
+                {
+                  "id": "c",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "fails": "upstream 400"
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "look up",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found"
+          }
+        ]
+      },
+      {
+        "id": "writer",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Still checking.",
+              "calls": [
+                {
+                  "id": "c",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "fails": "upstream 400"
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "look up",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "parent",
+        "bindings": [
+          {
+            "channel_id": "email"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "errors",
+        "trigger": "on_error",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "worker",
+      "task": "Find it.",
+      "share_channels": [
+        "email"
+      ],
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "failed",
+          "result": {
+            "status": "failed"
+          }
+        }
+      }
+    },
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "writer",
+      "task": "Find it.",
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "failed",
+          "result": {
+            "status": "failed"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "errors": [
+        {
+          "trigger": "on_error",
+          "room_id": "$r1",
+          "event": {
+            "source": {
+              "channel_id": "worker"
+            },
+            "content": {
+              "type": "text",
+              "body": "upstream 400"
+            }
+          }
+        },
+        {
+          "trigger": "on_error",
+          "room_id": "$r2",
+          "event": {
+            "source": {
+              "channel_id": "writer"
+            },
+            "content": {
+              "type": "text",
+              "body": "upstream 400"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

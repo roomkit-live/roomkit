@@ -8,7 +8,7 @@
     "§10.1.1",
     "§22"
   ],
-  "notes": "Python: tests/tasks/test_delegation_result_delivery.py, tests/tasks/test_integration.py::test_full_delegate_flow, tests/tasks/test_runner.py::TestInMemoryTaskRunner::test_submit_and_wait_completed (its duration_ms > 0 read as present); tests/test_task_status.py::test_the_hand_back_names_its_task, test_the_hand_back_says_what_was_asked, test_a_task_is_named_on_one_line_and_bounded (core/mixins/delegation.py task_name, read in the hand-back's metadata; its cut with no space to cut at is bounded_text's); core/mixins/delegation.py _run_background, _deliver_delegation_result, _delegation_result_text; tasks/handback.py hand_back, RESULT_TURN_NOTE.",
+  "notes": "Python: tests/tasks/test_delegation_result_delivery.py::test_the_result_is_not_stored_as_anyone_s_words, tests/tasks/test_integration.py::test_full_delegate_flow, tests/tasks/test_runner.py::TestInMemoryTaskRunner::test_submit_and_wait_completed (its duration_ms > 0 read as present); tests/test_task_status.py::test_the_hand_back_names_its_task, test_the_hand_back_says_what_was_asked, test_a_task_is_named_on_one_line_and_bounded (core/mixins/delegation.py task_name, read in the hand-back's metadata; its cut with no space to cut at is bounded_text's); core/mixins/delegation.py _run_background, _deliver_delegation_result, _delegation_result_text; tasks/handback.py hand_back, RESULT_TURN_NOTE.",
   "setup": {
     "channels": [
       {

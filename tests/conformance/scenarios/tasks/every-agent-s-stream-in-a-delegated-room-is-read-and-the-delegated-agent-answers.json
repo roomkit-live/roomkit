@@ -1,0 +1,127 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/every-agent-s-stream-in-a-delegated-room-is-read-and-the-delegated-agent-answers",
+  "title": "In a delegated room no transport is shared into, another agent shared there answers by its own stream too: both streams are read to their end and kept in the trace, and the task's output is the delegated agent's answer",
+  "rules": [
+    "§23.3 step 5",
+    "§23.3 step 6",
+    "§8.3"
+  ],
+  "notes": "Python: tests/tasks/test_child_room_trace.py::TestEveryResponseIsRead::test_a_second_response_is_read_and_the_first_answer_wins; core/mixins/_child_execution.py _collect_answer, which reads every stream the broadcast started to its end (RFC §8.3) and takes the delegated agent's answer (the room's task_agent_id). The Python test reads two streams of one agent through the private _collect_answer; the public form is another agent shared into the room. The two rows come in either order: the scenario names neither row's index.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "worker's ",
+                "answer"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": "observer",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "observer's ",
+                "answer"
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "observer",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "Do the task.",
+      "share_channels": [
+        "observer"
+      ],
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "completed",
+          "result": {
+            "status": "completed",
+            "output": "worker's answer"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [],
+      "$r1": {
+        "$unordered": [
+          {
+            "index": 0,
+            "source": {
+              "channel_id": "system"
+            },
+            "content": {
+              "type": "text",
+              "body": "Do the task."
+            }
+          },
+          {
+            "source": {
+              "channel_id": "worker"
+            },
+            "chain_depth": 1,
+            "responds_to": "$r1#0",
+            "content": {
+              "type": "text",
+              "body": "worker's answer"
+            }
+          },
+          {
+            "source": {
+              "channel_id": "observer"
+            },
+            "chain_depth": 1,
+            "responds_to": "$r1#0",
+            "content": {
+              "type": "text",
+              "body": "observer's answer"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
