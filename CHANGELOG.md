@@ -54,8 +54,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tool handler hands the model. An image, audio and a blob resource now read
   `[image content (image/png) not shown to the model]`, as the handler
   already noted them; a text resource reads as its text, and a resource link
-  as `[resource_link content (text/plain) not shown to the model]`. A note
-  keeps only the characters a media type has of the type the server named.
+  as `[resource_link content (text/plain) not shown to the model]`, and a
+  kind of content the bridge does not know as `[other content (unknown) not
+  shown to the model]`. A note keeps only the characters a media type has
+  of the type the server named.
   The bytes are still read with `call_tool_result()`. roomkit-rs reads them
   the same.
 
