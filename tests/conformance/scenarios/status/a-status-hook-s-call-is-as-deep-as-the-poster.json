@@ -1,0 +1,220 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "status/a-status-hook-s-call-is-as-deep-as-the-poster",
+  "title": "A status a turn posts reaches ON_STATUS_POSTED at the turn's depth: what the hook sends into the room is that deep, so an agent that posts a status on every turn, a hook that tells it again, stops at the chain's depth limit",
+  "rules": [
+    "§19.8",
+    "§8.3",
+    "§9.2"
+  ],
+  "notes": "Python: orchestration/status_bus.py post publishes in a task that copies the poster's context (create_task), and core/hooks.py _start_async_hooks reads the chain floor as the trigger fires: a hook body sends at least as deep as the turn that posted (RMK-1004). The agent answers each event by posting a status from its turn's host; the hook sends 'again' into the room. The turn on the event at depth 4 would answer at depth 5, the limit: it is not asked, its BLOCKED record stored. RMK-1187.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "repeat": true,
+            "do": [
+              {
+                "call": "host.post_status",
+                "agent_id": "ai",
+                "action": "lookup",
+                "status": "info"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "relay",
+        "trigger": "on_status_posted",
+        "execution": "async",
+        "reactions": [
+          {
+            "repeat": true,
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "room-1",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "again"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message",
+          "status": "delivered",
+          "chain_depth": 0,
+          "content": {
+            "type": "text",
+            "body": "go"
+          }
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "status": "delivered",
+          "chain_depth": 1,
+          "source": {
+            "channel_id": "sms"
+          },
+          "content": {
+            "type": "text",
+            "body": "again"
+          }
+        },
+        {
+          "index": 2,
+          "type": "message",
+          "status": "delivered",
+          "chain_depth": 2,
+          "source": {
+            "channel_id": "sms"
+          },
+          "content": {
+            "type": "text",
+            "body": "again"
+          }
+        },
+        {
+          "index": 3,
+          "type": "message",
+          "status": "delivered",
+          "chain_depth": 3,
+          "source": {
+            "channel_id": "sms"
+          },
+          "content": {
+            "type": "text",
+            "body": "again"
+          }
+        },
+        {
+          "index": 4,
+          "type": "message",
+          "status": "delivered",
+          "chain_depth": 4,
+          "source": {
+            "channel_id": "sms"
+          },
+          "content": {
+            "type": "text",
+            "body": "again"
+          }
+        },
+        {
+          "index": 5,
+          "status": "blocked",
+          "blocked_by": "event_chain_depth_limit",
+          "chain_depth": 5,
+          "source": {
+            "channel_id": "ai"
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "relay": [
+        {
+          "trigger": "on_status_posted",
+          "room_id": "room-1",
+          "status_entry": {
+            "agent_id": "ai",
+            "action": "lookup",
+            "status": "info",
+            "metadata": {
+              "room_id": "room-1"
+            }
+          }
+        },
+        {
+          "trigger": "on_status_posted",
+          "room_id": "room-1",
+          "status_entry": {
+            "agent_id": "ai",
+            "action": "lookup",
+            "status": "info",
+            "metadata": {
+              "room_id": "room-1"
+            }
+          }
+        },
+        {
+          "trigger": "on_status_posted",
+          "room_id": "room-1",
+          "status_entry": {
+            "agent_id": "ai",
+            "action": "lookup",
+            "status": "info",
+            "metadata": {
+              "room_id": "room-1"
+            }
+          }
+        },
+        {
+          "trigger": "on_status_posted",
+          "room_id": "room-1",
+          "status_entry": {
+            "agent_id": "ai",
+            "action": "lookup",
+            "status": "info",
+            "metadata": {
+              "room_id": "room-1"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
