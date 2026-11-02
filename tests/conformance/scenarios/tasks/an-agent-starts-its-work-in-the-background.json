@@ -1,0 +1,146 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/an-agent-starts-its-work-in-the-background",
+  "title": "An agent given work_in_background by setup_background calls it in its turn: the room's owner starts the task on the worker the host named and answers at once, the task's id, started, and where its result goes; the worker's result comes back to the agent as a turn of its own; a hand-back the setup does not know, and an agent the kit does not hold, are refused",
+  "rules": [
+    "§23.4",
+    "§10.6.5",
+    "§23.3 step 8"
+  ],
+  "notes": "Python: tests/tasks/test_background_tasks.py::test_setup_declares_the_tool_on_the_agent, test_setup_refuses_an_unknown_hand_back, test_the_tool_starts_the_task_and_answers_at_once, test_the_task_runs_on_the_worker_the_host_named; core/mixins/background.py setup_background; tasks/background.py background_tool_server, BACKGROUND_TOOL_DEF. The tool's answer is Python's json.dumps of its members, in their order.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "helper",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "source_channel_id": "system",
+              "type": "message"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Three tickets are open."
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "speaker",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "work_in_background",
+                  "arguments": {
+                    "task": "Count the open tickets."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "On it."
+            },
+            {
+              "text": "Three tickets are open."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "speaker"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "setup_background",
+      "agent_id": "speaker",
+      "hand_back": "shout",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "setup_background",
+      "agent_id": "nobody",
+      "expect": {
+        "error": "channel_not_registered"
+      }
+    },
+    {
+      "call": "setup_background",
+      "agent_id": "speaker",
+      "worker": "helper"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "How many tickets are open?"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "$r1": {
+        "metadata": {
+          "parent_room_id": "room-1",
+          "task_agent_id": "helper",
+          "task_status": "completed",
+          "task_result": "Three tickets are open."
+        }
+      }
+    },
+    "models": {
+      "speaker": [
+        {
+          "tool_results": []
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": {
+                "$contains": "\"status\": \"started\", \"message\": \"The work runs in the background and its result comes back to speaker as a turn of its own when it is done. If this turn has not said so yet, say in one short sentence that it is under way; then end your turn, without saying it again.\"}"
+              }
+            }
+          ]
+        },
+        "$any"
+      ]
+    }
+  }
+}

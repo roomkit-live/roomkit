@@ -1,0 +1,142 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/an-agent-reads-and-cancels-its-room-s-tasks",
+  "title": "An agent given task_status and cancel_task by setup_task_tools reads its room's tasks, each with its worker, what was asked, its state and its result, and is answered that a task its room does not hold is no task there",
+  "rules": [
+    "§23.4",
+    "§10.6.5"
+  ],
+  "notes": "Python: tests/tasks/test_cancel_task.py::test_the_owner_serves_the_task_tools_set_up_on_an_agent, test_another_rooms_task_is_out_of_reach, test_setup_task_tools_sets_up_both_tools_or_neither; tests/test_task_status.py; core/mixins/background.py setup_task_tools; tasks/status.py TaskStatusTool, CancelTaskTool. A line's instants are each implementation's; the scenario reads the members around them.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Look it up."
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Found it."
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "speaker",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "task_status",
+                  "arguments": {}
+                },
+                {
+                  "id": "c2",
+                  "name": "cancel_task",
+                  "arguments": {
+                    "task_id": "task-elsewhere"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "speaker"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "setup_task_tools",
+      "agent_id": "nobody",
+      "expect": {
+        "error": "channel_not_registered"
+      }
+    },
+    {
+      "call": "setup_task_tools",
+      "agent_id": "speaker"
+    },
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "Look it up.",
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "completed"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Where are we?"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "speaker": [
+        {
+          "tool_results": []
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": {
+                "$contains": "\"agent\": \"worker\", \"task\": \"Look it up.\", \"status\": \"completed\", \"since\": "
+              }
+            },
+            {
+              "tool_call_id": "c2",
+              "content": "{\"task_id\": \"task-elsewhere\", \"status\": \"unknown\", \"message\": \"No task task-elsewhere here.\"}"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
