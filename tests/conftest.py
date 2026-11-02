@@ -126,6 +126,17 @@ def streaming(request: pytest.FixtureRequest) -> Iterator[bool]:
     expect_streaming(None)
 
 
+if redis_turn_mode.ENABLED:
+
+    @pytest.fixture(autouse=True)
+    async def _redis_turn_backends_closed() -> AsyncIterator[None]:
+        """Close what the test's kits left open across Redis
+        (tests/redis_turn_mode.py). Defined in that mode only: elsewhere a
+        synchronous test keeps no event loop it did not ask for."""
+        yield
+        await redis_turn_mode.close_left_open()
+
+
 def pytest_configure(config: pytest.Config) -> None:
     if redis_turn_mode.ENABLED:
         redis_turn_mode.install(config)

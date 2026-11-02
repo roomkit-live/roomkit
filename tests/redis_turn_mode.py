@@ -10,6 +10,7 @@ process is marked ``in_process`` (naming why) and skipped in this mode.
 
 from __future__ import annotations
 
+import asyncio
 import os
 from collections.abc import Iterator
 from uuid import uuid4
@@ -28,16 +29,32 @@ from roomkit.turns.redis import RedisTurnBackend
 ENABLED = os.environ.get("ROOMKIT_TEST_TURN_BACKEND") == "redis"
 # This session's keys: another session on the same Redis keeps its own.
 SESSION_PREFIX = f"roomkit:test:{uuid4().hex[:12]}"
+# The backends built since the last test ended. A kit and its loop live
+# within one test (no fixture shares them), so each is that test's.
+_built: list[RedisTurnBackend] = []
 
 
 def backend(timeouts: TurnTimeouts | None = None) -> RedisTurnBackend:
     """A backend of this session's, keeping *timeouts* when given."""
-    return RedisTurnBackend(
+    built = RedisTurnBackend(
         os.environ["REDIS_URL"],
         key_prefix=f"{SESSION_PREFIX}:{uuid4().hex[:12]}",
         timeouts=timeouts,
         _loop_back=True,
     )
+    _built.append(built)
+    return built
+
+
+async def close_left_open() -> None:
+    """Close the backends of the kits the test left open, waiting for
+    nothing: the test is over. Left open, a backend beats on from a thread
+    of its own (RFC §10.6.8), which keeps it and its Redis connections
+    alive for the rest of the worker; a worker past 1024 descriptors then
+    hands the console shell a pipe ``select`` refuses (RMK-1224)."""
+    loop = asyncio.get_running_loop()
+    while _built:
+        await _built.pop()._close_within(loop.time())
 
 
 def clean_up() -> None:
@@ -68,8 +85,3 @@ def install(config: pytest.Config) -> None:
     if not os.environ.get("REDIS_URL"):
         raise pytest.UsageError("ROOMKIT_TEST_TURN_BACKEND=redis needs REDIS_URL")
     turns_owner.InMemoryTurnBackend = backend  # type: ignore[misc, assignment]
-    # A test that never closes its kit leaves its backend's connection pool to
-    # the collector, whose release redis-py never awaits: noise of this mode.
-    config.addinivalue_line(
-        "filterwarnings", "ignore:coroutine 'ConnectionPool.release' was never awaited"
-    )
