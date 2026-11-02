@@ -1,0 +1,208 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inputs/the-kit-answers-a-turn-s-request",
+  "title": "The kit's answer_input answers a turn's human-input request: the waiting tool reads the answer, the door says true, and the request is answered once",
+  "rules": [
+    "§10.6.5",
+    "§9.3"
+  ],
+  "notes": "Python: tests/test_turns_inputs.py::test_the_owner_answers_a_turns_request, test_the_kits_door_says_true_only_for_an_answer_the_tool_reads. The request runs on the turn's executor, the answer comes through the room's owner (§10.6.5): the executor sends input_request before ON_USER_INPUT_REQUIRED fires, so the hook's answer reaches an open request. Requests are $p1, $p2... in the order the run first shows them.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "ask_user",
+                  "arguments": {
+                    "question": "Color?"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Thanks."
+            }
+          ]
+        },
+        "human_input": {
+          "tool_names": [
+            "ask_user"
+          ],
+          "timeout_ms": 5000,
+          "tools": [
+            {
+              "name": "ask_user",
+              "description": "Ask the user.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "question": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "asked",
+        "trigger": "on_user_input_required",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "answer_input",
+                "request_id": "$request",
+                "value": "Blue",
+                "expect": {
+                  "result": true
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "calls",
+        "trigger": "on_tool_call",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "ops",
+        "content": {
+          "type": "text",
+          "body": "Hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "answer_input",
+      "request_id": "$p1",
+      "value": "Red",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "call": "reject_input",
+      "request_id": "$p1",
+      "reason": "late",
+      "expect": {
+        "result": false
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "asked": [
+        {
+          "trigger": "on_user_input_required",
+          "room_id": "room-1",
+          "request": {
+            "pending_id": "$p1",
+            "tool_name": "ask_user",
+            "arguments": {
+              "question": "Color?"
+            },
+            "room_id": "room-1",
+            "tool_call_id": "c1",
+            "channel_id": "agent",
+            "channel_type": "ai"
+          }
+        }
+      ],
+      "calls": [
+        {
+          "trigger": "on_tool_call",
+          "room_id": "room-1",
+          "tool_call": {
+            "name": "ask_user",
+            "tool_call_id": "c1",
+            "arguments": {
+              "question": "Color?"
+            },
+            "result": "Blue",
+            "is_error": false,
+            "refused": false
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "tool_results": []
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "Blue",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    },
+    "framework_events": {
+      "room-1": [
+        {
+          "$unordered": [
+            {
+              "event": "event_processed",
+              "event_id": "room-1#0"
+            },
+            {
+              "event": "user_input_required",
+              "room_id": "room-1",
+              "channel_id": "agent",
+              "pending_id": "$p1",
+              "tool_name": "ask_user",
+              "tool_call_id": "c1",
+              "allowed": true,
+              "reason": null
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

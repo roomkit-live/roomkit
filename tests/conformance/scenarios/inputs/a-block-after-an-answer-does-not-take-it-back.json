@@ -1,0 +1,196 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inputs/a-block-after-an-answer-does-not-take-it-back",
+  "title": "An ON_USER_INPUT_REQUIRED hook that answers the request through the kit, then blocks, leaves the answer standing: a block never retracts an answer recorded",
+  "rules": [
+    "§10.6.5",
+    "§9.3"
+  ],
+  "notes": "Python: tests/test_turns_inputs.py::test_a_block_after_an_answer_does_not_take_it_back, test_the_kits_door_says_true_only_for_an_answer_the_tool_reads. §9.3: a BLOCK does not retract an answer already recorded.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "ask_user",
+                  "arguments": {
+                    "question": "Color?"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Thanks."
+            }
+          ]
+        },
+        "human_input": {
+          "tool_names": [
+            "ask_user"
+          ],
+          "timeout_ms": 5000,
+          "tools": [
+            {
+              "name": "ask_user",
+              "description": "Ask the user.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "question": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "asked",
+        "trigger": "on_user_input_required",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "answer_input",
+                "request_id": "$request",
+                "value": "Blue",
+                "expect": {
+                  "result": true
+                }
+              }
+            ],
+            "result": {
+              "action": "block",
+              "reason": "Too late to deny"
+            }
+          }
+        ]
+      },
+      {
+        "name": "calls",
+        "trigger": "on_tool_call",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "ops",
+        "content": {
+          "type": "text",
+          "body": "Hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "asked": [
+        {
+          "trigger": "on_user_input_required",
+          "room_id": "room-1",
+          "request": {
+            "pending_id": "$p1",
+            "tool_name": "ask_user",
+            "arguments": {
+              "question": "Color?"
+            },
+            "room_id": "room-1",
+            "tool_call_id": "c1",
+            "channel_id": "agent",
+            "channel_type": "ai"
+          }
+        }
+      ],
+      "calls": [
+        {
+          "trigger": "on_tool_call",
+          "room_id": "room-1",
+          "tool_call": {
+            "name": "ask_user",
+            "tool_call_id": "c1",
+            "arguments": {
+              "question": "Color?"
+            },
+            "result": "Blue",
+            "is_error": false,
+            "refused": false
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "tool_results": []
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "Blue",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    },
+    "framework_events": {
+      "room-1": [
+        {
+          "$unordered": [
+            {
+              "event": "event_processed",
+              "event_id": "room-1#0"
+            },
+            {
+              "event": "user_input_required",
+              "room_id": "room-1",
+              "channel_id": "agent",
+              "pending_id": "$p1",
+              "tool_name": "ask_user",
+              "tool_call_id": "c1",
+              "allowed": false,
+              "reason": "Too late to deny"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

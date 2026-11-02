@@ -1,0 +1,138 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inputs/a-name-the-agent-s-tools-declare-is-asked-of-the-person",
+  "title": "A human-input handler that defines no tool serves a name the agent's tools declare: the call asks the person, before the tools' handler",
+  "rules": [
+    "§10.6.5",
+    "§9.3"
+  ],
+  "notes": "Python: tests/test_human_input_doors.py::test_a_name_the_host_declares_is_served_by_the_person. §9.3: the channel serves the human-input tools itself, before the host's handler.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "text": "Thanks."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look a room up.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "the host's answer"
+          }
+        ],
+        "human_input": {
+          "tool_names": [
+            "lookup"
+          ],
+          "timeout_ms": 5000
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "asked",
+        "trigger": "on_user_input_required",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "answer_input",
+                "request_id": "$request",
+                "value": "the blue room",
+                "expect": {
+                  "result": true
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "ops",
+        "content": {
+          "type": "text",
+          "body": "Hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "asked": [
+        {
+          "trigger": "on_user_input_required",
+          "room_id": "room-1",
+          "request": {
+            "pending_id": "$p1",
+            "tool_name": "lookup",
+            "tool_call_id": "c1",
+            "channel_id": "agent",
+            "channel_type": "ai"
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "tool_results": []
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "the blue room",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
