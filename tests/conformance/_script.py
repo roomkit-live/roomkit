@@ -7,6 +7,7 @@ hooks") defines what each does; this module builds them on the Python core.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextvars import ContextVar
 from datetime import UTC, datetime
@@ -437,6 +438,8 @@ def hook_result(spec: Mapping[str, Any] | None, payload: Any, room_id: str) -> H
             data["event"] = patched_generation(payload, data["event"])
         elif isinstance(payload, ToolRoundEvent):
             data["event"] = patched_tool_round(payload, data["event"])
+        elif isinstance(payload, PendingInputEvent):
+            data["event"] = dataclasses.replace(payload, **data["event"])
     data["injected_events"] = [
         InjectedEvent(
             event=complete_event(item["event"], room_id, SYSTEM_SOURCE),
