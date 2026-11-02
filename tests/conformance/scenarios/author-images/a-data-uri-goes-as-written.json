@@ -1,11 +1,11 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "author-images/a-data-uri-goes-as-written",
-  "title": "A data URI an author sent goes to a model that sees as written, its scheme, type and parameters in lower case: whatever its header's parameters and its data's form, only its data's presence and its size are read",
+  "title": "A data URI an author sent goes to a model that sees as written, its scheme, type and parameters in lower case: whatever its header's parameters and its data's form, only its data's presence and its size are read, and a header that declares no type reads as the media's own",
   "rules": [
     "§6.4"
   ],
-  "notes": "Python's _inline and canonical_data_uri: a data URI is refused only when its data is empty or past 5 MiB, read off its length; a parameter beside base64, a header without it, unpadded or URL-safe base64 and a line break in the data are the provider's to judge (RMK-1197, HITL 9dc47ced).",
+  "notes": "Python's _inline and canonical_data_uri: a data URI is refused only when its data is empty or past 5 MiB, read off its length; a parameter beside base64, a header without it, unpadded or URL-safe base64 and a line break in the data are the provider's to judge (RMK-1197, HITL 9dc47ced). A header that declares no type takes the media's (Python's vision_image_type: data_uri_media_type or media_type).",
   "setup": {
     "channels": [
       {
@@ -85,6 +85,18 @@
               "url": "data:image/png,AQIDBA==",
               "mime_type": "image/png",
               "filename": "p4.png"
+            },
+            {
+              "type": "media",
+              "url": "data:;base64,AQIDBA==",
+              "mime_type": "image/png",
+              "filename": "p5.png"
+            },
+            {
+              "type": "media",
+              "url": "data:,AQIDBA==",
+              "mime_type": "image/png",
+              "filename": "p6.png"
             }
           ]
         }
@@ -130,6 +142,14 @@
                 },
                 {
                   "image": "data:image/png,AQIDBA==",
+                  "mime_type": "image/png"
+                },
+                {
+                  "image": "data:;base64,AQIDBA==",
+                  "mime_type": "image/png"
+                },
+                {
+                  "image": "data:,AQIDBA==",
                   "mime_type": "image/png"
                 }
               ]
