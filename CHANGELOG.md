@@ -58,7 +58,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   read, and every reader (the AI channel's conversation, a steered message,
   an ACP agent's request, a delegated task's requester, a summary's lines)
   counts speakers by source: one sender whose name changed is one speaker.
-  roomkit-rs reads them the same.
+  A steered message counts no longer the agent's own replies nor the
+  application's instructions, so a one-to-one room the agent answered reads
+  it unlabelled, and in a discussion `@ws` names neither of two nameless
+  senders of ws. roomkit-rs reads them the same.
 
 - **An edit or a delete opens no agent turn** (RFC §10.3, RMK-1226). An
   edit or a delete reached `AIChannel.on_event()` as any event and opened a
