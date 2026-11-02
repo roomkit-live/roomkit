@@ -89,10 +89,12 @@ from tests.test_kit_close_doors import _STORES
 
 
 class _Transport(SimpleChannel):
-    """A transport whose send of a body in *holds* waits: its seconds, or for
-    ever when ``None``."""
+    """A transport whose send of a body in *holds* waits: its seconds, until
+    its event is set, or for ever when ``None``."""
 
-    def __init__(self, channel_id: str, holds: dict[str, float | None] | None = None) -> None:
+    def __init__(
+        self, channel_id: str, holds: dict[str, float | asyncio.Event | None] | None = None
+    ) -> None:
         super().__init__(channel_id)
         self.holds = holds or {}
         self.sending: dict[str, asyncio.Event] = {}
@@ -106,7 +108,10 @@ class _Transport(SimpleChannel):
         self.entered(body).set()
         if body in self.holds:
             hold = self.holds[body]
-            await (asyncio.Event().wait() if hold is None else asyncio.sleep(hold))
+            if isinstance(hold, asyncio.Event):
+                await hold.wait()
+            else:
+                await (asyncio.Event().wait() if hold is None else asyncio.sleep(hold))
         self.sent.append(body)
         return await super().deliver(event, binding, context)
 
@@ -645,21 +650,31 @@ async def test_the_close_returns_while_calls_keep_coming(close_grace: float) -> 
 @pytest.mark.parametrize("store", list(_STORES))
 @pytest.mark.parametrize("lane", ["idle", "busy"])
 async def test_a_delivery_placed_in_an_idle_lane_runs_one_queued_behind_is_never_sent(
-    lane: str, store: str, tmp_path: Path, close_grace: float
+    lane: str, store: str, tmp_path: Path, long_grace: None
 ) -> None:
     """A delivery queued behind another is dropped, never sent. One placed
     in its room's idle lane runs from its placement, taken by the lane or
     not as the close starts, whatever the store: it gets the grace, and is
-    sent (RMK-1039)."""
-    transport = _Transport("ws", holds={"held": close_grace / 5})
+    sent (RMK-1039). The send ahead of it holds until the close has settled
+    it, then ends in its grace: a send that ended first would leave the lane
+    idle (RMK-1224)."""
+    settled = asyncio.Event()
+    transport = _Transport("ws", holds={"held": settled})
     kit = await _kit(transport, store=_STORES[store](tmp_path))
     if lane == "busy":
         await kit.process_inbound(_message("held"), room_id="r", defer_delivery=True)
         await transport.entered("held").wait()
     placed = await kit.process_inbound(_message("placed"), room_id="r", defer_delivery=True)
     assert placed.delivery is not None
+    delivery = placed.delivery
 
+    async def settle() -> None:
+        await delivery.wait()
+        settled.set()
+
+    settling = asyncio.ensure_future(settle())
     await kit.close()
+    await settling
 
     result = await placed.delivery.wait()
     sent = {"ws": "sent"} if lane == "idle" else {}
