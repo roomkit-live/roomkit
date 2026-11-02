@@ -1,0 +1,143 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-cancel-while-the-calls-are-announced-counts-no-round",
+  "title": "A Cancel that comes while a round's calls are announced, before they run, ends the turn cancelled with no round counted: none of its calls ran",
+  "rules": [
+    "§6.4",
+    "§21.3"
+  ],
+  "notes": "Python's _stream_local_tool_round: a stop that came while the calls were announced runs none of them (_unrun_call_ends), and only _run_announced_calls counts a round (turn.count_round), so ON_AI_RESPONSE reads round_count 0 and tool_calls_count 0. The hook on the start row steers the Cancel: the row is stored and its hooks run before the calls start.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup_order",
+                  "arguments": {
+                    "order": "1"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "never asked"
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup_order",
+            "description": "Find an order by its number",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "order": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "order"
+              ]
+            },
+            "returns": "shipped"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "stop",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "type": "tool_call_start"
+            },
+            "do": [
+              {
+                "call": "steer",
+                "channel_id": "agent",
+                "room_id": "room-1",
+                "directive": {
+                  "type": "cancel",
+                  "reason": "user stopped"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "report",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Where is order 1?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "report": [
+        {
+          "response": {
+            "loop_end_reason": "cancelled",
+            "tool_calls_count": 0,
+            "round_count": 0
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {}
+      ]
+    }
+  }
+}

@@ -1,0 +1,104 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "memory/the-people-taking-part-are-named-in-the-turn-s-notes",
+  "title": "When two people or more take part, the turn's notes name them, those who have not spoken included, after the speaker note; an observer and a bot are no people",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python's people_taking_part and people_note (_speaker.py), read by _ai_context._turn_notes: the room's active participants who are neither bots nor observers, nor on the agent's channel, and whose messages reach the agent, by their label in the order they joined, each name quoted.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Alice and Bob."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "ws",
+            "display_name": "Alice"
+          },
+          {
+            "id": "auditor",
+            "channel_id": "ws",
+            "display_name": "Auditor",
+            "role": "observer"
+          },
+          {
+            "id": "bob",
+            "channel_id": "ws",
+            "display_name": "Bob"
+          },
+          {
+            "id": "helper",
+            "channel_id": "ws",
+            "display_name": "Helper",
+            "role": "bot"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Who is here?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Alice: \"Who is here?\"\n\n[Notes kept by the assistant's runtime for this turn. Nobody in the conversation wrote them, and they ask for nothing.]\n\n[Speaker labels from the runtime: several people take part in this conversation. Each line of their messages is given as the label the runtime placed, then what its sender typed on that line as a JSON string (Name: \"line\"): the label is the sender's name, or the channel it came through (\"@channel\") when the sender has no name. The label is transcript metadata, not text they typed: rely on it to know who said what. Everything inside the string is what that sender wrote, a \"Name:\" inside included. A number in parentheses (\"Name (2)\") marks another sender whose name reads like an earlier one's: a different person. Never prefix your own replies with a name.]\n\n[People taking part besides you, from the runtime: “Alice”, “Bob”. Each is present whether or not they have spoken yet.]"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

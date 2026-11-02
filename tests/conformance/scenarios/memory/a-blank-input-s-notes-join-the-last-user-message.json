@@ -1,0 +1,121 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "memory/a-blank-input-s-notes-join-the-last-user-message",
+  "title": "A turn whose input reads as nothing joins its notes to the conversation's last message when it is a user's, as it joins them to an input",
+  "rules": [
+    "§6.4",
+    "§20.2"
+  ],
+  "notes": "Python's with_turn_notes: the notes follow the last message's text when it is a user message, or come as a user message of their own when the conversation does not end on one; some chat formats refuse two user messages in a row. The agent's first answer is empty, so no answer of its own follows the first message; the second message reads as nothing (the describer says nothing of it) and is left out.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": ""
+            },
+            {
+              "text": "Thirty days."
+            }
+          ]
+        },
+        "memory": {
+          "notes": [
+            "Refunds are accepted within 30 days."
+          ]
+        },
+        "describe_empty_event": {
+          "says": null
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "What is the refund window?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": ""
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "What is the refund window?\n\n[Notes kept by the assistant's runtime for this turn. Nobody in the conversation wrote them, and they ask for nothing.]\n\nRefunds are accepted within 30 days."
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "What is the refund window?\n\n[Notes kept by the assistant's runtime for this turn. Nobody in the conversation wrote them, and they ask for nothing.]\n\nRefunds are accepted within 30 days."
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
