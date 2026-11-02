@@ -18,6 +18,7 @@ from roomkit.models.channel import ChannelBinding
 from roomkit.models.enums import RoomStatus
 from roomkit.models.room import Room
 from roomkit.models.store_filter import EventFilter
+from roomkit.models.verification import Verification, VerificationRequest
 from tests.conformance._calls import Call, read
 from tests.conformance._script import (
     SYSTEM_SOURCE,
@@ -60,6 +61,16 @@ def _task(template: Mapping[str, Any], spec: Mapping[str, Any]) -> Any:
     return complete_task(template, template["room_id"])
 
 
+def _verification(record: Mapping[str, Any], spec: Mapping[str, Any]) -> Verification:
+    return Verification.model_validate(record)
+
+
+def _verification_request(
+    record: Mapping[str, Any], spec: Mapping[str, Any]
+) -> VerificationRequest:
+    return VerificationRequest.model_validate(record)
+
+
 def _instant(value: str | None, spec: Mapping[str, Any]) -> datetime | None:
     return None if value is None else datetime.fromisoformat(value)
 
@@ -77,6 +88,8 @@ _RECORDS: dict[str, Callable[[Any, Mapping[str, Any]], Any]] = {
     "target": _event,
     "event_filter": _event_filter,
     "task": _task,
+    "verification": _verification,
+    "request": _verification_request,
     "paused_at": _instant,
     "last_activity_at": _instant,
 }
@@ -116,6 +129,12 @@ STORE_ARGUMENTS: dict[str, set[str]] = {
     "store.get_task": {"task_id"},
     "store.update_task": {"task"},
     "store.list_tasks": {"room_id", "status"},
+    "store.put_verification": {"verification"},
+    "store.get_verification": {"identity_id", "organization_id"},
+    "store.list_verifications_in_force": set(),
+    "store.create_verification_request": {"request"},
+    "store.get_verification_request": {"request_id"},
+    "store.update_verification_request": {"request"},
 }
 
 # The kit's calls on a room's read markers (README, "Calls"), beside
