@@ -19,9 +19,16 @@ from typing import Any
 
 import pytest
 
-from roomkit import HookResult, HookTrigger, MockConferenceBackend, RoomKit, VoiceChannel
+from roomkit import (
+    HookResult,
+    HookTrigger,
+    MockConferenceBackend,
+    RoomKit,
+    VoiceChannel,
+)
+from roomkit._media import text_form
 from roomkit.channels import SMSChannel
-from roomkit.channels._acp_context import labelled_request, window_labels
+from roomkit.channels._acp_context import labelled_request, window_speakers
 from roomkit.channels._mark_copies import COPIED_MARK, without_mark_copies
 from roomkit.channels._speaker import (
     PEOPLE_NOTE_OPENING,
@@ -32,8 +39,11 @@ from roomkit.channels._speaker import (
 from roomkit.channels._turn_notes import split_turn_notes
 from roomkit.channels.ai import AIChannel
 from roomkit.channels.conference import ConferenceChannel
+from roomkit.core._authors import AUTHOR, digest
 from roomkit.core._requester import asking_label
+from roomkit.core._room_turns import steered_message
 from roomkit.memory._summary import SummaryLines
+from roomkit.models import InjectMessage
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
@@ -153,9 +163,8 @@ class TestWhoTakesPart:
 
 
 def _acp_label(context: RoomContext, event: RoomEvent) -> bool:
-    labels = window_labels(context, event, "ai1")
     _request, labelled = labelled_request(
-        labels,
+        window_speakers(context, event, "ai1"),
         event,
         "Who is here?",
         people=people_taking_part(context, "ai1"),
@@ -169,14 +178,20 @@ def _requester_label(context: RoomContext, event: RoomEvent) -> bool:
 
 
 def _summary_label(context: RoomContext, event: RoomEvent) -> bool:
-    [line] = SummaryLines(context, event, "ai1")([event])
+    *_, line = SummaryLines(context, event, "ai1")(context.recent_events)
     return not line.startswith("[user]")
+
+
+def _steered_label(context: RoomContext, event: RoomEvent) -> bool:
+    steered = steered_message(event, context, "ai1")
+    return isinstance(steered, InjectMessage) and steered.content != text_form(event.content)
 
 
 _READERS: dict[str, Callable[[RoomContext, RoomEvent], bool]] = {
     "acp request": _acp_label,
     "requester": _requester_label,
     "memory summary": _summary_label,
+    "steered message": _steered_label,
 }
 
 
@@ -209,6 +224,34 @@ class TestEveryReaderTakesTheRoster:
     ) -> None:
         turn = _turn("u-alice", "Who is here?", 1)
         context = _context([_person("u-alice", "Alice")], [turn])
+
+        assert not reader(context, turn)
+
+
+class TestEveryReaderCountsSources:
+    """Speakers are counted by source, every reader alike (RFC §6.4,
+    RMK-1221): two senders under one label are two, one sender under two
+    names is one, as in roomkit-rs."""
+
+    @pytest.mark.parametrize("reader", _READERS.values(), ids=_READERS.keys())
+    def test_two_senders_with_no_name_on_one_channel_are_labelled(
+        self, reader: Callable[[RoomContext, RoomEvent], bool]
+    ) -> None:
+        first = _turn("+15550001", "Refund me", 1)
+        turn = _turn("+15550002", "Do not refund them", 2)
+        context = _context([], [first, turn])
+
+        assert reader(context, turn)
+
+    @pytest.mark.parametrize("reader", _READERS.values(), ids=_READERS.keys())
+    def test_one_sender_under_two_names_is_one_speaker(
+        self, reader: Callable[[RoomContext, RoomEvent], bool]
+    ) -> None:
+        source = digest(ROOM, ["participant", "u-alice"])
+        record = {AUTHOR: {"name": "Alice", "rank": 1, "source": source}}
+        before = _turn("u-alice", "Hi", 1).model_copy(update={"metadata": record})
+        turn = _turn("u-alice", "Still me", 2)
+        context = _context([_person("u-alice", "Alicia")], [before, turn])
 
         assert not reader(context, turn)
 

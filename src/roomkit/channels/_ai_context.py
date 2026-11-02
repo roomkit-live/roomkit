@@ -47,11 +47,12 @@ from roomkit.channels._skill_constants import TOOL_RUN_SCRIPT
 from roomkit.channels._speaker import (
     SPEAKER_ATTRIBUTION_NOTE,
     SPEAKER_KEY,
+    TurnSpeaker,
     labelled_lines,
     people_note,
     people_taking_part,
     several_speakers,
-    turn_labels,
+    turn_speakers,
 )
 from roomkit.channels._task_planner import TaskPlanner
 from roomkit.channels._tasks_note import render_tasks_note
@@ -529,24 +530,22 @@ class AIContextMixin(_AIChannelContract):
         untouched, except in a thinker's context, which names its one speaker too
         (``loop_ctx.names_every_speaker``, RFC §6.4).
         """
-        labels = turn_labels([*memory_result.events, event], context)
-        past_turns, past_indexes = self._past_turns(memory_result, context, labels, loop_ctx)
-        current_content, current_label = self._turn_input(event, loop_ctx, labels)
-        speakers = {label for _, _, label in past_turns if label}
-        if current_content and current_label:
-            speakers.add(current_label)
-        # The people a summary named count too: a summary that names Alice
-        # leaves no unlabelled "Alice: ..." turn after it (RFC §6.4).
-        speakers.update(memory_result.speakers)
-        attribute_speakers = several_speakers(speakers, people) or (
-            loop_ctx.names_every_speaker and bool(speakers)
+        speakers = turn_speakers([*memory_result.events, event], context)
+        past_turns, past_indexes = self._past_turns(memory_result, context, speakers, loop_ctx)
+        current_content, current_speaker = self._turn_input(event, loop_ctx, speakers)
+        said = [speaker for _, _, speaker in past_turns if speaker is not None]
+        if current_content and current_speaker is not None:
+            said.append(current_speaker)
+        attribute_speakers = _labels_turns(said, memory_result.speakers, people, loop_ctx)
+        current_label = (
+            current_speaker.label if attribute_speakers and current_speaker is not None else None
         )
 
         # Pre-built messages from memory (e.g. summaries)
         memory = [_runtime_or_cleaned(message) for message in memory_result.messages]
         past = [
-            _turn_message(role, content, label if attribute_speakers else None)
-            for role, content, label in past_turns
+            _turn_message(role, content, speaker.label if attribute_speakers and speaker else None)
+            for role, content, speaker in past_turns
         ]
         past, past_indexes = with_tool_rounds(
             past, past_indexes, rounds, before=_rounds_before(event)
@@ -554,9 +553,7 @@ class AIContextMixin(_AIChannelContract):
         messages: list[AIMessage] = [*memory, *past]
 
         current = (
-            _turn_message("user", current_content, current_label if attribute_speakers else None)
-            if current_content
-            else None
+            _turn_message("user", current_content, current_label) if current_content else None
         )
         # A discussion's turn answers an event others may have followed: it
         # reads at its place, before them, not as the last message (§19.7.5).
@@ -571,20 +568,19 @@ class AIContextMixin(_AIChannelContract):
 
         if current is not None:
             messages.append(current)
-        requester = current_label if attribute_speakers else None
         conversation = _conversation(messages, len(memory))
-        return conversation, attribute_speakers, requester
+        return conversation, attribute_speakers, current_label
 
     def _past_turns(
         self,
         memory_result: MemoryResult,
         context: RoomContext,
-        labels: dict[str, str | None],
+        speakers: dict[str, TurnSpeaker | None],
         loop_ctx: _ToolLoopContext,
-    ) -> tuple[list[tuple[str, str | list[_ContentPart], str | None]], list[int | None]]:
-        """The history's turns as (role, content, label), a user turn labelled
-        by who said it, and the room index of the event each turn is."""
-        past_turns: list[tuple[str, str | list[_ContentPart], str | None]] = []
+    ) -> tuple[list[tuple[str, str | list[_ContentPart], TurnSpeaker | None]], list[int | None]]:
+        """The history's turns as (role, content, speaker), a user turn naming
+        who said it, and the room index of the event each turn is."""
+        past_turns: list[tuple[str, str | list[_ContentPart], TurnSpeaker | None]] = []
         indexes: list[int | None] = []
         # An answer cut off by a barge-in reads as cut, not as heard whole (§6.4).
         cuts = self._cut_answers(context, memory_result)
@@ -601,18 +597,18 @@ class AIContextMixin(_AIChannelContract):
                     content, cut_mark(cuts[past_event.id], without_mark_copies)
                 )
             if content:
-                label = labels.get(past_event.id) if role == "user" else None
-                past_turns.append((role, content, label))
+                speaker = speakers.get(past_event.id) if role == "user" else None
+                past_turns.append((role, content, speaker))
                 indexes.append(past_event.index)
         return past_turns, indexes
 
     def _turn_input(
-        self, event: RoomEvent, loop_ctx: _ToolLoopContext, labels: dict[str, str | None]
-    ) -> tuple[str | list[_ContentPart] | None, str | None]:
-        """The turn's input and its speaker's label; an instruction marked as
-        the application's, with none."""
+        self, event: RoomEvent, loop_ctx: _ToolLoopContext, speakers: dict[str, TurnSpeaker | None]
+    ) -> tuple[str | list[_ContentPart] | None, TurnSpeaker | None]:
+        """The turn's input and its speaker; an instruction marked as the
+        application's, with none."""
         current_content = self._transcript_content(event, loop_ctx.author_images or _NO_IMAGES)
-        current_label = labels.get(event.id)
+        current_speaker = speakers.get(event.id)
         if event.type == EventType.INSTRUCTION:
             # The application's direction for this one turn (RFC §10.1.1),
             # the text its content reads as (§6.6). It is the turn's input — a
@@ -624,8 +620,8 @@ class AIContextMixin(_AIChannelContract):
             current_content = (
                 mark_instruction(without_mark_copies(instruction)) if instruction else None
             )
-            current_label = None
-        return current_content, current_label
+            current_speaker = None
+        return current_content, current_speaker
 
     def _cut_answers(
         self, context: RoomContext, memory_result: MemoryResult
@@ -1203,6 +1199,22 @@ def _with_cut_mark(content: str | list[_ContentPart], mark: str) -> str | list[_
     if isinstance(content, str):
         return f"{content}\n{mark}"
     return [*content, AITextPart(text=mark)]
+
+
+def _labels_turns(
+    said: list[TurnSpeaker],
+    remembered: list[str],
+    people: tuple[str, ...],
+    loop_ctx: _ToolLoopContext,
+) -> bool:
+    """Whether the turn's messages open with their speakers' labels (RFC
+    §6.4): several speakers counted by source, or several people taking
+    part; the people a summary named count too, since a summary that names
+    Alice leaves no unlabelled "Alice: ..." turn after it. A thinker's
+    context names its one speaker too."""
+    return several_speakers(said, people, remembered) or (
+        loop_ctx.names_every_speaker and bool(said or remembered)
+    )
 
 
 def _turn_message(role: str, content: str | list[_ContentPart], speaker: str | None) -> AIMessage:

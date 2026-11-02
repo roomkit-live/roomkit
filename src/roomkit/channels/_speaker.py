@@ -14,6 +14,7 @@ import functools
 import json
 import re
 from collections.abc import Callable, Iterable, Sequence
+from typing import NamedTuple
 
 from roomkit._lookalike import skeletons
 from roomkit._text import identifier, json_text_line, person_name, quoted
@@ -74,12 +75,36 @@ _PERSON_LIMIT = 96
 64, its rank and ``(a participant)``."""
 
 
-def several_speakers(labels: Iterable[str | None], people: Sequence[str]) -> bool:
-    """Whether a transcript labels its participants' turns (RFC §6.4): *labels*
-    name two speakers or more, or two people or more take part
-    (:func:`people_taking_part`), those who have not spoken included; a
-    one-to-one conversation is left as it is."""
-    return len(people) >= 2 or len({label for label in labels if label}) >= 2
+class TurnSpeaker(NamedTuple):
+    """Who said a turn, as the conversation names them (RFC §6.4)."""
+
+    label: str
+    """The label the turn's lines open with."""
+    source: str
+    """Who the turn comes from (:func:`~roomkit.core._authors.source_of`,
+    hashed): two turns of one speaker have the same source, whatever their
+    labels."""
+    named: bool
+    """Whether the label is its author's name rather than its channel."""
+
+
+def several_speakers(
+    speakers: Iterable[TurnSpeaker | None],
+    people: Sequence[str],
+    remembered: Iterable[str] = (),
+) -> bool:
+    """Whether a transcript labels its participants' turns (RFC §6.4): the
+    turns read hold two speakers or more, counted by source, so that two
+    senders under one label count twice and one sender under two names
+    once; or two people or more take part (:func:`people_taking_part`),
+    those who have not spoken included. A label a memory's summary names
+    (*remembered*) that no turn's label is counts as a speaker of its own.
+    A one-to-one conversation is left as it is."""
+    said = [speaker for speaker in speakers if speaker is not None]
+    labels = {speaker.label for speaker in said}
+    sources = {speaker.source for speaker in said}
+    sources.update(f"\x00{label}" for label in remembered if label and label not in labels)
+    return len(people) >= 2 or len(sources) >= 2
 
 
 def people_taking_part(context: RoomContext, channel_id: str | None) -> tuple[str, ...]:
@@ -174,9 +199,30 @@ def author_name(event: RoomEvent, context: RoomContext) -> str | None:
 
 
 def turn_labels(events: Iterable[RoomEvent], context: RoomContext) -> dict[str, str | None]:
-    """The label each of *events* opens with where a model reads it (RFC §6.4):
+    """The label each of *events* opens with where a model reads it
+    (:func:`turn_speakers`); ``None`` for the runtime's system events."""
+    return labels_of(turn_speakers(events, context))
+
+
+def labels_of(speakers: dict[str, TurnSpeaker | None]) -> dict[str, str | None]:
+    """Each turn's label, from its speaker (:func:`turn_speakers`)."""
+    return {
+        event_id: speaker.label if speaker is not None else None
+        for event_id, speaker in speakers.items()
+    }
+
+
+def turn_speakers(
+    events: Iterable[RoomEvent], context: RoomContext
+) -> dict[str, TurnSpeaker | None]:
+    """Who said each of *events* where a model reads it (RFC §6.4), its label
     its author's name, or its channel (:func:`channel_label`) when they have
     none; ``None`` for the runtime's system events, no participant's turn.
+
+    Senders with no name are told apart within their channel: the second
+    source labelled ``@sms`` reads ``@sms (2)``, and so on, in the order they
+    first speak in *events*, which are read in the conversation's order. One
+    nameless source of a channel keeps its channel's label.
 
     Names are told apart across sources (a participant, whichever channel
     reached them, or a sender on its channel): when a source's name reads
@@ -189,10 +235,17 @@ def turn_labels(events: Iterable[RoomEvent], context: RoomContext) -> dict[str, 
     register. A name that reads as a label the agent's own turns carry
     (``You``) carries ``(a participant)``, so no one reads as the agent."""
     unrecorded = _Unrecorded(context)
-    return {event.id: _label(event, unrecorded) for event in events}
+    nameless: dict[str, list[str]] = {}
+    speakers: dict[str, TurnSpeaker | None] = {}
+    for event in events:
+        speaker = _speaker(event, unrecorded)
+        if speaker is not None and not speaker.named:
+            speaker = _told_apart(speaker, nameless.setdefault(speaker.label, []))
+        speakers[event.id] = speaker
+    return speakers
 
 
-def _label(event: RoomEvent, unrecorded: _Unrecorded) -> str | None:
+def _speaker(event: RoomEvent, unrecorded: _Unrecorded) -> TurnSpeaker | None:
     if event.source.channel_type == ChannelType.SYSTEM:
         return None
     people, salt = unrecorded.people, unrecorded.salt
@@ -205,9 +258,19 @@ def _label(event: RoomEvent, unrecorded: _Unrecorded) -> str | None:
         name = _author_name(event, people)
         if name is None:
             channel_id = event.source.channel_id
-            return channel_label(unrecorded.handles.get(channel_id, channel_id))
+            label = channel_label(unrecorded.handles.get(channel_id, channel_id))
+            return TurnSpeaker(label, source, named=False)
         rank = unrecorded.rank(source, name_keys(salt, name))
-    return _ranked(name, rank)
+    return TurnSpeaker(_ranked(name, rank), source, named=True)
+
+
+def _told_apart(speaker: TurnSpeaker, sources: list[str]) -> TurnSpeaker:
+    """*speaker*, a sender with no name, with its rank among the *sources*
+    read so far under its channel's label, which it joins when new."""
+    if speaker.source not in sources:
+        sources.append(speaker.source)
+    rank = sources.index(speaker.source) + 1
+    return speaker if rank == 1 else speaker._replace(label=f"{speaker.label} ({rank})")
 
 
 def _ranked(name: str, rank: int) -> str:

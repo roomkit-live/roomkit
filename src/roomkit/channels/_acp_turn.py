@@ -32,7 +32,7 @@ from roomkit.channels._acp_context import (
     instructions_block,
     labelled_request,
     room_context_block,
-    window_labels,
+    window_speakers,
 )
 from roomkit.channels._acp_usage import (
     _apply_transport_usage,
@@ -41,7 +41,7 @@ from roomkit.channels._acp_usage import (
     _usage_report,
     _usage_tokens,
 )
-from roomkit.channels._speaker import people_taking_part
+from roomkit.channels._speaker import labels_of, people_taking_part
 from roomkit.channels._turn_notes import without_header_copies
 from roomkit.channels.acp_transport import ACPSessionInvalidatedError
 from roomkit.models.context import RoomContext
@@ -292,7 +292,7 @@ class ACPTurnMixin:
         session was born empty. A copy of the notes' header anywhere but the
         notes is replaced, so no one passes their words off as the
         runtime's (RFC §6.4)."""
-        labels = window_labels(context, trigger, self.channel_id)
+        speakers = window_speakers(context, trigger, self.channel_id)
         catch_up = (
             ""
             if standalone
@@ -302,11 +302,11 @@ class ACPTurnMixin:
                 after_index=self._prompted_index.get(room_id, _UNSEEN),
                 trigger=trigger,
                 limit=self._room_history,
-                labels=labels,
+                labels=labels_of(speakers),
             )
         )
         request, labelled = labelled_request(
-            labels,
+            speakers,
             trigger,
             text,
             people=people_taking_part(context, self.channel_id),

@@ -38,10 +38,12 @@ from roomkit.channels._mark_copies import without_mark_copies
 from roomkit.channels._runtime_record import written_by_runtime
 from roomkit.channels._speaker import (
     SPEAKER_ATTRIBUTION_NOTE,
+    TurnSpeaker,
     channel_label,
     labelled_lines,
     several_speakers,
     turn_labels,
+    turn_speakers,
 )
 from roomkit.channels.base import Channel
 from roomkit.core.visibility import visible_events
@@ -97,8 +99,8 @@ def room_context_block(
     labels: dict[str, str | None] | None = None,
 ) -> str:
     """The room's conversation since *after_index*, as one prompt section,
-    each turn named by *labels* when given (:func:`window_labels`, the
-    request's ranking), else ranked over the turns shown.
+    each turn named by *labels* when given (:func:`window_speakers`' labels,
+    the request's ranking), else ranked over the turns shown.
 
     Returns ``""`` when there is nothing the agent missed — the common case
     once it is in a back-and-forth, and the reason an ordinary exchange pays
@@ -253,11 +255,11 @@ async def contributed_blocks(
         return []
 
 
-def window_labels(
+def window_speakers(
     context: RoomContext, trigger: RoomEvent, channel_id: str
-) -> dict[str, str | None]:
-    """The label of each turn the agent may read and of *trigger*, ranked
-    once, so the room context and the request name each source one way."""
+) -> dict[str, TurnSpeaker | None]:
+    """Who said each turn the agent may read and *trigger*, ranked once, so
+    the room context and the request name each source one way."""
     window = [
         event
         for event in visible_events(context, channel_id)
@@ -266,11 +268,11 @@ def window_labels(
         and event.type not in _SKIPPED_TYPES
         and acp_event_text(event).strip()
     ]
-    return turn_labels([*window, trigger], context)
+    return turn_speakers([*window, trigger], context)
 
 
 def labelled_request(
-    labels: dict[str, str | None],
+    speakers: dict[str, TurnSpeaker | None],
     trigger: RoomEvent,
     text: str,
     *,
@@ -278,8 +280,8 @@ def labelled_request(
     session_labelled: bool,
 ) -> tuple[str, bool]:
     """The request an ACP turn sends for *trigger*, and whether it opens with
-    its sender's label (RFC §6.4): it does when *labels* (:func:`window_labels`)
-    name several speakers, or several *people* take part
+    its sender's label (RFC §6.4): it does when *speakers*
+    (:func:`window_speakers`) are several, or several *people* take part
     (:func:`~roomkit.channels._speaker.people_taking_part`), or once the
     session was sent a labelled request (*session_labelled*), since the
     session keeps what it was sent; the first
@@ -289,10 +291,10 @@ def labelled_request(
     as they are."""
     if trigger.type == EventType.INSTRUCTION or not text.strip():
         return text, False
-    label = labels.get(trigger.id)
-    if label is None or not (session_labelled or several_speakers(labels.values(), people)):
+    speaker = speakers.get(trigger.id)
+    if speaker is None or not (session_labelled or several_speakers(speakers.values(), people)):
         return text, False
-    request = labelled_lines(text, label)
+    request = labelled_lines(text, speaker.label)
     return (request if session_labelled else f"{SPEAKER_ATTRIBUTION_NOTE}\n\n{request}"), True
 
 

@@ -49,6 +49,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Two senders with no name on one channel read as two speakers** (RFC
+  §6.4, RMK-1221). An event the application sent from a channel with no
+  participant and a message a nameless sender sent through it both read
+  `@ws`, and speakers were counted by label, so a room where only they spoke
+  was not labelled: the model read one person. The second nameless source of
+  a channel now reads `@ws (2)`, in the order they first speak in the turns
+  read, and every reader (the AI channel's conversation, a steered message,
+  an ACP agent's request, a delegated task's requester, a summary's lines)
+  counts speakers by source: one sender whose name changed is one speaker.
+  roomkit-rs reads them the same.
+
 - **An edit or a delete opens no agent turn** (RFC §10.3, RMK-1226). An
   edit or a delete reached `AIChannel.on_event()` as any event and opened a
   turn: the model answered `[Message deleted]`, or `Correction: ...`, a

@@ -14,7 +14,7 @@ turn, as the conversation does.
 
 from __future__ import annotations
 
-from roomkit.channels._speaker import people_taking_part, several_speakers, turn_labels
+from roomkit.channels._speaker import people_taking_part, several_speakers, turn_speakers
 from roomkit.core.visibility import visible_events
 from roomkit.memory.token_estimator import extract_event_text
 from roomkit.models.context import RoomContext
@@ -34,10 +34,11 @@ def asking_label(event: RoomEvent, context: RoomContext, channel_id: str) -> str
         for e in visible_events(context, channel_id)
         if e.id != event.id and e.source.channel_id != channel_id and _a_turn(e)
     ]
-    labels = turn_labels([*window, event], context)
-    counted = (labels.get(e.id) for e in (*window, event) if _a_turn(e))
+    speakers = turn_speakers([*window, event], context)
+    counted = (speakers.get(e.id) for e in (*window, event) if _a_turn(e))
     people = people_taking_part(context, channel_id)
-    return labels.get(event.id) if several_speakers(counted, people) else None
+    asker = speakers.get(event.id)
+    return asker.label if asker is not None and several_speakers(counted, people) else None
 
 
 def _a_turn(event: RoomEvent) -> bool:

@@ -30,7 +30,7 @@ from roomkit.channels._speaker import (
     labelled_lines,
     people_taking_part,
     several_speakers,
-    turn_labels,
+    turn_speakers,
 )
 from roomkit.channels.base import Channel
 from roomkit.core._changes import concerns_change, for_channels
@@ -221,10 +221,10 @@ def steered_message(
     text = text_form(event.content)
     if not text:
         return None
-    labels = turn_labels([*context.recent_events, event], context)
-    label = labels.get(event.id)
-    if label and several_speakers(labels.values(), people_taking_part(context, channel_id)):
-        text = labelled_lines(text, label)
+    speakers = turn_speakers([*context.recent_events, event], context)
+    speaker = speakers.get(event.id)
+    if speaker and several_speakers(speakers.values(), people_taking_part(context, channel_id)):
+        text = labelled_lines(text, speaker.label)
     return InjectMessage(content=text)
 
 

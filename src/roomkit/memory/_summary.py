@@ -15,7 +15,12 @@ from roomkit.channels._runtime_record import (
     runtime_record,
     written_by_runtime,
 )
-from roomkit.channels._speaker import people_taking_part, several_speakers, turn_labels
+from roomkit.channels._speaker import (
+    labels_of,
+    people_taking_part,
+    several_speakers,
+    turn_speakers,
+)
 from roomkit.memory.token_estimator import extract_event_text
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import ChannelType, EventType
@@ -63,10 +68,10 @@ class SummaryLines:
         fewer than two people take part."""
         current = [self.current] if self.current is not None else []
         turns = list({e.id: e for e in (*events, *self.kept, *current)}.values())
-        labels = turn_labels(turns, self.context)
-        counted = (labels.get(e.id) for e in turns if self._counts(e))
+        speakers = turn_speakers(turns, self.context)
+        counted = (speakers.get(e.id) for e in turns if self._counts(e))
         people = people_taking_part(self.context, self.channel_id)
-        return labels if several_speakers(counted, people) else {}
+        return labels_of(speakers) if several_speakers(counted, people) else {}
 
     def _counts(self, event: RoomEvent) -> bool:
         """Whether *event* counts toward the threshold, as the conversation's
