@@ -587,7 +587,9 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         """
         try:
             async with aclosing(
-                round_.stream(self._generate_stream_with_retry(context))
+                round_.stream(
+                    self._generate_stream_with_retry(context, received=round_.state.note_received)
+                )
             ) as deltas:
                 async for delta in deltas:
                     yield delta

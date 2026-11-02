@@ -94,8 +94,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   marked the image refused in the room: later turns read `[Image refused by
   the model's provider: …]` in its place, though the provider had begun to
   answer. Only what reached the turn's reader counted as streamed, and a
-  call the loop serves reaches none. Any event the provider hands now
-  counts, as in roomkit-rs: the image is sent again on the next turn.
+  call the loop serves reaches none, nor does text a response schema holds
+  until checked. Any event the provider hands now counts, as in
+  roomkit-rs: the image is sent again on the next turn.
 
 - **A provider that fails after a round of calls, whatever it raises, ends
   the turn `error`** (RFC §6.4, RMK-1199). Only a `ProviderError` did: a

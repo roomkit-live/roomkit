@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from contextlib import aclosing
 from typing import TYPE_CHECKING
 
@@ -56,6 +56,18 @@ class _StreamRetryBoundary:
     """
 
 
+async def _noted(
+    events: AsyncIterator[StreamEvent], received: Callable[[], None]
+) -> AsyncIterator[StreamEvent]:
+    """*events* as they come, *received* told of each before anything holds it."""
+    try:
+        async for event in events:
+            received()
+            yield event
+    finally:
+        await _aclose_stream(events)
+
+
 class AIResilienceMixin(_AIChannelContract):
     """Retry logic, streaming retry, context overflow detection, and compaction.
 
@@ -72,7 +84,7 @@ class AIResilienceMixin(_AIChannelContract):
     _tool_call_intents_required: bool
 
     async def _generate_stream_with_retry(
-        self, context: AIContext
+        self, context: AIContext, *, received: Callable[[], None] | None = None
     ) -> AsyncIterator[StreamEvent | _StreamRetryBoundary]:
         """Stream with compaction, retry and optional fallback.
 
@@ -97,7 +109,7 @@ class AIResilienceMixin(_AIChannelContract):
         while attempt <= policy.max_retries:
             emitted = False
             projected_composition = False
-            stream = self._structured_stream(self._provider, context)
+            stream = self._structured_stream(self._provider, context, received)
             try:
                 async for event in stream:
                     # A composition delta is a projection: it is neither
@@ -155,7 +167,8 @@ class AIResilienceMixin(_AIChannelContract):
 
         # Fallback — only reachable when nothing was emitted.
         if self._fallback_provider and last_error:
-            async with aclosing(self._fallback_stream(context, last_error)) as events:
+            fallback = self._fallback_stream(context, last_error, received)
+            async with aclosing(fallback) as events:
                 async for event in events:
                     yield event
             return
@@ -164,7 +177,10 @@ class AIResilienceMixin(_AIChannelContract):
             raise last_error
 
     async def _fallback_stream(
-        self, context: AIContext, primary_error: ProviderError
+        self,
+        context: AIContext,
+        primary_error: ProviderError,
+        received: Callable[[], None] | None = None,
     ) -> AsyncGenerator[StreamEvent | _StreamRetryBoundary, None]:
         """The fallback provider's stream, once the primary's retries are spent
         and nothing reached the consumer.
@@ -176,7 +192,7 @@ class AIResilienceMixin(_AIChannelContract):
         logger.warning("Trying fallback provider for stream.")
         fallback = self._fallback_provider
         assert fallback is not None  # the caller checked
-        stream = self._structured_stream(fallback, declared_for(fallback, context))
+        stream = self._structured_stream(fallback, declared_for(fallback, context), received)
         emitted = False
         projected_composition = False
         try:
@@ -201,13 +217,19 @@ class AIResilienceMixin(_AIChannelContract):
             await _aclose_stream(stream)
 
     def _structured_stream(
-        self, provider: AIProvider, context: AIContext
+        self,
+        provider: AIProvider,
+        context: AIContext,
+        received: Callable[[], None] | None = None,
     ) -> AsyncIterator[StreamEvent]:
         """The provider's structured stream on *context* as the model is shown
         it, its text held back until checked when the turn is constrained to a
         response schema: the room must never receive an answer the check then
-        refuses (RFC §6.7)."""
+        refuses (RFC §6.7). *received* is told of each event the provider
+        hands, held or not: its answer began (RFC §6.4)."""
         stream = provider.generate_structured_stream(self._shown_to_model(context))
+        if received is not None:
+            stream = _noted(stream, received)
         if context.response_schema is None:
             return stream
         return hold_until_checked(stream)

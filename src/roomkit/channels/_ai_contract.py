@@ -14,7 +14,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Iterable, Sequence
+    from collections.abc import AsyncIterator, Callable, Iterable, Sequence
 
     from roomkit.channels._ai_resilience import _StreamRetryBoundary
     from roomkit.models.channel import ChannelBinding
@@ -126,7 +126,7 @@ class _AIChannelContract:
     ) -> tuple[AIContext, bool]: ...
 
     def _generate_stream_with_retry(
-        self, context: AIContext
+        self, context: AIContext, *, received: Callable[[], None] | None = None
     ) -> AsyncIterator[StreamEvent | _StreamRetryBoundary]: ...
 
     def _record_declared_tools(

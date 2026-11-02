@@ -423,12 +423,22 @@ class TestReferenceURL:
 class _Scripted(MockAIProvider):
     """Answers each request with the next step: a response, or an error raised."""
 
-    def __init__(self, steps: list[AIResponse | Exception], *, streaming: bool = False) -> None:
-        super().__init__(vision=True, streaming=streaming)
+    def __init__(
+        self,
+        steps: list[AIResponse | Exception],
+        *,
+        streaming: bool = False,
+        response_schema: bool = False,
+    ) -> None:
+        super().__init__(vision=True, streaming=streaming, response_schema=response_schema)
         self._steps = list(steps)
 
     async def generate(self, context: AIContext) -> AIResponse:
         self.calls.append(context)
+        return self._next_response()
+
+    def _next_response(self) -> AIResponse:
+        # A turn constrained to a schema streams this one, unchecked.
         step = self._steps.pop(0)
         if isinstance(step, Exception):
             raise step
@@ -438,8 +448,14 @@ class _Scripted(MockAIProvider):
 class _BreaksMidStream(_Scripted):
     """Streams the start of its first answer, then fails: the request was taken."""
 
-    def __init__(self, steps: list[AIResponse | Exception], *, first: StreamEvent) -> None:
-        super().__init__(steps, streaming=True)
+    def __init__(
+        self,
+        steps: list[AIResponse | Exception],
+        *,
+        first: StreamEvent,
+        response_schema: bool = False,
+    ) -> None:
+        super().__init__(steps, streaming=True, response_schema=response_schema)
         self._first = first
 
     async def _scripted_events(self, context: AIContext) -> Any:
@@ -453,6 +469,12 @@ class _BreaksMidStream(_Scripted):
 
 
 _OK = AIResponse(content="ok", finish_reason="stop")
+_SCHEMA = {
+    "type": "object",
+    "properties": {"a": {"type": "string"}},
+    "required": ["a"],
+    "additionalProperties": False,
+}
 _LOOKUP = AITool(name="lookup", description="Look something up", parameters={})
 
 
@@ -460,9 +482,16 @@ async def _lookup(name: str, arguments: dict[str, Any]) -> str:
     return "found"
 
 
-async def _turns(provider: MockAIProvider, *, tool: bool = False) -> AIContext:
+async def _turns(
+    provider: MockAIProvider, *, tool: bool = False, schema: dict[str, Any] | None = None
+) -> AIContext:
     """A photo's turn, which may fail, then a question: the context the question got."""
-    channel = AIChannel("ai1", provider=provider, tool_handler=_lookup if tool else None)
+    channel = AIChannel(
+        "ai1",
+        provider=provider,
+        tool_handler=_lookup if tool else None,
+        response_schema=schema,
+    )
     channel._media_resolver = _Host()  # noqa: SLF001
     binding = _BINDING.model_copy(
         update={"metadata": {"tools": [_LOOKUP.model_dump()]} if tool else {}}
@@ -518,17 +547,25 @@ class TestRefusal:
         assert _images(context) == [_PNG]
 
     @pytest.mark.parametrize(
-        "first",
+        ("first", "schema"),
         [
-            StreamTextDelta(text="Let me look"),
+            (StreamTextDelta(text="Let me look"), None),
             # RMK-1220: a call the loop serves reaches no reader, yet the
             # provider began its answer.
-            StreamToolCall(id="c0", name="lookup", arguments={}),
+            (StreamToolCall(id="c0", name="lookup", arguments={}), None),
+            # A turn constrained to a schema holds its text until checked:
+            # the provider began its answer all the same.
+            (StreamTextDelta(text='{"a": "x'), _SCHEMA),
         ],
-        ids=["text", "tool-call"],
+        ids=["text", "tool-call", "schema"],
     )
-    async def test_a_stream_under_way_refuses_nothing(self, first: StreamEvent) -> None:
-        context = await _turns(_BreaksMidStream([_OK], first=first), tool=True)
+    async def test_a_stream_under_way_refuses_nothing(
+        self, first: StreamEvent, schema: dict[str, Any] | None
+    ) -> None:
+        answer = _OK if schema is None else AIResponse(content='{"a": "x"}', finish_reason="stop")
+        provider = _BreaksMidStream([answer], first=first, response_schema=schema is not None)
+
+        context = await _turns(provider, tool=schema is None, schema=schema)
 
         assert _images(context) == [_PNG]
 
