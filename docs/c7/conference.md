@@ -39,7 +39,7 @@ The bot joins lazily, only when the channel has a need (stt/tts/recording/realti
 Those triggers start the join without waiting on it. A host that must know the bot is in (to listen before it lets a meeting begin) awaits `await channel.ensure_bot(room_id) -> BotSession` (RFC §12.10.4): a live session is returned as is, concurrent calls and the triggers join once, a lost session is joined again, and a new join fires `ON_SESSION_STARTED` before it returns. `RoomNotAttachedError` when the channel is not attached to the room or is detached mid-join; `ConferenceCapabilityError` on a pure-transport channel, whose bot would be a silent observer.
 
 - **Inbound**: each subscribed AUDIO track gets its own `ConferenceLane` (queue + task + VAD state). The VAD segments utterances; one utterance → one STT call → one `RoomEvent` attributed to the track's `participant_id` (track identity replaces diarization). A full lane drops oldest frames.
-- **Outbound**: `deliver()` speaks AI-channel TextContent on the single bot track via TTS (all text events if `speak_text_events=True`); with `realtime`, text is injected into the provider's context instead.
+- **Outbound**: `deliver()` speaks AI-channel TextContent on the single bot track via TTS (all text events if `speak_text_events=True`); with `realtime`, text is injected into the provider's context instead, an edit, a delete or a reaction silently, so the model does not answer it.
 - **Video**: never subscribed — `capabilities()` announces AUDIO only.
 
 ```python
