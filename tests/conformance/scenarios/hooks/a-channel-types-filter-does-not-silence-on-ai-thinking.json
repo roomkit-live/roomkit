@@ -1,0 +1,85 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/a-channel-types-filter-does-not-silence-on-ai-thinking",
+  "title": "A hook's channel_types filter does not silence ON_AI_THINKING, whose payload carries no channel type",
+  "rules": [
+    "§9.1"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "thinking_coalesce_ms": 60000,
+        "model": {
+          "rounds": [
+            {
+              "thinking": [
+                "Let me"
+              ],
+              "text": "Done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "reasons",
+        "trigger": "on_ai_thinking",
+        "execution": "async",
+        "channel_types": [
+          "sms"
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "reasons": [
+        {
+          "thinking": {
+            "round_index": 0
+          }
+        }
+      ]
+    }
+  },
+  "notes": "Python: core/hooks.py TYPED_TURN_TRIGGERS; tests/test_turn_hooks.py test_the_typed_turn_triggers_are_those_whose_payload_carries_a_type."
+}

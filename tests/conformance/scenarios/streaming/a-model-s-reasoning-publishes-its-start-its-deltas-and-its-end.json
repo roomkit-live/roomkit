@@ -1,0 +1,127 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-model-s-reasoning-publishes-its-start-its-deltas-and-its-end",
+  "title": "A model's reasoning publishes its start, its deltas and its end, each naming the round and the agent, and fires ON_AI_THINKING once, its text empty; the turn's record reads the reasoning",
+  "rules": [
+    "§6.7",
+    "§9.2"
+  ],
+  "notes": "Python: channels/_ai_stream_round.py _add_thinking, _end_thinking; channels/_ai_streaming.py _close_thinking_window; channels/_ai_events.py _publish_thinking_event; turns/_wiring.py build_thinking_hook; tests/test_ai_streaming_thinking.py test_no_tools_streaming_publishes_thinking_events.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "thinking_coalesce_ms": 60000,
+        "model": {
+          "rounds": [
+            {
+              "thinking": [
+                "user asked ",
+                "the meaning"
+              ],
+              "text": "42."
+            }
+          ]
+        },
+        "publish_thinking_text": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "reasons",
+        "trigger": "on_ai_thinking",
+        "execution": "async"
+      },
+      {
+        "name": "answers",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "thinking_events": {
+      "room-1": [
+        {
+          "type": "thinking_start",
+          "thinking": "",
+          "thinking_length": 0,
+          "round": 0,
+          "channel_id": "agent"
+        },
+        {
+          "type": "thinking_delta",
+          "thinking": "user asked the meaning",
+          "thinking_length": 22,
+          "round": 0,
+          "channel_id": "agent"
+        },
+        {
+          "type": "thinking_end",
+          "thinking": "user asked the meaning",
+          "thinking_length": 22,
+          "round": 0,
+          "channel_id": "agent"
+        }
+      ]
+    },
+    "hooks": {
+      "reasons": [
+        {
+          "room_id": "room-1",
+          "thinking": {
+            "channel_id": "agent",
+            "thinking": "",
+            "round_index": 0
+          }
+        }
+      ],
+      "answers": [
+        {
+          "room_id": "room-1",
+          "response": {
+            "channel_id": "agent",
+            "thinking": "user asked the meaning"
+          }
+        }
+      ]
+    }
+  }
+}

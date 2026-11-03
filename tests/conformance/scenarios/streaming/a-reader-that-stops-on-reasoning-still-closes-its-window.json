@@ -1,0 +1,114 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-reader-that-stops-on-reasoning-still-closes-its-window",
+  "title": "A streaming channel that stops reading while the model reasons still closes the window: what the coalescer held, then THINKING_END",
+  "rules": [
+    "§6.7",
+    "§12.2"
+  ],
+  "notes": "Python: channels/_ai_streaming.py _close_thinking_window, every abnormal exit of a round; channels/_ai_stream_round.py close.",
+  "setup": {
+    "channels": [
+      {
+        "id": "web",
+        "type": "webhook",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true,
+        "deliver_stream": [
+          {
+            "stop_after": "Let me "
+          }
+        ]
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "thinking": [
+                "Let me ",
+                "think."
+              ],
+              "deltas": [
+                "The ",
+                "answer."
+              ]
+            }
+          ]
+        },
+        "thinking_coalesce_ms": 60000,
+        "publish_thinking_text": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "web",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "What is the answer?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null,
+          "response_metadata": {
+            "turns": {
+              "agent": {
+                "loop_end_reason": "cancelled"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "thinking_events": {
+      "room-1": [
+        {
+          "type": "thinking_start",
+          "thinking": ""
+        },
+        {
+          "type": "thinking_delta"
+        },
+        {
+          "type": "thinking_end",
+          "thinking": "Let me think."
+        }
+      ]
+    }
+  }
+}

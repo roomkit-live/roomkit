@@ -1,0 +1,93 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-turn-that-does-not-reason-publishes-nothing-of-it",
+  "title": "A turn whose model does not reason publishes no thinking event and fires no ON_AI_THINKING",
+  "rules": [
+    "§6.7",
+    "§9.2"
+  ],
+  "notes": "Python: channels/_ai_stream_round.py _add_thinking, _end_thinking; channels/_ai_streaming.py _close_thinking_window; channels/_ai_events.py _publish_thinking_event; turns/_wiring.py build_thinking_hook; tests/test_ai_streaming_thinking.py test_no_tools_streaming_without_thinking_emits_no_events.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "thinking": [
+                ""
+              ],
+              "text": "Just text."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "reasons",
+        "trigger": "on_ai_thinking",
+        "execution": "async"
+      },
+      {
+        "name": "answers",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "thinking_events": {
+      "room-1": []
+    },
+    "hooks": {
+      "reasons": [],
+      "answers": [
+        {
+          "room_id": "room-1",
+          "response": {
+            "channel_id": "agent",
+            "thinking": ""
+          }
+        }
+      ]
+    }
+  }
+}

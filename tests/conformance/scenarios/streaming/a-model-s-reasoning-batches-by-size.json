@@ -1,0 +1,102 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-model-s-reasoning-batches-by-size",
+  "title": "A model's reasoning batches into one THINKING_DELTA per window of its size, nothing lost",
+  "rules": [
+    "§6.7"
+  ],
+  "notes": "Python: channels/_ai_stream_round.py _add_thinking, _end_thinking; channels/_ai_streaming.py _close_thinking_window; channels/_ai_events.py _publish_thinking_event; turns/_wiring.py build_thinking_hook; tests/test_ai_streaming_thinking.py test_streaming_coalesces_thinking_deltas_on_the_bus; channels/_ai_coalescers.py _ThinkingCoalescer.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "thinking_coalesce_ms": 60000,
+        "thinking_coalesce_chars": 4,
+        "model": {
+          "rounds": [
+            {
+              "thinking": [
+                "ab",
+                "cd",
+                "ef"
+              ],
+              "text": "Done."
+            }
+          ]
+        },
+        "publish_thinking_text": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "thinking_events": {
+      "room-1": [
+        {
+          "type": "thinking_start",
+          "thinking": "",
+          "thinking_length": 0,
+          "round": 0,
+          "channel_id": "agent"
+        },
+        {
+          "type": "thinking_delta",
+          "thinking": "abcd",
+          "thinking_length": 4,
+          "round": 0,
+          "channel_id": "agent"
+        },
+        {
+          "type": "thinking_delta",
+          "thinking": "ef",
+          "thinking_length": 2,
+          "round": 0,
+          "channel_id": "agent"
+        },
+        {
+          "type": "thinking_end",
+          "thinking": "abcdef",
+          "thinking_length": 6,
+          "round": 0,
+          "channel_id": "agent"
+        }
+      ]
+    }
+  }
+}
