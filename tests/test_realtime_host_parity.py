@@ -270,11 +270,17 @@ async def test_a_hook_s_injected_event_is_taken_silently(host: str) -> None:
 
 @HOSTS
 @pytest.mark.parametrize(
-    "change",
-    [EventType.EDIT, EventType.DELETE, EventType.REACTION],
+    ("change", "taken"),
+    [
+        (EventType.EDIT, "@src: “Correction: Oops, fixed”"),
+        (EventType.DELETE, "@src: “[Message deleted]”"),
+        (EventType.REACTION, "@src: “Ha!”"),
+    ],
     ids=["edit", "delete", "reaction"],
 )
-async def test_what_opens_no_turn_is_taken_silently(host: str, change: EventType) -> None:
+async def test_what_opens_no_turn_is_taken_silently(
+    host: str, change: EventType, taken: str
+) -> None:
     """A change (RFC §10.3, RMK-1258) or a notice (RFC §6.4) is no message a
     turn may answer, and a transport hosting a model answers none: the
     model's context learns the correction, the deletion or the notice, and
@@ -291,10 +297,15 @@ async def test_what_opens_no_turn_is_taken_silently(host: str, change: EventType
         content = DeleteContent(target_event_id=said.id, delete_type=DeleteType.SENDER)
 
     await rt.kit.send_event(ROOM, "src", content, event_type=change, participant_id="alice")
-    await until(lambda: len(provider.injections) == 2)
+    await rt.kit.send_event(ROOM, "src", TextContent(body="next"), participant_id="alice")
+    await until(lambda: len(provider.injections) == 3)
     await rt.kit.close()
 
-    assert [silent for _, silent in provider.injections] == [False, True]
+    assert provider.injections == [
+        ("@src: “Oops”", False),
+        (taken, True),
+        ("@src: “next”", False),
+    ]
 
 
 @HOSTS
