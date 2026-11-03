@@ -51,8 +51,8 @@ def generation_record(payload: AIGenerationEvent) -> dict[str, Any]:
 
 def patched_generation(payload: AIGenerationEvent, patch: Mapping[str, Any]) -> AIGenerationEvent:
     """A replacement event (``HookResult.modify``): its context's
-    ``system_prompt``, ``messages`` (each ``{role, text}``) and
-    ``reasoning_effort`` are the patch's,
+    ``system_prompt``, ``messages`` (each ``{role, text}``), ``reasoning_effort``,
+    ``thinking_budget`` and ``enable_thinking`` are the patch's,
     its ``tools`` those of the context the patch names, in their order, and
     each tool ``define`` gives in place of the tool of its name, or after
     them."""
