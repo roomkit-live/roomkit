@@ -1,0 +1,186 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-model-s-reasoning-reaches-a-streaming-channel-before-its-text",
+  "title": "A model's reasoning reaches a streaming channel piece by piece, before its text, and no other channel: the row holds the text alone, an empty piece reads as nothing, and a room no channel streams in reads the text as ever",
+  "rules": [
+    "§6.1",
+    "§6.7",
+    "§10.6.4"
+  ],
+  "notes": "Python: channels/_ai_stream_round.py stream (a non-empty StreamThinkingDelta yields a ThinkingDeltaMarker), core/mixins/_streaming_segments.py, channels/base.py deliver_stream; tests/test_ai_streaming_thinking.py test_thinking_markers_stream_inline_before_text.",
+  "setup": {
+    "channels": [
+      {
+        "id": "web",
+        "type": "webhook",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "thinking": [
+                "Let me ",
+                "",
+                "think."
+              ],
+              "deltas": [
+                "The ",
+                "answer."
+              ]
+            },
+            {
+              "thinking": [
+                "Alone."
+              ],
+              "text": "Stored."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "web",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "web",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "streamed": {
+      "room-1": {
+        "ws": [
+          {
+            "thinking": "Let me "
+          },
+          {
+            "thinking": "think."
+          },
+          {
+            "text": "The "
+          },
+          {
+            "text": "answer."
+          },
+          {
+            "row": {
+              "id": "room-1#1",
+              "content": {
+                "body": "The answer."
+              }
+            }
+          }
+        ]
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "web": [
+          {
+            "content": {
+              "body": "The answer."
+            }
+          }
+        ]
+      },
+      "room-2": {
+        "web": [
+          {
+            "content": {
+              "body": "Stored."
+            }
+          }
+        ]
+      }
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0
+        },
+        {
+          "index": 1,
+          "content": {
+            "type": "text",
+            "body": "The answer."
+          }
+        }
+      ],
+      "room-2": [
+        {
+          "index": 0
+        },
+        {
+          "index": 1,
+          "content": {
+            "type": "text",
+            "body": "Stored."
+          }
+        }
+      ]
+    }
+  }
+}

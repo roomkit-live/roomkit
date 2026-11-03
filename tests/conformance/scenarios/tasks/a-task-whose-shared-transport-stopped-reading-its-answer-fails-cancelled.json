@@ -7,7 +7,7 @@
     "§12.2 step 13s",
     "§6.4"
   ],
-  "notes": "Python: tests/tasks/test_stopped_stream_turn_end.py::test_a_delegated_turn_its_transport_stopped_fails_cancelled[after-text] (while-thinking needs thinking deltas, which a scripted model does not write; acp-finished needs an ACP agent). ws stops reading after the answer's second delta, as a barge-in does.",
+  "notes": "Python: tests/tasks/test_stopped_stream_turn_end.py::test_a_delegated_turn_its_transport_stopped_fails_cancelled[after-text] (while-thinking: tasks/a-task-whose-shared-transport-stopped-reading-while-its-model-reasoned-fails-cancelled; acp-finished needs an ACP agent). ws stops reading after the answer's second delta, as a barge-in does.",
   "setup": {
     "channels": [
       {

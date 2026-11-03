@@ -1,0 +1,123 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-model-s-reasoning-between-its-calls-stays-in-its-order",
+  "title": "A model's reasoning reaches a streaming channel in its order among the rows of a turn's rounds: each round's reasoning before that round's text, and before the rows of its calls",
+  "rules": [
+    "§6.1",
+    "§6.7"
+  ],
+  "notes": "Python: channels/_ai_stream_round.py stream (a non-empty StreamThinkingDelta yields a ThinkingDeltaMarker), core/mixins/_streaming_segments.py, channels/base.py deliver_stream; tests/test_ai_stream_contract.py test_reasoning_composition_and_execution_keep_their_order.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up.",
+            "returns": "found"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "thinking": [
+                "First."
+              ],
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "thinking": [
+                "Second."
+              ],
+              "text": "Done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "streamed": {
+      "room-1": {
+        "ws": [
+          {
+            "thinking": "First."
+          },
+          {
+            "row": {
+              "content": {
+                "tool_name": "lookup",
+                "status": "pending"
+              }
+            }
+          },
+          {
+            "row": {
+              "content": {
+                "tool_name": "lookup",
+                "result": "found"
+              }
+            }
+          },
+          {
+            "thinking": "Second."
+          },
+          {
+            "text": "Done."
+          },
+          {
+            "row": {
+              "content": {
+                "body": "Done."
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

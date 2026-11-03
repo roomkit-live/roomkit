@@ -1,0 +1,94 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "resilience/a-generation-that-reasoned-before-its-refusal-is-not-tried-again",
+  "title": "A generation that streamed reasoning before its provider refused it handed something: it is not tried again, nor asked of the fallback, and the turn fails with the refusal",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: channels/_ai_resilience.py (a stream under way is not tried again); tests/test_vision_openai.py and RMK-1234 item 1: a reasoning chunk counts as a stream under way.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "retry_policy": {
+          "max_retries": 2,
+          "base_delay_ms": 1
+        },
+        "fallback_model": {
+          "rounds": [
+            {
+              "text": "The fallback's."
+            }
+          ]
+        },
+        "model": {
+          "rounds": [
+            {
+              "thinking": [
+                "Let me think."
+              ],
+              "refuses": {
+                "status": 503,
+                "message": "busy",
+                "retryable": true
+              }
+            },
+            {
+              "text": "Asked again."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "error": "busy"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {}
+      ],
+      "agent/fallback": []
+    }
+  }
+}

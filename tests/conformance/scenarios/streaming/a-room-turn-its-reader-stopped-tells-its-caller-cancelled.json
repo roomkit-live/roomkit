@@ -7,7 +7,7 @@
     "§6.4",
     "§10.1 step 18"
   ],
-  "notes": "Python: tests/tasks/test_stopped_stream_turn_end.py::test_a_room_turn_its_transport_stopped_tells_its_caller_cancelled[after-text] (while-thinking needs thinking deltas, which a scripted model does not write; acp-finished needs an ACP agent); core/mixins/lane_execution.py (each stream's turns entry merged into the caller's record). streaming/reader-stops.json's setup, its result's record asserted.",
+  "notes": "Python: tests/tasks/test_stopped_stream_turn_end.py::test_a_room_turn_its_transport_stopped_tells_its_caller_cancelled[after-text] (while-thinking: streaming/a-room-turn-its-reader-stopped-while-the-model-reasoned-tells-its-caller-cancelled; acp-finished needs an ACP agent); core/mixins/lane_execution.py (each stream's turns entry merged into the caller's record). streaming/reader-stops.json's setup, its result's record asserted.",
   "setup": {
     "channels": [
       {

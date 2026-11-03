@@ -1,0 +1,80 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-task-whose-shared-transport-stopped-reading-while-its-model-reasoned-fails-cancelled",
+  "title": "A delegated turn whose reasoning a streaming transport shared into the child room stopped reading ends cancelled: its task fails, its metadata naming the end cancelled",
+  "rules": [
+    "§23.3 step 6",
+    "§12.2 step 13s",
+    "§6.4"
+  ],
+  "notes": "Python: tests/tasks/test_stopped_stream_turn_end.py::test_a_delegated_turn_its_transport_stopped_fails_cancelled[while-thinking].",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true,
+        "deliver_stream": [
+          {
+            "stop_after": "Let me "
+          }
+        ]
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "thinking": [
+                "Let me ",
+                "think."
+              ],
+              "deltas": [
+                "The ",
+                "answer."
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "parent",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "worker",
+      "task": "Answer.",
+      "share_channels": [
+        "ws"
+      ],
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "failed",
+          "result": {
+            "status": "failed",
+            "metadata": {
+              "loop_end_reason": "cancelled"
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ]
+}
