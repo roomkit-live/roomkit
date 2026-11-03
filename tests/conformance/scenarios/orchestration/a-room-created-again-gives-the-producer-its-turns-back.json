@@ -1,0 +1,141 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-room-created-again-gives-the-producer-its-turns-back",
+  "title": "A room id created again with no strategy keeps nothing of the Loop its old room held: the producer, attached to the new room, answers its messages itself",
+  "rules": [
+    "§19.7",
+    "§19.7.4"
+  ],
+  "notes": "Python: core/mixins/strategies.py _forget_strategy takes back the old record's hooks, tools and turn runners (core/_turn_runners.py), whatever the new room holds. The status bus holds no entry of the producer: no task was delegated.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "writer",
+        "type": "ai",
+        "agent": {},
+        "model": {
+          "rounds": [
+            {
+              "text": "Mine."
+            }
+          ]
+        }
+      },
+      {
+        "id": "editor",
+        "type": "ai",
+        "agent": {
+          "role": "Editor"
+        },
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "strategies": [
+      {
+        "id": "loop",
+        "loop": {
+          "agent": "writer",
+          "reviewer": "editor"
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "create_room",
+      "room": {
+        "id": "r1"
+      },
+      "orchestration": "loop"
+    },
+    {
+      "call": "store.delete_room",
+      "room_id": "r1"
+    },
+    {
+      "call": "create_room",
+      "room": {
+        "id": "r1"
+      },
+      "orchestration": null
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "r1",
+      "channel_id": "sms"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "r1",
+      "channel_id": "writer"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Write it."
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "status.recent",
+      "agent_id": "writer",
+      "expect": {
+        "result": []
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "sms"
+          },
+          "content": {
+            "type": "text",
+            "body": "Write it."
+          }
+        },
+        {
+          "source": {
+            "channel_id": "writer"
+          },
+          "content": {
+            "type": "text",
+            "body": "Mine."
+          },
+          "metadata": {
+            "approved": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    },
+    "models": {
+      "editor": []
+    }
+  }
+}

@@ -1,0 +1,146 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-loop-whose-producer-fails-hands-its-error-to-the-caller-reported-once",
+  "title": "A Loop whose producer's provider refuses hands that error to the caller, its message kept, and answers nothing; the failure is reported to ON_ERROR once, in the producer's task room, never again in the room the loop answers",
+  "rules": [
+    "§19.7.4",
+    "§23.3",
+    "§15.2"
+  ],
+  "notes": "Python: test_loop_producer_cut.py test_a_producer_whose_provider_fails_gives_its_error_to_the_caller (the failure logged once); loop.py _producer_failure hands on the task's exception, marked reported (core/_failure_log.mark_reported).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "writer",
+        "type": "ai",
+        "agent": {},
+        "model": {
+          "rounds": [
+            {
+              "refuses": {
+                "status": 401,
+                "message": "invalid key"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "editor",
+        "type": "ai",
+        "agent": {
+          "role": "Editor"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "APPROVED"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "loop",
+        "loop": {
+          "agent": "writer",
+          "reviewer": "editor"
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "errors",
+        "trigger": "on_error",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "loop"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Write it."
+        }
+      },
+      "expect": {
+        "result": {
+          "error": {
+            "$contains": "invalid key"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "sms"
+          },
+          "content": {
+            "type": "text",
+            "body": "Write it."
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "r1": {
+        "metadata": {
+          "_conversation_state": {
+            "phase": "writer",
+            "active_agent_id": "writer",
+            "context": {
+              "_loop_iteration": 0,
+              "_loop_approved": false,
+              "_loop_max_iterations": 3,
+              "_loop_stopped": "producer_failed"
+            }
+          }
+        }
+      }
+    },
+    "hooks": {
+      "errors": [
+        {
+          "trigger": "on_error",
+          "room_id": "$r1"
+        }
+      ]
+    },
+    "models": {
+      "editor": []
+    }
+  }
+}

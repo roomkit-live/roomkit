@@ -1,0 +1,226 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-loop-leaves-its-producer-the-events-that-are-no-task",
+  "title": "A Loop takes only its own room's messages of text from outside the agents: another agent's message, a message with no text, an event that opens no turn and any message of a room without the loop are the producer's own turn",
+  "rules": [
+    "§19.7.4",
+    "§19.7"
+  ],
+  "notes": "Python: test_loop_strategy.py TestWrappedOnEvent::test_different_room_delegates_to_original, test_ai_event_goes_to_original, test_system_event_goes_to_original; loop.py _LoopTurns.run, _worker_run.task_input, core/_changes.opens_no_turn (a system event of text is no task, and the producer's own turn opens none, RMK-1257). No task is delegated: the status bus holds no entry of the producer.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "other",
+        "type": "ai",
+        "category": "intelligence"
+      },
+      {
+        "id": "writer",
+        "type": "ai",
+        "agent": {},
+        "model": {
+          "rounds": [
+            {
+              "text": "Mine one."
+            },
+            {
+              "text": "Mine two."
+            },
+            {
+              "text": "Mine three."
+            }
+          ]
+        }
+      },
+      {
+        "id": "editor",
+        "type": "ai",
+        "agent": {
+          "role": "Editor"
+        },
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "other"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "writer"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "loop",
+        "loop": {
+          "agent": "writer",
+          "reviewer": "editor"
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "loop"
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "other",
+      "content": {
+        "type": "text",
+        "body": "From another agent."
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "sms",
+      "content": {
+        "type": "media",
+        "url": "https://example.com/a.png",
+        "mime_type": "image/png"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "sms",
+      "content": {
+        "type": "text",
+        "body": "The order shipped."
+      },
+      "event_type": "system"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Write it here."
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "status.recent",
+      "agent_id": "writer",
+      "expect": {
+        "result": []
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "other"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "writer"
+          },
+          "content": {
+            "type": "text",
+            "body": "Mine one."
+          },
+          "responds_to": "r1#0",
+          "metadata": {
+            "approved": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "source": {
+            "channel_id": "sms"
+          },
+          "content": {
+            "type": "media"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "writer"
+          },
+          "content": {
+            "type": "text",
+            "body": "Mine two."
+          },
+          "responds_to": "r1#2"
+        },
+        {
+          "type": "system",
+          "source": {
+            "channel_id": "sms"
+          },
+          "content": {
+            "type": "text",
+            "body": "The order shipped."
+          }
+        }
+      ],
+      "r2": [
+        {
+          "source": {
+            "channel_id": "sms"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "writer"
+          },
+          "content": {
+            "type": "text",
+            "body": "Mine three."
+          },
+          "responds_to": "r2#0"
+        }
+      ]
+    },
+    "models": {
+      "editor": []
+    }
+  }
+}

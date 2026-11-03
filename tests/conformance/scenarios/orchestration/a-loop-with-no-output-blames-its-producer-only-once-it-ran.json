@@ -1,0 +1,192 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-loop-with-no-output-blames-its-producer-only-once-it-ran",
+  "title": "A Loop whose producer says nothing fails its caller's turn with that, naming the producer; a Loop of no iteration asks no one and fails nothing",
+  "rules": [
+    "§19.7.4"
+  ],
+  "notes": "Python: test_loop_producer_cut.py test_a_producer_with_nothing_to_say_is_named_so, test_a_loop_that_runs_no_iteration_blames_no_producer.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "writer",
+        "type": "ai",
+        "agent": {},
+        "model": {
+          "rounds": [
+            {
+              "text": ""
+            }
+          ]
+        }
+      },
+      {
+        "id": "editor",
+        "type": "ai",
+        "agent": {
+          "role": "Editor"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "APPROVED"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "loop",
+        "loop": {
+          "agent": "writer",
+          "reviewer": "editor"
+        }
+      },
+      {
+        "id": "idle",
+        "loop": {
+          "agent": "writer",
+          "reviewer": "editor",
+          "max_iterations": 0
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "loop"
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r2",
+      "strategy": "idle"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Write it."
+        }
+      },
+      "expect": {
+        "result": {
+          "error": "The producer's task gave no output"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Write it."
+        }
+      },
+      "expect": {
+        "result": {
+          "error": null,
+          "response_metadata": {
+            "turns": {
+              "$absent": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "sms"
+          },
+          "content": {
+            "type": "text",
+            "body": "Write it."
+          }
+        }
+      ],
+      "r2": [
+        {
+          "source": {
+            "channel_id": "sms"
+          },
+          "content": {
+            "type": "text",
+            "body": "Write it."
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "r1": {
+        "metadata": {
+          "_conversation_state": {
+            "phase": "writer",
+            "active_agent_id": "writer",
+            "context": {
+              "_loop_iteration": 0,
+              "_loop_approved": false,
+              "_loop_max_iterations": 3,
+              "_loop_stopped": "producer_failed"
+            }
+          }
+        }
+      },
+      "r2": {
+        "metadata": {
+          "_conversation_state": {
+            "phase": "writer",
+            "active_agent_id": "writer",
+            "context": {
+              "_loop_iteration": 0,
+              "_loop_approved": false,
+              "_loop_max_iterations": 0,
+              "_loop_stopped": "max_iterations"
+            }
+          }
+        }
+      }
+    },
+    "models": {
+      "editor": []
+    }
+  }
+}

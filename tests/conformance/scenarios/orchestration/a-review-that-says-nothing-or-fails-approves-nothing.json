@@ -1,0 +1,181 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-review-that-says-nothing-or-fails-approves-nothing",
+  "title": "A reviewer whose task fails or gives no output does not approve: its review ends failed on the status bus, and the producer revises on no feedback",
+  "rules": [
+    "§19.7.4",
+    "§19.8"
+  ],
+  "notes": "Python: test_loop_strategy.py TestReviewSequential::test_empty_output_not_approved, TestReviewParallel::test_parallel_empty_result; test_loop_review_status.py test_a_review_ends_on_its_terminal_entry[task-failed]. The reviewer's first turn raises, its second answers nothing: both tasks fail.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "writer",
+        "type": "ai",
+        "agent": {},
+        "model": {
+          "rounds": [
+            {
+              "text": "Draft one."
+            },
+            {
+              "text": "Draft two."
+            }
+          ]
+        }
+      },
+      {
+        "id": "editor",
+        "type": "ai",
+        "agent": {
+          "role": "Editor"
+        },
+        "model": {
+          "rounds": [
+            {
+              "fails": "reviewer down"
+            },
+            {
+              "text": ""
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "loop",
+        "loop": {
+          "agent": "writer",
+          "reviewer": "editor",
+          "max_iterations": 2
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "loop"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Write it."
+        }
+      },
+      "expect": {
+        "result": {
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "status.recent",
+      "agent_id": "editor",
+      "expect": {
+        "result": [
+          {
+            "action": "review",
+            "status": "pending"
+          },
+          {
+            "action": "review",
+            "status": "failed",
+            "detail": "The task failed.",
+            "metadata": {
+              "approved": false
+            }
+          },
+          {
+            "action": "review",
+            "status": "pending"
+          },
+          {
+            "action": "review",
+            "status": "failed",
+            "detail": "The task failed.",
+            "metadata": {
+              "approved": false
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "sms"
+          },
+          "content": {
+            "type": "text",
+            "body": "Write it."
+          }
+        },
+        {
+          "source": {
+            "channel_id": "writer",
+            "channel_type": "ai"
+          },
+          "content": {
+            "type": "text",
+            "body": "Draft two."
+          },
+          "responds_to": "r1#0",
+          "metadata": {
+            "approved": false,
+            "iteration": 2,
+            "stopped": "max_iterations"
+          }
+        }
+      ]
+    },
+    "models": {
+      "writer": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Write it."
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Revise your previous work based on the reviewers' feedback. Your previous output and their feedback are set apart below.\n\n[Your previous output]\n<worker_output>\nDraft one.\n</worker_output>\n\n[Feedback from Editor]\n<worker_output>\n(no output)\n</worker_output>"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

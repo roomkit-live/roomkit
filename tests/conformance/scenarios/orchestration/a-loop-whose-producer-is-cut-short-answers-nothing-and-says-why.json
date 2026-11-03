@@ -1,0 +1,207 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-loop-whose-producer-is-cut-short-answers-nothing-and-says-why",
+  "title": "A Loop whose producer's turn is cut short before any output answers nothing: no error reaches the caller, who reads how the producer's turn ended under turns, and the room's state says the producer's task stopped the loop",
+  "rules": [
+    "§19.7.4",
+    "§23.3",
+    "§6.4"
+  ],
+  "notes": "Python: test_loop_producer_cut.py test_a_producer_cut_before_any_output_gives_no_answer_and_its_reason; test_loop_strategy.py TestExecuteLoop::test_producer_empty_output_breaks. The producer calls a tool in every round, past its bound of one round: its task fails cut short, and no reviewer is asked.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "writer",
+        "type": "ai",
+        "agent": {},
+        "model": {
+          "rounds": [
+            {
+              "text": "Still checking.",
+              "calls": [
+                {
+                  "id": "c",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "text": "Still checking.",
+              "calls": [
+                {
+                  "id": "c",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "text": "Still checking.",
+              "calls": [
+                {
+                  "id": "c",
+                  "name": "lookup"
+                }
+              ]
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "look up",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found"
+          }
+        ],
+        "max_tool_rounds": 1
+      },
+      {
+        "id": "editor",
+        "type": "ai",
+        "agent": {
+          "role": "Editor"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "APPROVED"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "loop",
+        "loop": {
+          "agent": "writer",
+          "reviewer": "editor"
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "errors",
+        "trigger": "on_error",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "loop"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Write it."
+        }
+      },
+      "expect": {
+        "result": {
+          "error": null,
+          "response_metadata": {
+            "turns": {
+              "writer": {
+                "loop_end_reason": "max_rounds"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "status.recent",
+      "agent_id": "writer",
+      "expect": {
+        "result": [
+          {
+            "action": "iteration",
+            "status": "pending"
+          },
+          {
+            "action": "iteration",
+            "status": "failed",
+            "detail": "The producer's task failed (cut short: max_rounds).",
+            "metadata": {
+              "task_id": {
+                "$present": true
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "call": "status.recent",
+      "agent_id": "editor",
+      "expect": {
+        "result": []
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "sms"
+          },
+          "content": {
+            "type": "text",
+            "body": "Write it."
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "r1": {
+        "metadata": {
+          "_conversation_state": {
+            "phase": "writer",
+            "active_agent_id": "writer",
+            "context": {
+              "_loop_iteration": 0,
+              "_loop_approved": false,
+              "_loop_max_iterations": 3,
+              "_loop_stopped": "producer_failed"
+            }
+          }
+        }
+      }
+    },
+    "hooks": {
+      "errors": []
+    },
+    "models": {
+      "editor": []
+    }
+  }
+}
