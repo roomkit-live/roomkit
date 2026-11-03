@@ -1,0 +1,194 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-loop-s-parallel-review-that-raises-fails-at-once-and-cuts-the-other-reviews",
+  "title": "A Loop whose parallel reviewers review an output, one of whose reviews raises (its reviewer left the kit), fails the loop with that error without waiting for the other reviews: each of them has started, posted pending, and is cut, posted failed 'cancelled'",
+  "rules": [
+    "§19.7.4"
+  ],
+  "notes": "Python: orchestration/strategies/loop.py _review_parallel (core/task_utils.py gather_or_cut: the first error cuts the others, then is raised); tests/orchestration/test_loop_strategy.py TestReviewParallel::test_the_first_error_cuts_the_other_reviewers. Decided by the maintainer, HITL 4080f241 (RMK-1279). The raising reviewer is the first: each review still starts, posted pending, before the error answers; the slow reviewer's model holds at a gate never opened, so whether its turn reached the model is not pinned.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "writer",
+        "type": "ai",
+        "agent": {},
+        "model": {
+          "rounds": [
+            {
+              "text": "Draft one."
+            }
+          ]
+        }
+      },
+      {
+        "id": "slow",
+        "type": "ai",
+        "agent": {
+          "role": "Slow"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "APPROVED",
+              "gate": "slow"
+            }
+          ]
+        }
+      },
+      {
+        "id": "gone",
+        "type": "ai",
+        "agent": {
+          "role": "Gone"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "APPROVED"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "loop",
+        "loop": {
+          "agent": "writer",
+          "reviewers": [
+            "gone",
+            "slow"
+          ],
+          "strategy": "parallel"
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "errors",
+        "trigger": "on_error",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "loop"
+    },
+    {
+      "call": "unregister_channel",
+      "channel_id": "gone"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Write it."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$present": true
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "status.recent",
+      "agent_id": "slow",
+      "expect": {
+        "result": [
+          {
+            "agent_id": "slow",
+            "action": "review",
+            "status": "pending",
+            "metadata": {
+              "room_id": "r1",
+              "strategy": "parallel",
+              "task_run": true
+            }
+          },
+          {
+            "agent_id": "slow",
+            "action": "review",
+            "status": "failed",
+            "detail": "cancelled",
+            "metadata": {
+              "room_id": "r1",
+              "strategy": "parallel",
+              "task_run": true
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "sms"
+          }
+        }
+      ]
+    },
+    "models": {
+      "writer": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Write it."
+            }
+          ]
+        }
+      ],
+      "gone": []
+    },
+    "hooks": {
+      "errors": [
+        {
+          "trigger": "on_error",
+          "room_id": "r1",
+          "event": {
+            "source": {
+              "channel_id": "writer"
+            },
+            "chain_depth": 1,
+            "responds_to": "r1#0",
+            "metadata": {
+              "error_category": "generation"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

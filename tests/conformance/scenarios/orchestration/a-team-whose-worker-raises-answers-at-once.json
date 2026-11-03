@@ -1,12 +1,12 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "orchestration/a-team-whose-worker-raises-answers-at-once",
-  "title": "A parallel team one of whose delegations raises (its worker left the kit) answers delegate_workers with that failure as soon as it is raised: the call does not wait for the other workers, still at work",
+  "title": "A parallel team one of whose delegations raises (its worker left the kit) answers delegate_workers with that failure without waiting for the other workers: each of them has started, posted pending, and is cut, its task posted failed 'cancelled'",
   "rules": [
     "§19.7.3",
     "§23.3"
   ],
-  "notes": "Python: orchestration/strategies/supervisor/execution.py _run_parallel (asyncio.gather without return_exceptions: the first error propagates at once, the other delegations go on); _inject_strategy.py _run (logged, raised: a failed call, RFC §9.3). Found by the review of stream I lot 5a; whether the others should be cut instead is asked of the maintainer (HITL 4080f241). The slow worker's model waits at its gate until the call has answered; what it does after is not pinned (Python's idle does not wait for a gather's orphan, roomkit-rs's kit holds every inline delegation).",
+  "notes": "Python: orchestration/strategies/supervisor/execution.py _run_parallel (core/task_utils.py gather_or_cut: the first error cuts the others, then is raised), _inject_strategy.py _run (logged, raised: a failed call, RFC §9.3); tests/orchestration/test_supervisor_strategy.py TestParallelWorkerFailure::test_the_first_error_cuts_the_other_workers. Decided by the maintainer, HITL 4080f241 (RMK-1279). The raising worker is the first: each worker still starts, posted pending, before the error answers; the slow worker's model holds at a gate never opened, so whether its turn reached the model is not pinned.",
   "setup": {
     "channels": [
       {
@@ -122,12 +122,6 @@
       }
     },
     {
-      "wait_for": "slow"
-    },
-    {
-      "open": "slow"
-    },
-    {
       "idle": true
     },
     {
@@ -154,6 +148,36 @@
             "status": "failed",
             "metadata": {
               "strategy": "parallel"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "call": "status.recent",
+      "agent_id": "slow",
+      "expect": {
+        "result": [
+          {
+            "agent_id": "slow",
+            "action": "task",
+            "status": "pending",
+            "detail": "Acme",
+            "metadata": {
+              "room_id": "r1",
+              "strategy": "parallel",
+              "task_run": true
+            }
+          },
+          {
+            "agent_id": "slow",
+            "action": "task",
+            "status": "failed",
+            "detail": "cancelled",
+            "metadata": {
+              "room_id": "r1",
+              "strategy": "parallel",
+              "task_run": true
             }
           }
         ]
@@ -187,16 +211,6 @@
     },
     "models": {
       "gone": [],
-      "slow": [
-        {
-          "messages": [
-            {
-              "role": "user",
-              "text": "Acme"
-            }
-          ]
-        }
-      ],
       "sup": [
         {},
         {
