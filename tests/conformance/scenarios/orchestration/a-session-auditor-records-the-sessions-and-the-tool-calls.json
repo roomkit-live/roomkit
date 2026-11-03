@@ -1,0 +1,156 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-session-auditor-records-the-sessions-and-the-tool-calls",
+  "title": "A session auditor attached to the kit records the session a first message starts, and an agent's tool calls through its tool auditor bridge, in one timeline",
+  "rules": [
+    "§15.8.2",
+    "§10.1 step 2"
+  ],
+  "notes": "Python's SessionAuditor.attach registers ON_SESSION_STARTED among its hooks, and record_tool turns a tool entry into a tool_call entry (orchestration/session_audit.py; tests/orchestration/test_session_audit.py: test_record_tool_adds_to_timeline, test_tool_auditor_bridge_record).",
+  "setup": {
+    "session_auditor": {
+      "attached": true
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {
+                    "q": "roomkit"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Found it."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "The lookup tool",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "returns": "found"
+          }
+        ],
+        "audit": "session_auditor"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": []
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Look up roomkit."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "session_audit": [
+      {
+        "ts": {
+          "$present": true
+        },
+        "type": "session",
+        "role": "system",
+        "content": "Session started",
+        "duration_ms": null,
+        "metadata": {
+          "channel_id": "sms",
+          "participant_id": "+15551234567"
+        }
+      },
+      {
+        "ts": {
+          "$present": true
+        },
+        "type": "tool_call",
+        "role": "assistant",
+        "content": "found",
+        "duration_ms": {
+          "$present": true
+        },
+        "metadata": {
+          "tool_name": "lookup",
+          "arguments": {
+            "q": "roomkit"
+          },
+          "status": "ok",
+          "agent_id": "agent"
+        }
+      }
+    ]
+  }
+}

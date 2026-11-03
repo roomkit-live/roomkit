@@ -1,0 +1,334 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/an-audited-call-is-recorded-by-how-it-ended",
+  "title": "An audited tool's call is recorded by how it ended: ok, failed when its body or its handler says so, error when the handler raised, cancelled when the channel's per-call bound cut it; the model reads each call as it would without the audit",
+  "rules": [
+    "§15.8.1",
+    "§21.6",
+    "§9.3"
+  ],
+  "notes": "Python's audit_tool_handler (orchestration/tool_audit.py) and its tests (tests/orchestration/test_tool_audit.py: records, detects_failed, error, declined, the channel's bound cut as cancelled).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {
+                    "q": "x"
+                  }
+                },
+                {
+                  "id": "c2",
+                  "name": "flagged",
+                  "arguments": {}
+                },
+                {
+                  "id": "c3",
+                  "name": "boom",
+                  "arguments": {}
+                },
+                {
+                  "id": "c4",
+                  "name": "guarded",
+                  "arguments": {}
+                },
+                {
+                  "id": "c5",
+                  "name": "broken",
+                  "arguments": {}
+                },
+                {
+                  "id": "c6",
+                  "name": "elsewhere",
+                  "arguments": {}
+                },
+                {
+                  "id": "c7",
+                  "name": "slow",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "The lookup tool",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "returns": "{\"status\": \"ok\", \"data\": \"hello\"}"
+          },
+          {
+            "name": "flagged",
+            "description": "The flagged tool",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "returns": "{\"status\": \"failed\", \"error\": \"not found\"}"
+          },
+          {
+            "name": "boom",
+            "description": "The boom tool",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "raises": {
+              "kind": "ValueError",
+              "message": "boom"
+            }
+          },
+          {
+            "name": "guarded",
+            "description": "The guarded tool",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "refuses": "not allowed here"
+          },
+          {
+            "name": "broken",
+            "description": "The broken tool",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "fails": "the disk is full"
+          },
+          {
+            "name": "elsewhere",
+            "description": "The elsewhere tool",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "declines": true
+          },
+          {
+            "name": "slow",
+            "description": "The slow tool",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "hangs": true
+          }
+        ],
+        "tool_timeouts_ms": {
+          "slow": 20
+        },
+        "audit": "tool_auditor"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": []
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Look everything up."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "tool_audit": {
+      "$unordered": [
+        {
+          "ts": {
+            "$present": true
+          },
+          "agent_id": "agent",
+          "tool_name": "lookup",
+          "arguments": {
+            "q": "x"
+          },
+          "result": "{\"status\": \"ok\", \"data\": \"hello\"}",
+          "status": "ok",
+          "duration_ms": {
+            "$present": true
+          },
+          "metadata": {}
+        },
+        {
+          "ts": {
+            "$present": true
+          },
+          "agent_id": "agent",
+          "tool_name": "flagged",
+          "arguments": {},
+          "result": "{\"status\": \"failed\", \"error\": \"not found\"}",
+          "status": "failed",
+          "duration_ms": {
+            "$present": true
+          },
+          "metadata": {}
+        },
+        {
+          "ts": {
+            "$present": true
+          },
+          "agent_id": "agent",
+          "tool_name": "boom",
+          "arguments": {},
+          "result": "boom",
+          "status": "error",
+          "duration_ms": {
+            "$present": true
+          },
+          "metadata": {}
+        },
+        {
+          "ts": {
+            "$present": true
+          },
+          "agent_id": "agent",
+          "tool_name": "guarded",
+          "arguments": {},
+          "result": "not allowed here",
+          "status": "failed",
+          "duration_ms": {
+            "$present": true
+          },
+          "metadata": {}
+        },
+        {
+          "ts": {
+            "$present": true
+          },
+          "agent_id": "agent",
+          "tool_name": "broken",
+          "arguments": {},
+          "result": "the disk is full",
+          "status": "failed",
+          "duration_ms": {
+            "$present": true
+          },
+          "metadata": {}
+        },
+        {
+          "ts": {
+            "$present": true
+          },
+          "agent_id": "agent",
+          "tool_name": "elsewhere",
+          "arguments": {},
+          "result": "elsewhere is not this handler's",
+          "status": "failed",
+          "duration_ms": {
+            "$present": true
+          },
+          "metadata": {}
+        },
+        {
+          "ts": {
+            "$present": true
+          },
+          "agent_id": "agent",
+          "tool_name": "slow",
+          "arguments": {},
+          "result": "",
+          "status": "cancelled",
+          "duration_ms": {
+            "$present": true
+          },
+          "metadata": {}
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "tool_results": []
+        },
+        {
+          "tool_results": {
+            "$unordered": [
+              {
+                "tool_call_id": "c1",
+                "content": "{\"status\": \"ok\", \"data\": \"hello\"}"
+              },
+              {
+                "tool_call_id": "c2",
+                "content": "{\"status\": \"failed\", \"error\": \"not found\"}"
+              },
+              {
+                "tool_call_id": "c3",
+                "content": "{\"error\": \"Tool 'boom' failed (ValueError)\"}",
+                "is_error": true
+              },
+              {
+                "tool_call_id": "c4",
+                "content": "not allowed here",
+                "is_error": true
+              },
+              {
+                "tool_call_id": "c5",
+                "content": "the disk is full",
+                "is_error": true
+              },
+              {
+                "tool_call_id": "c6",
+                "content": "{\"error\": \"No handler for tool elsewhere\"}",
+                "is_error": true
+              },
+              {
+                "tool_call_id": "c7",
+                "content": "{\"error\": \"Tool 'slow' failed (ToolTimeoutError)\"}",
+                "is_error": true
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

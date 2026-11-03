@@ -1,0 +1,243 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/an-audited-answer-reaches-the-model-unchanged",
+  "title": "An audited tool's answer reaches the model as the tool gave it, its parts and its JSON whole and its text never cut, while the record reads the answer as text cut at 500 characters (not bytes), a JSON error envelope recorded failed",
+  "rules": [
+    "§15.8.1",
+    "§21.4"
+  ],
+  "notes": "Python's audit_tool_handler returns the handler's answer itself and records result_text(answer)[:500] (tests/orchestration/test_tool_audit.py: test_audit_returns_the_answer_unchanged, test_audit_tool_handler_truncates).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "count",
+                  "arguments": {}
+                },
+                {
+                  "id": "c2",
+                  "name": "chart",
+                  "arguments": {}
+                },
+                {
+                  "id": "c3",
+                  "name": "quota",
+                  "arguments": {}
+                },
+                {
+                  "id": "c4",
+                  "name": "long",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "Here it is."
+            }
+          ],
+          "vision": true
+        },
+        "tools": [
+          {
+            "name": "count",
+            "description": "The count tool",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "returns_json": {
+              "found": 3
+            }
+          },
+          {
+            "name": "chart",
+            "description": "The chart tool",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "returns_parts": [
+              {
+                "text": "a chart"
+              },
+              {
+                "image": "https://x.example/c.png",
+                "mime_type": "image/png"
+              }
+            ]
+          },
+          {
+            "name": "quota",
+            "description": "The quota tool",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "returns_json": {
+              "error": "quota exceeded"
+            }
+          },
+          {
+            "name": "long",
+            "description": "The long tool",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "returns": "é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789"
+          }
+        ],
+        "audit": "tool_auditor"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": []
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Show me the chart."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "tool_audit": {
+      "$unordered": [
+        {
+          "ts": {
+            "$present": true
+          },
+          "agent_id": "agent",
+          "tool_name": "count",
+          "arguments": {},
+          "result": "{\"found\": 3}",
+          "status": "ok",
+          "duration_ms": {
+            "$present": true
+          },
+          "metadata": {}
+        },
+        {
+          "ts": {
+            "$present": true
+          },
+          "agent_id": "agent",
+          "tool_name": "chart",
+          "arguments": {},
+          "result": "a chart\n[image]",
+          "status": "ok",
+          "duration_ms": {
+            "$present": true
+          },
+          "metadata": {}
+        },
+        {
+          "ts": {
+            "$present": true
+          },
+          "agent_id": "agent",
+          "tool_name": "quota",
+          "arguments": {},
+          "result": "{\"error\": \"quota exceeded\"}",
+          "status": "failed",
+          "duration_ms": {
+            "$present": true
+          },
+          "metadata": {}
+        },
+        {
+          "ts": {
+            "$present": true
+          },
+          "agent_id": "agent",
+          "tool_name": "long",
+          "arguments": {},
+          "result": "é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789",
+          "status": "ok",
+          "duration_ms": {
+            "$present": true
+          },
+          "metadata": {}
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "tool_results": []
+        },
+        {
+          "tool_results": {
+            "$unordered": [
+              {
+                "tool_call_id": "c1",
+                "content": "{\"found\": 3}"
+              },
+              {
+                "tool_call_id": "c2",
+                "content": [
+                  {
+                    "text": "a chart"
+                  },
+                  {
+                    "image": "https://x.example/c.png",
+                    "mime_type": "image/png"
+                  }
+                ]
+              },
+              {
+                "tool_call_id": "c3",
+                "content": "{\"error\": \"quota exceeded\"}"
+              },
+              {
+                "tool_call_id": "c4",
+                "content": "é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789é123456789"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}
