@@ -2880,8 +2880,10 @@ async with MCPToolProvider.from_url("https://huggingface.co/mcp", discover=False
   and `run_skill_script` refuses it. While one is active in a conversation, a
   sandbox command and every tool matching `execution_tools` (globs) are refused
   unless `approve_execution` approves; with no callback they are always
-  refused. An approval holds for the conversation and the entry's fingerprint;
-  a dynamic skill has no fingerprint and is asked every time.
+  refused. An approval holds for the conversation, the entry's fingerprint
+  and the registry's server that gave it: the same entry another registry
+  serves (a turn's own, RFC §24.3) asks that server's callback. A dynamic
+  skill has no fingerprint and is asked every time.
 
 ```python
 from roomkit.skills import SkillExecutionRequest
