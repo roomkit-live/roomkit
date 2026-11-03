@@ -85,9 +85,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Such an event is still stored and handed to the memory, though the
   conversation a turn reads does not show it, and answered by no turn, nor
   recorded as an agent not asked past the depth limit (nor is an edit or a
-  delete any more). The `session_started`
-  notice a voice session's `process_inbound()` sends no longer makes an
-  agent speak first: an agent greets with `Agent(greeting=...)`, or a hook
+  delete any more). The `session_started` notice a voice session's
+  `process_inbound()` sends no longer makes an agent speak first: an agent greets with `Agent(greeting=...)`, or a hook
   on `ON_SESSION_STARTED` delivers it an instruction. To have an agent react
   to a notice, send it an instruction (`kit.deliver(..., instruction=True)`).
   roomkit-rs answers the same two types.

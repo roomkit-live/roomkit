@@ -1277,8 +1277,9 @@ class ConferenceChannel(
             # content its author wrote, never as the application's
             # instruction (RFC §12.4), as on a realtime voice channel;
             # silent for an event a hook injected, which asks no agent
-            # (RFC §9.4), and for an event that opens no turn, a notice, an
-            # edit or a delete (RFC §6.4, §10.3).
+            # (RFC §9.4), and for an event that opens no turn, a reaction,
+            # an edit or a delete (RFC §6.4, §10.3); a SYSTEM event never
+            # comes this far.
             await compile_mark_patterns()
             text = broadcast_text(event, event.content.body, context, self.channel_id)
             if text is None:

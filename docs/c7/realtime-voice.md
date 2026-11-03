@@ -166,7 +166,7 @@ session = await kit.join("room", "realtime-voice", participant_id="user")
 await realtime.inject_text(session, "Let me check that for you...")
 ```
 
-A message another channel broadcasts enters each session of the room as its author's quoted words (`@ws: “...”`), and the model answers it. An edit, a delete or a notice (a `SYSTEM` event, a reaction) enters silently: the session learns the correction, the deletion or the notice, and the model answers the next message. To have the model speak about a notice, deliver it an instruction (`kit.deliver(..., instruction=True)`).
+A message another channel broadcasts enters each session of the room as its author's quoted words (`@ws: “...”`), and the model answers it. An edit, a delete, a notice (a `SYSTEM` event) or a reaction enters silently: the session learns the correction, the deletion or the notice, and the model answers the next message. To have the model speak about a notice, deliver it an instruction (`kit.deliver(..., instruction=True)`).
 
 ## VAD Configuration
 
