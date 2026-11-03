@@ -1,0 +1,127 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "greeting/send-greeting-stores-the-agent-s-greeting-and-delivers-it",
+  "title": "send_greeting stores the agent's greeting, or the text given, as the agent's event and delivers it; a room with no agent is greeted by no one",
+  "rules": [
+    "§19.1"
+  ],
+  "notes": "The agent's auto_greet is off: only the calls greet. A greeting carries no hook and the agent does not answer its own event.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence",
+        "agent": {
+          "greeting": "Welcome!",
+          "auto_greet": false
+        },
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "How can I help?"
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_greeting",
+      "room_id": "room-1"
+    },
+    {
+      "call": "send_greeting",
+      "room_id": "room-1",
+      "greeting": "Hello again"
+    },
+    {
+      "call": "send_greeting",
+      "room_id": "room-2"
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message",
+          "source": {
+            "channel_id": "agent",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "Welcome!"
+          },
+          "metadata": {
+            "auto_greeting": true
+          },
+          "status": "delivered"
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "source": {
+            "channel_id": "agent",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "Hello again"
+          },
+          "metadata": {
+            "auto_greeting": true
+          },
+          "status": "delivered"
+        }
+      ],
+      "room-2": []
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [
+          {
+            "id": "room-1#0"
+          },
+          {
+            "id": "room-1#1"
+          }
+        ]
+      },
+      "room-2": {
+        "sms": []
+      }
+    }
+  }
+}

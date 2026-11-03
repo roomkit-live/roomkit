@@ -1,0 +1,164 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-channel-that-declares-no-streaming-streams-in-the-rooms-it-says",
+  "title": "A channel that declares no streaming but streams in one room is handed the stream there and the answer whole in the other",
+  "rules": [
+    "§6.1",
+    "§12.2 step 13s"
+  ],
+  "notes": "The framework asks every transport the answer reaches, at each stream, whether it takes a streamed response in the room (supports_streaming_delivery_for), whatever it declared at registration: a WebSocket channel with no streaming client when it registered streams once one connects.",
+  "setup": {
+    "channels": [
+      {
+        "id": "web",
+        "type": "webhook",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams_in": [
+          "room-1"
+        ]
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "The ",
+                "answer."
+              ]
+            },
+            {
+              "deltas": [
+                "The ",
+                "answer."
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "web",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Question?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "web",
+        "sender_id": "bob",
+        "content": {
+          "type": "text",
+          "body": "Question?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "streamed": {
+      "room-1": {
+        "ws": [
+          {
+            "text": "The "
+          },
+          {
+            "text": "answer."
+          },
+          {
+            "row": {
+              "id": "room-1#1",
+              "content": {
+                "body": "The answer."
+              }
+            }
+          }
+        ]
+      },
+      "room-2": {
+        "ws": []
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "index": 0
+          }
+        ]
+      },
+      "room-2": {
+        "ws": [
+          {
+            "index": 0
+          },
+          {
+            "id": "room-2#1",
+            "content": {
+              "body": "The answer."
+            }
+          }
+        ]
+      }
+    }
+  }
+}

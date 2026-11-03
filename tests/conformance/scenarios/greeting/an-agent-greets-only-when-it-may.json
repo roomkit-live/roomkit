@@ -1,0 +1,147 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "greeting/an-agent-greets-only-when-it-may",
+  "title": "An agent greets no room it is not attached to, nor with auto_greet off or no greeting",
+  "rules": [
+    "§10.1 step 2",
+    "§19.1"
+  ],
+  "notes": "quiet has a greeting and auto_greet off, plain has no greeting, away has a greeting and is never attached. The room a first message creates attaches quiet and plain: no greeting is stored, and both answer the message.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "quiet",
+        "type": "ai",
+        "category": "intelligence",
+        "agent": {
+          "greeting": "Hello from quiet",
+          "auto_greet": false
+        },
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "quiet here"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": "plain",
+        "type": "ai",
+        "category": "intelligence",
+        "agent": {
+          "role": "Helper"
+        },
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "plain here"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": "away",
+        "type": "ai",
+        "category": "intelligence",
+        "agent": {
+          "greeting": "Hello from away"
+        },
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "away here"
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "attach_agents",
+        "trigger": "on_room_created",
+        "execution": "async",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "attach_channel",
+                "room_id": "$room",
+                "channel_id": "quiet"
+              },
+              {
+                "call": "attach_channel",
+                "room_id": "$room",
+                "channel_id": "plain"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "$r1": {
+        "$unordered": [
+          {
+            "source": {
+              "channel_id": "sms"
+            },
+            "content": {
+              "body": "Hi"
+            }
+          },
+          {
+            "source": {
+              "channel_id": "quiet"
+            },
+            "content": {
+              "body": "quiet here"
+            }
+          },
+          {
+            "source": {
+              "channel_id": "plain"
+            },
+            "content": {
+              "body": "plain here"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -204,6 +204,35 @@
           }
         ]
       }
+    },
+    "streamed": {
+      "room-1": {
+        "ws": [
+          {
+            "text": "Let me "
+          },
+          {
+            "text": "check."
+          },
+          {
+            "row": {
+              "id": "room-1#1",
+              "index": 1,
+              "type": "message",
+              "content": {
+                "body": "Let me check."
+              }
+            }
+          },
+          {
+            "row": {
+              "id": "room-1#2",
+              "index": 2,
+              "type": "tool_call_start"
+            }
+          }
+        ]
+      }
     }
   }
 }

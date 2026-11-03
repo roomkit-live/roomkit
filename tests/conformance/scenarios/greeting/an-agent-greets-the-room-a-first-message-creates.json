@@ -1,0 +1,130 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "greeting/an-agent-greets-the-room-a-first-message-creates",
+  "title": "An agent with a greeting greets the room a first message creates, before the message, its greeting stored as its own and delivered",
+  "rules": [
+    "§10.1 step 2",
+    "§19.1"
+  ],
+  "notes": "The first message on sms finds no room: the room is created, an ON_ROOM_CREATED hook attaches the agent, and the text session starts. The agent's greeting is stored as its event, marked auto_greeting, and delivered to sms before the message is processed; the agent then answers the message.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "How can I help?"
+              ]
+            }
+          ]
+        },
+        "agent": {
+          "greeting": "Welcome!"
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "attach_agent",
+        "trigger": "on_room_created",
+        "execution": "async",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "attach_channel",
+                "room_id": "$room",
+                "channel_id": "agent"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "$r1": [
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "agent",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "Welcome!"
+          },
+          "metadata": {
+            "auto_greeting": true
+          },
+          "status": "delivered"
+        },
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "sms"
+          },
+          "content": {
+            "body": "Hi"
+          }
+        },
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "agent"
+          },
+          "content": {
+            "body": "How can I help?"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "$r1": {
+        "sms": [
+          {
+            "content": {
+              "body": "Welcome!"
+            }
+          },
+          {
+            "content": {
+              "body": "How can I help?"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
