@@ -1,0 +1,127 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-config/a-turn-config-s-prompt-and-tools-replace-the-binding-s",
+  "title": "A turn's configuration sets its system prompt over the agent's and its toolset in place of the one its binding's metadata declares, the agent's handler serving it",
+  "rules": [
+    "§6.4",
+    "Appendix A.9"
+  ],
+  "notes": "Python: channels/_ai_context.py _resolve_turn, _turn_settings, _turn_source, _turn_base_tools; channels/_turn_config.py AIChannelTurnConfig. tests/test_channels/test_turn_config.py TestConfigProvider::test_provider_overrides_prompt_and_tools. The binding's metadata declares outlook; the turn's configuration declares gmail, which the model calls.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "system_prompt": "static prompt",
+        "tools": [
+          {
+            "name": "gmail",
+            "declared": false,
+            "returns": "gmail's"
+          },
+          {
+            "name": "outlook",
+            "declared": false,
+            "returns": "outlook's"
+          }
+        ],
+        "config_provider": {
+          "room-1": {
+            "system_prompt": "fresh prompt",
+            "tools": [
+              {
+                "name": "gmail",
+                "description": "mail",
+                "parameters": {}
+              }
+            ]
+          }
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "gmail"
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "tools": [
+                {
+                  "name": "outlook",
+                  "description": "mail",
+                  "parameters": {}
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "system_prompt": "fresh prompt",
+          "tools": {
+            "gmail": 0,
+            "outlook": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "call-1",
+              "content": "gmail's",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

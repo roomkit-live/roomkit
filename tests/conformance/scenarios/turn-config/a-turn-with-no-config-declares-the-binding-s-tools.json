@@ -1,0 +1,387 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-config/a-turn-with-no-config-declares-the-binding-s-tools",
+  "title": "A turn whose configuration returns none, or that has no configuration, declares the tools its binding's metadata declares, served by the agent's handler, before the agent's own, whose definition stands under its name; a null there declares none, and a binding's null setting keeps the agent's",
+  "rules": [
+    "§6.4",
+    "Appendix A.9"
+  ],
+  "notes": "Python: channels/_ai_context.py _resolve_turn, _turn_settings, _turn_source, _turn_base_tools; channels/_turn_config.py AIChannelTurnConfig. tests/test_channels/test_turn_config.py TestConfigProvider::test_provider_returning_none_keeps_static_path, test_no_provider_is_byte_identical_to_static_path, TestANullDefers::test_a_null_tools_declares_no_toolset, test_a_binding_null_keeps_the_channel_default (system_prompt, temperature, max_tokens, reasoning_effort). The configuration returns none for room-1 and names no other room. In room-4 the binding declares a tool under the agent's own tool's name: the agent's stands, at its place, with its definition. In room-5 an agent with no configuration reads its binding's tools.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "system_prompt": "static prompt",
+        "temperature": 0.3,
+        "max_tokens": 321,
+        "reasoning_effort": "low",
+        "tools": [
+          {
+            "name": "gmail",
+            "declared": false,
+            "returns": "gmail's"
+          },
+          {
+            "name": "outlook",
+            "declared": false,
+            "returns": "outlook's"
+          },
+          {
+            "name": "calendar",
+            "description": "The agent's calendar",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "calendar's"
+          }
+        ],
+        "config_provider": {
+          "room-1": null
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "outlook"
+                }
+              ]
+            },
+            {
+              "text": "done"
+            },
+            {
+              "text": "done"
+            },
+            {
+              "text": "done"
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      },
+      {
+        "id": "plain",
+        "type": "ai",
+        "system_prompt": "plain prompt",
+        "tools": [
+          {
+            "name": "outlook",
+            "declared": false,
+            "returns": "outlook's"
+          },
+          {
+            "name": "calendar",
+            "description": "The agent's calendar",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "calendar's"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "tools": [
+                {
+                  "name": "outlook",
+                  "description": "mail",
+                  "parameters": {}
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "tools": [
+                {
+                  "name": "outlook",
+                  "description": "mail",
+                  "parameters": {}
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-3",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "tools": null,
+              "system_prompt": null,
+              "temperature": null,
+              "max_tokens": null,
+              "reasoning_effort": null
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-4",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "tools": [
+                {
+                  "name": "calendar",
+                  "description": "The room's calendar",
+                  "parameters": {}
+                },
+                {
+                  "name": "outlook",
+                  "description": "mail",
+                  "parameters": {}
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-5",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "plain",
+            "category": "intelligence",
+            "metadata": {
+              "tools": [
+                {
+                  "name": "outlook",
+                  "description": "mail",
+                  "parameters": {}
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "seen",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-3",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-4",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-5",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "system_prompt": "static prompt",
+          "temperature": 0.3,
+          "max_tokens": 321,
+          "reasoning_effort": "low",
+          "tools": {
+            "outlook": 0,
+            "calendar": 1
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "call-1",
+              "content": "outlook's",
+              "is_error": false
+            }
+          ]
+        },
+        {
+          "system_prompt": "static prompt",
+          "temperature": 0.3,
+          "max_tokens": 321,
+          "reasoning_effort": "low",
+          "tools": {
+            "outlook": 0,
+            "calendar": 1
+          }
+        },
+        {
+          "system_prompt": "static prompt",
+          "temperature": 0.3,
+          "max_tokens": 321,
+          "reasoning_effort": "low",
+          "tools": {
+            "calendar": 0,
+            "outlook": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "outlook": 0,
+            "calendar": 1
+          }
+        }
+      ],
+      "plain": [
+        {
+          "system_prompt": "plain prompt",
+          "tools": {
+            "outlook": 0,
+            "calendar": 1
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "seen": [
+        {
+          "room_id": "room-1"
+        },
+        {
+          "room_id": "room-2"
+        },
+        {
+          "room_id": "room-3"
+        },
+        {
+          "room_id": "room-4",
+          "response": {
+            "channel_id": "agent",
+            "declared_tools": {
+              "calendar": {
+                "description": "The agent's calendar"
+              }
+            }
+          }
+        },
+        {
+          "room_id": "room-5",
+          "response": {
+            "channel_id": "plain"
+          }
+        }
+      ]
+    }
+  }
+}

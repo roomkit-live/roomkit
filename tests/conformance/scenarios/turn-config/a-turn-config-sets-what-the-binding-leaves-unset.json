@@ -1,0 +1,236 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-config/a-turn-config-sets-what-the-binding-leaves-unset",
+  "title": "A turn's configuration sets each setting its binding's metadata leaves unset, absent or null, over the agent's; a setting it leaves unset, absent or null, keeps the agent's",
+  "rules": [
+    "§6.4",
+    "§6.7",
+    "Appendix A.9"
+  ],
+  "notes": "Python: channels/_ai_context.py _resolve_turn, _turn_settings, _turn_source, _turn_base_tools; channels/_turn_config.py AIChannelTurnConfig. tests/test_channels/test_turn_config.py TestReasoningOverrides::test_turn_config_overrides_channel_default, TestANullDefers::test_a_binding_null_keeps_the_turn_value, test_a_turn_none_keeps_the_channel_default, TestConfigProvider::test_partial_config_falls_back_to_defaults. room-1: no metadata; room-2: the metadata's settings null; room-3: a configuration with tools only; room-4: a configuration whose settings are null.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "system_prompt": "static prompt",
+        "temperature": 0.3,
+        "max_tokens": 321,
+        "reasoning_effort": "low",
+        "tools": [
+          {
+            "name": "gmail",
+            "declared": false,
+            "returns": "gmail's"
+          },
+          {
+            "name": "outlook",
+            "declared": false,
+            "returns": "outlook's"
+          }
+        ],
+        "config_provider": {
+          "room-1": {
+            "system_prompt": "turn prompt",
+            "temperature": 0.9,
+            "max_tokens": 654,
+            "reasoning_effort": "xhigh"
+          },
+          "room-2": {
+            "system_prompt": "turn prompt",
+            "temperature": 0.9,
+            "max_tokens": 654,
+            "reasoning_effort": "xhigh"
+          },
+          "room-3": {
+            "tools": [
+              {
+                "name": "gmail",
+                "description": "mail",
+                "parameters": {}
+              }
+            ]
+          },
+          "room-4": {
+            "system_prompt": null,
+            "temperature": null,
+            "max_tokens": null,
+            "reasoning_effort": null
+          }
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "done"
+            },
+            {
+              "text": "done"
+            },
+            {
+              "text": "done"
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "system_prompt": null,
+              "temperature": null,
+              "max_tokens": null,
+              "reasoning_effort": null
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-3",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-4",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-3",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-4",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "system_prompt": "turn prompt",
+          "temperature": 0.9,
+          "max_tokens": 654,
+          "reasoning_effort": "xhigh"
+        },
+        {
+          "system_prompt": "turn prompt",
+          "temperature": 0.9,
+          "max_tokens": 654,
+          "reasoning_effort": "xhigh"
+        },
+        {
+          "system_prompt": "static prompt",
+          "temperature": 0.3,
+          "max_tokens": 321,
+          "reasoning_effort": "low",
+          "tools": {
+            "gmail": 0
+          }
+        },
+        {
+          "system_prompt": "static prompt",
+          "temperature": 0.3,
+          "max_tokens": 321,
+          "reasoning_effort": "low"
+        }
+      ]
+    }
+  }
+}

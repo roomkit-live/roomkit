@@ -1,0 +1,404 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-config/a-turn-config-s-token-budget-sits-between-the-binding-s-and-the-agent-s",
+  "title": "A turn's configuration's token budget bounds the turn over the agent's, under its binding's; a null one keeps the agent's",
+  "rules": [
+    "§6.4",
+    "Appendix A.9"
+  ],
+  "notes": "Python: channels/_ai_context.py _resolve_turn, _turn_settings, _turn_source, _turn_base_tools; channels/_turn_config.py AIChannelTurnConfig. tests/test_channels/test_turn_budget.py test_the_turn_config_and_the_room_outrank_the_channel, test_a_null_never_lifts_the_channel_budget[turn-turn_budget_tokens]. Each generation bills 500 tokens; the agent's budget is 1200. room-1's configuration sets 700; room-2's sets 700 under a binding's 100000; room-3's sets null.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look up an item",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "n": {
+                  "type": "integer"
+                }
+              }
+            },
+            "returns": "ok"
+          }
+        ],
+        "turn_budget_tokens": 1200,
+        "config_provider": {
+          "room-1": {
+            "turn_budget_tokens": 700
+          },
+          "room-2": {
+            "turn_budget_tokens": 700
+          },
+          "room-3": {
+            "turn_budget_tokens": null
+          }
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c0",
+                  "name": "lookup",
+                  "arguments": {
+                    "n": 0
+                  }
+                }
+              ],
+              "usage": {
+                "input_tokens": 300,
+                "cache_read_input_tokens": 100,
+                "output_tokens": 100
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {
+                    "n": 1
+                  }
+                }
+              ],
+              "usage": {
+                "input_tokens": 300,
+                "cache_read_input_tokens": 100,
+                "output_tokens": 100
+              },
+              "text": "Looking again."
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "lookup",
+                  "arguments": {
+                    "n": 2
+                  }
+                }
+              ],
+              "usage": {
+                "input_tokens": 300,
+                "cache_read_input_tokens": 100,
+                "output_tokens": 100
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c3",
+                  "name": "lookup",
+                  "arguments": {
+                    "n": 3
+                  }
+                }
+              ],
+              "usage": {
+                "input_tokens": 300,
+                "cache_read_input_tokens": 100,
+                "output_tokens": 100
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c4",
+                  "name": "lookup",
+                  "arguments": {
+                    "n": 4
+                  }
+                }
+              ],
+              "usage": {
+                "input_tokens": 300,
+                "cache_read_input_tokens": 100,
+                "output_tokens": 100
+              }
+            },
+            {
+              "text": "done",
+              "usage": {
+                "input_tokens": 300,
+                "cache_read_input_tokens": 100,
+                "output_tokens": 100
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c5",
+                  "name": "lookup",
+                  "arguments": {
+                    "n": 5
+                  }
+                }
+              ],
+              "usage": {
+                "input_tokens": 300,
+                "cache_read_input_tokens": 100,
+                "output_tokens": 100
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c6",
+                  "name": "lookup",
+                  "arguments": {
+                    "n": 6
+                  }
+                }
+              ],
+              "usage": {
+                "input_tokens": 300,
+                "cache_read_input_tokens": 100,
+                "output_tokens": 100
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c7",
+                  "name": "lookup",
+                  "arguments": {
+                    "n": 7
+                  }
+                }
+              ],
+              "usage": {
+                "input_tokens": 300,
+                "cache_read_input_tokens": 100,
+                "output_tokens": 100
+              },
+              "text": "Looking again."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "turn_budget_tokens": 100000
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-3",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-3",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message"
+        },
+        {
+          "index": 1,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 2,
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "c0",
+            "outcome": "served"
+          }
+        },
+        {
+          "index": 3,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "Looking again."
+          },
+          "metadata": {
+            "loop_end_reason": "budget_exceeded"
+          }
+        }
+      ],
+      "room-2": [
+        {
+          "index": 0,
+          "type": "message"
+        },
+        {
+          "index": 1,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 2,
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "c2",
+            "outcome": "served"
+          }
+        },
+        {
+          "index": 3,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 4,
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "c3",
+            "outcome": "served"
+          }
+        },
+        {
+          "index": 5,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 6,
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "c4",
+            "outcome": "served"
+          }
+        },
+        {
+          "index": 7,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "done"
+          }
+        }
+      ],
+      "room-3": [
+        {
+          "index": 0,
+          "type": "message"
+        },
+        {
+          "index": 1,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 2,
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "c5",
+            "outcome": "served"
+          }
+        },
+        {
+          "index": 3,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 4,
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "c6",
+            "outcome": "served"
+          }
+        },
+        {
+          "index": 5,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "Looking again."
+          },
+          "metadata": {
+            "loop_end_reason": "budget_exceeded"
+          }
+        }
+      ]
+    }
+  }
+}

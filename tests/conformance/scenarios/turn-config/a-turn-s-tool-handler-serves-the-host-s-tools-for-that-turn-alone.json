@@ -1,0 +1,243 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-config/a-turn-s-tool-handler-serves-the-host-s-tools-for-that-turn-alone",
+  "title": "A turn's configuration's tool handler serves the host's tools for that turn in place of the agent's handler, a tool it does not serve unserved; a turn whose configuration gives none reads the agent's",
+  "rules": [
+    "§6.4",
+    "§21.4",
+    "Appendix A.9"
+  ],
+  "notes": "Python: channels/_ai_context.py _resolve_turn, _turn_settings, _turn_source, _turn_base_tools; channels/_turn_config.py AIChannelTurnConfig. tests/test_channels/test_turn_tool_handler.py test_no_override_keeps_the_default_without_leaking_a_previous_turn (both cases). room-1's configuration gives lookup and a handler serving it; room-2's gives lookup alone; room-3 has none.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Read this member's records",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "default"
+          },
+          {
+            "name": "calendar",
+            "description": "The agent's calendar",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "calendar's"
+          }
+        ],
+        "config_provider": {
+          "room-1": {
+            "tools": [
+              {
+                "name": "lookup",
+                "description": "Read this member's records",
+                "parameters": {
+                  "type": "object"
+                }
+              }
+            ],
+            "tool_handler": [
+              {
+                "name": "lookup",
+                "returns": "per-turn"
+              }
+            ]
+          },
+          "room-2": {
+            "tools": [
+              {
+                "name": "lookup",
+                "description": "Read this member's records",
+                "parameters": {
+                  "type": "object"
+                }
+              }
+            ]
+          }
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "lookup"
+                },
+                {
+                  "id": "call-2",
+                  "name": "calendar"
+                }
+              ]
+            },
+            {
+              "text": "done"
+            },
+            {
+              "calls": [
+                {
+                  "id": "call-3",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "text": "done"
+            },
+            {
+              "calls": [
+                {
+                  "id": "call-4",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-3",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-3",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "lookup": 0,
+            "calendar": 1
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "call-1",
+              "content": "per-turn",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "call-2",
+              "is_error": true
+            }
+          ]
+        },
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "call-3",
+              "content": "default",
+              "is_error": false
+            }
+          ]
+        },
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "call-4",
+              "content": "default",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

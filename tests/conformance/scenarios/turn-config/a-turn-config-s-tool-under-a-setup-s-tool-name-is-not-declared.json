@@ -1,0 +1,148 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-config/a-turn-config-s-tool-under-a-setup-s-tool-name-is-not-declared",
+  "title": "A tool a turn's configuration gives under the name of a tool the room's setup serves the agent is not declared: the setup's stands, and the turn runs",
+  "rules": [
+    "§21.1",
+    "Appendix A.9"
+  ],
+  "notes": "Python: channels/_ai_context.py _resolve_turn, _turn_settings, _turn_source, _turn_base_tools; channels/_turn_config.py AIChannelTurnConfig. channels/_ai_tools.py _declared_once (the names the channel and orchestration serve in the room). The supervisor's configuration gives delegate_to_researcher, the name its install serves.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Found it myself."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up.",
+            "returns": "found"
+          }
+        ],
+        "config_provider": {
+          "r1": {
+            "tools": [
+              {
+                "name": "delegate_to_researcher",
+                "description": "mine"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "researcher",
+        "type": "ai",
+        "agent": {
+          "role": "Researcher"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "The facts."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "researcher"
+          ]
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "seen",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Look up Acme."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "researcher": [],
+      "sup": [
+        {
+          "tools": {
+            "lookup": 0,
+            "delegate_to_researcher": 1
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "seen": [
+        {
+          "room_id": "r1",
+          "response": {
+            "channel_id": "sup",
+            "declared_tools": {
+              "delegate_to_researcher": {
+                "description": "Delegate a task to researcher. Worker agent researcher"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

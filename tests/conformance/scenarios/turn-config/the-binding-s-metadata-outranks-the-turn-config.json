@@ -1,0 +1,124 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-config/the-binding-s-metadata-outranks-the-turn-config",
+  "title": "A turn's binding's metadata sets its system prompt, temperature, max tokens and reasoning effort over its configuration's, whose toolset still replaces the binding's",
+  "rules": [
+    "§6.4",
+    "§6.7",
+    "Appendix A.9"
+  ],
+  "notes": "Python: channels/_ai_context.py _resolve_turn, _turn_settings, _turn_source, _turn_base_tools; channels/_turn_config.py AIChannelTurnConfig. tests/test_channels/test_turn_config.py TestConfigProvider::test_binding_metadata_still_wins_for_sampling_and_prompt, TestReasoningOverrides::test_binding_metadata_wins_over_turn_config.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "system_prompt": "static prompt",
+        "temperature": 0.3,
+        "max_tokens": 321,
+        "reasoning_effort": "low",
+        "tools": [
+          {
+            "name": "gmail",
+            "declared": false,
+            "returns": "gmail's"
+          },
+          {
+            "name": "outlook",
+            "declared": false,
+            "returns": "outlook's"
+          }
+        ],
+        "config_provider": {
+          "room-1": {
+            "system_prompt": "turn prompt",
+            "temperature": 0.9,
+            "max_tokens": 654,
+            "reasoning_effort": "xhigh",
+            "tools": [
+              {
+                "name": "gmail",
+                "description": "mail",
+                "parameters": {}
+              }
+            ]
+          }
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "system_prompt": "room prompt",
+              "temperature": 0.1,
+              "max_tokens": 100,
+              "reasoning_effort": "high",
+              "tools": [
+                {
+                  "name": "outlook",
+                  "description": "mail",
+                  "parameters": {}
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "system_prompt": "room prompt",
+          "temperature": 0.1,
+          "max_tokens": 100,
+          "reasoning_effort": "high",
+          "tools": {
+            "gmail": 0,
+            "outlook": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}
