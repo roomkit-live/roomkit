@@ -152,6 +152,12 @@ class Normalizer:
                 "latest_index": latest,
                 "delivered_index": lambda raw: max(self.index(room, raw), -1),
             }
+        if isinstance(room_id, str) and value.get("event") == "delivery_skipped":
+            # The indexes a delivery lane skipped (§8.2), read as an event's.
+            return {
+                "from_index": lambda raw: self.index(room_id, raw),
+                "to_index": lambda raw: self.index(room_id, raw),
+            }
         return {}
 
     def _string(self, value: str, key: str | None) -> str:

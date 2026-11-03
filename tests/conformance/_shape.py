@@ -56,7 +56,10 @@ KIT = {
     "media_resolver",
     "attached_media",
     "orchestration",
+    "delivery_gap_timeout_ms",
+    "lock_manager",
 }
+LOCK_MANAGER = {"release_error"}
 DELIVERY_BACKEND = {
     "retry_delay_ms",
     "max_retry_delay_ms",
@@ -316,6 +319,7 @@ CALLS |= STRATEGY_ARGUMENTS
 CALLS |= ROUTING_ARGUMENTS
 STEPS = {"await": {"await", "expect"}, "concurrent": {"concurrent"}, "wait_for": {"wait_for"}}
 STEPS |= {"open": {"open"}, "idle": {"idle"}, "wait_for_lock": {"wait_for_lock", "waiters"}}
+STEPS |= {"lock_releases": {"lock_releases"}}
 
 
 def unknown_members(scenario: Mapping[str, Any]) -> list[str]:
@@ -328,6 +332,8 @@ def unknown_members(scenario: Mapping[str, Any]) -> list[str]:
     if "delivery_backend" in setup.get("kit", {}):
         backend = setup["kit"]["delivery_backend"]
         _members(backend, DELIVERY_BACKEND, "setup.kit.delivery_backend", found)
+    if "lock_manager" in setup.get("kit", {}):
+        _members(setup["kit"]["lock_manager"], LOCK_MANAGER, "setup.kit.lock_manager", found)
     readers = {"media_resolver": MEDIA_RESOLVER, "attached_media": ATTACHED_MEDIA}
     for reader, members in readers.items():
         if reader in setup.get("kit", {}):

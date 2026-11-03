@@ -59,6 +59,7 @@ from tests.conformance._delivery import (
 )
 from tests.conformance._identity import kit_options, register_identity_hook
 from tests.conformance._inputs import INPUT_CALLS, request_record
+from tests.conformance._locks import LOCK_EVENTS, lock_options, set_lock_releases
 from tests.conformance._media import media_options
 from tests.conformance._members import MEMBER_CALLS, store_identities
 from tests.conformance._normalize import Observed, is_lifecycle_record
@@ -161,6 +162,7 @@ class Harness:
             )
         kwargs |= kit_options(kit_setup, self)
         kwargs |= delivery_options(kit_setup)
+        kwargs |= lock_options(kit_setup)
         kwargs |= verification_options(kit_setup)
         kwargs |= media_options(kit_setup, self)
         kwargs |= kit_orchestration(kit_setup, self)
@@ -320,6 +322,7 @@ class Harness:
     async def _setup(self) -> None:
         setup = self.scenario.get("setup", {})
         recorded = LEVEL_0_EVENTS + LEVEL_2_EVENTS + INPUT_EVENTS + VERIFICATION_EVENTS + AI_EVENTS
+        recorded += LOCK_EVENTS
         for event_type in recorded:
             self.kit.on(event_type)(self._on_framework_event)
         self.auditors.set_up(setup.get("session_auditor"), self.kit)
@@ -376,6 +379,8 @@ class Harness:
                 await wait_for_lock(self.kit, room_id, waiters)
             except TimeoutError:
                 self._problems.append(f"{path}: {waiters} calls never waited for {room_id}'s lock")
+        elif "lock_releases" in step:
+            set_lock_releases(self.kit, step["lock_releases"])
         elif "open" in step:
             self.gates.open(step["open"])
         elif "idle" in step:
