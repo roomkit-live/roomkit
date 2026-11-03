@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -624,6 +625,26 @@ class TestRoomTimers:
         ids = [r.id for r in transitioned]
         assert "r1" in ids
         assert "r2" not in ids
+
+    async def test_check_all_timers_goes_on_past_a_room_id_holding_nul(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A stored room whose id holds a NUL character takes no room lock
+        (RFC §13.5): it is logged, and every other room is still checked."""
+        kit = await self._make_kit()
+        due = {"inactive_after_seconds": 60, "last_activity_at": _ago(120)}
+        await kit.store.create_room(
+            Room(id="\x00__delivery__:r1").model_copy(update={"timers": RoomTimers(**due)})
+        )
+        r1 = await kit.create_room("r1")
+        await _rewrite(kit, r1, timers=due)
+
+        with caplog.at_level(logging.WARNING, logger="roomkit.framework"):
+            transitioned = await kit.check_all_timers()
+
+        assert [room.id for room in transitioned] == ["r1"]
+        assert "NUL" in caplog.text
+        await kit.close()
 
     async def test_check_all_timers_reaches_every_room_past_a_page(self) -> None:
         """RMK-1009: a sweep transitions every room due, past the 100 a store

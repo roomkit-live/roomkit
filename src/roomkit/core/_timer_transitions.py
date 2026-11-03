@@ -25,7 +25,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from roomkit.core._room_timers import DueTransition, due_transitions, transitioned
-from roomkit.core.locks import _has_room_lock, unlocked_context
+from roomkit.core.locks import _has_room_lock, _NulRoomIdError, unlocked_context
 from roomkit.core.task_utils import await_unless_cut, run_to_its_end, start_named
 from roomkit.models.enums import EventType, HookTrigger, RoomStatus
 
@@ -126,7 +126,9 @@ class TimerTransitions:
 
     async def check_all(self, *, organization_id: str | None = None) -> list[Room]:
         """:meth:`check` every ACTIVE and PAUSED room, one tenant's with
-        *organization_id*, and return the rooms that transitioned."""
+        *organization_id*, and return the rooms that transitioned. A stored
+        room whose id takes no room lock is logged and passed over: one bad
+        record stops no other room's check."""
         rooms = [
             room
             for status in (RoomStatus.ACTIVE, RoomStatus.PAUSED)
@@ -134,7 +136,13 @@ class TimerTransitions:
         ]
         changed: list[Room] = []
         for room in rooms:
-            checked = await self.check(room.id, organization_id=organization_id)
+            try:
+                checked = await self.check(room.id, organization_id=organization_id)
+            except _NulRoomIdError:
+                logger.warning(
+                    "Room %r holds a NUL character: its timers are not checked", room.id
+                )
+                continue
             if checked.status != room.status:
                 changed.append(checked)
         return changed

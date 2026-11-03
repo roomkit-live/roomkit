@@ -387,6 +387,13 @@ class ReleaseTolerantLockManager(RoomLockManager):
         await close_bounded(self.inner)
 
 
+class _NulRoomIdError(ValueError):
+    """The room lock's refusal of a room id holding a NUL character: a
+    ``ValueError`` to the caller, and what a sweep over stored rooms tells
+    apart from any other ``ValueError``, one bad record stopping no other
+    room's work."""
+
+
 class RoomLocks(ReleaseTolerantLockManager):
     """The kit's hold on its rooms' locks: a room id holding a NUL
     character takes none, wherever the id came from (a room written to the
@@ -396,7 +403,7 @@ class RoomLocks(ReleaseTolerantLockManager):
     @asynccontextmanager
     async def locked(self, room_id: str) -> AsyncGenerator[None, None]:
         if _OTHER_KIND in room_id:
-            raise ValueError("A room id holds no NUL character")
+            raise _NulRoomIdError("A room id holds no NUL character")
         async with super().locked(room_id):
             yield
 
