@@ -113,7 +113,17 @@ CHANNEL = {
     "agent",
 }
 ADDRESSES = {"normalizes", "conversation_key"}
-AGENT = {"name", "role", "description", "purpose", "scope", "language", "identity_in_prompt"}
+AGENT = {
+    "name",
+    "role",
+    "description",
+    "purpose",
+    "scope",
+    "language",
+    "identity_in_prompt",
+    "greeting",
+    "auto_greet",
+}
 MODEL = {"rounds", "vision", "pricing"}
 MODEL_ROUND = {
     "text",
@@ -289,6 +299,7 @@ CALLS: dict[str, set[str]] = {
     "set_access": {"room_id", "channel_id", "access"},
     "set_visibility": {"room_id", "channel_id", "visibility"},
     "close_room": {"room_id"},
+    "send_greeting": {"room_id", "channel_id", "agent_id", "greeting"},
     "archive_room": {"room_id"},
     "check_timers": {"room_id"},
     "register_channel": {"channel"},

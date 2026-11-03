@@ -260,7 +260,8 @@ class ScriptedChannel(Channel):
     def supports_streaming_delivery_for(self, room_id: str) -> bool:
         if self._streams_in is None:
             return super().supports_streaming_delivery_for(room_id)
-        return self._streams and room_id in self._streams_in
+        # Asked whatever the channel declares (README, `streams_in`).
+        return room_id in self._streams_in
 
     async def handle_inbound(self, message: InboundMessage, context: RoomContext) -> RoomEvent:
         room_id = context.room.id

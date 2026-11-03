@@ -337,6 +337,11 @@ async def _close_room(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -
     return await kit.close_room(spec["room_id"], **_org(spec))
 
 
+async def _send_greeting(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
+    names = {key: spec[key] for key in ("channel_id", "agent_id", "greeting") if key in spec}
+    return await kit.send_greeting(spec["room_id"], **names, **_org(spec))
+
+
 async def _archive_room(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
     return await kit.archive_room(spec["room_id"], **_org(spec))
 
@@ -473,6 +478,7 @@ CALLS: dict[str, Call] = {
     "set_access": _set_access,
     "set_visibility": _set_visibility,
     "close_room": _close_room,
+    "send_greeting": _send_greeting,
     "archive_room": _archive_room,
     "check_timers": _check_timers,
     "register_channel": _register_channel,
