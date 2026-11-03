@@ -321,6 +321,8 @@ class ScriptedChannel(Channel):
                 elif isinstance(item, ThinkingDeltaMarker):
                     thinking = {"thinking": item.thinking}
                     self._harness.record_streamed(room_id, self.channel_id, thinking)
+                    if item.thinking == stop_after:
+                        break
                 elif isinstance(item, RoomEvent):
                     row = {"row": item.model_dump(mode="json")}
                     self._harness.record_streamed(room_id, self.channel_id, row)
