@@ -175,8 +175,9 @@ class RoomLockManager(ABC):
         """The locks of *kind* the kit takes from this manager besides its
         rooms' (``"delivery"``: a room's delivery claim; ``"verification"``:
         an identity's verification). A manager shared across processes holds
-        them among its rooms' keys, under keys of their own."""
-        return self
+        them among its rooms' keys, each key led by a NUL character, which
+        no room id holds (``create_room`` refuses one, RFC §13.5)."""
+        return _NulLedKeys(self)
 
 
 class InMemoryLockManager(RoomLockManager):
@@ -258,7 +259,11 @@ class InMemoryLockManager(RoomLockManager):
     def _key_space(self, kind: str) -> RoomLockManager:
         """A map of its own for the locks of *kind*, shared by every kit that
         shares this manager: no room id, whatever it reads, names one of
-        their keys (RFC §13.5)."""
+        their keys (RFC §13.5). A subclass that takes its locks its own way
+        (``locked`` overridden) is asked for every kind, as a shared
+        manager is."""
+        if type(self).locked is not InMemoryLockManager.locked:
+            return super()._key_space(kind)
         space = self._key_spaces.get(kind)
         if space is None:
             space = self._key_spaces[kind] = _KeySpace(self._max_locks)
@@ -267,6 +272,29 @@ class InMemoryLockManager(RoomLockManager):
 
 class _KeySpace(InMemoryLockManager):
     """An in-memory manager's locks of one kind other than its rooms'."""
+
+
+# What leads the key of a lock of another kind than a room's in a shared
+# manager: no room id holds it.
+_OTHER_KIND = "\x00"
+
+
+class _NulLedKeys(RoomLockManager):
+    """A shared manager's locks of a kind other than its rooms': the same
+    manager, each key led by a NUL character (``\x00__delivery__:r1``,
+    ``\x00verification:org-a:alice``)."""
+
+    def __init__(self, inner: RoomLockManager) -> None:
+        self.inner = inner
+
+    @asynccontextmanager
+    async def locked(self, room_id: str) -> AsyncGenerator[None, None]:
+        async with self.inner.locked(f"{_OTHER_KIND}{room_id}"):
+            yield
+
+    async def close(self) -> None:
+        """The shared manager is closed as the room locks' manager."""
+        return None
 
 
 # The failed releases met by the operation that set the list (RFC §13.5).
@@ -317,8 +345,12 @@ class ReleaseTolerantLockManager(RoomLockManager):
     @asynccontextmanager
     async def locked(self, room_id: str) -> AsyncGenerator[None, None]:
         lock = self.inner.locked(room_id)
-        # A lock this context holds already, of any kind, is no wait.
-        held = _has_room_lock(room_id, self.inner)
+        # A lock this context holds already, of any kind, is no wait: asked
+        # of the manager that marks it, under the key it holds.
+        manager, key = self.inner, room_id
+        if isinstance(manager, _NulLedKeys):
+            manager, key = manager.inner, f"{_OTHER_KIND}{room_id}"
+        held = _has_room_lock(key, manager)
         with nullcontext() if held else self._waiting(room_id):
             await lock.__aenter__()
         try:

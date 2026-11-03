@@ -136,7 +136,12 @@ class RoomLifecycleMixin(HelpersMixin):
                 as the recorder raised it. The recorders start before the room
                 is written, so no room exists afterwards and the recordings
                 already started are stopped (RFC §12.11).
+            ValueError: *room_id* holds a NUL character, which starts the
+                keys of the kit's other locks in a shared lock manager
+                (RFC §13.5).
         """
+        if room_id is not None and "\x00" in room_id:
+            raise ValueError("A room id holds no NUL character")
         metadata = without_framework_keys(metadata or {}, room_id=room_id, writer="create_room")
         room = Room(
             id=uuid4().hex if room_id is None else room_id,

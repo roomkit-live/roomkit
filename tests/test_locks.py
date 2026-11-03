@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 
-from roomkit.core.locks import InMemoryLockManager, _has_room_lock, _held_rooms
+import pytest
+
+from roomkit import RoomKit
+from roomkit.core.locks import InMemoryLockManager, RoomLockManager, _has_room_lock, _held_rooms
 
 
 class TestInMemoryLockManager:
@@ -165,10 +170,32 @@ async def test_a_lock_of_another_kind_is_no_room_lock() -> None:
     """A kit's lock of another kind (a delivery claim) keyed like a room id is
     held in a map of its own and never reads as that room's lock."""
     rooms = InMemoryLockManager()
-    claims = rooms._key_space("delivery")
-    assert rooms._key_space("delivery") is claims
-    async with claims.locked("r1"):
+    async with rooms._key_space("delivery").locked("r1"):
         assert not _has_room_lock("r1")
-        assert not rooms._locks
-        async with rooms.locked("r1"):
-            assert _has_room_lock("r1")
+        async with asyncio.timeout(1):
+            async with rooms.locked("r1"):
+                assert _has_room_lock("r1")
+
+
+class SharedLockManager(RoomLockManager):
+    """A lock manager of no in-memory kind, as one shared across processes:
+    one lock per key, whatever the key."""
+
+    def __init__(self) -> None:
+        self.locks: dict[str, asyncio.Lock] = {}
+        self.keys: list[str] = []
+
+    @asynccontextmanager
+    async def locked(self, room_id: str) -> AsyncGenerator[None, None]:
+        self.keys.append(room_id)
+        async with self.locks.setdefault(room_id, asyncio.Lock()):
+            yield
+
+
+async def test_a_room_id_with_a_nul_character_is_refused() -> None:
+    """A NUL character leads the keys of the kit's other locks in a shared
+    manager (RFC §13.5): no room id holds one."""
+    kit = RoomKit(lock_manager=SharedLockManager())
+    with pytest.raises(ValueError, match="NUL"):
+        await kit.create_room(room_id="\x00__delivery__:r1")
+    await kit.close()

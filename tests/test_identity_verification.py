@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import asyncio
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -16,6 +17,7 @@ import pytest
 
 from roomkit import (
     FrameworkEvent,
+    KitClosedError,
     RoomKit,
     RoomNotFoundError,
     VerificationPolicy,
@@ -23,11 +25,13 @@ from roomkit import (
     VerificationRequestStatus,
     VerificationStatus,
 )
+from roomkit.core.locks import InMemoryLockManager, RoomLockManager
 from roomkit.core.mixins import verification as verification_mixin
 from roomkit.models.verification import Verification
 from roomkit.store.base import ConversationStore
 from roomkit.store.memory import InMemoryStore
 from roomkit.store.sqlite import SQLiteStore
+from tests.test_locks import SharedLockManager
 
 # The production work factor, ~55 ms a hash: what a leaked store's codes cost.
 _PRODUCTION_SCRYPT_N = verification_mixin._SCRYPT_N
@@ -110,11 +114,15 @@ async def test_a_completed_request_verifies_the_identity(store: ConversationStor
     await kit.close()
 
 
-async def test_a_room_named_like_a_verification_key_holds_no_verification() -> None:
+@pytest.mark.parametrize("locks", [InMemoryLockManager, SharedLockManager])
+async def test_a_room_named_like_a_verification_key_holds_no_verification(
+    locks: type[RoomLockManager],
+) -> None:
     """An identity's verification lock is in a key space of its own (RFC
     §13.5): a section of the room ``verification::alice`` leaves alice's
-    transitions free."""
-    kit = RoomKit()
+    transitions free, with the in-memory manager or one shared across
+    processes."""
+    kit = RoomKit(lock_manager=locks())
     room = await _room(kit)
     held, done = asyncio.Event(), asyncio.Event()
 
@@ -134,6 +142,86 @@ async def test_a_room_named_like_a_verification_key_holds_no_verification() -> N
         await holder
     assert request.identity_id == "alice"
     await kit.close()
+
+
+async def test_a_manager_built_on_the_in_memory_one_takes_every_kind_of_lock() -> None:
+    """A subclass that takes its locks its own way (a distributed lock over
+    the in-memory reentrance) is asked for an identity's lock too."""
+
+    class Recording(InMemoryLockManager):
+        def __init__(self) -> None:
+            super().__init__()
+            self.keys: list[str] = []
+
+        @asynccontextmanager
+        async def locked(self, room_id: str) -> AsyncGenerator[None, None]:
+            self.keys.append(room_id)
+            async with super().locked(room_id):
+                yield
+
+    locks = Recording()
+    kit = RoomKit(lock_manager=locks)
+    await kit.request_verification("alice", room_id=await _room(kit), channel_id="sms")
+    assert "\x00verification::alice" in locks.keys
+    await kit.close()
+
+
+async def test_two_kits_sharing_a_lock_manager_share_an_identity_s_lock() -> None:
+    """Kits sharing a store and an in-memory lock manager, as processes
+    sharing a distributed one, serialise an identity's transitions."""
+    store, locks = InMemoryStore(), InMemoryLockManager()
+    first = RoomKit(store=store, lock_manager=locks)
+    second = RoomKit(store=store, lock_manager=locks)
+    room = await _room(first)
+    held, done = asyncio.Event(), asyncio.Event()
+
+    async def holder() -> None:
+        async with first._verification_locks.locked("verification::alice"):
+            held.set()
+            await done.wait()
+
+    holding = asyncio.create_task(holder())
+    await held.wait()
+    asking = asyncio.create_task(
+        second.request_verification("alice", room_id=room, channel_id="sms")
+    )
+    await asyncio.sleep(0.02)
+    assert not asking.done()
+    done.set()
+    await holding
+    await asyncio.wait_for(asking, 1.0)
+    await first.close()
+    await second.close()
+
+
+async def test_the_close_cuts_a_wait_for_an_identity_s_lock_under_its_namesake_room() -> None:
+    """A call waiting for alice's lock under the lock of the room
+    ``verification::alice`` waits for alice's lock all the same: the
+    kit's close cuts it at once (RFC §12.10.4)."""
+    kit = RoomKit()
+    held, done = asyncio.Event(), asyncio.Event()
+
+    async def holder() -> None:
+        async with kit._verification_locks.locked("verification::alice"):
+            held.set()
+            await done.wait()
+
+    async def revoke() -> None:
+        async with kit.lock_manager.locked("verification::alice"):
+            await kit.revoke_verification("alice")
+
+    holding = asyncio.create_task(holder())
+    await held.wait()
+    call = asyncio.create_task(revoke())
+    async with asyncio.timeout(1):
+        while not kit._door_runs._waiting:
+            await asyncio.sleep(0)
+    closing = asyncio.create_task(kit.close())
+    with pytest.raises(KitClosedError):
+        await asyncio.wait_for(call, 0.5)
+    done.set()
+    await holding
+    await closing
 
 
 async def test_the_secret_is_returned_once_and_never_stored(store: ConversationStore) -> None:

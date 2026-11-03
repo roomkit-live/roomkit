@@ -11,12 +11,20 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
+
 from roomkit import RoomKit
-from roomkit.core.locks import InMemoryLockManager, _held_rooms
+from roomkit.core.locks import (
+    InMemoryLockManager,
+    RoomLockManager,
+    _held_rooms,
+    _holds_a_room_lock,
+)
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.event import TextContent
 from roomkit.store.memory import InMemoryStore
 from tests.test_framework import AILikeChannel, SimpleChannel
+from tests.test_locks import SharedLockManager
 
 
 class RecordingChannel(SimpleChannel):
@@ -139,10 +147,14 @@ async def test_delivery_runs_outside_the_room_lock() -> None:
     still delivering."""
     kit = RoomKit()
     held_during_delivery: list[frozenset[str]] = []
+    # Under the lane's delivery claim, a lock of its own kind, no room lock
+    # is held: a Queued delivery from there waits its turn (RFC §13.5).
+    claims_as_room_locks: list[bool] = []
 
     class ProbeChannel(SimpleChannel):
         async def deliver(self, event, binding, context):  # type: ignore[override]
             held_during_delivery.append(_held_rooms.get())
+            claims_as_room_locks.append(_holds_a_room_lock(kit.lock_manager))
             return await super().deliver(event, binding, context)
 
     kit.register_channel(SimpleChannel("src"))
@@ -155,13 +167,18 @@ async def test_delivery_runs_outside_the_room_lock() -> None:
     )
     assert held_during_delivery, "delivery ran"
     assert all("r1" not in held for held in held_during_delivery)
+    assert claims_as_room_locks == [False] * len(held_during_delivery)
     await kit.close()
 
 
-async def test_a_room_named_like_a_delivery_claim_holds_no_claim() -> None:
+@pytest.mark.parametrize("locks", [InMemoryLockManager, SharedLockManager])
+async def test_a_room_named_like_a_delivery_claim_holds_no_claim(
+    locks: type[RoomLockManager],
+) -> None:
     """A room's delivery claim is in a key space of its own (RFC §13.5): a
-    section of the room ``__delivery__:r1`` leaves r1's deliveries free."""
-    kit = RoomKit()
+    section of the room ``__delivery__:r1`` leaves r1's deliveries free,
+    with the in-memory manager or one shared across processes."""
+    kit = RoomKit(lock_manager=locks())
     delivered = asyncio.Event()
 
     class Recorder(SimpleChannel):

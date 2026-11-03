@@ -22,7 +22,6 @@ from roomkit.core import task_utils
 from roomkit.core._reentrance import ReentryBudget
 from roomkit.core.exceptions import KitClosedError, TurnLinkError
 from roomkit.core.lanes import DeliveryCascade
-from roomkit.core.locks import _has_room_lock
 from roomkit.models.delivery import InboundResult
 from roomkit.models.enums import EventStatus
 from roomkit.models.event import RoomEvent
@@ -238,13 +237,15 @@ class DoorRuns:
         """Around the current code's wait for *room_id*'s lock: a call
         waiting so is cut at once as the kit closes, and one that reaches
         it once the close started is refused, but the work the close is
-        called from. A lock the code already holds is no wait.
+        called from. The caller asks it only for a lock the code does not
+        hold already, checked against the lock's own manager: a room lock
+        named like an identity's key is no hold of that identity's lock.
 
         Raises:
             KitClosedError: the kit is closing.
         """
         task = asyncio.current_task()
-        if task is None or task not in self._running or _has_room_lock(room_id):
+        if task is None or task not in self._running:
             yield
             return
         if self.closed and task not in self._spared():
