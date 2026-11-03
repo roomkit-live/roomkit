@@ -178,6 +178,7 @@ class AIChannel(
         continuation: ContinuationPolicy | None = None,
         thinking_coalesce_ms: float = 80.0,
         thinking_coalesce_chars: int = 256,
+        publish_thinking_text: bool = False,
         retry_policy: RetryPolicy | None = None,
         fallback_provider: AIProvider | None = None,
         skills: SkillRegistry | None = None,
@@ -254,6 +255,10 @@ class AIChannel(
         # while staying visibly real-time. 0 ms disables (publish every delta).
         self._thinking_coalesce_ms = thinking_coalesce_ms
         self._thinking_coalesce_chars = thinking_coalesce_chars
+        # The reasoning repeats what the model read, and a room's realtime
+        # channel has no visibility gate: its text goes to the subscribers only
+        # when the host asks. Its length and its round always do.
+        self._publish_thinking_text = publish_thinking_text
         # The answer's text as it is written, the same way: one TEXT_DELTA per
         # window, for the code that delegated a task (RFC §6.4). Off unless
         # the host asks, and published by the room's owner only for a turn a

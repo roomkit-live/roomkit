@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **BREAKING: a model's reasoning text is private by default on a room's
+  realtime channel** (RMK-1052). `THINKING_DELTA` and `THINKING_END` carried up
+  to 1000 characters of the reasoning to every subscriber, with no visibility
+  gate, and the reasoning repeats what the model read: the system prompt, tool
+  results, other participants' words. They now carry `thinking_length`, `round`
+  and `channel_id`; `AIChannel(publish_thinking_text=True)` and
+  `ACPChannel(publish_thinking_text=True)` opt in to the text. The
+  `ON_AI_THINKING` hook and a streaming channel's `ThinkingDeltaMarker` do not
+  change.
+
 - **`check_all_timers` goes on past a room that fails** (HITL f85e4849,
   RMK-1281). A room deleted since it was listed, a store's failure on one
   room or a room id the lock refuses raised out of the sweep, and the rooms

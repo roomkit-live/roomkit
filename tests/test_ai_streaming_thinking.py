@@ -155,7 +155,7 @@ async def test_no_tools_streaming_publishes_thinking_events() -> None:
     kit = RoomKit()
 
     sms = SimpleChannel("sms1")
-    ai = AIChannel("ai1", provider=provider, thinking_budget=4096)
+    ai = AIChannel("ai1", provider=provider, thinking_budget=4096, publish_thinking_text=True)
     kit.register_channel(sms)
     kit.register_channel(ai)
 
@@ -185,6 +185,63 @@ async def test_no_tools_streaming_publishes_thinking_events() -> None:
     assert len(ends) == 1
     assert ends[0].data["thinking"] == "user asked the meaning of life"
     assert ends[0].channel_id == "ai1"
+
+    await kit.close()
+
+
+@pytest.mark.parametrize(
+    ("options", "reads_text"),
+    [({}, False), ({"publish_thinking_text": True}, True)],
+    ids=["private-by-default", "opted-in"],
+)
+async def test_a_subscriber_reads_the_reasoning_text_only_when_opted_in(
+    options: dict[str, Any], reads_text: bool
+) -> None:
+    """The reasoning repeats what the model read, and a room's realtime channel
+    has no visibility gate: by default a subscriber reads what a live indicator
+    needs (its length, its round), never the text (RMK-1052)."""
+    reasoning = "the customer's balance is 1240"
+    provider = MockAIProvider(
+        streaming=True, ai_responses=[AIResponse(content="Done.", thinking=reasoning)]
+    )
+    kit = RoomKit()
+    kit.register_channel(SimpleChannel("sms1"))
+    kit.register_channel(AIChannel("ai1", provider=provider, thinking_budget=4096, **options))
+    await kit.create_room(room_id="r1")
+    await kit.attach_channel("r1", "sms1")
+    await kit.attach_channel("r1", "ai1", category=ChannelCategory.INTELLIGENCE)
+    received: list[EphemeralEvent] = []
+
+    async def on_event(ev: EphemeralEvent) -> None:
+        received.append(ev)
+
+    await kit.realtime.subscribe_to_room("r1", on_event)
+    await kit.process_inbound(
+        InboundMessage(channel_id="sms1", sender_id="u1", content=TextContent(body="hi"))
+    )
+    await asyncio.sleep(0.05)
+
+    thinking = [
+        e
+        for e in received
+        if e.type
+        in (
+            EphemeralEventType.THINKING_START,
+            EphemeralEventType.THINKING_DELTA,
+            EphemeralEventType.THINKING_END,
+        )
+    ]
+    assert [e.type for e in thinking] == [
+        EphemeralEventType.THINKING_START,
+        EphemeralEventType.THINKING_DELTA,
+        EphemeralEventType.THINKING_END,
+    ]
+    end = thinking[-1].data
+    assert end["thinking_length"] == len(reasoning)
+    assert end["round"] == 0
+    published = " ".join(str(e.data) for e in thinking)
+    assert (reasoning in published) is reads_text
+    assert all(("thinking" in e.data) is reads_text for e in thinking)
 
     await kit.close()
 
@@ -366,6 +423,7 @@ async def test_streaming_coalesces_thinking_deltas_on_the_bus() -> None:
         provider=provider,
         thinking_budget=4096,
         thinking_coalesce_ms=1e9,
+        publish_thinking_text=True,
         thinking_coalesce_chars=16,
     )
     kit.register_channel(sink)
@@ -531,6 +589,7 @@ async def _run_scripted_turn(
         tool_handler=tool_handler if tools else None,
         thinking_budget=4096,
         thinking_coalesce_ms=0,
+        publish_thinking_text=True,
     )
     kit.register_channel(sms)
     kit.register_channel(ai)
@@ -728,7 +787,9 @@ async def test_no_tools_path_error_still_reaches_the_consumer() -> None:
             yield StreamThinkingDelta(thinking="HALF-A-BLOCK")
             raise ProviderError("upstream stopped", retryable=False, provider="broken")
 
-    ai = AIChannel("ai1", provider=_BrokenProvider([]), thinking_budget=4096)
+    ai = AIChannel(
+        "ai1", provider=_BrokenProvider([]), thinking_budget=4096, publish_thinking_text=True
+    )
     output = await ai.on_event(
         make_event(room_id="room-1", body="go", channel_id="sms1"),
         ChannelBinding(

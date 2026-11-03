@@ -285,6 +285,7 @@ class ACPEventsMixin:
     channel_type: ChannelType
     _turns: dict[str, _TurnState]
     _session_rooms: dict[str, str]
+    _publish_thinking_text: bool
     _session_options: dict[str, list[Any]]
     # Implemented by the other mixins; annotations, so they shadow nothing.
     _is_room_session: Callable[[str], bool]
@@ -342,7 +343,7 @@ class ACPEventsMixin:
                 room_id,
                 EphemeralEventType.THINKING_DELTA,
                 {
-                    "thinking": thinking[:1000],
+                    **({"thinking": thinking[:1000]} if self._publish_thinking_text else {}),
                     "thinking_length": len(thinking),
                     "round": 0,
                 },

@@ -35,6 +35,7 @@ class AIEventsMixin(_AIChannelContract):
 
     _realtime: RealtimeBackend | None
     _thinking_hook: ThinkingHook | None
+    _publish_thinking_text: bool
     channel_id: str
 
     async def _publish_tool_event(
@@ -109,13 +110,13 @@ class AIEventsMixin(_AIChannelContract):
                 logger.debug("ON_AI_THINKING hook failed", exc_info=True)
         if self._realtime is None:
             return
-        preview_limit = THINKING_PREVIEW_LIMIT
         data: dict[str, Any] = {
-            "thinking": thinking[:preview_limit] if len(thinking) > preview_limit else thinking,
             "thinking_length": len(thinking),
             "round": round_idx,
             "channel_id": self.channel_id,
         }
+        if self._publish_thinking_text:
+            data["thinking"] = thinking[:THINKING_PREVIEW_LIMIT]
         try:
             await self._realtime.publish_to_room(
                 room_id,

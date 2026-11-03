@@ -491,7 +491,13 @@ async def test_composition_deltas_reach_the_bus_before_the_call_completes() -> N
     kit = RoomKit()
     # A zero-millisecond window publishes every fragment, so the assertions
     # below read the composition rather than one coalesced snapshot.
-    ai = AIChannel("ai1", provider=provider, tool_handler=tool_handler, thinking_coalesce_ms=0)
+    ai = AIChannel(
+        "ai1",
+        provider=provider,
+        tool_handler=tool_handler,
+        thinking_coalesce_ms=0,
+        publish_thinking_text=True,
+    )
 
     received = await _run_turn(kit, ai)
     deltas = _delta_events(received)
@@ -541,7 +547,13 @@ async def test_composition_delta_never_carries_the_argument_content() -> None:
         ],
     )
     kit = RoomKit()
-    ai = AIChannel("ai1", provider=provider, tool_handler=tool_handler, thinking_coalesce_ms=0)
+    ai = AIChannel(
+        "ai1",
+        provider=provider,
+        tool_handler=tool_handler,
+        thinking_coalesce_ms=0,
+        publish_thinking_text=True,
+    )
 
     received = await _run_turn(kit, ai)
     deltas = _delta_events(received)
@@ -628,6 +640,7 @@ async def test_reasoning_window_closes_when_the_model_starts_composing() -> None
         tool_handler=tool_handler,
         thinking_budget=4096,
         thinking_coalesce_ms=0,
+        publish_thinking_text=True,
     )
 
     received = await _run_turn(kit, ai)
@@ -774,6 +787,7 @@ async def test_cancelling_mid_reasoning_closes_the_thinking_window() -> None:
         thinking_budget=4096,
         thinking_coalesce_ms=60_000.0,
         thinking_coalesce_chars=100_000,
+        publish_thinking_text=True,
     )
     holder["ai"] = ai
 
@@ -1041,6 +1055,7 @@ async def test_a_provider_failure_mid_reasoning_closes_the_thinking_window() -> 
         tool_handler=tool_handler,
         thinking_budget=4096,
         thinking_coalesce_ms=0,
+        publish_thinking_text=True,
     )
 
     received = await _run_turn(kit, ai)
@@ -1093,6 +1108,7 @@ async def test_a_provider_failure_mid_reasoning_still_reaches_the_consumer() -> 
         tool_handler=tool_handler,
         thinking_budget=4096,
         thinking_coalesce_ms=0,
+        publish_thinking_text=True,
     )
     kit.register_channel(ai)
     await kit.create_room(room_id="r1")
@@ -1131,6 +1147,7 @@ async def test_a_consumer_closing_the_stream_mid_reasoning_closes_the_window() -
         tool_handler=tool_handler,
         thinking_budget=4096,
         thinking_coalesce_ms=0,
+        publish_thinking_text=True,
     )
     kit.register_channel(ai)
     await kit.create_room(room_id="r1")
@@ -1188,6 +1205,7 @@ async def _turn_count_after_a_re_cancelled_consumer(*, tools: bool) -> int:
         tool_handler=tool_handler if tools else None,
         thinking_budget=4096,
         thinking_coalesce_ms=0,
+        publish_thinking_text=True,
     )
     kit.register_channel(ai)
     await kit.create_room(room_id="r1")

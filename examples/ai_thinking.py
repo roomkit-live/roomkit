@@ -55,6 +55,9 @@ async def main() -> None:
         provider=mock,
         system_prompt="You are a thoughtful assistant. Think carefully before answering.",
         thinking_budget=8192,
+        # The reasoning repeats what the model read, and a room's realtime
+        # channel has no visibility gate: its text is opt-in.
+        publish_thinking_text=True,
     )
     kit.register_channel(ws)
     kit.register_channel(ai)

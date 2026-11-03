@@ -226,6 +226,7 @@ class ACPChannel(ACPConnectionMixin, ACPSessionsMixin, ACPTurnMixin, ACPEventsMi
         inherit_env: Sequence[str] | None = None,
         mcp_servers: Sequence[Any] | MCPServersForRoom | None = None,
         session_config: Mapping[str, str | bool] | None = None,
+        publish_thinking_text: bool = False,
         authentication_method: str | None = None,
         external_tool_handler: ExternalToolHandler | None = None,
         room_history: int = _DEFAULT_ROOM_HISTORY,
@@ -286,6 +287,9 @@ class ACPChannel(ACPConnectionMixin, ACPSessionsMixin, ACPTurnMixin, ACPEventsMi
         # step 7): opened for that turn, never prompted after it, never the room's.
         self._turn_sessions: dict[str, str] = {}
         self._session_rooms: dict[str, str] = {}
+        # The agent's reasoning reaches a room's subscribers as its length; its
+        # text only when the host asks: the channel has no visibility gate.
+        self._publish_thinking_text = publish_thinking_text
         self._session_options: dict[str, list[Any]] = {}
         self._prompted_index: dict[str, int] = {}
         # Rooms whose session was sent a labelled request (RFC §6.4).
