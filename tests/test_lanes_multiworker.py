@@ -223,8 +223,10 @@ async def test_a_stored_room_whose_id_holds_nul_takes_no_room_lock() -> None:
     await store.add_binding(
         ChannelBinding(channel_id="src", room_id=nul_room, channel_type=ChannelType.SMS)
     )
-    with pytest.raises(ValueError, match="NUL"):
+    with pytest.raises(ValueError, match="NUL") as refused:
         await kit.send_event(nul_room, "src", TextContent(body="hi"))
+    # A delivery's error code reads the class's name: no private name there.
+    assert type(refused.value).__name__ == "ValueError"
     assert nul_room not in locks.keys
     await kit.close()
 

@@ -25,7 +25,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from roomkit.core._room_timers import DueTransition, due_transitions, transitioned
-from roomkit.core.locks import _has_room_lock, _NulRoomIdError, unlocked_context
+from roomkit.core.locks import _has_room_lock, takes_no_room_lock, unlocked_context
 from roomkit.core.task_utils import await_unless_cut, run_to_its_end, start_named
 from roomkit.models.enums import EventType, HookTrigger, RoomStatus
 
@@ -136,13 +136,12 @@ class TimerTransitions:
         ]
         changed: list[Room] = []
         for room in rooms:
-            try:
-                checked = await self.check(room.id, organization_id=organization_id)
-            except _NulRoomIdError:
+            if takes_no_room_lock(room.id):
                 logger.warning(
                     "Room %r holds a NUL character: its timers are not checked", room.id
                 )
                 continue
+            checked = await self.check(room.id, organization_id=organization_id)
             if checked.status != room.status:
                 changed.append(checked)
         return changed
