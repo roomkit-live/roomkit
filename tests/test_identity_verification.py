@@ -110,6 +110,32 @@ async def test_a_completed_request_verifies_the_identity(store: ConversationStor
     await kit.close()
 
 
+async def test_a_room_named_like_a_verification_key_holds_no_verification() -> None:
+    """An identity's verification lock is in a key space of its own (RFC
+    §13.5): a section of the room ``verification::alice`` leaves alice's
+    transitions free."""
+    kit = RoomKit()
+    room = await _room(kit)
+    held, done = asyncio.Event(), asyncio.Event()
+
+    async def section() -> None:
+        async with kit.lock_manager.locked("verification::alice"):
+            held.set()
+            await done.wait()
+
+    holder = asyncio.create_task(section())
+    await held.wait()
+    try:
+        request, _ = await asyncio.wait_for(
+            kit.request_verification("alice", room_id=room, channel_id="sms"), 1.0
+        )
+    finally:
+        done.set()
+        await holder
+    assert request.identity_id == "alice"
+    await kit.close()
+
+
 async def test_the_secret_is_returned_once_and_never_stored(store: ConversationStore) -> None:
     kit, _ = _kit(store)
     room = await _room(kit)

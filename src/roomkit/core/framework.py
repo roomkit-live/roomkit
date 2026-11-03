@@ -464,6 +464,12 @@ class RoomKit(
         self._lock_manager = ReleaseTolerantLockManager(
             self._given_lock_manager, waiting=self._door_runs.waiting_for_lock
         )
+        # An identity's transitions are serialised apart from the rooms: no
+        # room id takes an identity's verification lock (RFC §11.7, §13.5).
+        self._verification_locks = ReleaseTolerantLockManager(
+            self._given_lock_manager._key_space("verification"),
+            waiting=self._door_runs.waiting_for_lock,
+        )
         # Admission tickets for off-lock BEFORE_BROADCAST checks (RFC §9.5.1).
         self._admission = RoomAdmission(
             self._hook_engine, self._build_context, self._announce_hook_errors
@@ -487,11 +493,20 @@ class RoomKit(
             )
         # Delivery lanes (RFC §10.2): broadcast planned under the room lock,
         # executed per room in index order off it. The claim defaults to the
-        # room lock manager (derived key space); a dedicated manager keeps
-        # long claim tenures off the commit pool in multi-process setups.
+        # room lock manager, in a key space of its own that no room id
+        # reaches; a dedicated manager keeps long claim tenures off the
+        # commit pool in multi-process setups.
         from roomkit.core.lanes import LaneConfig, RoomLaneRegistry
 
-        self._claim_locks = delivery_claim_lock_manager or self._lock_manager
+        self._given_claim_locks = delivery_claim_lock_manager
+        self._claim_locks: RoomLockManager = (
+            delivery_claim_lock_manager._key_space("delivery")
+            if delivery_claim_lock_manager is not None
+            else ReleaseTolerantLockManager(
+                self._given_lock_manager._key_space("delivery"),
+                waiting=self._door_runs.waiting_for_lock,
+            )
+        )
         self._lanes = RoomLaneRegistry(
             self, self._claim_locks, LaneConfig(gap_timeout=delivery_gap_timeout)
         )
@@ -1179,8 +1194,9 @@ class RoomKit(
         # Close the lock manager (e.g. release an advisory-lock pool), and
         # the delivery-claim manager when the host supplied a dedicated one.
         await close_bounded(self._lock_manager)
-        if self._claim_locks is not self._lock_manager:
-            await close_bounded(self._claim_locks)
+        claims = self._given_claim_locks
+        if claims is not None and claims is not self._given_lock_manager:
+            await close_bounded(claims)
         # Close status bus
         await self._status_bus.close()
         # Flush telemetry (ends active spans, flushes exporter)

@@ -158,6 +158,33 @@ async def test_delivery_runs_outside_the_room_lock() -> None:
     await kit.close()
 
 
+async def test_a_room_named_like_a_delivery_claim_holds_no_claim() -> None:
+    """A room's delivery claim is in a key space of its own (RFC §13.5): a
+    section of the room ``__delivery__:r1`` leaves r1's deliveries free."""
+    kit = RoomKit()
+    delivered = asyncio.Event()
+
+    class Recorder(SimpleChannel):
+        async def deliver(self, event, binding, context):  # type: ignore[override]
+            delivered.set()
+            return await super().deliver(event, binding, context)
+
+    kit.register_channel(SimpleChannel("src"))
+    kit.register_channel(Recorder("out"))
+    await kit.create_room(room_id="r1")
+    await kit.attach_channel("r1", "src")
+    await kit.attach_channel("r1", "out")
+    async with kit.lock_manager.locked("__delivery__:r1"):
+        await asyncio.wait_for(
+            kit.process_inbound(
+                InboundMessage(channel_id="src", sender_id="u", content=TextContent(body="hi"))
+            ),
+            1.0,
+        )
+        await asyncio.wait_for(delivered.wait(), 1.0)
+    await kit.close()
+
+
 async def test_ai_chain_completes_before_return_and_cursor_catches_up() -> None:
     """The observable contract the whole suite leans on, stated explicitly:
     when process_inbound returns, the AI's response is committed AND its

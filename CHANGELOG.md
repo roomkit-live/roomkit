@@ -200,6 +200,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unread, in their child rooms. They are now cut, and awaited to their end,
   before the error is raised.
 
+- **A room id takes no delivery claim and no verification lock** (RFC
+  §13.5, RMK-1281). The kit kept a room's delivery claim
+  (`__delivery__:<room_id>`) and an identity's verification lock
+  (`verification:<org>:<identity>`) among its rooms' keys: a section of the
+  room `__delivery__:r1` held r1's deliveries, and one of the room
+  `verification:org-a:alice` alice's verification. An `InMemoryLockManager`
+  now keeps each kind in a map of its own, shared by the kits sharing it.
+
 - **A sender's routing stamps are dropped** (RFC §19.4, RMK-1233). A
   message that arrived with `_routed_to` or `_always_process` in its
   metadata chose the agent that answered it, or added one to its address:

@@ -63,13 +63,23 @@ _held_leases: contextvars.ContextVar[tuple[_LockLease | _LentLease, ...]] = cont
 
 
 def _has_room_lock(room_id: str, manager: RoomLockManager | None = None) -> bool:
-    """Inherited context grants reentrancy only while its acquisition is live."""
+    """Inherited context grants reentrancy only while its acquisition is live.
+
+    Without *manager*, any room lock counts, never a lock of another kind (a
+    delivery claim, a verification) whose key reads like a room id."""
     if isinstance(manager, ReleaseTolerantLockManager):
         manager = manager.inner
     return room_id in _held_rooms.get() and any(
-        lease.active and lease.room_id == room_id and (manager is None or lease.manager is manager)
+        lease.active
+        and lease.room_id == room_id
+        and (lease.manager is manager if manager is not None else _locks_rooms(lease.manager))
         for lease in _held_leases.get()
     )
+
+
+def _locks_rooms(manager: RoomLockManager) -> bool:
+    """Whether *manager* holds room locks, not a kit's locks of another kind."""
+    return not isinstance(manager, _KeySpace)
 
 
 def _holds_a_room_lock(manager: RoomLockManager | None = None) -> bool:
@@ -161,6 +171,13 @@ class RoomLockManager(ABC):
         MUST be idempotent."""
         return None
 
+    def _key_space(self, kind: str) -> RoomLockManager:
+        """The locks of *kind* the kit takes from this manager besides its
+        rooms' (``"delivery"``: a room's delivery claim; ``"verification"``:
+        an identity's verification). A manager shared across processes holds
+        them among its rooms' keys, under keys of their own."""
+        return self
+
 
 class InMemoryLockManager(RoomLockManager):
     """In-process per-room asyncio locks with LRU eviction.
@@ -180,6 +197,7 @@ class InMemoryLockManager(RoomLockManager):
         self._refcounts: dict[str, int] = {}
         self._max_locks = max_locks
         self._mgr_lock = asyncio.Lock()
+        self._key_spaces: dict[str, _KeySpace] = {}
 
     def _get_lock(self, room_id: str) -> asyncio.Lock:
         if room_id in self._locks:
@@ -237,6 +255,19 @@ class InMemoryLockManager(RoomLockManager):
         """Return the number of locks currently held."""
         return len(self._locks)
 
+    def _key_space(self, kind: str) -> RoomLockManager:
+        """A map of its own for the locks of *kind*, shared by every kit that
+        shares this manager: no room id, whatever it reads, names one of
+        their keys (RFC §13.5)."""
+        space = self._key_spaces.get(kind)
+        if space is None:
+            space = self._key_spaces[kind] = _KeySpace(self._max_locks)
+        return space
+
+
+class _KeySpace(InMemoryLockManager):
+    """An in-memory manager's locks of one kind other than its rooms'."""
+
 
 # The failed releases met by the operation that set the list (RFC §13.5).
 _release_failures: contextvars.ContextVar[list[Exception] | None] = contextvars.ContextVar(
@@ -286,7 +317,9 @@ class ReleaseTolerantLockManager(RoomLockManager):
     @asynccontextmanager
     async def locked(self, room_id: str) -> AsyncGenerator[None, None]:
         lock = self.inner.locked(room_id)
-        with self._waiting(room_id):
+        # A lock this context holds already, of any kind, is no wait.
+        held = _has_room_lock(room_id, self.inner)
+        with nullcontext() if held else self._waiting(room_id):
             await lock.__aenter__()
         try:
             yield

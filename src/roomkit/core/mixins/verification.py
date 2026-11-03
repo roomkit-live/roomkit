@@ -81,12 +81,15 @@ class VerificationHost(Protocol):
 
     Attributes provided by the host's ``__init__``:
         _store: Conversation persistence backend (stores verifications).
-        _lock_manager: Serialises the transitions of one identity.
+        _lock_manager: Per-room lock (releases a held message).
+        _verification_locks: Serialises the transitions of one identity,
+            apart from the room locks.
         _verification_policy: Lifetimes and attempts.
     """
 
     _store: ConversationStore
     _lock_manager: RoomLockManager
+    _verification_locks: RoomLockManager
     _verification_policy: VerificationPolicy
     _verification_timers: dict[str, asyncio.Task[None]]
 
@@ -99,6 +102,7 @@ class VerificationMixin(HelpersMixin):
 
     _store: ConversationStore
     _lock_manager: RoomLockManager
+    _verification_locks: RoomLockManager
     _verification_policy: VerificationPolicy
     _verification_timers: dict[str, asyncio.Task[None]]
     _hook_engine: HookEngine
@@ -156,7 +160,7 @@ class VerificationMixin(HelpersMixin):
             expires_at=now + timedelta(seconds=ttl),
             max_attempts=policy.max_attempts,
         )
-        async with self._lock_manager.locked(_lock_key(identity_id, organization_id)):
+        async with self._verification_locks.locked(_lock_key(identity_id, organization_id)):
             current = await self._stored_verification(identity_id, organization_id)
             cancelled = await self._cancel_open_request(current)
             await self._store.create_verification_request(request)
@@ -198,7 +202,7 @@ class VerificationMixin(HelpersMixin):
         if request is None or not _in_scope(request, organization_id):
             raise VerificationRefusedError("not_found")
         key = _lock_key(request.identity_id, request.organization_id)
-        async with self._lock_manager.locked(key):
+        async with self._verification_locks.locked(key):
             outcome, request, verification = await self._attempt(request_id, secret, method)
         if outcome == "completed":
             self._disarm_request_expiry(request.id)
@@ -233,7 +237,7 @@ class VerificationMixin(HelpersMixin):
         if request is None or not _in_scope(request, organization_id):
             raise VerificationRefusedError("not_found")
         key = _lock_key(request.identity_id, request.organization_id)
-        async with self._lock_manager.locked(key):
+        async with self._verification_locks.locked(key):
             outcome, request, current = await self._open_request(request_id)
             if outcome is None:
                 outcome, request = await self._count_failure(request, current)
@@ -257,7 +261,7 @@ class VerificationMixin(HelpersMixin):
         """
         now = datetime.now(UTC)
         self._disarm_expiry(identity_id, organization_id)
-        async with self._lock_manager.locked(_lock_key(identity_id, organization_id)):
+        async with self._verification_locks.locked(_lock_key(identity_id, organization_id)):
             current = await self._stored_verification(identity_id, organization_id)
             completing = await self._completing_request(current)
             cancelled = await self._cancel_open_request(current)
@@ -611,7 +615,7 @@ class VerificationMixin(HelpersMixin):
         await asyncio.sleep(max(0.0, delay))
         key = _lock_key(request.identity_id, request.organization_id)
         try:
-            async with self._lock_manager.locked(key):
+            async with self._verification_locks.locked(key):
                 outcome, ended, before = await self._open_request(request.id)
         except VerificationRefusedError:
             return  # gone from the store
@@ -633,7 +637,7 @@ class VerificationMixin(HelpersMixin):
     async def _expire(self, verification: Verification) -> Verification | None:
         """End *verification* if it is still the one in force and its time passed."""
         key = _lock_key(verification.identity_id, verification.organization_id)
-        async with self._lock_manager.locked(key):
+        async with self._verification_locks.locked(key):
             current = await self._stored_verification(
                 verification.identity_id, verification.organization_id
             )
@@ -902,7 +906,8 @@ def _in_scope(request: VerificationRequest, organization_id: str | None) -> bool
 
 
 def _lock_key(identity_id: str, organization_id: str | None) -> str:
-    """One identity's transitions are serialised under this key (any lock manager)."""
+    """One identity's transitions are serialised under this key, in the
+    verification key space of the kit's lock manager."""
     return f"verification:{organization_id or ''}:{identity_id}"
 
 

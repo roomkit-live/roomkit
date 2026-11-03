@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
-from roomkit.core.locks import InMemoryLockManager, _held_rooms
+from roomkit.core.locks import InMemoryLockManager, _has_room_lock, _held_rooms
 
 
 class TestInMemoryLockManager:
@@ -159,3 +159,16 @@ async def test_reentrance_is_scoped_to_manager() -> None:
     async with first.locked("r1"), second.locked("r1"):
         assert first._locks["r1"].locked()
         assert second._locks["r1"].locked()
+
+
+async def test_a_lock_of_another_kind_is_no_room_lock() -> None:
+    """A kit's lock of another kind (a delivery claim) keyed like a room id is
+    held in a map of its own and never reads as that room's lock."""
+    rooms = InMemoryLockManager()
+    claims = rooms._key_space("delivery")
+    assert rooms._key_space("delivery") is claims
+    async with claims.locked("r1"):
+        assert not _has_room_lock("r1")
+        assert not rooms._locks
+        async with rooms.locked("r1"):
+            assert _has_room_lock("r1")
