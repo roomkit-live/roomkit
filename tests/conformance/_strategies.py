@@ -15,7 +15,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from roomkit import RoomKit
-from roomkit.orchestration import Loop, Supervisor, Swarm
+from roomkit.orchestration import Loop, Pipeline, Supervisor, Swarm
 from roomkit.orchestration.base import Orchestration
 from tests.conformance._script import perform
 
@@ -23,8 +23,9 @@ if TYPE_CHECKING:
     from tests.conformance._calls import Call
     from tests.conformance._harness import Harness
 
-STRATEGY = {"id", "agents", "install", "uninstall", "loop", "supervisor", "swarm"}
+STRATEGY = {"id", "agents", "install", "uninstall", "loop", "supervisor", "swarm", "pipeline"}
 SWARM = {"agents", "entry"}
+PIPELINE = {"agents", "supervisor_id"}
 STRATEGY_STEP = {"gate", "do", "refuse"}
 STRATEGY_UNINSTALL = {"gate", "do"}
 LOOP = {"agent", "reviewer", "reviewers", "max_iterations", "strategy"}
@@ -101,13 +102,16 @@ def _supervisor(spec: Mapping[str, Any]) -> Supervisor:
 
 
 def _strategy(spec: Mapping[str, Any], harness: Harness) -> Orchestration:
-    """The strategy *spec* describes: a Loop, a Supervisor, a Swarm, or a scripted one."""
+    """The strategy *spec* describes: a built-in one, or a scripted one."""
     if "loop" in spec:
         return _loop(spec["loop"])
     if "supervisor" in spec:
         return _supervisor(spec["supervisor"])
     if "swarm" in spec:
         return Swarm(spec["swarm"]["agents"], entry=spec["swarm"].get("entry"))
+    if "pipeline" in spec:
+        pipeline = spec["pipeline"]
+        return Pipeline(pipeline["agents"], supervisor_id=pipeline.get("supervisor_id"))
     return ScriptedStrategy(spec, harness)
 
 

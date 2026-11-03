@@ -26,6 +26,7 @@ from tests.conformance._routing import (
 from tests.conformance._store import READ_MARKER_ARGUMENTS, STORE_ARGUMENTS
 from tests.conformance._strategies import (
     LOOP,
+    PIPELINE,
     STRATEGY,
     STRATEGY_ARGUMENTS,
     STRATEGY_STEP,
@@ -421,6 +422,8 @@ def _strategy(strategy: Mapping[str, Any], path: str, found: list[str]) -> None:
         _members(strategy["supervisor"], SUPERVISOR, f"{path}.supervisor", found)
     if "swarm" in strategy:
         _members(strategy["swarm"], SWARM, f"{path}.swarm", found)
+    if "pipeline" in strategy:
+        _members(strategy["pipeline"], PIPELINE, f"{path}.pipeline", found)
     for member, known in (("install", STRATEGY_STEP), ("uninstall", STRATEGY_UNINSTALL)):
         step = strategy.get(member, {})
         _members(step, known, f"{path}.{member}", found)
