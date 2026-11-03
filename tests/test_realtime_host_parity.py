@@ -308,6 +308,24 @@ async def test_what_opens_no_turn_is_taken_silently(
     ]
 
 
+async def test_a_system_notice_enters_a_realtime_voice_session_silently() -> None:
+    """A SYSTEM notice opens no turn (RFC §6.4, RMK-1258): the realtime voice
+    channel takes it silently; a conference takes no SYSTEM event at all."""
+    provider = _Provider()
+    rt = _Host("voice", provider, [])
+    await rt.attach()
+    await rt.start()
+
+    await rt.kit.send_event(
+        ROOM, "src", TextContent(body="The order shipped"), event_type=EventType.SYSTEM
+    )
+    await rt.kit.send_event(ROOM, "src", TextContent(body="next"))
+    await until(lambda: len(provider.injections) == 2)
+    await rt.kit.close()
+
+    assert provider.injections == [("@src: “The order shipped”", True), ("@src: “next”", False)]
+
+
 @HOSTS
 async def test_no_provider_audio_reaches_the_people_under_output_mute(host: str) -> None:
     provider = _Provider()
