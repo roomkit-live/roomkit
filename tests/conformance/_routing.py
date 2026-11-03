@@ -31,14 +31,18 @@ CONDITIONS = {"phases", "channel_types", "intents", "source_channel_ids"}
 TRANSITION = {"to_phase", "to_agent", "reason", "metadata"}
 
 
-def router_hook(spec: Mapping[str, Any]) -> HookHandler:
-    """The hook of the ConversationRouter a hook's ``router`` describes."""
-    router = ConversationRouter(
+def router_of(spec: Mapping[str, Any]) -> ConversationRouter:
+    """The ConversationRouter a ``router`` member describes."""
+    return ConversationRouter(
         rules=[_rule(rule) for rule in spec.get("rules", [])],
         default_agent_id=spec.get("default_agent_id"),
         supervisor_id=spec.get("supervisor_id"),
     )
-    return router.as_hook()
+
+
+def router_hook(spec: Mapping[str, Any]) -> HookHandler:
+    """The hook of the ConversationRouter a hook's ``router`` describes."""
+    return router_of(spec).as_hook()
 
 
 def _rule(spec: Mapping[str, Any]) -> RoutingRule:

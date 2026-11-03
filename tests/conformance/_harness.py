@@ -30,6 +30,7 @@ from roomkit.models.tool_call import (
     ToolCallEvent,
     ToolRoundEvent,
 )
+from roomkit.orchestration import HandoffHandler
 from roomkit.orchestration.base import Orchestration
 from roomkit.orchestration.status_bus import StatusEntry
 from roomkit.store.base import ConversationStore
@@ -57,6 +58,7 @@ from tests.conformance._delivery import (
     start_backend,
     wait_for_lock,
 )
+from tests.conformance._handoff import HANDOFF_CALLS
 from tests.conformance._identity import kit_options, register_identity_hook
 from tests.conformance._inputs import INPUT_CALLS, request_record
 from tests.conformance._locks import LOCK_EVENTS, lock_options, set_lock_releases
@@ -145,6 +147,7 @@ class Harness:
         self._problems: list[str] = []
         self.models: dict[str, ScriptedModel] = {}
         self.auditors = Auditors()
+        self.handoff_handlers: dict[str, HandoffHandler] = {}
         setup = scenario.get("setup", {})
         self.strategies = strategies(setup, self)
         kit_setup = setup.get("kit", {})
@@ -434,7 +437,7 @@ class Harness:
         """Makes one call; returns its outcome, its error named, never raising."""
         resolved = await self.resolve(dict(spec), scope)
         calls = CALLS | STORE_CALLS | TASK_CALLS | MEMBER_CALLS | INPUT_CALLS | STRATEGY_CALLS
-        call = (calls | VERIFICATION_CALLS | ROUTING_CALLS)[spec["call"]]
+        call = (calls | VERIFICATION_CALLS | ROUTING_CALLS | HANDOFF_CALLS)[spec["call"]]
         try:
             result = await asyncio.wait_for(call(self.kit, self, resolved), CALL_BOUND_S)
         except TimeoutError:

@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from tests.conformance._handoff import HANDOFF_ARGUMENTS
 from tests.conformance._inputs import INPUT_ARGUMENTS
 from tests.conformance._media import ATTACHED_MEDIA, MEDIA_RESOLVER
 from tests.conformance._members import MEMBER_ARGUMENTS
@@ -30,6 +31,7 @@ from tests.conformance._strategies import (
     STRATEGY_STEP,
     STRATEGY_UNINSTALL,
     SUPERVISOR,
+    SWARM,
 )
 from tests.conformance._tasks import TASK_ARGUMENTS
 from tests.conformance._verification import VERIFICATION_ARGUMENTS
@@ -351,6 +353,7 @@ CALLS |= INPUT_ARGUMENTS
 CALLS |= VERIFICATION_ARGUMENTS
 CALLS |= STRATEGY_ARGUMENTS
 CALLS |= ROUTING_ARGUMENTS
+CALLS |= HANDOFF_ARGUMENTS
 STEPS = {"await": {"await", "expect"}, "concurrent": {"concurrent"}, "wait_for": {"wait_for"}}
 STEPS |= {"open": {"open"}, "idle": {"idle"}, "wait_for_lock": {"wait_for_lock", "waiters"}}
 STEPS |= {"lock_releases": {"lock_releases"}}
@@ -402,6 +405,8 @@ def _strategy(strategy: Mapping[str, Any], path: str, found: list[str]) -> None:
         _members(strategy["loop"], LOOP, f"{path}.loop", found)
     if "supervisor" in strategy:
         _members(strategy["supervisor"], SUPERVISOR, f"{path}.supervisor", found)
+    if "swarm" in strategy:
+        _members(strategy["swarm"], SWARM, f"{path}.swarm", found)
     for member, known in (("install", STRATEGY_STEP), ("uninstall", STRATEGY_UNINSTALL)):
         step = strategy.get(member, {})
         _members(step, known, f"{path}.{member}", found)
@@ -576,6 +581,8 @@ def _call(call: Mapping[str, Any], extra: set[str], path: str, found: list[str])
         _hook(call.get("hook", {}), f"{path}.hook", found)
     if name == "add_room_hook":
         _hook(call.get("hook", {}), f"{path}.hook", found, ROOM_HOOK)
+    if name in ("handoff_handler", "install_router"):
+        _router(call.get("router", {}), f"{path}.router", found)
     if name == "save_conversation_state":
         for index, transition in enumerate(call.get("transitions", [])):
             _members(transition, TRANSITION, f"{path}.transitions[{index}]", found)
