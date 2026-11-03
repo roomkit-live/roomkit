@@ -1,0 +1,76 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "members/a-renamed-member-s-record-escapes-what-does-not-print",
+  "title": "The record of a rename quotes the name as Python's repr writes it: a character str.isprintable refuses is escaped, a no-break space as \\xa0, a right-to-left override as \\u202e",
+  "rules": [
+    "§5.5"
+  ],
+  "notes": "The new name holds a no-break space (U+00A0), a zero-width space (U+200B) and a right-to-left override (U+202E), written raw in this file. The record's body escapes each, so a name cannot hide or reverse what a reader of the record sees; the record's data keeps the name as it was given.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "add_member",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "participant_id": "u1",
+      "identity_id": "id-u1",
+      "display_name": "Alice"
+    },
+    {
+      "call": "rename_member",
+      "room_id": "room-1",
+      "participant_id": "u1",
+      "display_name": "Bob Smith​‮",
+      "expect": {
+        "result": {
+          "id": "u1",
+          "display_name": "Bob Smith​‮"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "lifecycle": {
+      "room-1": [
+        {
+          "type": "channel_attached"
+        },
+        {
+          "type": "participant_joined"
+        },
+        {
+          "type": "participant_updated",
+          "content": {
+            "type": "system",
+            "code": "participant_updated",
+            "body": "Participant u1 is now displayed as 'Bob\\xa0Smith\\u200b\\u202e'",
+            "data": {
+              "participant_id": "u1",
+              "display_name": "Bob Smith​‮"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

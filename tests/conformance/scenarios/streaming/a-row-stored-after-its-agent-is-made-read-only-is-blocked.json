@@ -1,0 +1,210 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-row-stored-after-its-agent-is-made-read-only-is-blocked",
+  "title": "A streamed row stored after its agent is made read-only is stored BLOCKED source_read_only, with no BEFORE_BROADCAST hook, and is delivered to no one",
+  "rules": [
+    "§7.2",
+    "§7.5 rule 2",
+    "§12.2 step 14s"
+  ],
+  "notes": "The agent is bound read-write when its turn starts and given read-only access by a tool-call hook while it streams. Each row reads its source's binding at its own commit, whether a BEFORE_BROADCAST hook runs or not: the rows stored before the change are delivered, those stored after it are stored BLOCKED and delivered to no one.",
+  "setup": {
+    "channels": [
+      {
+        "id": "web",
+        "type": "webhook",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "Let me ",
+                "check."
+              ],
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "lookup_order",
+                  "arguments": {
+                    "order": "42"
+                  }
+                }
+              ]
+            },
+            {
+              "deltas": [
+                "Order 42 ",
+                "shipped."
+              ]
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup_order",
+            "description": "Find an order by its number",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "order": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "order"
+              ]
+            },
+            "returns": "shipped"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "moderator",
+        "trigger": "on_tool_call",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "set_access",
+                "room_id": "$room",
+                "channel_id": "agent",
+                "access": "read_only",
+                "as": "change"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "web",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Where is order 42?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message",
+          "source": {
+            "channel_id": "web"
+          },
+          "content": {
+            "body": "Where is order 42?"
+          },
+          "status": "delivered"
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "source": {
+            "channel_id": "agent",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "Let me check."
+          },
+          "status": "delivered"
+        },
+        {
+          "index": 2,
+          "type": "tool_call_start",
+          "content": {
+            "tool_id": "call-1",
+            "status": "pending"
+          },
+          "status": "delivered"
+        },
+        {
+          "index": 3,
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "call-1",
+            "status": "completed",
+            "result": "shipped"
+          },
+          "status": "blocked",
+          "blocked_by": "source_read_only"
+        },
+        {
+          "index": 4,
+          "type": "message",
+          "source": {
+            "channel_id": "agent",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "Order 42 shipped."
+          },
+          "status": "blocked",
+          "blocked_by": "source_read_only"
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "index": 0
+          }
+        ],
+        "web": [
+          {
+            "id": "room-1#1"
+          },
+          {
+            "id": "room-1#2"
+          }
+        ]
+      }
+    }
+  }
+}
