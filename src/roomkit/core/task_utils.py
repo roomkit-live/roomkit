@@ -287,6 +287,28 @@ async def cancel_and_wait(
         )
 
 
+async def gather_or_cut[T](*works: Awaitable[T]) -> list[T]:
+    """The results of *works*, run at once, in their order (RFC §19.7.3,
+    §19.7.4): the first to raise cuts the others, awaited to their end, then
+    its error is raised, where ``asyncio.gather`` raises it and leaves the
+    others running unread. A caller cancelled cuts them all."""
+    tasks = [asyncio.ensure_future(work) for work in works]
+    try:
+        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
+    except asyncio.CancelledError:
+        await cancel_and_wait(*tasks, log_errors_to=logger)
+        raise
+    errors = [
+        error
+        for task in tasks
+        if task in done and not task.cancelled() and (error := task.exception()) is not None
+    ]
+    if not errors:
+        return [task.result() for task in tasks]
+    await cancel_and_wait(*pending, log_errors_to=logger)
+    raise errors[0]
+
+
 _CLOSE_CALLERS: weakref.WeakSet[asyncio.Task[Any]] = weakref.WeakSet()
 """The tasks a kit's ``close()`` is called from, until it returns."""
 

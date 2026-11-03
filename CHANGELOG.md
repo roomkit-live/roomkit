@@ -192,6 +192,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `BEFORE_BROADCAST` hook ran; each row now reads its agent's binding at
   its commit, hook or not, and is stored BLOCKED `source_muted`,
   `source_read_only` or `source_unbound`, as roomkit-rs does.
+
+- **A parallel team's first error cuts the other workers** (RFC §19.7.3,
+  §19.7.4, RMK-1279). A `Supervisor(strategy="parallel")` one of whose
+  delegations raised, and a `Loop` one of whose parallel reviews raised,
+  answered with that error at once and left the other workers running,
+  unread, in their child rooms. They are now cut, and awaited to their end,
+  before the error is raised.
+
 - **A sender's routing stamps are dropped** (RFC §19.4, RMK-1233). A
   message that arrived with `_routed_to` or `_always_process` in its
   metadata chose the agent that answered it, or added one to its address:

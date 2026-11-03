@@ -8,10 +8,10 @@ variant lives in ``supervised.py``.
 
 from __future__ import annotations
 
-import asyncio
 import json
 from typing import TYPE_CHECKING
 
+from roomkit.core.task_utils import gather_or_cut
 from roomkit.orchestration._worker_run import WorkerStatus, run_worker
 from roomkit.orchestration.strategies.supervisor._common import _DEFAULT_TASK_TIMEOUT_SECONDS
 from roomkit.orchestration.strategies.supervisor.results import _worker_label
@@ -112,5 +112,6 @@ async def _run_parallel(
             "completed": outcome.completed,
         }
 
-    results = await asyncio.gather(*[_delegate_one(w) for w in workers])
-    return json.dumps({"status": "completed", "results": list(results)})
+    # The first worker whose delegation raises cuts the others (RMK-1279).
+    results = await gather_or_cut(*[_delegate_one(w) for w in workers])
+    return json.dumps({"status": "completed", "results": results})

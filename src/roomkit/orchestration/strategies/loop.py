@@ -7,7 +7,6 @@ The framework controls the flow — agents just produce content.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from collections.abc import Callable, Mapping
@@ -19,6 +18,7 @@ from roomkit.channels.declared import named_agent, register_strategy_agents
 from roomkit.core._changes import opens_no_turn
 from roomkit.core._failure_log import mark_reported
 from roomkit.core.exceptions import RoomKitError
+from roomkit.core.task_utils import gather_or_cut
 from roomkit.models.channel import ChannelBinding, ChannelOutput
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import ChannelType, TaskStatus
@@ -714,11 +714,11 @@ async def _review_parallel(
     reviewers: list[HeldAgent],
     review_input: str,
 ) -> list[dict[str, Any]]:
-    """Run all reviewers in parallel on the same content."""
-    results = await asyncio.gather(
+    """Run all reviewers in parallel on the same content: the first review
+    that raises cuts the others (RMK-1279)."""
+    return await gather_or_cut(
         *[_review(kit, room_id, r, review_input, "parallel") for r in reviewers]
     )
-    return list(results)
 
 
 async def _review(

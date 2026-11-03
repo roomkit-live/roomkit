@@ -6,6 +6,7 @@ loop execution, reviewer strategies, async delivery, edge cases.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -576,6 +577,27 @@ class TestReviewParallel:
         assert len(results) == 2
         assert results[0]["approved"] is True
         assert results[1]["approved"] is False
+
+    async def test_the_first_error_cuts_the_other_reviewers(self) -> None:
+        """RMK-1279, RFC §19.7.4: the first review that raises fails the
+        reviews at once and cuts the others, awaited to their end."""
+        kit = _make_mock_kit(Room(id="r1"))
+        cut = asyncio.Event()
+
+        async def delegate(room_id: str, agent_id: str, task: str, **kwargs: object) -> None:
+            if agent_id == "r1":
+                raise RuntimeError("review boom")
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cut.set()
+                raise
+
+        kit.delegate = delegate
+        reviewers = [_make_agent("r1"), _make_agent("r2")]
+        with pytest.raises(RuntimeError, match="review boom"):
+            await _review_parallel(kit, "r1", reviewers, "Review this")
+        assert cut.is_set()
 
     async def test_parallel_empty_result(self) -> None:
         kit = _make_mock_kit(Room(id="r1"))

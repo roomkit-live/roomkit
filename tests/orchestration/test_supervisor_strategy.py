@@ -286,6 +286,32 @@ class TestParallelWorkerFailure:
             await supervisor._channel_tool_handler("delegate_workers", {"task": "fail"})
         await kit.close()
 
+    async def test_the_first_error_cuts_the_other_workers(self) -> None:
+        """RMK-1279, RFC §19.7.3: the first delegation that raises answers the
+        call at once and cuts the others, awaited to their end, never left
+        running unread."""
+        kit, supervisor = await _setup("parallel", [_agent("w1", "ok"), _agent("w2", "ok")])
+        cut = asyncio.Event()
+
+        async def delegate(room_id: str, agent_id: str, task: str, **kwargs: object) -> None:
+            if agent_id == "w1":
+                raise RuntimeError("parallel boom")
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cut.set()
+                raise
+
+        kit.delegate = delegate  # type: ignore[assignment]
+
+        with (
+            owner_tool_call_in(kit, "boss", "room"),
+            pytest.raises(RuntimeError, match="parallel boom"),
+        ):
+            await supervisor._channel_tool_handler("delegate_workers", {"task": "fail"})
+        assert cut.is_set()
+        await kit.close()
+
 
 # -- Background dedup (pending set) ------------------------------------------
 
