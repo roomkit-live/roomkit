@@ -1,0 +1,195 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-binding-s-cost-budget-that-is-no-positive-number-fails-the-turn",
+  "title": "A turn whose binding's metadata sets turn_budget_usd to a text, a boolean or zero fails with Python's ValueError naming the value, on a priced model, and its model is not asked",
+  "rules": [
+    "§6.4",
+    "Appendix A.9"
+  ],
+  "notes": "Python: channels/_turn_budget.py turn_budget, _check_positive: a cost budget is an int or a float, no boolean, above zero, else ValueError 'turn_budget_usd must be a positive number, got <repr>', before the turn reads anything; the binding's value is read strictly, not as a lenient number. The scripted model has a price, so the value alone fails the turn.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "done"
+            }
+          ],
+          "pricing": {
+            "input_per_million": 10.0,
+            "output_per_million": 50.0,
+            "verified": "2026-09-30"
+          }
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look up an item",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "n": {
+                  "type": "integer"
+                }
+              }
+            },
+            "returns": "ok"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-text",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "turn_budget_usd": "0.05"
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-bool",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "turn_budget_usd": true
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-zero",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "turn_budget_usd": 0
+            }
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "report",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-text",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": "turn_budget_usd must be a positive number, got '0.05'",
+          "delivery_results": {
+            "agent": {
+              "status": "failed",
+              "error": {
+                "code": "ValueError",
+                "message": "turn_budget_usd must be a positive number, got '0.05'"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-bool",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": "turn_budget_usd must be a positive number, got True",
+          "delivery_results": {
+            "agent": {
+              "status": "failed",
+              "error": {
+                "code": "ValueError",
+                "message": "turn_budget_usd must be a positive number, got True"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-zero",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": "turn_budget_usd must be a positive number, got 0",
+          "delivery_results": {
+            "agent": {
+              "status": "failed",
+              "error": {
+                "code": "ValueError",
+                "message": "turn_budget_usd must be a positive number, got 0"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": []
+    }
+  }
+}

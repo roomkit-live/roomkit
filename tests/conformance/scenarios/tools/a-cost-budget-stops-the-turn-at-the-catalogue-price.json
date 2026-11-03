@@ -1,0 +1,269 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-cost-budget-stops-the-turn-at-the-catalogue-price",
+  "title": "A turn whose cost, each generation priced at the model's catalogue price, reaches the agent's turn_budget_usd ends budget_exceeded at the round boundary where it is reached: the calls asked for there do not run",
+  "rules": [
+    "§6.4",
+    "Appendix A.9"
+  ],
+  "notes": "Python: channels/_turn_budget.py (TurnBudget.cost_of prices each generation's usage with the model's catalogue ModelPricing.cost_for, reached once the cost is at the budget), _ai_loop_rules.py limit_reached; tests/test_channels/test_turn_budget.py test_a_cost_budget_stops_the_turn_at_the_catalogue_price: a generation costs (300 x 10 + 100 x 1 + 100 x 50) / 1,000,000 = 0.0081, the budget 2.5 times that; the third reaches it.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c0",
+                  "name": "lookup",
+                  "arguments": {
+                    "n": 0
+                  }
+                }
+              ],
+              "usage": {
+                "input_tokens": 300,
+                "cache_read_input_tokens": 100,
+                "output_tokens": 100
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {
+                    "n": 1
+                  }
+                }
+              ],
+              "usage": {
+                "input_tokens": 300,
+                "cache_read_input_tokens": 100,
+                "output_tokens": 100
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "lookup",
+                  "arguments": {
+                    "n": 2
+                  }
+                }
+              ],
+              "usage": {
+                "input_tokens": 300,
+                "cache_read_input_tokens": 100,
+                "output_tokens": 100
+              },
+              "text": "Looking again."
+            },
+            {
+              "calls": [
+                {
+                  "id": "c3",
+                  "name": "lookup",
+                  "arguments": {
+                    "n": 3
+                  }
+                }
+              ],
+              "usage": {
+                "input_tokens": 300,
+                "cache_read_input_tokens": 100,
+                "output_tokens": 100
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c4",
+                  "name": "lookup",
+                  "arguments": {
+                    "n": 4
+                  }
+                }
+              ],
+              "usage": {
+                "input_tokens": 300,
+                "cache_read_input_tokens": 100,
+                "output_tokens": 100
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c5",
+                  "name": "lookup",
+                  "arguments": {
+                    "n": 5
+                  }
+                }
+              ],
+              "usage": {
+                "input_tokens": 300,
+                "cache_read_input_tokens": 100,
+                "output_tokens": 100
+              }
+            },
+            {
+              "text": "done",
+              "usage": {
+                "input_tokens": 300,
+                "cache_read_input_tokens": 100,
+                "output_tokens": 100
+              }
+            }
+          ],
+          "pricing": {
+            "input_per_million": 10.0,
+            "output_per_million": 50.0,
+            "cache_read_per_million": 1.0,
+            "long_context_threshold_tokens": 1000,
+            "long_context_input_multiplier": 2.0,
+            "verified": "2026-09-30"
+          }
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look up an item",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "n": {
+                  "type": "integer"
+                }
+              }
+            },
+            "returns": "ok"
+          }
+        ],
+        "turn_budget_usd": 0.02025
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "report",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message"
+        },
+        {
+          "index": 1,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 2,
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "c0",
+            "outcome": "served"
+          }
+        },
+        {
+          "index": 3,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 4,
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "c1",
+            "outcome": "served"
+          }
+        },
+        {
+          "index": 5,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "Looking again."
+          },
+          "metadata": {
+            "loop_end_reason": "budget_exceeded"
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "tool_results": []
+        },
+        {
+          "tool_results": "$any"
+        },
+        {
+          "tool_results": "$any"
+        }
+      ]
+    },
+    "hooks": {
+      "report": [
+        {
+          "response": {
+            "loop_end_reason": "budget_exceeded",
+            "tool_calls_count": 2,
+            "round_count": 2
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,110 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-binding-s-cost-budget-on-an-unpriced-model-fails-the-turn",
+  "title": "A turn whose binding's metadata sets turn_budget_usd for a model with no catalogue price fails with Python's ValueError, and its model is not asked",
+  "rules": [
+    "§6.4",
+    "Appendix A.9"
+  ],
+  "notes": "Python: channels/_turn_budget.py turn_budget raises ValueError for a cost budget on a model whose catalogue entry has no price, before the turn reads anything; tests/test_channels/test_turn_budget.py test_a_room_budget_the_model_cannot_price_fails_the_turn. The scripted model has no price.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "done"
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look up an item",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "n": {
+                  "type": "integer"
+                }
+              }
+            },
+            "returns": "ok"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "turn_budget_usd": 0.05
+            }
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "report",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "turn_budget_usd needs a model with a known price"
+          },
+          "delivery_results": {
+            "agent": {
+              "status": "failed",
+              "error": {
+                "code": "ValueError",
+                "message": {
+                  "$contains": "turn_budget_usd needs a model with a known price"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": []
+    }
+  }
+}

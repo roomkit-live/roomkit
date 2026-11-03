@@ -1,0 +1,270 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/each-generation-is-priced-as-one-response",
+  "title": "A cost budget prices each generation's usage as one response: generations each under the long-context threshold cost their own price, not the price of their sum",
+  "rules": [
+    "§6.4",
+    "Appendix A.9"
+  ],
+  "notes": "Python: channels/_turn_budget.py TurnBudget.cost_of, the loop adding each generation's cost; tests/test_channels/test_turn_budget.py test_each_generation_is_priced_as_one_response: 600 input tokens a generation stay under the 1,000-token threshold and cost 0.006 each; the budget is 3.5 times that, which the fourth generation reaches; the turn's summed usage priced as one response would cross the threshold and stop it two generations early.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c0",
+                  "name": "lookup",
+                  "arguments": {
+                    "n": 0
+                  }
+                }
+              ],
+              "usage": {
+                "input_tokens": 600
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {
+                    "n": 1
+                  }
+                }
+              ],
+              "usage": {
+                "input_tokens": 600
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "lookup",
+                  "arguments": {
+                    "n": 2
+                  }
+                }
+              ],
+              "usage": {
+                "input_tokens": 600
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c3",
+                  "name": "lookup",
+                  "arguments": {
+                    "n": 3
+                  }
+                }
+              ],
+              "usage": {
+                "input_tokens": 600
+              },
+              "text": "Looking again."
+            },
+            {
+              "calls": [
+                {
+                  "id": "c4",
+                  "name": "lookup",
+                  "arguments": {
+                    "n": 4
+                  }
+                }
+              ],
+              "usage": {
+                "input_tokens": 600
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c5",
+                  "name": "lookup",
+                  "arguments": {
+                    "n": 5
+                  }
+                }
+              ],
+              "usage": {
+                "input_tokens": 600
+              }
+            },
+            {
+              "text": "done",
+              "usage": {
+                "input_tokens": 600
+              }
+            }
+          ],
+          "pricing": {
+            "input_per_million": 10.0,
+            "output_per_million": 50.0,
+            "cache_read_per_million": 1.0,
+            "long_context_threshold_tokens": 1000,
+            "long_context_input_multiplier": 2.0,
+            "verified": "2026-09-30"
+          }
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look up an item",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "n": {
+                  "type": "integer"
+                }
+              }
+            },
+            "returns": "ok"
+          }
+        ],
+        "turn_budget_usd": 0.021
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "report",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message"
+        },
+        {
+          "index": 1,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 2,
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "c0",
+            "outcome": "served"
+          }
+        },
+        {
+          "index": 3,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 4,
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "c1",
+            "outcome": "served"
+          }
+        },
+        {
+          "index": 5,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 6,
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "c2",
+            "outcome": "served"
+          }
+        },
+        {
+          "index": 7,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "Looking again."
+          },
+          "metadata": {
+            "loop_end_reason": "budget_exceeded"
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "tool_results": []
+        },
+        {
+          "tool_results": "$any"
+        },
+        {
+          "tool_results": "$any"
+        },
+        {
+          "tool_results": "$any"
+        }
+      ]
+    },
+    "hooks": {
+      "report": [
+        {
+          "response": {
+            "loop_end_reason": "budget_exceeded",
+            "tool_calls_count": 3,
+            "round_count": 3
+          }
+        }
+      ]
+    }
+  }
+}

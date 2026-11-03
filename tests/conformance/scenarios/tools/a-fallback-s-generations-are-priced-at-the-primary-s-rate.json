@@ -1,0 +1,313 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-fallback-s-generations-are-priced-at-the-primary-s-rate",
+  "title": "A cost budget prices the generations its fallback serves at the primary model's catalogue price: a fallback priced a hundred times higher ends the turn where the primary's price reaches the budget, not at its first generation",
+  "rules": [
+    "§6.4",
+    "Appendix A.9"
+  ],
+  "notes": "Python: channels/_turn_budget.py turn_budget (TurnBudget.pricing is the provider's catalogue price, the fallback's never read; a fallback priced otherwise is only logged, _warn_if_priced_otherwise), _ai_loop_rules.py _ToolLoopState.count; RFC §6.4. Each generation the primary refuses as worth another try, with no retry policy, and the fallback answers. At the primary's price a generation costs 0.0081 and the third reaches the 0.02025 budget; at the fallback's, 0.81, the first would.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "refuses": {
+                "status": 503,
+                "message": "unavailable",
+                "retryable": true
+              }
+            },
+            {
+              "refuses": {
+                "status": 503,
+                "message": "unavailable",
+                "retryable": true
+              }
+            },
+            {
+              "refuses": {
+                "status": 503,
+                "message": "unavailable",
+                "retryable": true
+              }
+            }
+          ],
+          "pricing": {
+            "input_per_million": 10.0,
+            "output_per_million": 50.0,
+            "cache_read_per_million": 1.0,
+            "long_context_threshold_tokens": 1000,
+            "long_context_input_multiplier": 2.0,
+            "verified": "2026-09-30"
+          }
+        },
+        "fallback_model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c0",
+                  "name": "lookup",
+                  "arguments": {
+                    "n": 0
+                  }
+                }
+              ],
+              "usage": {
+                "input_tokens": 300,
+                "cache_read_input_tokens": 100,
+                "output_tokens": 100
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {
+                    "n": 1
+                  }
+                }
+              ],
+              "usage": {
+                "input_tokens": 300,
+                "cache_read_input_tokens": 100,
+                "output_tokens": 100
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "lookup",
+                  "arguments": {
+                    "n": 2
+                  }
+                }
+              ],
+              "usage": {
+                "input_tokens": 300,
+                "cache_read_input_tokens": 100,
+                "output_tokens": 100
+              },
+              "text": "Looking again."
+            },
+            {
+              "calls": [
+                {
+                  "id": "c3",
+                  "name": "lookup",
+                  "arguments": {
+                    "n": 3
+                  }
+                }
+              ],
+              "usage": {
+                "input_tokens": 300,
+                "cache_read_input_tokens": 100,
+                "output_tokens": 100
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c4",
+                  "name": "lookup",
+                  "arguments": {
+                    "n": 4
+                  }
+                }
+              ],
+              "usage": {
+                "input_tokens": 300,
+                "cache_read_input_tokens": 100,
+                "output_tokens": 100
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c5",
+                  "name": "lookup",
+                  "arguments": {
+                    "n": 5
+                  }
+                }
+              ],
+              "usage": {
+                "input_tokens": 300,
+                "cache_read_input_tokens": 100,
+                "output_tokens": 100
+              }
+            },
+            {
+              "text": "done",
+              "usage": {
+                "input_tokens": 300,
+                "cache_read_input_tokens": 100,
+                "output_tokens": 100
+              }
+            }
+          ],
+          "pricing": {
+            "input_per_million": 1000.0,
+            "output_per_million": 5000.0,
+            "cache_read_per_million": 100.0,
+            "long_context_threshold_tokens": 1000,
+            "long_context_input_multiplier": 2.0,
+            "verified": "2026-09-30"
+          }
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look up an item",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "n": {
+                  "type": "integer"
+                }
+              }
+            },
+            "returns": "ok"
+          }
+        ],
+        "turn_budget_usd": 0.02025
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "report",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message"
+        },
+        {
+          "index": 1,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 2,
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "c0",
+            "outcome": "served"
+          }
+        },
+        {
+          "index": 3,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 4,
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "c1",
+            "outcome": "served"
+          }
+        },
+        {
+          "index": 5,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "Looking again."
+          },
+          "metadata": {
+            "loop_end_reason": "budget_exceeded"
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "tool_results": []
+        },
+        {
+          "tool_results": "$any"
+        },
+        {
+          "tool_results": "$any"
+        }
+      ],
+      "agent/fallback": [
+        {
+          "tool_results": []
+        },
+        {
+          "tool_results": "$any"
+        },
+        {
+          "tool_results": "$any"
+        }
+      ]
+    },
+    "hooks": {
+      "report": [
+        {
+          "response": {
+            "loop_end_reason": "budget_exceeded",
+            "tool_calls_count": 2,
+            "round_count": 2
+          }
+        }
+      ]
+    }
+  }
+}
