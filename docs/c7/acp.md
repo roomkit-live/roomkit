@@ -110,7 +110,7 @@ Through the kit, wherever the agent's turns run (RFC §10.6.3): `await kit.chann
 For each non-self text event, `on_event()` returns `ChannelOutput(responded=True, response_stream=...)` (TOOL_CALL_START/END events are skipped). The prompt (tagged `roomkit.live/eventId`) yields a `StreamDelta` stream consumed by the inbound-streaming pipeline:
 
 - `agent_message_chunk` → `str` deltas → streamed to transports, persisted as the response event.
-- `agent_thought_chunk` → `ThinkingDeltaMarker` in the stream, plus ephemeral `THINKING_START` / `THINKING_DELTA` (thinking truncated to 1000 chars) / `THINKING_END`.
+- `agent_thought_chunk` → `ThinkingDeltaMarker` in the stream, plus ephemeral `THINKING_START` / `THINKING_DELTA` (`thinking_length`, and the text truncated to 1000 chars with `publish_thinking_text=True`) / `THINKING_END`.
 - `tool_call` / `tool_call_update` → `ToolCallStartMarker` / `ToolCallEndMarker` in the stream (persisted as `TOOL_CALL_START`/`TOOL_CALL_END` RoomEvents) plus matching ephemeral events (`result` truncated to 500 chars, `duration_ms`); non-terminal progress → ephemeral `CUSTOM` `{"type": "acp_tool_progress"}`.
 - `plan` / `plan_update` / `plan_removed` → ephemeral `CUSTOM` `{"type": "acp_plan_update", session_id, update}`. **Not** `ON_PLAN_UPDATED` — that hook belongs to AIChannel's `plan_tasks` tool.
 - `usage_update` → ephemeral `CUSTOM` `{"type": "acp_usage"}`.

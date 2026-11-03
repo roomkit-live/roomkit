@@ -1951,7 +1951,7 @@ member management API.
 | Trigger | Execution | Signature | Description |
 |---------|-----------|-----------|-------------|
 | `BEFORE_AI_GENERATION` | SYNC | `(AIGenerationEvent, ctx) -> HookResult` | Before the AI provider is invoked. `event.ai_context` (messages, system prompt, tools) may be mutated in place; block skips generation. Its `tools` are the turn's toolset after the tool policy and skill gating, under Tool Search the whole catalogue: a tool it removes is declared at no round, named by no `find_tools`, and refused; a tool it adds is declared at every round, never deferred. |
-| `ON_AI_THINKING` | ASYNC | `(ThinkingEvent, ctx) -> None` | A reasoning window opened (`THINKING_START`) on an AIChannel; fires whether or not a realtime backend is configured. The reasoning text itself streams on the ephemeral `THINKING_DELTA` / `THINKING_END` events, so `event.thinking` is empty here. |
+| `ON_AI_THINKING` | ASYNC | `(ThinkingEvent, ctx) -> None` | A reasoning window opened (`THINKING_START`) on an AIChannel; fires whether or not a realtime backend is configured. The reasoning text streams on the ephemeral `THINKING_DELTA` / `THINKING_END` events only for a channel built with `publish_thinking_text=True`; `event.thinking` is empty here. |
 | `ON_AI_RESPONSE` | ASYNC | `(AIResponseEvent, ctx) -> None` | AI generation completed. Carries the turn's text — `response_content`, the segments a tool call cut joined with a blank line, and `segments` one by one — plus usage, latency, tool call count, and `loop_end_reason` — which of the tool loop's rules ended the turn (`completed`, `max_rounds`, `timeout`, `budget_exceeded`, `cancelled`, `force_stopped`, `truncated`, `empty_response`, `unfinished`, `error`). Read that rather than inferring a cut-off from `tool_calls_count`, which counts the calls the turn ran. |
 
 ### Protocol Observability
@@ -3803,7 +3803,7 @@ Through the kit, wherever the agent's turns run (RFC §10.6.3): `await kit.chann
 For each non-self text event, `on_event()` returns `ChannelOutput(responded=True, response_stream=...)` (TOOL_CALL_START/END events are skipped). The prompt (tagged `roomkit.live/eventId`) yields a `StreamDelta` stream consumed by the inbound-streaming pipeline:
 
 - `agent_message_chunk` → `str` deltas → streamed to transports, persisted as the response event.
-- `agent_thought_chunk` → `ThinkingDeltaMarker` in the stream, plus ephemeral `THINKING_START` / `THINKING_DELTA` (thinking truncated to 1000 chars) / `THINKING_END`.
+- `agent_thought_chunk` → `ThinkingDeltaMarker` in the stream, plus ephemeral `THINKING_START` / `THINKING_DELTA` (`thinking_length`, and the text truncated to 1000 chars with `publish_thinking_text=True`) / `THINKING_END`.
 - `tool_call` / `tool_call_update` → `ToolCallStartMarker` / `ToolCallEndMarker` in the stream (persisted as `TOOL_CALL_START`/`TOOL_CALL_END` RoomEvents) plus matching ephemeral events (`result` truncated to 500 chars, `duration_ms`); non-terminal progress → ephemeral `CUSTOM` `{"type": "acp_tool_progress"}`.
 - `plan` / `plan_update` / `plan_removed` → ephemeral `CUSTOM` `{"type": "acp_plan_update", session_id, update}`. **Not** `ON_PLAN_UPDATED` — that hook belongs to AIChannel's `plan_tasks` tool.
 - `usage_update` → ephemeral `CUSTOM` `{"type": "acp_usage"}`.
@@ -6704,7 +6704,7 @@ and subscribed to as given, as before.
 | `TOOL_CALL_DELTA` | AI is composing a tool call (streaming only) |
 | `TOOL_CALL_START` | AI started executing a tool |
 | `TOOL_CALL_END` | AI finished executing a tool |
-| `THINKING_START` / `THINKING_DELTA` / `THINKING_END` | AI reasoning, coalesced |
+| `THINKING_START` / `THINKING_DELTA` / `THINKING_END` | AI reasoning, coalesced (`thinking_length`, `round`, `channel_id`); its text, up to 1000 characters, only with `publish_thinking_text=True` |
 | `TEXT_DELTA` | A delegated task's answer text as it is written, coalesced (`text`, `round`, `channel_id`); opt-in |
 | `CUSTOM` | Custom ephemeral event |
 

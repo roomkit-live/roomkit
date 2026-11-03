@@ -181,7 +181,7 @@ and subscribed to as given, as before.
 | `TOOL_CALL_DELTA` | AI is composing a tool call (streaming only) |
 | `TOOL_CALL_START` | AI started executing a tool |
 | `TOOL_CALL_END` | AI finished executing a tool |
-| `THINKING_START` / `THINKING_DELTA` / `THINKING_END` | AI reasoning, coalesced |
+| `THINKING_START` / `THINKING_DELTA` / `THINKING_END` | AI reasoning, coalesced (`thinking_length`, `round`, `channel_id`); its text, up to 1000 characters, only with `publish_thinking_text=True` |
 | `TEXT_DELTA` | A delegated task's answer text as it is written, coalesced (`text`, `round`, `channel_id`); opt-in |
 | `CUSTOM` | Custom ephemeral event |
 

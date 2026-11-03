@@ -686,6 +686,34 @@ async def test_each_room_s_agent_updates_reach_that_room(tmp_path: Any) -> None:
         await kit.close()
 
 
+@pytest.mark.parametrize(
+    ("options", "reads_text"),
+    [({}, False), ({"publish_thinking_text": True}, True)],
+    ids=["private-by-default", "opted-in"],
+)
+async def test_a_subscriber_reads_an_agent_s_reasoning_only_when_opted_in(
+    tmp_path: Any, options: dict[str, Any], reads_text: bool
+) -> None:
+    """The channel has no visibility gate: by default a subscriber reads what a
+    live indicator needs, never the text (RMK-1052)."""
+    realtime = InMemoryRealtime()
+    seen: list[EphemeralEvent] = []
+
+    async def capture(event: EphemeralEvent) -> None:
+        if event.type is EphemeralEventType.THINKING_DELTA:
+            seen.append(event)
+
+    await realtime.subscribe_to_room("room-1", capture)
+    async with _socket_agent() as transport:
+        channel = ACPChannel(AGENT, transport=transport, cwd=tmp_path, **options)
+        kit = await _two_rooms(channel, realtime)
+        await _say(kit, "first room", "room-1")
+        await _eventually(lambda: bool(seen))
+        await kit.close()
+    assert all(("thinking" in event.data) is reads_text for event in seen)
+    assert all(event.data["thinking_length"] > 0 for event in seen)
+
+
 async def test_each_room_s_tool_hooks_and_permissions_see_that_room_s_host(
     tmp_path: Any,
 ) -> None:
