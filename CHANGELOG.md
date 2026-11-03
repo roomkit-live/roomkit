@@ -220,6 +220,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **One `find_tools` query reveals the same tools from one process to the next**
+  (HITL ceb81513, RMK-1053). A tool at exactly half of the best score was kept or
+  cut on the last bit of a sum taken in a set's order, which changes per process.
+  The words now add up in sorted order, as in roomkit-rs.
 - **A channel's memory of rooms with no tool rows keeps its bound** (HITL
   d8f31c25, RMK-1053). Reading a new room's stored rows added a record without
   `_MAX_ROOMS`, so a channel answering without a tool in many rooms grew until a

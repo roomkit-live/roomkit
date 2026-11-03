@@ -195,7 +195,9 @@ def _word_weights(candidates: list[_Candidate], query_tokens: set[str]) -> dict[
     """How rare each query word is among the catalogue's tools.
 
     Smoothed (``log((n+1)/(df+1)) + 1``) so it never collapses to zero on a
-    tiny catalogue; a word no tool carries weighs nothing.
+    tiny catalogue; a word no tool carries weighs nothing. In the words' sorted
+    order: a tool at exactly half of the best is kept or cut on the last bit of
+    a sum, and a set's order would change that from one process to the next.
     """
     n = len(candidates)
     df = {
@@ -204,7 +206,7 @@ def _word_weights(candidates: list[_Candidate], query_tokens: set[str]) -> dict[
         )
         for q in query_tokens
     }
-    return {q: math.log((n + 1) / (df[q] + 1)) + 1 if df[q] else 0.0 for q in query_tokens}
+    return {q: math.log((n + 1) / (df[q] + 1)) + 1 if df[q] else 0.0 for q in sorted(query_tokens)}
 
 
 def _score_tool(candidate: _Candidate, weights: dict[str, float]) -> float:

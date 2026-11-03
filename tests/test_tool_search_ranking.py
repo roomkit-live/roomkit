@@ -10,12 +10,13 @@ the model asked for. Then the exact-name rule through both channels that run
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from typing import Any
 
 import pytest
 
 from roomkit.channels._realtime_tool_search import RealtimeToolSearchSupport
-from roomkit.channels._tool_search import search_catalogue
+from roomkit.channels._tool_search import _candidate, _word_weights, search_catalogue
 from roomkit.channels._tool_search_constants import TOOL_FIND_TOOLS
 from roomkit.channels.ai import AIChannel
 from roomkit.models.channel import ChannelBinding
@@ -232,3 +233,19 @@ async def test_the_realtime_channel_finds_a_named_tool_first() -> None:
     )
     assert [match["name"] for match in json.loads(result)["matches"]][0] == "search_messages"
     assert names[0] == "search_messages"
+
+
+class _ReadBackwards(set[str]):
+    """A set that gives its words in the order a process's hash may give them."""
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(sorted(super().__iter__(), reverse=True))
+
+
+def test_the_words_of_a_query_add_up_in_one_order() -> None:
+    """A tool at exactly half of the best is kept or cut on the last bit of a sum,
+    which depends on the order of its terms: a set's would make one search reveal
+    other tools from one process to the next (HITL ceb81513)."""
+    candidates = [_candidate(_tool("foo_bar", "foo bar"))]
+    weights = _word_weights(candidates, _ReadBackwards({"foo", "bar"}))
+    assert list(weights) == ["bar", "foo"]
