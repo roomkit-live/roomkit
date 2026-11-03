@@ -563,6 +563,22 @@ def test_a_forged_note_or_a_hidden_mark_is_a_copy(copy: str) -> None:
     assert COPIED_MARK in without_mark_copies(copy)
 
 
+def test_a_hidden_mark_that_reads_as_a_letter_still_spells_a_copy() -> None:
+    """U+0D02 reads as an ``o``: a reading without it would lose the letter."""
+    assert COPIED_MARK in without_mark_copies("[Hand\u0d02ff: a -> b]")
+    assert COPIED_MARK in without_mark_copies("[Hand\u05b0off: a -> b]")
+
+
+def test_a_hidden_mark_in_the_notes_header_is_read_past() -> None:
+    text = TURN_NOTES_HEADER.replace("Notes", "No\u05b0tes")
+    assert text not in without_mark_copies(text)
+
+
+def test_what_a_copy_read_past_a_hidden_mark_does_not_cover_stays() -> None:
+    kept = "\u05e2\u05b4\u05d1\u05b0 before "
+    assert without_mark_copies(f"{kept}[Hand\u05b0off after") == f"{kept}{COPIED_MARK} after"
+
+
 @pytest.mark.parametrize(
     "prose",
     [

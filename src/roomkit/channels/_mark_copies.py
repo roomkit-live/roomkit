@@ -22,12 +22,12 @@ import unicodedata
 from typing import Any
 
 from roomkit._lookalike import (
-    _COMBINING,
-    INVISIBLE,
+    hidden_marks,
     phrase_marks,
     phrase_pattern,
     phrase_space_chars,
     phrase_words,
+    replaced_past_hidden_marks,
     word_pattern,
 )
 from roomkit._provider_marks import CONTEXT_UPDATE_MARK, SAID_BEFORE_MARK
@@ -75,7 +75,8 @@ _SHORT_MARKS = (
     HANDED_ON_CONTEXT,
     SAID_BEFORE_MARK,
 )
-"""The runtime's marks that count only with their opening bracket: their words
+"""The runtime's marks that count only with their square or fullwidth bracket,
+the people note apart (:func:`_people_note_pattern`): their words
 alone are prose (``the room context``, ``a handoff``, ``people taking
 part``). The handoff's record and the context handed on are written outside
 a model's input, into the timeline and a memory, and kept there by their
@@ -112,22 +113,6 @@ def _people_note_pattern() -> str:
 
 
 @functools.cache
-def _hidden_marks() -> re.Pattern[str]:
-    """The combining marks no reader sees that a phrase's pattern does not
-    read past: read past here, in a shadow of the text, so that the patterns
-    do not repeat this class at each letter."""
-    ranges = []
-    for code in range(sys.maxunicode + 1):
-        if unicodedata.category(chr(code)).startswith("M") and not _READ_MARK.match(chr(code)):
-            ranges.append(re.escape(chr(code)))
-    return re.compile(f"[{''.join(ranges)}]")
-
-
-_READ_MARK = re.compile(rf"[{_COMBINING}{INVISIBLE}]")
-"""The combining marks a phrase's pattern reads past itself."""
-
-
-@functools.cache
 def _copies() -> re.Pattern[str]:
     """Each long mark as a model reads it, whole, then each bracketed opening
     and short mark: the whole mark is tried first wherever both start.
@@ -153,24 +138,7 @@ def without_mark_copies(text: str) -> str:
 def _copies_replaced(text: str) -> str:
     """*text* scanned for a copy of a mark, then of the notes' header, each
     replaced."""
-    return without_header_copies(_past_hidden_marks(text))
-
-
-def _past_hidden_marks(text: str) -> str:
-    """*text* with each copy of a mark replaced, a combining mark no reader
-    sees read past wherever it sits (RFC §6.4)."""
-    hidden = list(_hidden_marks().finditer(text))
-    if not hidden:
-        return _copies().sub(lambda _match: COPIED_MARK, text)
-    gone = {match.start() for match in hidden}
-    offsets = [at for at in range(len(text)) if at not in gone]
-    offsets.append(len(text))
-    read = "".join(text[at] for at in offsets[:-1])
-    pieces, at = [], 0
-    for copy in _copies().finditer(read):
-        pieces += [text[at : offsets[copy.start()]], COPIED_MARK]
-        at = offsets[copy.end()]
-    return "".join(pieces) + text[at:] if pieces else text
+    return without_header_copies(replaced_past_hidden_marks(_copies(), COPIED_MARK, text))
 
 
 _COMPILING = threading.Lock()
@@ -180,7 +148,7 @@ async def compile_mark_patterns() -> None:
     """Compile the patterns that find a copy of a mark in a thread, not on the
     event loop: the first compilation takes about half a second. Nothing to do
     once compiled."""
-    compiled = (_copies, _hidden_marks, header_copies)
+    compiled = (_copies, hidden_marks, header_copies)
     if any(pattern.cache_info().currsize == 0 for pattern in compiled):
         await asyncio.to_thread(_compile)
 
@@ -190,7 +158,7 @@ def _compile() -> None:
     turns starting together wait for one compilation."""
     with _COMPILING:
         _copies()
-        _hidden_marks()
+        hidden_marks()
         header_copies()
 
 

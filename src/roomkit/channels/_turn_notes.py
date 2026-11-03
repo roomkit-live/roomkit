@@ -25,7 +25,7 @@ from collections.abc import Callable
 from itertools import groupby
 from typing import Any
 
-from roomkit._lookalike import phrase_pattern
+from roomkit._lookalike import phrase_pattern, replaced_past_hidden_marks
 from roomkit.channels._clean_texts import CleanTexts
 from roomkit.channels._user_text import joined
 from roomkit.providers.ai.base import AIImagePart, AIMessage, AITextPart
@@ -83,7 +83,7 @@ def without_header_copies(text: str) -> str:
 
 
 def _header_copies_replaced(text: str) -> str:
-    return header_copies().sub(lambda _match: COPIED_HEADER_MARK, text)
+    return replaced_past_hidden_marks(header_copies(), COPIED_HEADER_MARK, text)
 
 
 def conversation_without_header_copies(messages: list[AIMessage]) -> list[AIMessage]:

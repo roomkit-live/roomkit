@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import functools
 import re
+import sys
 import unicodedata
 
 from roomkit._lookalike_data import FORMS, SEQUENCES
@@ -308,3 +309,36 @@ def reads_as(text: str, word: str) -> bool:
     (``You.``, ``YOU!``)."""
     letters = word_pattern(word, phrase=True)
     return re.fullmatch(rf"[\W_]*{letters}[\W_]*", text, re.IGNORECASE) is not None
+
+
+@functools.cache
+def hidden_marks() -> frozenset[str]:
+    """The combining marks no reader sees that a phrase's pattern does not read
+    past (RFC §6.4): held apart, so that a pattern does not repeat them at each
+    letter."""
+    read = re.compile(rf"[{_COMBINING}{INVISIBLE}]")
+    marks = (chr(code) for code in range(sys.maxunicode + 1))
+    return frozenset(
+        mark
+        for mark in marks
+        if unicodedata.category(mark).startswith("M") and not read.match(mark)
+    )
+
+
+def replaced_past_hidden_marks(pattern: re.Pattern[str], replacement: str, text: str) -> str:
+    """*text* with each match of *pattern* replaced, then each match of a reading
+    of it without its :func:`hidden_marks`, wherever one sits: first as written,
+    since a look-alike of a letter may be such a mark. What a match does not
+    cover is kept as it is."""
+    text = pattern.sub(lambda _match: replacement, text)
+    hidden = hidden_marks()
+    if hidden.isdisjoint(text):
+        return text
+    offsets = [at for at, char in enumerate(text) if char not in hidden]
+    offsets.append(len(text))
+    read = "".join(text[at] for at in offsets[:-1])
+    pieces, at = [], 0
+    for copy in pattern.finditer(read):
+        pieces += [text[at : offsets[copy.start()]], replacement]
+        at = offsets[copy.end()]
+    return "".join(pieces) + text[at:] if pieces else text
