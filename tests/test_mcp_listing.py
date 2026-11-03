@@ -23,7 +23,7 @@ import pytest
 
 from roomkit.core.exceptions import UnservedToolCallError
 from roomkit.tools._mcp_result import check_structured_content
-from roomkit.tools.mcp import _MAX_LIST_PAGES, MCPToolProvider, _list_tools
+from roomkit.tools.mcp import _MAX_LIST_PAGES, MCPToolProvider, _definition, _list_tools
 
 pytest.importorskip("mcp.server.fastmcp")
 
@@ -309,3 +309,27 @@ async def test_a_listing_that_pages_without_end_stops(
     assert session.pages == pages
     assert len(tools) == kept
     assert "http://looping.invalid/mcp pages tools/list without end" in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("meta", "tags"),
+    [
+        ({"fastmcp": {"tags": ["send", "message"]}}, ["send", "message"]),
+        ({"fastmcp": {"tags": [1, "send"]}}, ["send"]),
+        ({"fastmcp": {"tags": "send"}}, []),
+        ({"fastmcp": {"tags": None}}, []),
+        ({"fastmcp": "send"}, []),
+        ({"fastmcp": None}, []),
+        ("not a mapping", []),
+        (None, []),
+    ],
+)
+def test_a_tag_a_server_wrote_badly_costs_it_no_tool(meta: Any, tags: list[str]) -> None:
+    """A server's optional metadata: what is no list of texts is left out, and
+    the tool stays, as roomkit-rs reads it (HITL e0bb4999)."""
+    listed = SimpleNamespace(
+        name="search", description="Search", inputSchema={"type": "object"}, meta=meta
+    )
+    definition = _definition(listed)
+    assert definition is not None
+    assert definition.tags == tags

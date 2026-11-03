@@ -34,19 +34,24 @@ def _definition(tool: Any) -> AITool | None:
     """The definition of a listed MCP tool, or ``None`` for one whose name no
     provider accepts: skipped, so the server's other tools stay usable
     (RFC §6.7)."""
-    # FastMCP serializes a tool's tags into `_meta["fastmcp"]["tags"]`;
-    # surface them so Tool Search can match this tool cross-lingually.
     if not some_vendor_accepts_tool_name(tool.name):
         logger.warning("MCP tool %r skipped: no provider accepts its name", tool.name)
         return None
-    meta = getattr(tool, "meta", None)
-    tags = meta.get("fastmcp", {}).get("tags", []) if isinstance(meta, dict) else []
     return AITool(
         name=tool.name,
         description=tool.description or "",
         parameters=tool.inputSchema if tool.inputSchema else {},
-        tags=tags or [],
+        tags=_published_tags(getattr(tool, "meta", None)),
     )
+
+
+def _published_tags(meta: Any) -> list[str]:
+    """The tags FastMCP wrote in a tool's ``_meta["fastmcp"]["tags"]``, so Tool
+    Search can match the tool cross-lingually. Optional metadata of a server: what
+    is no list of texts is left out, and costs it no tool."""
+    fastmcp = meta.get("fastmcp") if isinstance(meta, dict) else None
+    tags = fastmcp.get("tags") if isinstance(fastmcp, dict) else None
+    return [tag for tag in tags if isinstance(tag, str)] if isinstance(tags, list) else []
 
 
 _MAX_LIST_PAGES = 1000
