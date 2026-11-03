@@ -1,0 +1,192 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-worker-past-its-task-timeout-is-cut-and-read-as-timed-out",
+  "title": "A worker still working past the Supervisor's task timeout is cut: its task ends cancelled, the call that delegated answers at once with the worker read as timed out, and the worker's one terminal status entry says so, naming its task; the supervisor's default bound on a call, shorter, does not cut a delegation",
+  "rules": [
+    "§19.7.3",
+    "§23.3"
+  ],
+  "notes": "Python: tests/orchestration/test_worker_delegation_bound.py test_a_worker_past_its_bound_is_cut_and_the_call_answers_once (the per-worker door); tests/orchestration/test_worker_run_task_line.py (timed out, inline); tests/tasks/test_cancelled_delegation.py test_a_supervisors_task_timeout_ends_the_task_cancelled. orchestration/_worker_run.py _delegate (answer_within, the timeout's text with :g); channels/_tool_registry.py orchestration_tool(..., waits=True) (RFC §21.6: a strategy's tool waits by design). The worker's model waits at a gate no step opens.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "delegate_to_researcher",
+                  "arguments": {
+                    "task": "Find the facts."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "It took too long."
+            }
+          ]
+        },
+        "tool_timeout_ms": 20
+      },
+      {
+        "id": "researcher",
+        "type": "ai",
+        "agent": {
+          "role": "Researcher"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Too late.",
+              "gate": "never"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "researcher"
+          ],
+          "task_timeout_ms": 50
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Find it."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "status.recent",
+      "agent_id": "researcher",
+      "expect": {
+        "result": [
+          {
+            "status": "pending",
+            "detail": "Find the facts."
+          },
+          {
+            "status": "failed",
+            "detail": "The task timed out after 0.05s.",
+            "metadata": {
+              "mode": "per_worker_wait",
+              "task_run": true,
+              "task_id": {
+                "$present": true
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {},
+        {},
+        {
+          "type": "tool_call_end",
+          "content": {
+            "result": "{\"status\": \"failed\", \"worker\": \"researcher\", \"result\": \"The task timed out after 0.05s.\"}"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "sup",
+            "channel_type": "ai"
+          },
+          "content": {
+            "type": "text",
+            "body": "It took too long."
+          },
+          "chain_depth": 1,
+          "responds_to": "r1#0"
+        }
+      ]
+    },
+    "rooms": {
+      "$r1": {
+        "metadata": {
+          "task_agent_id": "researcher",
+          "task_status": "cancelled",
+          "task_result": null
+        }
+      }
+    },
+    "models": {
+      "researcher": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Find the facts."
+            }
+          ]
+        }
+      ],
+      "sup": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "{\"status\": \"failed\", \"worker\": \"researcher\", \"result\": \"The task timed out after 0.05s.\"}",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

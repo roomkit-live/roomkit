@@ -1,0 +1,174 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-supervisor-s-own-tools-stay-its-own",
+  "title": "A supervisor keeps its own tools beside the delegation tools its install gives it: a call to one of its own is served by its own handler, and delegates to no worker",
+  "rules": [
+    "§19.7.3",
+    "§10.6.5",
+    "§21.1"
+  ],
+  "notes": "Python: tests/test_supervisor.py TestStrategyToolHandler::test_strategy_tool_unknown_falls_through; tests/orchestration/test_strategy_supervisor.py TestSupervisorInstall::test_unknown_tool_falls_through. channels/_tool_registry.py (the owner's tools declared after the channel's own, RFC §10.6.5).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {
+                    "task": "Acme"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Found it myself."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up.",
+            "returns": "found"
+          }
+        ]
+      },
+      {
+        "id": "researcher",
+        "type": "ai",
+        "agent": {
+          "role": "Researcher"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "The facts."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "researcher"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Look up Acme."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "status.recent",
+      "agent_id": "researcher",
+      "expect": {
+        "result": []
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {},
+        {
+          "type": "tool_call_start",
+          "content": {
+            "tool_name": "lookup"
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "content": {
+            "tool_name": "lookup",
+            "result": "found"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "sup",
+            "channel_type": "ai"
+          },
+          "content": {
+            "type": "text",
+            "body": "Found it myself."
+          },
+          "chain_depth": 1,
+          "responds_to": "r1#0"
+        }
+      ]
+    },
+    "models": {
+      "researcher": [],
+      "sup": [
+        {
+          "tools": {
+            "lookup": 0,
+            "delegate_to_researcher": 1
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "found",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

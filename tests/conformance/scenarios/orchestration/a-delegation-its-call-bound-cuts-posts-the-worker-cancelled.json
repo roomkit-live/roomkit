@@ -1,0 +1,183 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-delegation-its-call-bound-cuts-posts-the-worker-cancelled",
+  "title": "A bound the supervisor's channel names for a delegation tool still applies: past it the call is cut, its worker's task ends cancelled, and the worker's one terminal status entry says cancelled",
+  "rules": [
+    "§19.7.3",
+    "§21.6",
+    "§23.3"
+  ],
+  "notes": "Python: tests/orchestration/test_worker_delegation_bound.py test_a_delegation_its_call_cut_posts_the_worker_failed (the per-worker door). orchestration/_worker_run.py _posted (CancelledError posts failed cancelled); channels/_tool_registry.py (a tool's own bound in tool_timeouts). The worker's model waits at a gate no step opens.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "delegate_to_researcher",
+                  "arguments": {
+                    "task": "Find the facts."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "It took too long."
+            }
+          ]
+        },
+        "tool_timeouts_ms": {
+          "delegate_to_researcher": 50
+        }
+      },
+      {
+        "id": "researcher",
+        "type": "ai",
+        "agent": {
+          "role": "Researcher"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Too late.",
+              "gate": "never"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "researcher"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Find it."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "status.recent",
+      "agent_id": "researcher",
+      "expect": {
+        "result": [
+          {
+            "status": "pending",
+            "detail": "Find the facts."
+          },
+          {
+            "status": "failed",
+            "detail": "cancelled",
+            "metadata": {
+              "mode": "per_worker_wait",
+              "task_run": true,
+              "task_id": {
+                "$present": true
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {},
+        {},
+        {
+          "type": "tool_call_end",
+          "content": {
+            "result": "{\"error\": \"Tool 'delegate_to_researcher' failed (ToolTimeoutError)\"}"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "sup",
+            "channel_type": "ai"
+          },
+          "content": {
+            "type": "text",
+            "body": "It took too long."
+          },
+          "chain_depth": 1,
+          "responds_to": "r1#0"
+        }
+      ]
+    },
+    "rooms": {
+      "$r1": {
+        "metadata": {
+          "task_agent_id": "researcher",
+          "task_status": "cancelled"
+        }
+      }
+    },
+    "models": {
+      "sup": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "{\"error\": \"Tool 'delegate_to_researcher' failed (ToolTimeoutError)\"}",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

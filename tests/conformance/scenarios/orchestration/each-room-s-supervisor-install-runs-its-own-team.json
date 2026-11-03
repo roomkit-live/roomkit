@@ -1,0 +1,482 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/each-room-s-supervisor-install-runs-its-own-team",
+  "title": "One supervisor serves every room a Supervisor is installed in, each install with its own team: a room's delegate_workers declares and runs that room's workers, a team still running in one room holds up no call of another, and a room the supervisor serves with no install declares no delegation tool",
+  "rules": [
+    "§19.7.3",
+    "§23.3"
+  ],
+  "notes": "Python: tests/orchestration/test_room_installs.py test_each_room_s_team_tool_runs_its_own_team, test_a_room_without_the_install_gets_the_supervisor_s_own_answer; tests/orchestration/test_supervisor_room_state.py test_one_rooms_pipeline_does_not_hold_up_another_rooms_call; tests/orchestration/test_strategy_behavioral.py TestSupervisorHandlerIdempotency::test_each_room_s_install_serves_its_own_room; tests/orchestration/test_call_room.py test_a_supervisor_shared_by_two_rooms_delegates_from_the_room_that_asked. orchestration/strategies/supervisor/_inject_strategy.py (owner_tools_of(...).register(entry, room_id=room_id, owner=self), a lock per room). The bank's worker waits at its gate while the clinic's team runs and answers.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms1",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sms2",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sms3",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "delegate_workers",
+                  "arguments": {
+                    "task": "Bank"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "delegate_workers",
+                  "arguments": {
+                    "task": "Clinic"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Clinic, done."
+            },
+            {
+              "text": "Bank, done."
+            },
+            {
+              "text": "Hello."
+            }
+          ]
+        }
+      },
+      {
+        "id": "banker",
+        "type": "ai",
+        "agent": {
+          "role": "Banker"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Accounts.",
+              "gate": "banker"
+            }
+          ]
+        }
+      },
+      {
+        "id": "nurse",
+        "type": "ai",
+        "agent": {
+          "role": "Nurse"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Patients."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms1"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "sms2"
+          }
+        ]
+      },
+      {
+        "id": "r3",
+        "bindings": [
+          {
+            "channel_id": "sms3"
+          },
+          {
+            "channel_id": "sup",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "bank",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "banker"
+          ],
+          "strategy": "parallel"
+        }
+      },
+      {
+        "id": "clinic",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "nurse"
+          ],
+          "strategy": "parallel"
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "seen",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "bank"
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r2",
+      "strategy": "clinic"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms1",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Check the bank."
+        }
+      },
+      "background": true,
+      "as": "bank"
+    },
+    {
+      "wait_for": "banker"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r2",
+      "message": {
+        "channel_id": "sms2",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Check the clinic."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "open": "banker"
+    },
+    {
+      "await": "bank",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r3",
+      "message": {
+        "channel_id": "sms3",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hi."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "status.recent",
+      "agent_id": "nurse",
+      "expect": {
+        "result": [
+          {
+            "status": "pending",
+            "detail": "Clinic",
+            "metadata": {
+              "room_id": "r2",
+              "strategy": "parallel"
+            }
+          },
+          {
+            "status": "completed",
+            "detail": "Patients.",
+            "metadata": {
+              "room_id": "r2"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "sms1"
+          }
+        },
+        {
+          "type": "tool_call_start"
+        },
+        {
+          "type": "tool_call_end"
+        },
+        {
+          "source": {
+            "channel_id": "sup"
+          },
+          "content": {
+            "body": "Bank, done."
+          }
+        }
+      ],
+      "r2": [
+        {
+          "source": {
+            "channel_id": "sms2"
+          }
+        },
+        {
+          "type": "tool_call_start"
+        },
+        {
+          "type": "tool_call_end"
+        },
+        {
+          "source": {
+            "channel_id": "sup"
+          },
+          "content": {
+            "body": "Clinic, done."
+          }
+        }
+      ],
+      "r3": [
+        {
+          "source": {
+            "channel_id": "sms3"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "sup"
+          },
+          "content": {
+            "body": "Hello."
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "r3": {
+        "metadata": {
+          "_conversation_state": {
+            "$absent": true
+          }
+        }
+      },
+      "r2": {
+        "metadata": {
+          "_conversation_state": {
+            "phase": "supervisor",
+            "active_agent_id": "sup",
+            "previous_agent_id": null,
+            "handoff_count": 0,
+            "phase_history": [],
+            "context": {}
+          }
+        }
+      }
+    },
+    "bindings": {
+      "r1": {
+        "banker": null,
+        "nurse": null
+      },
+      "r2": {
+        "banker": null,
+        "nurse": null
+      }
+    },
+    "models": {
+      "sup": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Check the bank."
+            }
+          ],
+          "tools": {
+            "delegate_workers": 0
+          }
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Check the clinic."
+            }
+          ],
+          "tools": {
+            "delegate_workers": 0
+          }
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Check the clinic."
+            },
+            {},
+            {}
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Check the bank."
+            },
+            {},
+            {}
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Hi."
+            }
+          ],
+          "tools": {
+            "delegate_workers": {
+              "$absent": true
+            }
+          }
+        }
+      ],
+      "banker": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Bank"
+            }
+          ]
+        }
+      ],
+      "nurse": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Clinic"
+            }
+          ]
+        }
+      ]
+    },
+    "hooks": {
+      "seen": [
+        {
+          "room_id": "$r2",
+          "response": {
+            "channel_id": "nurse"
+          }
+        },
+        {
+          "room_id": "r2",
+          "response": {
+            "channel_id": "sup",
+            "declared_tools": {
+              "delegate_workers": {
+                "description": "Delegate a task to ALL workers (Nurse) at once. Call this tool exactly ONCE with the topic. All workers run automatically in parallel mode. Do NOT split into separate calls per worker."
+              }
+            }
+          }
+        },
+        {
+          "room_id": "$r1",
+          "response": {
+            "channel_id": "banker"
+          }
+        },
+        {
+          "room_id": "r1",
+          "response": {
+            "channel_id": "sup",
+            "declared_tools": {
+              "delegate_workers": {
+                "description": "Delegate a task to ALL workers (Banker) at once. Call this tool exactly ONCE with the topic. All workers run automatically in parallel mode. Do NOT split into separate calls per worker."
+              }
+            }
+          }
+        },
+        {
+          "room_id": "r3",
+          "response": {
+            "channel_id": "sup",
+            "declared_tools": {
+              "delegate_workers": {
+                "$absent": true
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

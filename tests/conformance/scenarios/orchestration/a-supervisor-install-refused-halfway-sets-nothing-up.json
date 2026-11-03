@@ -1,0 +1,180 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-supervisor-install-refused-halfway-sets-nothing-up",
+  "title": "A Supervisor whose second delegation tool takes the name of one of its supervisor's own tools is refused, and its install sets none of it up: no tool, no router, no state",
+  "rules": [
+    "§19.7",
+    "§21.1"
+  ],
+  "notes": "Python: tests/orchestration/test_room_installs.py test_an_install_refused_halfway_sets_nothing_up; channels/_tool_registry.py register_all (all or none, ToolNameCollisionError: invalid_argument).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Hello."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "delegate_to_w2",
+            "description": "The host's own.",
+            "returns": "host"
+          }
+        ]
+      },
+      {
+        "id": "w1",
+        "type": "ai",
+        "agent": {
+          "role": "First"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "One."
+            }
+          ]
+        }
+      },
+      {
+        "id": "w2",
+        "type": "ai",
+        "agent": {
+          "role": "Second"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Two."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "w1",
+            "w2"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "r1",
+      "channel_id": "sup",
+      "category": "intelligence"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hi."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "metadata": {
+            "_routed_to": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "source": {
+            "channel_id": "sup",
+            "channel_type": "ai"
+          },
+          "content": {
+            "type": "text",
+            "body": "Hello."
+          },
+          "chain_depth": 1,
+          "responds_to": "r1#0"
+        }
+      ]
+    },
+    "rooms": {
+      "r1": {
+        "metadata": {
+          "_conversation_state": {
+            "$absent": true
+          }
+        }
+      }
+    },
+    "models": {
+      "sup": [
+        {
+          "tools": {
+            "delegate_to_w1": {
+              "$absent": true
+            },
+            "delegate_to_w2": 0
+          }
+        }
+      ]
+    }
+  }
+}

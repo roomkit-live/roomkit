@@ -1,0 +1,131 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-supervisor-s-workers-share-the-channels-it-names",
+  "title": "A Supervisor's share_channels are attached to each child room its delegations open, and nothing else of the room is",
+  "rules": [
+    "§19.7.3",
+    "§23.3"
+  ],
+  "notes": "Python: tests/orchestration/test_strategy_supervisor.py TestSupervisorShareChannels::test_per_worker_tool_inline_passes_share_channels, test_default_share_channels_is_empty, test_share_channels_defensive_copy. orchestration/strategies/supervisor/core.py __init__ (share_channels), _inject_per_worker.py (share_channels to run_worker).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "delegate_to_researcher",
+                  "arguments": {
+                    "task": "Find the facts."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Here."
+            }
+          ]
+        }
+      },
+      {
+        "id": "researcher",
+        "type": "ai",
+        "agent": {
+          "role": "Researcher"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "The facts."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "researcher"
+          ],
+          "share_channels": [
+            "ws"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Find it."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "$r1": {
+        "ws": {
+          "channel_id": "ws"
+        },
+        "researcher": {
+          "category": "intelligence"
+        },
+        "sms": null
+      }
+    }
+  }
+}

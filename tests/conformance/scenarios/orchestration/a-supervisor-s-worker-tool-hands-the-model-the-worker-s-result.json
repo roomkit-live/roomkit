@@ -1,0 +1,316 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-supervisor-s-worker-tool-hands-the-model-the-worker-s-result",
+  "title": "A Supervisor with no strategy gives its supervisor one delegate_to_<worker> tool per worker in the room it is installed in: a call delegates the task to that worker in a child room, waits for it, and answers the model with the worker's status and result; the supervisor answers the room, its workers registered but never attached",
+  "rules": [
+    "§19.7.3",
+    "§23.3"
+  ],
+  "notes": "Python: tests/test_supervisor.py TestPerWorkerDelegation::test_wait_for_result_returns_output; tests/orchestration/test_strategy_supervisor.py TestSupervisorInstall::test_installs_router_hook, test_registers_workers_on_kit, test_injects_delegation_tools, test_sets_initial_state, test_delegation_tool_handler; tests/orchestration/test_supervisor_inline.py test_inline_delegation_returns_worker_output, test_child_room_has_no_orchestration, test_parent_state_unchanged_after_delegation. orchestration/strategies/supervisor/core.py install, _inject_per_worker.py (_worker_tool, _PerWorkerToolServer._delegate_and_wait); _worker_run.py run_worker. The router stamps the message for the supervisor; the worker's status entries are the worker run's (mode per_worker_wait), the terminal one naming its task.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "delegate_to_researcher",
+                  "arguments": {
+                    "task": "Find the facts."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Here are the facts."
+            }
+          ]
+        }
+      },
+      {
+        "id": "researcher",
+        "type": "ai",
+        "agent": {
+          "role": "Researcher",
+          "description": "Finds facts."
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "The facts."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "researcher"
+          ]
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "seen",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Find it."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "status.recent",
+      "agent_id": "researcher",
+      "expect": {
+        "result": [
+          {
+            "agent_id": "researcher",
+            "action": "task",
+            "status": "pending",
+            "detail": "Find the facts.",
+            "metadata": {
+              "room_id": "r1",
+              "mode": "per_worker_wait",
+              "task_run": true,
+              "task_id": {
+                "$absent": true
+              }
+            }
+          },
+          {
+            "agent_id": "researcher",
+            "action": "task",
+            "status": "completed",
+            "detail": "The facts.",
+            "metadata": {
+              "room_id": "r1",
+              "mode": "per_worker_wait",
+              "task_run": true,
+              "task_id": {
+                "$present": true
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "sms"
+          },
+          "content": {
+            "type": "text",
+            "body": "Find it."
+          },
+          "metadata": {
+            "_routed_to": "sup"
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "source": {
+            "channel_id": "sup"
+          },
+          "content": {
+            "type": "tool_call",
+            "tool_name": "delegate_to_researcher",
+            "arguments": {
+              "task": "Find the facts."
+            }
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "source": {
+            "channel_id": "sup"
+          },
+          "content": {
+            "type": "tool_call",
+            "tool_name": "delegate_to_researcher",
+            "result": "{\"status\": \"completed\", \"worker\": \"researcher\", \"result\": \"The facts.\"}",
+            "status": "completed"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "sup",
+            "channel_type": "ai"
+          },
+          "content": {
+            "type": "text",
+            "body": "Here are the facts."
+          },
+          "chain_depth": 1,
+          "responds_to": "r1#0"
+        }
+      ]
+    },
+    "rooms": {
+      "r1": {
+        "metadata": {
+          "_conversation_state": {
+            "phase": "supervisor",
+            "active_agent_id": "sup",
+            "previous_agent_id": null,
+            "handoff_count": 0,
+            "phase_history": [],
+            "context": {}
+          }
+        }
+      },
+      "$r1": {
+        "metadata": {
+          "task_agent_id": "researcher",
+          "task_input": "Find the facts.",
+          "task_result": "The facts.",
+          "_conversation_state": {
+            "$absent": true
+          }
+        }
+      }
+    },
+    "bindings": {
+      "r1": {
+        "sup": {
+          "category": "intelligence"
+        },
+        "researcher": null
+      }
+    },
+    "hooks": {
+      "seen": [
+        {
+          "room_id": "$r1",
+          "response": {
+            "channel_id": "researcher",
+            "declared_tools": {
+              "delegate_to_researcher": {
+                "$absent": true
+              }
+            }
+          }
+        },
+        {
+          "room_id": "r1",
+          "response": {
+            "channel_id": "sup",
+            "declared_tools": {
+              "delegate_to_researcher": {
+                "position": 0,
+                "description": "Delegate a task to researcher. Finds facts.",
+                "parameters": {
+                  "type": "object",
+                  "properties": {
+                    "task": {
+                      "type": "string",
+                      "description": "Description of the task to delegate"
+                    }
+                  },
+                  "required": [
+                    "task"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "models": {
+      "sup": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Find it."
+            }
+          ],
+          "tools": {
+            "delegate_to_researcher": 0
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "{\"status\": \"completed\", \"worker\": \"researcher\", \"result\": \"The facts.\"}",
+              "is_error": false
+            }
+          ]
+        }
+      ],
+      "researcher": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Find the facts."
+            }
+          ],
+          "tools": {
+            "delegate_to_researcher": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

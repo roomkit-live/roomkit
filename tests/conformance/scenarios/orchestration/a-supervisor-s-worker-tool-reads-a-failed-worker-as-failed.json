@@ -1,0 +1,172 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-supervisor-s-worker-tool-reads-a-failed-worker-as-failed",
+  "title": "A worker whose delegation fails answers its delegate_to_<worker> call as failed, read as failed and never with the failure's message, and its terminal status entry is failed",
+  "rules": [
+    "§19.7.3",
+    "§23.3"
+  ],
+  "notes": "Python: tests/test_supervisor.py TestPerWorkerDelegation::test_wait_for_result_with_error, test_wait_for_result_none. orchestration/strategies/supervisor/_inject_per_worker.py _PerWorkerToolServer._delegate_and_wait, _worker_run.py task_output.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "delegate_to_researcher",
+                  "arguments": {
+                    "task": "Find the facts."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "It failed."
+            }
+          ]
+        }
+      },
+      {
+        "id": "researcher",
+        "type": "ai",
+        "agent": {
+          "role": "Researcher"
+        },
+        "model": {
+          "rounds": [
+            {
+              "fails": "Credit balance exhausted."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "researcher"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Find it."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "status.recent",
+      "agent_id": "researcher",
+      "expect": {
+        "result": [
+          {
+            "status": "pending",
+            "detail": "Find the facts.",
+            "metadata": {
+              "mode": "per_worker_wait"
+            }
+          },
+          {
+            "status": "failed",
+            "detail": "The task failed.",
+            "metadata": {
+              "mode": "per_worker_wait",
+              "task_id": {
+                "$present": true
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {},
+        {},
+        {
+          "type": "tool_call_end",
+          "content": {
+            "result": "{\"status\": \"failed\", \"worker\": \"researcher\", \"result\": \"The task failed.\"}"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "sup",
+            "channel_type": "ai"
+          },
+          "content": {
+            "type": "text",
+            "body": "It failed."
+          },
+          "chain_depth": 1,
+          "responds_to": "r1#0"
+        }
+      ]
+    },
+    "models": {
+      "sup": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "{\"status\": \"failed\", \"worker\": \"researcher\", \"result\": \"The task failed.\"}",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

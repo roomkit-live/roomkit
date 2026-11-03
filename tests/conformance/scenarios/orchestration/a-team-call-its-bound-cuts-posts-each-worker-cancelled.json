@@ -1,0 +1,196 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-team-call-its-bound-cuts-posts-each-worker-cancelled",
+  "title": "A bound the supervisor's channel names for delegate_workers still applies: past it the call is cut, each worker still working has its task ended cancelled, and its one terminal status entry says cancelled",
+  "rules": [
+    "§19.7.3",
+    "§23.3"
+  ],
+  "notes": "Python: tests/orchestration/test_worker_delegation_bound.py test_a_delegation_its_call_cut_posts_the_worker_failed (the parallel door). orchestration/_worker_run.py _posted (CancelledError posts failed cancelled). The analyst's model waits at a gate no step opens.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "delegate_workers",
+                  "arguments": {
+                    "task": "Acme"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "It took too long."
+            }
+          ]
+        },
+        "tool_timeouts_ms": {
+          "delegate_workers": 50
+        }
+      },
+      {
+        "id": "analyst",
+        "type": "ai",
+        "agent": {
+          "role": "Analyst"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Too late.",
+              "gate": "never"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "analyst"
+          ],
+          "strategy": "parallel"
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Look into Acme."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "status.recent",
+      "agent_id": "analyst",
+      "expect": {
+        "result": [
+          {
+            "agent_id": "analyst",
+            "action": "task",
+            "status": "pending",
+            "detail": "Acme",
+            "metadata": {
+              "room_id": "r1",
+              "strategy": "parallel",
+              "task_run": true,
+              "task_id": {
+                "$absent": true
+              }
+            }
+          },
+          {
+            "agent_id": "analyst",
+            "action": "task",
+            "status": "failed",
+            "detail": "cancelled",
+            "metadata": {
+              "room_id": "r1",
+              "strategy": "parallel",
+              "task_run": true,
+              "task_id": {
+                "$present": true
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {},
+        {},
+        {
+          "type": "tool_call_end",
+          "content": {
+            "result": "{\"error\": \"Tool 'delegate_workers' failed (ToolTimeoutError)\"}"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "sup",
+            "channel_type": "ai"
+          },
+          "content": {
+            "type": "text",
+            "body": "It took too long."
+          },
+          "chain_depth": 1,
+          "responds_to": "r1#0"
+        }
+      ]
+    },
+    "rooms": {
+      "$r1": {
+        "metadata": {
+          "task_agent_id": "analyst",
+          "task_status": "cancelled"
+        }
+      }
+    },
+    "models": {
+      "sup": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "{\"error\": \"Tool 'delegate_workers' failed (ToolTimeoutError)\"}",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,170 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/an-uninstalled-supervisor-takes-its-router-and-its-tools-back",
+  "title": "Uninstalling a Supervisor takes back what its install added for the room: its router, the delegation tools its supervisor was given there, its supervisor's binding and the room's conversation state; the supervisor attached again answers as itself",
+  "rules": [
+    "§19.7",
+    "§19.7.3"
+  ],
+  "notes": "Python: tests/orchestration/test_strategy_install.py test_a_strategy_that_runs_turns_gives_them_back (its Supervisor case); core/mixins/strategies.py _snapshot, _take_back (a registry's room tools released). orchestration/strategies/supervisor/core.py install.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Hello."
+            }
+          ]
+        }
+      },
+      {
+        "id": "researcher",
+        "type": "ai",
+        "agent": {
+          "role": "Researcher"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "The facts."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "researcher"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "uninstall_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "r1",
+      "channel_id": "sup",
+      "category": "intelligence"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hi."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": null
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "sms"
+          },
+          "metadata": {
+            "_routed_to": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "source": {
+            "channel_id": "sup",
+            "channel_type": "ai"
+          },
+          "content": {
+            "type": "text",
+            "body": "Hello."
+          },
+          "chain_depth": 1,
+          "responds_to": "r1#0"
+        }
+      ]
+    },
+    "rooms": {
+      "r1": {
+        "metadata": {
+          "_conversation_state": {
+            "$absent": true
+          }
+        }
+      }
+    },
+    "models": {
+      "sup": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Hi."
+            }
+          ],
+          "tools": {
+            "delegate_to_researcher": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}
