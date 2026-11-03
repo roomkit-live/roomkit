@@ -15,7 +15,7 @@ from typing import Any
 
 from pydantic_core import to_jsonable_python
 
-from roomkit import RoomKit, current_turn_host
+from roomkit import RoomKit, ThinkingEvent, current_turn_host
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import DeliveryHandle, DeliveryStatus
@@ -33,6 +33,7 @@ from roomkit.models.tool_call import (
 from roomkit.orchestration import HandoffHandler
 from roomkit.orchestration.base import Orchestration
 from roomkit.orchestration.status_bus import StatusEntry
+from roomkit.realtime import EphemeralEvent, EphemeralEventType
 from roomkit.store.base import ConversationStore
 from roomkit.tasks import DelegatedTask
 from tests.conformance._agent import ScriptedModel, tool_call_record
@@ -124,6 +125,13 @@ CALL_BOUND_S = 10.0
 _EVENT_ALIAS = re.compile(r"^(.+)#(\d+)$")
 _CREATED_ROOM = re.compile(r"^\$r(\d+)$")
 _REQUEST = re.compile(r"^\$p(\d+)$")
+
+
+_THINKING_EVENTS = {
+    EphemeralEventType.THINKING_START,
+    EphemeralEventType.THINKING_DELTA,
+    EphemeralEventType.THINKING_END,
+}
 
 
 class Harness:
@@ -242,6 +250,12 @@ class Harness:
             call["tool_round"] = tool_round_record(payload)
         if isinstance(payload, AIResponseEvent):
             call["response"] = response_record(payload)
+        if isinstance(payload, ThinkingEvent):
+            call["thinking"] = {
+                "channel_id": payload.channel_id,
+                "thinking": payload.thinking,
+                "round_index": payload.round_index,
+            }
         self.observed.hooks.setdefault(name, []).append(call)
         self.observed.hook_order.append(name)
 
@@ -306,6 +320,26 @@ class Harness:
 
     # -- the run ----------------------------------------------------------
 
+    async def _subscribe_thinking(self, room_id: str) -> None:
+        """Records the room's thinking events, for a scenario that expects them."""
+        if "thinking_events" not in self.scenario.get("expect", {}):
+            return
+
+        async def record(event: EphemeralEvent) -> None:
+            if event.type in _THINKING_EVENTS:
+                data = event.data
+                self.observed.thinking_events.setdefault(room_id, []).append(
+                    {"type": event.type.value, **data}
+                )
+
+        await self.kit.realtime.subscribe_to_room(room_id, record)
+
+    async def _thinking_read(self) -> None:
+        """Lets the realtime backend's own tasks hand what it was published."""
+        if "thinking_events" in self.scenario.get("expect", {}):
+            for _ in range(20):
+                await asyncio.sleep(0)
+
     async def run(self) -> list[str]:
         """Runs the scenario; returns every mismatch with its expectations."""
         try:
@@ -314,6 +348,7 @@ class Harness:
             for position, step in enumerate(self.scenario["steps"]):
                 await self._step(step, f"steps[{position}]")
             await self.idle()
+            await self._thinking_read()
             await self._observe()
         finally:
             await self.kit.close()
@@ -334,6 +369,7 @@ class Harness:
         await store_identities(self.kit, setup.get("identities", []))
         for room in setup.get("rooms", []):
             await create_room(self.kit, room)
+            await self._subscribe_thinking(room["id"])
             for binding in room.get("bindings", []):
                 await attach_channel(self.kit, room["id"], binding)
                 if binding.get("muted"):

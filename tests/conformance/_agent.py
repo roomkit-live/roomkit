@@ -357,6 +357,8 @@ def scripted_agent(
         "reasoning_effort",
         "thinking_budget",
         "enable_thinking",
+        "thinking_coalesce_ms",
+        "thinking_coalesce_chars",
     ):
         if setting in spec:
             kwargs[setting] = spec[setting]
