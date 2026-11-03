@@ -38,8 +38,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger("roomkit.framework")
 
 # Writes a transition tries before it leaves the room to the next section,
-# each one beaten by a commit off the room lock (a spoken greeting, a delegated
-# turn's trace).
+# each one beaten by a commit off the room lock (a spoken greeting).
 _ATTEMPTS = 3
 
 # The rooms a sweep reads per store call.
@@ -208,8 +207,8 @@ class TimerTransitions:
         """Write the transitions due on *room*, a compare-and-set on the
         status, ``paused_at`` and ``last_activity_at`` they were computed
         from (``update_room_if``): a commit off the room lock (a spoken
-        greeting, a delegated turn's trace) that resumed the room or moved its
-        activity in between is never overwritten, and the transitions are those due on
+        greeting) that resumed the room or moved its activity in between is
+        never overwritten, and the transitions are those due on
         the room it left. The room written and its transitions, or the room
         as last read and none."""
         for _ in range(_ATTEMPTS):

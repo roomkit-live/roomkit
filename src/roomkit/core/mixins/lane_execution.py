@@ -366,8 +366,8 @@ class LaneExecutionMixin(HelpersMixin):
         """Commit an event and hand its delivery to the room's lane.
 
         The one entry point for a caller that owns an event end to end (a
-        greeting, a streamed segment) rather than committing it and then
-        broadcasting it where it stands. Inline
+        greeting) rather than committing it and then broadcasting it where it
+        stands. Inline
         execution satisfies per-room order only while nothing else can
         deliver for the room (RFC §10.2), and committing publishes the
         index on the delivery cursor, which is precisely what releases the

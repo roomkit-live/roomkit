@@ -662,8 +662,7 @@ class RoomDeliveryLane:
     lock. The lane's own task executes entries strictly in index order,
     gated by the shared cursor; entries are buffered *indexed* (a dict keyed
     by index, plus a FIFO of index-less entries anchored by ``after_index``)
-    because arrival order is not index order — streamed segments commit off
-    the lock and can overtake an inbound commit.
+    because arrival order is not assumed to be index order.
     """
 
     def __init__(

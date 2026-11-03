@@ -404,8 +404,8 @@ class ConversationStore(ABC):
         ``None`` with nothing written when the stored room moved.
 
         A timer transition is written so (RFC §5.1): it is computed from a
-        room read earlier, and a streamed row or a greeting commits without
-        the room lock, so a commit that resumed the room or moved its
+        room read earlier, and a spoken greeting commits without the room
+        lock, so a commit that resumed the room or moved its
         activity in between must not be overwritten by a stale close or
         pause.
 
