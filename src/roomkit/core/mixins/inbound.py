@@ -1407,9 +1407,9 @@ class InboundMixin(HelpersMixin):
     ) -> None:
         """Fire ON_SESSION_STARTED for text channel room auto-creation.
 
-        Internal hooks (name starts with ``_``) are awaited so the greeting
-        gate mechanism completes before the first inbound message is processed.
-        User hooks are fired in the background to avoid blocking the pipeline.
+        Internal hooks (name starts with ``_``) are awaited so that an agent's
+        greeting comes before the first inbound message is processed. User
+        hooks are fired in the background to avoid blocking the pipeline.
         """
         try:
             from roomkit.models.session_event import SessionStartedEvent
@@ -1421,7 +1421,7 @@ class InboundMixin(HelpersMixin):
                 channel_type=channel_type,
                 participant_id=participant_id,
             )
-            # Await internal hooks (auto-greet must complete for gate ordering)
+            # Await internal hooks (auto-greet comes before the message)
             await self._hook_engine.run_async_hooks(
                 room_id,
                 HookTrigger.ON_SESSION_STARTED,

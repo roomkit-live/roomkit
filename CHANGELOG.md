@@ -274,6 +274,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A tag a server wrote badly costs it no tool** (HITL e0bb4999, RMK-1053).
   An MCP tool whose FastMCP tags were no list of texts failed the server's whole
   listing; what is no text is now left out and the tool stays, as in roomkit-rs.
+- **A greeting read by another agent no longer refuses the first message**
+  (RMK-503, HITL eb6ce4e1). An auto-greeting agent held the greeting gate on a
+  text session, and the greeting's delivery to another intelligence channel
+  waited on that same gate: the message was refused `process_timeout`. The gate
+  now stays on the voice paths; two auto-greeting agents go through too.
 - **A turn's work runs under the broadcast's span in every process** (RFC
   §10.6.9, §15.7, HITL f9ab2401). In the process that owned it, what a tool or
   a hook of a turn asked of the kit sat under `framework.inbound`, beside the

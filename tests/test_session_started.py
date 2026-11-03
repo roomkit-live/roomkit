@@ -14,7 +14,7 @@ from roomkit import (
 )
 from roomkit.channels import SMSChannel
 from roomkit.models.delivery import InboundMessage
-from roomkit.models.enums import ChannelCategory, EventType
+from roomkit.models.enums import EventType
 from roomkit.models.event import TextContent
 from roomkit.models.session_event import SessionStartedEvent
 from roomkit.providers.ai.mock import MockAIProvider
@@ -688,6 +688,39 @@ class TestTextSessionStarted:
         assert len(greeting_events) == 1
         assert greeting_events[0].content.body == "Welcome via SMS!"
 
+    async def test_another_agent_reading_the_greeting_holds_no_message(self) -> None:
+        """A greeting's delivery to another intelligence channel waits on no gate
+        of its own: the message is processed, not refused process_timeout (RMK-503)."""
+        kit = RoomKit(process_timeout=0.5)
+        sms = SMSChannel("sms-1", provider=MockSMSProvider())
+        agent = Agent(
+            "agent-1",
+            provider=MockAIProvider(responses=["Noted"]),
+            greeting="Welcome!",
+            auto_greet=True,
+        )
+        helper = Agent("helper", provider=MockAIProvider(responses=["Hello"]))
+        kit.register_channel(sms)
+        kit.register_channel(agent)
+        kit.register_channel(helper)
+
+        @kit.hook(HookTrigger.ON_ROOM_CREATED, HookExecution.ASYNC)
+        async def attach_agents(event: object, context: object) -> None:
+            room_id = event.room_id  # type: ignore[attr-defined]
+            await kit.attach_channel(room_id, "agent-1")
+            await kit.attach_channel(room_id, "helper")
+
+        msg = InboundMessage(
+            channel_id="sms-1",
+            sender_id="+15551234567",
+            content=TextContent(body="Hello"),
+        )
+
+        result = await kit.process_inbound(msg)
+
+        assert not result.blocked
+        await kit.close()
+
     async def test_send_greeting_broadcasts_to_text_channel(self) -> None:
         """send_greeting delivers text to transport channels in non-voice rooms."""
         kit = RoomKit()
@@ -717,76 +750,6 @@ class TestTextSessionStarted:
 
 class TestGreetingGate:
     """Greeting gate mechanism tests."""
-
-    async def test_gate_blocks_ai_until_greeting_stored(self) -> None:
-        """Stateless: greeting event index < user message event index."""
-        kit = RoomKit()
-        sms = SMSChannel("sms-1", provider=MockSMSProvider())
-        agent = Agent(
-            "agent-1",
-            provider=MockAIProvider(responses=["AI reply"]),
-            greeting="Welcome!",
-            auto_greet=True,
-        )
-        kit.register_channel(sms)
-        kit.register_channel(agent)
-
-        @kit.hook(HookTrigger.ON_ROOM_CREATED, HookExecution.ASYNC)
-        async def attach_agent(event: object, context: object) -> None:
-            room_id = event.room_id  # type: ignore[attr-defined]
-            await kit.attach_channel(room_id, "agent-1")
-
-        msg = InboundMessage(
-            channel_id="sms-1",
-            sender_id="+15551234567",
-            content=TextContent(body="Hello"),
-        )
-        # process_inbound now awaits _fire_text_session_started (which runs
-        # the auto_greet_handler to completion) before processing the user
-        # message.  No sleep needed — ordering is deterministic.
-        result = await kit.process_inbound(msg)
-
-        assert not result.blocked
-        rooms = await kit._store.list_rooms()
-        assert len(rooms) == 1
-        events = await kit._store.list_events(rooms[0].id)
-
-        greeting_events = [e for e in events if e.metadata.get("auto_greeting") is True]
-        user_events = [
-            e
-            for e in events
-            if e.type == EventType.MESSAGE and not e.metadata.get("auto_greeting")
-        ]
-
-        assert len(greeting_events) == 1
-        assert len(user_events) >= 1
-
-        # Greeting must be stored before the user message
-        assert greeting_events[0].index < user_events[0].index
-
-        # Gate must be fully cleared after completion
-        assert len(kit._greeting_gates) == 0
-        assert len(kit._greeting_gate_counts) == 0
-
-        await kit.close()
-
-    async def test_no_agent_no_gate(self) -> None:
-        """No agent = no greeting gate set."""
-        kit = RoomKit()
-        sms = SMSChannel("sms-1", provider=MockSMSProvider())
-        kit.register_channel(sms)
-
-        msg = InboundMessage(
-            channel_id="sms-1",
-            sender_id="+15551234567",
-            content=TextContent(body="Hello"),
-        )
-        await kit.process_inbound(msg)
-
-        # No gates should exist
-        assert len(kit._greeting_gates) == 0
-
-        await kit.close()
 
     async def test_gate_timeout_releases(self) -> None:
         """Gate timeout clears the gate and allows processing to continue."""
@@ -919,46 +882,49 @@ class TestGreetingGate:
             assert call_kwargs.kwargs.get("session") is session
             assert call_kwargs.kwargs.get("channel_type") is not None
 
-    async def test_gate_cleared_on_send_greeting_error(self) -> None:
-        """Gate is cleared even when send_greeting raises an error."""
-        from unittest.mock import AsyncMock, patch
+    async def test_voice_greeting_holds_the_gate_until_it_fails(self) -> None:
+        """A voice session's greeting holds the gate, and its failure releases it."""
+        from unittest.mock import patch
 
-        kit = RoomKit()
-        sms = SMSChannel("sms-1", provider=MockSMSProvider())
+        backend = MockVoiceBackend()
+        stt = MockSTTProvider(transcripts=["hi"])
+        tts = MockTTSProvider()
+
+        kit = RoomKit(stt=stt, tts=tts, voice=backend)
+
+        voice_channel = VoiceChannel(
+            "voice-1", stt=stt, tts=tts, backend=backend, pipeline=AudioPipelineConfig()
+        )
         agent = Agent(
             "agent-1",
-            provider=MockAIProvider(responses=["Hi!"]),
+            provider=MockAIProvider(responses=["Hello!"]),
             greeting="Welcome!",
             auto_greet=True,
         )
-        kit.register_channel(sms)
+        kit.register_channel(voice_channel)
         kit.register_channel(agent)
 
-        @kit.hook(HookTrigger.ON_ROOM_CREATED, HookExecution.ASYNC)
-        async def attach_agent(event: object, context: object) -> None:
-            room_id = event.room_id  # type: ignore[attr-defined]
-            await kit.attach_channel(room_id, "agent-1")
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "voice-1")
+        await kit.attach_channel(room.id, "agent-1")
 
-        # Make _store_greeting_event raise an error
-        with patch.object(
-            kit, "_store_greeting_event", new_callable=AsyncMock, side_effect=RuntimeError("boom")
-        ):
-            msg = InboundMessage(
-                channel_id="sms-1",
-                sender_id="+15551234567",
-                content=TextContent(body="Hello"),
-            )
-            # The greeting error should be caught by the hook's try/finally
-            await kit.process_inbound(msg)
+        held: list[bool] = []
 
-        # Gate must be cleared despite the error
-        assert len(kit._greeting_gates) == 0
-        assert len(kit._greeting_gate_counts) == 0
+        async def failing_greeting(room_id: str, **kwargs: object) -> None:
+            held.append(room_id in kit._greeting_gates)
+            raise RuntimeError("boom")
 
+        with patch.object(kit, "send_greeting", side_effect=failing_greeting):
+            await kit.connect_voice(room.id, "user-1", "voice-1")
+            await until(lambda: bool(held))
+            await until(lambda: room.id not in kit._greeting_gates)
+
+        assert held == [True]
         await kit.close()
 
-    async def test_multi_agent_gate_waits_for_all(self) -> None:
-        """Two agents with auto_greet: gate holds until both finish."""
+    async def test_two_agents_greet_before_the_message(self) -> None:
+        """Two auto-greeting agents reading each other: both greet, then the message
+        is processed, not refused process_timeout (RMK-503)."""
         kit = RoomKit()
         sms = SMSChannel("sms-1", provider=MockSMSProvider())
         agent1 = Agent(
@@ -980,46 +946,34 @@ class TestGreetingGate:
         @kit.hook(HookTrigger.ON_ROOM_CREATED, HookExecution.ASYNC)
         async def attach_agents(event: object, context: object) -> None:
             room_id = event.room_id  # type: ignore[attr-defined]
-            # As transports, the shape this gate test was written on: two
-            # auto-greeting agents attached as intelligence channels stall the
-            # first inbound (RMK-503).
-            await kit.attach_channel(room_id, "agent-1", category=ChannelCategory.TRANSPORT)
-            await kit.attach_channel(room_id, "agent-2", category=ChannelCategory.TRANSPORT)
+            await kit.attach_channel(room_id, "agent-1")
+            await kit.attach_channel(room_id, "agent-2")
 
         msg = InboundMessage(
             channel_id="sms-1",
             sender_id="+15551234567",
             content=TextContent(body="Hello"),
         )
-        result = await kit.process_inbound(msg)
 
+        result = await kit.process_inbound(msg)
         assert not result.blocked
+
         rooms = await kit._store.list_rooms()
         assert len(rooms) == 1
+
         # The two agents answer each other past the default page (RMK-370).
         events = await kit._store.list_events(rooms[0].id, limit=500)
-
         greeting_events = [e for e in events if e.metadata.get("auto_greeting") is True]
-        # Filter for the actual user inbound message (from sms-1), not AI responses
         user_inbound = [
             e for e in events if e.source.channel_id == "sms-1" and e.type == EventType.MESSAGE
         ]
 
-        # Both agents should have stored their greeting
-        assert len(greeting_events) == 2
-        greeting_texts = {e.content.body for e in greeting_events}
-        assert "Hello from agent 1!" in greeting_texts
-        assert "Hello from agent 2!" in greeting_texts
-
-        # Both greetings stored before user's inbound message
-        assert len(user_inbound) >= 1
-        max_greeting_index = max(e.index for e in greeting_events)
-        user_msg_index = user_inbound[0].index
-        assert max_greeting_index < user_msg_index
-
-        # Gate fully cleaned up
-        assert len(kit._greeting_gates) == 0
-        assert len(kit._greeting_gate_counts) == 0
+        assert {e.content.body for e in greeting_events} == {
+            "Hello from agent 1!",
+            "Hello from agent 2!",
+        }
+        assert len(user_inbound) == 1
+        assert max(e.index for e in greeting_events) < user_inbound[0].index
 
         await kit.close()
 
@@ -1071,58 +1025,5 @@ class TestGreetingGate:
         assert not slow_hook_finished.is_set()
         release.set()
         await asyncio.wait_for(slow_hook_finished.wait(), timeout=2.0)
-
-        await kit.close()
-
-    async def test_multi_agent_partial_failure_releases_gate(self) -> None:
-        """Failed agent greeting force-clears gate; other agent's greeting stored."""
-        from unittest.mock import patch
-
-        kit = RoomKit()
-        sms = SMSChannel("sms-1", provider=MockSMSProvider())
-        agent1 = Agent(
-            "agent-1",
-            provider=MockAIProvider(responses=["AI-1 reply"]),
-            greeting="Hello from agent 1!",
-            auto_greet=True,
-        )
-        agent2 = Agent(
-            "agent-2",
-            provider=MockAIProvider(responses=["AI-2 reply"]),
-            greeting="Hello from agent 2!",
-            auto_greet=True,
-        )
-        kit.register_channel(sms)
-        kit.register_channel(agent1)
-        kit.register_channel(agent2)
-
-        @kit.hook(HookTrigger.ON_ROOM_CREATED, HookExecution.ASYNC)
-        async def attach_agents(event: object, context: object) -> None:
-            room_id = event.room_id  # type: ignore[attr-defined]
-            await kit.attach_channel(room_id, "agent-1")
-            await kit.attach_channel(room_id, "agent-2")
-
-        # Wrap send_greeting to fail for agent-2 only
-        original_send_greeting = kit.send_greeting
-
-        async def patched_send_greeting(room_id: str, **kwargs: object) -> object:
-            if kwargs.get("agent_id") == "agent-2":
-                raise RuntimeError("agent-2 greeting failed")
-            return await original_send_greeting(room_id, **kwargs)
-
-        with patch.object(kit, "send_greeting", side_effect=patched_send_greeting):
-            msg = InboundMessage(
-                channel_id="sms-1",
-                sender_id="+15551234567",
-                content=TextContent(body="Hello"),
-            )
-            # Should not stall — gate force-clears on agent-2's error
-            result = await asyncio.wait_for(kit.process_inbound(msg), timeout=5.0)
-
-        assert not result.blocked
-
-        # Gate must be fully cleared despite partial failure
-        assert len(kit._greeting_gates) == 0
-        assert len(kit._greeting_gate_counts) == 0
 
         await kit.close()

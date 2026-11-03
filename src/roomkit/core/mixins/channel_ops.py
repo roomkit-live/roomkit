@@ -935,6 +935,17 @@ class ChannelOpsMixin(HelpersMixin):
                     greeted_rooms.pop(dedup_key, None)
                     return
 
+            if event.session is None:
+                # Text path: no greeting gate. The session's start awaits this
+                # hook before its message goes on, so nothing the gate would
+                # hold back is ahead of the greeting, and its delivery to
+                # another intelligence channel would wait for the very gate
+                # that waits for it, past process_timeout (RMK-503).
+                await kit_ref.send_greeting(
+                    room_id, agent_id=agent_id, channel_type=event.channel_type
+                )
+                return
+
             kit_ref._set_greeting_gate(room_id)
             try:
                 await kit_ref.send_greeting(
