@@ -76,6 +76,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and a hook on `ON_EVENT_UPDATED` or `ON_EVENT_DELETED` still reacts to it.
   roomkit-rs opens no turn on a change either.
 
+- **BREAKING — an agent takes a turn on a message or an instruction only**
+  (RFC §6.4, RMK-1257). Any other event an application sent opened a turn:
+  `send_event(type=EventType.SYSTEM, ...)` with "The order shipped", a
+  reaction or a participant's arrival made the model answer it, a
+  generation paid per notice, and a `Loop`, an auto-delegating
+  `Supervisor`, an `ACPChannel` and a steered turn took it as a message.
+  Such an event is still stored and handed to the memory, and answered by
+  no turn; to have an agent react to a notice, send it an instruction
+  (`kit.deliver(..., instruction=True)`). roomkit-rs answers the same two
+  types.
+
 - **`MCPToolProvider.call_tool()` notes what is not text, and reads a text
   resource as its text** (RFC §21.2, RMK-1251). An image the server
   returned came back as its object's printing, base64 included (`type='image'

@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 
 from roomkit.channels._tool_registry import orchestration_tool, schema_tool
 from roomkit.channels.declared import named_agent, register_strategy_agents
-from roomkit.core._changes import concerns_change
+from roomkit.core._changes import opens_no_turn
 from roomkit.core._failure_log import mark_reported
 from roomkit.core.exceptions import RoomKitError
 from roomkit.models.channel import ChannelBinding, ChannelOutput
@@ -243,10 +243,11 @@ class _LoopTurns:
         producer = self._producer
         if event.source.channel_id == producer.channel_id:
             return ChannelOutput.empty()
-        # An agent's or the system's event, or an edit or a delete, which is
-        # no task (RFC §10.3): the producer's own channel reads it.
+        # An agent's or the system's event, or one that opens no turn (a
+        # notice, an edit or a delete: RFC §6.4, §10.3), is no task: the
+        # producer's own channel reads it.
         from_agents = event.source.channel_type in (ChannelType.AI, ChannelType.SYSTEM)
-        if from_agents or concerns_change(event):
+        if from_agents or opens_no_turn(event):
             return await self._kit._strategy_turn(event, binding, context)
         task = task_input(event)
         if not task:

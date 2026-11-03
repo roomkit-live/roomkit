@@ -48,6 +48,8 @@ CHANGE_REFUSALS = frozenset(
 """Every reason step 8a refuses a change with (RFC §10.1)."""
 
 _CHANGE_TYPES = frozenset({EventType.EDIT, EventType.DELETE})
+# The events an agent takes a turn on (RFC §6.4).
+_TURN_TYPES = frozenset({EventType.MESSAGE, EventType.INSTRUCTION})
 _ADMINISTRATORS = frozenset({ParticipantRole.OWNER, ParticipantRole.AGENT})
 _GONE = frozenset({ParticipantStatus.LEFT, ParticipantStatus.BANNED})
 # RFC §10.3 fixes ``edit_source`` at "sender" | "system" | null, which
@@ -83,6 +85,14 @@ def concerns_change(event: RoomEvent) -> bool:
     """Whether step 8a judges *event* (RFC §10.1): an EDIT or a DELETE, or
     an event holding a change anywhere."""
     return event.type in _CHANGE_TYPES or holds_change(event.content)
+
+
+def opens_no_turn(event: RoomEvent) -> bool:
+    """Whether no agent takes a turn on *event* (RFC §6.4): an agent answers
+    a message or an instruction, never a change (§10.3). A notice, a
+    reaction, a participant's arrival or a tool call's record is stored,
+    and answered by no turn."""
+    return event.type not in _TURN_TYPES or concerns_change(event)
 
 
 def change_of(event: RoomEvent) -> Change | None:

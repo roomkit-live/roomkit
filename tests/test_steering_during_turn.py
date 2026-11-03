@@ -248,13 +248,15 @@ async def test_a_message_while_the_model_answers_is_answered_by_the_same_turn(
     assert await _bodies(kit, "agent") == ["a.py, b.txt", "a.py"]
 
 
-@pytest.mark.parametrize("kind", [EventType.EDIT, EventType.DELETE], ids=["edit", "delete"])
-async def test_an_edit_or_a_delete_while_the_model_answers_is_not_steered(
+@pytest.mark.parametrize(
+    "kind", [EventType.EDIT, EventType.DELETE, EventType.SYSTEM], ids=["edit", "delete", "system"]
+)
+async def test_what_opens_no_turn_while_the_model_answers_is_not_steered(
     kind: EventType, streaming: bool
 ) -> None:
-    """A change is no message a turn may answer (RFC §10.3, RMK-1226): it is
-    not handed to the running turn, and waits its place for a turn the
-    agent does not take."""
+    """A change (RFC §10.3, RMK-1226) or a notice (RFC §6.4, RMK-1257) is
+    no message a turn may answer: it is not handed to the running turn, and
+    waits its place for a turn the agent does not take."""
     provider = _Gated(
         [AIResponse(content="Seen 0."), AIResponse(content="Seen 1.")], held=0, streaming=streaming
     )
@@ -273,8 +275,10 @@ async def test_an_edit_or_a_delete_while_the_model_answers_is_not_steered(
         content: EventContent = EditContent(
             target_event_id=oops.id, new_content=TextContent(body="Oops, fixed")
         )
-    else:
+    elif kind == EventType.DELETE:
         content = DeleteContent(target_event_id=oops.id, delete_type=DeleteType.SENDER)
+    else:
+        content = TextContent(body="The order shipped")
     change = asyncio.create_task(
         kit.process_inbound(
             InboundMessage(channel_id="ws", sender_id="u1", event_type=kind, content=content),

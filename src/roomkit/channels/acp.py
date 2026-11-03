@@ -61,7 +61,7 @@ from roomkit.channels._mark_copies import compile_mark_patterns
 from roomkit.channels._turn_notes import turn_notes
 from roomkit.channels.acp_transport import ACPTransport, _agent_transport
 from roomkit.channels.base import Channel
-from roomkit.core._changes import concerns_change
+from roomkit.core._changes import opens_no_turn
 from roomkit.core.task_utils import log_task_exception
 from roomkit.models.channel import ChannelBinding, ChannelCapabilities, ChannelOutput
 from roomkit.models.context import RoomContext
@@ -73,7 +73,7 @@ from roomkit.models.enums import (
     ChannelType,
     EventType,
 )
-from roomkit.models.event import RoomEvent, is_tool_call_record
+from roomkit.models.event import RoomEvent
 from roomkit.models.response_metadata import ResponseMetadata
 from roomkit.models.steering import Cancel, SteeringDirective
 from roomkit.models.tool_call import AfterResponseCallback, ToolCallObserver
@@ -520,11 +520,10 @@ class ACPChannel(ACPConnectionMixin, ACPSessionsMixin, ACPTurnMixin, ACPEventsMi
         binding: ChannelBinding,
         context: RoomContext,
     ) -> ChannelOutput:
-        """Create a lazy ACP prompt stream for a Room event; none for an edit
+        """Create a lazy ACP prompt stream for a Room event; none for an
+        event that is no message nor instruction (RFC §6.4), nor for an edit
         or a delete, no message a turn may answer (RFC §10.3)."""
-        if event.source.channel_id == self.channel_id:
-            return ChannelOutput.empty()
-        if is_tool_call_record(event) or concerns_change(event):
+        if event.source.channel_id == self.channel_id or opens_no_turn(event):
             return ChannelOutput.empty()
 
         await compile_mark_patterns()

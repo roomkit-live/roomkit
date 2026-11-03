@@ -1037,14 +1037,33 @@ def _last_prompt(provider: MockAIProvider) -> str:
     return " ".join(str(m.content) for m in provider.calls[-1].messages)
 
 
-class TestNoTurnOnAChange:
-    """RFC §10.3 (RMK-1226): an edit or a delete opens no turn (the shared
-    scenarios inbound/an-edit-opens-no-agent-turn and
-    inbound/a-deletion-opens-no-agent-turn); the agent's memory learns it
-    all the same, as roomkit-rs's does."""
+async def _no_turn_event(kit: RoomKit, kind: str, oops: RoomEvent) -> None:
+    """An event of *kind* that opens no agent turn: a change of *oops*, or a
+    notice the application sends."""
+    if kind == "edit":
+        await _edit(kit, oops, sender_id="alice", edit_source="sender")
+    elif kind == "delete":
+        await _delete(kit, oops, sender_id="alice", delete_type=DeleteType.SENDER)
+    else:
+        notice = TextContent(body="The order shipped")
+        await kit.send_event("r1", "src", notice, event_type=EventType(kind))
 
-    @pytest.mark.parametrize("change", ["edit", "delete"])
-    async def test_the_memory_learns_a_change_no_turn_answers(self, change: str) -> None:
+
+#: An edit, a delete (RFC §10.3, RMK-1226), and events that are no message
+#: nor instruction (RFC §6.4, RMK-1257).
+_NO_TURN_KINDS = ["edit", "delete", "system", "reaction", "participant_joined"]
+
+
+class TestNoTurnOnAChangeOrANotice:
+    """An edit or a delete opens no turn (RFC §10.3, RMK-1226: the shared
+    scenarios inbound/an-edit-opens-no-agent-turn and
+    inbound/a-deletion-opens-no-agent-turn), nor does an event that is no
+    message nor instruction (RFC §6.4, RMK-1257:
+    inbound/a-system-event-opens-no-agent-turn); the agent's memory learns
+    it all the same, as roomkit-rs's does."""
+
+    @pytest.mark.parametrize("change", _NO_TURN_KINDS)
+    async def test_the_memory_learns_what_opens_no_turn(self, change: str) -> None:
         memory = MockMemoryProvider()
         provider = MockAIProvider(responses=["noted"] * 10)
         kit = RoomKit()
@@ -1054,19 +1073,18 @@ class TestNoTurnOnAChange:
         await kit.attach_channel("r1", "src")
         await kit.attach_channel("r1", "ai", category=ChannelCategory.INTELLIGENCE)
         oops = await _post(kit, "Oops", sender_id="alice")
-        if change == "edit":
-            await _edit(kit, oops, sender_id="alice", edit_source="sender")
-        else:
-            await _delete(kit, oops, sender_id="alice", delete_type=DeleteType.SENDER)
+        await _no_turn_event(kit, change, oops)
 
         assert len(provider.calls) == 1
         kinds = [call.event.type for call in memory.ingest_calls]
         assert kinds == [EventType.MESSAGE, EventType(change)]
         await kit.close()
 
-    @pytest.mark.parametrize("change", ["edit", "delete"])
-    async def test_no_speak_policy_nor_thinker_is_asked_about_a_change(self, change: str) -> None:
-        """No turn is opened on a change: its speak policy is not asked,
+    @pytest.mark.parametrize("change", _NO_TURN_KINDS)
+    async def test_no_speak_policy_nor_thinker_is_asked_what_opens_no_turn(
+        self, change: str
+    ) -> None:
+        """No turn is opened on such an event: its speak policy is not asked,
         ON_SPEAK_DECISION does not fire and its thinker does not run (RFC
         §6.4, §10.3)."""
         policy = MockSpeakPolicy(["silent"])
@@ -1086,10 +1104,7 @@ class TestNoTurnOnAChange:
             decided.append(event)
 
         oops = await _post(kit, "Oops", sender_id="alice")
-        if change == "edit":
-            await _edit(kit, oops, sender_id="alice", edit_source="sender")
-        else:
-            await _delete(kit, oops, sender_id="alice", delete_type=DeleteType.SENDER)
+        await _no_turn_event(kit, change, oops)
         await kit.close()
 
         assert (len(policy.turns), len(thinker.calls), len(decided)) == (1, 1, 1)

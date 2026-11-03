@@ -60,7 +60,7 @@ from roomkit.channels._turn_budget import turn_budget
 from roomkit.channels._turn_config import ConfigProvider
 from roomkit.channels.base import Channel
 from roomkit.core._authors import People
-from roomkit.core._changes import concerns_change
+from roomkit.core._changes import opens_no_turn
 from roomkit.memory.base import MemoryProvider
 from roomkit.memory.sliding_window import SlidingWindowMemory
 from roomkit.models.channel import (
@@ -609,17 +609,19 @@ class AIChannel(
     ) -> ChannelOutput:
         """React to an event: the channel answers, as its speak policy decides.
 
-        An edit or a delete opens no turn, a strategy's included: it is no
-        message a turn may answer (RFC §10.3), and the next message is
-        answered in the room it left.
+        Only a message or an instruction opens a turn, a strategy's
+        included (RFC §6.4): a notice, a reaction or a participant's arrival
+        goes to the memory, not answered, and an edit or a delete is no
+        message a turn may answer (RFC §10.3); the next message is answered
+        in the room they left.
 
         A strategy that takes the agent's turns in a room (a loop, a
         supervisor's delegation passes) runs on the room's owner and asks each
         generation as a strategy turn, which the channel answers past its
         speak policy and its thinker (RFC §10.6.1).
         """
-        if concerns_change(event):
-            return await self._read_change(event, context)
+        if opens_no_turn(event):
+            return await self._read_without_turn(event, context)
         if in_strategy_turn():
             return await self._respond(event, binding, context)
         room_id = context.room.id if context.room else event.room_id
@@ -637,11 +639,13 @@ class AIChannel(
         notes = await self._speaking_notes(room_id, decision)
         return await self._respond(event, binding, context, notes=notes, ingested=True)
 
-    async def _read_change(self, event: RoomEvent, context: RoomContext) -> ChannelOutput:
-        """No turn on an edit or a delete (RFC §10.3): step 8a applied it.
-        The memory learns it as it learns every event the channel is handed,
-        but the channel's own."""
-        if event.source.channel_id != self.channel_id and discussion_turn(event) is None:
+    async def _read_without_turn(self, event: RoomEvent, context: RoomContext) -> ChannelOutput:
+        """No turn on an event that is no message nor instruction (RFC §6.4),
+        nor on an edit or a delete, which step 8a applied (RFC §10.3). The
+        memory learns it as it learns every event the channel is handed, but
+        the channel's own and a tool call's record."""
+        own = event.source.channel_id == self.channel_id
+        if not own and not is_tool_call_record(event) and discussion_turn(event) is None:
             await self._ingest_event(event, context)
         return ChannelOutput.empty()
 
@@ -738,9 +742,6 @@ class AIChannel(
         *ingested*: the memory provider already has the event.
         """
         if event.source.channel_id == self.channel_id:
-            return ChannelOutput.empty()
-
-        if is_tool_call_record(event):
             return ChannelOutput.empty()
 
         # A discussion handed the event to memory when it committed (RFC

@@ -1121,10 +1121,12 @@ class TestACPChannel:
         assert (await channel.on_event(own, _binding(), context)).responded is False
 
         # An edit or a delete, as transcoded for the channel, is no message a
-        # turn may answer (RFC §10.3, RMK-1226).
+        # turn may answer (RFC §10.3, RMK-1226), nor is a notice (RFC §6.4,
+        # RMK-1257).
         for kind, body in (
             (EventType.EDIT, "Correction: Why?"),
             (EventType.DELETE, "[Message deleted]"),
+            (EventType.SYSTEM, "The order shipped"),
         ):
             change = make_event(body=body).model_copy(update={"type": kind})
             assert (await channel.on_event(change, _binding(), context)).responded is False

@@ -28,7 +28,7 @@ from typing import Any
 from roomkit._media import text_form
 from roomkit.channels._speaker import labelled_lines
 from roomkit.channels.base import Channel
-from roomkit.core._changes import concerns_change, for_channels
+from roomkit.core._changes import for_channels, opens_no_turn
 from roomkit.core._requester import asking_label
 from roomkit.core.lanes import anchor_index
 from roomkit.core.mixins.helpers import _RECENT_EVENTS_LIMIT
@@ -210,9 +210,9 @@ def steered_message(
     content reads as, a participant's words under their label when the room
     has several speakers, as the turn's history labels them; none for an
     event that reads as no text, which waits a turn of its own, nor for an
-    edit or a delete, no message a turn may answer (RFC §10.3), whose own
-    turn the agent does not take."""
-    if concerns_change(event):
+    event that opens no turn (a notice, a reaction: RFC §6.4; an edit or a
+    delete: RFC §10.3), whose own turn the agent does not take."""
+    if opens_no_turn(event):
         return None
     text = text_form(event.content)
     if not text:

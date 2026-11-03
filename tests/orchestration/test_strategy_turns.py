@@ -220,7 +220,9 @@ def _strategy(name: str, lead: Agent, helper: Agent) -> Orchestration:
 def _change(kind: EventType, target: RoomEvent) -> EventContent:
     if kind == EventType.EDIT:
         return EditContent(target_event_id=target.id, new_content=TextContent(body="Why not?"))
-    return DeleteContent(target_event_id=target.id, delete_type=DeleteType.SENDER)
+    if kind == EventType.DELETE:
+        return DeleteContent(target_event_id=target.id, delete_type=DeleteType.SENDER)
+    return TextContent(body="The order shipped")
 
 
 async def _from_ws(kit: RoomKit, kind: EventType, content: EventContent) -> InboundResult:
@@ -230,11 +232,14 @@ async def _from_ws(kit: RoomKit, kind: EventType, content: EventContent) -> Inbo
     )
 
 
-@pytest.mark.parametrize("kind", [EventType.EDIT, EventType.DELETE], ids=["edit", "delete"])
+@pytest.mark.parametrize(
+    "kind", [EventType.EDIT, EventType.DELETE, EventType.SYSTEM], ids=["edit", "delete", "system"]
+)
 @pytest.mark.parametrize("name", ["loop", "one-pass", "two-pass"])
-async def test_a_strategy_takes_no_turn_on_an_edit_or_a_delete(name: str, kind: EventType) -> None:
-    """RFC §10.3 (RMK-1226): a strategy that takes the agent's turns asks
-    none on a change, as the agent's own channel answers none."""
+async def test_a_strategy_takes_no_turn_on_what_opens_none(name: str, kind: EventType) -> None:
+    """A strategy that takes the agent's turns asks none on a change (RFC
+    §10.3, RMK-1226) nor on an event that is no message nor instruction
+    (RFC §6.4, RMK-1257), as the agent's own channel answers none."""
     memory = CountingMemory()
     lead = _agent("lead", *["lead answer"] * 4, memory=memory)
     helper = _agent("helper", *["APPROVED"] * 4)
@@ -254,7 +259,7 @@ async def test_a_strategy_takes_no_turn_on_an_edit_or_a_delete(name: str, kind: 
     assert not result.blocked
     assert (len(lead.provider.calls), len(helper.provider.calls)) == asked
     assert result.response_events == []
-    # The lead's memory still learns the change.
+    # The lead's memory still learns it.
     assert memory.sources[ingested:] == ["ws"]
     await kit.close()
 
