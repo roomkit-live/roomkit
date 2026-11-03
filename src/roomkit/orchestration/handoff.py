@@ -21,6 +21,7 @@ from roomkit.channels._tool_registry import ToolEntry, orchestration_tool
 from roomkit.channels.agent import Agent
 from roomkit.channels.declared import id_of, owner_tools_of
 from roomkit.channels.realtime_voice import RealtimeVoiceChannel
+from roomkit.core._routing_stamps import ORCHESTRATION_INTERNAL
 from roomkit.memory._wrapper import _MemoryWrapper
 from roomkit.memory.base import MemoryProvider, MemoryResult
 from roomkit.models.channel import ChannelBinding
@@ -421,7 +422,7 @@ class HandoffHandler:
                 "from_agent": calling_agent_id,
                 "to_agent": request.target_agent_id,
                 "summary": request.summary,
-                "_orchestration_internal": True,
+                ORCHESTRATION_INTERNAL: True,
                 # The runtime's record: its mark is kept, a copy replaced (§6.4).
                 **runtime_record("handoff"),
             },

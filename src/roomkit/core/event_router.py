@@ -16,7 +16,7 @@ from roomkit.core._instructions import response_metadata
 from roomkit.core._reentrance import answers_past_limit, within_turn
 from roomkit.core._room_metadata import without_framework_keys
 from roomkit.core._room_turns import RoomTurns
-from roomkit.core._routing_stamps import ALWAYS_PROCESS, ROUTED_TO
+from roomkit.core._routing_stamps import ALWAYS_PROCESS, ORCHESTRATION_INTERNAL, ROUTED_TO
 from roomkit.core._turn_runners import TurnRunner
 from roomkit.core._voice_delivery import delivering_injected
 from roomkit.core.circuit_breaker import CircuitBreaker
@@ -1015,7 +1015,7 @@ class EventRouter:
             return None
         if plan is not None and plan.defers_solicitation:
             return _TargetResult(channel_id=binding.channel_id)
-        internal = bool((event.metadata or {}).get("_orchestration_internal"))
+        internal = bool((event.metadata or {}).get(ORCHESTRATION_INTERNAL))
         asked = not internal and _solicits(
             event,
             binding.channel_id,

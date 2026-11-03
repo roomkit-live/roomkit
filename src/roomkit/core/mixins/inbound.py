@@ -25,7 +25,7 @@ from roomkit.core._reentrance import (
     admission_order,
     chain_floor,
 )
-from roomkit.core._routing_stamps import without_routing_stamps
+from roomkit.core._routing_stamps import ORCHESTRATION_INTERNAL, without_routing_stamps
 from roomkit.core.exceptions import (
     ChannelNotRegisteredError,
     RoomAlreadyExistsError,
@@ -1628,11 +1628,12 @@ def _in_its_room(event: RoomEvent, room_id: str) -> RoomEvent:
     return event.model_copy(update={"room_id": room_id, "responds_to": None})
 
 
-_RUNTIME_KEYS = (RUNTIME_RECORD, HELD_KEY, FINGERPRINT)
+_RUNTIME_KEYS = (RUNTIME_RECORD, HELD_KEY, FINGERPRINT, ORCHESTRATION_INTERNAL)
 """Metadata keys only the runtime writes: which text is the runtime's (RFC
 §6.4), which message it holds for verification (§11.7.3), whose release
-would otherwise hand a sender's message to the agents as another's, and
-which instruction produced a response (§5.2, §10.1.1 step 6)."""
+would otherwise hand a sender's message to the agents as another's, which
+instruction produced a response (§5.2, §10.1.1 step 6), and which event is
+the orchestration's own and asks no agent (§19.6)."""
 
 
 def _without_runtime_keys(event: RoomEvent) -> RoomEvent:
@@ -1641,6 +1642,13 @@ def _without_runtime_keys(event: RoomEvent) -> RoomEvent:
     brings one back."""
     if not any(key in event.metadata for key in _RUNTIME_KEYS):
         return event
+    if ORCHESTRATION_INTERNAL in event.metadata:
+        logger.warning(
+            "Event %s of room %s arrived with %s, which only the runtime writes: dropped",
+            event.id,
+            event.room_id,
+            ORCHESTRATION_INTERNAL,
+        )
     metadata = {k: v for k, v in event.metadata.items() if k not in _RUNTIME_KEYS}
     return event.model_copy(update={"metadata": metadata})
 

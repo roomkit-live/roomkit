@@ -21,6 +21,12 @@ ROUTED_TO = "_routed_to"
 ALWAYS_PROCESS = "_always_process"
 ROUTING_STAMPS = (ROUTED_TO, ALWAYS_PROCESS)
 
+ORCHESTRATION_INTERNAL = "_orchestration_internal"
+"""Marks an event as the orchestration's own record, a handoff's, which asks no
+agent (RFC §19.6). Only the runtime and code the host runs write it: a sender
+who wrote it into its message would silence the room's agents, so the kit drops
+it from what arrives through its door (RFC §10.1)."""
+
 
 def without_routing_stamps(event: RoomEvent) -> RoomEvent:
     """*event* without the routing stamps its metadata arrived with, each
