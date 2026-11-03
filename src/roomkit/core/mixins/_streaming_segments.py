@@ -628,8 +628,8 @@ class SegmentWriter:
 
 class LaneSink:
     """A room's streamed rows: refused once the room refuses writes, gated on
-    ``BEFORE_BROADCAST``, committed on its lane with the room's bindings as
-    they stand at each row's commit."""
+    ``BEFORE_BROADCAST``, committed on its lane with the room's context as it
+    stands at each row's commit."""
 
     def __init__(
         self,
@@ -788,6 +788,9 @@ class LaneSink:
             # A close that held the lock meanwhile refuses the row (RFC §5.1).
             if context is None or _refuses_writes(context.room):
                 logger.debug("Room %s closed before %s's commit", room_id, event.type)
+                # A status changed elsewhere moves no close count: the next
+                # row's hooks are spared all the same.
+                self._refusing = True
                 return None
             bindings = context.bindings
             source = context.get_binding(event.source.channel_id)

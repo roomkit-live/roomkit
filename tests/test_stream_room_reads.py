@@ -90,7 +90,7 @@ async def _ai_rows(kit: RoomKit) -> list[EventType]:
     return [e.type for e in events if e.source.channel_id == "ai1"]
 
 
-async def test_a_streamed_turn_reads_the_room_status_once() -> None:
+async def test_a_streamed_turn_reads_the_status_once_around_its_hooks() -> None:
     kit = await _room(rounds=4)
     reads = _count_status_reads(kit)
 
@@ -99,6 +99,28 @@ async def test_a_streamed_turn_reads_the_room_status_once() -> None:
     assert reads == ["r1"]
     assert (await _ai_rows(kit)).count(EventType.TOOL_CALL_END) == 4
     await kit.close()
+
+
+async def test_a_row_reads_the_room_once() -> None:
+    """Each tool round adds three rows, each reading the room at its commit
+    (RMK-1286); a read that grew with the rows would not pass."""
+
+    async def reads(rounds: int) -> int:
+        kit = await _room(rounds=rounds)
+        count = 0
+        get_room = kit.store.get_room
+
+        async def counting(room_id: str) -> Any:
+            nonlocal count
+            count += 1
+            return await get_room(room_id)
+
+        kit.store.get_room = counting  # type: ignore[method-assign]
+        await _say(kit)
+        await kit.close()
+        return count
+
+    assert await reads(4) - await reads(1) <= 3 * 3
 
 
 async def test_another_room_closing_costs_one_read_and_blocks_nothing() -> None:
@@ -186,4 +208,48 @@ async def test_a_close_before_the_first_row_is_read() -> None:
     )
 
     assert await sink.commit(row, exclude=None) is None
+    await kit.close()
+
+
+async def _set_timers_due(kit: RoomKit) -> None:
+    past = datetime.now(UTC) - timedelta(seconds=10)
+    await kit.set_room_timers(
+        "r1",
+        RoomTimers(inactive_after_seconds=0, closed_after_seconds=0, last_activity_at=past),
+    )
+
+
+async def test_a_timer_due_at_a_row_s_commit_applies_there() -> None:
+    """RFC §5.1: the row's commit is a section that reads the status, so the
+    transitions due apply first; nothing else checked the timers here."""
+    kit = await _room(rounds=1, during_tool=_set_timers_due)
+
+    await _say(kit)
+
+    room = await kit.store.get_room("r1")
+    assert room is not None and room.status == RoomStatus.CLOSED
+    assert EventType.TOOL_CALL_END not in await _ai_rows(kit)
+    await kit.close()
+
+
+async def test_a_refusal_the_commit_found_spares_the_next_row_s_hooks() -> None:
+    """A status changed elsewhere moves no close count: the commit that reads
+    it spares the rows after it their hooks."""
+
+    async def close_elsewhere(kit: RoomKit) -> None:
+        room = await kit.store.get_room("r1")
+        await kit.store.update_room(room.model_copy(update={"status": RoomStatus.CLOSED}))
+
+    kit = await _room(rounds=1, during_tool=close_elsewhere)
+    seen: list[EventType] = []
+
+    @kit.hook(HookTrigger.BEFORE_BROADCAST, name="watch")
+    async def watch(event: RoomEvent, ctx: RoomContext) -> HookResult:
+        if event.source.channel_id == "ai1":
+            seen.append(event.type)
+        return HookResult.allow()
+
+    await _say(kit)
+
+    assert seen == [EventType.MESSAGE, EventType.TOOL_CALL_START, EventType.TOOL_CALL_END]
     await kit.close()

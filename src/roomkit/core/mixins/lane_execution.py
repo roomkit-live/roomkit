@@ -473,11 +473,11 @@ class LaneExecutionMixin(HelpersMixin):
         *,
         policy_aware: bool,
     ) -> RoomEvent | None:
-        """Commit *event*, its source resolved by its caller once for a run
-        (a stream's rows), with no lock taken and nothing read; but for an
-        event in a thread, whose parent is rooted at its commit under the
-        room lock a hard delete takes, so that a reply names a root the room
-        holds as it commits (RFC §10.1 step 8)."""
+        """Commit *event*, its source resolved by its caller (a stream's row,
+        under the room lock), with nothing read; but for an event in a
+        thread, whose parent is rooted at its commit under the room lock a
+        hard delete takes, so that a reply names a root the room holds as it
+        commits (RFC §10.1 step 8)."""
         if event.parent_event_id is None:
             return await self._commit_to_lane(
                 room_id,

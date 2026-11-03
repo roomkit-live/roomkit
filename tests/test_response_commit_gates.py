@@ -673,10 +673,6 @@ async def test_a_row_reads_what_another_channel_committed_during_its_stream() ->
     agent, _ = _tool_turn(kit, aside)
     await _streaming_room(kit, reader, agent)
 
-    @kit.hook(HookTrigger.BEFORE_BROADCAST, name="watch")
-    async def watch(event: RoomEvent, context: RoomContext) -> HookResult:
-        return HookResult.allow()
-
     await kit.process_inbound(_hi(), room_id="r1")
 
     assert "Any news?" in reader.read["Done."]
