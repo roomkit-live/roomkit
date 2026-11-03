@@ -61,6 +61,8 @@ class Observed:
     resolver: list[dict[str, Any]] = field(default_factory=list)
     media_resolver: list[dict[str, Any]] = field(default_factory=list)
     requests: list[str] = field(default_factory=list)
+    tool_audit: list[Any] = field(default_factory=list)
+    session_audit: list[Any] = field(default_factory=list)
 
 
 class Normalizer:

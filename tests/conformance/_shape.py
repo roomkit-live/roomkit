@@ -33,7 +33,16 @@ from tests.conformance._tasks import TASK_ARGUMENTS
 from tests.conformance._verification import VERIFICATION_ARGUMENTS
 
 TOP = {"$schema", "id", "title", "rules", "reentrancy", "notes", "setup", "steps", "expect"}
-SETUP = {"kit", "channels", "rooms", "hooks", "identity_hooks", "identities", "strategies"}
+SETUP = {
+    "kit",
+    "channels",
+    "rooms",
+    "hooks",
+    "identity_hooks",
+    "identities",
+    "strategies",
+    "session_auditor",
+}
 KIT = {
     "max_chain_depth",
     "process_timeout_ms",
@@ -86,6 +95,7 @@ CHANNEL = {
     "steer_room_turns",
     "human_input",
     "kit_tools",
+    "audit",
     "addresses",
     "streams_in",
     "recent_events_window",
@@ -214,6 +224,8 @@ EXPECT = {
     "participants",
     "resolver",
     "media_resolver",
+    "tool_audit",
+    "session_audit",
 }
 NEW_ROOM = {"id", "organization_id", "metadata", "timers"}
 

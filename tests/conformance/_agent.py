@@ -41,6 +41,7 @@ from tests.conformance._memory import scripted_memory
 
 if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
+    from tests.conformance._audits import Auditors
     from tests.conformance._script import Gates
 
 
@@ -295,6 +296,7 @@ def scripted_agent(
     gates: Gates,
     kit: RoomKit,
     labelled: Callable[[Any], Any] | None = None,
+    auditors: Auditors | None = None,
 ) -> tuple[AIChannel, dict[str, ScriptedModel]]:
     """The AI channel of a scripted agent, and its models by the name
     ``expect.models`` gives them: its own under its id, its memory's
@@ -362,10 +364,15 @@ def scripted_agent(
             if tool.get("declared", True)
         ]
         + _kit_tools(spec.get("kit_tools", []), kit),
-        tool_handler=_tool_handler(tools, gates),
+        tool_handler=_audited(_tool_handler(tools, gates), spec, auditors),
         **kwargs,
     )
     return channel, models
+
+
+def _audited(handler: Any, spec: Mapping[str, Any], auditors: Auditors | None) -> Any:
+    """*handler* wrapped to record to the auditor the agent's `audit` names."""
+    return handler if auditors is None else auditors.audited(handler, spec)
 
 
 def _seconds(milliseconds: int | None) -> float | None:

@@ -35,6 +35,7 @@ from roomkit.store.base import ConversationStore
 from roomkit.tasks import DelegatedTask
 from tests.conformance._agent import ScriptedModel, tool_call_record
 from tests.conformance._ai_hooks import generation_record, response_record, tool_round_record
+from tests.conformance._audits import Auditors
 from tests.conformance._calls import (
     CALLS,
     UnmappedError,
@@ -142,6 +143,7 @@ class Harness:
         self._step_outcomes: list[dict[str, Any]] = []
         self._problems: list[str] = []
         self.models: dict[str, ScriptedModel] = {}
+        self.auditors = Auditors()
         setup = scenario.get("setup", {})
         self.strategies = strategies(setup, self)
         kit_setup = setup.get("kit", {})
@@ -310,6 +312,7 @@ class Harness:
             await self._observe()
         finally:
             await self.kit.close()
+            self.auditors.close()
         return self._problems + compare(
             self.scenario.get("expect", {}), self.observed, self._checks
         )
@@ -319,6 +322,7 @@ class Harness:
         recorded = LEVEL_0_EVENTS + LEVEL_2_EVENTS + INPUT_EVENTS + VERIFICATION_EVENTS + AI_EVENTS
         for event_type in recorded:
             self.kit.on(event_type)(self._on_framework_event)
+        self.auditors.set_up(setup.get("session_auditor"), self.kit)
         for channel in setup.get("channels", []):
             register_channel(self.kit, self, channel)
         await store_identities(self.kit, setup.get("identities", []))
@@ -575,6 +579,9 @@ class Harness:
         self.observed.models = {
             channel_id: list(model.requests) for channel_id, model in self.models.items()
         }
+        tools, sessions, problems = self.auditors.observe()
+        self.observed.tool_audit, self.observed.session_audit = tools, sessions
+        self._problems.extend(problems)
 
 
 def _literal_rooms(scenario: Mapping[str, Any]) -> set[str]:
