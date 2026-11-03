@@ -29,6 +29,7 @@ from tests.conformance._strategies import (
     STRATEGY_ARGUMENTS,
     STRATEGY_STEP,
     STRATEGY_UNINSTALL,
+    SUPERVISOR,
 )
 from tests.conformance._tasks import TASK_ARGUMENTS
 from tests.conformance._verification import VERIFICATION_ARGUMENTS
@@ -366,6 +367,8 @@ def _strategy(strategy: Mapping[str, Any], path: str, found: list[str]) -> None:
     _members(strategy, STRATEGY, path, found)
     if "loop" in strategy:
         _members(strategy["loop"], LOOP, f"{path}.loop", found)
+    if "supervisor" in strategy:
+        _members(strategy["supervisor"], SUPERVISOR, f"{path}.supervisor", found)
     for member, known in (("install", STRATEGY_STEP), ("uninstall", STRATEGY_UNINSTALL)):
         step = strategy.get(member, {})
         _members(step, known, f"{path}.{member}", found)

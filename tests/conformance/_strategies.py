@@ -4,7 +4,8 @@ A scripted strategy is a host's own: the agents it names by their channel
 ids, what its install does (a gate, kit calls made as a reaction's, then a
 refusal of the room) and what its own uninstall step does. A strategy with a
 ``loop`` is the implementation's Loop instead, its agents named by their ids
-(RFC §19.7.4). One object stands for each id, whatever the room it is
+(RFC §19.7.4), and one with a ``supervisor`` the implementation's Supervisor
+(RFC §19.7.3). One object stands for each id, whatever the room it is
 installed in.
 """
 
@@ -14,7 +15,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from roomkit import RoomKit
-from roomkit.orchestration import Loop
+from roomkit.orchestration import Loop, Supervisor
 from roomkit.orchestration.base import Orchestration
 from tests.conformance._script import perform
 
@@ -22,10 +23,18 @@ if TYPE_CHECKING:
     from tests.conformance._calls import Call
     from tests.conformance._harness import Harness
 
-STRATEGY = {"id", "agents", "install", "uninstall", "loop"}
+STRATEGY = {"id", "agents", "install", "uninstall", "loop", "supervisor"}
 STRATEGY_STEP = {"gate", "do", "refuse"}
 STRATEGY_UNINSTALL = {"gate", "do"}
 LOOP = {"agent", "reviewer", "reviewers", "max_iterations", "strategy"}
+SUPERVISOR = {
+    "supervisor",
+    "workers",
+    "strategy",
+    "share_channels",
+    "task_timeout_ms",
+    "max_revisions",
+}
 
 
 class ScriptedStrategy(Orchestration):
@@ -65,12 +74,29 @@ def _loop(spec: Mapping[str, Any]) -> Loop:
     return Loop(spec["agent"], **options)
 
 
+def _supervisor(spec: Mapping[str, Any]) -> Supervisor:
+    """The implementation's Supervisor a strategy's ``supervisor`` builds, its
+    agents named by their channel ids, its task timeout given in
+    milliseconds."""
+    named = ("strategy", "share_channels", "max_revisions")
+    options: dict[str, Any] = {key: spec[key] for key in named if key in spec}
+    if "task_timeout_ms" in spec:
+        options["task_timeout"] = spec["task_timeout_ms"] / 1000
+    return Supervisor(spec["supervisor"], spec["workers"], **options)
+
+
+def _strategy(spec: Mapping[str, Any], harness: Harness) -> Orchestration:
+    """The strategy *spec* describes: a Loop, a Supervisor, or a scripted one."""
+    if "loop" in spec:
+        return _loop(spec["loop"])
+    if "supervisor" in spec:
+        return _supervisor(spec["supervisor"])
+    return ScriptedStrategy(spec, harness)
+
+
 def strategies(setup: Mapping[str, Any], harness: Harness) -> dict[str, Orchestration]:
     """The scripted strategies of a scenario's setup, by id."""
-    return {
-        spec["id"]: _loop(spec["loop"]) if "loop" in spec else ScriptedStrategy(spec, harness)
-        for spec in setup.get("strategies", [])
-    }
+    return {spec["id"]: _strategy(spec, harness) for spec in setup.get("strategies", [])}
 
 
 def kit_orchestration(kit: Mapping[str, Any], harness: Harness) -> dict[str, Any]:
