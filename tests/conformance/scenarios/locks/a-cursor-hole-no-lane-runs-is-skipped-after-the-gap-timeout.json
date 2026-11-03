@@ -1,0 +1,102 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "locks/a-cursor-hole-no-lane-runs-is-skipped-after-the-gap-timeout",
+  "title": "An index committed that no lane delivers holds the room's delivery cursor until the gap timeout, then the next delivery forces the cursor past it and emits delivery_skipped",
+  "rules": [
+    "§13.5 Delivery lanes across processes",
+    "§8.2",
+    "§5.1"
+  ],
+  "setup": {
+    "kit": {
+      "delivery_gap_timeout_ms": 20
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "lost"
+        }
+      },
+      "expect": {
+        "result": {
+          "index": 0
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "after"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "body": "after"
+            }
+          }
+        ]
+      }
+    },
+    "framework_events": {
+      "room-1": [
+        {
+          "event": "delivery_skipped",
+          "from_index": 0,
+          "to_index": 0
+        },
+        {
+          "event": "delivery_succeeded",
+          "channel_id": "ws"
+        },
+        "event_processed"
+      ]
+    },
+    "rooms": {
+      "room-1": {
+        "latest_index": 1,
+        "delivered_index": 1
+      }
+    }
+  }
+}
