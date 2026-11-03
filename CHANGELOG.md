@@ -163,7 +163,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **A streamed answer stored after its agent is muted is withheld**
+- **A streamed answer stored after its agent is muted, made read-only or
+  detached is withheld**
   (RFC §7.2, §7.5 rule 2, RMK-1170). The rows a stream committed after a
   `mute()`, a `set_access()` that takes the agent's writing away or a
   `detach_channel()` of the agent were stored and delivered unless a
