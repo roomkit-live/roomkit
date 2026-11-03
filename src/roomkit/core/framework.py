@@ -70,6 +70,7 @@ from roomkit.core.locks import (
     InMemoryLockManager,
     ReleaseTolerantLockManager,
     RoomLockManager,
+    RoomLocks,
     close_bounded,
 )
 from roomkit.core.mixins import (
@@ -461,7 +462,7 @@ class RoomKit(
         self._hook_engine.turn_side = self._kit_turn_hooks
         self._given_lock_manager = lock_manager or InMemoryLockManager()
         # A failed release never undoes a locked section (RFC §13.5).
-        self._lock_manager = ReleaseTolerantLockManager(
+        self._lock_manager = RoomLocks(
             self._given_lock_manager, waiting=self._door_runs.waiting_for_lock
         )
         # An identity's transitions are serialised apart from the rooms: no

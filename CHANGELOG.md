@@ -220,8 +220,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `verification:org-a:alice` alice's verification. An `InMemoryLockManager`
   now keeps each kind in a map of its own, shared by the kits sharing it;
   any other manager, a subclass whose `locked()` is its own included, gets
-  those keys led by a NUL character (`\x00__delivery__:r1`), and
-  `create_room` refuses a room id holding one with `ValueError`. A room's
+  those keys led by a NUL character (`\x00__delivery__:r1`), and a room id
+  holding one takes no room lock: `create_room`, and any call that takes a
+  room's lock for a room it did not make (one written to the store
+  straight), raise `ValueError`. A room's
   own lock keeps its id: `kit.lock_manager.locked(room_id)` is unchanged.
   Code running under a delivery lane's claim no longer counts as holding a
   room lock, so a `Queued` delivery made from it waits its turn. Processes

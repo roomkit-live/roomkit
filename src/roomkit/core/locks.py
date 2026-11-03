@@ -387,6 +387,20 @@ class ReleaseTolerantLockManager(RoomLockManager):
         await close_bounded(self.inner)
 
 
+class RoomLocks(ReleaseTolerantLockManager):
+    """The kit's hold on its rooms' locks: a room id holding a NUL
+    character takes none, wherever the id came from (a room written to the
+    store straight, a router's answer), since a NUL leads the keys of the
+    kit's other locks in a shared manager (RFC §13.5)."""
+
+    @asynccontextmanager
+    async def locked(self, room_id: str) -> AsyncGenerator[None, None]:
+        if _OTHER_KIND in room_id:
+            raise ValueError("A room id holds no NUL character")
+        async with super().locked(room_id):
+            yield
+
+
 async def close_bounded(resource: Any) -> None:
     """Close *resource* (a store, a lock manager) as the kit's close does:
     through its bounded close when it offers one, which gives its

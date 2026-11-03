@@ -20,8 +20,11 @@ from roomkit.core.locks import (
     _held_rooms,
     _holds_a_room_lock,
 )
+from roomkit.models.channel import ChannelBinding
 from roomkit.models.delivery import InboundMessage
+from roomkit.models.enums import ChannelType
 from roomkit.models.event import TextContent
+from roomkit.models.room import Room
 from roomkit.store.memory import InMemoryStore
 from tests.test_framework import AILikeChannel, SimpleChannel
 from tests.test_locks import MarkingLockManager, SharedLockManager
@@ -201,6 +204,28 @@ async def test_a_room_named_like_a_delivery_claim_holds_no_claim(
             1.0,
         )
         await asyncio.wait_for(delivered.wait(), 1.0)
+    await kit.close()
+
+
+async def test_a_stored_room_whose_id_holds_nul_takes_no_room_lock() -> None:
+    """A room id holding a NUL character that no ``create_room`` made (a
+    room written to the store straight) takes no room lock (RFC §13.5): in
+    a shared manager, the room ``\\x00__delivery__:r1``'s lock would be r1's
+    delivery claim."""
+    nul_room = "\x00__delivery__:r1"
+    store = InMemoryStore()
+    locks = SharedLockManager()
+    kit = RoomKit(store=store, lock_manager=locks)
+    kit.register_channel(SimpleChannel("src"))
+    await store.create_room(Room(id=nul_room))
+    with pytest.raises(ValueError, match="NUL"):
+        await kit.attach_channel(nul_room, "src")
+    await store.add_binding(
+        ChannelBinding(channel_id="src", room_id=nul_room, channel_type=ChannelType.SMS)
+    )
+    with pytest.raises(ValueError, match="NUL"):
+        await kit.send_event(nul_room, "src", TextContent(body="hi"))
+    assert nul_room not in locks.keys
     await kit.close()
 
 
