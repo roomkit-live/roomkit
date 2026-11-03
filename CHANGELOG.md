@@ -189,11 +189,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stream's start: a transport made write-only or detached mid-stream was still
   delivered the rows after, and the streaming target, checked only at the
   start, read the text of an agent muted, made read-only or detached since,
-  though its rows were stored BLOCKED. Each row now reads the room's bindings
-  under its lock at its commit, its agent's right to write included, and once
-  the room no longer lets the target read the answer, the target reads nothing
-  more of the stream and the rest is delivered as each row's plan says, as
-  roomkit-rs does.
+  though its rows were stored BLOCKED, and of a room closed since. Each row now
+  reads the room's bindings under its lock at its commit, its agent's right to
+  write and the room's status included, and once the room no longer lets the
+  target read the answer, the target reads nothing more of the stream and the
+  rest is delivered as each row's plan says, as roomkit-rs does. Each row now
+  takes the room lock for that read.
 
 - **A streamed answer stored after its agent is muted, made read-only or
   detached is withheld**

@@ -177,24 +177,17 @@ def _unavailable_targets(plan: DeliveryPlan, result: BroadcastResult) -> list[st
 
 @dataclass(slots=True, frozen=True)
 class DeliverySource:
-    """Planning inputs shared by a run of events from one sender.
+    """Planning inputs a caller resolved for an event: its sender's binding
+    and the context it is planned with.
 
-    Resolving them per event costs a room lock and a context read every
-    time. A stream's segments share one sender and one delivery set, so the
-    run resolves them once and hands the result to each commit — which is
-    what the single batch broadcast they replaced did, against bindings of
-    exactly the same freshness.
+    A stream's rows share one sender and one history: each row reads the
+    room's bindings under the lock at its commit and is planned with them
+    and the run's history (``LaneSink``), so the commit itself reads nothing
+    more.
     """
 
     binding: ChannelBinding
     context: RoomContext
-
-    @classmethod
-    def of(cls, channel_id: str, context: RoomContext) -> DeliverySource | str:
-        """The planning inputs of *channel_id*'s run in *context*: its
-        binding there, or its id alone when the context holds none."""
-        binding = next((b for b in context.bindings if b.channel_id == channel_id), None)
-        return cls(binding=binding, context=context) if binding is not None else channel_id
 
 
 def _stamped(event: RoomEvent, source: DeliverySource | None) -> RoomEvent:
@@ -383,12 +376,11 @@ class LaneExecutionMixin(HelpersMixin):
         single ordering authority: the cursor advances after this event's
         delivery set has run, never before it.
 
-        ``source`` is the sending channel's id, which costs a room lock and
-        a context read to resolve — right for a one-off event, wrong for a
-        run of them. A caller emitting several (a stream's segments) resolves
-        a :class:`DeliverySource` once and passes that instead: the commit
-        then takes no lock and reads nothing, and the store still assigns the
-        index atomically (RFC §8.1), which is what this path always relied on.
+        ``source`` is the sending channel's id, resolved from one read of the
+        room's context under its lock. A caller that resolved its
+        :class:`DeliverySource` itself passes that instead: the commit then
+        reads nothing, and the store still assigns the index atomically
+        (RFC §8.1).
 
         The event is an agent's output like any other (RFC §19.3.1): what
         the other agents answer to it re-enters, and a stream one of them
@@ -404,13 +396,12 @@ class LaneExecutionMixin(HelpersMixin):
         injected events are committed after their triggering event.
 
         The room's status gate (RFC §5.1) reads the room before the commit.
-        A run that gates its rows itself (a stream's :class:`LaneSink`, which
-        reads the status once and again after a close) passes
-        ``gate_status=False``. With a resolved ``source`` the commit then
-        takes no lock and reads nothing, but for the anchor of a row the
-        persistence policy excludes. A ``str`` source is resolved per event,
-        from one read of the room's context under its lock, which the status
-        gate and the sender's binding read too (RFC §10.1 steps 6 and 12).
+        A caller that gates its event itself passes ``gate_status=False``.
+        With a resolved ``source`` the commit then takes no lock and reads
+        nothing, but for the anchor of a row the persistence policy excludes.
+        A ``str`` source is resolved per event, from one read of the room's
+        context under its lock, which the status gate and the sender's
+        binding read too (RFC §10.1 steps 6 and 12).
 
         Returns the committed event, or ``None`` when the persistence
         policy excluded it (delivered, unstored — RFC §14.3).

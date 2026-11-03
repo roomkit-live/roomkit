@@ -321,7 +321,12 @@ class InboundStreamingMixin(HelpersMixin):
     ) -> Exception | None:
         """Run the channel's deliver_stream over *segments*; the error it raised, if any."""
         try:
-            await channel.deliver_stream(segments, placeholder, binding, context)
+            if (
+                error := await self._hand_segments(
+                    channel, binding, placeholder, segments, sr, writer, context
+                )
+            ) is not None:
+                return error
             if writer.read_to_end or writer.failure is not None:
                 return None
             if writer.withdrawn:
@@ -346,6 +351,33 @@ class InboundStreamingMixin(HelpersMixin):
             raise
         except Exception as exc:
             return exc
+        return None
+
+    @staticmethod
+    async def _hand_segments(
+        channel: Channel,
+        binding: ChannelBinding,
+        placeholder: RoomEvent,
+        segments: AsyncIterator[str | ThinkingDeltaMarker | RoomEvent],
+        sr: StreamingResponse,
+        writer: SegmentWriter,
+        context: RoomContext,
+    ) -> Exception | None:
+        """Hand *segments* to the channel's deliver_stream; the error it raised,
+        if any. Once the room stopped letting the channel read the response,
+        what it raises after is its own: logged, and the turn goes on for
+        the others (RFC §7.5)."""
+        try:
+            await channel.deliver_stream(segments, placeholder, binding, context)
+        except Exception as exc:
+            if not writer.withdrawn:
+                return exc
+            log_failure(
+                logger,
+                exc,
+                f"streaming channel {binding.channel_id} after the room stopped it reading "
+                f"the response of {sr.source_channel_id} in room {placeholder.room_id}",
+            )
         return None
 
     @staticmethod

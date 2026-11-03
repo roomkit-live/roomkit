@@ -173,12 +173,14 @@ class SegmentWriter:
         # Whether the reader was handed anything, a thinking delta included:
         # from there the turn began, and a stop cuts it.
         self._began = False
-        # The rows handed to the target in the stream, by id; and whether the
-        # room stopped letting it read the stream (:meth:`_write_now`), the
-        # read handing it nothing more (``_stopping``, until it ends).
+        # The rows handed to the target in the stream, by id; whether the
+        # room stopped letting it read the stream (``_stopping``, set by
+        # :meth:`_hand_to_target`, the read handing it nothing more); and
+        # whether the stream ended there, on its own (:attr:`withdrawn`), not
+        # on its reader's stop, a barge-in cutting the read mid-commit.
         self._streamed_rows: set[str] = set()
-        self.withdrawn = False
         self._stopping = False
+        self.withdrawn = False
         self.persisted: list[RoomEvent] = []
         # How :meth:`stream` ended: read to its end, or on the response's failure.
         self.read_to_end = False
@@ -348,6 +350,7 @@ class SegmentWriter:
         if self._stopping:
             # The room no longer lets the channel read the response: its
             # stream ends here, the rest read by :meth:`read_rest`.
+            self.withdrawn = True
             return
         self.read_to_end = True
         if (row := await self.flush_text()) is not None and row.id in self._streamed_rows:
@@ -620,7 +623,6 @@ class SegmentWriter:
                 self._streamed_rows.add(stored.id)
             return
         self._streamed_to.clear()
-        self.withdrawn = True
         self._stopping = True
 
 
@@ -783,6 +785,10 @@ class LaneSink:
         kit, room_id = self._kit, self._room_id
         scope = event.response_visibility
         async with kit._lock_manager.locked(room_id):
+            # A close that held the lock meanwhile refuses the row (RFC §5.1).
+            if await self._room_refuses_writes():
+                logger.debug("Room %s closed before %s's commit", room_id, event.type)
+                return None
             bindings = await kit._store.list_bindings(room_id)
             context = self._history.model_copy(update={"bindings": bindings})
             source = context.get_binding(event.source.channel_id)
@@ -829,10 +835,10 @@ def _readers(
 def _with_row(context: RoomContext, row: RoomEvent) -> RoomContext:
     """The run's history with *row* added.
 
-    The context is resolved once for the whole stream; without this, the
-    agents a later row reaches would answer it without the rows before it,
-    where a buffered response's segments each re-enter with the ones before
-    them in their context.
+    The history is read once for the whole stream, its bindings at each row's
+    commit; without this, the agents a later row reaches would answer it
+    without the rows before it, where a buffered response's segments each
+    re-enter with the ones before them in their context.
     """
     recent = [*context.recent_events[-(_RECENT_EVENTS_LIMIT - 1) :], row]
     return context.model_copy(update={"recent_events": recent})

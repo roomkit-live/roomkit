@@ -10,6 +10,8 @@ budget, and the caller's ``response_events``.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -458,4 +460,188 @@ async def test_a_binding_change_during_a_stream_holds_from_its_next_row(
 
     assert _live(ws) == live
     assert [e.type.value for e in other.delivered if e.source.channel_id == "ai1"] == web
+    await kit.close()
+
+
+def _tool_turn(kit: RoomKit, during_tool: Any = None) -> tuple[AIChannel, MockAIProvider]:
+    """An agent that says a line, calls a tool, then says "Done."."""
+
+    async def lookup(name: str, arguments: dict[str, Any]) -> str:
+        if during_tool is not None:
+            await during_tool(kit)
+        return "found"
+
+    call = AIToolCall(id="c1", name="lookup", arguments={})
+    provider = MockAIProvider(
+        ai_responses=[
+            AIResponse(content="Let me check.", finish_reason="tool_calls", tool_calls=[call]),
+            AIResponse(content="Done."),
+        ],
+        streaming=True,
+    )
+    return AIChannel("ai1", provider=provider, tool_handler=lookup, tools=[_LOOKUP]), provider
+
+
+async def _streaming_room(kit: RoomKit, ws: Channel, agent: AIChannel) -> SimpleChannel:
+    other = SimpleChannel("web")
+    for channel in (ws, other, agent):
+        kit.register_channel(channel)
+    await kit.create_room(room_id="r1")
+    await kit.attach_channel("r1", "web")
+    await kit.attach_channel("r1", "ws")
+    await kit.attach_channel("r1", "ai1", category=ChannelCategory.INTELLIGENCE)
+    return other
+
+
+def _hi() -> InboundMessage:
+    return InboundMessage(channel_id="web", sender_id="u1", content=TextContent(body="hi"))
+
+
+class _BargingTransport(_StreamingTransport):
+    """A transport whose sessions all barge in once *barged* is set: it
+    cancels the read in flight and hands back, as a voice channel does
+    (RFC §12.2 step 13s), once the row being written then is stored."""
+
+    def __init__(self, channel_id: str, stored: Any) -> None:
+        super().__init__(channel_id)
+        self.barged = asyncio.Event()
+        self._stored = stored
+
+    async def deliver_stream(
+        self,
+        text_stream: AsyncIterator[object],
+        event: RoomEvent,
+        binding: ChannelBinding,
+        context: RoomContext,
+    ) -> ChannelOutput:
+        items = aiter(text_stream)
+        while True:
+            pull = asyncio.ensure_future(anext(items))
+            barge = asyncio.ensure_future(self.barged.wait())
+            await asyncio.wait({pull, barge}, return_when=asyncio.FIRST_COMPLETED)
+            if not pull.done():
+                pull.cancel()
+                with contextlib.suppress(asyncio.CancelledError, StopAsyncIteration):
+                    await pull
+                await asyncio.wait_for(self._stored(), 1.0)
+                return ChannelOutput.empty()
+            barge.cancel()
+            try:
+                self.live.append(pull.result())
+            except StopAsyncIteration:
+                return ChannelOutput.empty()
+
+
+async def test_a_barge_in_during_the_row_that_stops_the_target_still_stops_the_turn() -> None:
+    """RFC §12.2 step 13s: a reader that stops its stream stops the turn,
+    even when the row being written then also stops the room letting it
+    read (a mute): the model is not asked again."""
+    kit = RoomKit()
+
+    async def tool_end_blocked() -> None:
+        while not any(
+            e.type == "tool_call_end" and e.status == EventStatus.BLOCKED
+            for e in await kit.store.list_events(
+                "r1", event_filter=EventFilter(include_blocked=True)
+            )
+        ):
+            await asyncio.sleep(0)
+        for _ in range(20):
+            await asyncio.sleep(0)
+
+    ws = _BargingTransport("ws", tool_end_blocked)
+    agent, provider = _tool_turn(kit)
+    await _streaming_room(kit, ws, agent)
+
+    @kit.hook(HookTrigger.BEFORE_BROADCAST, name="barge")
+    async def barge(event: RoomEvent, context: RoomContext) -> HookResult:
+        if event.type == "tool_call_end":
+            await kit.mute("r1", "ai1")
+            # The sessions barge in while this row is being written.
+            ws.barged.set()
+            for _ in range(5):
+                await asyncio.sleep(0)
+        return HookResult.allow()
+
+    await kit.process_inbound(_hi(), room_id="r1")
+
+    assert len(provider.calls) == 1
+    await kit.close()
+
+
+async def test_a_row_waiting_for_the_lock_a_close_holds_is_refused() -> None:
+    """RFC §5.1: a row whose commit waits for the room lock while a close
+    holds it is not stored in the room the close left CLOSED."""
+    kit = RoomKit()
+    agent, _ = _tool_turn(kit)
+    await _streaming_room(kit, _StreamingTransport("ws"), agent)
+    held, waiting, armed = asyncio.Event(), asyncio.Event(), asyncio.Event()
+
+    async def stop_recordings(room_id: str) -> None:
+        held.set()
+        await waiting.wait()
+
+    kit._stop_room_recordings = stop_recordings  # type: ignore[method-assign]
+    locked = kit._lock_manager.locked
+
+    @contextlib.asynccontextmanager
+    async def watched(room_id: str) -> AsyncIterator[None]:
+        if armed.is_set():
+            waiting.set()
+        async with locked(room_id):
+            yield
+
+    kit._lock_manager.locked = watched  # type: ignore[method-assign]
+    closing: list[asyncio.Task[Any]] = []
+
+    @kit.hook(HookTrigger.BEFORE_BROADCAST, name="close")
+    async def close(event: RoomEvent, context: RoomContext) -> HookResult:
+        if event.type == "tool_call_end":
+            closing.append(asyncio.create_task(kit.close_room("r1")))
+            await held.wait()
+            armed.set()
+        return HookResult.allow()
+
+    await kit.process_inbound(_hi(), room_id="r1")
+    await asyncio.wait_for(closing[0], 1.0)
+
+    events = await kit.store.list_events("r1", event_filter=EventFilter(include_blocked=True))
+    assert [e.type.value for e in events if e.source.channel_id == "ai1"] == [
+        "message",
+        "tool_call_start",
+    ]
+    await kit.close()
+
+
+class _FailsAtItsEnd(_StreamingTransport):
+    """A transport that reads its stream, then fails (a lost socket)."""
+
+    async def deliver_stream(
+        self,
+        text_stream: AsyncIterator[object],
+        event: RoomEvent,
+        binding: ChannelBinding,
+        context: RoomContext,
+    ) -> ChannelOutput:
+        await super().deliver_stream(text_stream, event, binding, context)
+        raise ConnectionError("socket lost")
+
+
+async def test_a_stopped_target_s_failure_leaves_the_turn_to_the_others() -> None:
+    """RFC §7.5: once the room stopped the target reading the answer, what
+    the target raises is its own: the turn goes on and the others are
+    delivered the rest."""
+    kit = RoomKit()
+    agent, provider = _tool_turn(kit, lambda kit: kit.set_access("r1", "ws", Access.WRITE_ONLY))
+    other = await _streaming_room(kit, _FailsAtItsEnd("ws"), agent)
+
+    await kit.process_inbound(_hi(), room_id="r1")
+
+    assert [e.type.value for e in other.delivered if e.source.channel_id == "ai1"] == [
+        "message",
+        "tool_call_start",
+        "tool_call_end",
+        "message",
+    ]
+    assert len(provider.calls) == 2
     await kit.close()
