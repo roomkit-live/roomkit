@@ -220,6 +220,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A channel's memory of rooms with no tool rows keeps its bound** (HITL
+  d8f31c25, RMK-1053). Reading a new room's stored rows added a record without
+  `_MAX_ROOMS`, so a channel answering without a tool in many rooms grew until a
+  tool call somewhere trimmed it. A room dropped reads its rows again on its next
+  turn; what it had found but never called is forgotten, as for any room dropped.
 - **A tag a server wrote badly costs it no tool** (HITL e0bb4999, RMK-1053).
   An MCP tool whose FastMCP tags were no list of texts failed the server's whole
   listing; what is no text is now left out and the tool stays, as in roomkit-rs.

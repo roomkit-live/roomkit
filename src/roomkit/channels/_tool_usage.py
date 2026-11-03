@@ -165,6 +165,9 @@ class ToolUsageMemory:
                 call.get("result", ""),
                 keep_images=False,
             )
+        # A room with no rows records nothing, and counts toward the bound too.
+        while len(self._by_room) > _MAX_ROOMS:
+            self._by_room.popitem(last=False)
 
     def forget_images(self, room_id: str | None) -> None:
         """Replay none of the images the room's results returned so far: a

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock
 
-from roomkit.channels._tool_usage import ToolUsageMemory
+from roomkit.channels._tool_usage import _MAX_ROOMS, ToolUsageMemory
 from roomkit.channels.ai import AIChannel
 from roomkit.models.channel import ChannelBinding, ChannelCapabilities
 from roomkit.models.context import RoomContext
@@ -54,6 +54,15 @@ class TestToolUsageMemory:
         mem = ToolUsageMemory()
         assert mem.tool_names("r1") == set()
         assert mem.tool_names(None) == set()
+
+    def test_seeding_rooms_from_nothing_stays_under_the_rooms_bound(self) -> None:
+        """A room with no stored rows counts toward the bound, as roomkit-rs reads
+        it (HITL d8f31c25): a channel answering without a tool in many rooms would
+        otherwise grow until a tool call somewhere trims it."""
+        mem = _channel_memory()
+        for at in range(_MAX_ROOMS + 50):
+            mem.seed(f"r{at}", [])
+        assert len(mem._by_room) == _MAX_ROOMS
 
     def test_infra_tools_are_not_recorded(self) -> None:
         mem = _channel_memory()
