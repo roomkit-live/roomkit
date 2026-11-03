@@ -243,9 +243,7 @@ class TestEveryDeclarationDeclaresAnEmptyObject:
 
 
 def test_an_mcp_tool_rejected_for_another_reason_is_not_blamed_on_its_name() -> None:
-    listed = SimpleNamespace(
-        name="lookup", description="d", inputSchema={}, meta={"fastmcp": {"tags": "not-a-list"}}
-    )
+    listed = SimpleNamespace(name="lookup", description="d", inputSchema="not-a-schema", meta=None)
 
-    with pytest.raises(ValidationError, match="tags"):
+    with pytest.raises(ValidationError, match="parameters"):
         _definition(listed)
