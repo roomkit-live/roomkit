@@ -1,0 +1,151 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-row-s-delivery-reads-the-room-at-its-commit",
+  "title": "A streamed row's delivery reads the room's latest events at its commit, then the row, as any other delivery does",
+  "rules": [
+    "§10.1 step 12",
+    "§10.2",
+    "§12.2 step 14s"
+  ],
+  "notes": "reader and the agent read a window of one event, and no hook is registered, so the room's context holds one event of its conversation (tool-call rows are no part of it) before the commit. Each row's delivery set reads the room at its commit: the latest message, then itself, not the stream's first window with every row since.",
+  "setup": {
+    "channels": [
+      {
+        "id": "web",
+        "type": "webhook",
+        "category": "transport"
+      },
+      {
+        "id": "reader",
+        "type": "websocket",
+        "category": "transport",
+        "recent_events_window": 1
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "Let me ",
+                "check."
+              ],
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "lookup_order",
+                  "arguments": {
+                    "order": "42"
+                  }
+                }
+              ]
+            },
+            {
+              "deltas": [
+                "Order 42 ",
+                "shipped."
+              ]
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup_order",
+            "description": "Find an order by its number",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "order": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "order"
+              ]
+            },
+            "returns": "shipped"
+          }
+        ],
+        "max_context_events": 1
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "reader"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "web",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Where is order 42?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "contexts": {
+      "room-1": {
+        "reader": [
+          {
+            "call": "deliver",
+            "recent_events": "$any"
+          },
+          {
+            "call": "deliver",
+            "recent_events": [
+              "room-1#0",
+              "room-1#1"
+            ]
+          },
+          {
+            "call": "deliver",
+            "recent_events": [
+              "room-1#1",
+              "room-1#2"
+            ]
+          },
+          {
+            "call": "deliver",
+            "recent_events": [
+              "room-1#1",
+              "room-1#3"
+            ]
+          },
+          {
+            "call": "deliver",
+            "recent_events": [
+              "room-1#1",
+              "room-1#4"
+            ]
+          }
+        ]
+      }
+    }
+  }
+}
