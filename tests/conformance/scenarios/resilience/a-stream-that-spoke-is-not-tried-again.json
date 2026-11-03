@@ -1,0 +1,126 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "resilience/a-stream-that-spoke-is-not-tried-again",
+  "title": "A generation that fails once it handed text is neither tried again nor handed to the fallback provider: the turn fails, the text it handed kept",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: tests/test_channels/test_ai_streaming_compaction.py::test_a_stream_that_spoke_is_not_reentered_even_by_the_retry.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Voici",
+              "refuses": {
+                "status": 503,
+                "message": "the provider went away",
+                "retryable": true
+              }
+            }
+          ]
+        },
+        "retry_policy": {
+          "max_retries": 3,
+          "base_delay_ms": 1
+        },
+        "fallback_model": {
+          "rounds": [
+            {
+              "text": "fallback"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "the provider went away"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message",
+          "source": {
+            "channel_id": "ws"
+          },
+          "content": {
+            "type": "text",
+            "body": "Hello?"
+          }
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "source": {
+            "channel_id": "agent",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "Voici"
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Hello?"
+            }
+          ]
+        }
+      ],
+      "agent/fallback": []
+    }
+  }
+}

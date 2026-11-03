@@ -1,0 +1,350 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "resilience/a-rate-limit-worded-like-an-overflow-keeps-its-retries",
+  "title": "A rate limit whose words name a request too large is no context overflow: the context is not compacted, every retry is spent on it, then the fallback answers",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: tests/test_channels/test_ai_streaming_compaction.py::test_a_rate_limit_worded_like_an_overflow_keeps_its_retries.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "a1"
+            },
+            {
+              "text": "a2"
+            },
+            {
+              "refuses": {
+                "status": 429,
+                "message": "Request too large for gpt-4o in organization org-x on tokens per min (TPM): Limit 30000, Requested 31000.",
+                "retryable": true
+              }
+            },
+            {
+              "refuses": {
+                "status": 429,
+                "message": "Request too large for gpt-4o in organization org-x on tokens per min (TPM): Limit 30000, Requested 31000.",
+                "retryable": true
+              }
+            },
+            {
+              "refuses": {
+                "status": 429,
+                "message": "Request too large for gpt-4o in organization org-x on tokens per min (TPM): Limit 30000, Requested 31000.",
+                "retryable": true
+              }
+            },
+            {
+              "refuses": {
+                "status": 429,
+                "message": "Request too large for gpt-4o in organization org-x on tokens per min (TPM): Limit 30000, Requested 31000.",
+                "retryable": true
+              }
+            }
+          ]
+        },
+        "retry_policy": {
+          "max_retries": 3,
+          "base_delay_ms": 1
+        },
+        "fallback_model": {
+          "rounds": [
+            {
+              "text": "from fallback"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "q1"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "q2"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "q3"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message",
+          "source": {
+            "channel_id": "ws"
+          },
+          "content": {
+            "type": "text",
+            "body": "q1"
+          }
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "source": {
+            "channel_id": "agent",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "a1"
+          }
+        },
+        {
+          "index": 2,
+          "type": "message",
+          "source": {
+            "channel_id": "ws"
+          },
+          "content": {
+            "type": "text",
+            "body": "q2"
+          }
+        },
+        {
+          "index": 3,
+          "type": "message",
+          "source": {
+            "channel_id": "agent",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "a2"
+          }
+        },
+        {
+          "index": 4,
+          "type": "message",
+          "source": {
+            "channel_id": "ws"
+          },
+          "content": {
+            "type": "text",
+            "body": "q3"
+          }
+        },
+        {
+          "index": 5,
+          "type": "message",
+          "source": {
+            "channel_id": "agent",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "from fallback"
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {},
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "q1"
+            },
+            {
+              "role": "assistant",
+              "text": "a1"
+            },
+            {
+              "role": "user",
+              "text": "q2"
+            },
+            {
+              "role": "assistant",
+              "text": "a2"
+            },
+            {
+              "role": "user",
+              "text": "q3"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "q1"
+            },
+            {
+              "role": "assistant",
+              "text": "a1"
+            },
+            {
+              "role": "user",
+              "text": "q2"
+            },
+            {
+              "role": "assistant",
+              "text": "a2"
+            },
+            {
+              "role": "user",
+              "text": "q3"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "q1"
+            },
+            {
+              "role": "assistant",
+              "text": "a1"
+            },
+            {
+              "role": "user",
+              "text": "q2"
+            },
+            {
+              "role": "assistant",
+              "text": "a2"
+            },
+            {
+              "role": "user",
+              "text": "q3"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "q1"
+            },
+            {
+              "role": "assistant",
+              "text": "a1"
+            },
+            {
+              "role": "user",
+              "text": "q2"
+            },
+            {
+              "role": "assistant",
+              "text": "a2"
+            },
+            {
+              "role": "user",
+              "text": "q3"
+            }
+          ]
+        }
+      ],
+      "agent/fallback": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "q1"
+            },
+            {
+              "role": "assistant",
+              "text": "a1"
+            },
+            {
+              "role": "user",
+              "text": "q2"
+            },
+            {
+              "role": "assistant",
+              "text": "a2"
+            },
+            {
+              "role": "user",
+              "text": "q3"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

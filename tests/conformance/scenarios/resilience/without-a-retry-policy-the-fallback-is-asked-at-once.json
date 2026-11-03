@@ -1,0 +1,130 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "resilience/without-a-retry-policy-the-fallback-is-asked-at-once",
+  "title": "An agent without a retry policy hands a refusal worth another try to its fallback provider at once, the primary asked once",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python's _generate_stream_with_retry reads no policy as RetryPolicy(max_retries=0): the retries are spent at once.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "refuses": {
+                "status": 503,
+                "message": "unavailable",
+                "retryable": true
+              }
+            },
+            {
+              "text": "never"
+            }
+          ]
+        },
+        "fallback_model": {
+          "rounds": [
+            {
+              "text": "fallback response"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message",
+          "source": {
+            "channel_id": "ws"
+          },
+          "content": {
+            "type": "text",
+            "body": "Hello?"
+          }
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "source": {
+            "channel_id": "agent",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "fallback response"
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Hello?"
+            }
+          ]
+        }
+      ],
+      "agent/fallback": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Hello?"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
