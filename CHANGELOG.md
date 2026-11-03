@@ -106,6 +106,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **BREAKING: `Pipeline` no longer takes `routing=`** (RMK-1233). It kept the
+  keyword hints and nothing read them, though its docstring said they reached
+  the agents' prompts. `Pipeline(agents=[a, b])` works as before; a call still
+  passing `routing=` raises `TypeError`.
 - `Pipeline(agents=[])` is refused at its install with `ValueError("Pipeline
   needs at least one agent")`, where it raised `IndexError` (RMK-1233).
 - **Two senders with no name on one channel read as two speakers** (RFC

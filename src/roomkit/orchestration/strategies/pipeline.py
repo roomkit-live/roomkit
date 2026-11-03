@@ -59,7 +59,6 @@ class Pipeline(Orchestration):
     def __init__(
         self,
         agents: Sequence[Agent | str],
-        routing: dict[str, list[str]] | None = None,
         *,
         supervisor_id: str | None = None,
         voice_channel_id: str | None = None,
@@ -74,9 +73,6 @@ class Pipeline(Orchestration):
                 one the kit holds, by its declaration alone included (RFC
                 §10.6.2). First agent is the entry point. Stages chain
                 linearly (each agent hands off to the next).
-            routing: Optional keyword hints injected into agent system
-                prompts (not runtime rules). Keys are agent channel IDs,
-                values are keyword lists describing when to route there.
             supervisor_id: Optional supervisor agent ID that receives
                 all events for monitoring.
             voice_channel_id: The voice channel the agents speak on: it
@@ -95,7 +91,6 @@ class Pipeline(Orchestration):
         if greet_on_handoff and not voice_channel_id:
             raise ValueError("greet_on_handoff=True requires voice_channel_id")
         self._agents = list(agents)
-        self._routing = routing or {}
         self._supervisor_id = supervisor_id
         self._voice_channel_id = voice_channel_id
         self._greet_on_handoff = greet_on_handoff

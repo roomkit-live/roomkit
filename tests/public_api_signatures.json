@@ -1597,7 +1597,7 @@
     "should_persist": ["def", "event_type"]
   },
   "roomkit.Pipeline": {
-    "__init__": ["def", "agents", "routing=None", "*", "supervisor_id=None", "voice_channel_id=None", "greet_on_handoff=False", "greeting_prompt=None", "farewell_prompt=None"],
+    "__init__": ["def", "agents", "*", "supervisor_id=None", "voice_channel_id=None", "greet_on_handoff=False", "greeting_prompt=None", "farewell_prompt=None"],
     "agents": ["def"],
     "install": ["async def", "kit", "room_id"],
     "uninstall": ["async def", "kit", "room_id"]
