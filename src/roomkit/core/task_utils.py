@@ -291,8 +291,12 @@ async def gather_or_cut[T](*works: Awaitable[T]) -> list[T]:
     """The results of *works*, run at once, in their order (RFC §19.7.3,
     §19.7.4): the first to raise cuts the others, awaited to their end, then
     its error is raised, where ``asyncio.gather`` raises it and leaves the
-    others running unread. A caller cancelled cuts them all."""
+    others running unread. A caller cancelled cuts them all. A work that
+    ends cancelled on its own cuts nothing: the others run to their end, then
+    its cancellation is raised (no strategy's delegation ends so)."""
     tasks = [asyncio.ensure_future(work) for work in works]
+    if not tasks:
+        return []
     try:
         done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
     except asyncio.CancelledError:

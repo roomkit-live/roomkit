@@ -270,22 +270,6 @@ class TestSequentialWorkerFailure:
 
 
 class TestParallelWorkerFailure:
-    async def test_parallel_propagates_error(self) -> None:
-        """If delegation raises during parallel, the handler raises on (RMK-295)."""
-        kit, supervisor = await _setup("parallel", [_agent("w1", "ok")])
-
-        async def failing_delegate(*args, **kwargs):  # type: ignore[no-untyped-def]
-            raise RuntimeError("parallel boom")
-
-        kit.delegate = failing_delegate  # type: ignore[assignment]
-
-        with (
-            owner_tool_call_in(kit, "boss", "room"),
-            pytest.raises(RuntimeError, match="parallel boom"),
-        ):
-            await supervisor._channel_tool_handler("delegate_workers", {"task": "fail"})
-        await kit.close()
-
     async def test_the_first_error_cuts_the_other_workers(self) -> None:
         """RMK-1279, RFC §19.7.3: the first delegation that raises answers the
         call at once and cuts the others, awaited to their end, never left
@@ -310,6 +294,16 @@ class TestParallelWorkerFailure:
         ):
             await supervisor._channel_tool_handler("delegate_workers", {"task": "fail"})
         assert cut.is_set()
+        await kit.close()
+
+    async def test_a_team_with_no_worker_answers_with_no_work(self) -> None:
+        """A parallel team of no worker delegates nothing and answers its
+        review brief, as a gather of nothing returns nothing (RMK-1279)."""
+        kit, supervisor = await _setup("parallel", [])
+
+        with owner_tool_call_in(kit, "boss", "room"):
+            answer = await supervisor._channel_tool_handler("delegate_workers", {"task": "Acme"})
+        assert answer.startswith("Your team has finished.")
         await kit.close()
 
 
