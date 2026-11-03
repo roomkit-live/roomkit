@@ -116,6 +116,12 @@ CHANNEL = {
     "human_input",
     "kit_tools",
     "audit",
+    "tool_search",
+    "tool_search_pinned",
+    "tool_search_threshold",
+    "tool_search_threshold_pct",
+    "tool_search_miss_hint",
+    "tool_search_threshold_tokens",
     "addresses",
     "streams_in",
     "recent_events_window",
@@ -135,7 +141,7 @@ AGENT = {
     "greeting",
     "auto_greet",
 }
-MODEL = {"rounds", "vision", "pricing"}
+MODEL = {"rounds", "vision", "pricing", "context_window"}
 MODEL_ROUND = {
     "text",
     "deltas",
@@ -156,6 +162,7 @@ TOOL = {
     "name",
     "description",
     "parameters",
+    "tags",
     "returns",
     "raises",
     "fails",

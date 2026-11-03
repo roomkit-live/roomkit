@@ -3,7 +3,7 @@
 The rules are the suite's, written in roomkit-specs ``conformance/README.md``
 ("Matching"): an object names the members it checks, a list matches element
 by element, and a few operators (``"$any"``, ``$unordered``, ``$absent``,
-``$present``, ``$contains``) loosen a member.
+``$present``, ``$contains``, ``$lacks``) loosen a member.
 """
 
 from __future__ import annotations
@@ -63,6 +63,10 @@ def _object(expected: dict[str, Any], actual: Any, path: str) -> list[str]:
         )
     if expected.get("$present") is True:
         return [f"{path}: absent"] if actual is None or actual is MISSING else []
+    if "$lacks" in expected:
+        if isinstance(actual, str) and expected["$lacks"] not in actual:
+            return []
+        return [f"{path}: {_short(actual)} contains {expected['$lacks']!r}"]
     if "$contains" in expected:
         if isinstance(actual, str) and expected["$contains"] in actual:
             return []

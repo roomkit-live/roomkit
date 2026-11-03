@@ -52,6 +52,16 @@ if TYPE_CHECKING:
     from tests.conformance._script import Gates
 
 
+TOOL_SEARCH_SETTINGS = (
+    "tool_search",
+    "tool_search_pinned",
+    "tool_search_threshold",
+    "tool_search_threshold_pct",
+    "tool_search_miss_hint",
+    "tool_search_threshold_tokens",
+)
+
+
 class ModelPastItsScriptError(Exception):
     """The agent asked the scripted model for a generation its script lacks."""
 
@@ -73,7 +83,9 @@ class ScriptedModel(AIProvider):
         vision: bool = False,
         labelled: Callable[[Any], Any] | None = None,
         pricing: Mapping[str, Any] | None = None,
+        context_window: int | None = None,
     ) -> None:
+        self._context_window = context_window
         self._rounds = list(rounds)
         self._gates = gates
         self._vision = vision
@@ -90,11 +102,13 @@ class ScriptedModel(AIProvider):
         return self._vision
 
     def catalog_entry(self) -> ModelInfo | None:
-        """The model's catalogue entry, with the price the scenario gives it;
-        none for a model the scenario gives no price."""
-        if self._pricing is None:
+        """The model's catalogue entry, with the price and the context window
+        the scenario gives it; none for a model the scenario gives neither."""
+        if self._pricing is None and self._context_window is None:
             return None
-        return ModelInfo(id=self.model_name, pricing=self._pricing)
+        return ModelInfo(
+            id=self.model_name, pricing=self._pricing, context_window=self._context_window
+        )
 
     async def generate(self, context: AIContext) -> AIResponse:
         round_ = self._next_round(context)
@@ -333,6 +347,7 @@ def scripted_agent(
         vision=bool(spec["model"].get("vision", False)),
         labelled=labelled,
         pricing=spec["model"].get("pricing"),
+        context_window=spec["model"].get("context_window"),
     )
     models = {spec["id"]: model}
     tools = spec.get("tools", [])
@@ -400,6 +415,9 @@ def scripted_agent(
         kwargs["memory"] = scripted_memory(memory, spec.get("max_context_events", 50), summarizer)
     if "human_input" in spec:
         kwargs["human_input_handler"] = _human_input(spec["human_input"])
+    for setting in TOOL_SEARCH_SETTINGS:
+        if setting in spec:
+            kwargs[setting] = spec[setting]
     # An identity makes the scripted agent an Agent (README, "Scripted agents").
     build: Callable[..., AIChannel] = AIChannel
     if "agent" in spec:
@@ -413,6 +431,7 @@ def scripted_agent(
                 name=tool["name"],
                 description=tool.get("description", ""),
                 parameters=dict(tool.get("parameters", {})),
+                tags=list(tool.get("tags", [])),
             )
             for tool in tools
             if tool.get("declared", True)
