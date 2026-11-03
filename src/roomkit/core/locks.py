@@ -83,8 +83,14 @@ def _locks_rooms(manager: RoomLockManager) -> bool:
 
 
 def _holds_a_room_lock(manager: RoomLockManager | None = None) -> bool:
-    """Whether this context holds a live lock on any room of *manager*."""
-    return any(_has_room_lock(room_id, manager) for room_id in _held_rooms.get())
+    """Whether this context holds a live lock on any room of *manager*: a
+    lock of another kind a shared manager holds, its key led by NUL, is no
+    room's."""
+    return any(
+        _has_room_lock(room_id, manager)
+        for room_id in _held_rooms.get()
+        if not room_id.startswith(_OTHER_KIND)
+    )
 
 
 def unlocked_context() -> contextvars.Context:

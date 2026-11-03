@@ -24,7 +24,7 @@ from roomkit.models.delivery import InboundMessage
 from roomkit.models.event import TextContent
 from roomkit.store.memory import InMemoryStore
 from tests.test_framework import AILikeChannel, SimpleChannel
-from tests.test_locks import SharedLockManager
+from tests.test_locks import MarkingLockManager, SharedLockManager
 
 
 class RecordingChannel(SimpleChannel):
@@ -141,11 +141,13 @@ async def test_crashed_worker_commit_is_skipped_and_room_recovers() -> None:
     await kit_b.close()
 
 
-async def test_delivery_runs_outside_the_room_lock() -> None:
+@pytest.mark.parametrize("locks", [InMemoryLockManager, MarkingLockManager])
+async def test_delivery_runs_outside_the_room_lock(locks: type[InMemoryLockManager]) -> None:
     """The point of the lanes: channel delivery no longer holds the room
     lock, so a second turn can enter the locked section while the first is
-    still delivering."""
-    kit = RoomKit()
+    still delivering; with a manager that holds the claims among its rooms
+    too."""
+    kit = RoomKit(lock_manager=locks())
     held_during_delivery: list[frozenset[str]] = []
     # Under the lane's delivery claim, a lock of its own kind, no room lock
     # is held: a Queued delivery from there waits its turn (RFC §13.5).

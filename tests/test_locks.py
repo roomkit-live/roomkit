@@ -199,3 +199,31 @@ async def test_a_room_id_with_a_nul_character_is_refused() -> None:
     with pytest.raises(ValueError, match="NUL"):
         await kit.create_room(room_id="\x00__delivery__:r1")
     await kit.close()
+
+
+class MarkingLockManager(InMemoryLockManager):
+    """A manager whose ``locked()`` is its own and marks its leases, as
+    ``PostgresAdvisoryLockManager`` does: the kit holds every kind in it."""
+
+    @asynccontextmanager
+    async def locked(self, room_id: str) -> AsyncGenerator[None, None]:
+        async with super().locked(room_id):
+            yield
+
+
+@pytest.mark.parametrize("kind", ["room", "verification"])
+@pytest.mark.parametrize("locks", [InMemoryLockManager, MarkingLockManager])
+async def test_a_lock_held_and_asked_again_once_the_close_began_is_no_wait(
+    kind: str, locks: type[InMemoryLockManager]
+) -> None:
+    """A call holding a lock that asks for it again once the kit's close
+    stopped admission is not cut: a lock the call holds is no wait, whatever
+    its kind and its manager (RFC §12.10.4)."""
+    kit = RoomKit(lock_manager=locks())
+    held = kit._lock_manager if kind == "room" else kit._verification_locks
+    async with kit._door_runs.run(), held.locked("k"):
+        kit._door_runs.closed = True
+        async with held.locked("k"):
+            pass
+    kit._door_runs.closed = False
+    await kit.close()
