@@ -1,0 +1,70 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-turn-with-no-effort-set-asks-for-none",
+  "title": "An agent's turn whose effort neither its binding nor the agent sets asks the model for none, which its provider leaves to the model",
+  "rules": [
+    "§6.4",
+    "§6.7"
+  ],
+  "notes": "Python: tests/test_channels/test_turn_config.py TestReasoningOverrides::test_unset_stays_none: nothing set anywhere, the context's reasoning_effort is None.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "main",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "ok"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "main",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "main": [
+        {
+          "reasoning_effort": null
+        }
+      ]
+    }
+  }
+}

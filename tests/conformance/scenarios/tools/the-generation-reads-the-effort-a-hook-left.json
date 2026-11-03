@@ -1,0 +1,88 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/the-generation-reads-the-effort-a-hook-left",
+  "title": "A BEFORE_AI_GENERATION hook that hands back a context with another reasoning effort changes the effort the turn's generation asks for",
+  "rules": [
+    "§6.4",
+    "§6.7"
+  ],
+  "notes": "Python: channels/_ai_generation.py _fire_before_generation_hook returns the event's ai_context, which the generation reads whole (_ai_streaming.py). The agent's effort is low; the hook's replacement sets high.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "main",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "ok"
+            }
+          ]
+        },
+        "reasoning_effort": "low"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "main",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "effort",
+        "trigger": "before_ai_generation",
+        "priority": 0,
+        "reactions": [
+          {
+            "result": {
+              "action": "modify",
+              "event": {
+                "reasoning_effort": "high"
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "main": [
+        {
+          "reasoning_effort": "high"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,180 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-turn-takes-its-binding-s-reasoning-effort",
+  "title": "An agent's turn asks for the reasoning effort its binding's metadata sets, over the agent's own, none included; a null effort there, or no key, keeps the agent's",
+  "rules": [
+    "§6.4",
+    "§6.7",
+    "Appendix A.9"
+  ],
+  "notes": "Python: channels/_ai_context.py _turn_settings, _turn_source (binding metadata, then the config provider's result, then the channel default; None is not set at every level, an explicit null included); tests/test_channels/test_turn_config.py TestReasoningOverrides::test_channel_default_reaches_context, test_binding_metadata_wins_over_turn_config (its binding half), TestANullDefers::test_a_binding_null_keeps_the_channel_default[reasoning_effort]. The agent's effort is low; room-1 binds it with high, room-2 with null, room-3 with no metadata, room-4 with none, which states reasoning off for that room (Appendix A.9).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "main",
+        "type": "ai",
+        "reasoning_effort": "low",
+        "model": {
+          "rounds": [
+            {
+              "text": "ok"
+            },
+            {
+              "text": "ok"
+            },
+            {
+              "text": "ok"
+            },
+            {
+              "text": "ok"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "main",
+            "category": "intelligence",
+            "metadata": {
+              "reasoning_effort": "high"
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "main",
+            "category": "intelligence",
+            "metadata": {
+              "reasoning_effort": null
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-3",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "main",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-4",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "main",
+            "category": "intelligence",
+            "metadata": {
+              "reasoning_effort": "none"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-3",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-4",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "main": [
+        {
+          "reasoning_effort": "high"
+        },
+        {
+          "reasoning_effort": "low"
+        },
+        {
+          "reasoning_effort": "low"
+        },
+        {
+          "reasoning_effort": "none"
+        }
+      ]
+    }
+  }
+}

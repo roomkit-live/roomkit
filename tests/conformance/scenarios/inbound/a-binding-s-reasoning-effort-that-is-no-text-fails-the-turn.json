@@ -1,0 +1,90 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-binding-s-reasoning-effort-that-is-no-text-fails-the-turn",
+  "title": "An agent's turn whose binding's metadata sets a reasoning effort that is no text fails, with pydantic's validation error, and its model is not asked",
+  "rules": [
+    "§6.4",
+    "§6.7",
+    "Appendix A.9"
+  ],
+  "notes": "Python: channels/_ai_context.py _build_context builds AIContext(**settings), whose reasoning_effort is a str | None pydantic does not read from an integer: the turn fails with its ValidationError, the trigger's delivery result for the agent failed under its class's name. The line pydantic adds after the error, a link to its documentation, is not asserted.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "main",
+        "type": "ai",
+        "reasoning_effort": "low",
+        "model": {
+          "rounds": [
+            {
+              "text": "ok"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "main",
+            "category": "intelligence",
+            "metadata": {
+              "reasoning_effort": 5
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "1 validation error for AIContext\nreasoning_effort\n  Input should be a valid string [type=string_type, input_value=5, input_type=int]"
+          },
+          "delivery_results": {
+            "main": {
+              "status": "failed",
+              "error": {
+                "code": "ValidationError",
+                "message": {
+                  "$contains": "1 validation error for AIContext\nreasoning_effort\n  Input should be a valid string [type=string_type, input_value=5, input_type=int]"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "main": []
+    }
+  }
+}
