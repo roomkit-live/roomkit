@@ -90,6 +90,8 @@ CHANNEL = {
     "tool_timeout_ms",
     "tool_timeouts_ms",
     "turn_budget_tokens",
+    "retry_policy",
+    "fallback_model",
     "max_author_images",
     "describe_empty_event",
     "serialize_room_turns",
@@ -119,7 +121,8 @@ MODEL_ROUND = {
     "refuses",
     "failure_after_calls",
 }
-REFUSES = {"status", "message", "context_overflow", "provider"}
+REFUSES = {"status", "message", "context_overflow", "provider", "retryable"}
+RETRY_POLICY = {"max_retries", "base_delay_ms", "max_delay_ms", "exponential_base"}
 MODEL_CALL = {"id", "name", "arguments", "cut"}
 TOOL = {
     "name",
@@ -402,6 +405,10 @@ def _channel(channel: Mapping[str, Any], path: str, found: list[str]) -> None:
             _reaction(reaction, f"{path}.{kind}[{index}]", found)
     if "model" in channel:
         _model(channel["model"], f"{path}.model", found)
+    if "fallback_model" in channel:
+        _model(channel["fallback_model"], f"{path}.fallback_model", found)
+    if "retry_policy" in channel:
+        _members(channel["retry_policy"], RETRY_POLICY, f"{path}.retry_policy", found)
     for index, tool in enumerate(channel.get("tools", [])):
         _members(tool, TOOL, f"{path}.tools[{index}]", found)
         if "raises" in tool:

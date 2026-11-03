@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any
 from roomkit import Agent
 from roomkit.channels.ai import AIChannel
 from roomkit.core.exceptions import ToolFailedError, ToolRefusedError, UnservedToolCallError
+from roomkit.models.channel import RetryPolicy
 from roomkit.models.tool_call import ToolCallEvent
 from roomkit.providers.ai import (
     AIContext,
@@ -140,12 +141,13 @@ class ScriptedModel(AIProvider):
 
 
 def _refuse(round_: Mapping[str, Any]) -> None:
-    """Raise the provider's refusal a round's ``refuses`` names: an error not
-    retried, with its HTTP status and its provider (RFC §6.4)."""
+    """Raise the provider's refusal a round's ``refuses`` names: an error with
+    its HTTP status and its provider, worth another try when it says so (RFC
+    §6.4)."""
     if (refusal := round_.get("refuses")) is not None:
         raise ProviderError(
             refusal["message"],
-            retryable=False,
+            retryable=bool(refusal.get("retryable", False)),
             status_code=refusal["status"],
             context_overflow=refusal.get("context_overflow"),
             provider=refusal.get("provider", ""),
@@ -300,7 +302,8 @@ def scripted_agent(
 ) -> tuple[AIChannel, dict[str, ScriptedModel]]:
     """The AI channel of a scripted agent, and its models by the name
     ``expect.models`` gives them: its own under its id, its memory's
-    summarizer under ``<id>/summarizer``; a round or a tool with a ``gate``
+    summarizer under ``<id>/summarizer``, its fallback under
+    ``<id>/fallback``; a round or a tool with a ``gate``
     holds at it; the tools *kit* makes that it is given, after its own; its
     calls' arguments read by *labelled* as the model writes them."""
     model = ScriptedModel(
@@ -325,6 +328,17 @@ def scripted_agent(
         kwargs["tool_timeout_seconds"] = _seconds(spec["tool_timeout_ms"])
     if "turn_budget_tokens" in spec:
         kwargs["turn_budget_tokens"] = spec["turn_budget_tokens"]
+    if "retry_policy" in spec:
+        kwargs["retry_policy"] = _retry_policy(spec["retry_policy"])
+    if "fallback_model" in spec:
+        fallback = ScriptedModel(
+            spec["fallback_model"]["rounds"],
+            gates,
+            vision=bool(spec["fallback_model"].get("vision", False)),
+            labelled=labelled,
+        )
+        models[f"{spec['id']}/fallback"] = fallback
+        kwargs["fallback_provider"] = fallback
     if "max_author_images" in spec:
         kwargs["max_author_images"] = spec["max_author_images"]
     if "describe_empty_event" in spec:
@@ -373,6 +387,18 @@ def scripted_agent(
 def _audited(handler: Any, spec: Mapping[str, Any], auditors: Auditors | None) -> Any:
     """*handler* wrapped to record to the auditor the agent's `audit` names."""
     return handler if auditors is None else auditors.audited(handler, spec)
+
+
+def _retry_policy(spec: Mapping[str, Any]) -> RetryPolicy:
+    """A scripted agent's retry policy, its delays given in milliseconds
+    (README, "Scripted agents")."""
+    defaults = RetryPolicy()
+    return RetryPolicy(
+        max_retries=spec.get("max_retries", defaults.max_retries),
+        base_delay_seconds=spec.get("base_delay_ms", defaults.base_delay_seconds * 1000) / 1000,
+        max_delay_seconds=spec.get("max_delay_ms", defaults.max_delay_seconds * 1000) / 1000,
+        exponential_base=spec.get("exponential_base", defaults.exponential_base),
+    )
 
 
 def _seconds(milliseconds: int | None) -> float | None:
