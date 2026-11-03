@@ -34,6 +34,11 @@ SUPERVISOR = {
     "share_channels",
     "task_timeout_ms",
     "max_revisions",
+    "auto_delegate",
+    "refine_task",
+    "refine_instruction",
+    "delegation_message",
+    "wait_for_result",
 }
 
 
@@ -78,7 +83,16 @@ def _supervisor(spec: Mapping[str, Any]) -> Supervisor:
     """The implementation's Supervisor a strategy's ``supervisor`` builds, its
     agents named by their channel ids, its task timeout given in
     milliseconds."""
-    named = ("strategy", "share_channels", "max_revisions")
+    named = (
+        "strategy",
+        "share_channels",
+        "max_revisions",
+        "auto_delegate",
+        "refine_task",
+        "refine_instruction",
+        "delegation_message",
+        "wait_for_result",
+    )
     options: dict[str, Any] = {key: spec[key] for key in named if key in spec}
     if "task_timeout_ms" in spec:
         options["task_timeout"] = spec["task_timeout_ms"] / 1000
