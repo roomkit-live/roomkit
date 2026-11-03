@@ -1,13 +1,13 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "inbound/an-agent-s-provider-refusal-keeps-its-retryability",
-  "title": "An agent whose turn fails with its provider's explicit refusal reports the refusal's code and retryability, whatever carried the turn",
+  "title": "An agent whose turn fails with its provider's explicit refusal reports the refusal's code and retryability, and its class as the error's type, whatever carried the turn",
   "rules": [
     "§5.13",
     "§10.2",
     "§10.6.8"
   ],
-  "notes": "The agent's turn raises the provider's refusal, code E42, not retryable: the trigger's delivery result for the agent is failed with that code, its words and retryable false, the message id it named not kept, as roomkit reads it across its turn backend.",
+  "notes": "The agent's turn raises the provider's refusal, code E42, not retryable: the trigger's delivery result for the agent is failed with that code, its words and retryable false, the message id it named not kept, as roomkit reads it across its turn backend; ON_ERROR names the refusal's class, ProviderDeliveryError, as its error_type, not its code.",
   "setup": {
     "channels": [
       {
@@ -43,6 +43,13 @@
           }
         ]
       }
+    ],
+    "hooks": [
+      {
+        "name": "errors",
+        "trigger": "on_error",
+        "execution": "async"
+      }
     ]
   },
   "steps": [
@@ -74,5 +81,26 @@
         }
       }
     }
-  ]
+  ],
+  "expect": {
+    "hooks": {
+      "errors": [
+        {
+          "trigger": "on_error",
+          "room_id": "room-1",
+          "event": {
+            "source": {
+              "channel_id": "ai",
+              "channel_type": "ai"
+            },
+            "metadata": {
+              "error": "rejected",
+              "error_type": "ProviderDeliveryError",
+              "error_category": "generation"
+            }
+          }
+        }
+      ]
+    }
+  }
 }
