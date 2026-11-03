@@ -129,6 +129,7 @@ class ScriptedModel(AIProvider):
                 "system_prompt": context.system_prompt,
                 "temperature": context.temperature,
                 "max_tokens": context.max_tokens,
+                "reasoning_effort": context.reasoning_effort,
                 "tools": {
                     tool.name: position for position, tool in enumerate(context.tools or [])
                 },
@@ -328,6 +329,8 @@ def scripted_agent(
         kwargs["tool_timeout_seconds"] = _seconds(spec["tool_timeout_ms"])
     if "turn_budget_tokens" in spec:
         kwargs["turn_budget_tokens"] = spec["turn_budget_tokens"]
+    if "reasoning_effort" in spec:
+        kwargs["reasoning_effort"] = spec["reasoning_effort"]
     if "retry_policy" in spec:
         kwargs["retry_policy"] = _retry_policy(spec["retry_policy"])
     if "fallback_model" in spec:
