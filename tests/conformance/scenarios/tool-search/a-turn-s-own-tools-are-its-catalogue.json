@@ -1,0 +1,183 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tool-search/a-turn-s-own-tools-are-its-catalogue",
+  "title": "The tools a turn's configuration gives are its catalogue, found and served by that turn's handler; a name it does not hold is refused with the hint",
+  "rules": [
+    "§6.4",
+    "§21.1",
+    "Appendix A.9"
+  ],
+  "notes": "Python: tests/test_channels/test_turn_tool_handler.py::test_channel_tools_stay_local_and_unoffered_tools_stay_refused.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "find_tools",
+                  "arguments": {
+                    "query": "lookup"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c3",
+                  "name": "other_member_tool"
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [],
+        "tool_search": true,
+        "config_provider": {
+          "room-1": {
+            "tools": [
+              {
+                "name": "lookup",
+                "description": "Look a record up.",
+                "parameters": {}
+              }
+            ],
+            "tool_handler": [
+              {
+                "name": "lookup",
+                "description": "Look a record up.",
+                "parameters": {},
+                "returns": "per-turn"
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go 1."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "find_tools": 0,
+            "list_tools": 1,
+            "lookup": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "lookup": 0,
+            "find_tools": 1,
+            "list_tools": 2
+          },
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": {
+                "$contains": "\"name\": \"lookup\""
+              }
+            }
+          ]
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": {
+                "$contains": "\"name\": \"lookup\""
+              }
+            },
+            {
+              "tool_call_id": "c2",
+              "content": "per-turn",
+              "is_error": false
+            }
+          ]
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": {
+                "$contains": "\"name\": \"lookup\""
+              }
+            },
+            {
+              "tool_call_id": "c2",
+              "content": "per-turn",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c3",
+              "is_error": true,
+              "content": {
+                "$contains": "No tool named 'other_member_tool' exists."
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,139 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tool-search/a-query-adds-its-words-in-one-order",
+  "title": "A tool at exactly half of the best score is cut or kept the same way on every run: the query's words add up in one order",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: tests/test_tool_search_ranking.py::test_the_words_of_a_query_add_up_in_one_order.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "find_tools",
+                  "arguments": {
+                    "query": "foo bar"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "foo_bar",
+            "description": "foo bar",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "beta",
+            "description": "",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}",
+            "tags": [
+              "foo",
+              "bar"
+            ]
+          },
+          {
+            "name": "b0",
+            "description": "bar",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "n0",
+            "description": "",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          }
+        ],
+        "tool_search": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go 1."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tools": {
+            "foo_bar": 0,
+            "find_tools": 1,
+            "list_tools": 2,
+            "beta": {
+              "$absent": true
+            },
+            "b0": {
+              "$absent": true
+            },
+            "n0": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

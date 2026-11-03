@@ -160,11 +160,38 @@
               },
               "find_tools": {
                 "origin": "always",
-                "position": 1
+                "position": 1,
+                "description": "Search the agent's full tool catalogue by natural-language query. Returns up to N best matches with their schemas, which become directly invocable for the rest of the session.",
+                "parameters": {
+                  "type": "object",
+                  "properties": {
+                    "query": {
+                      "type": "string",
+                      "description": "Natural-language description of what you need to do (e.g. \"look up a contact by phone number\", \"send an SMS\")."
+                    },
+                    "max_results": {
+                      "type": "integer",
+                      "description": "Maximum number of tools to return. Defaults to 5. Keep small — the goal is a focused result, not a list."
+                    }
+                  },
+                  "required": [
+                    "query"
+                  ]
+                }
               },
               "list_tools": {
                 "origin": "always",
-                "position": 2
+                "position": 2,
+                "description": "List every tool the agent has access to (name + short description), optionally filtered by a name-prefix category. Use sparingly — prefer find_tools for action.",
+                "parameters": {
+                  "type": "object",
+                  "properties": {
+                    "category": {
+                      "type": "string",
+                      "description": "Optional prefix to filter tools by name (e.g. \"crm_\" or \"admin_\"). Empty/omitted returns all."
+                    }
+                  }
+                }
               },
               "send_sms": {
                 "origin": "revealed",
