@@ -14,7 +14,7 @@ import dataclasses
 from collections.abc import AsyncIterator, Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
-from roomkit import Agent
+from roomkit import Agent, AIChannelTurnConfig
 from roomkit.channels.ai import AIChannel
 from roomkit.core.exceptions import ToolFailedError, ToolRefusedError, UnservedToolCallError
 from roomkit.models.channel import RetryPolicy
@@ -43,7 +43,10 @@ from roomkit.tools.policy import ToolPolicy
 from tests.conformance._memory import scripted_memory
 
 if TYPE_CHECKING:
+    from roomkit.channels._turn_config import ConfigProvider
     from roomkit.core.framework import RoomKit
+    from roomkit.models.channel import ChannelBinding
+    from roomkit.models.context import RoomContext
     from tests.conformance._audits import Auditors
     from tests.conformance._script import Gates
 
@@ -341,8 +344,11 @@ def scripted_agent(
         kwargs["tool_timeout_seconds"] = _seconds(spec["tool_timeout_ms"])
     if "turn_budget_tokens" in spec:
         kwargs["turn_budget_tokens"] = spec["turn_budget_tokens"]
-    if "reasoning_effort" in spec:
-        kwargs["reasoning_effort"] = spec["reasoning_effort"]
+    for setting in ("system_prompt", "temperature", "max_tokens", "reasoning_effort"):
+        if setting in spec:
+            kwargs[setting] = spec[setting]
+    if "config_provider" in spec:
+        kwargs["config_provider"] = _config_provider(spec["config_provider"], gates)
     if "turn_budget_usd" in spec:
         kwargs["turn_budget_usd"] = spec["turn_budget_usd"]
     if "retry_policy" in spec:
@@ -405,6 +411,39 @@ def scripted_agent(
 def _audited(handler: Any, spec: Mapping[str, Any], auditors: Auditors | None) -> Any:
     """*handler* wrapped to record to the auditor the agent's `audit` names."""
     return handler if auditors is None else auditors.audited(handler, spec)
+
+
+def _config_provider(by_room: Mapping[str, Any], gates: Gates) -> ConfigProvider:
+    """A scripted agent's per-turn configuration: the one the scenario gives
+    the binding's room, none for a room it does not name (README, "Scripted
+    agents")."""
+
+    async def provider(
+        binding: ChannelBinding, context: RoomContext
+    ) -> AIChannelTurnConfig | None:
+        if context.room.id != binding.room_id:
+            raise AssertionError(f"called for {binding.room_id} in {context.room.id}")
+        spec = by_room.get(binding.room_id)
+        if spec is None:
+            return None
+        settings = {
+            key: value for key, value in spec.items() if key not in ("tools", "tool_handler")
+        }
+        config = AIChannelTurnConfig(**settings)
+        if (tools := spec.get("tools")) is not None:
+            config.tools = [
+                AITool(
+                    name=tool["name"],
+                    description=tool.get("description", ""),
+                    parameters=dict(tool.get("parameters", {})),
+                )
+                for tool in tools
+            ]
+        if "tool_handler" in spec:
+            config.tool_handler = _tool_handler(spec["tool_handler"], gates)
+        return config
+
+    return provider
 
 
 def _retry_policy(spec: Mapping[str, Any]) -> RetryPolicy:

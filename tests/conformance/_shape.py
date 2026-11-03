@@ -96,6 +96,10 @@ CHANNEL = {
     "turn_budget_tokens",
     "reasoning_effort",
     "turn_budget_usd",
+    "system_prompt",
+    "temperature",
+    "max_tokens",
+    "config_provider",
     "retry_policy",
     "fallback_model",
     "max_author_images",
@@ -157,6 +161,17 @@ TOOL = {
 }
 RAISES = {"kind", "message"}
 HUMAN_INPUT = {"tool_names", "timeout_ms", "tools"}
+TURN_CONFIG = {
+    "system_prompt",
+    "tools",
+    "temperature",
+    "max_tokens",
+    "reasoning_effort",
+    "turn_budget_tokens",
+    "turn_budget_usd",
+    "tool_handler",
+}
+TURN_TOOL = {"name", "description", "parameters"}
 HUMAN_TOOL = {"name", "description", "parameters"}
 POLICY = {"allow", "deny"}
 MEMORY = {
@@ -443,11 +458,21 @@ def _channel(channel: Mapping[str, Any], path: str, found: list[str]) -> None:
         _members(channel["agent"], AGENT, f"{path}.agent", found)
     if "memory" in channel:
         _memory(channel["memory"], f"{path}.memory", found)
+    for room_id, config in channel.get("config_provider", {}).items():
+        _turn_config(config or {}, f"{path}.config_provider.{room_id}", found)
     if "human_input" in channel:
         human = channel["human_input"]
         _members(human, HUMAN_INPUT, f"{path}.human_input", found)
         for index, tool in enumerate(human.get("tools", [])):
             _members(tool, HUMAN_TOOL, f"{path}.human_input.tools[{index}]", found)
+
+
+def _turn_config(config: Mapping[str, Any], path: str, found: list[str]) -> None:
+    _members(config, TURN_CONFIG, path, found)
+    for index, tool in enumerate(config.get("tools") or []):
+        _members(tool, TURN_TOOL, f"{path}.tools[{index}]", found)
+    for index, tool in enumerate(config.get("tool_handler", [])):
+        _members(tool, TOOL, f"{path}.tool_handler[{index}]", found)
 
 
 def _memory(memory: Mapping[str, Any], path: str, found: list[str]) -> None:
