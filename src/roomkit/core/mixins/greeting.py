@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from roomkit.core._reentrance import RoomWork, chain_floor
+from roomkit.core.exceptions import RoomClosedError
 from roomkit.core.mixins.helpers import HelpersMixin
 from roomkit.core.visibility import with_committed_visibility
 from roomkit.models.enums import (
@@ -37,14 +40,19 @@ class GreetingHost(Protocol):
             until greeting delivery completes.
         _greeting_gate_counts: Reference counts for multi-agent gates.
 
+    Attributes also provided by the host's ``__init__``:
+        _room_work: Tells the greeting what it is to the room's work.
+
     Cross-mixin methods (provided by other mixins in the MRO):
         _commit_and_deliver: From :class:`LaneExecutionMixin`.
+        _store_entry_past_cap: From :class:`RoomKit`.
     """
 
     _store: ConversationStore
     _channels: dict[str, Channel]
     _greeting_gates: dict[str, asyncio.Event]
     _greeting_gate_counts: dict[str, int]
+    _room_work: RoomWork
 
 
 class GreetingMixin(HelpersMixin):
@@ -61,6 +69,8 @@ class GreetingMixin(HelpersMixin):
     # Cross-mixin methods — attribute annotations avoid MRO shadowing
     _commit_and_deliver: Any  # LaneExecutionMixin
     get_room: Any  # RoomLifecycleMixin
+    _room_work: RoomWork  # RoomKit
+    _store_entry_past_cap: Any  # RoomKit
 
     async def send_greeting(
         self,
@@ -136,12 +146,19 @@ class GreetingMixin(HelpersMixin):
 
         # Text path: commit the greeting and deliver it through the room's
         # lane, which is what keeps its index and its delivery in the same
-        # order as every other event's (RFC §10.2).
-        await self._commit_and_deliver(
-            room_id,
-            self._make_greeting_event(room_id, agent_channel_id, text),
-            agent_channel_id,
+        # order as every other event's (RFC §10.2). Made in the room's own
+        # work, a hook's body or a delivery, it is that work's write as
+        # send_event's is: at its depth, on its budget (RFC §8.3, §9.5.1), so
+        # that a hook greeting on every answer stops at the limit.
+        entry = self._room_work.entry(room_id)
+        event = self._make_greeting_event(
+            room_id, agent_channel_id, text, chain_depth=chain_floor()
         )
+        if entry.charged and not entry.draw():
+            with contextlib.suppress(RoomClosedError):
+                await self._store_entry_past_cap(room_id, event)
+            return
+        await self._commit_and_deliver(room_id, event, agent_channel_id, budget=entry.budget)
 
     async def _greeting_agent(
         self, room_id: str, channel_id: str | None
@@ -176,7 +193,9 @@ class GreetingMixin(HelpersMixin):
         await channel.inject_text(session, text, role="assistant")
 
     @staticmethod
-    def _make_greeting_event(room_id: str, agent_channel_id: str, text: str) -> RoomEvent:
+    def _make_greeting_event(
+        room_id: str, agent_channel_id: str, text: str, *, chain_depth: int = 0
+    ) -> RoomEvent:
         """Build the greeting as an assistant event."""
         return RoomEvent(
             room_id=room_id,
@@ -188,6 +207,7 @@ class GreetingMixin(HelpersMixin):
             ),
             content=TextContent(body=text),
             status=EventStatus.DELIVERED,
+            chain_depth=chain_depth,
             metadata={"auto_greeting": True},
         )
 

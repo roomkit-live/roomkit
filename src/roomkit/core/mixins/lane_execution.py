@@ -20,7 +20,7 @@ from roomkit.core._changes import with_target
 from roomkit.core._failure_log import needs_reporting
 from roomkit.core._observed import Observed, observed_once_over
 from roomkit.core._queued_injections import QueuedInjections
-from roomkit.core._reentrance import section
+from roomkit.core._reentrance import ReentryBudget, section
 from roomkit.core.event_router import (
     CHAIN_DEPTH_LIMIT,
     CHANNEL_NOT_REGISTERED,
@@ -362,6 +362,7 @@ class LaneExecutionMixin(HelpersMixin):
         cascade: DeliveryCascade | None = None,
         hook_result: SyncPipelineResult | None = None,
         gate_status: bool = True,
+        budget: ReentryBudget | None = None,
     ) -> RoomEvent | None:
         """Commit an event and hand its delivery to the room's lane.
 
@@ -390,6 +391,9 @@ class LaneExecutionMixin(HelpersMixin):
         caller owns the single wait at the end, and the reading of the
         streams the run started.
 
+        ``budget`` is what the cascade this call makes draws on, the budget of
+        the room's work a caller stands in (RFC §8.3): one of its own unset.
+
         ``hook_result`` carries effects from an already allowed sync hook
         pipeline. Tasks and observations join the plan's post-delivery work;
         injected events are committed after their triggering event.
@@ -408,7 +412,10 @@ class LaneExecutionMixin(HelpersMixin):
 
         own_cascade = cascade is None
         if cascade is None:
-            cascade = self._cascades.new(room_id, reentry_budget=self._max_chain_depth * 10)
+            cascade = self._cascades.new(
+                room_id,
+                reentry_budget=budget if budget is not None else self._max_chain_depth * 10,
+            )
 
         if isinstance(source, str):
             async with self._lock_manager.locked(room_id):

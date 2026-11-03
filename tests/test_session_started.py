@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import warnings
 
+import pytest
+
 from roomkit import (
     Agent,
     HookExecution,
@@ -14,8 +16,8 @@ from roomkit import (
 )
 from roomkit.channels import SMSChannel
 from roomkit.models.delivery import InboundMessage
-from roomkit.models.enums import EventType
-from roomkit.models.event import TextContent
+from roomkit.models.enums import Access, EventType
+from roomkit.models.event import RoomEvent, TextContent
 from roomkit.models.session_event import SessionStartedEvent
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.providers.sms.mock import MockSMSProvider
@@ -1027,3 +1029,60 @@ class TestGreetingGate:
         await asyncio.wait_for(slow_hook_finished.wait(), timeout=2.0)
 
         await kit.close()
+
+
+class TestGreetingInTheRoomsWork:
+    """A greeting made in the room's own work is that work's write (RFC §8.3)."""
+
+    @pytest.mark.parametrize(
+        ("trigger", "execution"),
+        [
+            (HookTrigger.BEFORE_BROADCAST, HookExecution.SYNC),
+            (HookTrigger.BEFORE_BROADCAST, HookExecution.ASYNC),
+            (HookTrigger.AFTER_BROADCAST, HookExecution.ASYNC),
+        ],
+    )
+    async def test_a_hook_greeting_on_every_answer_stops_at_the_limit(
+        self, trigger: HookTrigger, execution: HookExecution
+    ) -> None:
+        """A hook greeting on another agent's every answer is stopped by the
+        budget and the depth of the work it runs in, as send_event from there
+        is. On a budget of its own at depth 0, it went on without end."""
+        gives_up = 200
+        kit = RoomKit()
+        kit.register_channel(SMSChannel("sms-1", provider=MockSMSProvider()))
+        kit.register_channel(
+            Agent(
+                "agent-1",
+                provider=MockAIProvider(responses=["unused"]),
+                greeting="Welcome!",
+                auto_greet=False,
+            )
+        )
+        kit.register_channel(Agent("other", provider=MockAIProvider(responses=["Noted"])))
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "sms-1")
+        await kit.attach_channel(room.id, "agent-1", access=Access.WRITE_ONLY)
+        await kit.attach_channel(room.id, "other")
+        made = 0
+
+        @kit.hook(trigger, execution)
+        async def greets_on_every_answer(event: RoomEvent, context: object) -> None:
+            nonlocal made
+            if event.source.channel_id != "other" or made >= gives_up:
+                return
+            made += 1
+            await kit.send_greeting(event.room_id)
+
+        await kit.send_greeting(room.id)
+        await until(lambda: _idle(kit))
+        await kit.close()
+
+        assert 0 < made < gives_up
+
+
+def _idle(kit: RoomKit) -> bool:
+    """Whether the kit runs nothing more: no lane at work, no hook running."""
+    lanes = kit._lanes._lanes.values()
+    busy = any(lane._indexed or lane._unindexed or lane._busy for lane in lanes)
+    return not busy and not kit.hook_engine.running_observers() and not kit._pending_hook_tasks

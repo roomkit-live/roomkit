@@ -240,6 +240,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A greeting from the room's own work stops at the limit** (RMK-1264, HITL
+  1db22649). `send_greeting` from a hook's body or a delivery took a budget of
+  its own at depth 0, so a hook greeting on every answer drove the model without
+  end. It now keeps the budget and the depth of the work it is made in, as
+  `send_event` does, and past the budget is stored `BLOCKED`
+  (`reentry_loop_cap`); a top-level call keeps a budget of its own.
 - **A turn cut from outside gives its caller what it wrote** (RFC §6.7, HITL
   84991349). `handle.cancel()` or the kit's close left `turns` alone in the
   result; what a tool had written on the record now reaches it, as for a turn
