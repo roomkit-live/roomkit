@@ -106,6 +106,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `Pipeline(agents=[])` is refused at its install with `ValueError("Pipeline
+  needs at least one agent")`, where it raised `IndexError` (RMK-1233).
 - **Two senders with no name on one channel read as two speakers** (RFC
   §6.4, RMK-1221). An event the application sent from a channel with no
   participant and a message a nameless sender sent through it both read

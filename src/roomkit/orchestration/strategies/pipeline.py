@@ -109,8 +109,14 @@ class Pipeline(Orchestration):
     async def install(self, kit: RoomKit, room_id: str) -> None:
         """Wire pipeline routing and handoff into the room, the agents'
         voices and handoff greetings on its voice channel when one is named
-        (RFC §19.7.1)."""
+        (RFC §19.7.1).
+
+        Raises:
+            ValueError: A pipeline with no agent, or a realtime voice channel.
+        """
         self._refuse_realtime(kit)
+        if not self._agents:
+            raise ValueError("Pipeline needs at least one agent")
         await kit.claim_room_strategy(room_id, self)
         agents = [held(kit, a) for a in self._agents]
         cp = ConversationPipeline(stages=_build_stages(agents), supervisor_id=self._supervisor_id)

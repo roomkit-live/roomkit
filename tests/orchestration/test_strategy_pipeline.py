@@ -172,6 +172,17 @@ class TestPipelineInstall:
                 assert names.count("handoff_conversation") == 1
 
 
+async def test_a_pipeline_with_no_agent_is_refused_at_its_install() -> None:
+    kit = RoomKit()
+    await kit.create_room(room_id="r")
+
+    with pytest.raises(ValueError, match="needs at least one agent"):
+        await kit.install_strategy("r", Pipeline(agents=[]))
+
+    assert kit.room_strategy("r") is None
+    await kit.close()
+
+
 async def test_greet_on_handoff_without_a_voice_channel_is_refused() -> None:
     """RMK-873: the refusal ConversationPipeline.install makes, at construction."""
     with pytest.raises(ValueError, match="voice_channel_id"):
