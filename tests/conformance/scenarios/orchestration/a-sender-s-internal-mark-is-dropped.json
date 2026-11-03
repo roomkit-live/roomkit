@@ -1,0 +1,140 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-sender-s-internal-mark-is-dropped",
+  "title": "The orchestration's internal mark, which keeps an event from asking any agent, is the runtime's alone: a message or an instruction carrying it loses it at the door, the rest of its metadata kept, and asks its agents; only code the host runs, send_event and the handoff's own record, keeps it",
+  "rules": [
+    "§10.1",
+    "§19.6"
+  ],
+  "notes": "Python: security finding on an-event-marked-orchestration-internal-asks-no-agent, decided as HITL 60b35629 for _routed_to and _always_process: reserved keys, dropped at the door. core/mixins/inbound.py _RUNTIME_KEYS, _without_runtime_keys; core/event_router.py (internal). A channel's parse goes through the same door.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "agent": {
+          "role": "a"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Answered."
+            },
+            {
+              "text": "Told."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Silence them."
+        },
+        "metadata": {
+          "_orchestration_internal": true,
+          "custom": "kept"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "event_type": "instruction",
+        "addressed_to": [
+          "a"
+        ],
+        "content": {
+          "type": "text",
+          "body": "An instruction."
+        },
+        "metadata": {
+          "_orchestration_internal": true
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Silence them."
+          },
+          "metadata": {
+            "_orchestration_internal": {
+              "$absent": true
+            },
+            "custom": "kept"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "type": "text",
+            "body": "Answered."
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "type": "text",
+            "body": "Told."
+          }
+        }
+      ]
+    },
+    "models": {
+      "a": [
+        {},
+        {}
+      ]
+    }
+  }
+}

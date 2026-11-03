@@ -1,0 +1,236 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-swarm-starts-at-its-entry-and-serves-each-room-its-own-install",
+  "title": "A Swarm's entry names the agent it starts with; each room it is installed in has its own state and its own handoff tools, one per agent, and a handoff in one leaves the other's agent alone; uninstalling takes the room's router and tools back",
+  "rules": [
+    "§19.7"
+  ],
+  "notes": "Python: tests/orchestration/test_strategy_swarm.py TestSwarmAgents::test_custom_entry, test_agents_returns_all, TestSwarmInstall::test_double_install_skips_handoff, test_sets_initial_state. orchestration/strategies/swarm.py install.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "agent": {
+          "role": "Sales"
+        },
+        "model": {
+          "rounds": []
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "agent": {
+          "role": "Support"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "B in r2."
+            },
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "handoff_conversation",
+                  "arguments": {
+                    "target": "a",
+                    "reason": "Back.",
+                    "summary": "S."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "B in r1."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "swarm": {
+          "agents": [
+            "a",
+            "b"
+          ],
+          "entry": "b"
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r2",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Two."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "uninstall_strategy",
+      "room_id": "r2",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "One."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "One."
+          },
+          "metadata": {
+            "_routed_to": "b"
+          }
+        },
+        {
+          "type": "tool_call_start"
+        },
+        {
+          "type": "system"
+        },
+        {
+          "type": "tool_call_end"
+        },
+        {
+          "source": {
+            "channel_id": "b"
+          },
+          "content": {
+            "type": "text",
+            "body": "B in r1."
+          }
+        }
+      ],
+      "r2": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Two."
+          },
+          "metadata": {
+            "_routed_to": "b"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "b"
+          },
+          "content": {
+            "type": "text",
+            "body": "B in r2."
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "r1": {
+        "metadata": {
+          "_conversation_state": {
+            "phase": "handling",
+            "active_agent_id": "a",
+            "previous_agent_id": "b",
+            "handoff_count": 1
+          }
+        }
+      },
+      "r2": {
+        "metadata": {
+          "_conversation_state": {
+            "$absent": true
+          }
+        }
+      }
+    },
+    "models": {
+      "b": [
+        {
+          "tools": {
+            "handoff_conversation": 0
+          }
+        },
+        {
+          "tools": {
+            "handoff_conversation": 0
+          }
+        },
+        {}
+      ]
+    }
+  }
+}

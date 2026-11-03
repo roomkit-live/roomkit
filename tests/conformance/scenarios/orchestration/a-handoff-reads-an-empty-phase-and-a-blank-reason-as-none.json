@@ -1,0 +1,128 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-handoff-reads-an-empty-phase-and-a-blank-reason-as-none",
+  "title": "A handoff's empty next_phase falls to the phase map's, an empty one there to handling, and a blank reason is left out of the record",
+  "rules": [
+    "§19.6"
+  ],
+  "notes": "Python: orchestration/handoff.py handle (`arguments.get('next_phase') or phase_map.get(target) or 'handling'`), _handoff_line (`request.reason.strip()`).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "agent": {
+          "role": "a"
+        },
+        "model": {
+          "rounds": []
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "agent": {
+          "role": "b"
+        },
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a"
+          },
+          {
+            "channel_id": "b"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "handoff_handler",
+      "handler": "h",
+      "router": {
+        "default_agent_id": "a"
+      },
+      "phase_map": {
+        "b": "support",
+        "a": ""
+      }
+    },
+    {
+      "call": "handoff.handle",
+      "handler": "h",
+      "room_id": "r1",
+      "calling_agent_id": "a",
+      "arguments": {
+        "target": "b",
+        "reason": "  ",
+        "summary": "S1",
+        "next_phase": ""
+      },
+      "expect": {
+        "result": {
+          "accepted": true,
+          "new_agent_id": "b",
+          "new_phase": "support",
+          "message": "Conversation transferred to b. Do not respond — the receiving agent will greet the user.",
+          "reason": ""
+        }
+      }
+    },
+    {
+      "call": "handoff.handle",
+      "handler": "h",
+      "room_id": "r1",
+      "calling_agent_id": "b",
+      "arguments": {
+        "target": "a",
+        "reason": "R2",
+        "summary": "S2"
+      },
+      "expect": {
+        "result": {
+          "accepted": true,
+          "new_agent_id": "a",
+          "new_phase": "handling",
+          "message": "Conversation transferred to a. Do not respond — the receiving agent will greet the user.",
+          "reason": ""
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "type": "system",
+          "content": {
+            "type": "text",
+            "body": "[Handoff: a -> b]"
+          }
+        },
+        {
+          "type": "system",
+          "content": {
+            "type": "text",
+            "body": "[Handoff: b -> a] “R2”"
+          }
+        }
+      ]
+    }
+  }
+}

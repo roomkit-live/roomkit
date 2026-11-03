@@ -1,0 +1,223 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-handoff-picks-its-target-and-its-phase",
+  "title": "A handoff's target is read through the aliases, its phase is the call's next_phase, else the phase map's, else handling; a handoff to human leaves the room with no active agent; the state keeps each step in its history, counting the changes of agent",
+  "rules": [
+    "§19.2",
+    "§19.6"
+  ],
+  "notes": "Python: tests/orchestration/test_handoff.py TestHandoffHandler::test_handoff_to_human, test_alias_resolution, test_phase_map, test_explicit_next_phase_overrides_phase_map, test_handoff_increments_count. orchestration/handoff.py HandoffHandler.handle; state.py transition.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "agent": {
+          "role": "Sales"
+        },
+        "model": {
+          "rounds": []
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "agent": {
+          "role": "Support"
+        },
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a"
+          },
+          {
+            "channel_id": "b"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "handoff_handler",
+      "handler": "h",
+      "router": {
+        "default_agent_id": "a"
+      },
+      "agent_aliases": {
+        "helpdesk": "b"
+      },
+      "phase_map": {
+        "b": "support"
+      }
+    },
+    {
+      "call": "handoff.handle",
+      "handler": "h",
+      "room_id": "r1",
+      "calling_agent_id": "a",
+      "arguments": {
+        "target": "helpdesk",
+        "reason": "R1",
+        "summary": "S1"
+      },
+      "expect": {
+        "result": {
+          "accepted": true,
+          "new_agent_id": "b",
+          "new_phase": "support",
+          "message": "Conversation transferred to b. Do not respond — the receiving agent will greet the user.",
+          "reason": ""
+        }
+      }
+    },
+    {
+      "call": "handoff.handle",
+      "handler": "h",
+      "room_id": "r1",
+      "calling_agent_id": "b",
+      "arguments": {
+        "target": "a",
+        "reason": "R2",
+        "summary": "S2",
+        "next_phase": "review",
+        "channel_escalation": "email"
+      },
+      "expect": {
+        "result": {
+          "accepted": true,
+          "new_agent_id": "a",
+          "new_phase": "review",
+          "message": "Conversation transferred to a. Do not respond — the receiving agent will greet the user.",
+          "reason": ""
+        }
+      }
+    },
+    {
+      "call": "handoff.handle",
+      "handler": "h",
+      "room_id": "r1",
+      "calling_agent_id": "a",
+      "arguments": {
+        "target": "human",
+        "reason": "R3",
+        "summary": "S3"
+      },
+      "expect": {
+        "result": {
+          "accepted": true,
+          "new_agent_id": null,
+          "new_phase": "handling",
+          "message": "Conversation transferred to human. Do not respond — the receiving agent will greet the user.",
+          "reason": ""
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "type": "system",
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "type": "text",
+            "body": "[Handoff: a -> b] “R1”"
+          }
+        },
+        {
+          "type": "system",
+          "source": {
+            "channel_id": "b"
+          },
+          "content": {
+            "type": "text",
+            "body": "[Handoff: b -> a] “R2”"
+          }
+        },
+        {
+          "type": "system",
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "type": "text",
+            "body": "[Handoff: a -> human] “R3”"
+          },
+          "metadata": {
+            "to_agent": "human"
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "r1": {
+        "metadata": {
+          "_conversation_state": {
+            "phase": "handling",
+            "active_agent_id": null,
+            "previous_agent_id": "a",
+            "handoff_count": 3,
+            "phase_history": [
+              {
+                "from_phase": "intake",
+                "to_phase": "support",
+                "from_agent": null,
+                "to_agent": "b",
+                "reason": "R1",
+                "metadata": {
+                  "summary": "S1",
+                  "channel_escalation": "same"
+                }
+              },
+              {
+                "from_phase": "support",
+                "to_phase": "review",
+                "from_agent": "b",
+                "to_agent": "a",
+                "reason": "R2",
+                "metadata": {
+                  "summary": "S2",
+                  "channel_escalation": "email"
+                }
+              },
+              {
+                "from_phase": "review",
+                "to_phase": "handling",
+                "from_agent": "a",
+                "to_agent": null,
+                "reason": "R3",
+                "metadata": {
+                  "summary": "S3",
+                  "channel_escalation": "same"
+                }
+              }
+            ],
+            "context": {
+              "handoff_summary": "S3",
+              "handoff_from": "a",
+              "handoff_reason": "R3"
+            }
+          }
+        }
+      }
+    }
+  }
+}

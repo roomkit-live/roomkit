@@ -1,0 +1,133 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/an-event-marked-orchestration-internal-asks-no-agent",
+  "title": "An event carrying the orchestration's internal mark asks no agent, whatever its type, though it is stored and reaches the room's transports",
+  "rules": [
+    "§19.6"
+  ],
+  "notes": "Python: core/event_router.py _delivery_for (internal = metadata _orchestration_internal; asked = not internal and _solicits). The handoff's own record carries the mark.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "agent": {
+          "role": "Sales"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Answered."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "sms",
+      "content": {
+        "type": "text",
+        "body": "Marked."
+      },
+      "metadata": {
+        "_orchestration_internal": true
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Not marked."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Marked."
+          },
+          "metadata": {
+            "_orchestration_internal": true
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Not marked."
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "type": "text",
+            "body": "Answered."
+          }
+        }
+      ]
+    },
+    "models": {
+      "a": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$contains": "Marked."
+              }
+            },
+            {
+              "role": "user",
+              "text": {
+                "$contains": "Not marked."
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

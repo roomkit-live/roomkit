@@ -1,0 +1,242 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-router-s-install-hooks-at-its-priority",
+  "title": "A router's install hooks the broadcast at its hook_priority, -100 by default, and a Swarm's router at -100: a hook before it reads no stamp, one after it reads the agent",
+  "rules": [
+    "§19.4",
+    "§19.7"
+  ],
+  "notes": "Python: orchestration/router.py install (hook_priority=-100); strategies/swarm.py install (priority=-100); tests/orchestration/test_router.py TestRouterInstall::test_install_registers_hook_and_returns_handler.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "agent": {
+          "role": "a"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "One."
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "agent": {
+          "role": "b"
+        },
+        "model": {
+          "rounds": []
+        }
+      },
+      {
+        "id": "c",
+        "type": "ai",
+        "agent": {
+          "role": "c"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Two."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "c"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a"
+          },
+          {
+            "channel_id": "b"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "early",
+        "trigger": "before_broadcast",
+        "priority": -150
+      },
+      {
+        "name": "between",
+        "trigger": "before_broadcast",
+        "priority": -50
+      },
+      {
+        "name": "late",
+        "trigger": "before_broadcast",
+        "priority": 0
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "swarm": {
+          "agents": [
+            "a",
+            "b"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r2",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Swarm."
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "install_router",
+      "handler": "h",
+      "router": {
+        "default_agent_id": "c"
+      },
+      "agents": [
+        "c"
+      ],
+      "hook_priority": -20
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Router."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "early": [
+        {
+          "room_id": "r2",
+          "event": {
+            "metadata": {
+              "_routed_to": {
+                "$absent": true
+              }
+            }
+          }
+        },
+        {
+          "room_id": "r2"
+        },
+        {
+          "room_id": "r1",
+          "event": {
+            "metadata": {
+              "_routed_to": {
+                "$absent": true
+              }
+            }
+          }
+        },
+        {
+          "room_id": "r1"
+        }
+      ],
+      "between": [
+        {
+          "room_id": "r2",
+          "event": {
+            "metadata": {
+              "_routed_to": "a"
+            }
+          }
+        },
+        {
+          "room_id": "r2"
+        },
+        {
+          "room_id": "r1",
+          "event": {
+            "metadata": {
+              "_routed_to": {
+                "$absent": true
+              }
+            }
+          }
+        },
+        {
+          "room_id": "r1"
+        }
+      ],
+      "late": [
+        {
+          "room_id": "r2",
+          "event": {
+            "metadata": {
+              "_routed_to": "a"
+            }
+          }
+        },
+        {
+          "room_id": "r2"
+        },
+        {
+          "room_id": "r1",
+          "event": {
+            "metadata": {
+              "_routed_to": "c"
+            }
+          }
+        },
+        {
+          "room_id": "r1"
+        }
+      ]
+    }
+  }
+}

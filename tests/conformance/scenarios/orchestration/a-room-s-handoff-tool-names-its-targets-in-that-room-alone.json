@@ -1,0 +1,229 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-room-s-handoff-tool-names-its-targets-in-that-room-alone",
+  "title": "setup_handoff with a custom tool names its targets and is declared in the one room it was set up for; another room the agent serves declares none; the host's own tools stay the agent's",
+  "rules": [
+    "§19.6",
+    "§19.7"
+  ],
+  "notes": "Python: tests/orchestration/test_handoff.py TestSetupHandoff::test_a_room_s_handoff_is_declared_in_that_room_only, test_non_handoff_tool_delegates, TestSetupHandoffCustomTool::test_custom_tool_injected. orchestration/handoff.py setup_handoff, build_handoff_tool.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "agent": {
+          "role": "Sales"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "In r1."
+            },
+            {
+              "text": "In r2."
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "agent": {
+          "role": "Support"
+        },
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "seen",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "handoff_handler",
+      "handler": "h",
+      "router": {
+        "default_agent_id": "a"
+      }
+    },
+    {
+      "call": "setup_handoff",
+      "agent_id": "a",
+      "handler": "h",
+      "targets": [
+        [
+          "b",
+          "Handles bills."
+        ],
+        [
+          "c",
+          null
+        ]
+      ],
+      "room_id": "r1"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "One."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Two."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "seen": [
+        {
+          "room_id": "r1",
+          "response": {
+            "channel_id": "a",
+            "declared_tools": {
+              "handoff_conversation": {
+                "position": 0,
+                "description": "Transfer this conversation to another agent.\nAvailable targets:\n  - b: Handles bills.\n  - c",
+                "parameters": {
+                  "type": "object",
+                  "properties": {
+                    "target": {
+                      "type": "string",
+                      "enum": [
+                        "b",
+                        "c"
+                      ],
+                      "description": "Target agent ID to transfer to"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "description": "Why the handoff is needed"
+                    },
+                    "summary": {
+                      "type": "string",
+                      "description": "Summary of the conversation so far and what the next agent needs to know to continue effectively"
+                    },
+                    "next_phase": {
+                      "type": "string",
+                      "description": "Optional: conversation phase to transition to (e.g., 'handling', 'review', 'escalation')"
+                    },
+                    "channel_escalation": {
+                      "type": "string",
+                      "enum": [
+                        "same",
+                        "voice",
+                        "email",
+                        "sms"
+                      ],
+                      "description": "Whether to escalate to a different channel. 'same' keeps the current channel."
+                    }
+                  },
+                  "required": [
+                    "target",
+                    "reason",
+                    "summary"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "room_id": "r2",
+          "response": {
+            "channel_id": "a",
+            "declared_tools": {
+              "handoff_conversation": {
+                "$absent": true
+              }
+            }
+          }
+        }
+      ]
+    },
+    "models": {
+      "a": [
+        {
+          "tools": {
+            "handoff_conversation": 0
+          }
+        },
+        {
+          "tools": {
+            "handoff_conversation": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

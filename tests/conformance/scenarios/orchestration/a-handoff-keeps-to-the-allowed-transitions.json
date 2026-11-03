@@ -1,0 +1,150 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-handoff-keeps-to-the-allowed-transitions",
+  "title": "With allowed transitions, a handoff from a phase to one the map does not list is refused, its reason naming both, the state left alone; one it lists goes through",
+  "rules": [
+    "§19.6"
+  ],
+  "notes": "Python: tests/orchestration/test_handoff.py TestHandoffHandler::test_allowed_transition_accepted, test_disallowed_transition_rejected, test_no_transition_constraints_allows_anything. orchestration/handoff.py HandoffHandler.handle.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "agent": {
+          "role": "Sales"
+        },
+        "model": {
+          "rounds": []
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "agent": {
+          "role": "Support"
+        },
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a"
+          },
+          {
+            "channel_id": "b"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "handoff_handler",
+      "handler": "h",
+      "router": {
+        "default_agent_id": "a"
+      },
+      "allowed_transitions": {
+        "intake": [
+          "handling"
+        ]
+      }
+    },
+    {
+      "call": "handoff.handle",
+      "handler": "h",
+      "room_id": "r1",
+      "calling_agent_id": "a",
+      "arguments": {
+        "target": "b",
+        "reason": "R1",
+        "summary": "S1",
+        "next_phase": "review"
+      },
+      "expect": {
+        "result": {
+          "accepted": false,
+          "new_agent_id": null,
+          "new_phase": null,
+          "message": "",
+          "reason": "Transition from 'intake' to 'review' is not allowed"
+        }
+      }
+    },
+    {
+      "call": "handoff.handle",
+      "handler": "h",
+      "room_id": "r1",
+      "calling_agent_id": "a",
+      "arguments": {
+        "target": "b",
+        "reason": "R2",
+        "summary": "S2"
+      },
+      "expect": {
+        "result": {
+          "accepted": true,
+          "new_agent_id": "b",
+          "new_phase": "handling",
+          "message": "Conversation transferred to b. Do not respond — the receiving agent will greet the user.",
+          "reason": ""
+        }
+      }
+    },
+    {
+      "call": "handoff.handle",
+      "handler": "h",
+      "room_id": "r1",
+      "calling_agent_id": "b",
+      "arguments": {
+        "target": "a",
+        "reason": "R3",
+        "summary": "S3"
+      },
+      "expect": {
+        "result": {
+          "accepted": false,
+          "reason": "Transition from 'handling' to 'handling' is not allowed"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "type": "system",
+          "content": {
+            "type": "text",
+            "body": "[Handoff: a -> b] “R2”"
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "r1": {
+        "metadata": {
+          "_conversation_state": {
+            "phase": "handling",
+            "active_agent_id": "b",
+            "handoff_count": 1
+          }
+        }
+      }
+    }
+  }
+}

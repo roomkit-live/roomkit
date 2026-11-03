@@ -1,0 +1,185 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/the-generic-handoff-tool-is-declared-in-every-room-the-agent-serves",
+  "title": "setup_handoff with no custom tool and no room declares the generic tool in every room the agent serves, its target free",
+  "rules": [
+    "§19.6"
+  ],
+  "notes": "Python: tests/orchestration/test_handoff.py TestHandoffModels::test_handoff_tool_definition, TestSetupHandoff::test_injects_handoff_tool, TestSetupHandoffCustomTool::test_default_tool_when_none. orchestration/handoff.py HANDOFF_TOOL, setup_handoff.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "agent": {
+          "role": "Sales"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "In r1."
+            },
+            {
+              "text": "In r2."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "seen",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "handoff_handler",
+      "handler": "h",
+      "router": {
+        "default_agent_id": "a"
+      }
+    },
+    {
+      "call": "setup_handoff",
+      "agent_id": "a",
+      "handler": "h"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "One."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Two."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "seen": [
+        {
+          "room_id": "r1",
+          "response": {
+            "declared_tools": {
+              "handoff_conversation": {
+                "position": 0,
+                "description": "Transfer this conversation to another agent or specialist. Use when: the user asks to speak with someone else, the user wants to be transferred or go back to a previous agent, the conversation needs expertise you don't have, or your task is complete and the next step requires a different agent. Always provide a clear summary of the conversation so far.",
+                "parameters": {
+                  "type": "object",
+                  "properties": {
+                    "target": {
+                      "type": "string",
+                      "description": "Target agent ID or alias (e.g., 'agent-advisor', 'agent-coder', 'human')"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "description": "Why the handoff is needed"
+                    },
+                    "summary": {
+                      "type": "string",
+                      "description": "Summary of the conversation so far and what the next agent needs to know to continue effectively"
+                    },
+                    "next_phase": {
+                      "type": "string",
+                      "description": "Optional: conversation phase to transition to (e.g., 'handling', 'review', 'escalation')"
+                    },
+                    "channel_escalation": {
+                      "type": "string",
+                      "enum": [
+                        "same",
+                        "voice",
+                        "email",
+                        "sms"
+                      ],
+                      "description": "Whether to escalate to a different channel. 'same' keeps the current channel."
+                    }
+                  },
+                  "required": [
+                    "target",
+                    "reason",
+                    "summary"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "room_id": "r2",
+          "response": {
+            "declared_tools": {
+              "handoff_conversation": {
+                "position": 0
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

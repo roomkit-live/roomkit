@@ -1,0 +1,363 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-handoff-hands-the-room-to-its-target",
+  "title": "An agent the router's install wired hands the conversation off through its tool: the room's state moves to the target, the timeline records the handoff, nobody is asked by it, the hooks fire, the status bus says it, and the next message goes to the target",
+  "rules": [
+    "§19.5",
+    "§19.6"
+  ],
+  "notes": "Python: tests/orchestration/test_handoff.py TestHandoffHandler::test_successful_handoff, TestSetupHandoff::test_injects_handoff_tool, test_handoff_tool_call_dispatched, TestHandoffHookFiring::test_on_handoff_fired_on_success, TestOrchestrationInternalFlag::test_send_event_has_internal_flag; tests/orchestration/test_router.py TestRouterInstall::test_install_registers_hook_and_returns_handler, test_install_wires_handoff, test_install_with_phase_map, test_install_passes_aliases, test_install_no_allowed_transitions. orchestration/handoff.py HandoffHandler.handle, handoff_entry, _handoff_line, _fire_hook; router.py install.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "agent": {
+          "role": "Sales"
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "handoff_conversation",
+                  "arguments": {
+                    "target": "helpdesk",
+                    "reason": "Needs support.",
+                    "summary": "Wants help with a bill."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "One moment."
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "agent": {
+          "role": "Support"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Support here."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a"
+          },
+          {
+            "channel_id": "b"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "on_handoff",
+        "trigger": "on_handoff",
+        "execution": "async"
+      },
+      {
+        "name": "on_handoff_rejected",
+        "trigger": "on_handoff_rejected",
+        "execution": "async"
+      },
+      {
+        "name": "on_phase_transition",
+        "trigger": "on_phase_transition",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_router",
+      "handler": "h",
+      "router": {
+        "default_agent_id": "a"
+      },
+      "agents": [
+        "a",
+        "b"
+      ],
+      "agent_aliases": {
+        "helpdesk": "b"
+      },
+      "phase_map": {
+        "b": "support"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "I need help."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "status.recent",
+      "agent_id": "b",
+      "expect": {
+        "result": [
+          {
+            "agent_id": "b",
+            "action": "handoff",
+            "status": "info",
+            "detail": "Needs support.",
+            "metadata": {
+              "room_id": "r1",
+              "from_agent": "a",
+              "phase": "support",
+              "summary": "Wants help with a bill."
+            }
+          }
+        ]
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hello?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "I need help."
+          },
+          "metadata": {
+            "_routed_to": "a"
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "type": "tool_call",
+            "tool_name": "handoff_conversation"
+          }
+        },
+        {
+          "type": "system",
+          "visibility": "all",
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "type": "text",
+            "body": "[Handoff: a -> b] “Needs support.”"
+          },
+          "metadata": {
+            "handoff": true,
+            "from_agent": "a",
+            "to_agent": "b",
+            "summary": "Wants help with a bill.",
+            "_orchestration_internal": true,
+            "runtime_record": "handoff"
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "type": "tool_call",
+            "tool_name": "handoff_conversation",
+            "result": "{\"accepted\":true,\"new_agent_id\":\"b\",\"new_phase\":\"support\",\"message\":\"Conversation transferred to b. Do not respond — the receiving agent will greet the user.\",\"reason\":\"\"}",
+            "status": "completed"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "type": "text",
+            "body": "One moment."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello?"
+          },
+          "metadata": {
+            "_routed_to": "b"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "b"
+          },
+          "content": {
+            "type": "text",
+            "body": "Support here."
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "r1": {
+        "metadata": {
+          "_conversation_state": {
+            "phase": "support",
+            "active_agent_id": "b",
+            "previous_agent_id": null,
+            "handoff_count": 1,
+            "phase_history": [
+              {
+                "from_phase": "intake",
+                "to_phase": "support",
+                "from_agent": null,
+                "to_agent": "b",
+                "reason": "Needs support.",
+                "metadata": {
+                  "summary": "Wants help with a bill.",
+                  "channel_escalation": "same"
+                }
+              }
+            ],
+            "context": {
+              "handoff_summary": "Wants help with a bill.",
+              "handoff_from": "a",
+              "handoff_reason": "Needs support."
+            }
+          }
+        }
+      }
+    },
+    "hooks": {
+      "on_handoff": [
+        {
+          "trigger": "on_handoff",
+          "room_id": "r1",
+          "event": {
+            "type": "system",
+            "status": "delivered",
+            "visibility": "internal",
+            "source": {
+              "channel_id": "a",
+              "channel_type": "ai"
+            },
+            "content": {
+              "type": "text",
+              "body": "Needs support."
+            },
+            "metadata": {
+              "handoff": true,
+              "from_agent": "a",
+              "to_agent": "b",
+              "accepted": true,
+              "new_phase": "support"
+            }
+          }
+        }
+      ],
+      "on_phase_transition": [
+        {
+          "trigger": "on_phase_transition",
+          "room_id": "r1",
+          "event": {
+            "type": "system",
+            "visibility": "internal",
+            "metadata": {
+              "handoff": true,
+              "from_agent": "a",
+              "to_agent": "b",
+              "accepted": true,
+              "new_phase": "support"
+            }
+          }
+        }
+      ],
+      "on_handoff_rejected": []
+    },
+    "models": {
+      "a": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "I need help."
+            }
+          ],
+          "tools": {
+            "handoff_conversation": 0
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "is_error": false
+            }
+          ]
+        }
+      ],
+      "b": [
+        {
+          "tools": {
+            "handoff_conversation": 0
+          }
+        }
+      ]
+    }
+  }
+}

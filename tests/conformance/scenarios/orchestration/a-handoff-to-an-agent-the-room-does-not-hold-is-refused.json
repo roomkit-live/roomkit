@@ -1,0 +1,219 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-handoff-to-an-agent-the-room-does-not-hold-is-refused",
+  "title": "A handoff to an agent the room does not bind, and the kit's handler does not know, is refused with its reason: the state and the timeline are left alone, the caller's status says it failed, and only ON_HANDOFF_REJECTED fires; a target named in known_agents is taken though the room binds none",
+  "rules": [
+    "§19.6"
+  ],
+  "notes": "Python: tests/orchestration/test_handoff.py TestHandoffHandler::test_handoff_to_unknown_agent_rejected, TestHandoffHookFiring::test_on_handoff_rejected_fired, TestKnownAgents::test_known_agent_bypasses_binding_check, test_unknown_agent_still_rejected. orchestration/handoff.py HandoffHandler.handle.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "agent": {
+          "role": "Sales"
+        },
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "on_handoff",
+        "trigger": "on_handoff",
+        "execution": "async"
+      },
+      {
+        "name": "on_handoff_rejected",
+        "trigger": "on_handoff_rejected",
+        "execution": "async"
+      },
+      {
+        "name": "on_phase_transition",
+        "trigger": "on_phase_transition",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "handoff_handler",
+      "handler": "h",
+      "router": {
+        "default_agent_id": "a"
+      },
+      "known_agents": [
+        "voice-agent"
+      ]
+    },
+    {
+      "call": "handoff.handle",
+      "handler": "h",
+      "room_id": "r1",
+      "calling_agent_id": "a",
+      "arguments": {
+        "target": "nobody",
+        "reason": "Why not.",
+        "summary": "S."
+      },
+      "expect": {
+        "result": {
+          "accepted": false,
+          "new_agent_id": null,
+          "new_phase": null,
+          "message": "",
+          "reason": "Agent nobody not found in room"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "status.recent",
+      "agent_id": "a",
+      "expect": {
+        "result": [
+          {
+            "action": "handoff",
+            "status": "failed",
+            "detail": "Agent nobody not found in room",
+            "metadata": {
+              "room_id": "r1",
+              "to_agent": "nobody",
+              "reason": "Why not."
+            }
+          }
+        ]
+      }
+    },
+    {
+      "call": "handoff.handle",
+      "handler": "h",
+      "room_id": "r1",
+      "calling_agent_id": "a",
+      "arguments": {
+        "target": "voice-agent",
+        "reason": "",
+        "summary": ""
+      },
+      "expect": {
+        "result": {
+          "accepted": true,
+          "new_agent_id": "voice-agent",
+          "new_phase": "handling",
+          "message": "Conversation transferred to voice-agent. Do not respond — the receiving agent will greet the user.",
+          "reason": ""
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "status.recent",
+      "agent_id": "voice-agent",
+      "expect": {
+        "result": [
+          {
+            "action": "handoff",
+            "status": "info",
+            "detail": "handoff from a"
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "type": "system",
+          "content": {
+            "type": "text",
+            "body": "[Handoff: a -> voice-agent]"
+          },
+          "metadata": {
+            "to_agent": "voice-agent"
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "r1": {
+        "metadata": {
+          "_conversation_state": {
+            "phase": "handling",
+            "active_agent_id": "voice-agent",
+            "handoff_count": 1
+          }
+        }
+      }
+    },
+    "hooks": {
+      "on_handoff_rejected": [
+        {
+          "trigger": "on_handoff_rejected",
+          "room_id": "r1",
+          "event": {
+            "type": "system",
+            "visibility": "internal",
+            "source": {
+              "channel_id": "a",
+              "channel_type": "ai"
+            },
+            "content": {
+              "type": "text",
+              "body": "Why not."
+            },
+            "metadata": {
+              "handoff": true,
+              "from_agent": "a",
+              "to_agent": "nobody",
+              "accepted": false,
+              "new_phase": null
+            }
+          }
+        }
+      ],
+      "on_handoff": [
+        {
+          "event": {
+            "metadata": {
+              "to_agent": "voice-agent"
+            }
+          }
+        }
+      ],
+      "on_phase_transition": [
+        {
+          "event": {
+            "metadata": {
+              "to_agent": "voice-agent"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

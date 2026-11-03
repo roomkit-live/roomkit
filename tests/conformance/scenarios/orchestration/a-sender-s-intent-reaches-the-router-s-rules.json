@@ -1,0 +1,133 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-sender-s-intent-reaches-the-router-s-rules",
+  "title": "A message's metadata `intent` is the caller's word, read by a router's rules as it arrives: the rule naming it asks its agent alone, whoever set it",
+  "rules": [
+    "§19.4"
+  ],
+  "notes": "Python: tests/orchestration/test_router.py TestSelectAgent intent cases; orchestration/router.py _matches (event.metadata intent). Pinned as it stands while the security finding on the router's keys is with the maintainer: unlike _routed_to, _always_process and _orchestration_internal, no framework code writes this key.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "agent": {
+          "role": "a"
+        },
+        "model": {
+          "rounds": []
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "agent": {
+          "role": "b"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Billing here."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a"
+          },
+          {
+            "channel_id": "b"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "add_room_hook",
+      "room_id": "r1",
+      "hook": {
+        "name": "router",
+        "trigger": "before_broadcast",
+        "priority": -100,
+        "router": {
+          "default_agent_id": "a",
+          "rules": [
+            {
+              "agent_id": "b",
+              "conditions": {
+                "intents": [
+                  "billing"
+                ]
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "A bill."
+        },
+        "metadata": {
+          "intent": "billing"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "metadata": {
+            "intent": "billing",
+            "_routed_to": "b"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "b"
+          },
+          "content": {
+            "type": "text",
+            "body": "Billing here."
+          }
+        }
+      ]
+    },
+    "models": {
+      "a": [],
+      "b": [
+        {}
+      ]
+    }
+  }
+}

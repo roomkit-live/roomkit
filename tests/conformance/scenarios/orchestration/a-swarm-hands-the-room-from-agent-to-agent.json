@@ -1,0 +1,382 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-swarm-hands-the-room-from-agent-to-agent",
+  "title": "A Swarm installed in a room asks its entry agent, the first by default, and sets the room's state; each agent can hand the conversation to any other, its tool naming the others alone, and the agent it hands to keeps the conversation",
+  "rules": [
+    "§19.7"
+  ],
+  "notes": "Python: tests/orchestration/test_strategy_swarm.py TestSwarmAgents::test_default_entry_is_first_agent, TestSwarmInstall::test_installs_router_hook, test_sets_initial_state, test_bidirectional_handoff_tools; tests/orchestration/test_strategy_install.py test_a_swarm_installed_on_a_live_room_reaches_the_agent_it_hands_off_to. orchestration/strategies/swarm.py install.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "agent": {
+          "role": "Sales",
+          "description": "Sells."
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "handoff_conversation",
+                  "arguments": {
+                    "target": "b",
+                    "reason": "To support.",
+                    "summary": "S."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "One moment."
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "agent": {
+          "role": "Support",
+          "description": "Helps."
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "handoff_conversation",
+                  "arguments": {
+                    "target": "c",
+                    "reason": "To billing.",
+                    "summary": "S."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Passing you on."
+            }
+          ]
+        }
+      },
+      {
+        "id": "c",
+        "type": "ai",
+        "agent": {
+          "role": "Billing"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Billing here."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "seen",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "swarm": {
+          "agents": [
+            "a",
+            "b",
+            "c"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": "team"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hi."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hello?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "A bill."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hi."
+          },
+          "metadata": {
+            "_routed_to": "a"
+          }
+        },
+        {
+          "type": "tool_call_start"
+        },
+        {
+          "type": "system",
+          "content": {
+            "type": "text",
+            "body": "[Handoff: a -> b] “To support.”"
+          }
+        },
+        {
+          "type": "tool_call_end"
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "type": "text",
+            "body": "One moment."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello?"
+          },
+          "metadata": {
+            "_routed_to": "b"
+          }
+        },
+        {
+          "type": "tool_call_start"
+        },
+        {
+          "type": "system",
+          "content": {
+            "type": "text",
+            "body": "[Handoff: b -> c] “To billing.”"
+          }
+        },
+        {
+          "type": "tool_call_end"
+        },
+        {
+          "source": {
+            "channel_id": "b"
+          },
+          "content": {
+            "type": "text",
+            "body": "Passing you on."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "A bill."
+          },
+          "metadata": {
+            "_routed_to": "c"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "c"
+          },
+          "content": {
+            "type": "text",
+            "body": "Billing here."
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "r1": {
+        "metadata": {
+          "_conversation_state": {
+            "phase": "handling",
+            "active_agent_id": "c",
+            "previous_agent_id": "b",
+            "handoff_count": 2,
+            "phase_history": [
+              {
+                "from_phase": "swarm",
+                "to_phase": "handling",
+                "from_agent": "a",
+                "to_agent": "b"
+              },
+              {
+                "from_phase": "handling",
+                "to_phase": "handling",
+                "from_agent": "b",
+                "to_agent": "c"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "bindings": {
+      "r1": {
+        "a": {
+          "category": "intelligence"
+        },
+        "b": {
+          "category": "intelligence"
+        },
+        "c": {
+          "category": "intelligence"
+        }
+      }
+    },
+    "hooks": {
+      "seen": [
+        {
+          "response": {
+            "channel_id": "a",
+            "declared_tools": {
+              "handoff_conversation": {
+                "description": "Transfer this conversation to another agent.\nAvailable targets:\n  - b: Helps.\n  - c",
+                "parameters": {
+                  "properties": {
+                    "target": {
+                      "enum": [
+                        "b",
+                        "c"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "response": {
+            "channel_id": "b",
+            "declared_tools": {
+              "handoff_conversation": {
+                "description": "Transfer this conversation to another agent.\nAvailable targets:\n  - a: Sells.\n  - c",
+                "parameters": {
+                  "properties": {
+                    "target": {
+                      "enum": [
+                        "a",
+                        "c"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "response": {
+            "channel_id": "c",
+            "declared_tools": {
+              "handoff_conversation": {
+                "parameters": {
+                  "properties": {
+                    "target": {
+                      "enum": [
+                        "a",
+                        "b"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,134 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-handoff-s-record-reaches-the-room-s-transports",
+  "title": "A handoff's record reaches the room's transports, and so does an event marked internal, except its own source",
+  "rules": [
+    "§19.6"
+  ],
+  "notes": "Python: core/event_router.py (internal asks no agent, delivers to transports); orchestration/handoff.py handle's send_event.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "web",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "agent": {
+          "role": "Sales"
+        },
+        "model": {
+          "rounds": []
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "agent": {
+          "role": "Support"
+        },
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "a"
+          },
+          {
+            "channel_id": "b"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_router",
+      "handler": "h",
+      "router": {
+        "default_agent_id": "a"
+      },
+      "agents": [
+        "a",
+        "b"
+      ]
+    },
+    {
+      "call": "handoff.handle",
+      "handler": "h",
+      "room_id": "r1",
+      "calling_agent_id": "a",
+      "arguments": {
+        "target": "b",
+        "reason": "R",
+        "summary": "S"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "sms",
+      "content": {
+        "type": "text",
+        "body": "Marked."
+      },
+      "metadata": {
+        "_orchestration_internal": true
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "deliveries": {
+      "r1": {
+        "sms": [
+          {
+            "type": "system",
+            "content": {
+              "type": "text",
+              "body": "[Handoff: a -> b] “R”"
+            }
+          }
+        ],
+        "web": [
+          {
+            "type": "system",
+            "content": {
+              "type": "text",
+              "body": "[Handoff: a -> b] “R”"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Marked."
+            }
+          }
+        ]
+      }
+    }
+  }
+}

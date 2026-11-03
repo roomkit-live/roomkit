@@ -1,0 +1,99 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-handoff-s-language-is-the-room-s-state",
+  "title": "set_language keeps the language in the room's conversation state, beside what the state's context holds, on a text channel with no session to reconfigure",
+  "rules": [
+    "§19.2",
+    "§19.6"
+  ],
+  "notes": "Python: tests/orchestration/test_handoff.py TestSetLanguage::test_set_language_stores_in_state, test_a_language_change_on_a_text_channel_takes_a_declared_agent. orchestration/handoff.py HandoffHandler.set_language.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "agent": {
+          "role": "Sales"
+        },
+        "model": {
+          "rounds": []
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "agent": {
+          "role": "Support"
+        },
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a"
+          },
+          {
+            "channel_id": "b"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "handoff_handler",
+      "handler": "h",
+      "router": {
+        "default_agent_id": "a"
+      }
+    },
+    {
+      "call": "handoff.handle",
+      "handler": "h",
+      "room_id": "r1",
+      "calling_agent_id": "a",
+      "arguments": {
+        "target": "b",
+        "reason": "R",
+        "summary": "S"
+      }
+    },
+    {
+      "call": "handoff.set_language",
+      "handler": "h",
+      "room_id": "r1",
+      "language": "French"
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "r1": {
+        "metadata": {
+          "_conversation_state": {
+            "active_agent_id": "b",
+            "handoff_count": 1,
+            "context": {
+              "language": "French",
+              "handoff_summary": "S",
+              "handoff_from": "a",
+              "handoff_reason": "R"
+            }
+          }
+        }
+      }
+    }
+  }
+}
