@@ -223,7 +223,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   those keys led by a NUL character (`\x00__delivery__:r1`). Whatever the
   manager, a room id holding one takes no room lock: `create_room`, and any
   call taking the lock of a room the kit did not make (one written to the
-  store straight), raise `ValueError`. A room's own lock keeps its id:
+  store straight), raise `ValueError`; `check_all_timers` logs such a room
+  and goes on with the others. A room's own lock keeps its id:
   `kit.lock_manager.locked(room_id)` is unchanged.
   Code running under a delivery lane's claim no longer counts as holding a
   room lock, so a `Queued` delivery made from it waits its turn. Processes
