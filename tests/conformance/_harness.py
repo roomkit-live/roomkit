@@ -483,7 +483,13 @@ class Harness:
             await self.kit.hook_engine.drain_observers()
         tasks = [
             task
-            for held in (self.kit._pending_hook_tasks, self.kit._decided_writes)
+            for held in (
+                self.kit._pending_hook_tasks,
+                self.kit._decided_writes,
+                # A strategy's background runs (RFC §19.7.3): a run waits
+                # for its task, then hands its outcome back.
+                self.kit._background_runs,
+            )
             for task in held
             if not task.done()
         ]
