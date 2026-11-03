@@ -95,6 +95,7 @@ CHANNEL = {
     "tool_timeouts_ms",
     "turn_budget_tokens",
     "reasoning_effort",
+    "turn_budget_usd",
     "retry_policy",
     "fallback_model",
     "max_author_images",
@@ -113,7 +114,7 @@ CHANNEL = {
 }
 ADDRESSES = {"normalizes", "conversation_key"}
 AGENT = {"name", "role", "description", "purpose", "scope", "language", "identity_in_prompt"}
-MODEL = {"rounds", "vision"}
+MODEL = {"rounds", "vision", "pricing"}
 MODEL_ROUND = {
     "text",
     "deltas",

@@ -27,6 +27,8 @@ from roomkit.providers.ai import (
     AITextPart,
     AITool,
     AIToolCall,
+    ModelInfo,
+    ModelPricing,
 )
 from roomkit.providers.ai.base import (
     ProviderError,
@@ -66,10 +68,12 @@ class ScriptedModel(AIProvider):
         *,
         vision: bool = False,
         labelled: Callable[[Any], Any] | None = None,
+        pricing: Mapping[str, Any] | None = None,
     ) -> None:
         self._rounds = list(rounds)
         self._gates = gates
         self._vision = vision
+        self._pricing = ModelPricing.model_validate(pricing) if pricing is not None else None
         self._labelled = labelled
         self.requests: list[dict[str, Any]] = []
 
@@ -80,6 +84,13 @@ class ScriptedModel(AIProvider):
     @property
     def supports_vision(self) -> bool:
         return self._vision
+
+    def catalog_entry(self) -> ModelInfo | None:
+        """The model's catalogue entry, with the price the scenario gives it;
+        none for a model the scenario gives no price."""
+        if self._pricing is None:
+            return None
+        return ModelInfo(id=self.model_name, pricing=self._pricing)
 
     async def generate(self, context: AIContext) -> AIResponse:
         round_ = self._next_round(context)
@@ -312,6 +323,7 @@ def scripted_agent(
         gates,
         vision=bool(spec["model"].get("vision", False)),
         labelled=labelled,
+        pricing=spec["model"].get("pricing"),
     )
     models = {spec["id"]: model}
     tools = spec.get("tools", [])
@@ -331,6 +343,8 @@ def scripted_agent(
         kwargs["turn_budget_tokens"] = spec["turn_budget_tokens"]
     if "reasoning_effort" in spec:
         kwargs["reasoning_effort"] = spec["reasoning_effort"]
+    if "turn_budget_usd" in spec:
+        kwargs["turn_budget_usd"] = spec["turn_budget_usd"]
     if "retry_policy" in spec:
         kwargs["retry_policy"] = _retry_policy(spec["retry_policy"])
     if "fallback_model" in spec:
@@ -339,6 +353,7 @@ def scripted_agent(
             gates,
             vision=bool(spec["fallback_model"].get("vision", False)),
             labelled=labelled,
+            pricing=spec["fallback_model"].get("pricing"),
         )
         models[f"{spec['id']}/fallback"] = fallback
         kwargs["fallback_provider"] = fallback
