@@ -18,7 +18,7 @@ from roomkit.core.framework import RoomKit
 from roomkit.models.channel import ChannelOutput
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import ChannelCategory, EventStatus, EventType
-from roomkit.models.event import EventContent, TextContent, ToolCallContent
+from roomkit.models.event import EditContent, EventContent, TextContent, ToolCallContent
 from roomkit.models.store_filter import EventFilter
 from roomkit.providers.ai.base import AIResponse, AITool, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
@@ -140,23 +140,30 @@ async def test_the_limit_holds_at_its_default(streaming: bool) -> None:
         assert len(rows) == 1 if blocked else len(rows) > 1
 
 
-@pytest.mark.parametrize("kind", [EventType.TOOL_CALL_START, EventType.SYSTEM])
+@pytest.mark.parametrize("kind", [EventType.TOOL_CALL_START, EventType.SYSTEM, EventType.EDIT])
 async def test_what_opens_no_turn_at_the_limit_leaves_no_record(
     streaming: bool, kind: EventType
 ) -> None:
-    """No agent answers a tool-call row nor a notice (RFC §6.4, RMK-1257),
-    so none is recorded as not asked."""
+    """No agent answers a tool-call row, a notice nor an edit (RFC §6.4,
+    RMK-1257), so none is recorded as not asked: an edit's target, a
+    message, leaves the one record."""
     kit, _, _, _, _ = await _turn(streaming, max_chain_depth=1)
-    content: EventContent = (
-        ToolCallContent(tool_name="lookup", tool_id="t9", arguments={}, status="pending")
-        if kind == EventType.TOOL_CALL_START
-        else TextContent(body="The order shipped")
-    )
+    records = 0
+    if kind == EventType.TOOL_CALL_START:
+        content: EventContent = ToolCallContent(
+            tool_name="lookup", tool_id="t9", arguments={}, status="pending"
+        )
+    elif kind == EventType.SYSTEM:
+        content = TextContent(body="The order shipped")
+    else:
+        said = await kit.send_event("r1", "sms1", TextContent(body="Oops"), participant_id="alice")
+        content = EditContent(target_event_id=said.id, new_content=TextContent(body="Oops, fixed"))
+        records = 1
 
-    await kit.send_event("r1", "sms1", content, event_type=kind)
+    await kit.send_event("r1", "sms1", content, event_type=kind, participant_id="alice")
 
-    assert await _ai_rows(kit) == []
-    assert await kit.store.list_observations("r1") == []
+    assert len(await _ai_rows(kit)) == records
+    assert len(await kit.store.list_observations("r1")) == records
 
 
 async def test_a_room_closed_mid_stream_takes_no_further_row(streaming: bool) -> None:
