@@ -1,0 +1,307 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-config/an-off-turns-off-a-less-specific-budget",
+  "title": "An enable_thinking of false turns off a thinking budget a less specific level set; a budget set at the same level or a more specific one still decides",
+  "rules": [
+    "§6.7",
+    "Appendix A.9"
+  ],
+  "notes": "Python: channels/_ai_context.py _turn_settings, _thinking_turned_off, _turn_source; tests/test_channels/test_turn_config.py TestThinkingOffAcrossLevels::test_off_turns_off_a_less_specific_budget (its six cases, in its order): the agent's budget is 2048. room-7: a binding's false written otherwise, which AIContext reads as false: Python's _thinking_turned_off compares the value as written (`enabled is False`), so the agent's budget stands.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "thinking_budget": 2048,
+        "config_provider": {
+          "room-3": {
+            "enable_thinking": false
+          },
+          "room-4": {
+            "thinking_budget": 4096
+          },
+          "room-6": {
+            "enable_thinking": false
+          }
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "done"
+            },
+            {
+              "text": "done"
+            },
+            {
+              "text": "done"
+            },
+            {
+              "text": "done"
+            },
+            {
+              "text": "done"
+            },
+            {
+              "text": "done"
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "enable_thinking": false
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "enable_thinking": false,
+              "thinking_budget": null
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-3",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-4",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "enable_thinking": false
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-5",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "enable_thinking": false,
+              "thinking_budget": 1024
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-6",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "thinking_budget": 1024
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-7",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "enable_thinking": "off"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-3",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-4",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-5",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-6",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-7",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "thinking_budget": null,
+          "enable_thinking": false
+        },
+        {
+          "thinking_budget": null,
+          "enable_thinking": false
+        },
+        {
+          "thinking_budget": null,
+          "enable_thinking": false
+        },
+        {
+          "thinking_budget": null,
+          "enable_thinking": false
+        },
+        {
+          "thinking_budget": 1024,
+          "enable_thinking": false
+        },
+        {
+          "thinking_budget": 1024,
+          "enable_thinking": false
+        },
+        {
+          "thinking_budget": 2048,
+          "enable_thinking": false
+        }
+      ]
+    }
+  }
+}

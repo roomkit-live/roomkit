@@ -1,0 +1,71 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-config/a-turn-with-no-reasoning-setting-asks-for-none",
+  "title": "A turn nothing sets a reasoning setting on asks for none: the provider is left to defer to the model",
+  "rules": [
+    "§6.7",
+    "Appendix A.9"
+  ],
+  "notes": "Python: channels/_ai_context.py _turn_settings, _thinking_turned_off, _turn_source; tests/test_channels/test_turn_config.py TestReasoningOverrides::test_unset_stays_none.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "thinking_budget": null,
+          "enable_thinking": null
+        }
+      ]
+    }
+  }
+}

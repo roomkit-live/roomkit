@@ -1,0 +1,310 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-config/the-reasoning-settings-resolve-binding-then-turn-then-agent",
+  "title": "A turn's thinking budget and reasoning switch are its binding's metadata's, else its configuration's, else the agent's; a null defers at every level, a false is a value, and a budget of 0 lifts the agent's for the room",
+  "rules": [
+    "§6.7",
+    "Appendix A.9"
+  ],
+  "notes": "Python: channels/_ai_context.py _turn_settings, _thinking_turned_off, _turn_source; tests/test_channels/test_turn_config.py TestReasoningOverrides (each), TestANullDefers[thinking_budget, enable_thinking] (each), test_a_zero_budget_in_the_binding_lifts_the_channel_budget. room-1: the agent's alone; room-2: the configuration's over them; room-3: the binding's over both; room-4: a binding's null keeps the configuration's; room-5: a configuration's null keeps the agent's; room-6: a binding's false over a true; room-7: a binding's budget of 0.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "thinking_budget": 2048,
+        "enable_thinking": true,
+        "config_provider": {
+          "room-2": {
+            "thinking_budget": 4096,
+            "enable_thinking": false
+          },
+          "room-3": {
+            "thinking_budget": 4096,
+            "enable_thinking": true
+          },
+          "room-4": {
+            "thinking_budget": 4096,
+            "enable_thinking": false
+          },
+          "room-5": {
+            "thinking_budget": null,
+            "enable_thinking": null
+          }
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "done"
+            },
+            {
+              "text": "done"
+            },
+            {
+              "text": "done"
+            },
+            {
+              "text": "done"
+            },
+            {
+              "text": "done"
+            },
+            {
+              "text": "done"
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-3",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "thinking_budget": 1024,
+              "enable_thinking": false
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-4",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "thinking_budget": null,
+              "enable_thinking": null
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-5",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-6",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "enable_thinking": false,
+              "thinking_budget": 512
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-7",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "thinking_budget": 0
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-3",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-4",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-5",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-6",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-7",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "thinking_budget": 2048,
+          "enable_thinking": true
+        },
+        {
+          "thinking_budget": 4096,
+          "enable_thinking": false
+        },
+        {
+          "thinking_budget": 1024,
+          "enable_thinking": false
+        },
+        {
+          "thinking_budget": 4096,
+          "enable_thinking": false
+        },
+        {
+          "thinking_budget": 2048,
+          "enable_thinking": true
+        },
+        {
+          "thinking_budget": 512,
+          "enable_thinking": false
+        },
+        {
+          "thinking_budget": 0,
+          "enable_thinking": true
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,338 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-config/a-binding-s-reasoning-settings-read-as-the-context-reads-them",
+  "title": "A binding's thinking budget and reasoning switch read as AIContext reads them, in pydantic's lax mode: what does not read so fails the turn, every setting refused named",
+  "rules": [
+    "§6.7",
+    "Appendix A.9"
+  ],
+  "notes": "Python: providers/ai/base.py AIContext(thinking_budget: int | None, enable_thinking: bool | None), validated by pydantic; RFC Appendix A.9, a value read as its setting's type reads one of another kind.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "done"
+            },
+            {
+              "text": "done"
+            },
+            {
+              "text": "done"
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "thinking_budget": "2048",
+              "enable_thinking": "off"
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "thinking_budget": 64.0,
+              "enable_thinking": 1
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-3",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "thinking_budget": true,
+              "enable_thinking": "YES"
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-4",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "thinking_budget": -1,
+              "enable_thinking": 0.0
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-5",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "thinking_budget": "many"
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-6",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "enable_thinking": "maybe"
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-7",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "enable_thinking": 2
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-8",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "thinking_budget": 1.5,
+              "enable_thinking": []
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-3",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-4",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-5",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "error": {
+            "$contains": "1 validation error for AIContext\nthinking_budget\n  Input should be a valid integer, unable to parse string as an integer [type=int_parsing, input_value='many', input_type=str]"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-6",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "error": {
+            "$contains": "1 validation error for AIContext\nenable_thinking\n  Input should be a valid boolean, unable to interpret input [type=bool_parsing, input_value='maybe', input_type=str]"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-7",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "error": {
+            "$contains": "1 validation error for AIContext\nenable_thinking\n  Input should be a valid boolean, unable to interpret input [type=bool_parsing, input_value=2, input_type=int]"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-8",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "error": {
+            "$contains": "2 validation errors for AIContext\nthinking_budget\n  Input should be a valid integer, got a number with a fractional part [type=int_from_float, input_value=1.5, input_type=float]"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "thinking_budget": 2048,
+          "enable_thinking": false
+        },
+        {
+          "thinking_budget": 64,
+          "enable_thinking": true
+        },
+        {
+          "thinking_budget": 1,
+          "enable_thinking": true
+        },
+        {
+          "thinking_budget": -1,
+          "enable_thinking": false
+        }
+      ]
+    }
+  }
+}

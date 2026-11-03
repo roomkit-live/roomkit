@@ -1,0 +1,183 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/the-generation-reads-the-reasoning-settings-a-hook-left",
+  "title": "A generation reads the thinking budget and the reasoning switch a BEFORE_AI_GENERATION hook left, as it left them: the off rule between levels is not read again",
+  "rules": [
+    "§6.4",
+    "§6.7"
+  ],
+  "notes": "Python: channels/_ai_generation.py _fire_before_generation_hook returns the event's ai_context, which the generation reads whole. The agent's budget is 2048; room-1's hook leaves a false beside it, room-2's a budget of 0, room-3's no budget and a true.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "main",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "ok"
+            },
+            {
+              "text": "ok"
+            },
+            {
+              "text": "ok"
+            }
+          ]
+        },
+        "thinking_budget": 2048
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "main",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "main",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-3",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "main",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "reasoning",
+        "trigger": "before_ai_generation",
+        "priority": 0,
+        "reactions": [
+          {
+            "when": {
+              "room_id": "room-1"
+            },
+            "result": {
+              "action": "modify",
+              "event": {
+                "enable_thinking": false
+              }
+            }
+          },
+          {
+            "when": {
+              "room_id": "room-2"
+            },
+            "result": {
+              "action": "modify",
+              "event": {
+                "thinking_budget": 0
+              }
+            }
+          },
+          {
+            "when": {
+              "room_id": "room-3"
+            },
+            "result": {
+              "action": "modify",
+              "event": {
+                "thinking_budget": null,
+                "enable_thinking": true
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-3",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "main": [
+        {
+          "thinking_budget": 2048,
+          "enable_thinking": false
+        },
+        {
+          "thinking_budget": 0,
+          "enable_thinking": null
+        },
+        {
+          "thinking_budget": null,
+          "enable_thinking": true
+        }
+      ]
+    }
+  }
+}
