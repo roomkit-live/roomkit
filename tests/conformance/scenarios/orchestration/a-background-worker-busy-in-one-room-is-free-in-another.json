@@ -1,0 +1,365 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-background-worker-busy-in-one-room-is-free-in-another",
+  "title": "While a Supervisor's worker works in the background on a room's task, a second delegate_to_<worker> call in that room answers already_running and starts nothing, where a call in another room the strategy is installed in delegates at once; each room is handed back its own outcome",
+  "rules": [
+    "§19.7.3",
+    "§23.3"
+  ],
+  "notes": "Python: tests/test_supervisor.py TestPerWorkerDelegation::test_no_wait_already_running; tests/orchestration/test_supervisor_strategy.py TestBackgroundDedup::test_pending_guard_blocks_re_delegation; tests/orchestration/test_supervisor_room_state.py test_a_worker_busy_in_one_room_is_free_in_another. orchestration/strategies/supervisor/_inject_per_worker.py _PerWorkerToolServer (its pending set by room and worker), _already_working. The two hand-backs' order is the runner's: their worker outputs and the supervisor's answers are alike.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "delegate_to_researcher",
+                  "arguments": {
+                    "task": "Find the facts."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Started."
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "delegate_to_researcher",
+                  "arguments": {
+                    "task": "Find the facts."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Started."
+            },
+            {
+              "calls": [
+                {
+                  "id": "c3",
+                  "name": "delegate_to_researcher",
+                  "arguments": {
+                    "task": "Find more."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Still working."
+            },
+            {
+              "text": "Done."
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        }
+      },
+      {
+        "id": "researcher",
+        "type": "ai",
+        "agent": {
+          "role": "Researcher"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "The facts.",
+              "gate": "w"
+            },
+            {
+              "text": "The facts.",
+              "gate": "w"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "researcher"
+          ],
+          "wait_for_result": false
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r2",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Find it."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "wait_for": "w"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Find it."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Anything yet?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "open": "w"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "status.recent",
+      "agent_id": "orchestration",
+      "expect": {
+        "result": {
+          "$unordered": [
+            {
+              "action": "worker",
+              "status": "completed",
+              "detail": "completed",
+              "metadata": {
+                "room_id": "r1",
+                "mode": "per_worker_async",
+                "worker": "researcher"
+              }
+            },
+            {
+              "action": "worker",
+              "status": "completed",
+              "detail": "completed",
+              "metadata": {
+                "room_id": "r2",
+                "mode": "per_worker_async",
+                "worker": "researcher"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Find it."
+          }
+        },
+        {
+          "type": "tool_call_start"
+        },
+        {
+          "type": "tool_call_end",
+          "content": {
+            "type": "tool_call",
+            "tool_name": "delegate_to_researcher",
+            "result": {
+              "$contains": "{\"status\": \"delegated\", \"task_id\": \"task-"
+            },
+            "status": "completed"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "sup"
+          },
+          "content": {
+            "type": "text",
+            "body": "Started."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Anything yet?"
+          }
+        },
+        {
+          "type": "tool_call_start"
+        },
+        {
+          "type": "tool_call_end",
+          "content": {
+            "type": "tool_call",
+            "tool_name": "delegate_to_researcher",
+            "result": "{\"status\": \"already_running\", \"worker\": \"researcher\", \"message\": \"researcher is already working on this. Do NOT call this tool again. Tell the user to ask again shortly.\"}",
+            "status": "completed"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "sup"
+          },
+          "content": {
+            "type": "text",
+            "body": "Still working."
+          }
+        },
+        {
+          "source": {
+            "channel_id": "sup"
+          },
+          "content": {
+            "type": "text",
+            "body": "Done."
+          },
+          "chain_depth": 2
+        }
+      ],
+      "r2": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Find it."
+          }
+        },
+        {
+          "type": "tool_call_start"
+        },
+        {
+          "type": "tool_call_end",
+          "content": {
+            "type": "tool_call",
+            "tool_name": "delegate_to_researcher",
+            "result": {
+              "$contains": "{\"status\": \"delegated\", \"task_id\": \"task-"
+            },
+            "status": "completed"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "sup"
+          },
+          "content": {
+            "type": "text",
+            "body": "Started."
+          }
+        },
+        {
+          "source": {
+            "channel_id": "sup"
+          },
+          "content": {
+            "type": "text",
+            "body": "Done."
+          },
+          "chain_depth": 2
+        }
+      ]
+    },
+    "models": {
+      "researcher": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Find the facts."
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Find the facts."
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
