@@ -1,0 +1,117 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tool-search/after-tool-round-names-the-whole-catalogue",
+  "title": "AFTER_TOOL_ROUND names the turn's whole catalogue, a hidden tool among it, so a hook can withdraw it",
+  "rules": [
+    "§6.4",
+    "§9.2"
+  ],
+  "notes": "Python: tests/test_after_tool_round.py::test_under_tool_search_the_event_names_the_whole_catalogue.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c0",
+                  "name": "safe_read"
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "safe_read",
+            "description": "Read a record.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "wire_money",
+            "description": "Wire money to an account.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          }
+        ],
+        "tool_search": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "see",
+        "trigger": "after_tool_round"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go 1."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "see": [
+        {
+          "trigger": "after_tool_round",
+          "tool_round": {
+            "tools": [
+              "safe_read",
+              "wire_money",
+              "find_tools",
+              "list_tools"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

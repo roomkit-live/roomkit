@@ -1,0 +1,205 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tool-search/a-blocked-search-reveals-nothing-this-turn-or-the-next",
+  "title": "A search ON_TOOL_CALL blocks reveals nothing, for the next round or for a later turn",
+  "rules": [
+    "§6.4",
+    "§9.3"
+  ],
+  "notes": "Python: tests/test_find_tools_judged.py::TestText::test_a_blocked_search_reveals_nothing_this_turn_or_the_next.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "find_tools",
+                  "arguments": {
+                    "query": "spotify"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            },
+            {
+              "text": "Again."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "spotify_play",
+            "description": "Play a song on spotify.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "spotify_search",
+            "description": "Search spotify.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "x5",
+            "description": "A fifth thing.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "widget_0",
+            "description": "Operate widget number 0.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "widget_1",
+            "description": "Operate widget number 1.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "widget_2",
+            "description": "Operate widget number 2.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          }
+        ],
+        "tool_search": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "judge",
+        "trigger": "on_tool_call",
+        "reactions": [
+          {
+            "result": {
+              "action": "block",
+              "reason": "search is not allowed here"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go 1."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go 2."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tools": {
+            "find_tools": 0,
+            "list_tools": 1,
+            "spotify_play": {
+              "$absent": true
+            },
+            "spotify_search": {
+              "$absent": true
+            }
+          },
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "{\"error\": \"search is not allowed here\"}",
+              "is_error": true
+            }
+          ]
+        },
+        {
+          "tools": {
+            "find_tools": 0,
+            "list_tools": 1,
+            "spotify_play": {
+              "$absent": true
+            },
+            "spotify_search": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

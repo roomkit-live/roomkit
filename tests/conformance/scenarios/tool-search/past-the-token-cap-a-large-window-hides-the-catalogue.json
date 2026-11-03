@@ -1,0 +1,137 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tool-search/past-the-token-cap-a-large-window-hides-the-catalogue",
+  "title": "Past the token cap a catalogue is hidden whatever the window it would fit in",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: tests/test_channels/test_stored_result_search.py::test_the_channel_hides_a_large_catalogue_on_a_large_window.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Done."
+            }
+          ],
+          "context_window": 1000000
+        },
+        "tools": [
+          {
+            "name": "widget_0",
+            "description": "Operate widget number 0.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "widget_1",
+            "description": "Operate widget number 1.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "widget_2",
+            "description": "Operate widget number 2.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "widget_3",
+            "description": "Operate widget number 3.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "widget_4",
+            "description": "Operate widget number 4.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          }
+        ],
+        "tool_search_threshold_tokens": 20
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go 1."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "find_tools": 0,
+            "list_tools": 1,
+            "widget_0": {
+              "$absent": true
+            },
+            "widget_1": {
+              "$absent": true
+            },
+            "widget_2": {
+              "$absent": true
+            },
+            "widget_3": {
+              "$absent": true
+            },
+            "widget_4": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

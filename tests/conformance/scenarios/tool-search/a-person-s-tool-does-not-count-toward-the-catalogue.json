@@ -1,0 +1,131 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tool-search/a-person-s-tool-does-not-count-toward-the-catalogue",
+  "title": "A tool that asks a person is no part of the catalogue whose size decides: the host's tools stay at the count, and nothing is hidden",
+  "rules": [
+    "§6.4",
+    "§9.3",
+    "§21.1"
+  ],
+  "notes": "Python: tests/test_toolset_names_across_doors.py::test_the_person_s_tools_are_never_hidden_by_tool_search_on_a_text_turn.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "widget_0",
+            "description": "Operate widget number 0.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "widget_1",
+            "description": "Operate widget number 1.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "widget_2",
+            "description": "Operate widget number 2.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          }
+        ],
+        "tool_search_threshold": 3,
+        "human_input": {
+          "tool_names": [
+            "ask_person"
+          ],
+          "tools": [
+            {
+              "name": "ask_person",
+              "description": "Ask the person.",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go 1."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "widget_0": {
+              "$present": true
+            },
+            "ask_person": {
+              "$present": true
+            },
+            "find_tools": {
+              "$absent": true
+            },
+            "list_tools": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

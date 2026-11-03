@@ -1,0 +1,218 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tool-search/a-tool-the-store-says-was-used-stays-declared",
+  "title": "An agent attached again to a room reads from the store the tools it used there: one that answered stays declared, reported sticky, one refused does not",
+  "rules": [
+    "§6.4",
+    "§10.6.3"
+  ],
+  "notes": "Python: tests/test_channels/test_tool_usage_memory.py::TestToolUsageInContext::test_framework_loader_reads_persisted_tool_calls, AIChannel._forget_room.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "t1",
+                  "name": "send_sms",
+                  "arguments": {
+                    "to": "+15551234567",
+                    "body": "hi"
+                  }
+                },
+                {
+                  "id": "t2",
+                  "name": "mail_deliver"
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            },
+            {
+              "text": "Again."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "widget_0",
+            "description": "Operate widget number 0.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "widget_1",
+            "description": "Operate widget number 1.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "widget_2",
+            "description": "Operate widget number 2.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "send_sms",
+            "description": "Send an SMS text message to a phone number.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "to": {
+                  "type": "string"
+                },
+                "body": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "to",
+                "body"
+              ]
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "mail_deliver",
+            "description": "Deliver an electronic mail.",
+            "parameters": {
+              "type": "object"
+            },
+            "refuses": "No mail today."
+          }
+        ],
+        "tool_search": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "report",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "room-1",
+      "channel_id": "agent"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "agent",
+      "category": "intelligence"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go 1."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {
+          "tools": {
+            "send_sms": 0,
+            "find_tools": 1,
+            "list_tools": 2,
+            "mail_deliver": {
+              "$absent": true
+            },
+            "widget_0": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "report": [
+        {
+          "trigger": "on_ai_response"
+        },
+        {
+          "trigger": "on_ai_response",
+          "response": {
+            "declared_tools": {
+              "send_sms": {
+                "origin": "sticky"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

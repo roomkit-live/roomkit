@@ -1,0 +1,223 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tool-search/a-later-search-keeps-a-called-tool-declared",
+  "title": "A tool the model called and that answered stays declared after a later search replaced the window",
+  "rules": [
+    "§6.4",
+    "§21.1"
+  ],
+  "notes": "Python: tests/test_tool_search_called_declaration.py::test_a_later_search_keeps_called_schemas[served-found].",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "find",
+                  "name": "find_tools",
+                  "arguments": {
+                    "query": "dataset rows"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "first",
+                  "name": "tables_query_rows",
+                  "arguments": {
+                    "filters": []
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "other",
+                  "name": "find_tools",
+                  "arguments": {
+                    "query": "kanban boards"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "retry",
+                  "name": "tables_query_rows",
+                  "arguments": {
+                    "filters": []
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "tables_query_rows",
+            "description": "Query dataset rows using filters.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "filters": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
+              },
+              "required": [
+                "filters"
+              ]
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "tables_insert_row",
+            "description": "Insert dataset rows.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "boards_list",
+            "description": "List kanban boards.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "widget_0",
+            "description": "Operate widget number 0.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "widget_1",
+            "description": "Operate widget number 1.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "widget_2",
+            "description": "Operate widget number 2.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          }
+        ],
+        "tool_search": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go 1."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tools": {
+            "tables_query_rows": {
+              "$present": true
+            },
+            "tables_insert_row": {
+              "$present": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "tables_query_rows": {
+              "$present": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "tables_query_rows": {
+              "$present": true
+            },
+            "boards_list": {
+              "$present": true
+            },
+            "tables_insert_row": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "tables_query_rows": {
+              "$present": true
+            },
+            "boards_list": {
+              "$present": true
+            },
+            "tables_insert_row": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

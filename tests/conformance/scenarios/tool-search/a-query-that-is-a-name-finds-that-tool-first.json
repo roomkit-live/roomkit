@@ -1,0 +1,199 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tool-search/a-query-that-is-a-name-finds-that-tool-first",
+  "title": "A query that is a tool's name, compared without case or surrounding space, finds that tool first, ahead of tools carrying more of its words",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: tests/test_tool_search_ranking.py::TestExactName::test_it_holds_the_single_place_a_one_result_search_has.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "find_tools",
+                  "arguments": {
+                    "query": "  Search_Messages ",
+                    "max_results": 1
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "acmemail_search_messages",
+            "description": "Search messages.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}",
+            "tags": [
+              "mail",
+              "message",
+              "search",
+              "send",
+              "search_messages"
+            ]
+          },
+          {
+            "name": "acmemail_send_message",
+            "description": "Send message.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}",
+            "tags": [
+              "mail",
+              "message",
+              "search",
+              "send",
+              "send_message"
+            ]
+          },
+          {
+            "name": "acmemail_read_message",
+            "description": "Read message.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}",
+            "tags": [
+              "mail",
+              "message",
+              "search",
+              "send",
+              "read_message"
+            ]
+          },
+          {
+            "name": "globexmail_search_messages",
+            "description": "Search messages.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}",
+            "tags": [
+              "mail",
+              "message",
+              "search",
+              "send",
+              "search_messages"
+            ]
+          },
+          {
+            "name": "globexmail_send_message",
+            "description": "Send message.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}",
+            "tags": [
+              "mail",
+              "message",
+              "search",
+              "send",
+              "send_message"
+            ]
+          },
+          {
+            "name": "globexmail_read_message",
+            "description": "Read message.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}",
+            "tags": [
+              "mail",
+              "message",
+              "search",
+              "send",
+              "read_message"
+            ]
+          },
+          {
+            "name": "search_messages",
+            "description": "Look through the local archive.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          }
+        ],
+        "tool_search": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go 1."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tools": {
+            "search_messages": 0,
+            "find_tools": 1,
+            "list_tools": 2,
+            "acmemail_search_messages": {
+              "$absent": true
+            },
+            "globexmail_search_messages": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

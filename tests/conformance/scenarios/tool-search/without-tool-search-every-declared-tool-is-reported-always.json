@@ -1,0 +1,133 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tool-search/without-tool-search-every-declared-tool-is-reported-always",
+  "title": "A turn without Tool Search reports its one declaration, each tool as always",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: tests/test_channels/test_ai_response_declared_tools.py::test_without_tool_search_the_whole_declaration_is_reported.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "send_sms",
+            "description": "Send an SMS text message to a phone number.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "to": {
+                  "type": "string"
+                },
+                "body": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "to",
+                "body"
+              ]
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "mail_deliver",
+            "description": "Deliver an electronic mail.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "to": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "{\"ok\": true}"
+          }
+        ],
+        "tool_search": false
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "report",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go 1."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "report": [
+        {
+          "trigger": "on_ai_response",
+          "response": {
+            "declared_tools": {
+              "send_sms": {
+                "origin": "always",
+                "position": 0
+              },
+              "mail_deliver": {
+                "origin": "always",
+                "position": 1
+              },
+              "find_tools": {
+                "$absent": true
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

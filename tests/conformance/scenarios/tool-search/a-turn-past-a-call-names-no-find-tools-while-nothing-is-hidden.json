@@ -1,0 +1,163 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tool-search/a-turn-past-a-call-names-no-find-tools-while-nothing-is-hidden",
+  "title": "After a call, a later turn with Tool Search off mentions find_tools nowhere: not in its prompt, not in its messages",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: RMK-1022: tests/test_tool_search_text.py::TestActivationGating::test_under_window_pct_is_noop.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "t1",
+                  "name": "send_sms",
+                  "arguments": {
+                    "to": "+15551234567",
+                    "body": "hi"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            },
+            {
+              "text": "Again."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "send_sms",
+            "description": "Send an SMS text message to a phone number.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "to": {
+                  "type": "string"
+                },
+                "body": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "to",
+                "body"
+              ]
+            },
+            "returns": "{\"ok\": true}"
+          }
+        ],
+        "tool_search": false,
+        "system_prompt": "Be brief."
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go 1."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go 2."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "system_prompt": {
+            "$lacks": "find_tools"
+          }
+        },
+        {},
+        {
+          "system_prompt": {
+            "$lacks": "find_tools"
+          },
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$lacks": "find_tools"
+              }
+            },
+            {},
+            {},
+            {
+              "role": "assistant",
+              "text": "Done."
+            },
+            {
+              "role": "user",
+              "text": {
+                "$lacks": "find_tools"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,175 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tool-search/a-tool-withdrawn-after-a-round-is-neither-found-nor-listed-nor-run",
+  "title": "A hidden tool AFTER_TOOL_ROUND withdraws is named by neither discovery tool afterwards, and a call naming it is refused",
+  "rules": [
+    "§6.4",
+    "§9.2"
+  ],
+  "notes": "Python: tests/test_after_tool_round.py::test_under_tool_search_a_tool_withdrawn_after_a_round_is_neither_found_nor_run.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c0",
+                  "name": "safe_read"
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "find_tools",
+                  "arguments": {
+                    "query": "wire money"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "list_tools"
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c3",
+                  "name": "wire_money"
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "safe_read",
+            "description": "Read a record.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "wire_money",
+            "description": "Wire money to an account.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          }
+        ],
+        "tool_search": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "withdraw",
+        "trigger": "after_tool_round",
+        "reactions": [
+          {
+            "result": {
+              "action": "modify",
+              "event": {
+                "withdrawn": [
+                  "wire_money"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go 1."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {},
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c0",
+              "content": "{\"ok\": true}",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c1",
+              "content": {
+                "$lacks": "wire_money"
+              }
+            },
+            {
+              "tool_call_id": "c2",
+              "content": {
+                "$lacks": "wire_money"
+              }
+            },
+            {
+              "tool_call_id": "c3",
+              "content": "{\"error\": \"Tool 'wire_money' is not available in this turn.\"}",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

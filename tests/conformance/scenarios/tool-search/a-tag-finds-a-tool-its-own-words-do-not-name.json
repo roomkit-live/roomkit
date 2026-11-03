@@ -1,0 +1,146 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tool-search/a-tag-finds-a-tool-its-own-words-do-not-name",
+  "title": "A tool's tags are searched: an English query finds a tool named and described in another language",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: src/roomkit/channels/_tool_search.py::_score_tool.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "find_tools",
+                  "arguments": {
+                    "query": "send a message"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "widget_0",
+            "description": "Operate widget number 0.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "widget_1",
+            "description": "Operate widget number 1.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "widget_2",
+            "description": "Operate widget number 2.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "envoyer_texto",
+            "description": "Envoie un texto.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}",
+            "tags": [
+              "send",
+              "message"
+            ]
+          }
+        ],
+        "tool_search": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go 1."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tools": {
+            "envoyer_texto": 0,
+            "find_tools": 1,
+            "list_tools": 2,
+            "widget_0": {
+              "$absent": true
+            },
+            "widget_1": {
+              "$absent": true
+            },
+            "widget_2": {
+              "$absent": true
+            }
+          },
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "{\"matches\": [{\"name\": \"envoyer_texto\", \"description\": \"Envoie un texto.\"}], \"_note\": \"These tools are now invocable \\u2014 their full schemas are in your tool list. Call the right one directly. Do not call find_tools again unless none of these fit.\"}",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

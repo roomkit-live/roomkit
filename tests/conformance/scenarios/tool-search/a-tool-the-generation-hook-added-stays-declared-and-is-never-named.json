@@ -1,0 +1,206 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tool-search/a-tool-the-generation-hook-added-stays-declared-and-is-never-named",
+  "title": "A tool the generation hook adds is declared at every round, served by the handler, and never named by find_tools",
+  "rules": [
+    "§6.4",
+    "§9.2",
+    "§21.1"
+  ],
+  "notes": "Python: tests/test_hook_tool_restrictions.py::test_under_tool_search_a_tool_the_hook_added_is_declared_at_every_round, test_under_tool_search_find_tools_never_names_a_tool_the_hook_added.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c0",
+                  "name": "find_tools",
+                  "arguments": {
+                    "query": "export report"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "export_report"
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "safe_read",
+            "description": "Read a record.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "wire_money",
+            "description": "Wire money to an account.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "export_report",
+            "description": "Export a report.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}",
+            "declared": false
+          }
+        ],
+        "tool_search": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "add",
+        "trigger": "before_ai_generation",
+        "reactions": [
+          {
+            "result": {
+              "action": "modify",
+              "event": {
+                "define": [
+                  {
+                    "name": "export_report",
+                    "description": "Export a report.",
+                    "parameters": {
+                      "type": "object"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "report",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go 1."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "export_report": {
+              "$present": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "export_report": {
+              "$present": true
+            }
+          },
+          "tool_results": [
+            {
+              "tool_call_id": "c0",
+              "content": {
+                "$lacks": "export_report"
+              }
+            }
+          ]
+        },
+        {
+          "tools": {
+            "export_report": {
+              "$present": true
+            }
+          },
+          "tool_results": [
+            {
+              "tool_call_id": "c0",
+              "content": {
+                "$lacks": "export_report"
+              }
+            },
+            {
+              "tool_call_id": "c1",
+              "content": "{\"ok\": true}",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    },
+    "hooks": {
+      "report": [
+        {
+          "trigger": "on_ai_response",
+          "response": {
+            "declared_tools": {
+              "export_report": {
+                "origin": "always"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

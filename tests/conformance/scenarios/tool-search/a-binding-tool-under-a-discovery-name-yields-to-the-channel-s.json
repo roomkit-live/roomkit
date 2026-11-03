@@ -1,0 +1,129 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tool-search/a-binding-tool-under-a-discovery-name-yields-to-the-channel-s",
+  "title": "A tool a binding declares under a discovery tool's name is not declared: the channel's own stands, once",
+  "rules": [
+    "§6.4",
+    "§21.1"
+  ],
+  "notes": "Python: tests/test_policy_served_exemption.py::TestEveryEntryReadsTheSameDeclaration.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "list_tools"
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "widget_0",
+            "description": "Operate widget number 0.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          }
+        ],
+        "tool_search": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "tools": [
+                {
+                  "name": "list_tools",
+                  "description": "The host's",
+                  "parameters": {}
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "report",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go 1."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "find_tools": 0,
+            "list_tools": 1
+          }
+        },
+        {}
+      ]
+    },
+    "hooks": {
+      "report": [
+        {
+          "trigger": "on_ai_response",
+          "response": {
+            "declared_tools": {
+              "list_tools": {
+                "description": "List every tool the agent has access to (name + short description), optionally filtered by a name-prefix category. Use sparingly — prefer find_tools for action."
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

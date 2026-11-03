@@ -1,0 +1,167 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tool-search/a-word-in-a-name-outweighs-the-same-word-as-a-source-wide-tag",
+  "title": "A word in a tool's name counts more than the same word tagged on every tool of its source",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: tests/test_tool_search_ranking.py::TestAWordCountsOnce::test_a_word_in_the_name_outweighs_it_as_a_source_wide_tag.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "find_tools",
+                  "arguments": {
+                    "query": "search messages",
+                    "max_results": 1
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "acmemail_send_message",
+            "description": "An Acme mail action.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}",
+            "tags": [
+              "mail",
+              "message",
+              "search",
+              "send_message"
+            ]
+          },
+          {
+            "name": "acmemail_read_message",
+            "description": "An Acme mail action.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}",
+            "tags": [
+              "mail",
+              "message",
+              "search",
+              "read_message"
+            ]
+          },
+          {
+            "name": "acmemail_list_messages",
+            "description": "An Acme mail action.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}",
+            "tags": [
+              "mail",
+              "message",
+              "search",
+              "list_messages"
+            ]
+          },
+          {
+            "name": "acmemail_search_messages",
+            "description": "An Acme mail action.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}",
+            "tags": [
+              "mail",
+              "message",
+              "search",
+              "search_messages"
+            ]
+          },
+          {
+            "name": "calendar_list_events",
+            "description": "List events.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "weather",
+            "description": "Get the forecast.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          }
+        ],
+        "tool_search": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go 1."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tools": {
+            "acmemail_search_messages": 0,
+            "find_tools": 1,
+            "list_tools": 2
+          }
+        }
+      ]
+    }
+  }
+}

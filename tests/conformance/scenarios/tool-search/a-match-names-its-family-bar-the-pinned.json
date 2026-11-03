@@ -1,0 +1,132 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tool-search/a-match-names-its-family-bar-the-pinned",
+  "title": "A match's result names the unmatched tools of its name's family, a pinned one left out",
+  "rules": [
+    "§6.4",
+    "§21.1"
+  ],
+  "notes": "Python: tests/test_tool_list_parity.py::TestFindTools::test_a_text_search_names_no_pinned_tool_as_related.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "find_tools",
+                  "arguments": {
+                    "query": "get contact"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "crm_get_contact",
+            "description": "Get a contact from the CRM.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "crm_merge_records",
+            "description": "Merge two records.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "crm_pinned_summary",
+            "description": "A summary of the account.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "weather",
+            "description": "Get the forecast.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          }
+        ],
+        "tool_search": true,
+        "tool_search_pinned": [
+          "crm_pinned_summary"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go 1."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "{\"matches\": [{\"name\": \"crm_get_contact\", \"description\": \"Get a contact from the CRM.\"}], \"_note\": \"These tools are now invocable \\u2014 their full schemas are in your tool list. Call the right one directly. Do not call find_tools again unless none of these fit. related_tools_same_source lists MORE tools from the same source (NOT yet invocable) \\u2014 run find_tools for one of those when the user's next ask falls in this domain, instead of assuming you cannot do it.\", \"related_tools_same_source\": [\"crm_merge_records\"]}",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
