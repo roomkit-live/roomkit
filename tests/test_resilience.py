@@ -535,6 +535,20 @@ async def _rewrite(
     await kit.store.update_room(room.model_copy(update=fields))
 
 
+class _FailsOnOne(InMemoryStore):
+    """A store whose read of the room ``r1`` raises *failure* while failing."""
+
+    def __init__(self, failure: Exception) -> None:
+        super().__init__()
+        self.failure = failure
+        self.failing = False
+
+    async def get_room(self, room_id: str) -> Room | None:
+        if self.failing and room_id == "r1":
+            raise self.failure
+        return await super().get_room(room_id)
+
+
 class TestRoomTimers:
     async def _make_kit(self) -> tuple:
         kit = RoomKit()
@@ -653,38 +667,31 @@ class TestRoomTimers:
     ) -> None:
         """A store's failure on one room, as a room deleted since it was
         listed, stops no other room's check: it is logged."""
-
-        class FailsOnOne(InMemoryStore):
-            async def get_room(self, room_id: str) -> Room | None:
-                if room_id == "r1":
-                    raise RuntimeError("the shard is down")
-                return await super().get_room(room_id)
-
-        kit = RoomKit(store=FailsOnOne())
+        store = _FailsOnOne(RuntimeError("the shard is down"))
+        kit = RoomKit(store=store)
         due = {"inactive_after_seconds": 60, "last_activity_at": _ago(120)}
         for room_id in ("r1", "r2"):
             await _rewrite(kit, await kit.create_room(room_id), timers=due)
 
+        store.failing = True
         with caplog.at_level(logging.WARNING, logger="roomkit.framework"):
             transitioned = await kit.check_all_timers()
+        store.failing = False
 
         assert [room.id for room in transitioned] == ["r2"]
         assert "the shard is down" in caplog.text
         await kit.close()
 
     async def test_the_kit_s_close_stops_a_sweep(self) -> None:
-        class ClosesOnOne(InMemoryStore):
-            async def get_room(self, room_id: str) -> Room | None:
-                if room_id == "r1":
-                    raise KitClosedError()
-                return await super().get_room(room_id)
-
-        kit = RoomKit(store=ClosesOnOne())
+        store = _FailsOnOne(KitClosedError())
+        kit = RoomKit(store=store)
         due = {"inactive_after_seconds": 60, "last_activity_at": _ago(120)}
         await _rewrite(kit, await kit.create_room("r1"), timers=due)
 
+        store.failing = True
         with pytest.raises(KitClosedError):
             await kit.check_all_timers()
+        store.failing = False
         await kit.close()
 
     async def test_check_all_timers_reaches_every_room_past_a_page(self) -> None:
