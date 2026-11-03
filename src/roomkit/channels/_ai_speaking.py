@@ -59,7 +59,8 @@ class AISpeakingMixin:
         """The decision on *event*: the policy's, as the ``ON_SPEAK_DECISION``
         hooks leave it (told how long the policy took), or None when nothing is
         decided: no policy, an instruction (the application asked for that
-        turn), the channel's own event or a tool record. *asked_again*: the
+        turn) or the channel's own event; an event that opens no turn (RFC
+        §6.4) never reaches it. *asked_again*: the
         policy decides again once the agent thought (RFC §6.4); *late*: with a
         thought that came back after the event was decided."""
         policy = self._speak_policy
@@ -100,11 +101,7 @@ class AISpeakingMixin:
         return SpeakDecision("speak", reason=_FALLBACK)
 
     def _submitted_to_policy(self, event: RoomEvent) -> bool:
-        return (
-            event.type != EventType.INSTRUCTION
-            and event.source.channel_id != self.channel_id
-            and not is_tool_call_record(event)
-        )
+        return event.type != EventType.INSTRUCTION and event.source.channel_id != self.channel_id
 
     async def _hooked_decision(self, report: SpeakDecisionEvent) -> SpeakDecision:
         """The decision in *report* once the ``ON_SPEAK_DECISION`` hooks had

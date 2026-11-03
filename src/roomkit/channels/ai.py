@@ -734,7 +734,7 @@ class AIChannel(
         """Answer an event with this channel's own turn.
 
         Skips events from this channel to prevent self-loops. Every other
-        event runs the one tool loop (RFC §6.4): it yields text deltas round
+        message or instruction runs the one tool loop (RFC §6.4): it yields text deltas round
         by round and executes tool calls between rounds, whatever the provider
         streams (one that does not is read through its ``generate()``) and
         whether the turn carries tools (a turn without any is one round).

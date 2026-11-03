@@ -1,6 +1,7 @@
 """Edits and deletes (RFC §10.3): what a change is, what it may target, who
 may make it, what its commit writes on its target, and the trigger it fires
-once the room lock is released."""
+once the room lock is released; and which events, a change among them, open
+no agent turn (RFC §6.4)."""
 
 from __future__ import annotations
 
