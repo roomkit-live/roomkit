@@ -198,7 +198,6 @@ async def test_a_close_before_the_first_row_is_read() -> None:
         room_id="r1",
         context=context,
         cascade=DeliveryCascade("r1", reentry_budget=10),
-        plan_source="ai1",
     )
     row = RoomEvent(
         room_id="r1",

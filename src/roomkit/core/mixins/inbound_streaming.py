@@ -17,16 +17,12 @@ from roomkit.core.event_router import stream_turn_entry, unanswered
 from roomkit.core.exceptions import error_type_name
 from roomkit.core.lanes import DeliveryCascade
 from roomkit.core.mixins._response_reader import ResponseReader
+from roomkit.core.mixins._stream_reach import reads_the_stream
 from roomkit.core.mixins._streaming_segments import LaneSink, SegmentWriter, TurnScope
-from roomkit.core.mixins.helpers import HelpersMixin, _source_block_reason
-from roomkit.core.mixins.lane_execution import DeliverySource
+from roomkit.core.mixins.helpers import HelpersMixin
 from roomkit.core.task_utils import cancel_reason
-from roomkit.core.visibility import answer_scope, answers_reach, visibility_allows
-from roomkit.models.enums import (
-    Access,
-    ChannelCategory,
-    EventDirection,
-)
+from roomkit.core.visibility import answer_scope, answers_reach
+from roomkit.models.enums import EventDirection
 from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.models.response_metadata import (
     ResponseMetadata,
@@ -175,21 +171,14 @@ class InboundStreamingMixin(HelpersMixin):
         visibility = scope.visibility
         parent_event_id = scope.parent_event_id
 
-        # Planning inputs for the whole run, resolved once. Every segment has
-        # the same sender and the same delivery set, so re-resolving per
-        # segment would buy nothing and cost a room lock plus a context read
-        # each time — on a tool-heavy turn, tens of them on the hot path the
-        # delivery lanes exist to keep clear. The binding is already in the
-        # context the caller built; the batch broadcast this replaced planned
-        # off that same snapshot.
-        plan_source = DeliverySource.of(sr.source_channel_id, context)
-
+        # The run's history is the context the caller built, each row added
+        # as it commits; each row reads the room's bindings at its commit
+        # (LaneSink), so a binding changed during the stream holds from the
+        # next row (RFC §7.5 rule 1, §10.2).
         writer = SegmentWriter(
             self,
             sr,
-            LaneSink(
-                self, room_id=room_id, context=context, cascade=cascade, plan_source=plan_source
-            ),
+            LaneSink(self, room_id=room_id, context=context, cascade=cascade),
             room_id=room_id,
             chain_depth=chain_depth,
             visibility=visibility,
@@ -333,11 +322,18 @@ class InboundStreamingMixin(HelpersMixin):
         """Run the channel's deliver_stream over *segments*; the error it raised, if any."""
         try:
             await channel.deliver_stream(segments, placeholder, binding, context)
+            if writer.read_to_end or writer.failure is not None:
+                return None
+            if writer.withdrawn:
+                # The room stopped letting the channel read the response
+                # (RFC §7.2, §7.5): the turn goes on, its rows delivered as
+                # their plans say.
+                await writer.read_rest(reader)
+                return None
             # A transport that hands back early (every voice session barged
             # in, RFC §12.2 step 13s; or one that never reads it at all) left
             # the response unread: it is closed and stored cancelled.
-            if not writer.read_to_end and writer.failure is None:
-                await self._stop_unread_stream(segments, sr, reader, writer, placeholder.room_id)
+            await self._stop_unread_stream(segments, sr, reader, writer, placeholder.room_id)
         except asyncio.CancelledError as cut:
             # A turn interrupted on purpose (the console's Esc). What was
             # already streamed is on the user's screen, so the timeline
@@ -465,28 +461,10 @@ class InboundStreamingMixin(HelpersMixin):
         commit gate, and nothing of it is piped live.
         """
         source_binding = context.get_binding(sr.source_channel_id)
-        if _source_block_reason(source_binding) is not None:
-            return []
         response_vis = answer_scope(sr.trigger_event.response_visibility)
         targets: list[Any] = []
         for binding in context.bindings:
-            if binding.category != ChannelCategory.TRANSPORT:
-                continue
-            if binding.channel_id == sr.source_channel_id:
-                continue
-            if binding.access in (Access.WRITE_ONLY, Access.NONE):
-                continue
-            # A live stream is a delivery: an INBOUND-only transport is not
-            # delivered to (RFC §10.2 step 3d).
-            if not binding.sends:
-                continue
-            # The rows are committed with the answer's scope intersected with
-            # the agent's binding (RFC §7.3): the live pipe reaches no more.
-            if response_vis is not None and not visibility_allows(response_vis, binding):
-                continue
-            if source_binding is not None and not visibility_allows(
-                source_binding.visibility, binding
-            ):
+            if not reads_the_stream(source_binding, binding, response_vis):
                 continue
             channel = router.get_channel(binding.channel_id)
             # Asked per room: a channel can hold streaming clients for one room

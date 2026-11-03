@@ -24,7 +24,6 @@ from roomkit.core.exceptions import TaskCutShortError, TaskTurnFailedError, Turn
 from roomkit.core.mixins._response_reader import ResponseReader
 from roomkit.core.mixins._result_capture import capture_result
 from roomkit.core.mixins._streaming_segments import LaneSink, RowSink, SegmentWriter, TurnScope
-from roomkit.core.mixins.lane_execution import DeliverySource
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import (
@@ -73,6 +72,9 @@ class _TraceSink:
     async def commit(self, event: RoomEvent, *, exclude: set[str] | None) -> RoomEvent | None:
         return await self._kit._commit_indexed(self._room_id, without_reserved_key(event))
 
+    def reads(self, channel_id: str) -> bool:
+        return False
+
 
 class _ToolRowsOnly:
     """A turn whose text answers no one in its room (a supervisor's first
@@ -86,6 +88,9 @@ class _ToolRowsOnly:
         if event.type in (EventType.TOOL_CALL_START, EventType.TOOL_CALL_END):
             return await self._rows.commit(event, exclude=exclude)
         return event
+
+    def reads(self, channel_id: str) -> bool:
+        return self._rows.reads(channel_id)
 
 
 class PersistedTurn(NamedTuple):
@@ -116,7 +121,6 @@ async def persist_tool_calls(
         room_id=room_id,
         context=context,
         cascade=cascade,
-        plan_source=DeliverySource.of(sr.source_channel_id, context),
     )
     scope = TurnScope.answering(await kit._with_thread_root(room_id, sr.trigger_event))
     writer = SegmentWriter(

@@ -184,6 +184,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A binding changed during a stream holds from its next row** (RMK-1280,
+  RMK-1283). A streamed answer's rows were planned with the bindings of the
+  stream's start: a transport made write-only or detached mid-stream was still
+  delivered the rows after, and the streaming target, checked only at the
+  start, read the text of an agent muted, made read-only or detached since,
+  though its rows were stored BLOCKED. Each row now reads the room's bindings
+  under its lock at its commit, its agent's right to write included, and once
+  the room no longer lets the target read the answer, the target reads nothing
+  more of the stream and the rest is delivered as each row's plan says, as
+  roomkit-rs does.
+
 - **A streamed answer stored after its agent is muted, made read-only or
   detached is withheld**
   (RFC §7.2, §7.5 rule 2, RMK-1170). The rows a stream committed after a

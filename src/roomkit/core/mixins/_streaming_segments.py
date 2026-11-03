@@ -6,7 +6,7 @@ import asyncio
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import aclosing
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
 
 from roomkit.channels._tool_event_result import tool_event_payload
@@ -15,10 +15,12 @@ from roomkit.core._instructions import response_metadata
 from roomkit.core._observed import Observed, observed_once_over
 from roomkit.core._queued_injections import QueuedInjections
 from roomkit.core.event_router import stream_record
-from roomkit.core.mixins.helpers import _RECENT_EVENTS_LIMIT
+from roomkit.core.mixins._stream_reach import reads_the_stream
+from roomkit.core.mixins.helpers import _RECENT_EVENTS_LIMIT, _source_block_reason
 from roomkit.core.mixins.inbound_locked import _Blocked, _Refused, within_answer_scope
+from roomkit.core.mixins.lane_execution import DeliverySource
 from roomkit.core.task_utils import cancel_reason
-from roomkit.core.visibility import answer_scope, answers_reach
+from roomkit.core.visibility import answer_scope, answers_reach, with_committed_visibility
 from roomkit.models.enums import EventDirection, EventStatus, EventType, Visibility
 from roomkit.models.event import EventSource, RoomEvent, TextContent, ToolCallContent
 from roomkit.models.response_metadata import recorded_turn_end
@@ -35,7 +37,7 @@ if TYPE_CHECKING:
     from roomkit.core.hooks import SyncPipelineResult
     from roomkit.core.lanes import DeliveryCascade
     from roomkit.core.mixins._response_reader import ResponseReader
-    from roomkit.core.mixins.lane_execution import DeliverySource
+    from roomkit.models.channel import ChannelBinding
     from roomkit.models.context import RoomContext
 
 logger = logging.getLogger("roomkit.inbound")
@@ -53,6 +55,11 @@ class RowSink(Protocol):
 
         *exclude* names the channels the row must not be delivered to.
         """
+        ...
+
+    def reads(self, channel_id: str) -> bool:
+        """Whether *channel_id* may still read the stream, as the last
+        commit read the room."""
         ...
 
 
@@ -166,6 +173,12 @@ class SegmentWriter:
         # Whether the reader was handed anything, a thinking delta included:
         # from there the turn began, and a stop cuts it.
         self._began = False
+        # The rows handed to the target in the stream, by id; and whether the
+        # room stopped letting it read the stream (:meth:`_write_now`), the
+        # read handing it nothing more (``_stopping``, until it ends).
+        self._streamed_rows: set[str] = set()
+        self.withdrawn = False
+        self._stopping = False
         self.persisted: list[RoomEvent] = []
         # How :meth:`stream` ended: read to its end, or on the response's failure.
         self.read_to_end = False
@@ -281,7 +294,10 @@ class SegmentWriter:
                 if held := self._end_held():
                     yield held
                 for row in await self.take(delta):
-                    yield row
+                    if row.id in self._streamed_rows:
+                        yield row
+                if self._stopping:
+                    return
                 if not self._accumulated:
                     self._released = False
 
@@ -326,12 +342,27 @@ class SegmentWriter:
                     yield item
         except Exception as exc:
             self.failure = exc
-            if (row := await self.flush_text()) is not None:
+            if (row := await self.flush_text()) is not None and row.id in self._streamed_rows:
                 yield row
             raise
+        if self._stopping:
+            # The room no longer lets the channel read the response: its
+            # stream ends here, the rest read by :meth:`read_rest`.
+            return
         self.read_to_end = True
-        if (row := await self.flush_text()) is not None:
+        if (row := await self.flush_text()) is not None and row.id in self._streamed_rows:
             yield row
+
+    async def read_rest(self, reader: ResponseReader) -> None:
+        """Read on a response the room stopped letting its channel read
+        (:attr:`withdrawn`): its rows are written and delivered as each one's
+        plan says, nothing of it handed to that channel any more (RFC §7.2,
+        §7.5). A failure or a cancellation ends it as the stream's would.
+        """
+        self._stopping = False
+        async with aclosing(self.stream(reader)) as items:
+            async for _ in items:
+                pass
 
     async def drain(self, reader: ResponseReader) -> None:
         """Read the response to its end, writing its rows, those of a cut-short turn included.
@@ -563,17 +594,40 @@ class SegmentWriter:
             )
 
     async def _write_now(self, event: RoomEvent, *, exclude: set[str] | None) -> RoomEvent | None:
+        # A row is kept from the channel reading the stream only while it
+        # still reads it: the rows before may have withdrawn it.
+        if exclude:
+            exclude = exclude & self._streamed_to
         stored = await self._sink.commit(event, exclude=exclude)
+        if exclude:
+            self._hand_to_target(stored, exclude)
         if stored is not None:
             self.persisted.append(stored)
             if self._response_events is not None:
                 self._response_events.append(stored)
         return stored
 
+    def _hand_to_target(self, stored: RoomEvent | None, target: set[str]) -> None:
+        """Whether the channel reading the stream is handed *stored*, a row
+        committed for it: it is while the room, as the row's commit read it,
+        still lets it read the response. Once it no longer does (the agent
+        muted, made read-only or detached, the channel made write-only or
+        detached), it reads nothing more of the stream, neither text nor
+        rows, and the rows after are delivered as their plans say (RFC §7.2,
+        §7.5)."""
+        if all(self._sink.reads(channel_id) for channel_id in target):
+            if stored is not None:
+                self._streamed_rows.add(stored.id)
+            return
+        self._streamed_to.clear()
+        self.withdrawn = True
+        self._stopping = True
+
 
 class LaneSink:
     """A room's streamed rows: refused once the room refuses writes, gated on
-    ``BEFORE_BROADCAST``, committed on its lane."""
+    ``BEFORE_BROADCAST``, committed on its lane with the room's bindings as
+    they stand at each row's commit."""
 
     def __init__(
         self,
@@ -582,19 +636,29 @@ class LaneSink:
         room_id: str,
         context: RoomContext,
         cascade: DeliveryCascade,
-        plan_source: DeliverySource | str,
     ) -> None:
         self._kit = kit
         self._room_id = room_id
         self._context = context
         self._cascade = cascade
-        self._plan_source = plan_source
+        # The run's history: the context the stream started with, each row
+        # added as it commits (_with_row).
+        self._history = context
         # The room's status as last read, and the kit's close count then:
         # None until the first row reads it.
         self._refusing = False
         self._close_epoch: int | None = None
+        # The channels the room still lets read the stream, as the last
+        # row's commit read it.
+        self._readers: set[str] = set()
+
+    def reads(self, channel_id: str) -> bool:
+        """Whether the room, as the last row's commit read it, still lets
+        *channel_id* read the response as it streams (RFC §7.2, §7.5)."""
+        return channel_id in self._readers
 
     async def commit(self, event: RoomEvent, *, exclude: set[str] | None) -> RoomEvent | None:
+        self._readers = set()
         if await self._room_refuses_writes():
             logger.debug("Room %s refuses writes; %s not committed", self._room_id, event.type)
             return None
@@ -603,11 +667,15 @@ class LaneSink:
         async with observed_once_over(
             self._kit._hook_engine, self._room_id, closing=lambda: self._kit._closed
         ) as observed:
-            gated = await self._gate(event, observed)
+            gated = await self._gate(event, observed, exclude)
             if gated is None:
                 return None
             event, hook_result = gated
-            return await self._lane(event, exclude=exclude, hook_result=hook_result)
+            committed = await self._lane(event, exclude=exclude, hook_result=hook_result)
+            if isinstance(committed, _Blocked):
+                await self._record_blocked(committed, observed)
+                return None
+            return committed
 
     async def _room_refuses_writes(self) -> bool:
         """Whether the room refuses this row (RFC §5.1).
@@ -615,10 +683,10 @@ class LaneSink:
         The status gate holds at every point the timeline grows: a room closed
         mid-stream takes no further row. The run reads the status at its first
         row, and again only once the kit has closed or archived a room since,
-        so a stream does not read the room per row (its source's binding is
-        read at each row's commit, RFC §7.5 rule 2). The count is taken
-        before the read and kept only once the read succeeded: a close landing
-        meanwhile, or a read that failed, is read again at the next row.
+        so a stream does not read the room per row (its bindings are read at
+        each row's commit, RFC §7.5). The count is taken before the read and
+        kept only once the read succeeded: a close landing meanwhile, or a
+        read that failed, is read again at the next row.
         """
         epoch = self._kit._room_close_epoch
         if epoch != self._close_epoch:
@@ -627,7 +695,7 @@ class LaneSink:
         return self._refusing
 
     async def _gate(
-        self, event: RoomEvent, observed: Observed
+        self, event: RoomEvent, observed: Observed, exclude: set[str] | None
     ) -> tuple[RoomEvent, SyncPipelineResult] | None:
         """Pass a row through the commit gate before it commits: its
         BEFORE_BROADCAST sync hooks, then its source's right to write.
@@ -642,9 +710,8 @@ class LaneSink:
         ``None`` when the gate refused the row: a hook blocked it, or its
         source cannot write (a read-only agent's stream, RFC §7.5 rule 2). A
         refusal is not a drop: the row is committed with status BLOCKED as
-        the audit record, announced as ``event_blocked``, and what the hooks
-        decided still stands, their tasks and observations persisted and
-        their injected events laned.
+        the audit record (:meth:`_record_blocked`). The source's right to
+        write is checked again at the commit (:meth:`_lane`).
         """
         room_id = self._room_id
         # The row carries its cascade's scope (TurnScope), before its hooks.
@@ -663,23 +730,33 @@ class LaneSink:
         # Its hooks may have widened it: back within the cascade's scope.
         decision = within_answer_scope(decision, scope)
         if isinstance(decision, _Blocked):
-            # A row commits without the room lock: what its hooks injected
-            # runs its passes now, each taking the lock (RFC §9.5.1), and
-            # whatever becomes of the stream's reader (RFC §9.4).
-            queued = QueuedInjections()
-            await self._kit._store_blocked(room_id, decision, queued)
-            # Its pass is over: observed before its injected events' passes.
-            await observed.start(self._kit._hook_engine, room_id)
-            handed = self._kit._hand_off_queued(queued, room_id, self._cascade)
-            await self._kit._finish_queued(handed)
-            logger.info(
-                "Streamed %s blocked (room %s): %s",
-                event.type.value,
-                room_id,
-                decision.reason,
-            )
+            # Who still reads the stream: a hook's block withdraws no one.
+            bindings = await self._kit._store.list_bindings(room_id)
+            self._readers = _readers(bindings, event.source.channel_id, scope, exclude)
+            await self._record_blocked(decision, observed)
             return None
         return decision.event, decision.sync_result
+
+    async def _record_blocked(self, decision: _Blocked, observed: Observed) -> None:
+        """Store a refused row BLOCKED, announced as ``event_blocked``; what
+        its hooks decided still stands, their tasks and observations
+        persisted and their injected events laned."""
+        room_id = self._room_id
+        # A row commits without the room lock: what its hooks injected
+        # runs its passes now, each taking the lock (RFC §9.5.1), and
+        # whatever becomes of the stream's reader (RFC §9.4).
+        queued = QueuedInjections()
+        await self._kit._store_blocked(room_id, decision, queued)
+        # Its pass is over: observed before its injected events' passes.
+        await observed.start(self._kit._hook_engine, room_id)
+        handed = self._kit._hand_off_queued(queued, room_id, self._cascade)
+        await self._kit._finish_queued(handed)
+        logger.info(
+            "Streamed %s blocked (room %s): %s",
+            decision.event.type.value,
+            room_id,
+            decision.reason,
+        )
 
     async def _lane(
         self,
@@ -687,8 +764,15 @@ class LaneSink:
         *,
         exclude: set[str] | None,
         hook_result: SyncPipelineResult,
-    ) -> RoomEvent | None:
-        """Commit a row and queue its delivery on the room's lane.
+    ) -> RoomEvent | _Blocked | None:
+        """Commit a row and queue its delivery on the room's lane; the row's
+        block when its source can no longer write.
+
+        The room's bindings are read under its lock at the row's commit, and
+        the row planned with them (RFC §7.5 rule 1, §10.2): a binding changed
+        during the stream (a mute, an access, a detach) holds from the next
+        row, the source's right to write included (rule 2), and it tells who
+        may still read the stream. The history is the run's (:func:`_with_row`).
 
         Deliberately not awaited to completion: this runs inside the
         streaming channel's ``deliver_stream``, and blocking the generator on
@@ -696,29 +780,59 @@ class LaneSink:
         every row's unit instead, and the caller waits on it once the stream
         is done.
         """
-        stored = await self._kit._commit_and_deliver(
-            self._room_id,
-            event,
-            self._plan_source,
-            exclude_delivery=exclude,
-            cascade=self._cascade,
-            hook_result=hook_result,
-            gate_status=False,
-        )
+        kit, room_id = self._kit, self._room_id
+        scope = event.response_visibility
+        async with kit._lock_manager.locked(room_id):
+            bindings = await kit._store.list_bindings(room_id)
+            context = self._history.model_copy(update={"bindings": bindings})
+            source = context.get_binding(event.source.channel_id)
+            reason = _source_block_reason(source)
+            if source is None or reason is not None:
+                stamped = with_committed_visibility(event, source, bindings)
+                return _Blocked.after_hooks(
+                    stamped, context, hook_result, reason=reason, blocked_by=reason
+                )
+            resolved = DeliverySource(binding=source, context=context)
+            stored = await kit._commit_resolved(
+                room_id,
+                event,
+                resolved,
+                self._cascade,
+                kit._plan_factory(resolved, exclude, hook_result),
+                policy_aware=True,
+            )
+        self._readers = _readers(bindings, event.source.channel_id, scope, exclude)
+        if hook_result.injected_events:
+            await kit._lane_injected_events(
+                hook_result.injected_events, room_id, self._cascade, cause=stored or event
+            )
         if stored is not None:
-            self._plan_source = _with_row(self._plan_source, stored)
+            self._history = _with_row(self._history, stored)
         return stored
 
 
-def _with_row(source: DeliverySource | str, row: RoomEvent) -> DeliverySource | str:
-    """The run's planning inputs with *row* in their history.
+def _readers(
+    bindings: list[ChannelBinding], source_id: str, scope: str | None, streamed: set[str] | None
+) -> set[str]:
+    """The channels of *streamed* the room, bound by *bindings*, still lets
+    read the stream of *source_id*'s answer scoped by *scope*."""
+    by_id = {binding.channel_id: binding for binding in bindings}
+    source = by_id.get(source_id)
+    return {
+        channel_id
+        for channel_id in streamed or ()
+        if (binding := by_id.get(channel_id)) is not None
+        and reads_the_stream(source, binding, scope)
+    }
+
+
+def _with_row(context: RoomContext, row: RoomEvent) -> RoomContext:
+    """The run's history with *row* added.
 
     The context is resolved once for the whole stream; without this, the
     agents a later row reaches would answer it without the rows before it,
     where a buffered response's segments each re-enter with the ones before
     them in their context.
     """
-    if isinstance(source, str):
-        return source
-    recent = [*source.context.recent_events[-(_RECENT_EVENTS_LIMIT - 1) :], row]
-    return replace(source, context=source.context.model_copy(update={"recent_events": recent}))
+    recent = [*context.recent_events[-(_RECENT_EVENTS_LIMIT - 1) :], row]
+    return context.model_copy(update={"recent_events": recent})

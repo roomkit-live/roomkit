@@ -11,6 +11,7 @@ budget, and the caller's ``response_events``.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from typing import Any
 
 import pytest
 
@@ -26,6 +27,7 @@ from roomkit.models.framework_event import FrameworkEvent
 from roomkit.models.hook import HookResult
 from roomkit.models.store_filter import EventFilter
 from roomkit.models.task import Task
+from roomkit.providers.ai.base import AIResponse, AITool, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
 from tests.buffered_agent import BufferedAgent
 from tests.test_framework import SimpleChannel
@@ -385,3 +387,75 @@ async def test_a_muted_agent_answers_count_against_the_reentry_budget() -> None:
 
     reasons = [row[2] for row in await room.rows()]
     assert reasons == ["source_muted"] * 20 + ["reentry_loop_cap"]
+
+
+# -- A binding changed during a stream holds from its next row -------------
+
+_LOOKUP = AITool(name="lookup", description="Look up", parameters={"type": "object"})
+
+
+def _live(transport: _StreamingTransport) -> list[str]:
+    """What the streaming transport read: each text delta, then each row by type."""
+    return [
+        chunk if isinstance(chunk, str) else chunk.type.value
+        for chunk in transport.live
+        if isinstance(chunk, str | RoomEvent)
+    ]
+
+
+@pytest.mark.parametrize(
+    ("change", "live", "web"),
+    [
+        (
+            lambda kit: kit.mute("r1", "ai1"),
+            ["Let me check.", "message", "tool_call_start"],
+            ["message", "tool_call_start"],
+        ),
+        (
+            lambda kit: kit.set_access("r1", "ws", Access.WRITE_ONLY),
+            ["Let me check.", "message", "tool_call_start"],
+            ["message", "tool_call_start", "tool_call_end", "message"],
+        ),
+        (
+            lambda kit: kit.set_access("r1", "web", Access.WRITE_ONLY),
+            ["Let me check.", "message", "tool_call_start", "tool_call_end", "Done.", "message"],
+            ["message", "tool_call_start"],
+        ),
+    ],
+    ids=["agent-muted", "target-made-write-only", "other-made-write-only"],
+)
+async def test_a_binding_change_during_a_stream_holds_from_its_next_row(
+    change: Any, live: list[str], web: list[str]
+) -> None:
+    """RFC §7.2, §7.5, §10.2: each streamed row is planned with the bindings
+    read at its commit, and once the room no longer lets the streaming
+    target read the response, the target reads nothing more of it."""
+    kit = RoomKit()
+    ws, other = _StreamingTransport("ws"), SimpleChannel("web")
+
+    async def lookup(name: str, arguments: dict[str, Any]) -> str:
+        await change(kit)
+        return "found"
+
+    call = AIToolCall(id="c1", name="lookup", arguments={})
+    provider = MockAIProvider(
+        ai_responses=[
+            AIResponse(content="Let me check.", finish_reason="tool_calls", tool_calls=[call]),
+            AIResponse(content="Done."),
+        ],
+        streaming=True,
+    )
+    agent = AIChannel("ai1", provider=provider, tool_handler=lookup, tools=[_LOOKUP])
+    for channel in (ws, other, agent):
+        kit.register_channel(channel)
+    await kit.create_room(room_id="r1")
+    await kit.attach_channel("r1", "web")
+    await kit.attach_channel("r1", "ws")
+    await kit.attach_channel("r1", "ai1", category=ChannelCategory.INTELLIGENCE)
+
+    message = InboundMessage(channel_id="web", sender_id="u1", content=TextContent(body="hi"))
+    await kit.process_inbound(message, room_id="r1")
+
+    assert _live(ws) == live
+    assert [e.type.value for e in other.delivered if e.source.channel_id == "ai1"] == web
+    await kit.close()
