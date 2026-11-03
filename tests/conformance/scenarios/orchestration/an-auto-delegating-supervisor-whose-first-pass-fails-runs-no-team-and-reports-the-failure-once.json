@@ -1,0 +1,150 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/an-auto-delegating-supervisor-whose-first-pass-fails-runs-no-team-and-reports-the-failure-once",
+  "title": "The first pass of an auto-delegating Supervisor whose model fails hands on no task: no worker runs, its text is kept out of the room, and its failure reaches the caller and ON_ERROR once, as a streamed turn's",
+  "rules": [
+    "§19.7.3",
+    "§15.2"
+  ],
+  "notes": "Python: tests/orchestration/test_supervisor_pass1_cut.py test_a_failed_pass_gives_its_error_logged_once. orchestration/strategies/supervisor/delegate.py _pass1_task, _report_pass1_failure (kit._report_stream_failure, mark_reported), _pass1_answer (an error has no fallback).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Thinking",
+              "fails": "boom"
+            }
+          ]
+        }
+      },
+      {
+        "id": "analyst",
+        "type": "ai",
+        "agent": {
+          "role": "Analyst"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Numbers."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "analyst"
+          ],
+          "strategy": "parallel",
+          "auto_delegate": true
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "errors",
+        "trigger": "on_error",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Look into Acme."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "boom"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "sms"
+          }
+        }
+      ]
+    },
+    "models": {
+      "analyst": []
+    },
+    "hooks": {
+      "errors": [
+        {
+          "trigger": "on_error",
+          "room_id": "r1",
+          "event": {
+            "type": "message",
+            "source": {
+              "channel_id": "sup",
+              "direction": "inbound"
+            },
+            "content": {
+              "body": {
+                "$contains": "boom"
+              }
+            },
+            "chain_depth": 1,
+            "responds_to": "r1#0",
+            "correlation_id": {
+              "$present": true
+            },
+            "metadata": {
+              "error_category": "streaming"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

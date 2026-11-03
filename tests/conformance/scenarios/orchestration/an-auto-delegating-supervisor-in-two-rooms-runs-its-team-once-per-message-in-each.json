@@ -1,0 +1,216 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/an-auto-delegating-supervisor-in-two-rooms-runs-its-team-once-per-message-in-each",
+  "title": "One auto-delegating Supervisor installed in two rooms takes the supervisor's turns in each: a message in either runs the team once, for that room, and is answered there alone",
+  "rules": [
+    "§19.7",
+    "§19.7.3"
+  ],
+  "notes": "Python: tests/orchestration/test_strategy_rooms.py test_a_sync_auto_supervisor_in_two_rooms_runs_once_per_message. orchestration/strategies/supervisor/_install_auto.py _install_sync_auto_delegate (kit._turn_runners.take per room and channel).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Acme"
+            },
+            {
+              "text": "Acme, done."
+            },
+            {
+              "text": "Beta"
+            },
+            {
+              "text": "Beta, done."
+            }
+          ]
+        }
+      },
+      {
+        "id": "analyst",
+        "type": "ai",
+        "agent": {
+          "role": "Analyst"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "A."
+            },
+            {
+              "text": "B."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "analyst"
+          ],
+          "strategy": "parallel",
+          "auto_delegate": true
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r2",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Look into Acme."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Look into Beta."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "sms"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "sup"
+          },
+          "content": {
+            "body": "Acme, done."
+          },
+          "chain_depth": 1,
+          "responds_to": "r1#0"
+        }
+      ],
+      "r2": [
+        {
+          "source": {
+            "channel_id": "sms"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "sup"
+          },
+          "content": {
+            "body": "Beta, done."
+          },
+          "chain_depth": 1,
+          "responds_to": "r2#0"
+        }
+      ]
+    },
+    "models": {
+      "analyst": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Acme"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Beta"
+            }
+          ]
+        }
+      ]
+    },
+    "rooms": {
+      "$r1": {
+        "metadata": {
+          "task_agent_id": "analyst",
+          "task_input": "Acme"
+        }
+      },
+      "$r2": {
+        "metadata": {
+          "task_agent_id": "analyst",
+          "task_input": "Beta"
+        }
+      }
+    }
+  }
+}

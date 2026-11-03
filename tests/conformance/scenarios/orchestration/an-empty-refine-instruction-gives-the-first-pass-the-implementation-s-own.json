@@ -1,0 +1,126 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/an-empty-refine-instruction-gives-the-first-pass-the-implementation-s-own",
+  "title": "An auto-delegating Supervisor whose refine_instruction is empty gives its first pass the implementation's own task-formulation instruction",
+  "rules": [
+    "§19.7.3"
+  ],
+  "notes": "Python: orchestration/strategies/supervisor/delegate.py _formulate_task (instruction or _build_pass1_instruction()). Found by the review of stream I lot 5b.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Acme"
+            },
+            {
+              "text": "Acme, in short."
+            }
+          ]
+        }
+      },
+      {
+        "id": "analyst",
+        "type": "ai",
+        "agent": {
+          "role": "Analyst"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Numbers."
+            }
+          ]
+        }
+      },
+      {
+        "id": "critic",
+        "type": "ai",
+        "agent": {
+          "role": "Critic"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Risks."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "analyst",
+            "critic"
+          ],
+          "strategy": "parallel",
+          "auto_delegate": true,
+          "refine_instruction": ""
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Look into Acme."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "sup": [
+        {
+          "system_prompt": "Extract the core topic or subject from the user's request. Output only the topic, nothing else. No questions, no instructions, no formatting. Example: user says 'analyse anthropic' → 'Anthropic'\n--- Agent Identity ---\nRole: Coordinator"
+        },
+        "$any"
+      ]
+    }
+  }
+}

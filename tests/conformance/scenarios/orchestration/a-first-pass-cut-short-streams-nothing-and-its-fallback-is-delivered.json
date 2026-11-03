@@ -1,0 +1,156 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-first-pass-cut-short-streams-nothing-and-its-fallback-is-delivered",
+  "title": "An auto-delegating Supervisor's first pass that its round cap cuts short streams nothing to the room's streaming transport: its calls and the supervisor's fallback are delivered to it as rows",
+  "rules": [
+    "§19.7.3"
+  ],
+  "notes": "Python: orchestration/strategies/supervisor/delegate.py _pass1_answer (the fallback is the turn's answer, delivered as any response). Found by the review of stream I lot 5b.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Still checking.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "text": "Still checking.",
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "lookup"
+                }
+              ]
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "look up",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found"
+          }
+        ],
+        "max_tool_rounds": 1
+      },
+      {
+        "id": "analyst",
+        "type": "ai",
+        "agent": {
+          "role": "Analyst"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Numbers."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "analyst"
+          ],
+          "strategy": "parallel",
+          "auto_delegate": true
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Look into Acme."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null,
+          "response_metadata": {
+            "turns": {
+              "sup": {
+                "loop_end_reason": "max_rounds"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "streamed": {
+      "r1": {
+        "sms": []
+      }
+    },
+    "deliveries": {
+      "r1": {
+        "sms": [
+          {
+            "id": "r1#1"
+          },
+          {
+            "id": "r1#2"
+          },
+          {
+            "id": "r1#3",
+            "content": {
+              "body": "The delegated work could not be completed."
+            }
+          }
+        ]
+      }
+    }
+  }
+}

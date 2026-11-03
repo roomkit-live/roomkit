@@ -1,0 +1,141 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/an-auto-delegating-supervisor-s-answer-reads-the-room-as-it-was-asked",
+  "title": "The second pass of an auto-delegating Supervisor reads the room as it was when the message was asked: a message stored while the team works is not in its history, and the workers' results stand in for the message",
+  "rules": [
+    "§19.7.3"
+  ],
+  "notes": "Python: orchestration/strategies/supervisor/delegate.py _two_pass_delegate (the presentation turn is handed the context loaded for the message; only the tool rounds are read again). Found by the review of stream I lot 5b.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Acme"
+            },
+            {
+              "text": "Acme done."
+            }
+          ]
+        }
+      },
+      {
+        "id": "analyst",
+        "type": "ai",
+        "agent": {
+          "role": "Analyst"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "A.",
+              "gate": "w1"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "analyst"
+          ],
+          "strategy": "parallel",
+          "auto_delegate": true
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Look into Acme."
+        }
+      },
+      "background": true,
+      "as": "a"
+    },
+    {
+      "wait_for": "w1"
+    },
+    {
+      "call": "commit_event",
+      "room_id": "r1",
+      "event": {
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms"
+        },
+        "content": {
+          "type": "text",
+          "body": "Meanwhile, a later message."
+        }
+      }
+    },
+    {
+      "open": "w1"
+    },
+    {
+      "await": "a"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "sup": [
+        "$any",
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Look into Acme."
+            },
+            {
+              "role": "user",
+              "text": {
+                "$contains": "Here are the results"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

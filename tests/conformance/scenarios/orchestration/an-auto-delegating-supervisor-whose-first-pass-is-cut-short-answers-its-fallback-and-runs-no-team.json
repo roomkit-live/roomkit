@@ -1,0 +1,187 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/an-auto-delegating-supervisor-whose-first-pass-is-cut-short-answers-its-fallback-and-runs-no-team",
+  "title": "The first pass of an auto-delegating Supervisor that its round cap cuts short hands on no task, its narration being no answer: no worker runs, its calls stay the room's, and the message is answered by the supervisor's fallback, carrying the turn's record and how it ended",
+  "rules": [
+    "§19.7.3",
+    "§6.4"
+  ],
+  "notes": "Python: tests/orchestration/test_strategy_supervisor.py test_pass_one_cut_by_its_round_cap_hands_on_no_task[narrated]; tests/orchestration/test_supervisor_pass1_cut.py test_a_cut_pass_answers_with_the_supervisors_fallback; tests/test_inbound_turns_record.py test_a_supervisor_whose_pass_was_cut_names_its_end. orchestration/strategies/supervisor/delegate.py _pass1_answer (FALLBACK_FAILED, loop_end_reason), core/mixins/_child_execution.py _handed_on.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Still checking.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "text": "Still checking.",
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "lookup"
+                }
+              ]
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "look up",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found"
+          }
+        ],
+        "max_tool_rounds": 1
+      },
+      {
+        "id": "analyst",
+        "type": "ai",
+        "agent": {
+          "role": "Analyst"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Numbers."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "analyst"
+          ],
+          "strategy": "parallel",
+          "auto_delegate": true
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Look into Acme."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null,
+          "response_metadata": {
+            "turns": {
+              "sup": {
+                "loop_end_reason": "max_rounds"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "sms"
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "source": {
+            "channel_id": "sup"
+          },
+          "content": {
+            "tool_id": "c1"
+          },
+          "chain_depth": 1,
+          "responds_to": "r1#0"
+        },
+        {
+          "type": "tool_call_end",
+          "source": {
+            "channel_id": "sup"
+          },
+          "content": {
+            "tool_id": "c1",
+            "outcome": "served"
+          },
+          "chain_depth": 1,
+          "responds_to": "r1#0"
+        },
+        {
+          "source": {
+            "channel_id": "sup",
+            "channel_type": "ai"
+          },
+          "content": {
+            "type": "text",
+            "body": "The delegated work could not be completed."
+          },
+          "chain_depth": 1,
+          "responds_to": "r1#0",
+          "correlation_id": {
+            "$absent": true
+          },
+          "metadata": {
+            "loop_end_reason": "max_rounds",
+            "ai_usage": {}
+          }
+        }
+      ]
+    },
+    "models": {
+      "analyst": []
+    }
+  }
+}

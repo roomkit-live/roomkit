@@ -1,0 +1,155 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/an-auto-delegating-supervisor-s-first-pass-streams-nothing-to-the-room-s-transport",
+  "title": "A room's streaming transport is handed nothing of an auto-delegating Supervisor's first pass in the stream: its calls are delivered to it as rows, its text never, and the second pass's answer streams to it as any turn's",
+  "rules": [
+    "§19.7.3"
+  ],
+  "notes": "Python: orchestration/strategies/supervisor/delegate.py _pass1_task (persist_tool_calls reads the pass's stream itself, no streaming target), RFC §19.7.3. Found by the review of stream I lot 5b.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Let me check.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "text": "Acme"
+            },
+            {
+              "text": "Acme, in short."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "look up",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found"
+          }
+        ]
+      },
+      {
+        "id": "analyst",
+        "type": "ai",
+        "agent": {
+          "role": "Analyst"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Numbers."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "analyst"
+          ],
+          "strategy": "parallel",
+          "auto_delegate": true
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "gate",
+        "trigger": "before_broadcast",
+        "execution": "sync"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Look into Acme."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "streamed": {
+      "r1": {
+        "sms": [
+          {
+            "text": "Acme, in short."
+          },
+          {
+            "row": {
+              "id": "r1#3"
+            }
+          }
+        ]
+      }
+    },
+    "deliveries": {
+      "r1": {
+        "sms": [
+          {
+            "id": "r1#1"
+          },
+          {
+            "id": "r1#2"
+          }
+        ]
+      }
+    }
+  }
+}
