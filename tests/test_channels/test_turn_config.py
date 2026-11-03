@@ -320,6 +320,11 @@ class TestThinkingOffAcrossLevels:
             ({"enable_thinking": False}, _budget_turn, None),
             ({"enable_thinking": False, "thinking_budget": 1024}, None, 1024),
             ({"thinking_budget": 1024}, _off_turn, 1024),
+            ({"enable_thinking": "off"}, None, None),
+            ({"enable_thinking": "false"}, None, None),
+            ({"enable_thinking": "no"}, None, None),
+            ({"enable_thinking": 0}, None, None),
+            ({"enable_thinking": "off", "thinking_budget": 1024}, None, 1024),
         ],
         ids=[
             "room-off-over-channel-budget",
@@ -328,6 +333,11 @@ class TestThinkingOffAcrossLevels:
             "room-off-over-turn-budget",
             "same-level-budget-decides",
             "more-specific-budget-decides",
+            "room-off-as-text-off",
+            "room-off-as-text-false",
+            "room-off-as-text-no",
+            "room-off-as-zero",
+            "same-level-budget-decides-over-off-as-text",
         ],
     )
     async def test_off_turns_off_a_less_specific_budget(

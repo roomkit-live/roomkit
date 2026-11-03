@@ -6,7 +6,7 @@ import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from roomkit._media import content_text, media_label, text_form
 from roomkit.channels._ai_cuts import CUT_NOTE, cut_answers, cut_mark, cut_records
@@ -1009,7 +1009,7 @@ class AIContextMixin(_AIChannelContract):
         """
         off_level, enabled = self._turn_source("enable_thinking", binding, turn)
         budget_level, budget = self._turn_source("thinking_budget", binding, turn)
-        return enabled is False and budget is not None and off_level < budget_level
+        return _reads_off(enabled) and budget is not None and off_level < budget_level
 
     def _turn_value(
         self, key: str, binding: ChannelBinding, turn: AIChannelTurnConfig | None
@@ -1173,6 +1173,19 @@ def _without_former_vision(binding: ChannelBinding) -> ChannelBinding:
     metadata = {k: v for k, v in binding.metadata.items() if k != _FORMER_VISION_BASE}
     metadata["system_prompt"] = binding.metadata[_FORMER_VISION_BASE] or None
     return binding.model_copy(update={"metadata": metadata})
+
+
+_THINKING_SWITCH = TypeAdapter(bool | None)
+
+
+def _reads_off(enabled: object) -> bool:
+    """Whether *enabled* reads as false, as ``AIContext`` reads its
+    ``enable_thinking`` (RFC Appendix A.9): ``"off"`` and ``0`` as ``False``.
+    A value it refuses is no off: it fails the turn when the context is built."""
+    try:
+        return _THINKING_SWITCH.validate_python(enabled) is False
+    except ValidationError:
+        return False
 
 
 def _reply_tokens(max_tokens: object) -> int:

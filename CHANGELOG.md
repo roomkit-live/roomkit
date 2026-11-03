@@ -220,6 +220,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A binding's `enable_thinking` is read before it is compared** (RFC §6.7,
+  Appendix A.9). `"off"`, `"no"` or `0` now turn off a budget a less specific
+  level set, as `false` does, where they left the model reasoning and billing on
+  the channel's budget.
+
 - **A streamed turn stores no blank text segment** (RMK-1300). A reasoning model
   writing a line break before its call left a `MESSAGE` of `"\n\n"` in the room,
   delivered to every channel, an empty SMS included. The stream's reader still
