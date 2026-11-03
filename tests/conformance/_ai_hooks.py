@@ -17,7 +17,17 @@ from roomkit.models.tool_call import AIGenerationEvent, AIResponseEvent, ToolRou
 from roomkit.providers.ai import AIMessage, AITool
 from tests.conformance._agent import messages, result_content
 
-_GENERATION_PATCH = frozenset({"system_prompt", "messages", "reasoning_effort", "tools", "define"})
+_GENERATION_PATCH = frozenset(
+    {
+        "system_prompt",
+        "messages",
+        "reasoning_effort",
+        "thinking_budget",
+        "enable_thinking",
+        "tools",
+        "define",
+    }
+)
 _TOOL_ROUND_PATCH = frozenset({"withdrawn", "messages"})
 
 
@@ -56,8 +66,9 @@ def patched_generation(payload: AIGenerationEvent, patch: Mapping[str, Any]) -> 
             AIMessage(role=message["role"], content=message["text"])
             for message in patch["messages"]
         ]
-    if "reasoning_effort" in patch:
-        update["reasoning_effort"] = patch["reasoning_effort"]
+    for setting in ("reasoning_effort", "thinking_budget", "enable_thinking"):
+        if setting in patch:
+            update[setting] = patch[setting]
     if "tools" in patch:
         kept = set(patch["tools"])
         update["tools"] = [tool for tool in context.tools or [] if tool.name in kept]
