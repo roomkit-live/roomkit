@@ -615,7 +615,8 @@ class LaneSink:
         The status gate holds at every point the timeline grows: a room closed
         mid-stream takes no further row. The run reads the status at its first
         row, and again only once the kit has closed or archived a room since,
-        so a stream does not cost a store read per row. The count is taken
+        so a stream does not read the room per row (its source's binding is
+        read at each row's commit, RFC §7.5 rule 2). The count is taken
         before the read and kept only once the read succeeded: a close landing
         meanwhile, or a read that failed, is read again at the next row.
         """
