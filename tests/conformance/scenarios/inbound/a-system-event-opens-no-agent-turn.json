@@ -1,0 +1,97 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-system-event-opens-no-agent-turn",
+  "title": "An event that is no message nor instruction opens no agent turn: the next message is answered, the notice not in its conversation",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "An agent takes a turn on a MESSAGE or an INSTRUCTION only (RFC §6.4): a SYSTEM notice, a reaction or a participant's arrival an application sends is stored and handed to the memory, not answered, and the conversation a turn reads does not show it. Python answered every type but a change, its own events and tool-call records until RMK-1257, the maintainer's choice (Python as Rust).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "vision": true,
+          "rounds": [
+            {
+              "text": "Seen 0."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "The order shipped"
+      },
+      "event_type": "system"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "hello",
+              "parts": {
+                "$absent": true
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

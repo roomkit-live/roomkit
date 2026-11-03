@@ -1,0 +1,87 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "chain/a-notice-past-the-depth-limit-leaves-no-record",
+  "title": "A notice whose answer would pass the depth limit leaves no record of an agent not asked",
+  "rules": [
+    "§8.3",
+    "§6.4"
+  ],
+  "notes": "No agent answers a notice (RFC §6.4, RMK-1257), so none is recorded as not asked past the depth limit, as a tool-call row: no BLOCKED record, no observation, no chain_depth_exceeded. Both implementations recorded one until RMK-1257.",
+  "setup": {
+    "kit": {
+      "max_chain_depth": 1
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "never"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "The order shipped"
+      },
+      "event_type": "system"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "system",
+          "status": "delivered",
+          "source": {
+            "channel_id": "ws"
+          }
+        }
+      ]
+    },
+    "observations": {
+      "room-1": []
+    },
+    "models": {
+      "agent": []
+    },
+    "framework_events": {
+      "room-1": [
+        "event_processed"
+      ]
+    }
+  }
+}
