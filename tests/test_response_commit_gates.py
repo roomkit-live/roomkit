@@ -645,3 +645,39 @@ async def test_a_stopped_target_s_failure_leaves_the_turn_to_the_others() -> Non
     ]
     assert len(provider.calls) == 2
     await kit.close()
+
+
+class _Reading(SimpleChannel):
+    """A transport that keeps what each delivery's context held."""
+
+    def __init__(self, channel_id: str) -> None:
+        super().__init__(channel_id)
+        self.read: dict[str, list[str]] = {}
+
+    async def deliver(
+        self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
+    ) -> ChannelOutput:
+        self.read[_body(event)] = [_body(e) for e in context.recent_events]
+        return await super().deliver(event, binding, context)
+
+
+async def test_a_row_reads_what_another_channel_committed_during_its_stream() -> None:
+    """RFC §10.1 step 12: a streamed row's delivery reads the room at the
+    row's commit, as any delivery does, not the stream's first window."""
+    kit = RoomKit()
+    reader = _Reading("ws")
+
+    async def aside(kit: RoomKit) -> None:
+        await kit.send_event("r1", "web", TextContent(body="Any news?"), visibility="ws")
+
+    agent, _ = _tool_turn(kit, aside)
+    await _streaming_room(kit, reader, agent)
+
+    @kit.hook(HookTrigger.BEFORE_BROADCAST, name="watch")
+    async def watch(event: RoomEvent, context: RoomContext) -> HookResult:
+        return HookResult.allow()
+
+    await kit.process_inbound(_hi(), room_id="r1")
+
+    assert "Any news?" in reader.read["Done."]
+    await kit.close()

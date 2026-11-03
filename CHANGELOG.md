@@ -194,7 +194,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   write and the room's status included, and once the room no longer lets the
   target read the answer, the target reads nothing more of the stream and the
   rest is delivered as each row's plan says, as roomkit-rs does. Each row now
-  takes the room lock for that read.
+  reads the room's context under its lock at its commit, as any event does, so
+  a delivery reads the room's latest events, one another channel committed
+  during the stream included, where it read the stream's first window with
+  every row since (RMK-1286). The cost is that read and that lock per row.
 
 - **A streamed answer stored after its agent is muted, made read-only or
   detached is withheld**

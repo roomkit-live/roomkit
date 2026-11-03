@@ -1,9 +1,10 @@
-"""A stream reads the room's status once, not once per row (RMK-302, RFC §5.1).
+"""Around a streamed row's hooks, a stream reads the room's status once
+(RMK-302, RFC §5.1); the row's commit reads the room under its lock (RMK-1286).
 
 The status gate holds at every row a stream writes: a room closed mid-stream
-takes no further row. The run reads the status at its first row, and again
-only once the kit closed or archived a room since; it checks it again after
-a row's BEFORE_BROADCAST hooks, which run without the room lock.
+takes no further row. Around its hooks, which run without the room lock, the
+run reads the status at its first row, and again only once the kit closed or
+archived a room since.
 """
 
 from __future__ import annotations
@@ -98,27 +99,6 @@ async def test_a_streamed_turn_reads_the_room_status_once() -> None:
     assert reads == ["r1"]
     assert (await _ai_rows(kit)).count(EventType.TOOL_CALL_END) == 4
     await kit.close()
-
-
-async def test_the_store_reads_do_not_grow_with_the_rows() -> None:
-    """Each tool round adds three rows; its store reads are its tool hooks' contexts."""
-
-    async def reads(rounds: int) -> int:
-        kit = await _room(rounds=rounds)
-        count = 0
-        get_room = kit.store.get_room
-
-        async def counting(room_id: str) -> Any:
-            nonlocal count
-            count += 1
-            return await get_room(room_id)
-
-        kit.store.get_room = counting  # type: ignore[method-assign]
-        await _say(kit)
-        await kit.close()
-        return count
-
-    assert await reads(4) - await reads(1) <= 2 * 3
 
 
 async def test_another_room_closing_costs_one_read_and_blocks_nothing() -> None:

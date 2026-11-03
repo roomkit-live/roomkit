@@ -171,10 +171,9 @@ class InboundStreamingMixin(HelpersMixin):
         visibility = scope.visibility
         parent_event_id = scope.parent_event_id
 
-        # The run's history is the context the caller built, each row added
-        # as it commits; each row reads the room's bindings at its commit
-        # (LaneSink), so a binding changed during the stream holds from the
-        # next row (RFC §7.5 rule 1, §10.2).
+        # Each row reads the room's context at its commit (LaneSink), so what
+        # changed during the stream holds from the next row (RFC §7.5 rule 1,
+        # §10.1 step 12, §10.2).
         writer = SegmentWriter(
             self,
             sr,

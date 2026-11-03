@@ -16,7 +16,7 @@ from roomkit.core._observed import Observed, observed_once_over
 from roomkit.core._queued_injections import QueuedInjections
 from roomkit.core.event_router import stream_record
 from roomkit.core.mixins._stream_reach import reads_the_stream
-from roomkit.core.mixins.helpers import _RECENT_EVENTS_LIMIT, _source_block_reason
+from roomkit.core.mixins.helpers import _refuses_writes, _source_block_reason
 from roomkit.core.mixins.inbound_locked import _Blocked, _Refused, within_answer_scope
 from roomkit.core.mixins.lane_execution import DeliverySource
 from roomkit.core.task_utils import cancel_reason
@@ -643,9 +643,6 @@ class LaneSink:
         self._room_id = room_id
         self._context = context
         self._cascade = cascade
-        # The run's history: the context the stream started with, each row
-        # added as it commits (_with_row).
-        self._history = context
         # The room's status as last read, and the kit's close count then:
         # None until the first row reads it.
         self._refusing = False
@@ -683,12 +680,13 @@ class LaneSink:
         """Whether the room refuses this row (RFC §5.1).
 
         The status gate holds at every point the timeline grows: a room closed
-        mid-stream takes no further row. The run reads the status at its first
-        row, and again only once the kit has closed or archived a room since,
-        so a stream does not read the room per row (its bindings are read at
-        each row's commit, RFC §7.5). The count is taken before the read and
-        kept only once the read succeeded: a close landing meanwhile, or a
-        read that failed, is read again at the next row.
+        mid-stream takes no further row. Around a row's hooks, which it spares
+        a room that refuses it, the run reads the status at its first row, and
+        again only once the kit has closed or archived a room since; the
+        row's commit reads the room under its lock (:meth:`_lane`). The count
+        is taken before the read and kept only once the read succeeded: a
+        close landing meanwhile, or a read that failed, is read again at the
+        next row.
         """
         epoch = self._kit._room_close_epoch
         if epoch != self._close_epoch:
@@ -770,11 +768,12 @@ class LaneSink:
         """Commit a row and queue its delivery on the room's lane; the row's
         block when its source can no longer write.
 
-        The room's bindings are read under its lock at the row's commit, and
-        the row planned with them (RFC §7.5 rule 1, §10.2): a binding changed
-        during the stream (a mute, an access, a detach) holds from the next
-        row, the source's right to write included (rule 2), and it tells who
-        may still read the stream. The history is the run's (:func:`_with_row`).
+        The room's context is read under its lock at the row's commit, as any
+        event's (RFC §10.1 step 12), and the row planned with it (§7.5 rule
+        1, §10.2): its status, a binding changed during the stream (a mute,
+        an access, a detach) and the events committed since hold from the
+        next row, the source's right to write included (rule 2), and it tells
+        who may still read the stream.
 
         Deliberately not awaited to completion: this runs inside the
         streaming channel's ``deliver_stream``, and blocking the generator on
@@ -785,12 +784,12 @@ class LaneSink:
         kit, room_id = self._kit, self._room_id
         scope = event.response_visibility
         async with kit._lock_manager.locked(room_id):
+            context = await kit._existing_room_context(room_id)
             # A close that held the lock meanwhile refuses the row (RFC §5.1).
-            if await self._room_refuses_writes():
+            if context is None or _refuses_writes(context.room):
                 logger.debug("Room %s closed before %s's commit", room_id, event.type)
                 return None
-            bindings = await kit._store.list_bindings(room_id)
-            context = self._history.model_copy(update={"bindings": bindings})
+            bindings = context.bindings
             source = context.get_binding(event.source.channel_id)
             reason = _source_block_reason(source)
             if source is None or reason is not None:
@@ -812,8 +811,6 @@ class LaneSink:
             await kit._lane_injected_events(
                 hook_result.injected_events, room_id, self._cascade, cause=stored or event
             )
-        if stored is not None:
-            self._history = _with_row(self._history, stored)
         return stored
 
 
@@ -830,15 +827,3 @@ def _readers(
         if (binding := by_id.get(channel_id)) is not None
         and reads_the_stream(source, binding, scope)
     }
-
-
-def _with_row(context: RoomContext, row: RoomEvent) -> RoomContext:
-    """The run's history with *row* added.
-
-    The history is read once for the whole stream, its bindings at each row's
-    commit; without this, the agents a later row reaches would answer it
-    without the rows before it, where a buffered response's segments each
-    re-enter with the ones before them in their context.
-    """
-    recent = [*context.recent_events[-(_RECENT_EVENTS_LIMIT - 1) :], row]
-    return context.model_copy(update={"recent_events": recent})

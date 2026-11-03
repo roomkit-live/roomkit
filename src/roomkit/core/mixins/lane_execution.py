@@ -180,9 +180,8 @@ class DeliverySource:
     """Planning inputs a caller resolved for an event: its sender's binding
     and the context it is planned with.
 
-    A stream's rows share one sender and one history: each row reads the
-    room's bindings under the lock at its commit and is planned with them
-    and the run's history (``LaneSink``), so the commit itself reads nothing
+    A stream's row reads the room's context under the lock at its commit and
+    is planned with it (``LaneSink``), so the commit itself reads nothing
     more.
     """
 
