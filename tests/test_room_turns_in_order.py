@@ -33,6 +33,7 @@ from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage, InboundResult
 from roomkit.models.event import RoomEvent, TextContent
 from roomkit.models.response_metadata import ResponseMetadata
+from roomkit.models.store_filter import EventFilter
 from roomkit.providers.ai.base import AIContext, AIResponse, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.store.memory import InMemoryStore
@@ -191,7 +192,8 @@ async def test_a_message_removed_while_a_turn_waits_is_not_read(room: Room) -> N
 async def test_a_turn_muted_while_it_waits_is_not_delivered(room: Room) -> None:
     # The turn was asked unmuted and starts after the mute: its answer is
     # withheld as a muted channel's is (RFC §7.2), read with the room it
-    # starts in.
+    # starts in. The running turn's answer commits after the mute too, and
+    # is withheld as well, hook or not (§7.5 rule 2).
     a = await room.send("task A")
     await room.agent.until_started("task A")
     b = await room.send("task B")
@@ -205,7 +207,8 @@ async def test_a_turn_muted_while_it_waits_is_not_delivered(room: Room) -> None:
     await asyncio.wait_for(b.delivery.wait(), WAIT)
 
     assert "task B" in room.agent.read
-    assert await _said(room.kit, "agent") == ["answer to task A"]
+    assert await _said(room.kit, "agent") == []
+    assert await _withheld(room.kit, "agent") == ["answer to task A", "answer to task B"]
 
 
 async def test_a_waiting_turn_s_answer_is_judged_with_the_answers_before_it(room: Room) -> None:
@@ -513,6 +516,18 @@ async def _said(kit: RoomKit, channel_id: str) -> list[str]:
         event.content.body
         for event in await kit.store.list_events("r")
         if event.source.channel_id == channel_id and isinstance(event.content, TextContent)
+    ]
+
+
+async def _withheld(kit: RoomKit, channel_id: str) -> list[str]:
+    """What *channel_id* said that was stored BLOCKED as a muted source's."""
+    stored = await kit.store.list_events("r", event_filter=EventFilter(include_blocked=True))
+    return [
+        event.content.body
+        for event in stored
+        if event.source.channel_id == channel_id
+        and event.blocked_by == "source_muted"
+        and isinstance(event.content, TextContent)
     ]
 
 

@@ -163,6 +163,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A streamed answer stored after its agent is muted is withheld**
+  (RFC §7.2, §7.5 rule 2, RMK-1170). The rows a stream committed after a
+  `mute()` were stored and delivered unless a `BEFORE_BROADCAST` hook ran;
+  each row now reads its agent's binding at its commit, hook or not, and is
+  stored BLOCKED `source_muted`, as roomkit-rs does.
 - **A sender's routing stamps are dropped** (RFC §19.4, RMK-1233). A
   message that arrived with `_routed_to` or `_always_process` in its
   metadata chose the agent that answered it, or added one to its address:

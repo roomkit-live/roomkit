@@ -766,13 +766,14 @@ class InboundLockedMixin(HelpersMixin):
         §8.2), ``None``; the event takes the room's next index, an entry
         committed ahead of it during its hooks having taken the one step 8
         showed them, and its mutation trigger reads that entry (§10.3). A
-        streamed row's hooks read the binding again alone.
+        streamed row reads its binding again alone, hook or not: a mute
+        during its stream holds at its commit (§7.2, §7.5 rule 2).
         """
         source = event.source.channel_id
-        if not ran:
-            return _AfterHooks(context, context.get_binding(source), None)
         if not under_lock:
             return _AfterHooks(context, await self._store.get_binding(room_id, source), None)
+        if not ran:
+            return _AfterHooks(context, context.get_binding(source), None)
         try:
             context = await self._build_context(room_id)
         except RoomNotFoundError:
