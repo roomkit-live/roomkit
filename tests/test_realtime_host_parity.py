@@ -25,8 +25,15 @@ from roomkit import (
 from roomkit.channels import _conference_realtime
 from roomkit.channels.conference import ConferenceChannel
 from roomkit.channels.realtime_voice import RealtimeVoiceChannel
-from roomkit.models.enums import ChannelType
-from roomkit.models.event import EventSource, RoomEvent, TextContent
+from roomkit.models.enums import ChannelType, DeleteType, EventType
+from roomkit.models.event import (
+    DeleteContent,
+    EditContent,
+    EventContent,
+    EventSource,
+    RoomEvent,
+    TextContent,
+)
 from roomkit.models.hook import HookResult, InjectedEvent
 from roomkit.models.tool_call import ToolCallEvent
 from roomkit.voice.base import VoiceSession, VoiceSessionState
@@ -259,6 +266,35 @@ async def test_a_hook_s_injected_event_is_taken_silently(host: str) -> None:
         (False, False),
         (True, True),
     ]
+
+
+@HOSTS
+@pytest.mark.parametrize(
+    "change",
+    [EventType.EDIT, EventType.DELETE, EventType.REACTION],
+    ids=["edit", "delete", "reaction"],
+)
+async def test_what_opens_no_turn_is_taken_silently(host: str, change: EventType) -> None:
+    """A change (RFC §10.3, RMK-1258) or a notice (RFC §6.4) is no message a
+    turn may answer, and a transport hosting a model answers none: the
+    model's context learns the correction, the deletion or the notice, and
+    the model says nothing until the next message."""
+    provider = _Provider()
+    rt = _Host(host, provider, [])
+    await rt.attach()
+    await rt.start()
+    said = await rt.kit.send_event(ROOM, "src", TextContent(body="Oops"), participant_id="alice")
+    content: EventContent = TextContent(body="Ha!")
+    if change == EventType.EDIT:
+        content = EditContent(target_event_id=said.id, new_content=TextContent(body="Oops, fixed"))
+    elif change == EventType.DELETE:
+        content = DeleteContent(target_event_id=said.id, delete_type=DeleteType.SENDER)
+
+    await rt.kit.send_event(ROOM, "src", content, event_type=change, participant_id="alice")
+    await until(lambda: len(provider.injections) == 2)
+    await rt.kit.close()
+
+    assert [silent for _, silent in provider.injections] == [False, True]
 
 
 @HOSTS

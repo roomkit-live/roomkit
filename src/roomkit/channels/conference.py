@@ -82,6 +82,7 @@ from roomkit.conference.models import (
     ConferenceRecordingMode,
     TrackKind,
 )
+from roomkit.core._changes import opens_no_turn
 from roomkit.core._voice_delivery import injection_silent
 from roomkit.core.task_utils import callers_read, check_open, wait_for_unspared
 from roomkit.models.channel import ChannelBinding, ChannelCapabilities, ChannelOutput
@@ -1276,7 +1277,8 @@ class ConferenceChannel(
             # content its author wrote, never as the application's
             # instruction (RFC §12.4), as on a realtime voice channel;
             # silent for an event a hook injected, which asks no agent
-            # (RFC §9.4).
+            # (RFC §9.4), and for an event that opens no turn, a notice, an
+            # edit or a delete (RFC §6.4, §10.3).
             await compile_mark_patterns()
             text = broadcast_text(event, event.content.body, context, self.channel_id)
             if text is None:
@@ -1284,7 +1286,7 @@ class ConferenceChannel(
             await self._realtime.deliver_text(
                 event.room_id,
                 text,
-                silent=injection_silent(binding),
+                silent=injection_silent(binding) or opens_no_turn(event),
                 chain_depth=event.chain_depth,
                 injected_from=event,
             )

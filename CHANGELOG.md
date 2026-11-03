@@ -92,6 +92,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to a notice, send it an instruction (`kit.deliver(..., instruction=True)`).
   roomkit-rs answers the same two types.
 
+- **BREAKING — an edit, a delete or a notice no longer makes a realtime
+  voice agent speak** (RFC §6.4, §10.3, RMK-1258). A `RealtimeVoiceChannel`
+  (and its audio-video subclass) or a `ConferenceChannel` with a realtime
+  model injected such an event into the session as any broadcast message:
+  after a delete the speech-to-speech model read `@ws: "[Message deleted]"`
+  and answered aloud; a reaction made either speak, and a
+  `send_event(type=EventType.SYSTEM, ...)` the realtime voice channel. It is now injected silently, as an agent
+  takes a turn on a message or an instruction only: the session learns the
+  correction, the deletion or the notice, and the model answers the next
+  message. To have a realtime agent speak about a notice, deliver it an
+  instruction (`kit.deliver(..., instruction=True)`).
+
 - **`MCPToolProvider.call_tool()` notes what is not text, and reads a text
   resource as its text** (RFC §21.2, RMK-1251). An image the server
   returned came back as its object's printing, base64 included (`type='image'

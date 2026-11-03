@@ -90,6 +90,7 @@ from roomkit.channels.base import (
     RealtimeModelHost,
     _check_room_scope,
 )
+from roomkit.core._changes import opens_no_turn
 from roomkit.core._participant_channels import record_reached
 from roomkit.core._voice_delivery import held_at_the_limit, injection_depth, injection_silent
 from roomkit.core.task_utils import (
@@ -2175,9 +2176,11 @@ class RealtimeVoiceChannel(
             return ChannelOutput.empty()
 
         # Into every live session of the room, as any injection goes: silent
-        # under a muted binding and for an event a hook injected, which asks
-        # no agent (RFC §9.4), one deeper than the event, announced once.
-        silent = injection_silent(binding)
+        # under a muted binding, for an event a hook injected, which asks no
+        # agent (RFC §9.4), and for an event that opens no turn, a notice, an
+        # edit or a delete (RFC §6.4, §10.3); one deeper than the event,
+        # announced once.
+        silent = injection_silent(binding) or opens_no_turn(event)
         for session in self.get_room_sessions(event.room_id):
             try:
                 await self._inject(
