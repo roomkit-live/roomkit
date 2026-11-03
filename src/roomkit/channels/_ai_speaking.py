@@ -60,9 +60,9 @@ class AISpeakingMixin:
         hooks leave it (told how long the policy took), or None when nothing is
         decided: no policy, an instruction (the application asked for that
         turn) or the channel's own event; an event that opens no turn (RFC
-        §6.4) never reaches it. *asked_again*: the
-        policy decides again once the agent thought (RFC §6.4); *late*: with a
-        thought that came back after the event was decided."""
+        §6.4) never reaches it. *asked_again*: the policy decides again once
+        the agent thought (RFC §6.4); *late*: with a thought that came back
+        after the event was decided."""
         policy = self._speak_policy
         if policy is None or not self._submitted_to_policy(event):
             return None
