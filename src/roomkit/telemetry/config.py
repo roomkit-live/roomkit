@@ -20,12 +20,18 @@ class TelemetryConfig:
             Default 1.0 records all spans.
         enabled_spans: If set, only these span kinds are recorded.
             ``None`` means all span kinds are enabled.
+        record_sensitive_data: Whether spans carry what can hold personal
+            data: a sender's address (``sender_id``), a recipient's
+            (``delivery.recipient``), and the text of an error, which then
+            reads its class's name alone. Off by default: an exporter often
+            stands outside the application's production data.
     """
 
     provider: TelemetryProvider | None = None
     sample_rate: float = 1.0
     enabled_spans: set[SpanKind] | None = None
     metadata: dict[str, str] = field(default_factory=dict)
+    record_sensitive_data: bool = False
     suppressed_hook_triggers: set[str] = field(
         default_factory=lambda: {
             "on_input_audio_level",

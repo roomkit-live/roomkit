@@ -180,7 +180,7 @@ class TransportChannel(Channel):
 
     async def handle_inbound(self, message: InboundMessage, context: RoomContext) -> RoomEvent:
         """Convert an inbound message into a room event."""
-        from roomkit.telemetry.base import Attr, SpanKind
+        from roomkit.telemetry.base import Attr, SpanKind, span_error
         from roomkit.telemetry.context import get_current_span
         from roomkit.telemetry.noop import NoopTelemetryProvider
 
@@ -228,7 +228,7 @@ class TransportChannel(Channel):
             telemetry.end_span(span_id)
             return event
         except Exception as exc:
-            telemetry.end_span(span_id, status="error", error_message=str(exc))
+            telemetry.end_span(span_id, status="error", error_message=span_error(telemetry, exc))
             raise
 
     @staticmethod
@@ -254,7 +254,7 @@ class TransportChannel(Channel):
             logger.debug("No provider configured for %s, skipping delivery", self.channel_id)
             return ChannelOutput.empty()
 
-        from roomkit.telemetry.base import Attr, SpanKind
+        from roomkit.telemetry.base import Attr, SpanKind, sensitive, span_error
         from roomkit.telemetry.context import get_current_span
         from roomkit.telemetry.noop import NoopTelemetryProvider
 
@@ -282,7 +282,7 @@ class TransportChannel(Channel):
             channel_id=self.channel_id,
             attributes={
                 Attr.DELIVERY_CHANNEL_TYPE: str(self.channel_type),
-                Attr.DELIVERY_RECIPIENT: to,
+                **sensitive(telemetry, {Attr.DELIVERY_RECIPIENT: to}),
                 Attr.PROVIDER: provider_name,
             },
         )
@@ -292,7 +292,7 @@ class TransportChannel(Channel):
             duration_ms = (_time.monotonic() - t0) * 1000
             attrs: dict[str, Any] = {Attr.DELIVERY_SUCCESS: result.success}
             if result.error:
-                attrs[Attr.DELIVERY_ERROR] = result.error
+                attrs.update(sensitive(telemetry, {Attr.DELIVERY_ERROR: result.error}))
             if result.provider_message_id:
                 attrs[Attr.DELIVERY_MESSAGE_ID] = result.provider_message_id
             if result.success:
@@ -301,7 +301,8 @@ class TransportChannel(Channel):
                 telemetry.end_span(
                     span_id,
                     status="error",
-                    error_message=result.error or "send_failed",
+                    error_message=sensitive(telemetry, {"error": result.error}).get("error")
+                    or "send_failed",
                     attributes=attrs,
                 )
             telemetry.record_metric(
@@ -311,7 +312,7 @@ class TransportChannel(Channel):
                 attributes={Attr.PROVIDER: provider_name},
             )
         except Exception as exc:
-            telemetry.end_span(span_id, status="error", error_message=str(exc))
+            telemetry.end_span(span_id, status="error", error_message=span_error(telemetry, exc))
             raise
         if not result.success:
             raise ProviderDeliveryError(result)

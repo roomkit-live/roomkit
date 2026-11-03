@@ -63,7 +63,7 @@ from roomkit.models.response_metadata import (
     merge_caller_record,
     merge_channel_record,
 )
-from roomkit.telemetry.base import SpanKind
+from roomkit.telemetry.base import SpanKind, span_error
 from roomkit.telemetry.context import get_current_span, restored_span
 from roomkit.turns.owner import unread_dropped_on_failure
 
@@ -633,9 +633,9 @@ class LaneExecutionMixin(HelpersMixin):
                 logger.error("Detached tail failed for room %s", room_id, exc_info=exc)
                 if isinstance(exc, Exception):
                     cascade.record_error(exc)
-                status, message = "error", str(exc)
+                status, message = "error", span_error(telemetry, exc)
             elif cascade.error is not None:
-                status, message = "error", str(cascade.error)
+                status, message = "error", span_error(telemetry, cascade.error)
             elif cascade.cancelled is not None:
                 status, message = "error", cascade.cancelled
             else:

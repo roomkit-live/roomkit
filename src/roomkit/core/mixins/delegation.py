@@ -62,7 +62,7 @@ from roomkit.tasks.status import (
     post_task_pending,
     room_task_lines,
 )
-from roomkit.telemetry.base import Attr, SpanKind
+from roomkit.telemetry.base import Attr, SpanKind, sensitive
 from roomkit.tools.context import _current_turn_chain_depth
 
 if TYPE_CHECKING:
@@ -135,7 +135,11 @@ class _DelegationSpan:
         self._telemetry.end_span(
             self._span_id,
             status=status,
-            error_message=result.error if status == "error" else None,
+            error_message=(
+                sensitive(self._telemetry, {"error": result.error}).get("error") or "task_failed"
+            )
+            if status == "error"
+            else None,
             attributes={
                 Attr.DELEGATION_STATUS: result.status,
                 Attr.DURATION_MS: result.duration_ms,

@@ -619,6 +619,8 @@ class RoomKit(
         )
         for engine in (self._hook_engine, self._turn_hooks):
             self._wire_hook_engine(engine, suppressed)
+        if isinstance(telemetry, _TelemetryConfigCls):
+            self._telemetry._record_sensitive_data = telemetry.record_sensitive_data
         # Propagate global metadata to the provider for searchable tags
         if (
             isinstance(telemetry, _TelemetryConfigCls)
@@ -1726,7 +1728,7 @@ class RoomKit(
 
         Raises what refused it before its commit point, nothing written.
         """
-        from roomkit.telemetry.base import SpanKind
+        from roomkit.telemetry.base import SpanKind, span_error
         from roomkit.telemetry.context import get_current_span, reset_span, set_current_span
 
         room_id, channel_id = event.room_id, event.source.channel_id
@@ -1770,7 +1772,7 @@ class RoomKit(
             # The caller owns the cascade: a caller cancelled stops its
             # turns, off the lock, as on the inbound path.
             await cascade.abandon("caller_cancelled")
-            telemetry.end_span(span_id, status="error", error_message=str(exc))
+            telemetry.end_span(span_id, status="error", error_message=span_error(telemetry, exc))
             raise
         finally:
             reset_span(token)

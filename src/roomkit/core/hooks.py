@@ -48,6 +48,7 @@ from roomkit.models.event import (
 )
 from roomkit.models.hook import HookResult, InjectedEvent
 from roomkit.models.task import Observation, Task
+from roomkit.telemetry.base import span_error
 
 logger = logging.getLogger("roomkit.hooks")
 
@@ -1279,7 +1280,9 @@ class HookEngine:
                 logger.exception("Sync hook %s failed", hook.name, extra={"room_id": room_id})
                 result.hook_errors.append({"hook": hook.name, "error": str(exc)})
                 if span_id is not None:
-                    self._telemetry.end_span(span_id, status="error", error_message=str(exc))
+                    self._telemetry.end_span(
+                        span_id, status="error", error_message=span_error(self._telemetry, exc)
+                    )
                 if self._close(
                     result, hook, trigger, "hook_error", f"hook {hook.name} failed: {exc}"
                 ):

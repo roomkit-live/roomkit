@@ -67,7 +67,7 @@ from roomkit.providers.ai.tool_calls import partial_call_error
 from roomkit.sandbox.tools import SANDBOX_TOOL_PREFIX, TOOL_SANDBOX_BASH
 from roomkit.skills.mcp.catalog import SkillChangedError
 from roomkit.skills.models import missing_required_tools, missing_tools_error
-from roomkit.telemetry.base import SpanKind, TelemetryProvider
+from roomkit.telemetry.base import SpanKind, TelemetryProvider, span_error
 from roomkit.telemetry.redaction import redact
 from roomkit.tools._outcome import OutcomeKind, ToolOutcome, kept_in_tool_memory, read_outcome
 from roomkit.tools._turn_calls import AnnouncedCall, reporting
@@ -749,7 +749,9 @@ class AIToolsMixin(_AIChannelContract):
             telemetry.end_span(tool_span_id, status="cancelled")
             raise
         except Exception as exc:
-            telemetry.end_span(tool_span_id, status="error", error_message=str(exc))
+            telemetry.end_span(
+                tool_span_id, status="error", error_message=span_error(telemetry, exc)
+            )
             return await self._raised_outcome(tc, arguments, scope.room_id, exc)
 
     async def _report_unreported_calls(self, loop_ctx: _ToolLoopContext) -> None:

@@ -133,7 +133,7 @@ class InboundIdentityMixin(HelpersMixin):
         if _sender_already_identified(event, context):
             return _as_the_record_named(event, context), None, None
 
-        from roomkit.telemetry.base import SpanKind
+        from roomkit.telemetry.base import SpanKind, span_error
         from roomkit.telemetry.context import get_current_span
 
         identity_span = telemetry.start_span(
@@ -183,7 +183,7 @@ class InboundIdentityMixin(HelpersMixin):
         except BaseException as exc:
             # A cancellation (the pre-commit budget spent) or an error with no
             # message leaves no result for the span to read.
-            _identity_error = str(exc) or type(exc).__name__
+            _identity_error = span_error(telemetry, exc)
             raise
         finally:
             if _identity_error:

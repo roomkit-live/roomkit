@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **A span holds no address and no error text by default** (HITL a5171c2d,
+  RMK-1213). A sender's address (`sender_id` on `framework.inbound` and
+  `framework.route`), a recipient's (`delivery.recipient`), a provider's
+  error (`delivery.error`) and each error's text (`error_message`, which
+  OpenTelemetry copies into the status and the exception event) went to the
+  exporter, often outside the application's production data. An `error_message`
+  now reads the class's name (`ValueError`), and the others are left out;
+  `TelemetryConfig(record_sensitive_data=True)` records them as before.
+  **BREAKING** for whoever reads those fields: `RoomKit(telemetry=provider)`
+  is private too.
+
 - **`ConsoleTelemetryProvider` writes out what could forge a log line**
   (RMK-1213). A span's attributes, its error, its name, and a metric's name
   and attributes were interpolated as they were, and a sender's text or a

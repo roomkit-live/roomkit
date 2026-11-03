@@ -5422,7 +5422,7 @@
     "VOICE_SESSION": ["member", "'voice.session'"]
   },
   "roomkit.telemetry.TelemetryConfig": {
-    "__init__": ["def", "provider=None", "sample_rate=1.0", "enabled_spans=None", "metadata=<factory>", "suppressed_hook_triggers=<factory>"]
+    "__init__": ["def", "provider=None", "sample_rate=1.0", "enabled_spans=None", "metadata=<factory>", "record_sensitive_data=False", "suppressed_hook_triggers=<factory>"]
   },
   "roomkit.telemetry.TelemetryProvider": {
     "close": ["def"],

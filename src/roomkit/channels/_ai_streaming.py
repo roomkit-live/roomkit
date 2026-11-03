@@ -53,7 +53,7 @@ from roomkit.providers.ai.base import (
 )
 from roomkit.providers.ai.tool_intent import owning_tools, take_intent
 from roomkit.realtime.base import EphemeralEventType
-from roomkit.telemetry.base import Attr, SpanKind, TelemetryProvider
+from roomkit.telemetry.base import Attr, SpanKind, TelemetryProvider, span_error
 from roomkit.telemetry.context import get_current_span
 from roomkit.tools.context import _current_loop_ctx, _ToolLoopContext
 
@@ -144,7 +144,10 @@ def _end_unfinished_turn(turn: _StreamTurnState, exc: BaseException) -> None:
     attributes = _turn_span_attributes(turn)
     if isinstance(exc, Exception):
         turn.telemetry.end_span(
-            turn.span_id, status="error", error_message=str(exc), attributes=attributes
+            turn.span_id,
+            status="error",
+            error_message=span_error(turn.telemetry, exc),
+            attributes=attributes,
         )
     else:
         turn.telemetry.end_span(turn.span_id, status="cancelled", attributes=attributes)
@@ -430,7 +433,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         turn.telemetry.end_span(
             turn.span_id,
             status=turn_span_status(turn.reason),
-            error_message=None if turn.error is None else str(turn.error),
+            error_message=None if turn.error is None else span_error(turn.telemetry, turn.error),
             attributes=_turn_span_attributes(turn),
         )
         if self._after_response_hook:

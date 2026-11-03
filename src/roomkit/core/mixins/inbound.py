@@ -263,7 +263,7 @@ class InboundMixin(HelpersMixin):
     ) -> InboundResult:
         """:meth:`process_inbound` for *message*, whose delivery *named*
         names, from RFC §10.1 step 1."""
-        from roomkit.telemetry.base import SpanKind
+        from roomkit.telemetry.base import SpanKind, sensitive, span_error
         from roomkit.telemetry.context import get_current_span, reset_span, set_current_span
 
         telemetry = self._telemetry
@@ -276,7 +276,7 @@ class InboundMixin(HelpersMixin):
                 parent_id=get_current_span(),
                 channel_id=message.channel_id,
                 room_id=room_id,
-                attributes={"sender_id": message.sender_id or ""},
+                attributes=sensitive(telemetry, {"sender_id": message.sender_id or ""}),
             )
 
         # One deadline from the call's start to its decision (RFC §13.6), as
@@ -357,7 +357,7 @@ class InboundMixin(HelpersMixin):
             telemetry.end_span(
                 inbound_span_id,
                 status="error",
-                error_message=str(exc),
+                error_message=span_error(telemetry, exc),
                 attributes={"deferred": defer_delivery},
             )
             raise
@@ -930,7 +930,7 @@ class InboundMixin(HelpersMixin):
         Returns:
             A tuple of (room_id, room_just_created).
         """
-        from roomkit.telemetry.base import SpanKind
+        from roomkit.telemetry.base import SpanKind, sensitive, span_error
         from roomkit.telemetry.context import get_current_span
 
         route_span = telemetry.start_span(
@@ -938,7 +938,7 @@ class InboundMixin(HelpersMixin):
             "framework.route",
             parent_id=get_current_span(),
             channel_id=message.channel_id,
-            attributes={"sender_id": message.sender_id or ""},
+            attributes=sensitive(telemetry, {"sender_id": message.sender_id or ""}),
         )
         try:
             if room_id is None:
@@ -951,7 +951,9 @@ class InboundMixin(HelpersMixin):
                 )
             telemetry.end_span(route_span, attributes={"room_id": room_id or ""})
         except Exception as exc:
-            telemetry.end_span(route_span, status="error", error_message=str(exc))
+            telemetry.end_span(
+                route_span, status="error", error_message=span_error(telemetry, exc)
+            )
             raise
 
         # Backfill room_id on the INBOUND_PIPELINE span now that routing is done

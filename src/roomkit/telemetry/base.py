@@ -144,6 +144,10 @@ class TelemetryProvider(ABC):
     The default ``NoopTelemetryProvider`` has zero overhead.
     """
 
+    # Whether the kit reports what can hold personal data: set from
+    # ``TelemetryConfig.record_sensitive_data``, off otherwise.
+    _record_sensitive_data: bool = False
+
     @property
     @abstractmethod
     def name(self) -> str:
@@ -262,3 +266,17 @@ class TelemetryProvider(ABC):
         except Exception as exc:
             self.end_span(span_id, status="error", error_message=str(exc))
             raise
+
+
+def span_error(telemetry: TelemetryProvider, exc: BaseException) -> str:
+    """What a span says of *exc*: its class's name, unless the kit's
+    ``TelemetryConfig.record_sensitive_data`` asks for its text, which can
+    quote a message or an address."""
+    name = type(exc).__name__
+    return (str(exc) or name) if telemetry._record_sensitive_data else name
+
+
+def sensitive(telemetry: TelemetryProvider, attributes: dict[str, Any]) -> dict[str, Any]:
+    """*attributes*, an address among them, as a span may carry them: none
+    unless the kit's ``TelemetryConfig.record_sensitive_data`` asks for them."""
+    return attributes if telemetry._record_sensitive_data else {}

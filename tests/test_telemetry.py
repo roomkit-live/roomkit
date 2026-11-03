@@ -827,6 +827,7 @@ class TestDeliveryTelemetry:
         from roomkit.channels.transport import TransportChannel
 
         mock = MockTelemetryProvider()
+        mock._record_sensitive_data = True
         provider = _FailingTransportProvider()
         ch = TransportChannel(
             "sms1",
@@ -909,6 +910,83 @@ class TestVoiceSessionTelemetry:
 # ---------------------------------------------------------------------------
 # Phase 2: Store query span (PostgresStore skipped — mocking pool is heavy)
 # ---------------------------------------------------------------------------
+
+
+class _RaisingHookKit:
+    """A kit of two channels whose hook raises a text quoting an address."""
+
+    @staticmethod
+    async def run(telemetry: Any) -> None:
+        kit = RoomKit(telemetry=telemetry)
+        kit.register_channel(SimpleChannel("ch1"))
+        kit.register_channel(SimpleChannel("ch2"))
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST, name="scan")
+        async def scan(event: RoomEvent, context: RoomContext) -> HookResult:
+            raise ValueError("+15145550123 is refused")
+
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "ch1")
+        await kit.attach_channel(room.id, "ch2")
+        await kit.process_inbound(
+            InboundMessage(
+                channel_id="ch1", sender_id="+15145550123", content=TextContent(body="hi")
+            ),
+            room_id=room.id,
+        )
+        await kit.close()
+
+
+class TestSensitiveData:
+    """What can hold personal data stays out of a span unless asked for."""
+
+    async def test_a_span_holds_no_address_and_no_error_text_by_default(self) -> None:
+        mock = MockTelemetryProvider()
+        await _RaisingHookKit.run(mock)
+        recorded = str([(s.attributes, s.error_message) for s in mock.spans])
+        assert "+15145550123" not in recorded
+        [hook] = mock.get_spans(SpanKind.HOOK_SYNC)
+        assert hook.status == "error"
+        assert hook.error_message == "ValueError"
+
+    async def test_the_config_records_them_when_it_asks(self) -> None:
+        mock = MockTelemetryProvider()
+        await _RaisingHookKit.run(TelemetryConfig(provider=mock, record_sensitive_data=True))
+        [root] = [s for s in mock.spans if s.name == "framework.inbound"]
+        assert root.attributes["sender_id"] == "+15145550123"
+        [route] = [s for s in mock.spans if s.name == "framework.route"]
+        assert route.attributes["sender_id"] == "+15145550123"
+        [hook] = mock.get_spans(SpanKind.HOOK_SYNC)
+        assert hook.error_message == "+15145550123 is refused"
+
+    async def test_a_delivery_span_holds_no_recipient_and_no_error_by_default(self) -> None:
+        from roomkit.channels.transport import TransportChannel
+        from roomkit.core.exceptions import ProviderDeliveryError
+        from roomkit.models.channel import ChannelBinding
+        from roomkit.models.event import EventSource
+        from roomkit.models.room import Room
+
+        mock = MockTelemetryProvider()
+        ch = TransportChannel("sms1", ChannelType.SMS, provider=_SoftFailTransportProvider())
+        ch._telemetry = mock
+        event = RoomEvent(
+            room_id="room1",
+            source=EventSource(channel_id="sms1", channel_type=ChannelType.SMS),
+            content=TextContent(body="hello"),
+        )
+        binding = ChannelBinding(
+            channel_id="sms1",
+            room_id="room1",
+            channel_type=ChannelType.SMS,
+            metadata={"phone_number": "+15551234567"},
+        )
+        context = RoomContext(room=Room(id="room1"), bindings=[], recent_events=[])
+        with pytest.raises(ProviderDeliveryError):
+            await ch.deliver(event, binding, context)
+        [span] = mock.get_spans(SpanKind.DELIVERY)
+        assert span.error_message == "send_failed"
+        assert Attr.DELIVERY_RECIPIENT not in span.attributes
+        assert Attr.DELIVERY_ERROR not in span.attributes
 
 
 class TestStoreQuerySpan:
@@ -1068,6 +1146,7 @@ class TestDeliveryTelemetryPhase3:
         from roomkit.models.room import Room
 
         mock = MockTelemetryProvider()
+        mock._record_sensitive_data = True
         provider = _SoftFailTransportProvider()
         ch = TransportChannel("sms1", ChannelType.SMS, provider=provider)
         ch._telemetry = mock  # type: ignore[attr-defined]
@@ -1132,6 +1211,7 @@ class TestDeliveryTelemetryPhase3:
         from roomkit.models.room import Room
 
         mock = MockTelemetryProvider()
+        mock._record_sensitive_data = True
         provider = _MockTransportProvider()
         ch = TransportChannel("sms1", ChannelType.SMS, provider=provider)
         ch._telemetry = mock  # type: ignore[attr-defined]

@@ -483,7 +483,7 @@ async def test_detached_span_reports_a_failed_tail() -> None:
 
     (tail,) = [s for s in telemetry.spans if s.name == "framework.detached"]
     assert tail.status == "error"
-    assert tail.error_message == str(exc)
+    assert tail.error_message == type(exc).__name__
     await kit.close()
 
 
