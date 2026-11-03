@@ -220,6 +220,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A streamed turn stores no blank text segment** (RMK-1300). A reasoning model
+  writing a line break before its call left a `MESSAGE` of `"\n\n"` in the room,
+  delivered to every channel, an empty SMS included. The stream's reader still
+  reads the deltas; a turn's end goes to its last message.
+
 - **One `find_tools` query reveals the same tools from one process to the next**
   (HITL ceb81513, RMK-1053). A tool at exactly half of the best score was kept or
   cut on the last bit of a sum taken in a set's order, which changes per process.

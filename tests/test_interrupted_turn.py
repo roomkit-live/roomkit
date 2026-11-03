@@ -289,6 +289,31 @@ async def test_a_turn_without_final_text_keeps_its_record_on_its_last_message(
     await kit.close()
 
 
+@pytest.mark.parametrize("blank", ["\n\n", " ", "\t\n"], ids=["lines", "space", "tab"])
+async def test_a_blank_segment_writes_no_message(blank: str, streaming: bool) -> None:
+    """A round that writes only blank text before its call, common with a
+    reasoning server, stores nothing and delivers nothing: an empty SMS says
+    nothing (RMK-1300). The call's rows and the final text are unchanged."""
+    provider = MockAIProvider(
+        ai_responses=[_looking(blank), AIResponse(content="Found.", finish_reason="stop")],
+        streaming=streaming,
+    )
+    kit, _, _ = await _room(provider)
+    transport = SimpleChannel("sms2")
+    kit.register_channel(transport)
+    await kit.attach_channel("r1", "sms2")
+
+    await _say(kit, "go")
+
+    assert await _ai_messages(kit) == ["Found."]
+    assert blank not in [
+        event.content.body
+        for event in transport.delivered
+        if isinstance(event.content, TextContent)
+    ]
+    await kit.close()
+
+
 @pytest.mark.parametrize(
     "answers",
     [

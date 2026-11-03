@@ -431,6 +431,10 @@ class SegmentWriter:
             return None
         body = "".join(self._accumulated)
         self._accumulated.clear()
+        # A blank segment says nothing: no row, so no empty SMS. A record it
+        # would have carried goes to the turn's last message.
+        if not body.strip():
+            return None
         metadata = dict(self._sr.response_metadata or {})
         # Read after the loop's end: this is the turn's final text
         record = self._turn_record
