@@ -769,6 +769,23 @@ class TestGreetingGate:
 
         await kit.close()
 
+    async def test_gate_holds_until_each_greeting_cleared_it(self) -> None:
+        """Two greetings on one room hold the gate: the first over does not release it."""
+        kit = RoomKit()
+        room = await kit.create_room()
+        kit._set_greeting_gate(room.id)
+        kit._set_greeting_gate(room.id)
+        waiting = asyncio.ensure_future(kit._wait_greeting_gate(room.id))
+        await asyncio.sleep(0)
+
+        kit._clear_greeting_gate(room.id)
+        await asyncio.sleep(0)
+        assert not waiting.done()
+
+        kit._clear_greeting_gate(room.id)
+        await asyncio.wait_for(waiting, timeout=1.0)
+        await kit.close()
+
     async def test_voice_greeting_uses_say_not_send_tts(self) -> None:
         """Voice greeting dispatches via say() not _send_tts()."""
         from unittest.mock import AsyncMock, patch
