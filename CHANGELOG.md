@@ -82,10 +82,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reaction or a participant's arrival made the model answer it, a
   generation paid per notice, and a `Loop`, an auto-delegating
   `Supervisor`, an `ACPChannel` and a steered turn took it as a message.
-  Such an event is still stored and handed to the memory, and answered by
-  no turn; to have an agent react to a notice, send it an instruction
-  (`kit.deliver(..., instruction=True)`). roomkit-rs answers the same two
-  types.
+  Such an event is still stored and handed to the memory, though the
+  conversation a turn reads does not show it, and answered by no turn, nor
+  recorded as an agent not asked past the depth limit. The `session_started`
+  notice a voice session's `process_inbound()` sends no longer makes an
+  agent speak first: an agent greets with `Agent(greeting=...)`, or a hook
+  on `ON_SESSION_STARTED` delivers it an instruction. To have an agent react
+  to a notice, send it an instruction (`kit.deliver(..., instruction=True)`).
+  roomkit-rs answers the same two types.
 
 - **`MCPToolProvider.call_tool()` notes what is not text, and reads a text
   resource as its text** (RFC §21.2, RMK-1251). An image the server

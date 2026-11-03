@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from roomkit.channels.base import Channel
-from roomkit.core._changes import for_channels
+from roomkit.core._changes import for_channels, opens_no_turn
 from roomkit.core._failure_log import log_failure
 from roomkit.core._instructions import response_metadata
 from roomkit.core._reentrance import answers_past_limit, within_turn
@@ -53,7 +53,6 @@ from roomkit.models.event import (
     TextContent,
     VideoContent,
     is_interruption_marker,
-    is_tool_call_record,
     refuse_too_deep,
     with_pipeline_id,
 )
@@ -1036,11 +1035,11 @@ class EventRouter:
 
         One per agent, in place of the response it was not asked for: its
         source is that agent, its text empty, its depth the one the response
-        would have had. A tool-call row leaves none, since no agent answers
-        one.
+        would have had. An event that opens no turn (a tool-call row, a
+        notice, a change: RFC §6.4) leaves none, since no agent answers one.
         """
         result = _TargetResult(channel_id=binding.channel_id)
-        if is_tool_call_record(event):
+        if opens_no_turn(event):
             return result
         record = unanswered(event, binding.channel_id, binding.channel_type).model_copy(
             update={"status": EventStatus.BLOCKED, "blocked_by": CHAIN_DEPTH_LIMIT}

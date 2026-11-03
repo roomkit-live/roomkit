@@ -11,12 +11,14 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from roomkit.channels.ai import AIChannel
 from roomkit.core.framework import RoomKit
 from roomkit.models.channel import ChannelOutput
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import ChannelCategory, EventStatus, EventType
-from roomkit.models.event import TextContent, ToolCallContent
+from roomkit.models.event import EventContent, TextContent, ToolCallContent
 from roomkit.models.store_filter import EventFilter
 from roomkit.providers.ai.base import AIResponse, AITool, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
@@ -138,16 +140,20 @@ async def test_the_limit_holds_at_its_default(streaming: bool) -> None:
         assert len(rows) == 1 if blocked else len(rows) > 1
 
 
-async def test_a_tool_call_row_at_the_limit_leaves_no_record(streaming: bool) -> None:
-    """No agent answers a tool-call row, so none is recorded as not asked."""
+@pytest.mark.parametrize("kind", [EventType.TOOL_CALL_START, EventType.SYSTEM])
+async def test_what_opens_no_turn_at_the_limit_leaves_no_record(
+    streaming: bool, kind: EventType
+) -> None:
+    """No agent answers a tool-call row nor a notice (RFC §6.4, RMK-1257),
+    so none is recorded as not asked."""
     kit, _, _, _, _ = await _turn(streaming, max_chain_depth=1)
-
-    await kit.send_event(
-        "r1",
-        "sms1",
-        ToolCallContent(tool_name="lookup", tool_id="t9", arguments={}, status="pending"),
-        event_type=EventType.TOOL_CALL_START,
+    content: EventContent = (
+        ToolCallContent(tool_name="lookup", tool_id="t9", arguments={}, status="pending")
+        if kind == EventType.TOOL_CALL_START
+        else TextContent(body="The order shipped")
     )
+
+    await kit.send_event("r1", "sms1", content, event_type=kind)
 
     assert await _ai_rows(kit) == []
     assert await kit.store.list_observations("r1") == []
