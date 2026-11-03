@@ -344,11 +344,13 @@ class ExecutorTurn:
         context.run(set_turn_outlet, self._outlet)
         context.run(set_turn_room_hooks, self._request.room_id, self._request.room_hooks)
         trace = self._request.trace or {}
-        if trace.get("span_id") and context.run(get_current_span) is None:
-            # A context of its own: the turn continues the owner's span, in
-            # the owner's trace when the request names it (RFC §10.6.9).
+        span_id = trace.get("span_id")
+        if span_id and context.run(get_current_span) != span_id:
+            # The turn continues the broadcast's span, whichever process runs
+            # it and whatever its context holds: its work reads the broadcast
+            # as current, in the owner's trace (RFC §10.6.9, §15.7).
             remote = self._telemetry.extract_context(trace) if self._telemetry else None
-            context.run(set_current_span, trace["span_id"], telemetry_ctx=remote)
+            context.run(set_current_span, span_id, telemetry_ctx=remote)
         self._work = asyncio.get_running_loop().create_task(
             work, context=context, name=f"roomkit-turn-{self._request.turn_id}-work"
         )

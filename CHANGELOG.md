@@ -208,6 +208,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A turn's work runs under the broadcast's span in every process** (RFC
+  §10.6.9, §15.7, HITL f9ab2401). In the process that owned it, what a tool or
+  a hook of a turn asked of the kit sat under `framework.inbound`, beside the
+  broadcast, and under the broadcast in another process. It now reads the
+  broadcast as its span everywhere: `framework.send_event` called from a tool
+  is a child of `framework.broadcast`. No id or attribute changes.
+
 - **A binding changed during a stream holds from its next row** (RMK-1280,
   RMK-1283). A streamed answer's rows were planned with the bindings of the
   stream's start: a transport made write-only or detached mid-stream was still

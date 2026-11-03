@@ -34,6 +34,7 @@ from roomkit.realtime.base import EphemeralEvent, EphemeralEventType
 from roomkit.scoring import MockScorer, ScoringHook
 from roomkit.store.memory import InMemoryStore
 from roomkit.telemetry.base import SpanKind
+from roomkit.telemetry.context import get_current_span
 from roomkit.telemetry.mock import MockTelemetryProvider
 from roomkit.tools.human_input import HumanInputToolHandler
 from roomkit.turns import InMemoryTurnBackend, TurnClient, TurnExecutor, memory
@@ -233,6 +234,47 @@ async def test_a_turn_in_a_context_of_its_own_continues_the_owner_s_span(
     generations = telemetry.get_spans(SpanKind.LLM_GENERATE)
     assert generations and all(span.parent_id == span_id for span in generations)
     await kit.close()
+
+
+async def test_a_turn_s_work_runs_under_the_broadcast() -> None:
+    """The work of a turn reads the broadcast as its span, as an executor in
+    another process does: what a tool asks of the kit sits under it (RFC
+    §10.6.9, §15.7)."""
+    telemetry = MockTelemetryProvider()
+    seen: list[str | None] = []
+
+    async def lookup(name: str, arguments: dict[str, Any]) -> str:
+        seen.append(get_current_span())
+        return "42"
+
+    calling = AIResponse(
+        content="",
+        finish_reason="tool_calls",
+        tool_calls=[AIToolCall(id="c1", name="lookup", arguments={})],
+    )
+    ai = AIChannel(
+        "agent",
+        provider=MockAIProvider(ai_responses=[calling, AIResponse(content="Done.")]),
+        tool_handler=lookup,
+    )
+    room = RoomKit(telemetry=telemetry)
+    room.register_channel(SimpleChannel("ops"))
+    room.register_channel(ai)
+    await room.create_room(room_id="r1")
+    await room.attach_channel("r1", "ops")
+    await room.attach_channel(
+        "r1",
+        "agent",
+        category=ChannelCategory.INTELLIGENCE,
+        metadata={
+            "tools": [{"name": "lookup", "description": "Look.", "parameters": {"type": "object"}}]
+        },
+    )
+    await _say(room)
+
+    broadcasts = {span.id for span in telemetry.get_spans(SpanKind.BROADCAST)}
+    assert seen and all(span_id in broadcasts for span_id in seen)
+    await room.close()
 
 
 async def test_a_scoring_hook_attaches_to_a_host_s_executor() -> None:
