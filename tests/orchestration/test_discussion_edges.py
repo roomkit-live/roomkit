@@ -945,6 +945,22 @@ async def test_an_agent_the_room_never_delivers_to_learns_nothing_and_is_not_que
     await kit.close()
 
 
+async def test_a_second_nameless_sender_does_not_answer_an_ask_of_the_first() -> None:
+    """The agent asks ``@chat`` while only m has spoken; n, a second sender
+    with no name on chat, reads ``@chat (2)`` (RMK-1221): n's message is no
+    answer to that ask, which stays pending for m."""
+    a = _provider("@chat can you confirm?", "noted")
+    kit = RoomKit()
+    await _room(kit, {"a": a})
+    for sender, body in (("m", "@a the deploy failed"), ("n", "it looks fine to me")):
+        said = InboundMessage(channel_id="chat", sender_id=sender, content=TextContent(body=body))
+        await kit.process_inbound(said, room_id="r1")
+        await _settle(kit)
+
+    assert _queue(kit).asked == (("a", "@chat"),)
+    await kit.close()
+
+
 async def test_two_nameless_senders_of_one_channel_leave_its_name_ambiguous() -> None:
     """Two senders with no name write through chat (``@chat``, then
     ``@chat (2)``, RMK-1221): ``@chat`` names neither alone, so the agent's
