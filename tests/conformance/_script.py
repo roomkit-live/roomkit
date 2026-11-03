@@ -17,6 +17,7 @@ from uuid import uuid4
 from roomkit.channels.base import Channel
 from roomkit.core.exceptions import ProviderDeliveryError
 from roomkit.core.inbound_router import InboundRoomRouter
+from roomkit.models import ThinkingDeltaMarker
 from roomkit.models.channel import ChannelBinding, ChannelCapabilities, ChannelOutput
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage, ProviderResult
@@ -317,6 +318,9 @@ class ScriptedChannel(Channel):
                     self._harness.record_streamed(room_id, self.channel_id, {"text": item})
                     if item == stop_after:
                         break
+                elif isinstance(item, ThinkingDeltaMarker):
+                    thinking = {"thinking": item.thinking}
+                    self._harness.record_streamed(room_id, self.channel_id, thinking)
                 elif isinstance(item, RoomEvent):
                     row = {"row": item.model_dump(mode="json")}
                     self._harness.record_streamed(room_id, self.channel_id, row)

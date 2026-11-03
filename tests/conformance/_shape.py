@@ -132,6 +132,7 @@ MODEL = {"rounds", "vision", "pricing"}
 MODEL_ROUND = {
     "text",
     "deltas",
+    "thinking",
     "calls",
     "finish_reason",
     "usage",

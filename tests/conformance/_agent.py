@@ -35,6 +35,7 @@ from roomkit.providers.ai.base import (
     StreamDone,
     StreamEvent,
     StreamTextDelta,
+    StreamThinkingDelta,
     response_stream_events,
 )
 from roomkit.tasks import CancelTaskTool, TaskStatusTool
@@ -114,6 +115,9 @@ class ScriptedModel(AIProvider):
         cross as one (RFC §10.6.4)."""
         round_ = self._next_round(context)
         await self._hold(round_)
+        for piece in round_.get("thinking", []):
+            yield StreamThinkingDelta(thinking=piece)
+            await asyncio.sleep(0)
         for position, delta in enumerate(_deltas(round_)):
             if position:
                 await asyncio.sleep(0)
