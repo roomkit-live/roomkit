@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **`check_all_timers` goes on past a room that fails** (HITL f85e4849,
+  RMK-1281). A room deleted since it was listed, a store's failure on one
+  room or a room id the lock refuses raised out of the sweep, and the rooms
+  after it went unchecked. Such a room is now logged and passed over, as in
+  roomkit-rs, and only `KitClosedError` stops the sweep.
+
 - **A span holds no address and no error text by default** (HITL a5171c2d,
   RMK-1213). A sender's address (`sender_id` on `framework.inbound` and
   `framework.route`), a recipient's (`delivery.recipient`), a provider's
@@ -246,8 +252,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   those keys led by a NUL character (`\x00__delivery__:r1`). Whatever the
   manager, a room id holding one takes no room lock: `create_room`, and any
   call taking the lock of a room the kit did not make (one written to the
-  store straight), raise `ValueError`; `check_all_timers` logs such a room
-  and goes on with the others. A room's own lock keeps its id:
+  store straight), raise `ValueError`. A room's own lock keeps its id:
   `kit.lock_manager.locked(room_id)` is unchanged.
   Code running under a delivery lane's claim no longer counts as holding a
   room lock, so a `Queued` delivery made from it waits its turn. Processes

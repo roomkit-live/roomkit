@@ -25,7 +25,8 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from roomkit.core._room_timers import DueTransition, due_transitions, transitioned
-from roomkit.core.locks import _has_room_lock, takes_no_room_lock, unlocked_context
+from roomkit.core.exceptions import KitClosedError
+from roomkit.core.locks import _has_room_lock, unlocked_context
 from roomkit.core.task_utils import await_unless_cut, run_to_its_end, start_named
 from roomkit.models.enums import EventType, HookTrigger, RoomStatus
 
@@ -126,9 +127,10 @@ class TimerTransitions:
 
     async def check_all(self, *, organization_id: str | None = None) -> list[Room]:
         """:meth:`check` every ACTIVE and PAUSED room, one tenant's with
-        *organization_id*, and return the rooms that transitioned. A stored
-        room whose id takes no room lock is logged and passed over: one bad
-        record stops no other room's check."""
+        *organization_id*, and return the rooms that transitioned. A room
+        whose check fails is logged and passed over: a room deleted since it
+        was listed, one whose id takes no room lock or a store's failure on it
+        stops no other room's check. The kit's close stops the sweep."""
         rooms = [
             room
             for status in (RoomStatus.ACTIVE, RoomStatus.PAUSED)
@@ -136,12 +138,13 @@ class TimerTransitions:
         ]
         changed: list[Room] = []
         for room in rooms:
-            if takes_no_room_lock(room.id):
-                logger.warning(
-                    "Room %r holds a NUL character: its timers are not checked", room.id
-                )
+            try:
+                checked = await self.check(room.id, organization_id=organization_id)
+            except KitClosedError:
+                raise
+            except Exception as exc:
+                logger.warning("Checking the timers of room %r failed: %s", room.id, exc)
                 continue
-            checked = await self.check(room.id, organization_id=organization_id)
             if checked.status != room.status:
                 changed.append(checked)
         return changed
