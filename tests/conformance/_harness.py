@@ -30,6 +30,7 @@ from roomkit.models.tool_call import (
     ToolCallEvent,
     ToolRoundEvent,
 )
+from roomkit.orchestration.base import Orchestration
 from roomkit.orchestration.status_bus import StatusEntry
 from roomkit.store.base import ConversationStore
 from roomkit.tasks import DelegatedTask
@@ -66,7 +67,6 @@ from tests.conformance._script import GATE_BOUND_S, Gates, ScriptedRouter
 from tests.conformance._store import STORE_CALLS
 from tests.conformance._strategies import (
     STRATEGY_CALLS,
-    ScriptedStrategy,
     kit_orchestration,
     strategies,
 )
@@ -166,7 +166,7 @@ class Harness:
         kwargs |= kit_orchestration(kit_setup, self)
         self.kit = RoomKit(**kwargs)
 
-    def strategy(self, strategy_id: str) -> ScriptedStrategy:
+    def strategy(self, strategy_id: str) -> Orchestration:
         """The scripted strategy *strategy_id* names (README, \"Setup\")."""
         if strategy_id not in self.strategies:
             raise UnreadableError(f"no scripted strategy {strategy_id!r}")

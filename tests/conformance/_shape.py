@@ -24,6 +24,7 @@ from tests.conformance._routing import (
 )
 from tests.conformance._store import READ_MARKER_ARGUMENTS, STORE_ARGUMENTS
 from tests.conformance._strategies import (
+    LOOP,
     STRATEGY,
     STRATEGY_ARGUMENTS,
     STRATEGY_STEP,
@@ -354,6 +355,8 @@ def unknown_members(scenario: Mapping[str, Any]) -> list[str]:
 def _strategy(strategy: Mapping[str, Any], path: str, found: list[str]) -> None:
     """The members of a scripted strategy, and of its install and uninstall."""
     _members(strategy, STRATEGY, path, found)
+    if "loop" in strategy:
+        _members(strategy["loop"], LOOP, f"{path}.loop", found)
     for member, known in (("install", STRATEGY_STEP), ("uninstall", STRATEGY_UNINSTALL)):
         step = strategy.get(member, {})
         _members(step, known, f"{path}.{member}", found)

@@ -2,8 +2,10 @@
 
 A scripted strategy is a host's own: the agents it names by their channel
 ids, what its install does (a gate, kit calls made as a reaction's, then a
-refusal of the room) and what its own uninstall step does. One object stands
-for each id, whatever the room it is installed in.
+refusal of the room) and what its own uninstall step does. A strategy with a
+``loop`` is the implementation's Loop instead, its agents named by their ids
+(RFC §19.7.4). One object stands for each id, whatever the room it is
+installed in.
 """
 
 from __future__ import annotations
@@ -12,6 +14,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from roomkit import RoomKit
+from roomkit.orchestration import Loop
 from roomkit.orchestration.base import Orchestration
 from tests.conformance._script import perform
 
@@ -19,9 +22,10 @@ if TYPE_CHECKING:
     from tests.conformance._calls import Call
     from tests.conformance._harness import Harness
 
-STRATEGY = {"id", "agents", "install", "uninstall"}
+STRATEGY = {"id", "agents", "install", "uninstall", "loop"}
 STRATEGY_STEP = {"gate", "do", "refuse"}
 STRATEGY_UNINSTALL = {"gate", "do"}
+LOOP = {"agent", "reviewer", "reviewers", "max_iterations", "strategy"}
 
 
 class ScriptedStrategy(Orchestration):
@@ -53,9 +57,20 @@ async def _step(harness: Harness, step: Mapping[str, Any], room_id: str) -> None
     await perform(harness, reaction, {"room": room_id})
 
 
-def strategies(setup: Mapping[str, Any], harness: Harness) -> dict[str, ScriptedStrategy]:
+def _loop(spec: Mapping[str, Any]) -> Loop:
+    """The implementation's Loop a strategy's ``loop`` builds, its agents
+    named by their channel ids."""
+    named = ("reviewer", "reviewers", "max_iterations", "strategy")
+    options: dict[str, Any] = {key: spec[key] for key in named if key in spec}
+    return Loop(spec["agent"], **options)
+
+
+def strategies(setup: Mapping[str, Any], harness: Harness) -> dict[str, Orchestration]:
     """The scripted strategies of a scenario's setup, by id."""
-    return {spec["id"]: ScriptedStrategy(spec, harness) for spec in setup.get("strategies", [])}
+    return {
+        spec["id"]: _loop(spec["loop"]) if "loop" in spec else ScriptedStrategy(spec, harness)
+        for spec in setup.get("strategies", [])
+    }
 
 
 def kit_orchestration(kit: Mapping[str, Any], harness: Harness) -> dict[str, Any]:
@@ -95,9 +110,10 @@ async def _room_strategy(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]
     strategy = kit.room_strategy(spec["room_id"], **_org(spec))
     if strategy is None:
         return None
-    if not isinstance(strategy, ScriptedStrategy):
-        raise TypeError(f"room {spec['room_id']} holds a strategy no scenario named")
-    return strategy.strategy_id
+    for strategy_id, named in harness.strategies.items():
+        if named is strategy:
+            return strategy_id
+    raise TypeError(f"room {spec['room_id']} holds a strategy no scenario named")
 
 
 STRATEGY_CALLS: dict[str, Call] = {
