@@ -306,6 +306,25 @@ class TestConsoleProvider:
         assert "METRIC" in caplog.text
         assert "42.00" in caplog.text
 
+    def test_console_writes_out_what_could_forge_a_log_line(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A value, an error, a name or a key is one log line's, whatever it holds."""
+        forged = "x\n[SPAN END] custom forged"
+        p = ConsoleTelemetryProvider()
+        with caplog.at_level(logging.INFO, logger="roomkit.telemetry"):
+            span_id = p.start_span(SpanKind.CUSTOM, forged, parent_id=forged)
+            p.end_span(span_id, attributes={forged: forged})
+            span_id = p.start_span(SpanKind.CUSTOM, "fail", attributes={"a": "b, c=d"})
+            p.end_span(span_id, status="error", error_message=forged)
+            p.record_metric(forged, 1.0, unit=forged, attributes={forged: forged})
+
+        lines = [record.getMessage() for record in caplog.records]
+        assert len(lines) == 5
+        assert all("\n" not in line for line in lines)
+        assert "'b, c=d'" in lines[3]
+        assert "error='x\\n[SPAN END] custom forged'" in lines[3]
+
     def test_console_close_warning(self, caplog: pytest.LogCaptureFixture) -> None:
         p = ConsoleTelemetryProvider()
         p.start_span(SpanKind.CUSTOM, "leak")

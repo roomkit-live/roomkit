@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **`ConsoleTelemetryProvider` writes out what could forge a log line**
+  (RMK-1213). A span's attributes, its error, its name, and a metric's name
+  and attributes were interpolated as they were, and a sender's text or a
+  model's tool name may reach them: a line break started a log line of its
+  own. Each value is now its `repr`, and a name or a key has its line breaks
+  and control characters written out.
+
 - **A served skill's approval to run code is its source's alone** (RMK-1282).
   `ServedExecutionGate` kept an approval by conversation, entry name and
   fingerprint, so once a turn could give its own registry, the same entry

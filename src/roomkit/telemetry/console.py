@@ -11,6 +11,23 @@ from roomkit.telemetry.base import Span, SpanKind, TelemetryProvider
 logger = logging.getLogger("roomkit.telemetry")
 
 
+def _escaped(text: str) -> str:
+    """*text* with its line breaks and control characters written out: a
+    span's name or an attribute's key may come from a sender or a model, and
+    must not forge a log line."""
+    return repr(str(text))[1:-1]
+
+
+def _listed(attributes: dict[str, Any] | None) -> str:
+    """`` [k=v, k=v]``, each value its ``repr``, which quotes and escapes a
+    text: a value holding a delimiter or a line break forges no attribute and
+    no log line; nothing for no attribute."""
+    if not attributes:
+        return ""
+    parts = [f"{_escaped(k)}={v!r}" for k, v in attributes.items()]
+    return f" [{', '.join(parts)}]"
+
+
 class ConsoleTelemetryProvider(TelemetryProvider):
     """Logs span start/end and metrics to ``roomkit.telemetry`` logger.
 
@@ -61,9 +78,9 @@ class ConsoleTelemetryProvider(TelemetryProvider):
             self._level,
             "[SPAN START] %s %s (id=%s%s)",
             kind,
-            name,
+            _escaped(name),
             span.id,
-            f", parent={parent_id}" if parent_id else "",
+            f", parent={_escaped(parent_id)}" if parent_id else "",
         )
         return span.id
 
@@ -86,17 +103,13 @@ class ConsoleTelemetryProvider(TelemetryProvider):
 
         duration = span.duration_ms
         dur_str = f" {duration:.1f}ms" if duration is not None else ""
-        attr_str = ""
-        if span.attributes:
-            parts = [f"{k}={v}" for k, v in span.attributes.items()]
-            attr_str = f" [{', '.join(parts)}]"
-
+        attr_str = _listed(span.attributes)
         if status == "error":
             logger.log(
                 self._level,
-                "[SPAN ERROR] %s %s%s%s error=%s",
+                "[SPAN ERROR] %s %s%s%s error=%r",
                 span.kind,
-                span.name,
+                _escaped(span.name),
                 dur_str,
                 attr_str,
                 error_message or "unknown",
@@ -106,7 +119,7 @@ class ConsoleTelemetryProvider(TelemetryProvider):
                 self._level,
                 "[SPAN END] %s %s%s%s",
                 span.kind,
-                span.name,
+                _escaped(span.name),
                 dur_str,
                 attr_str,
             )
@@ -124,12 +137,11 @@ class ConsoleTelemetryProvider(TelemetryProvider):
         unit: str = "",
         attributes: dict[str, Any] | None = None,
     ) -> None:
-        unit_str = f" {unit}" if unit else ""
-        attr_str = ""
-        if attributes:
-            parts = [f"{k}={v}" for k, v in attributes.items()]
-            attr_str = f" [{', '.join(parts)}]"
-        logger.log(self._level, "[METRIC] %s = %.2f%s%s", name, value, unit_str, attr_str)
+        unit_str = f" {_escaped(unit)}" if unit else ""
+        attr_str = _listed(attributes)
+        logger.log(
+            self._level, "[METRIC] %s = %.2f%s%s", _escaped(name), value, unit_str, attr_str
+        )
 
     def close(self) -> None:
         active = len(self._spans)
