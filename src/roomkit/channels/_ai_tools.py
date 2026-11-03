@@ -1040,7 +1040,7 @@ class AIToolsMixin(_AIChannelContract):
         # Code a served skill's content may have asked for runs only with the
         # host's approval of that skill (RFC §24.7).
         refusal = await self._served_execution.refusal(
-            self._skills,
+            self._turn_skills(),
             self._activated_skill_names(),
             self._get_loop_ctx().room_id,
             name,
@@ -1084,11 +1084,12 @@ class AIToolsMixin(_AIChannelContract):
 
     async def _handle_activate_skill(self, arguments: dict[str, Any]) -> str:
         """Load and return full skill instructions, tracking activation for gating."""
-        if not self._skills:
+        skills = self._turn_skills()
+        if not skills:
             return json.dumps({"error": "No skills registry configured"})
-        result_str, skill_name, skill = await handle_activate_skill(arguments, self._skills)
+        result_str, skill_name, skill = await handle_activate_skill(arguments, skills)
         loop_ctx = self._get_loop_ctx()
-        if skill_name and skill is None and self._skills.is_served(skill_name):
+        if skill_name and skill is None and skills.is_served(skill_name):
             # A served skill that failed to load is retired, so no later
             # acknowledgement stands in for a body it does not have (RFC §24.7).
             self._retire_skill(loop_ctx, skill_name)
@@ -1098,7 +1099,7 @@ class AIToolsMixin(_AIChannelContract):
             result_str, matching = tools_hint(
                 result_str,
                 skill_name,
-                self._skills,
+                skills,
                 (t.name for t in reachable if t.name not in own),
             )
             if not matching:
@@ -1125,12 +1126,13 @@ class AIToolsMixin(_AIChannelContract):
         tool policy is applied, skill gating aside (RFC §24.3); none to check
         outside a turn, which resolved no toolset."""
         base = self._get_loop_ctx().all_context_tools
-        if base is None or self._skills is None:
+        skills = self._turn_skills()
+        if base is None or skills is None:
             return []
         admitted = (tool.name for tool in base if self._policy_allows(tool.name))
         # Its own gates are the skill's to open; a closed one nothing opens.
-        closed = self._skills.closed_tool_names(self._activated_skill_names() | {skill.name})
-        match = self._skills.requires_match
+        closed = skills.closed_tool_names(self._activated_skill_names() | {skill.name})
+        match = skills.requires_match
         return missing_required_tools(skill.metadata, admitted, closed, match=match)
 
     def _defer_activation(self, loop_ctx: _ToolLoopContext, skill_name: str) -> None:
@@ -1214,10 +1216,11 @@ class AIToolsMixin(_AIChannelContract):
 
     async def _handle_read_reference(self, arguments: dict[str, Any]) -> str:
         """Read a reference file from a skill."""
-        if not self._skills:
+        skills = self._turn_skills()
+        if not skills:
             return json.dumps({"error": "No skills registry configured"})
         try:
-            return await handle_read_reference(arguments, self._skills)
+            return await handle_read_reference(arguments, skills)
         except SkillChangedError as exc:
             # A served skill's file failed verification: the skill is retired,
             # and its next activation delivers its current body (RFC §24.7).
@@ -1226,9 +1229,10 @@ class AIToolsMixin(_AIChannelContract):
 
     async def _handle_run_script(self, arguments: dict[str, Any]) -> str:
         """Execute a script via the configured ScriptExecutor."""
-        if not self._skills:
+        skills = self._turn_skills()
+        if not skills:
             return json.dumps({"error": "No skills registry configured"})
-        return await handle_run_script(arguments, self._skills, self._script_executor)
+        return await handle_run_script(arguments, skills, self._script_executor)
 
     def _tool_search_catalogue(self, loop_ctx: _ToolLoopContext) -> list[dict[str, Any]]:
         """The turn's reachable tools as score-able dicts (name + description + tags).

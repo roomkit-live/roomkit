@@ -101,7 +101,7 @@
     "update_binding": ["def", "room_id", "binding"]
   },
   "roomkit.AIChannelTurnConfig": {
-    "__init__": ["def", "system_prompt=None", "tools=None", "temperature=None", "max_tokens=None", "thinking_budget=None", "enable_thinking=None", "reasoning_effort=None", "response_schema=None", "turn_budget_tokens=None", "turn_budget_usd=None", "tool_handler=None"]
+    "__init__": ["def", "system_prompt=None", "tools=None", "temperature=None", "max_tokens=None", "thinking_budget=None", "enable_thinking=None", "reasoning_effort=None", "response_schema=None", "turn_budget_tokens=None", "turn_budget_usd=None", "tool_handler=None", "skills=None"]
   },
   "roomkit.AIGenerationEvent": {
     "__init__": ["def", "ai_context", "channel_id", "room_id=None", "provider_name=None", "timestamp=<factory>", "trigger=None", "purpose='answer'"]

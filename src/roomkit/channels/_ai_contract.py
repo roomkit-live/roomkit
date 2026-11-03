@@ -31,6 +31,7 @@ if TYPE_CHECKING:
         StreamEvent,
     )
     from roomkit.realtime.base import EphemeralEventType
+    from roomkit.skills.registry import SkillRegistry
     from roomkit.speaking.base import SpeakDecision
     from roomkit.speaking.thought import Thought
     from roomkit.telemetry.base import TelemetryProvider
@@ -151,6 +152,8 @@ class _AIChannelContract:
     def _gated_tool_names(self) -> set[str]: ...
 
     def _activated_skill_names(self) -> set[str]: ...
+
+    def _turn_skills(self) -> SkillRegistry | None: ...
 
     @property
     def _exempt_tool_names(self) -> set[str]: ...

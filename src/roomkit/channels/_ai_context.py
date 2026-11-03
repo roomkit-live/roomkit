@@ -242,6 +242,7 @@ class AIContextMixin(_AIChannelContract):
         loop_ctx = self._get_loop_ctx()
         loop_ctx.turn_budget = self._turn_budget(binding, turn)
         loop_ctx.tool_handler = turn.tool_handler if turn is not None else None
+        loop_ctx.skills = self._given_turn_skills(turn)
 
         # A standalone instruction reads nothing of the room (RFC §10.1.1 step
         # 7): no history below, and none of the room's working memories either
@@ -751,7 +752,8 @@ class AIContextMixin(_AIChannelContract):
         """The system prompt with the skills' manifest and the bodies of the
         skills active in *activation_room*; the skill tools join *tools*
         (infra tools here, gated tools later)."""
-        if not self._skills or not self._skills.has_entries:
+        skills = self._turn_skills()
+        if not skills or not skills.has_entries:
             return system_prompt
         tools.extend(self._skill_tools())
         # The manifest block is skipped when the host renders its own skills
@@ -762,9 +764,9 @@ class AIContextMixin(_AIChannelContract):
             # the model must not be told it can run a skill's scripts.
             if not self._script_executor or not self._policy_allows(TOOL_RUN_SCRIPT):
                 preamble += _SKILLS_NO_SCRIPTS_NOTE
-            if self._skills.has_served:
+            if skills.has_served:
                 preamble += _SERVED_SKILLS_PREAMBLE
-            skills_xml = self._skills.to_prompt_xml()
+            skills_xml = skills.to_prompt_xml()
             skill_block = f"\n\n{preamble}\n\n{skills_xml}"
             system_prompt = (system_prompt or "") + skill_block
         # Bodies of the skills activated in this room. Unlike the manifest
@@ -777,9 +779,7 @@ class AIContextMixin(_AIChannelContract):
         # This is what makes ``activate_skill``'s later ACKs safe: the rules
         # are in front of the model without the body being re-sent.
         active_skills = (
-            None
-            if standalone
-            else self._skill_activation.render_prompt(activation_room, self._skills)
+            None if standalone else self._skill_activation.render_prompt(activation_room, skills)
         )
         if active_skills:
             system_prompt = (system_prompt or "") + f"\n\n{active_skills}"
@@ -895,6 +895,20 @@ class AIContextMixin(_AIChannelContract):
         if self._config_provider is not None:
             turn = await self._config_provider(binding, context)
         return turn, self._turn_settings(binding, turn)
+
+    def _given_turn_skills(self, turn: AIChannelTurnConfig | None) -> SkillRegistry | None:
+        """The skill registry *turn*'s configuration gives it (RFC §24.3),
+        read only on a channel that serves skills: one built without a
+        registry declares no skill tools for a turn's to use."""
+        given = turn.skills if turn is not None else None
+        if given is not None and self._skills is None:
+            logger.warning(
+                "Channel %s was built without skills: the turn's skill registry is "
+                "ignored (build the channel with a registry, an empty one will do)",
+                self.channel_id,
+            )
+            return None
+        return given
 
     def _driven_turn(
         self,
@@ -1052,7 +1066,8 @@ class AIContextMixin(_AIChannelContract):
         if self._tool_usage_loader is None:
             return
         usage_needs = self._tool_usage.needs_hydration(usage_room_id)
-        skills_needs = self._skills is not None and self._skill_activation.needs_hydration(
+        skills = self._turn_skills()
+        skills_needs = skills is not None and self._skill_activation.needs_hydration(
             activation_room_id
         )
         if not usage_needs and not skills_needs:
@@ -1065,7 +1080,6 @@ class AIContextMixin(_AIChannelContract):
         if usage_needs:
             self._tool_usage.seed(usage_room_id, past_calls)
         if skills_needs:
-            skills = self._skills
             skip = skills.is_served if skills is not None else None
             self._skill_activation.seed(activation_room_id, past_calls, skip=skip)
 

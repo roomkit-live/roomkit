@@ -113,9 +113,16 @@ class AIToolPolicyMixin(_AIChannelContract):
         model to use them. A standalone turn reads none of the room's working
         state (RFC §10.1.1): only what it activates itself opens a gate.
         """
-        if not self._skills:
+        skills = self._turn_skills()
+        if not skills:
             return set()
-        return self._skills.gated_tool_names(self._activated_skill_names())
+        return skills.gated_tool_names(self._activated_skill_names())
+
+    def _turn_skills(self) -> SkillRegistry | None:
+        """The skills this turn reads (RFC §24.3): the registry its
+        configuration gave it, else the channel's."""
+        given = self._get_loop_ctx().skills
+        return given if given is not None else self._skills
 
     def _activated_skill_names(self) -> set[str]:
         """The skills this conversation activated: this turn's, and the room's
@@ -219,9 +226,8 @@ class AIToolPolicyMixin(_AIChannelContract):
             return {"error": policy_refusal(name)}
         if call_gated(name, self._gated_tool_names):
             logger.warning("Tool %s blocked by skill gating", name)
-            closed = self._skills is not None and call_gated(
-                name, self._skills.unopenable_tool_names()
-            )
+            skills = self._turn_skills()
+            closed = skills is not None and call_gated(name, skills.unopenable_tool_names())
             return {"error": gated_tool_refusal(name, closed=closed)}
         return None
 
@@ -371,7 +377,7 @@ class AIToolPolicyMixin(_AIChannelContract):
             opened,
             first,
             self._skill_activation.active_names(loop_ctx.room_id),
-            self._skills,
+            self._turn_skills(),
             f"reopen_{loop_ctx.loop_id[:12]}",
         )
         if not exchanges or not insert_before(context.messages, loop_ctx.turn_input, exchanges):

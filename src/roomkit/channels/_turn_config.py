@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from roomkit.models.channel import ChannelBinding
     from roomkit.models.context import RoomContext
     from roomkit.providers.ai.base import AITool
+    from roomkit.skills.registry import SkillRegistry
 
 
 @dataclass(slots=True)
@@ -45,6 +46,13 @@ class AIChannelTurnConfig:
     """Serve the host's tools for this turn. ``None`` keeps the channel's
     handler. Channel-managed tools keep their own dispatch; a turn's handler
     is never installed on the shared channel or reused by another turn."""
+    skills: SkillRegistry | None = None
+    """The skills this turn may activate (RFC §24.3): its manifest, its
+    activation, reference and script tools and its skill gating read this
+    registry in place of the channel's. ``None`` keeps the channel's. Read
+    only on a channel built with a registry (an empty one will do): a
+    channel without one serves no skill tools. Like the turn's handler, it
+    is never installed on the shared channel or read by another turn."""
 
 
 ConfigProvider = Callable[["ChannelBinding", "RoomContext"], Awaitable[AIChannelTurnConfig | None]]

@@ -2964,6 +2964,17 @@ mutate `AIChannel.tool_handler`; binding metadata cannot carry a callable.
 See `examples/turn_tool_handler.py` for two rooms sharing one channel while
 each turn calls its own backend.
 
+Resolve the skills with the turn by returning `skills`, a `SkillRegistry`:
+the turn's manifest, its `activate_skill`, `read_skill_reference` and
+`run_skill_script` calls and its skill gating read that registry instead of
+the channel's (RFC §24.3). One channel serves an agent in every room, and some
+skills belong to the person a turn is for: each turn gets the registry built
+for its own author, and a concurrent turn on the same channel never reads
+another's. `None` keeps the channel's registry. The channel must be built
+with a registry, an empty one will do (`AIChannel(skills=SkillRegistry())`):
+one built without serves no skill tools, and ignores a turn's registry with a
+warning.
+
 ## Streaming
 
 AIChannel supports streaming responses to WebSocket clients:

@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`AIChannelTurnConfig.skills` gives a turn its own skill registry**
+  (RMK-1282). A channel serves an agent in every room and is built once, so
+  its registry could not hold the skills that belong to the person a turn is
+  for: a host built it with whoever attached the agent last, and every turn
+  read that person's skills. A config provider now returns `skills` with the
+  turn's settings; the turn's manifest, its activation, reference and script
+  tools and its skill gating read it in place of the channel's, which is never
+  replaced, and a concurrent turn never reads another's. `None` keeps the
+  channel's registry. The channel must be built with a registry (an empty one
+  will do): one built without serves no skill tools and ignores a turn's, with
+  a warning.
+
 - **`OpenAIConfig(max_tokens=None)` sends no output cap** (RMK-1177). Every
   Chat Completions request of the OpenAI provider and the configs built on it
   carried `max_tokens` (or `max_completion_tokens`) at 1024, and a channel or
