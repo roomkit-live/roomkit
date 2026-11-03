@@ -287,6 +287,7 @@ async def test_what_opens_no_turn_while_the_model_answers_is_not_steered(
     )
     # Steered, the change returns at once; waiting its place, once the turn ends.
     await asyncio.wait({change}, timeout=0.05)
+    assert not change.done()
     provider.release.set()
     await asyncio.wait_for(asyncio.gather(turn, change), 5)
     await kit.close()
