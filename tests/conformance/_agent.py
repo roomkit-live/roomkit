@@ -148,6 +148,8 @@ class ScriptedModel(AIProvider):
                 "temperature": context.temperature,
                 "max_tokens": context.max_tokens,
                 "reasoning_effort": context.reasoning_effort,
+                "thinking_budget": context.thinking_budget,
+                "enable_thinking": context.enable_thinking,
                 "tools": {
                     tool.name: position for position, tool in enumerate(context.tools or [])
                 },
@@ -348,7 +350,14 @@ def scripted_agent(
         kwargs["tool_timeout_seconds"] = _seconds(spec["tool_timeout_ms"])
     if "turn_budget_tokens" in spec:
         kwargs["turn_budget_tokens"] = spec["turn_budget_tokens"]
-    for setting in ("system_prompt", "temperature", "max_tokens", "reasoning_effort"):
+    for setting in (
+        "system_prompt",
+        "temperature",
+        "max_tokens",
+        "reasoning_effort",
+        "thinking_budget",
+        "enable_thinking",
+    ):
         if setting in spec:
             kwargs[setting] = spec[setting]
     if "config_provider" in spec:

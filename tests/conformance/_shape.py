@@ -100,6 +100,8 @@ CHANNEL = {
     "temperature",
     "max_tokens",
     "config_provider",
+    "thinking_budget",
+    "enable_thinking",
     "retry_policy",
     "fallback_model",
     "max_author_images",
@@ -164,6 +166,8 @@ RAISES = {"kind", "message"}
 HUMAN_INPUT = {"tool_names", "timeout_ms", "tools"}
 TURN_CONFIG = {
     "system_prompt",
+    "thinking_budget",
+    "enable_thinking",
     "tools",
     "temperature",
     "max_tokens",
