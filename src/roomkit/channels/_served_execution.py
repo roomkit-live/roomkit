@@ -4,9 +4,11 @@ While a skill an MCP server serves is active in a conversation, its content
 may direct the model to run code: a sandbox command, a skill's script, a tool
 the host names as running code. Such a call is served only when the host's
 ``approve_execution`` approves every served skill active there. An approval
-holds for the conversation and for the skill's fingerprint only: an entry
-read again with another set of files is asked again, and a dynamic skill,
-which has no fingerprint, is asked every time.
+holds for the conversation, the skill's fingerprint and the source that gave
+it only: an entry read again with another set of files is asked again, a
+dynamic skill, which has no fingerprint, is asked every time, and the same
+entry served by another source (another registry's server, as a turn may give
+its own registry) asks that source.
 """
 
 from __future__ import annotations
@@ -28,11 +30,13 @@ _MAX_APPROVALS = 1000
 
 
 class ServedExecutionGate:
-    """The approvals a host gave, per conversation, skill and fingerprint."""
+    """The approvals a host gave, per conversation, source, skill and fingerprint."""
 
     def __init__(self, max_approvals: int = _MAX_APPROVALS) -> None:
         self._max = max_approvals
-        self._approved: OrderedDict[tuple[str | None, str, str], None] = OrderedDict()
+        # Keyed by the source's identity, each entry holding the source itself:
+        # while an approval is kept, no other source can take that identity.
+        self._approved: OrderedDict[tuple[str | None, int, str, str], object] = OrderedDict()
 
     async def refusal(
         self,
@@ -72,9 +76,11 @@ class ServedExecutionGate:
         if not isinstance(skill, MCPSkill) or origin is None:
             return False
         fingerprint = skill.held.fingerprint
-        # Kept only for a conversation and a fingerprint: without either, an
-        # approval would cover what it never saw, so the host is asked again.
-        key = (room_id, name, fingerprint) if fingerprint and room_id else None
+        # Kept only for a conversation, a fingerprint and the source that gave
+        # it: without the first two, an approval would cover what it never saw,
+        # and another source's entry under the same name is that source's to
+        # approve (a turn's registry may hold it, RFC §24.3), so it is asked.
+        key = (room_id, id(origin), name, fingerprint) if fingerprint and room_id else None
         if key is not None and key in self._approved:
             self._approved.move_to_end(key)
             return True
@@ -96,7 +102,7 @@ class ServedExecutionGate:
         if approved is not True:
             return False
         if key is not None:
-            self._approved[key] = None
+            self._approved[key] = origin
             while len(self._approved) > self._max:
                 self._approved.popitem(last=False)
         return True

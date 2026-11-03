@@ -259,3 +259,26 @@ class TestGateNeverFailsOpen:
                 registry, {NAME}, None, "sandbox_bash", sandbox_tools={"sandbox_bash"}
             )
         assert len(approver.asked) == 2
+
+    async def test_an_approval_never_covers_the_same_entry_from_another_source(self) -> None:
+        """Two turns of one room may give registries of their own (RFC §24.3),
+        each with its server serving the same entry: one source's approval is
+        that source's, and the other is asked."""
+        approving, refusing = Approver(True), Approver(False)
+        first, second = SkillRegistry(), SkillRegistry()
+        await first.add_mcp_server(FakeSkillServer([PDF]), "hf", approve_execution=approving)
+        await second.add_mcp_server(FakeSkillServer([PDF]), "hf", approve_execution=refusing)
+        for registry in (first, second):
+            await registry.load_skill(NAME)
+        gate = ServedExecutionGate()
+
+        allowed = await gate.refusal(
+            first, {NAME}, "r1", "sandbox_bash", sandbox_tools={"sandbox_bash"}
+        )
+        refused = await gate.refusal(
+            second, {NAME}, "r1", "sandbox_bash", sandbox_tools={"sandbox_bash"}
+        )
+
+        assert allowed is None
+        assert refused is not None and NAME in refused
+        assert len(refusing.asked) == 1

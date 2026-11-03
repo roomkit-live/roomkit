@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **A served skill's approval to run code is its source's alone** (RMK-1282).
+  `ServedExecutionGate` kept an approval by conversation, entry name and
+  fingerprint, so once a turn could give its own registry, the same entry
+  served by another registry's server in the same room ran on the first
+  server's approval, its own `approve_execution` never asked. An approval now
+  also names the source that gave it.
+
 ### Added
 
 - **`AIChannelTurnConfig.skills` gives a turn its own skill registry**
