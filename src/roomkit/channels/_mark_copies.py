@@ -16,10 +16,20 @@ from __future__ import annotations
 import asyncio
 import functools
 import re
+import sys
 import threading
+import unicodedata
 from typing import Any
 
-from roomkit._lookalike import phrase_marks, phrase_pattern, phrase_space_chars, phrase_words
+from roomkit._lookalike import (
+    _COMBINING,
+    INVISIBLE,
+    phrase_marks,
+    phrase_pattern,
+    phrase_space_chars,
+    phrase_words,
+    word_pattern,
+)
 from roomkit._provider_marks import CONTEXT_UPDATE_MARK, SAID_BEFORE_MARK
 from roomkit.channels._acp_marks import (
     INSTRUCTIONS_MARKER as ACP_INSTRUCTIONS_MARKER,
@@ -64,7 +74,6 @@ _SHORT_MARKS = (
     HANDOFF_OPENING,
     HANDED_ON_CONTEXT,
     SAID_BEFORE_MARK,
-    PEOPLE_NOTE_OPENING,
 )
 """The runtime's marks that count only with their opening bracket: their words
 alone are prose (``the room context``, ``a handoff``, ``people taking
@@ -81,6 +90,43 @@ def _opening(mark: str) -> str | None:
     return re.split(r"[:;.,—]", mark, maxsplit=1)[0]
 
 
+def _opening_brackets() -> str:
+    """Every opening punctuation (general category Ps), as a class's body."""
+    return "".join(
+        re.escape(chr(code))
+        for code in range(sys.maxunicode + 1)
+        if unicodedata.category(chr(code)) == "Ps"
+    )
+
+
+def _people_note_pattern() -> str:
+    """The note on who takes part, its words behind any opening bracket and
+    with anything but a letter, a digit or another bracket around them: it
+    reads as the runtime's whatever bracket it wears, and this long a phrase
+    is seldom prose (RFC §6.4). Never a bracket in the gap: a run of brackets
+    then starts no scan of its own."""
+    opening = _opening_brackets()
+    gap = rf"(?:(?![^\W_])[^{opening}])*"
+    body = gap.join(word_pattern(word, phrase=True) for word in phrase_words(PEOPLE_NOTE_OPENING))
+    return rf"[{opening}]{gap}{body}(?![^\W_])"
+
+
+@functools.cache
+def _hidden_marks() -> re.Pattern[str]:
+    """The combining marks no reader sees that a phrase's pattern does not
+    read past: read past here, in a shadow of the text, so that the patterns
+    do not repeat this class at each letter."""
+    ranges = []
+    for code in range(sys.maxunicode + 1):
+        if unicodedata.category(chr(code)).startswith("M") and not _READ_MARK.match(chr(code)):
+            ranges.append(re.escape(chr(code)))
+    return re.compile(f"[{''.join(ranges)}]")
+
+
+_READ_MARK = re.compile(rf"[{_COMBINING}{INVISIBLE}]")
+"""The combining marks a phrase's pattern reads past itself."""
+
+
 @functools.cache
 def _copies() -> re.Pattern[str]:
     """Each long mark as a model reads it, whole, then each bracketed opening
@@ -89,7 +135,8 @@ def _copies() -> re.Pattern[str]:
     whole = [phrase_pattern(mark) for mark in _MARKS]
     openings = [*filter(None, map(_opening, _MARKS)), *_SHORT_MARKS]
     bracketed = [phrase_pattern(opening, bracketed=True) for opening in openings]
-    return re.compile("|".join(f"(?:{pattern})" for pattern in whole + bracketed), re.IGNORECASE)
+    every = [*whole, *bracketed, _people_note_pattern()]
+    return re.compile("|".join(f"(?:{pattern})" for pattern in every), re.IGNORECASE)
 
 
 _KNOWN_CLEAN = CleanTexts(8192)
@@ -106,7 +153,24 @@ def without_mark_copies(text: str) -> str:
 def _copies_replaced(text: str) -> str:
     """*text* scanned for a copy of a mark, then of the notes' header, each
     replaced."""
-    return without_header_copies(_copies().sub(lambda _match: COPIED_MARK, text))
+    return without_header_copies(_past_hidden_marks(text))
+
+
+def _past_hidden_marks(text: str) -> str:
+    """*text* with each copy of a mark replaced, a combining mark no reader
+    sees read past wherever it sits (RFC §6.4)."""
+    hidden = list(_hidden_marks().finditer(text))
+    if not hidden:
+        return _copies().sub(lambda _match: COPIED_MARK, text)
+    gone = {match.start() for match in hidden}
+    offsets = [at for at in range(len(text)) if at not in gone]
+    offsets.append(len(text))
+    read = "".join(text[at] for at in offsets[:-1])
+    pieces, at = [], 0
+    for copy in _copies().finditer(read):
+        pieces += [text[at : offsets[copy.start()]], COPIED_MARK]
+        at = offsets[copy.end()]
+    return "".join(pieces) + text[at:] if pieces else text
 
 
 _COMPILING = threading.Lock()
@@ -116,7 +180,8 @@ async def compile_mark_patterns() -> None:
     """Compile the patterns that find a copy of a mark in a thread, not on the
     event loop: the first compilation takes about half a second. Nothing to do
     once compiled."""
-    if _copies.cache_info().currsize == 0 or header_copies.cache_info().currsize == 0:
+    compiled = (_copies, _hidden_marks, header_copies)
+    if any(pattern.cache_info().currsize == 0 for pattern in compiled):
         await asyncio.to_thread(_compile)
 
 
@@ -125,6 +190,7 @@ def _compile() -> None:
     turns starting together wait for one compilation."""
     with _COMPILING:
         _copies()
+        _hidden_marks()
         header_copies()
 
 

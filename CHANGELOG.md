@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   own. Each value is now its `repr`, and a name or a key has its line breaks
   and control characters written out.
 
+- **A sender's forged runtime mark is replaced in more forms** (HITL 5d5e8776, RMK-1233). The note on who takes part passed under a bracket other than `[`, as `【People taking part besides you…】`, and a combining mark outside the Latin range hid any mark from the check (`[Hand\u05b0off: a -> b]`), so a model read a sender's text as the runtime's. Prose such as `(people taking part besides you)` is replaced with them; `(handoff on Monday)` stays.
 - **A sender cannot silence a room's agents with `_orchestration_internal`.** The mark that keeps the orchestration's own record from asking any agent was read from any event; it is now dropped, with a warning, from what arrives through `process_inbound`, a channel's parse included, as `_routed_to` and `_always_process` are (RMK-1233).
 - **A served skill's approval to run code is its source's alone** (RMK-1282).
   `ServedExecutionGate` kept an approval by conversation, entry name and
