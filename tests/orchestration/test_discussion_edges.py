@@ -29,12 +29,14 @@ from roomkit.models.enums import (
 from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.models.hook import HookResult, InjectedEvent
 from roomkit.models.participant import Participant
+from roomkit.models.room import Room
 from roomkit.orchestration.strategies.discussion import (
     Discussion,
     SpeakQueueChange,
     SpeakQueueEvent,
     _driver,
 )
+from roomkit.orchestration.strategies.discussion._people import names_of, one_person, people_index
 from roomkit.providers.ai.base import AIResponse
 from roomkit.providers.ai.mock import MockAIProvider
 from tests.orchestration.test_strategy_discussion import _provider, _settle, _timeline
@@ -1017,3 +1019,25 @@ async def test_a_person_named_like_a_handle_is_addressed_by_no_name() -> None:
     assert f"asked by “{lookalike}”" in notes
     assert f"@{lookalike}" not in notes
     await kit.close()
+
+
+@pytest.mark.parametrize("handles", [(), ("alice",)])
+@pytest.mark.parametrize("name", ["\u0430ll", "ALL", "all"])
+def test_a_person_named_like_all_is_addressed_by_no_name(
+    name: str, handles: tuple[str, ...]
+) -> None:
+    """``@all`` names every agent, so a name that reads like it (Cyrillic ``а``)
+    addresses no person: an agent writing it believes it asks them all. The
+    others keep their names, a room with no handle yet included."""
+    context = RoomContext(
+        room=Room(id="r1"),
+        participants=[
+            Participant(id=pid, room_id="r1", channel_id="chat", display_name=shown)
+            for pid, shown in (("p1", name), ("p2", "Ana"))
+        ],
+    )
+
+    index = people_index(context, handles, None)
+
+    assert names_of(index) == ["Ana"]
+    assert one_person(index, name) is None

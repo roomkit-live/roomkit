@@ -18,8 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   longer labelled as an agent. A stored discussion `Discussion()` would refuse (no agents,
   two alike, `max_turns` 0, a blank token, a handle that cannot name an agent...) reads as
   none, with a warning, and the room answers. A person whose name reads like a handle
-  (`аlice` with a Cyrillic `а`, beside the agent `alice`) is addressed by no name: an agent
-  writing it no longer waits for that person, believing it asked the agent.
+  (`аlice` with a Cyrillic `а`, beside the agent `alice`) or like `all` is addressed by no
+  name: an agent writing it no longer waits for that person, believing it asked the agents.
 
 - **A span's error no longer quotes its text** (RFC §15.7, RMK-1301).
   `PostgresStore`'s `store.*` spans and `TelemetryProvider.span()`'s block wrote

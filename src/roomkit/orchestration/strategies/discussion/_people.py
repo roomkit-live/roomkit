@@ -25,7 +25,7 @@ from roomkit.models.enums import (
 from roomkit.models.event import RoomEvent
 from roomkit.models.participant import Participant
 
-from ._names import NAME_LIMIT, name_key
+from ._names import EVERYONE, NAME_LIMIT, name_key
 
 _READS = frozenset({Access.READ_WRITE, Access.READ_ONLY})
 
@@ -85,9 +85,9 @@ def people_index(
     names, as the transcript labels them (§6.4): the room's active people and
     the speakers of its recent messages; with *listed* (``people``), only
     those. A name is kept to a name's characters (``@AliceMartin``), never an
-    agent's handle (one of *handles*) nor one reading like it (a Cyrillic
-    ``а`` in ``@аlice``: an agent writing it believes it asks the agent), nor
-    longer than :data:`NAME_LIMIT`; two labels behind one name (``Alice
+    agent's handle (one of *handles*) nor one reading like it or like ``all``
+    (a Cyrillic ``а`` in ``@аlice``: an agent writing it believes it asks the
+    agent), nor longer than :data:`NAME_LIMIT`; two labels behind one name (``Alice
     Martin``, ``AliceMartin``) make it ambiguous, and a look-alike's ranked
     label (``Alice (2)``) is addressed by no name, and two nameless senders of
     a channel (``@chat``, ``@chat (2)``) make its name ambiguous."""
@@ -106,7 +106,7 @@ def people_index(
             entries.append((label_name(label), tuple(source_of(event, people))))
     allowed = None if listed is None else {name_key(p).casefold() for p in listed}
     taken = {handle.casefold() for handle in handles}
-    reads_as = frozenset().union(*(skeletons(handle) for handle in handles))
+    reads_as = skeletons(EVERYONE).union(*(skeletons(handle) for handle in handles))
     index: PeopleIndex = {}
     for label, source in entries:
         name = name_key(label.removeprefix("@"))
