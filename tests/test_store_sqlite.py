@@ -870,17 +870,24 @@ async def test_a_row_no_read_serves_leaves_its_address_free(
     assert _address_rows(path) == [("+1555", "dana", held_in)]
 
 
-async def test_a_holder_the_model_cannot_read_keeps_its_address(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "record",
+    [
+        '{"email": "a@globex.example"}',
+        '{"id": "i1", "channel_addresses": "x"}',
+        '["a@globex.example"]',
+    ],
+)
+async def test_a_holder_the_model_cannot_read_keeps_its_address(
+    tmp_path: Path, record: str
+) -> None:
     """RFC §5.6: the refusal stands, and quotes no part of the holder's record, which
-    may be another organization's."""
+    may be another organization's: a record with no id, of the wrong type, or no object."""
     path = tmp_path / "older.db"
     store = SQLiteStore(path)
     await store.create_identity(Identity(id="i1", organization_id="globex"))
     conn = sqlite3.connect(path)
-    conn.execute(
-        'UPDATE identities SET data = \'{"id": "i1", "email": "a@globex.example",'
-        ' "channel_addresses": "x"}\' WHERE id = \'i1\''
-    )
+    conn.execute("UPDATE identities SET data = ? WHERE id = 'i1'", (record,))
     conn.commit()
     conn.close()
     _insert_address(path, ("+1555", "i1", "acme"))
@@ -890,6 +897,7 @@ async def test_a_holder_the_model_cannot_read_keeps_its_address(tmp_path: Path) 
         )
     await store.close()
     assert "globex" not in str(refused.value)
+    assert refused.value.__suppress_context__
     assert _address_rows(path) == [("+1555", "i1", "acme")]
 
 

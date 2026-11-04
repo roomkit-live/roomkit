@@ -1616,6 +1616,43 @@ async def test_an_add_waiting_on_a_commit_holds_nothing_the_commit_needs(
 
 
 @pytest.mark.parametrize("adding", ["add_event", "add_event_auto_index"])
+async def test_an_add_holds_its_room_so_that_no_stream_of_them_starves_a_commit(
+    store, adding: str
+) -> None:
+    """HITL 0affbb3b: an add waiting on the sequence holds the room in a mode the next add
+    cannot share, and that a foreign key can: ``FOR NO KEY UPDATE``. The stress test
+    ``test_a_stream_of_adds_starves_nothing_on_its_room`` shows why."""
+    import asyncpg
+
+    await store.create_room(Room(id="r1"))
+    await store.add_event_auto_index("r1", _make_event(room_id="r1"))
+    sequence_holder = await asyncpg.connect(POSTGRES_DSN)
+    other = await asyncpg.connect(POSTGRES_DSN)
+    try:
+        async with sequence_holder.transaction():
+            await sequence_holder.execute(
+                "SELECT 1 FROM event_sequences WHERE room_id = 'r1' FOR UPDATE"
+            )
+            if adding == "add_event":
+                added = store.add_event(_make_event(room_id="r1", index=7))
+            else:
+                added = store.add_event_auto_index("r1", _make_event(room_id="r1"))
+            add = asyncio.create_task(added)
+            await _until_blocked_by(sequence_holder)
+            async with other.transaction():
+                await other.execute("SELECT 1 FROM rooms WHERE id = 'r1' FOR KEY SHARE NOWAIT")
+            with pytest.raises(asyncpg.LockNotAvailableError):
+                async with other.transaction():
+                    await other.execute(
+                        "SELECT 1 FROM rooms WHERE id = 'r1' FOR NO KEY UPDATE NOWAIT"
+                    )
+        await asyncio.wait_for(add, 2)
+    finally:
+        await sequence_holder.close()
+        await other.close()
+
+
+@pytest.mark.parametrize("adding", ["add_event", "add_event_auto_index"])
 async def test_an_add_to_a_missing_room_stays_the_foreign_key_s_refusal(
     store, adding: str
 ) -> None:
