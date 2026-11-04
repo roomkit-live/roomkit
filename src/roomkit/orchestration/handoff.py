@@ -668,11 +668,12 @@ class HandoffHandler:
 
     def _holds_phase(self, target: str, phase: str) -> bool:
         """Whether a handoff under allowed transitions may lead *target* to
-        *phase*: one the phase map does not know may (a human, a host's own
-        target); one it knows holds its own phase and those the router's rules
-        give it (RFC §19.6)."""
-        own = self._phase_map.get(target)
-        return not own or own == phase or self._router._routes_phase_to(phase, target)
+        *phase* (RFC §19.6). With no phase map nothing ties an agent to a
+        phase. With one, a human and a known target pass; any other holds its
+        own phase and those the router's rules give it, and no phase otherwise."""
+        if not self._phase_map or target == "human" or target in self._known_agents:
+            return True
+        return self._phase_map.get(target) == phase or self._router._routes_phase_to(phase, target)
 
     def _resolve_alias(self, target: str) -> str:
         return self._aliases.get(target, target)
