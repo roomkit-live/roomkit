@@ -5,7 +5,7 @@
   "rules": [
     "§6.7"
   ],
-  "notes": "Python: core/hooks.py runs an ASYNC hook on a task that copies the turn's context; review of RMK-1254.",
+  "notes": "Python: core/hooks.py runs an ASYNC hook on a task that copies the turn's context; review of RMK-1254. The hook writes, then holds at its gate; the next round holds until the write is known, so the turn's end cannot pass it.",
   "setup": {
     "channels": [
       {
@@ -46,10 +46,8 @@
               ]
             },
             {
-              "deltas": [
-                "Page 3 ",
-                "says so."
-              ]
+              "gate": "next-round",
+              "text": "Page 3 says so."
             }
           ]
         }
@@ -78,7 +76,8 @@
           {
             "writes_record": {
               "observed": true
-            }
+            },
+            "gate": "observed"
           }
         ]
       }
@@ -96,6 +95,23 @@
           "body": "Read page 3"
         }
       },
+      "background": true,
+      "as": "read"
+    },
+    {
+      "wait_for": "observed"
+    },
+    {
+      "open": "observed"
+    },
+    {
+      "wait_for": "next-round"
+    },
+    {
+      "open": "next-round"
+    },
+    {
+      "await": "read",
       "expect": {
         "result": {
           "response_metadata": {
