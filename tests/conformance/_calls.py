@@ -143,6 +143,7 @@ def dump(value: Any) -> Any:
             "reason": value.reason,
             "error": None if value.error is None else str(value.error),
             "response_metadata": dump(dict(value.response_metadata)),
+            "response_events": [dump(event) for event in value.response_events],
             "unavailable_targets": list(value.unavailable_targets or ()),
             "delivery_results": {k: dump(v) for k, v in (value.delivery_results or {}).items()},
             "cancellation_reason": value.cancellation_reason,
