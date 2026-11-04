@@ -1128,9 +1128,10 @@ async def test_init_moves_an_unscoped_address_to_its_identity_s_organization(sto
     """HITL 0f96a597, RFC §17.2: a row the upgrade left unscoped moves to the
     organization of its identity, once, if the identity still declares the address,
     so that its sender stays identified there; one whose organization holds the
-    address already yields to that row. A link since revoked is not restored. An
-    identity of no organization keeps its unscoped row, and a row of another
-    organization is left alone, which no read serves."""
+    address already yields to that row. A link since revoked is not restored: its row
+    goes, and the address is free (HITL 6928c418). An identity of no organization keeps
+    its unscoped row, and a row of another organization is left alone, which no read
+    serves."""
     alice = Identity(id="alice", organization_id="acme")
     bob = Identity(id="bob", organization_id="acme", channel_addresses={"sms": ["+2"]})
     carol = Identity(id="carol", channel_addresses={"sms": ["+3"]})
@@ -1162,13 +1163,15 @@ async def test_init_moves_an_unscoped_address_to_its_identity_s_organization(sto
         ("+2", "bob", "acme"),
         ("+3", "carol", ""),
         ("+4", "alice", "globex"),
-        ("+5", "alice", ""),
     ]
     moved = await store.resolve_identity("sms", "+1", organization_id="acme")
     assert moved is not None and moved.id == "alice"
     assert await store.resolve_identity("sms", "+1") is None
     for scope in (None, "acme"):
         assert await store.resolve_identity("sms", "+5", organization_id=scope) is None
+    dana = Identity(id="dana", channel_addresses={"sms": ["+5"]})
+    await store.create_identity(dana)
+    assert await store.resolve_identity("sms", "+5") == dana
 
 
 async def test_binding_policy_migration_preserves_old_rows(store) -> None:

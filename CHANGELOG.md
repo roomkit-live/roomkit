@@ -16,7 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   none, and not to its own. `resolve_identity` now compares them, and such a row
   moves to its identity's organization, once, at the first `init()` or open (schema
   version row 5 on Postgres, file version 14 on SQLite), yielding to a row that
-  organization already holds for the address.
+  organization already holds for the address. One the identity no longer declares, a
+  link since revoked, is removed, not restored; `unlink_address` removes the
+  identity's rows for the address in every scope.
 
 - **`create_identity` never crosses an organization** (HITL b5e932a6, RMK-1277).
   On the memory and SQLite stores, an id another organization holds was

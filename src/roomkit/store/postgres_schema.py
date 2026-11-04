@@ -714,10 +714,11 @@ END $$;
 -- An address the move to per-organization addresses left unscoped ('') for an
 -- identity of an organization moves to that organization, once, if the identity
 -- still declares it: a read serves an identity in its own organization only (RFC
--- §17.2), and its sender stays identified there, while a link since revoked is not
--- restored. One whose organization holds the address already yields to that row,
--- whose identity keeps it. A row of another organization is left: no API writes
--- one, and no read serves it. Version 5 records the rewrite as done.
+-- §17.2), and its sender stays identified there. One whose organization holds the
+-- address already yields to that row, whose identity keeps it. One the identity no
+-- longer declares, a link since revoked, is not restored: it goes, and the address
+-- is free. A row of another organization is left: no API writes one, and no read
+-- serves it. Version 5 records the rewrite as done.
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM schema_version WHERE version >= 5) THEN
@@ -734,6 +735,10 @@ BEGIN
               AND ia.organization_id = ''
               AND COALESCE(i.organization_id, '') <> ''
               AND i.channel_addresses -> ia.channel_type ? ia.address;
+        DELETE FROM identity_addresses ia USING identities i
+            WHERE i.id = ia.identity_id
+              AND ia.organization_id = ''
+              AND COALESCE(i.organization_id, '') <> '';
         INSERT INTO schema_version (version) VALUES (5);
     END IF;
 END $$;

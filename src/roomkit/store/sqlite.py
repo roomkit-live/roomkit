@@ -676,10 +676,10 @@ def _migrate_v13_to_v14(conn: sqlite3.Connection) -> None:
     """An address version 3's migration left unscoped (``''``) for an identity of
     an organization moves to that organization, if the identity still declares it:
     a read serves an identity in its own organization only (RFC §17.2), and its
-    sender stays identified there, while a link since revoked is not restored. One
-    whose organization holds the address already yields to that row, whose identity
-    keeps it. A row of another organization is left: no API writes one, and no read
-    serves it."""
+    sender stays identified there. One whose organization holds the address already
+    yields to that row, whose identity keeps it. One the identity no longer declares,
+    a link since revoked, is not restored: it goes, and the address is free. A row of
+    another organization is left: no API writes one, and no read serves it."""
     try:
         conn.execute("BEGIN IMMEDIATE")
         if int(conn.execute("PRAGMA user_version").fetchone()[0]) >= 14:
@@ -712,6 +712,13 @@ def _migrate_v13_to_v14(conn: sqlite3.Connection) -> None:
                      WHERE i.id = identity_addresses.identity_id
                        AND declared.key = identity_addresses.channel_type
                        AND held.value = identity_addresses.address)"""
+        )
+        conn.execute(
+            """DELETE FROM identity_addresses
+               WHERE organization_id = ''
+                 AND COALESCE((
+                     SELECT json_extract(i.data, '$.organization_id') FROM identities i
+                     WHERE i.id = identity_addresses.identity_id), '') <> ''"""
         )
         conn.execute("PRAGMA user_version=14")
         conn.execute("COMMIT")
