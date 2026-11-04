@@ -267,6 +267,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`PostgresStore` keeps what the other stores keep** (HITL f01854e2,
+  RMK-1277). It had no column for a participant's `candidates`, nor for an
+  identity's `phone`, `external_id` and `external_ids`, and lost them silently;
+  `create_identity` under a held id raised where the other stores replace; and a
+  `confidence` written 0.42 read 0.41999998688697815 (now `DOUBLE PRECISION`, a
+  stored value widened through its digits, once). The columns are additive.
+
 - **The kit's close cuts a greeting that waits for the room's lock** (RMK-1264,
   HITL 8a258410). It went on through the close and was stored, where the RFC
   (§12.10.4) cuts a call waiting for its room's lock, nothing of it stored. A

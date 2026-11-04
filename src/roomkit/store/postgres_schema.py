@@ -472,7 +472,15 @@ CREATE TABLE IF NOT EXISTS participants (
 -- before the column existed, and for any old writer that stored an empty or
 -- out-of-order list. It never discards a channel already recorded.
 """,
-        _add_missing_columns("participants", {"connected_via": "TEXT[] NOT NULL DEFAULT '{}'"}),
+        _add_missing_columns(
+            "participants",
+            {
+                "connected_via": "TEXT[] NOT NULL DEFAULT '{}'",
+                # The identities a resolver found an ambiguous sender could be
+                # (RFC §11.2). NULL is not the empty list: none were offered.
+                "candidates": "TEXT[]",
+            },
+        ),
         """\
 UPDATE participants
 SET connected_via = ARRAY[channel_id] || array_remove(connected_via, channel_id)
@@ -499,6 +507,19 @@ CREATE TABLE IF NOT EXISTS identities (
     channel_addresses JSONB NOT NULL DEFAULT '{}',
     metadata          JSONB NOT NULL DEFAULT '{}'
 );
+
+-- What an identity holds beside its addresses (RFC §5.6). Additive; an existing
+-- row was stored without them, and reads as having none.
+""",
+        _add_missing_columns(
+            "identities",
+            {
+                "phone": "TEXT",
+                "external_id": "TEXT",
+                "external_ids": "JSONB NOT NULL DEFAULT '{}'",
+            },
+        ),
+        """\
 
 CREATE TABLE IF NOT EXISTS identity_addresses (
     channel_type    TEXT NOT NULL,
@@ -574,10 +595,27 @@ CREATE TABLE IF NOT EXISTS observations (
     channel_id  TEXT,
     content     TEXT NOT NULL,
     category    TEXT,
-    confidence  REAL,
+    confidence  DOUBLE PRECISION,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     metadata    JSONB NOT NULL DEFAULT '{}'
 );
+-- A confidence reads as written: a REAL read 0.42 back as 0.41999998688697815.
+-- Through its text, the shortest digits that name the single, so that a value
+-- stored before reads as written too. Guarded on the column's type, so it runs
+-- once and no later boot rewrites the table.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'observations'
+          AND column_name = 'confidence'
+          AND data_type = 'real'
+    ) THEN
+        ALTER TABLE observations ALTER COLUMN confidence TYPE DOUBLE PRECISION
+            USING confidence::text::double precision;
+    END IF;
+END $$;
 """,
         _create_missing_indexes("observations", {"idx_observations_room_id": "(room_id)"}),
         """\

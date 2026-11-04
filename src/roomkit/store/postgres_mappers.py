@@ -12,6 +12,7 @@ from typing import Any
 
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.event import ChannelData, EventSource, RoomEvent
+from roomkit.models.identity import Identity
 from roomkit.models.participant import Participant
 from roomkit.models.room import Room, RoomTimers
 from roomkit.models.task import Observation, Task
@@ -144,12 +145,29 @@ def _row_to_participant(row: Any) -> Participant:
         status=row["status"],
         identification=row["identification"],
         identity_id=row["identity_id"],
+        # NULL and [] mean different things: none offered, none left.
+        candidates=list(candidates) if (candidates := row["candidates"]) is not None else None,
         connected_via=list(row["connected_via"] or ()),
         external_id=row["external_id"],
         joined_at=row["joined_at"],
         resolved_at=row["resolved_at"],
         resolved_by=row["resolved_by"],
         metadata=meta,
+    )
+
+
+def _row_to_identity(row: Any) -> Identity:
+    """Convert a database row to an Identity model."""
+    return Identity(
+        id=row["id"],
+        organization_id=row["organization_id"],
+        display_name=row["display_name"],
+        email=row["email"],
+        phone=row["phone"],
+        channel_addresses=_json(row["channel_addresses"]),
+        external_id=row["external_id"],
+        external_ids=_json(row["external_ids"]),
+        metadata=_json(row["metadata"]),
     )
 
 

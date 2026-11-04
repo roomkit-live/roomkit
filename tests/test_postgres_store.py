@@ -219,6 +219,7 @@ def _participant_row(participant: Participant) -> dict:
         "resolved_by": participant.resolved_by,
         "metadata": participant.metadata,
         "connected_via": participant.connected_via,
+        "candidates": participant.candidates,
     }
 
 
@@ -230,6 +231,9 @@ def _identity_row(identity: Identity) -> dict:
         "display_name": identity.display_name,
         "email": identity.email,
         "channel_addresses": identity.channel_addresses,
+        "phone": identity.phone,
+        "external_id": identity.external_id,
+        "external_ids": identity.external_ids,
         "metadata": identity.metadata,
     }
 

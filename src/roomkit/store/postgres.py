@@ -51,6 +51,7 @@ from roomkit.store.base import (
 from roomkit.store.postgres_mappers import (
     _row_to_binding,
     _row_to_event,
+    _row_to_identity,
     _row_to_observation,
     _row_to_participant,
     _row_to_room,
@@ -239,8 +240,8 @@ async def _insert_participant(conn: Any, participant: Participant) -> None:
         "INSERT INTO participants"
         " (id, room_id, channel_id, display_name, role, status,"
         "  identification, identity_id, external_id, joined_at,"
-        "  resolved_at, resolved_by, metadata, connected_via)"
-        " VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)"
+        "  resolved_at, resolved_by, metadata, connected_via, candidates)"
+        " VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)"
         " ON CONFLICT (room_id, id) DO NOTHING",
         participant.id,
         participant.room_id,
@@ -256,6 +257,7 @@ async def _insert_participant(conn: Any, participant: Participant) -> None:
         participant.resolved_by,
         participant.metadata,
         participant.connected_via,
+        participant.candidates,
     )
     if status == "INSERT 0 0":
         raise participant_exists(participant)
@@ -1743,7 +1745,8 @@ class PostgresStore(ConversationStore):
                 status = await conn.execute(
                     "UPDATE participants SET channel_id=$3, display_name=$4, role=$5,"
                     " status=$6, identification=$7, identity_id=$8, external_id=$9,"
-                    " resolved_at=$10, resolved_by=$11, metadata=$12, connected_via=$13"
+                    " resolved_at=$10, resolved_by=$11, metadata=$12, connected_via=$13,"
+                    " candidates=$14"
                     " WHERE room_id=$1 AND id=$2",
                     participant.room_id,
                     participant.id,
@@ -1758,6 +1761,7 @@ class PostgresStore(ConversationStore):
                     participant.resolved_by,
                     participant.metadata,
                     participant.connected_via,
+                    participant.candidates,
                 )
         if status == "UPDATE 0":
             raise participant_missing(participant)
@@ -1872,15 +1876,24 @@ class PostgresStore(ConversationStore):
 
     async def create_identity(self, identity: Identity) -> Identity:
         async with self._acquire() as conn, conn.transaction():
+            # Under an id the store holds it replaces the stored identity, as
+            # the other stores do.
             await conn.execute(
                 "INSERT INTO identities"
-                " (id, organization_id, display_name, email, channel_addresses, metadata)"
-                " VALUES ($1, $2, $3, $4, $5, $6)",
+                " (id, organization_id, display_name, email, phone, channel_addresses,"
+                "  external_id, external_ids, metadata)"
+                " VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"
+                " ON CONFLICT (id) DO UPDATE SET"
+                "  organization_id=$2, display_name=$3, email=$4, phone=$5,"
+                "  channel_addresses=$6, external_id=$7, external_ids=$8, metadata=$9",
                 identity.id,
                 identity.organization_id,
                 identity.display_name,
                 identity.email,
+                identity.phone,
                 identity.channel_addresses,
+                identity.external_id,
+                identity.external_ids,
                 identity.metadata,
             )
             for ch_type, addresses in identity.channel_addresses.items():
@@ -1898,22 +1911,7 @@ class PostgresStore(ConversationStore):
                 "SELECT * FROM identities WHERE id = $1",
                 identity_id,
             )
-        if row is None:
-            return None
-        ch_addr = row["channel_addresses"]
-        if isinstance(ch_addr, str):
-            ch_addr = json.loads(ch_addr)
-        meta = row["metadata"]
-        if isinstance(meta, str):
-            meta = json.loads(meta)
-        return Identity(
-            id=row["id"],
-            organization_id=row["organization_id"],
-            display_name=row["display_name"],
-            email=row["email"],
-            channel_addresses=ch_addr,
-            metadata=meta,
-        )
+        return _row_to_identity(row) if row is not None else None
 
     async def resolve_identity(
         self, channel_type: str, address: str, organization_id: str | None = None
@@ -1928,22 +1926,7 @@ class PostgresStore(ConversationStore):
                 address,
                 organization_id or "",
             )
-        if row is None:
-            return None
-        ch_addr = row["channel_addresses"]
-        if isinstance(ch_addr, str):
-            ch_addr = json.loads(ch_addr)
-        meta = row["metadata"]
-        if isinstance(meta, str):
-            meta = json.loads(meta)
-        return Identity(
-            id=row["id"],
-            organization_id=row["organization_id"],
-            display_name=row["display_name"],
-            email=row["email"],
-            channel_addresses=ch_addr,
-            metadata=meta,
-        )
+        return _row_to_identity(row) if row is not None else None
 
     async def link_address(
         self,

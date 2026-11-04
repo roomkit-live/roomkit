@@ -413,6 +413,22 @@ class TestParticipantOperations:
         # order is order of first sight, not set order
         assert result.connected_via[0] == "ch1"
 
+    @pytest.mark.parametrize("candidates", [None, [], ["alice-id", "bob-id"]])
+    async def test_candidates_round_trip(self, store, candidates: list[str] | None) -> None:
+        """RFC §11.2: the identities an ambiguous sender could be persist, and
+        none offered (NULL) is not none left ([])."""
+        await store.create_room(Room(id="r1"))
+        p = Participant(id="p1", room_id="r1", channel_id="ch1")
+        await store.add_participant(p.model_copy(update={"candidates": candidates}))
+        stored = await store.get_participant("r1", "p1")
+        assert stored is not None
+        assert stored.candidates == candidates
+
+        await store.update_participant(p.model_copy(update={"candidates": ["carol-id"]}))
+        stored = await store.get_participant("r1", "p1")
+        assert stored is not None
+        assert stored.candidates == ["carol-id"]
+
     async def test_connected_via_repairs_a_row_that_predates_it(self, store) -> None:
         """RFC §5.5: an old empty list reads with its primary included."""
         await store.create_room(Room(id="r1"))
@@ -538,6 +554,27 @@ class TestIdentityOperations:
         r2 = await store.resolve_identity("sms", "+15552222222")
         assert r1 is not None and r1.id == "id1"
         assert r2 is not None and r2.id == "id1"
+
+
+class TestIdentityDetails:
+    async def test_what_an_identity_holds_beside_its_addresses_round_trips(self, store) -> None:
+        """RFC §5.6: as the other stores keep them, through get and resolve."""
+        identity = Identity(
+            id="i1",
+            phone="+15551234567",
+            external_id="crm_42",
+            external_ids={"crm": "42", "erp": "77"},
+            channel_addresses={"sms": ["+15551234567"]},
+        )
+        await store.create_identity(identity)
+        assert await store.get_identity("i1") == identity
+        assert await store.resolve_identity("sms", "+15551234567") == identity
+
+    async def test_an_identity_created_again_replaces_the_stored_one(self, store) -> None:
+        await store.create_identity(Identity(id="i1", phone="+1555", external_id="crm_42"))
+        renamed = Identity(id="i1", display_name="Alice B.")
+        assert await store.create_identity(renamed) == renamed
+        assert await store.get_identity("i1") == renamed
 
 
 class TestTaskOperations:
@@ -958,6 +995,38 @@ class TestThreadQueries:
         await store.add_event(root)
         assert await store.get_thread_summaries("r1", [root.id]) == {}
         assert await store.get_thread_summaries("r1", []) == {}
+
+
+async def test_a_confidence_reads_as_written(store) -> None:
+    await store.create_room(Room(id="r1"))
+    written = Observation(id="o1", room_id="r1", channel_id="ch1", content="c", confidence=0.42)
+    await store.add_observation(written)
+    assert await store.list_observations("r1") == [written]
+
+
+async def test_init_widens_the_confidence_of_a_store_from_before(store) -> None:
+    """A value a REAL column holds reads as written once widened, through its
+    shortest digits, not as the nearest double of the single."""
+    await store.create_room(Room(id="r1"))
+    written = Observation(id="o1", room_id="r1", channel_id="ch1", content="c", confidence=0.42)
+    await store.add_observation(written)
+    async with store._pool.acquire() as conn:
+        await conn.execute("ALTER TABLE observations ALTER COLUMN confidence TYPE REAL")
+    await store.init()
+    await store.init()
+    assert await store.list_observations("r1") == [written]
+
+
+async def test_init_adds_what_an_identity_holds_to_a_table_without_it(store) -> None:
+    await store.create_identity(Identity(id="i1", display_name="Alice"))
+    async with store._pool.acquire() as conn:
+        await conn.execute(
+            "ALTER TABLE identities DROP COLUMN phone, DROP COLUMN external_id,"
+            " DROP COLUMN external_ids"
+        )
+    await store.init()
+    await store.init()
+    assert await store.get_identity("i1") == Identity(id="i1", display_name="Alice")
 
 
 async def test_binding_policy_migration_preserves_old_rows(store) -> None:
