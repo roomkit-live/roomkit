@@ -105,10 +105,15 @@ class Cascades:
         }
 
 
+def _event_lost(record: _Run, committed: RoomEvent | None) -> bool:
+    """Whether the commit *record* started stored no event it can read back."""
+    return record.committing is not None and committed is None
+
+
 class CallCutError(KitClosedError):
     """A call into a room the kit's close cut (RFC §12.10.4). *committed*
     is the event its commit stored, read back once it was cut, or ``None``
-    when nothing of it is stored; *blocked_reason*, the reason its hooks
+    when no event of it is stored; *blocked_reason*, the reason its hooks
     blocked it for, when its commit was the block's record."""
 
     def __init__(
@@ -205,7 +210,9 @@ class DoorRuns:
             committed = await self._read_back(record, cut_at)
             raise CallCutError(
                 f"The kit closed before this {what} ended"
-                + ("" if committed is not None else ": nothing of it is stored"),
+                # Only its event's fate is known: a room change, by then, may
+                # have written what it writes before its first context.
+                + (": its event is not stored" if _event_lost(record, committed) else ""),
                 committed,
                 record.blocked_reason,
             ) from None

@@ -217,8 +217,11 @@ async def test_a_call_waiting_for_the_subscription_is_cut_past_the_close_s_grace
 
     await kit.close()
 
-    with pytest.raises(KitClosedError):
+    with pytest.raises(KitClosedError) as cut:
         await call
+    # It wrote before it asked for its context: the cut says nothing of that.
+    assert await kit.store.get_room("past") is not None
+    assert "stored" not in str(cut.value)
 
 
 async def test_a_change_of_an_event_subscribes_only_for_a_hook_that_reads_its_context() -> None:

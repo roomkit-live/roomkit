@@ -284,6 +284,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `confidence` written 0.42 read 0.41999998688697815 (now `DOUBLE PRECISION`, a
   stored value widened through its digits, once). The columns are additive.
 
+- A call the kit's close cut no longer says `nothing of it is stored` when it may have written: a room change that writes before its first context reads only that it did not end; only its event's fate is told (RMK-1359).
 - **The kit's close cuts a greeting that waits for the room's lock** (RMK-1264,
   HITL 8a258410). It went on through the close and was stored, where the RFC
   (§12.10.4) cuts a call waiting for its room's lock, nothing of it stored. A
