@@ -268,3 +268,18 @@ def test_a_withheld_end_leaves_its_call_out_of_a_later_call_s_rebuild() -> None:
     assert [(c["arguments"], c["result"]) for c in remembered_calls(rows)] == [
         ({"q": "new"}, "its own")
     ]
+
+
+def test_a_later_round_s_call_under_an_id_takes_its_own_end_in_the_rebuild() -> None:
+    rows = [
+        _row(EventType.TOOL_CALL_START, "c1", "lookup", arguments={"q": "left"}),
+        _row(EventType.TOOL_CALL_START, "c2", "lookup", arguments={"q": "other"}),
+        _row(EventType.TOOL_CALL_END, "c2", "lookup", result="its", outcome="served"),
+        _row(EventType.TOOL_CALL_START, "c1", "lookup", arguments={"q": "new"}),
+        _row(EventType.TOOL_CALL_END, "c1", "lookup", result="its own", outcome="served"),
+    ]
+
+    assert [(c["arguments"], c["result"]) for c in remembered_calls(rows)] == [
+        ({"q": "other"}, "its"),
+        ({"q": "new"}, "its own"),
+    ]
