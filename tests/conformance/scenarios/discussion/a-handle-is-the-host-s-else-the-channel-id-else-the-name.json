@@ -1,0 +1,71 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-handle-is-the-host-s-else-the-channel-id-else-the-name",
+  "title": "An agent's handle is the one the host gives, else its channel id when that can name it, else its display name kept to a name's characters",
+  "rules": [
+    "§19.7.5"
+  ],
+  "notes": "Python: tests/orchestration/test_discussion_handles.py test_a_handle_is_the_hosts_else_the_channel_id_else_the_name. orchestration/strategies/discussion/strategy.py _handle_of.",
+  "setup": {},
+  "steps": [
+    {
+      "call": "discussion",
+      "agents": [
+        {
+          "id": "dev"
+        },
+        {
+          "id": "agent:1",
+          "name": "Research Desk"
+        },
+        {
+          "id": "agent:2"
+        },
+        {
+          "id": "sre",
+          "name": "Sam"
+        }
+      ],
+      "handles": {
+        "agent:2": "ops",
+        "sre": "SiteReliability"
+      },
+      "expect": {
+        "result": {
+          "agents": [
+            "dev",
+            "agent:1",
+            "agent:2",
+            "sre"
+          ],
+          "handles": {
+            "dev": "dev",
+            "agent:1": "ResearchDesk",
+            "agent:2": "ops",
+            "sre": "SiteReliability"
+          }
+        }
+      }
+    },
+    {
+      "call": "discussion",
+      "agents": [
+        {
+          "id": "agent:1",
+          "name": "Hélène Tremblay"
+        }
+      ],
+      "expect": {
+        "result": {
+          "agents": [
+            "agent:1"
+          ],
+          "handles": {
+            "agent:1": "HélèneTremblay"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

@@ -1,0 +1,93 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/an-agent-named-by-an-id-that-is-no-handle-waits-for-the-install",
+  "title": "An agent named by an id that is no handle takes its handle from its declaration, which only an install reads: until then the discussion reads no handle, and checks no handle the host gave, but still refuses one naming no agent",
+  "rules": [
+    "§19.7.5"
+  ],
+  "notes": "Python: orchestration/strategies/discussion/strategy.py __init__ named_later, _check_given. The install's own reading comes with the install (lot 8c).",
+  "setup": {},
+  "steps": [
+    {
+      "call": "discussion",
+      "agents": [
+        "agent:1"
+      ],
+      "expect": {
+        "result": {
+          "agents": [
+            "agent:1"
+          ],
+          "handles": {}
+        }
+      }
+    },
+    {
+      "call": "discussion",
+      "agents": [
+        "dev",
+        "agent:1"
+      ],
+      "expect": {
+        "result": {
+          "agents": [
+            "dev",
+            "agent:1"
+          ],
+          "handles": {}
+        }
+      }
+    },
+    {
+      "call": "discussion",
+      "agents": [
+        "dev",
+        "agent:1"
+      ],
+      "handles": {
+        "dev": "two words"
+      },
+      "expect": {
+        "result": {
+          "agents": [
+            "dev",
+            "agent:1"
+          ],
+          "handles": {}
+        }
+      }
+    },
+    {
+      "call": "discussion",
+      "agents": [
+        "agent:1"
+      ],
+      "handles": {
+        "sre": "sre"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "discussion",
+      "agents": [
+        "agent:1"
+      ],
+      "handles": {
+        "agent:1": "ops"
+      },
+      "expect": {
+        "result": {
+          "agents": [
+            "agent:1"
+          ],
+          "handles": {
+            "agent:1": "ops"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

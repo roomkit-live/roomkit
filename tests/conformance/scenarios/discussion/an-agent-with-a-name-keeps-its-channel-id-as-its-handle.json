@@ -1,0 +1,32 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/an-agent-with-a-name-keeps-its-channel-id-as-its-handle",
+  "title": "An agent's name is a display name: a channel id that can name the agent stays its handle",
+  "rules": [
+    "§19.7.5"
+  ],
+  "notes": "Python: tests/orchestration/test_discussion_handles.py test_an_agent_with_a_name_keeps_its_channel_id_as_its_handle.",
+  "setup": {},
+  "steps": [
+    {
+      "call": "discussion",
+      "agents": [
+        {
+          "id": "dev",
+          "name": "Developer"
+        }
+      ],
+      "expect": {
+        "result": {
+          "agents": [
+            "dev"
+          ],
+          "handles": {
+            "dev": "dev"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

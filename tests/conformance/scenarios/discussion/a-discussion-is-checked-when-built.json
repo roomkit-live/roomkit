@@ -1,0 +1,140 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-discussion-is-checked-when-built",
+  "title": "A discussion is checked when built: it needs an agent, distinct channel ids, an everyone naming its agents, a max_turns of at least 1, a max_depth of at least 2, a silent token and rules that are not blank",
+  "rules": [
+    "§19.7.5"
+  ],
+  "notes": "Python: tests/orchestration/test_strategy_discussion.py test_a_discussion_is_checked_when_built (its ValueErrors; the TypeError is a live channel that is no agent, a Rust test), tests/orchestration/test_discussion_rules.py test_blank_rules_are_refused. orchestration/strategies/discussion/strategy.py _check.",
+  "setup": {},
+  "steps": [
+    {
+      "call": "discussion",
+      "agents": [],
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "discussion",
+      "agents": [
+        "a",
+        "a"
+      ],
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "discussion",
+      "agents": [
+        "a",
+        {
+          "id": "a"
+        }
+      ],
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "discussion",
+      "agents": [
+        "a"
+      ],
+      "everyone": [
+        "b"
+      ],
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "discussion",
+      "agents": [
+        "a"
+      ],
+      "max_turns": 0,
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "discussion",
+      "agents": [
+        "a"
+      ],
+      "max_depth": 1,
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "discussion",
+      "agents": [
+        "a"
+      ],
+      "silent_token": "   ",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "discussion",
+      "agents": [
+        "a"
+      ],
+      "rules": "   ",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "discussion",
+      "agents": [
+        "a",
+        "b"
+      ],
+      "everyone": [
+        "b"
+      ],
+      "max_turns": 1,
+      "max_depth": 2,
+      "silent_token": "PASS",
+      "rules": "Hand over with {handle}.",
+      "people": [
+        "ops"
+      ],
+      "expect": {
+        "result": {
+          "agents": [
+            "a",
+            "b"
+          ],
+          "handles": {
+            "a": "a",
+            "b": "b"
+          }
+        }
+      }
+    },
+    {
+      "call": "discussion",
+      "agents": [
+        "a"
+      ],
+      "addressed_only": true,
+      "expect": {
+        "result": {
+          "agents": [
+            "a"
+          ],
+          "handles": {
+            "a": "a"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

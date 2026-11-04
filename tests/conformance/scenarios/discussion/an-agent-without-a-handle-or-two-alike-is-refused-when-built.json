@@ -1,0 +1,125 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/an-agent-without-a-handle-or-two-alike-is-refused-when-built",
+  "title": "A discussion is refused when built if an agent has no name that can address it, the host gives a handle that names nobody or names a channel that is no agent, or two handles read alike ignoring case",
+  "rules": [
+    "§19.7.5"
+  ],
+  "notes": "Python: tests/orchestration/test_discussion_handles.py test_an_agent_without_a_handle_or_two_alike_are_refused_at_construction (all 8 parameters).",
+  "setup": {},
+  "steps": [
+    {
+      "call": "discussion",
+      "agents": [
+        {
+          "id": "agent:1"
+        }
+      ],
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "discussion",
+      "agents": [
+        {
+          "id": "agent:1",
+          "name": "!!"
+        }
+      ],
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "discussion",
+      "agents": [
+        {
+          "id": "dev"
+        }
+      ],
+      "handles": {
+        "dev": "two words"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "discussion",
+      "agents": [
+        {
+          "id": "dev"
+        }
+      ],
+      "handles": {
+        "dev": "all"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "discussion",
+      "agents": [
+        {
+          "id": "dev"
+        }
+      ],
+      "handles": {
+        "dev": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "discussion",
+      "agents": [
+        {
+          "id": "dev"
+        }
+      ],
+      "handles": {
+        "sre": "sre"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "discussion",
+      "agents": [
+        {
+          "id": "agent:1",
+          "name": "Jev"
+        },
+        {
+          "id": "agent:2",
+          "name": "jev"
+        }
+      ],
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "discussion",
+      "agents": [
+        {
+          "id": "dev"
+        },
+        {
+          "id": "sre"
+        }
+      ],
+      "handles": {
+        "sre": "DEV"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    }
+  ],
+  "expect": {}
+}
