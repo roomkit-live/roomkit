@@ -108,6 +108,9 @@ _ITEM_KINDS = (
         lambda data: UsageMarker(
             usage=data["usage"], model=data.get("model"), provider=data.get("provider")
         ),
+        # Read ahead as text is, or the loop would wait at it for its reader
+        # where it went on to decide the round: what a stop finds would change.
+        delta=True,
     ),
     _ItemKind(
         "loop_end", LoopEndMarker, lambda item, start: dataclasses.asdict(item), _decode_loop_end

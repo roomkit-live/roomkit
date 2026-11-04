@@ -249,6 +249,8 @@ REACTION = {
     "output",
     "result",
     "stop_after",
+    "hold_after",
+    "hold_gate",
     "writes_record",
     "parsed",
     "refuse",

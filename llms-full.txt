@@ -3077,7 +3077,8 @@ every generation reported its input and output counters), and `ai_model` and
 answer, or, for a turn that ended without one (a cancellation between rounds, an
 interruption), the last round's text. A turn cut once it began records the same
 from what its generations told, its end `cancelled`: a generation in flight is
-not counted, and `ai_usage_complete` is then false. A streamed turn
+not counted, and `ai_usage_complete` is then false. A turn that told nothing
+(cut in its first generation, or an ACP agent's) records only its end. A streamed turn
 learns its end after that message was written: its stored row is updated once
 the turn's deliveries are done (`ON_EVENT_UPDATED` fires), so read it from the
 store or the `InboundResult`, not from the frames a channel was streamed.

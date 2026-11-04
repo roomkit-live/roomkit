@@ -320,6 +320,9 @@ class ScriptedChannel(Channel):
                     self._harness.record_streamed(room_id, self.channel_id, {"text": item})
                     if item == stop_after:
                         break
+                    if item == reaction.get("hold_after"):
+                        hold = {"gate": reaction["hold_gate"]}
+                        await perform(self._harness, hold, {"room": room_id})
                 elif isinstance(item, ThinkingDeltaMarker):
                     thinking = {"thinking": item.thinking}
                     self._harness.record_streamed(room_id, self.channel_id, thinking)

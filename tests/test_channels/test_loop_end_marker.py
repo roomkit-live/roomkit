@@ -16,8 +16,14 @@ import asyncio
 import pytest
 
 from roomkit.channels.ai import AIChannel
-from roomkit.core.mixins._streaming_segments import _ended_record
-from roomkit.models.streaming import LoopEndMarker
+from roomkit.core.mixins._streaming_segments import _ended_record, _GenerationsRead
+from roomkit.models.streaming import (
+    LoopEndMarker,
+    SegmentBreakMarker,
+    ToolCallEndMarker,
+    ToolCallStartMarker,
+    UsageMarker,
+)
 from roomkit.providers.ai.base import AIContext, AIMessage, AIResponse, AIToolCall, ServedCall
 from roomkit.providers.ai.mock import MockAIProvider
 
@@ -245,3 +251,37 @@ def test_the_record_holds_what_its_marker_says(
     marker: LoopEndMarker, record: dict[str, object]
 ) -> None:
     assert _ended_record(marker) == record
+
+
+_TOLD = UsageMarker(usage={"input_tokens": 5, "output_tokens": 2})
+_START = ToolCallStartMarker(tool_name="t", tool_id="c")
+_END = ToolCallEndMarker(tool_name="t", tool_id="c")
+
+
+@pytest.mark.parametrize(
+    ("items", "complete"),
+    [
+        pytest.param([_TOLD], True, id="told-and-nothing-after"),
+        pytest.param([_TOLD, _START], True, id="its-call-runs"),
+        pytest.param([_TOLD, _START, _START, _END], True, id="one-of-two-calls-runs"),
+        pytest.param([_TOLD, _START, _END], False, id="its-calls-over-the-next-starts"),
+        pytest.param([_TOLD, SegmentBreakMarker()], False, id="tried-again"),
+        pytest.param([_START, _END, _TOLD], True, id="a-provider-s-call-within-it"),
+        pytest.param([_TOLD, _START, _END, _START, _END, _TOLD], True, id="told-again"),
+    ],
+)
+def test_a_cut_reads_incomplete_with_a_generation_in_flight(
+    items: list[object], complete: bool
+) -> None:
+    read = _GenerationsRead()
+    for item in items:
+        read.read(item)
+
+    assert read.cut_record()["ai_usage_complete"] is complete
+
+
+def test_a_stream_that_told_nothing_records_only_its_end() -> None:
+    read = _GenerationsRead()
+    read.read("text")
+
+    assert read.cut_record() == {"loop_end_reason": "cancelled"}
