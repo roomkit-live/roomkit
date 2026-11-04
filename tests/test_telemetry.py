@@ -34,6 +34,7 @@ from roomkit.telemetry import (
     SpanKind,
     TelemetryConfig,
 )
+from roomkit.telemetry.context import get_current_telemetry_ctx
 from roomkit.voice.backends.mock import MockVoiceBackend
 from roomkit.voice.pipeline.config import AudioPipelineConfig
 from roomkit.voice.pipeline.vad.base import VADEvent, VADEventType
@@ -1385,7 +1386,7 @@ class TestTelemetryPhase4:
         assert broadcast_spans[0].parent_id == root_spans[0].id
 
     async def test_an_injected_event_s_broadcast_parents_to_inbound(self) -> None:
-        """A hook's injected event stays in its message's trace (RFC §15.7)."""
+        """A hook's injected event stays in its message's trace."""
         mock = MockTelemetryProvider()
         kit = RoomKit(telemetry=mock)
         kit.register_channel(SimpleChannel("ch1"))
@@ -1415,6 +1416,54 @@ class TestTelemetryPhase4:
         broadcasts = mock.get_spans(SpanKind.BROADCAST)
         assert len(broadcasts) == 2
         assert {s.parent_id for s in broadcasts} == {inbound.id}
+
+    async def test_an_injected_event_carries_its_own_parent_s_context(self) -> None:
+        """The context a backend reads back names the span the broadcast is a
+        child of, not the last span the hook's code ran under."""
+
+        class ReadsItsContext(MockTelemetryProvider):
+            def __init__(self) -> None:
+                super().__init__()
+                self.read: dict[str, Any] = {}
+
+            def get_span_context(self, span_id: str) -> Any:
+                return span_id
+
+            def start_span(self, kind: SpanKind, name: str, **kwargs: Any) -> str:
+                span_id = super().start_span(kind, name, **kwargs)
+                self.read[span_id] = get_current_telemetry_ctx()
+                return span_id
+
+        telemetry = ReadsItsContext()
+        kit = RoomKit(telemetry=telemetry)
+        kit.register_channel(SimpleChannel("ch1"))
+        kit.register_channel(SimpleChannel("ch2"))
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "ch1")
+        await kit.attach_channel(room.id, "ch2")
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST)
+        async def inject(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            if event.content.body != "hello":  # type: ignore[union-attr]
+                return HookResult.allow()
+            await kit.send_event(room.id, "ch1", TextContent(body="sent"))
+            noted = RoomEvent(
+                room_id=room.id,
+                source=EventSource(channel_id="ch1", channel_type=ChannelType.SMS),
+                content=TextContent(body="noted"),
+            )
+            return HookResult.allow(
+                injected=[InjectedEvent(event=noted, target_channel_ids=["ch2"])]
+            )
+
+        msg = InboundMessage(channel_id="ch1", sender_id="u", content=TextContent(body="hello"))
+        await kit.process_inbound(msg, room_id=room.id)
+        await kit.close()
+
+        (inbound,) = [s for s in telemetry.spans if s.name == "framework.inbound"]
+        under = [s for s in telemetry.get_spans(SpanKind.BROADCAST) if s.parent_id == inbound.id]
+        assert len(under) >= 2
+        assert {telemetry.read[s.id] for s in under} == {inbound.id}
 
     async def test_lane_side_spans_parent_to_inbound(self) -> None:
         """The reentry pass and AFTER_BROADCAST run in the lane executor, on

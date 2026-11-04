@@ -55,12 +55,13 @@ from roomkit.models.enums import (
     Visibility,
 )
 from roomkit.models.event import RoomEvent, with_pipeline_id
-from roomkit.telemetry.context import get_current_span, get_current_telemetry_ctx
+from roomkit.telemetry.context import get_current_span
 
 if TYPE_CHECKING:
     from roomkit.core.locks import RoomLockManager
     from roomkit.models.context import RoomContext
     from roomkit.models.hook import InjectedEvent
+    from roomkit.telemetry.base import TelemetryProvider
 
 logger = logging.getLogger("roomkit.framework")
 
@@ -120,6 +121,7 @@ class InjectedEventsMixin(HelpersMixin):
 
     _lock_manager: RoomLockManager
     _max_chain_depth: int
+    _telemetry: TelemetryProvider
 
     # Cross-mixin methods — attribute annotations avoid MRO shadowing
     _commit_to_lane: Any  # LaneExecutionMixin
@@ -323,9 +325,17 @@ class InjectedEventsMixin(HelpersMixin):
         context = with_target(ready.context, target)
         targets = await self._injected_targets(room_id, event, injected)
 
+        # The caller's span, carried across the lane boundary: an injected
+        # event's broadcast stays in its call's trace, as any other's.
+        parent_id = get_current_span()
+        parent_ctx = self._telemetry.get_span_context(parent_id) if parent_id is not None else None
+
         def factory(committed: RoomEvent) -> DeliveryPlan:
             planned = committed_in(context, committed)
-            return _injected_plan(committed, ready, planned, targets, mutation_hook)
+            plan = _injected_plan(committed, ready, planned, targets, mutation_hook)
+            plan.parent_span_id = parent_id
+            plan.parent_span_ctx = parent_ctx
+            return plan
 
         stored = await self._commit_to_lane(
             room_id, event, cascade, factory, policy_aware=False, target=target
@@ -393,8 +403,4 @@ def _injected_plan(
         targets=targets,
         injected=True,
         mutation_hook=mutation_hook,
-        # The caller's span, carried across the lane boundary: an injected
-        # event's broadcast stays in its call's trace, as any other's.
-        parent_span_id=get_current_span(),
-        parent_span_ctx=get_current_telemetry_ctx(),
     )

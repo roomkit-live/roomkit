@@ -16,6 +16,7 @@ from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import ChannelCategory, ChannelType, HookTrigger
 from roomkit.models.event import EventSource, RoomEvent, TextContent
+from roomkit.models.hook import HookResult, InjectedEvent
 from roomkit.models.room import Room
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.telemetry.base import SpanKind
@@ -300,6 +301,38 @@ class TestAcrossProcesses:
         assert named is not None and named["span_id"] == span
         assert named["traceparent"].split("-")[2] == span
         assert bare == {"span_id": span}
+
+
+async def test_a_hook_s_injected_event_stays_in_its_message_s_trace() -> None:
+    """RMK-1301: a hook's injected event's broadcast is no root of its own."""
+    provider, exporter = _exporting_provider()
+    kit = RoomKit(telemetry=provider)
+    kit.register_channel(SimpleChannel("ch1"))
+    kit.register_channel(SimpleChannel("ch2"))
+    await kit.create_room(room_id="r1")
+    await kit.attach_channel("r1", "ch1")
+    await kit.attach_channel("r1", "ch2")
+
+    @kit.hook(HookTrigger.BEFORE_BROADCAST)
+    async def inject(event: RoomEvent, ctx: RoomContext) -> HookResult:
+        if event.content.body != "Hi.":  # type: ignore[union-attr]
+            return HookResult.allow()
+        noted = RoomEvent(
+            room_id="r1",
+            source=EventSource(channel_id="ch1", channel_type=ChannelType.SMS),
+            content=TextContent(body="noted"),
+        )
+        return HookResult.allow(injected=[InjectedEvent(event=noted, target_channel_ids=["ch2"])])
+
+    await kit.process_inbound(
+        InboundMessage(channel_id="ch1", sender_id="u", content=TextContent(body="Hi.")),
+        room_id="r1",
+    )
+    await kit.close()
+
+    spans = exporter.get_finished_spans()
+    assert len({s.context.trace_id for s in spans}) == 1
+    assert [s.name for s in spans if s.parent is None] == ["roomkit.framework.inbound"]
 
 
 async def test_a_turn_s_generation_is_a_child_of_the_broadcast_it_runs_under() -> None:
