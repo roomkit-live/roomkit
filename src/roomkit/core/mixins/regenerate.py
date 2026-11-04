@@ -69,6 +69,8 @@ class RegenerateMixin(HelpersMixin):
     _max_chain_depth: int
     _room_work: RoomWork
     _discussions: dict[str, Any]  # rooms a discussion holds (RFC §19.7.5)
+    _follow_discussion: Any  # DiscussionMixin
+    _stored_discussion_over: Any  # DiscussionMixin
     _door_runs: DoorRuns
     _cascades: Cascades
 
@@ -265,6 +267,10 @@ class RegenerateMixin(HelpersMixin):
             await self.get_room(room_id, organization_id=organization_id)
         change = self._room_work.direct_change(room_id)
         charge_direct_change(change, room_id, "regenerate_response")
+        # A discussion another process stored is this room's here too (rule 16).
+        room = await self._store.get_room(room_id)
+        if room is not None:
+            self._follow_discussion(room)
         discussion = self._discussions.get(room_id)
         if discussion is not None:
             return await self._regenerate_in_discussion(discussion, room_id, trigger_id)
@@ -389,7 +395,8 @@ class RegenerateMixin(HelpersMixin):
             if refusal is not None or found is None:
                 return refusal
         self._door_runs.committed()
-        if discussion.state.over:
+        # The stored queue: what this process last read of it may be outdated.
+        if await self._stored_discussion_over(room_id):
             return InboundResult(blocked=True, reason="discussion_over")
         trigger, _ = found
         answered = [

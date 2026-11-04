@@ -142,6 +142,11 @@ def test_a_configuration_stored_without_handles_addresses_agents_by_channel_id()
         {"agents": ["a"], "max_depth": 5, "handles": {"a": "two\nlines"}},
         {"agents": ["a"], "max_depth": 5, "handles": {"a": "all"}},
         {"agents": ["a"]},
+        # A store holds what Discussion() wrote: JSON's own types, no lax reading.
+        {"agents": ["a"], "max_depth": "5"},
+        {"agents": ["a"], "max_depth": 5.0},
+        {"agents": ["a"], "max_depth": True},
+        {"agents": ["a"], "max_depth": 5, "addressed_only": "yes"},
     ],
 )
 async def test_what_the_constructor_refuses_stored_reads_as_no_discussion(
@@ -183,13 +188,16 @@ async def test_a_depth_of_1_the_kit_writes_for_a_discussion_is_read_back() -> No
 @pytest.mark.parametrize(
     ("config", "handles"),
     [
-        ({"agents": ["b"], "handles": {"b": "ops"}}, {"b": "ops"}),
+        ({"agents": ["b"], "handles": {"b": "ops"}, "max_depth": 5}, {"b": "ops"}),
         # A channel that is no agent is no agent's handle: a person stays one.
-        ({"agents": ["b"], "handles": {"sms": "b"}}, {}),
-        ({"handles": {"b": "ops"}}, {}),
+        ({"agents": ["b"], "handles": {"sms": "b"}, "max_depth": 5}, {}),
+        ({"handles": {"b": "ops"}, "max_depth": 5}, {}),
         # What cannot name an agent: a line break would leave the transcript's label.
-        ({"agents": ["b", "c"], "handles": {"b": "two\nlines", "c": "ops"}}, {"c": "ops"}),
-        ({"agents": ["b"], "handles": {"b": 3}}, {}),
+        ({"agents": ["b"], "handles": {"b": "two\nlines"}, "max_depth": 5}, {}),
+        ({"agents": ["b"], "handles": {"b": 3}, "max_depth": 5}, {}),
+        # What reads as no discussion labels nobody, a handle of an agent included.
+        ({"agents": ["sms", "b"], "handles": {"sms": "ops"}}, {}),
+        ({"agents": ["sms"], "handles": {"sms": "ops"}, "max_depth": 0}, {}),
     ],
 )
 def test_a_stored_handle_counts_for_an_agent_and_if_it_can_name_one(

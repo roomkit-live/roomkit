@@ -553,7 +553,8 @@ class AIContextMixin(_AIChannelContract):
             past_indexes,
             rounds,
             before=_rounds_before(event),
-            answered=_answered_index(event),
+            # An event that reads as nothing opens no history for a round.
+            answered=_answered_index(event) if current_content else None,
         )
         messages: list[AIMessage] = [*memory, *past]
 

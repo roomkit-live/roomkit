@@ -814,7 +814,11 @@ class TestDiscussionHandles:
 
     def _context(self) -> RoomContext:
         stored = {
-            DISCUSSION_CONFIG: {"agents": [self.AGENT], "handles": {self.AGENT: "ResearchDesk"}}
+            DISCUSSION_CONFIG: {
+                "agents": [self.AGENT],
+                "handles": {self.AGENT: "ResearchDesk"},
+                "max_depth": 5,
+            }
         }
         return RoomContext(room=Room(id="room-1", metadata=stored), bindings=[_make_binding()])
 

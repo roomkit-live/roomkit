@@ -381,3 +381,123 @@ async def test_an_instruction_to_a_stored_discussion_over_is_blocked_at_the_room
     assert (result.blocked, result.reason) == (True, "discussion_over")
     await kit.close()
     await other.close()
+
+
+async def test_a_discussion_stored_over_refuses_a_regeneration_at_the_rooms_first_call() -> None:
+    """As an instruction is: the stored queue, whatever this process read (rule 15)."""
+    store = InMemoryStore()
+    stored = {"_discussion": {"agents": ["a"], "max_depth": 5}}
+    await store.create_room(Room(id="r1", metadata=stored))
+    other = RoomKit(store=store)
+    kit = RoomKit(store=store)
+    for process in (other, kit):
+        process.register_channel(SimpleChannel("ops"))
+        process.register_channel(AIChannel("a", provider=_provider("a answers")))
+    await other.attach_channel("r1", "ops")
+    await other.attach_channel("r1", "a", category=ChannelCategory.INTELLIGENCE)
+    await _say(other, "hello")
+    await store.patch_room_metadata("r1", {"_speak_queue": {"over": True}})
+
+    result = await kit.regenerate_response("r1")
+
+    assert result is not None
+    assert (result.blocked, result.reason) == (True, "discussion_over")
+    await kit.close()
+    await other.close()
+
+
+async def test_a_refused_configuration_stored_over_holds_no_instruction_back() -> None:
+    """Over means a discussion's being over: what reads as none is no discussion."""
+    stored = {"_discussion": {"agents": []}, "_speak_queue": {"over": True}}
+    kit = RoomKit()
+    await kit.store.create_room(Room(id="r1", metadata=stored))
+    kit.register_channel(SimpleChannel("ops"))
+    kit.register_channel(AIChannel("a", provider=_provider("a answers")))
+    await kit.attach_channel("r1", "ops")
+    await kit.attach_channel("r1", "a", category=ChannelCategory.INTELLIGENCE)
+
+    result = await kit.process_inbound(
+        InboundMessage(
+            channel_id="ops",
+            sender_id="oncall",
+            content=TextContent(body="Introduce yourself"),
+            addressed_to=["a"],
+            event_type=EventType.INSTRUCTION,
+        )
+    )
+
+    assert not result.blocked
+    await kit.close()
+
+
+def _round_rows(first_index: int) -> list[RoomEvent]:
+    """One round of calls of the agent ``a``, its start at *first_index*."""
+    return [
+        RoomEvent(
+            room_id="r1",
+            type=kind,
+            index=first_index + offset,
+            correlation_id="t-asked",
+            status=EventStatus.DELIVERED,
+            source=EventSource(channel_id="a", channel_type=ChannelType.AI),
+            content=ToolCallContent(
+                tool_name="error_rate",
+                tool_id="c1",
+                result="4% since Monday" if kind == EventType.TOOL_CALL_END else None,
+                status="completed" if kind == EventType.TOOL_CALL_END else "pending",
+            ),
+        )
+        for offset, kind in ((0, EventType.TOOL_CALL_START), (1, EventType.TOOL_CALL_END))
+    ]
+
+
+async def test_a_turn_replays_a_round_when_its_answered_event_is_all_the_history() -> None:
+    """Nobody spoke since: the round still reads after the event (RFC §19.7.5)."""
+    a = _provider("my answer")
+    kit = RoomKit()
+    await _room(kit, a=a)
+    kit._discussions["r1"] = _Held()
+    asked = (await _say(kit, "first: what is the error rate?")).event
+    agent = kit.channels["a"]
+    agent._tool_history_loader = AsyncMock(  # type: ignore[attr-defined]
+        return_value=_round_rows(asked.index + 1)
+    )
+    context = await kit._build_context("r1")
+    binding = context.get_binding("a")
+    assert binding is not None
+    mark = issue_mark([])
+    trigger = asked.model_copy(update={"metadata": {**asked.metadata, DISCUSSION_TURN: mark}})
+
+    await _answer(agent, trigger, binding, context)
+    retire_mark(mark)
+
+    assert [m.role for m in a.calls[0].messages] == ["user", "assistant", "tool"]
+    await kit.close()
+
+
+async def test_a_history_opens_on_no_calls_when_the_answered_event_reads_as_nothing() -> None:
+    """An event that says nothing opens no history for the round that followed
+    it: a model never reads the assistant's calls first."""
+    a = _provider("my answer")
+    kit = RoomKit()
+    await _room(kit, a=a)
+    kit._discussions["r1"] = _Held()
+    asked = (await _say(kit, "")).event
+    later = (await _say(kit, "later: and since when?")).event
+    agent = kit.channels["a"]
+    agent._tool_history_loader = AsyncMock(  # type: ignore[attr-defined]
+        return_value=_round_rows(asked.index + 1)
+    )
+    context = await kit._build_context("r1")
+    binding = context.get_binding("a")
+    assert binding is not None
+    moved = later.model_copy(update={"index": asked.index + 3})
+    context.recent_events = [moved if e.id == later.id else e for e in context.recent_events]
+    mark = issue_mark([])
+    trigger = asked.model_copy(update={"metadata": {**asked.metadata, DISCUSSION_TURN: mark}})
+
+    await _answer(agent, trigger, binding, context)
+    retire_mark(mark)
+
+    assert [m.role for m in a.calls[0].messages] == ["user"]
+    await kit.close()

@@ -24,7 +24,7 @@ from collections.abc import Mapping
 from typing import Any
 from uuid import uuid4
 
-from roomkit._handles import is_handle
+from roomkit._discussion_config import StoredDiscussion
 from roomkit.core._room_metadata import DISCUSSION_CONFIG as DISCUSSION_CONFIG
 from roomkit.models.event import RoomEvent
 
@@ -77,14 +77,8 @@ def agent_handle(metadata: Mapping[str, Any] | None, channel_id: str) -> str:
 
 def discussion_handles(metadata: Mapping[str, Any] | None) -> dict[str, str]:
     """The handle each agent of the discussion a room's *metadata* stores is
-    addressed by, by channel id: empty when the room holds no discussion, or
-    one stored without handles (RFC §19.7.5 rule 4). A handle counts only for
-    a channel the discussion holds as an agent and only if it can name one, so
-    what a store holds never labels a person as an agent."""
-    config = (metadata or {}).get(DISCUSSION_CONFIG)
-    if not isinstance(config, Mapping):
-        return {}
-    handles, agents = config.get("handles"), config.get("agents")
-    if not isinstance(handles, Mapping) or not isinstance(agents, list):
-        return {}
-    return {k: v for k, v in handles.items() if k in agents and is_handle(v)}
+    addressed by, by channel id: empty when the room holds no discussion, what
+    reads as none included, or one stored without handles (RFC §19.7.5 rule 4).
+    So what a store holds never labels a person as an agent."""
+    config = StoredDiscussion.valid(metadata)
+    return dict(config.handles or {}) if config is not None else {}

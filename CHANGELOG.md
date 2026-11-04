@@ -20,8 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   another agent, holds it, or, malformed, fails its router and its turns; a host that
   seeded a state through `create_room(metadata=)` calls `save_conversation_state` instead.
   A stored discussion `Discussion()` would refuse (no agents,
-  two alike, `max_turns` 0, a blank token, a handle that cannot name an agent...) reads as
-  none, with a warning, and the room answers. A person whose name reads like a handle
+  two alike, `max_turns` 0, a blank token, a handle that cannot name an agent...) or that does
+  not read as it writes (`max_depth` "5") reads as none, with a warning, and the room answers;
+  its handles then label nobody. A person whose name reads like a handle
   (`аlice` with a Cyrillic `а`, beside the agent `alice`) or like `all` is addressed by no
   name: an agent writing it no longer waits for that person, believing it asked the agents.
 
@@ -317,7 +318,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A discussion keeps to RFC §19.7.5 where it strayed (HITL 0d726397, RMK-1338): a turn stopped
   past its own `max_depth` announces that limit in `chain_depth_exceeded`, not the kit's; a round
   of tool calls right after the event a turn answers is replayed, not lost; an instruction to a
-  discussion stored over is blocked `discussion_over` from the room's first call in a process.
+  discussion stored over, or its regeneration, is blocked `discussion_over` from the room's first
+  call in a process.
 - A round whose reasoning came in blocks replays two calls made under one id each
   with its own arguments, where the second overwrote the first (RMK-1316).
 - **`PostgresStore` keeps what the other stores keep** (HITL f01854e2,

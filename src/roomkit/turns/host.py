@@ -105,7 +105,7 @@ class UpdateRoomMetadata(_Verb):
     """``update_room_metadata``: keys merged into a room's metadata, which
     the owner writes through ``kit.update_room_metadata``: a key of the
     framework's own (the ``roomkit:`` namespace, a key of the room's private
-    state) is dropped there with a warning."""
+    state, orchestration's) is dropped there with a warning."""
 
     room_id: str
     metadata: dict[str, Any]

@@ -147,12 +147,12 @@ def with_tool_rounds(
     input is out of the window, and a history never opens on the assistant's
     calls. Nor is one at or after *before*, the turn's own event. *answered*
     is the index of the event a discussion's turn reads at its place, which
-    may open the history: a round after it reads after it.
+    may open the history or be all of it: a round after it reads after it.
     """
     known = [index for index in indexes if index is not None]
-    if not known:
+    if not known and answered is None:
         return messages, indexes
-    start = known[0] if answered is None else min(known[0], answered)
+    start = min([*known[:1], *([] if answered is None else [answered])])
     placed = [r for r in rounds if r.index > start and (before is None or r.index < before)]
     if not placed:
         return messages, indexes

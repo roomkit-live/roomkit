@@ -108,7 +108,9 @@ async def test_task_status_names_a_discussions_agent_by_its_handle() -> None:
     await task.wait()
     await until(lambda: task.result is not None, timeout=5)
     stored = await kit.get_room("r")
-    discussion = {DISCUSSION_CONFIG: {"agents": [worker_id], "handles": {worker_id: "Comms"}}}
+    discussion = {
+        DISCUSSION_CONFIG: {"agents": [worker_id], "handles": {worker_id: "Comms"}, "max_depth": 5}
+    }
     room = stored.model_copy(update={"metadata": {**stored.metadata, **discussion}})
 
     with tool_turn_context(room=room):
