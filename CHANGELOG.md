@@ -362,6 +362,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A discussion announces and runs a turn once its queue is stored (HITL 671c4655, RMK-1233): a
+  store that refused the write told a hook one `TURN_GIVEN` per try, for a turn never given, and
+  each try entered the room's lane.
 - **`delegate_task`'s `context` reaches the worker** (RFC §23.4, RMK-1363). The tool told the
   model it passes context to the agent, and the guide that `previous_tasks` tells it what was
   done; the worker's model read `task` alone. Both now reach it quoted as data and bounded,

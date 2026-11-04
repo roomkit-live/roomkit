@@ -159,10 +159,9 @@ async def test_a_turn_stopped_past_its_own_limit_is_announced_with_that_limit() 
     mark = issue_mark([])
     async with kit._lock_manager.locked("r1"):
         context = await kit._build_context("r1")
-        cascade = await kit._plan_discussion_turn(
-            "r1", deep, "a", context, mark=mark, max_depth=10
-        )
-    assert cascade is not None
+        plan = kit._plan_discussion_turn(deep, "a", context, mark=mark, max_depth=10)
+        assert plan is not None
+        cascade = kit._enter_discussion_turn("r1", plan, context, max_depth=10)
     await kit._finish_cascade(cascade, "r1")
     retire_mark(mark)
 

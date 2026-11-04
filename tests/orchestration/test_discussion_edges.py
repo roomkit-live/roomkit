@@ -772,6 +772,132 @@ async def test_a_failure_reading_the_queue_is_retried(monkeypatch: pytest.Monkey
     await kit.close()
 
 
+async def test_a_turn_is_told_and_runs_once_its_queue_is_stored(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(_driver, "_RETRY_MAX", 0.01)  # the retry's wait, on a test's scale
+    a = _provider("a")
+    kit = RoomKit()
+    await _room(kit, {"a": a})
+    told: list[Any] = []
+
+    @kit.hook(HookTrigger.ON_SPEAK_QUEUE, execution=HookExecution.ASYNC)
+    async def follow(event: SpeakQueueEvent, context: RoomContext) -> None:
+        told.append(event.change)
+
+    @kit.hook(HookTrigger.BEFORE_AI_GENERATION, execution=HookExecution.ASYNC)
+    async def generating(event: Any, context: RoomContext) -> None:
+        told.append("generating")
+
+    store = kit.store
+    patch = store.patch_room_metadata
+    refused: list[bool] = []
+    down = True
+
+    async def flaky(room_id: str, metadata: dict[str, Any], **kwargs: Any) -> Any:
+        if metadata.get("_speak_queue", {}).get("turns_given", 0) > 0:
+            await asyncio.sleep(0.001)  # a store's round trip: the lane may run
+            if down:
+                refused.append(True)
+                raise RuntimeError("store down")
+        return await patch(room_id, metadata, **kwargs)
+
+    store.patch_room_metadata = flaky  # type: ignore[method-assign]
+    await _say(kit, "@a hello")
+    async with asyncio.timeout(5):
+        while len(refused) < 3:
+            await asyncio.sleep(0.001)
+    assert told == [SpeakQueueChange.QUEUED]
+
+    down = False
+    async with asyncio.timeout(5):
+        while SpeakQueueChange.TURN_ENDED not in told:
+            await asyncio.sleep(0.001)
+
+    assert told == [
+        SpeakQueueChange.QUEUED,
+        SpeakQueueChange.TURN_GIVEN,
+        "generating",
+        SpeakQueueChange.TURN_ENDED,
+    ]
+    assert len(a.calls) == 1
+    await kit.close()
+
+
+async def test_an_uninstall_after_a_refused_write_ends_no_turn() -> None:
+    a = _provider("a")
+    kit = RoomKit()
+    await _room(kit, {"a": a})
+    told = _follow(kit)
+    store = kit.store
+    patch = store.patch_room_metadata
+    refused = asyncio.Event()
+
+    async def flaky(room_id: str, metadata: dict[str, Any], **kwargs: Any) -> Any:
+        if metadata.get("_speak_queue", {}).get("turns_given", 0) > 0:
+            refused.set()
+            raise RuntimeError("store down")
+        return await patch(room_id, metadata, **kwargs)
+
+    store.patch_room_metadata = flaky  # type: ignore[method-assign]
+    await _say(kit, "@a hello")
+    await asyncio.wait_for(refused.wait(), 5)
+    store.patch_room_metadata = patch  # type: ignore[method-assign]
+    await kit.uninstall_strategy("r1")
+    await kit.close()
+
+    assert [change for change, _ in told] == [SpeakQueueChange.QUEUED]
+    assert a.calls == []
+
+
+async def test_a_stop_during_the_write_ends_the_turn_it_gave() -> None:
+    a = _provider("a")
+    kit = RoomKit()
+    await _room(kit, {"a": a})
+    told = _follow(kit)
+    store = kit.store
+    patch = store.patch_room_metadata
+    writing = asyncio.Event()
+    never = asyncio.Event()
+
+    async def held(room_id: str, metadata: dict[str, Any], **kwargs: Any) -> Any:
+        given = (metadata.get("_speak_queue") or {}).get("turns_given", 0)
+        if given > 0 and not writing.is_set():
+            writing.set()
+            await never.wait()
+        return await patch(room_id, metadata, **kwargs)
+
+    store.patch_room_metadata = held  # type: ignore[method-assign]
+    await _say(kit, "@a hello")
+    await asyncio.wait_for(writing.wait(), 5)
+    await kit.uninstall_strategy("r1")
+    await kit.close()
+
+    assert [change for change, _ in told] == [
+        SpeakQueueChange.QUEUED,
+        SpeakQueueChange.TURN_GIVEN,
+        SpeakQueueChange.TURN_ENDED,
+    ]
+    assert a.calls == []
+
+
+@pytest.mark.parametrize("failure", [RuntimeError, asyncio.CancelledError])
+async def test_an_edit_cut_in_its_block_announces_nothing(failure: type[BaseException]) -> None:
+    kit = RoomKit()
+    await _room(kit, {"a": _provider("a")})
+    told = _follow(kit)
+    room = kit._discussions["r1"]
+
+    with pytest.raises(failure):
+        async with room.editing():
+            room.fire(SpeakQueueChange.WAITING, [])
+            raise failure
+    await _settle(kit)
+
+    assert told == []
+    await kit.close()
+
+
 async def test_concurrent_installs_on_one_room_are_one_too_many() -> None:
     kit = RoomKit()
     await kit.create_room(room_id="r1")

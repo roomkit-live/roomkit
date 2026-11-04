@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 from roomkit.channels._discussion_turn import DISCUSSION_TURN
 from roomkit.channels.declared import register_strategy_agents
 from roomkit.core._room_metadata import SPEAK_QUEUE
-from roomkit.core.lanes import DeliveryCascade, anchor_index
+from roomkit.core.lanes import DeliveryCascade, DeliveryPlan, anchor_index
 from roomkit.core.mixins.helpers import HelpersMixin
 from roomkit.models.enums import ChannelCategory, ChannelType, HookTrigger
 from roomkit.orchestration.strategies.discussion._config import DiscussionConfig
@@ -421,21 +421,19 @@ class DiscussionMixin(HelpersMixin):
 
     # -- Its turns --
 
-    async def _plan_discussion_turn(
+    def _plan_discussion_turn(
         self,
-        room_id: str,
         answered: RoomEvent,
         agent_id: str,
         context: RoomContext,
         *,
         mark: dict[str, Any],
         max_depth: int,
-    ) -> DeliveryCascade | None:
-        """Put a discussion's turn in the room's lane: a rerun of *answered*
-        for *agent_id* alone, carrying the turn's *mark*, bounded by the
-        discussion's own depth limit (rules 9 and 11); its cascade, or None
-        when the agent cannot be asked to answer it. Under the room lock, with
-        *context* read under it."""
+    ) -> DeliveryPlan | None:
+        """The plan of a discussion's turn: a rerun of *answered* for *agent_id*
+        alone, carrying the turn's *mark*, bounded by the discussion's own depth
+        limit (rules 9 and 11); None when the agent cannot be asked to answer it.
+        Under the room lock, with *context* read under it."""
         source = context.get_binding(answered.source.channel_id)
         if source is None:
             return None
@@ -450,6 +448,14 @@ class DiscussionMixin(HelpersMixin):
         plan.turn_for = agent_id
         plan.max_chain_depth = max_depth
         plan.response_visibility = answered.response_visibility
+        return plan
+
+    def _enter_discussion_turn(
+        self, room_id: str, plan: DeliveryPlan, context: RoomContext, *, max_depth: int
+    ) -> DeliveryCascade:
+        """Put a discussion's planned turn in the room's lane, once the queue
+        that gives it is stored: its cascade. Under the room lock *context* was
+        read under."""
         cascade = self._cascades.new(room_id, reentry_budget=10 * max_depth)
         cascade.retain()
         self._enqueue_exec(

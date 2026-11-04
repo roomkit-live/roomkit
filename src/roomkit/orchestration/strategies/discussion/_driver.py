@@ -34,7 +34,7 @@ from ._people import person_label
 from .models import SpeakQueueChange
 
 if TYPE_CHECKING:
-    from roomkit.core.lanes import DeliveryCascade
+    from roomkit.core.lanes import DeliveryCascade, DeliveryPlan
     from roomkit.models.context import RoomContext
     from roomkit.models.event import RoomEvent
 
@@ -57,8 +57,11 @@ _RETRY_MAX = 30.0
 class _Turn:
     entry: Entry
     cascade: DeliveryCascade | None
-    """The turn's run in the room's lane; None for a posted result's turn."""
+    """The turn's run in the room's lane, which it enters once the queue that
+    gives it is stored; None for a posted result's turn."""
     mark: dict[str, Any]
+    plan: DeliveryPlan | None = None
+    """What enters the lane; None for a posted result's turn."""
     started: bool = False
     cut: bool = False
     posted: RoomEvent | None = None
@@ -186,7 +189,18 @@ class TurnDriver:
         done = await self._done() if _holds_work(peek) else None
         if self._stopping or room.closed:
             return None
-        return await self._planned_turn(done)
+        try:
+            return await self._planned_turn(done)
+        except Exception:
+            self._drop_turn_not_stored()
+            raise
+
+    def _drop_turn_not_stored(self) -> None:
+        """The queue that gave a turn was not stored: no turn was given, and
+        its entry, still stored, gives it on the next look."""
+        turn, self._turn = self._turn, None
+        if turn is not None:
+            retire_mark(turn.mark)
 
     async def _planned_turn(self, done: bool | None) -> _Turn | None:
         """The turn to give, planned under the room lock, once the dispatch
@@ -213,6 +227,10 @@ class TurnDriver:
                 if pending is None:
                     turn, stopped = await self._pick(state, context, done=done)
             self._seen_version = room.state.version
+            if turn is not None and turn.plan is not None:
+                turn.cascade = room.kit._enter_discussion_turn(
+                    room.room_id, turn.plan, context, max_depth=room.max_depth
+                )
             # Committed off the queue's edit: a failure here never loses the
             # turn already handed to the lane.
             for entry, regenerated in stopped:
@@ -302,17 +320,17 @@ class TurnDriver:
         answered = _at_ask_depth(answered, entry)
         mark = issue_mark([self._notes(entry, answered, context)])
         try:
-            cascade = await room.kit._plan_discussion_turn(
-                room.room_id, answered, entry.agent, context, mark=mark, max_depth=room.max_depth
+            plan = room.kit._plan_discussion_turn(
+                answered, entry.agent, context, mark=mark, max_depth=room.max_depth
             )
         except BaseException:
             retire_mark(mark)
             raise
-        if cascade is None:
+        if plan is None:
             retire_mark(mark)
             return self._not_given(state, entry)
-        # Handed to the lane: from here the turn is the driver's to finish.
-        return self._handed(state, _Turn(entry, cascade, mark), answered.id)
+        # From here the turn is the driver's to finish.
+        return self._handed(state, _Turn(entry, None, mark, plan=plan), answered.id)
 
     def _handed(self, state: SpeakQueueState, turn: _Turn, answered_id: str) -> _Turn:
         """*turn* given: taken from the queue, the driver's to finish."""

@@ -68,6 +68,9 @@ text the event commits with (rule 4); the silence check just before it."""
 _STOP_WAIT = 5.0
 """How long stopping waits for the announcements still queued."""
 
+_Change = tuple[SpeakQueueChange, Sequence[str], str | None]
+"""What :meth:`DiscussionRoom.fire` announces."""
+
 
 class DiscussionRoom:
     """The discussion a room holds, as this process takes part in it."""
@@ -99,6 +102,9 @@ class DiscussionRoom:
         self.driver: TurnDriver | None = TurnDriver(self) if strategy is not None else None
         self._last_fire: asyncio.Task[None] | None = None
         self._announcing: set[asyncio.Task[None]] = set()
+        self._holding: tuple[asyncio.Task[Any] | None, list[_Change]] | None = None
+        """The task inside an edit of the queue and what it fired: one at a
+        time, under the room lock."""
         self.posts = ResultPosts(kit, room_id, self._floor_free)
         """The task results to post as the agents' messages (rule 19)."""
 
@@ -167,10 +173,29 @@ class DiscussionRoom:
     @contextlib.asynccontextmanager
     async def editing(self) -> AsyncGenerator[SpeakQueueState, None]:
         """Change the stored queue under the room lock, the room routed by the
-        configuration stored with it (rule 16)."""
-        async with self.shared.editing() as state:
-            self._follow_stored()
-            yield state
+        configuration stored with it (rule 16). What the block fires is
+        announced once the queue is stored: a store that refuses the write
+        changed nothing, so nothing is announced."""
+        held: list[_Change] = []
+        try:
+            async with self.shared.editing() as state:
+                self._follow_stored()
+                self._holding = asyncio.current_task(), held
+                try:
+                    yield state
+                except BaseException:
+                    held.clear()  # no write follows a block that did not end
+                    raise
+                finally:
+                    self._holding = None
+        except Exception:
+            held.clear()
+            raise
+        finally:
+            # A stop cutting the write is no refusal: the turn it gave ends,
+            # so it is told as given.
+            for change in held:
+                self.fire(*change)
 
     def _takes_nothing(self, state: SpeakQueueState) -> bool:
         """Whether the queue, read as *state* while editing, takes no turn:
@@ -717,6 +742,9 @@ class DiscussionRoom:
         """Announce a change of the queue through ``ON_SPEAK_QUEUE``, in the
         order the changes happened: each announcement waits for the previous."""
         if not self.kit.hook_engine.has_hooks(HookTrigger.ON_SPEAK_QUEUE):
+            return
+        if self._holding is not None and self._holding[0] is asyncio.current_task():
+            self._holding[1].append((change, channel_ids, event_id))
             return
         event = SpeakQueueEvent(
             room_id=self.room_id,
