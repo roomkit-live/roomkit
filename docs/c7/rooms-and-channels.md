@@ -405,7 +405,14 @@ scoped to the caller's organization:
 A message with no `room_id` under the framework's own name, `system`, is refused
 `reserved_sender`, with nothing written: the framework names the room it writes
 to, and a host writing under that name passes `room_id`. A message with no
-address, its sender empty or blank, opens a room no other sender is admitted to.
+address, its sender empty or blank and no chat, opens a room no other sender is
+admitted to.
+
+A custom router's answer is the host's decision, as a `room_id` is. A room that
+binds the channel is still held to step 3's conditions under the lock, but one
+that does not has the channel attached, whoever writes: the way a new channel
+joins a conversation. So never route on a field the sender chooses (a ticket in
+a webhook's body) without authenticating it.
 
 The store answers step 1 with `find_room_id_by_binding(channel_id,
 participant_id, identity_id, room_filter, *, recipient_key=None)` and

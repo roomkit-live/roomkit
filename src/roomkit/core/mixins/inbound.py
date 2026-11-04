@@ -1748,11 +1748,12 @@ def _not_an_instruction(event: RoomEvent, message: InboundMessage) -> RoomEvent:
 def _conversation(message: InboundMessage, channel: Channel) -> str:
     """The address *message* is routed and recorded by (RFC §10.4).
 
-    The channel's conversation address (the chat, on a chat channel), except
-    for a message the framework writes itself: its sender stays ``system``
-    whatever its metadata says, so it is never recorded on a binding.
+    The channel's conversation address (the chat, on a chat channel, whatever
+    its sender: a post with no author is its chat's), except for a message
+    under the framework's own name: its sender stays ``system`` whatever its
+    metadata says, so it is never recorded on a binding.
     """
-    if not recordable_sender(message.sender_id):
+    if message.sender_id == SYSTEM_SENDER_ID:
         return message.sender_id
     return channel.conversation_address(message)
 

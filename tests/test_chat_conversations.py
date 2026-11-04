@@ -168,6 +168,37 @@ async def test_whatsapp_personal_answers_a_private_chat_by_number_and_a_group_in
     await kit.close()
 
 
+async def test_a_post_with_no_author_is_its_chat_s() -> None:
+    """A Telegram channel post has no ``from``: its chat is its conversation
+    all the same (RFC §5.7), so the chat's posts share its room and the room
+    answers there. The chat wins over an empty sender, not over the name
+    ``system``, refused however it is written."""
+    bot = _Bot()
+    update = {
+        "message": {
+            "message_id": 1,
+            "chat": {"id": 5, "type": "channel"},
+            "date": 0,
+            "text": "a post",
+        },
+    }
+
+    rooms = set()
+    for number in (1, 2):
+        update["update_id"] = number
+        for message in parse_telegram_webhook(update, "tg"):
+            assert message.sender_id == ""
+            result = await bot.kit.process_inbound(message)
+            assert result.event is not None
+            rooms.add(result.event.room_id)
+
+    binding = await bot.kit.store.get_binding(rooms.copy().pop(), "tg")
+    await bot.kit.close()
+    assert len(rooms) == 1
+    assert binding is not None and binding.participant_id == "5"
+    assert bot.telegram.sent
+
+
 @pytest.mark.parametrize(
     "carried",
     [{}, {"chat_id": True}, {"chat_id": "  "}],
