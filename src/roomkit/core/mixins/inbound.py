@@ -1368,7 +1368,7 @@ class InboundMixin(HelpersMixin):
             # A binding stored with a recipient and no correspondent (before
             # RFC §5.7 named one) is its recipient's: the sender is recorded
             # only on a binding that delivers to no one, or to them.
-            update["participant_id"] = channel.recipient_address(binding) or _conversation(
+            update["participant_id"] = routed_recipient(channel, binding) or _conversation(
                 message, channel
             )
         if _lacks_recipient(binding.model_copy(update=update), message, channel):
