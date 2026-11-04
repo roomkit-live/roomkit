@@ -5,7 +5,7 @@
   "rules": [
     "§6.4"
   ],
-  "notes": "RFC §6.4: calls under one id in one round keep their own. Python: RoundTranscript.parts takes each entry's own call; the id the second goes back under is each implementation's: a provider that repeats an id breaks RFC §6.4's rule, which asks it to mint one.",
+  "notes": "RFC §6.4: calls under one id in one round keep their own. Python: RoundTranscript.parts takes each entry's own call; a provider that repeats an id breaks RFC §6.4's rule, which asks it to mint one, and the loop keeps the id it read, as it refuses the second call under it.",
   "setup": {
     "channels": [
       {
@@ -140,7 +140,7 @@
                   }
                 },
                 {
-                  "call": "$any",
+                  "call": "c1",
                   "arguments": {
                     "second": true
                   }

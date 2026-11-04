@@ -1,0 +1,196 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/another-turn-among-a-round-s-starts-leaves-its-results-paired",
+  "title": "Another turn's rows among a round's starts leave the round its turn's: the call that held the id reads its own result in a later turn",
+  "rules": [
+    "§6.4",
+    "§12.4"
+  ],
+  "notes": "Python: channels/_tool_history.py _Waiting. Two messages at once: the turn with two calls under c1 usually has the other turn's start row between its two, which read as two rounds of the room and one of the turn. The results are asserted in no order, as the turns' order is the scheduler's. Row by row, in each implementation: test_another_turn_among_a_round_s_starts_leaves_its_results_paired.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "lookup",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "fine"
+          },
+          {
+            "name": "other",
+            "description": "other",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "elsewhere"
+          },
+          {
+            "name": "z",
+            "description": "z",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "zed"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {
+                    "q": "first"
+                  }
+                },
+                {
+                  "id": "c1",
+                  "name": "other",
+                  "arguments": {
+                    "q": "second"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c9",
+                  "name": "z",
+                  "arguments": {
+                    "q": "theirs"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "one"
+            },
+            {
+              "text": "two"
+            },
+            {
+              "text": "three"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "concurrent": [
+        {
+          "call": "process_inbound",
+          "room_id": "room-1",
+          "message": {
+            "channel_id": "ws",
+            "sender_id": "ada",
+            "content": {
+              "type": "text",
+              "body": "Go."
+            }
+          }
+        },
+        {
+          "call": "process_inbound",
+          "room_id": "room-1",
+          "message": {
+            "channel_id": "ws",
+            "sender_id": "ada",
+            "content": {
+              "type": "text",
+              "body": "Also."
+            }
+          }
+        }
+      ]
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "More."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {},
+        {},
+        {
+          "tool_results": {
+            "$unordered": [
+              {
+                "tool_call_id": "c1",
+                "name": "lookup",
+                "content": "fine",
+                "is_error": false
+              },
+              {
+                "tool_call_id": "c9",
+                "name": "z",
+                "content": "zed",
+                "is_error": false
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

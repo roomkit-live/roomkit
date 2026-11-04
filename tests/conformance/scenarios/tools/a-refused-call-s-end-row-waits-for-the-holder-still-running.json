@@ -1,0 +1,204 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-refused-call-s-end-row-waits-for-the-holder-still-running",
+  "title": "A round's end rows come in its calls' order: the second call under an id, refused at once, ends after the first, which still runs, so a later turn reads the first with its own result",
+  "rules": [
+    "§6.4",
+    "§12.4"
+  ],
+  "notes": "Python: channels/_ai_tools.py _run_announced_calls answers in call order. Pairing a round's results first in, first out rests on this order.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "lookup",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "fine",
+            "gate": "held"
+          },
+          {
+            "name": "other",
+            "description": "other",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "elsewhere"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {
+                    "q": "first"
+                  }
+                },
+                {
+                  "id": "c1",
+                  "name": "other",
+                  "arguments": {
+                    "q": "second"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            },
+            {
+              "text": "again"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "defer_delivery": true,
+      "as": "a"
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "open": "held"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "More."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "type": "message"
+        },
+        {
+          "type": "tool_call_start",
+          "content": {
+            "tool_id": "c1",
+            "tool_name": "lookup"
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "content": {
+            "tool_id": "c1",
+            "tool_name": "other"
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "c1",
+            "tool_name": "lookup",
+            "outcome": "served"
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "c1",
+            "tool_name": "other",
+            "outcome": "refused"
+          }
+        },
+        {
+          "type": "message",
+          "content": {
+            "body": "done"
+          }
+        },
+        {
+          "type": "message"
+        },
+        {
+          "type": "message",
+          "content": {
+            "body": "again"
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {},
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "name": "lookup",
+              "content": "fine",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
