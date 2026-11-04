@@ -391,10 +391,11 @@ def known_as(sender: str | None, identity: Identity | None, channel_id: str) -> 
 def recordable_sender(sender: str | None) -> bool:
     """Whether *sender* can be a binding's correspondent (RFC §10.4).
 
-    Not an empty address, and not the framework's own sender: what the host
-    writes through ``deliver()`` names no correspondent.
+    Not an empty or blank address, which identifies no one, and not the
+    framework's own sender: what the host writes through ``deliver()`` names
+    no correspondent.
     """
-    return bool(sender) and sender != SYSTEM_SENDER_ID
+    return bool(sender and sender.strip()) and sender != SYSTEM_SENDER_ID
 
 
 def names_no_sender(sender: str | None) -> str | None:
