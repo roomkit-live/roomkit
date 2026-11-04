@@ -1,0 +1,121 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reasoning/a-round-tried-again-keeps-its-text-and-no-reasoning",
+  "title": "A round tried again goes back as its text alone: its reasoning is not replayed",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: channels/_ai_loop_rules.py _try_round_again.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "get_weather",
+            "description": "The weather.",
+            "returns": "sunny"
+          },
+          {
+            "name": "get_time",
+            "description": "The time.",
+            "returns": "noon"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "stream": [
+                {
+                  "thinking": "X",
+                  "block": 0
+                },
+                {
+                  "thinking": "",
+                  "block": 0,
+                  "signature": "S0"
+                },
+                {
+                  "text": "Hmm."
+                }
+              ],
+              "finish_reason": "MALFORMED_FUNCTION_CALL"
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "go"
+            },
+            {
+              "role": "assistant",
+              "text": "Hmm.",
+              "round": {
+                "$absent": true
+              }
+            },
+            {
+              "role": "user"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,225 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reasoning/the-rounds-keep-their-place-past-a-nudge-and-a-hook",
+  "title": "An empty round's nudge and the messages a hook adds between rounds leave each round its own reasoning",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: one list of messages; roomkit-rs keeps a round's parts by its message's place. channels/_ai_loop_rules.py _try_round_again, channels/_ai_streaming.py _after_tool_round.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "get_weather",
+            "description": "The weather.",
+            "returns": "sunny"
+          },
+          {
+            "name": "get_time",
+            "description": "The time.",
+            "returns": "noon"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "stream": [
+                {
+                  "thinking": "A",
+                  "block": 0
+                },
+                {
+                  "thinking": "",
+                  "block": 0,
+                  "signature": "S0"
+                },
+                {
+                  "call": {
+                    "id": "c1",
+                    "name": "get_weather"
+                  }
+                }
+              ]
+            },
+            {
+              "stream": [
+                {
+                  "thinking": "empty",
+                  "block": 0
+                },
+                {
+                  "thinking": "",
+                  "block": 0,
+                  "signature": "SE"
+                }
+              ]
+            },
+            {
+              "stream": [
+                {
+                  "text": "Say."
+                },
+                {
+                  "thinking": "B",
+                  "block": 1
+                },
+                {
+                  "thinking": "",
+                  "block": 1,
+                  "signature": "S1"
+                },
+                {
+                  "call": {
+                    "id": "c2",
+                    "name": "get_time"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "adds",
+        "trigger": "after_tool_round",
+        "reactions": [
+          {
+            "result": {
+              "action": "modify",
+              "event": {
+                "messages": [
+                  "HOOK-1"
+                ]
+              }
+            }
+          },
+          {
+            "result": {
+              "action": "modify",
+              "event": {
+                "messages": [
+                  "HOOK-2"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "go"
+            },
+            {
+              "role": "assistant",
+              "round": [
+                {
+                  "thinking": "A",
+                  "signature": "S0"
+                },
+                {
+                  "call": "c1"
+                }
+              ]
+            },
+            {
+              "role": "tool"
+            },
+            {
+              "role": "user",
+              "text": "HOOK-1"
+            },
+            {
+              "role": "user",
+              "round": {
+                "$absent": true
+              }
+            },
+            {
+              "role": "assistant",
+              "round": [
+                {
+                  "text": "Say."
+                },
+                {
+                  "thinking": "B",
+                  "signature": "S1"
+                },
+                {
+                  "call": "c2"
+                }
+              ]
+            },
+            {
+              "role": "tool"
+            },
+            {
+              "role": "user",
+              "text": "HOOK-2"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

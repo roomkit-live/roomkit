@@ -1,0 +1,181 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reasoning/a-later-turn-reads-no-reasoning",
+  "title": "A later turn reads no reasoning of the turn before: it lives within its turn",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: nothing of a round's reasoning is stored (RFC §6.4).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "get_weather",
+            "description": "The weather.",
+            "returns": "sunny"
+          },
+          {
+            "name": "get_time",
+            "description": "The time.",
+            "returns": "noon"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "stream": [
+                {
+                  "thinking": "A",
+                  "block": 0
+                },
+                {
+                  "thinking": "",
+                  "block": 0,
+                  "signature": "S0"
+                },
+                {
+                  "call": {
+                    "id": "c1",
+                    "name": "get_weather"
+                  }
+                }
+              ]
+            },
+            {
+              "stream": [
+                {
+                  "thinking": "Z",
+                  "block": 0
+                },
+                {
+                  "thinking": "",
+                  "block": 0,
+                  "signature": "SZ"
+                },
+                {
+                  "text": "First."
+                }
+              ]
+            },
+            {
+              "text": "Second."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "one"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "two"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "one",
+              "round": {
+                "$absent": true
+              }
+            },
+            {
+              "role": "assistant",
+              "text": "",
+              "round": [
+                {
+                  "call": "c1"
+                }
+              ]
+            },
+            {
+              "role": "tool",
+              "round": []
+            },
+            {
+              "role": "assistant",
+              "text": "First.",
+              "round": {
+                "$absent": true
+              }
+            },
+            {
+              "role": "user",
+              "text": "two",
+              "round": {
+                "$absent": true
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

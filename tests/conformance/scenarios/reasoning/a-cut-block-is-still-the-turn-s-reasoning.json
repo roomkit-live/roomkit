@@ -1,0 +1,130 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reasoning/a-cut-block-is-still-the-turn-s-reasoning",
+  "title": "What ON_AI_RESPONSE reports of a round's reasoning holds a block the response cut, which no replay carries",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: ThinkingBlocks.text, channels/_ai_streaming.py turn.thinking; tests/test_providers/test_thinking_blocks.py test_a_named_block_cut_before_its_signature_is_not_replayed.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "get_weather",
+            "description": "The weather.",
+            "returns": "sunny"
+          },
+          {
+            "name": "get_time",
+            "description": "The time.",
+            "returns": "noon"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "stream": [
+                {
+                  "thinking": "Weather first.",
+                  "block": 0
+                },
+                {
+                  "thinking": "",
+                  "block": 0,
+                  "signature": "S0"
+                },
+                {
+                  "call": {
+                    "id": "c1",
+                    "name": "get_weather"
+                  }
+                },
+                {
+                  "thinking": "Then the ti",
+                  "block": 2
+                }
+              ],
+              "finish_reason": "max_tokens"
+            },
+            {
+              "stream": [
+                {
+                  "thinking": "Second.",
+                  "block": 0
+                },
+                {
+                  "text": "Done."
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "response",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "response": [
+        {
+          "trigger": "on_ai_response",
+          "response": {
+            "thinking": "Weather first.Then the ti\n\nSecond."
+          }
+        }
+      ]
+    }
+  }
+}

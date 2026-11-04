@@ -1,0 +1,158 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reasoning/a-cut-call-goes-back-with-the-round",
+  "title": "A call the response cut goes back in its place, with its arguments as they came, and AFTER_TOOL_ROUND reads it as cut",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: RoundTranscript.parts keeps every call of the round, one that never runs too. channels/_ai_streaming.py _after_tool_round hands the calls themselves.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "get_weather",
+            "description": "The weather.",
+            "returns": "sunny"
+          },
+          {
+            "name": "get_time",
+            "description": "The time.",
+            "returns": "noon"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "stream": [
+                {
+                  "thinking": "A",
+                  "block": 0
+                },
+                {
+                  "thinking": "",
+                  "block": 0,
+                  "signature": "S0"
+                },
+                {
+                  "call": {
+                    "id": "c1",
+                    "name": "get_weather",
+                    "arguments": {
+                      "raw": "{\"ci"
+                    },
+                    "cut": true
+                  }
+                }
+              ],
+              "finish_reason": "max_tokens"
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "round",
+        "trigger": "after_tool_round"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "go"
+            },
+            {
+              "role": "assistant",
+              "round": [
+                {
+                  "thinking": "A",
+                  "signature": "S0"
+                },
+                {
+                  "call": "c1",
+                  "arguments": {
+                    "raw": "{\"ci"
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool"
+            }
+          ]
+        }
+      ]
+    },
+    "hooks": {
+      "round": [
+        {
+          "trigger": "after_tool_round",
+          "tool_round": {
+            "calls": [
+              {
+                "tool_call_id": "c1",
+                "partial": true,
+                "garbled": false
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

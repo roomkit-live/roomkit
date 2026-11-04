@@ -1,0 +1,133 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reasoning/reasoning-without-blocks-goes-first-as-one",
+  "title": "Reasoning that names no block is one block, its pieces joined across the text, replayed first, then the text, then the calls",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: RoundTranscript.parts on a round not keyed; tests/test_providers/test_thinking_blocks.py TestTheLoopReplaysTheRound::test_reasoning_without_blocks_goes_first_as_one, tests/test_ai_streaming_thinking.py test_assistant_message_keeps_the_whole_round_reasoning.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "get_weather",
+            "description": "The weather.",
+            "returns": "sunny"
+          },
+          {
+            "name": "get_time",
+            "description": "The time.",
+            "returns": "noon"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "stream": [
+                {
+                  "thinking": "FIRST-BLOCK"
+                },
+                {
+                  "text": "Let me look."
+                },
+                {
+                  "thinking": "SECOND-BLOCK"
+                },
+                {
+                  "call": {
+                    "id": "c1",
+                    "name": "get_weather"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "go"
+            },
+            {
+              "role": "assistant",
+              "round": [
+                {
+                  "thinking": "FIRST-BLOCKSECOND-BLOCK",
+                  "signature": {
+                    "$absent": true
+                  }
+                },
+                {
+                  "text": "Let me look."
+                },
+                {
+                  "call": "c1"
+                }
+              ]
+            },
+            {
+              "role": "tool"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

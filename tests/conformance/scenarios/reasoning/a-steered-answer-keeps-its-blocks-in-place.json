@@ -1,0 +1,165 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reasoning/a-steered-answer-keeps-its-blocks-in-place",
+  "title": "An answer a steered message asks the model after goes back block by block where each came, the block it cut left out",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: channels/_ai_streaming.py _steered_after_answer, RoundTranscript.parts([]).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "get_weather",
+            "description": "The weather.",
+            "returns": "sunny"
+          },
+          {
+            "name": "get_time",
+            "description": "The time.",
+            "returns": "noon"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "gate": "answer",
+              "stream": [
+                {
+                  "text": "a.py,"
+                },
+                {
+                  "thinking": "A",
+                  "block": 0
+                },
+                {
+                  "thinking": "",
+                  "block": 0,
+                  "signature": "S0"
+                },
+                {
+                  "text": " b.txt"
+                },
+                {
+                  "thinking": "cut",
+                  "block": 2
+                }
+              ]
+            },
+            {
+              "text": "a.py"
+            }
+          ]
+        },
+        "steer_room_turns": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "dev",
+        "content": {
+          "type": "text",
+          "body": "List the files."
+        }
+      },
+      "background": true,
+      "as": "first"
+    },
+    {
+      "wait_for": "answer"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "dev",
+        "content": {
+          "type": "text",
+          "body": "Only the .py files."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "open": "answer"
+    },
+    {
+      "await": "first",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "List the files."
+            },
+            {
+              "role": "assistant",
+              "text": "a.py, b.txt",
+              "round": [
+                {
+                  "text": "a.py,"
+                },
+                {
+                  "thinking": "A",
+                  "signature": "S0"
+                },
+                {
+                  "text": " b.txt"
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "text": "Only the .py files."
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

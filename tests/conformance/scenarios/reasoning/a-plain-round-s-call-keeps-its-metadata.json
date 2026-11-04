@@ -1,0 +1,146 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reasoning/a-plain-round-s-call-keeps-its-metadata",
+  "title": "A call's metadata goes back with it, and AFTER_TOOL_ROUND reads it",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: providers/ai/round_parts.py call_part; channels/_ai_streaming.py _after_tool_round hands the calls themselves.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "get_weather",
+            "description": "The weather.",
+            "returns": "sunny"
+          },
+          {
+            "name": "get_time",
+            "description": "The time.",
+            "returns": "noon"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "text": "Looking.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "get_weather",
+                  "metadata": {
+                    "thought_signature": "TS"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "round",
+        "trigger": "after_tool_round"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "go"
+            },
+            {
+              "role": "assistant",
+              "round": [
+                {
+                  "text": "Looking."
+                },
+                {
+                  "call": "c1",
+                  "metadata": {
+                    "thought_signature": "TS"
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool"
+            }
+          ]
+        }
+      ]
+    },
+    "hooks": {
+      "round": [
+        {
+          "trigger": "after_tool_round",
+          "tool_round": {
+            "calls": [
+              {
+                "tool_call_id": "c1",
+                "metadata": {
+                  "thought_signature": "TS"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,245 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reasoning/a-compaction-keeps-the-rounds-reasoning",
+  "title": "A context compacted keeps the reasoning of the rounds it keeps, and of the rounds after it",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: channels/_compaction.py keeps the messages it does not summarize as they are.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "get_weather",
+            "description": "The weather.",
+            "returns": "sunny"
+          },
+          {
+            "name": "get_time",
+            "description": "The time.",
+            "returns": "noon"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "text": "a1"
+            },
+            {
+              "text": "a2"
+            },
+            {
+              "stream": [
+                {
+                  "thinking": "A",
+                  "block": 0
+                },
+                {
+                  "thinking": "",
+                  "block": 0,
+                  "signature": "S0"
+                },
+                {
+                  "call": {
+                    "id": "c1",
+                    "name": "get_weather"
+                  }
+                }
+              ]
+            },
+            {
+              "refuses": {
+                "status": 400,
+                "message": "the request was refused",
+                "context_overflow": true
+              }
+            },
+            {
+              "stream": [
+                {
+                  "thinking": "B",
+                  "block": 0
+                },
+                {
+                  "thinking": "",
+                  "block": 0,
+                  "signature": "S1"
+                },
+                {
+                  "text": "More."
+                },
+                {
+                  "call": {
+                    "id": "c2",
+                    "name": "get_time"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "q1"
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "q2"
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "q3"
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {},
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$contains": "[Context compacted"
+              }
+            },
+            {
+              "role": "assistant",
+              "text": "a2"
+            },
+            {
+              "role": "user",
+              "text": "q3"
+            },
+            {
+              "role": "assistant",
+              "round": [
+                {
+                  "thinking": "A",
+                  "signature": "S0"
+                },
+                {
+                  "call": "c1"
+                }
+              ]
+            },
+            {
+              "role": "tool"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$contains": "[Context compacted"
+              }
+            },
+            {
+              "role": "assistant",
+              "text": "a2"
+            },
+            {
+              "role": "user",
+              "text": "q3"
+            },
+            {
+              "role": "assistant",
+              "round": [
+                {
+                  "thinking": "A",
+                  "signature": "S0"
+                },
+                {
+                  "call": "c1"
+                }
+              ]
+            },
+            {
+              "role": "tool"
+            },
+            {
+              "role": "assistant",
+              "round": [
+                {
+                  "thinking": "B",
+                  "signature": "S1"
+                },
+                {
+                  "text": "More."
+                },
+                {
+                  "call": "c2"
+                }
+              ]
+            },
+            {
+              "role": "tool"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

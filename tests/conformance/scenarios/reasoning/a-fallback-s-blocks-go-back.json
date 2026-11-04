@@ -1,0 +1,142 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reasoning/a-fallback-s-blocks-go-back",
+  "title": "A round the fallback provider served goes back with its blocks",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: channels/_ai_streaming.py, one transcript per round, whichever provider served it.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "get_weather",
+            "description": "The weather.",
+            "returns": "sunny"
+          },
+          {
+            "name": "get_time",
+            "description": "The time.",
+            "returns": "noon"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "refuses": {
+                "status": 529,
+                "message": "overloaded",
+                "retryable": true
+              }
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "fallback_model": {
+          "rounds": [
+            {
+              "stream": [
+                {
+                  "thinking": "F",
+                  "block": 0
+                },
+                {
+                  "thinking": "",
+                  "block": 0,
+                  "signature": "SF"
+                },
+                {
+                  "call": {
+                    "id": "c1",
+                    "name": "get_weather"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "go"
+            },
+            {
+              "role": "assistant",
+              "round": [
+                {
+                  "thinking": "F",
+                  "signature": "SF"
+                },
+                {
+                  "call": "c1"
+                }
+              ]
+            },
+            {
+              "role": "tool"
+            }
+          ]
+        }
+      ],
+      "agent/fallback": [
+        {}
+      ]
+    }
+  }
+}

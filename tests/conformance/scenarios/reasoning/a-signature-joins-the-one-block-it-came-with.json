@@ -1,0 +1,133 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reasoning/a-signature-joins-the-one-block-it-came-with",
+  "title": "A signature streamed alone, with no block named, belongs to the response's single block: its text joined, the last signature kept",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: ThinkingBlocks.add; tests/test_providers/test_thinking_blocks.py TestThinkingBlocks::test_reasoning_without_blocks_is_one_block.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "get_weather",
+            "description": "The weather.",
+            "returns": "sunny"
+          },
+          {
+            "name": "get_time",
+            "description": "The time.",
+            "returns": "noon"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "stream": [
+                {
+                  "thinking": "a"
+                },
+                {
+                  "thinking": "",
+                  "signature": "S1"
+                },
+                {
+                  "thinking": "b"
+                },
+                {
+                  "thinking": "",
+                  "signature": "S2"
+                },
+                {
+                  "call": {
+                    "id": "c1",
+                    "name": "get_weather"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "go"
+            },
+            {
+              "role": "assistant",
+              "round": [
+                {
+                  "thinking": "ab",
+                  "signature": "S2"
+                },
+                {
+                  "call": "c1"
+                }
+              ]
+            },
+            {
+              "role": "tool"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

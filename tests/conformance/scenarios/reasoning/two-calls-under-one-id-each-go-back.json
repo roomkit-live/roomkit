@@ -1,0 +1,162 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reasoning/two-calls-under-one-id-each-go-back",
+  "title": "Two calls a round made under one id each go back in their place, with their own arguments, among the round's blocks",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "RFC §6.4: calls under one id in one round keep their own. Python: RoundTranscript.parts takes each entry's own call; the id the second goes back under is each implementation's: a provider that repeats an id breaks RFC §6.4's rule, which asks it to mint one.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "get_weather",
+            "description": "The weather.",
+            "returns": "sunny"
+          },
+          {
+            "name": "get_time",
+            "description": "The time.",
+            "returns": "noon"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "stream": [
+                {
+                  "thinking": "A",
+                  "block": 0
+                },
+                {
+                  "thinking": "",
+                  "block": 0,
+                  "signature": "S0"
+                },
+                {
+                  "call": {
+                    "id": "c1",
+                    "name": "get_weather",
+                    "arguments": {
+                      "first": true
+                    }
+                  }
+                },
+                {
+                  "call": {
+                    "id": "c1",
+                    "name": "get_time",
+                    "arguments": {
+                      "second": true
+                    }
+                  }
+                },
+                {
+                  "thinking": "B",
+                  "block": 2
+                },
+                {
+                  "thinking": "",
+                  "block": 2,
+                  "signature": "S2"
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "go"
+            },
+            {
+              "role": "assistant",
+              "round": [
+                {
+                  "thinking": "A",
+                  "signature": "S0"
+                },
+                {
+                  "call": "c1",
+                  "arguments": {
+                    "first": true
+                  }
+                },
+                {
+                  "call": "$any",
+                  "arguments": {
+                    "second": true
+                  }
+                },
+                {
+                  "thinking": "B",
+                  "signature": "S2"
+                }
+              ]
+            },
+            {
+              "role": "tool"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

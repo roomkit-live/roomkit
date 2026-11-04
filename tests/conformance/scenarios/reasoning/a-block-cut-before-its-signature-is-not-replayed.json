@@ -1,0 +1,171 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reasoning/a-block-cut-before-its-signature-is-not-replayed",
+  "title": "A named block the response cut before its signature is not replayed, and what the provider showed of it is still the turn's reasoning",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: providers/ai/thinking_blocks.py _Block.part, ThinkingBlocks.text; tests/test_providers/test_thinking_blocks.py TestThinkingBlocks::test_a_named_block_cut_before_its_signature_is_not_replayed, TestTheLoopReplaysTheRound::test_a_block_cut_before_its_signature_is_not_replayed.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "get_weather",
+            "description": "The weather.",
+            "returns": "sunny"
+          },
+          {
+            "name": "get_time",
+            "description": "The time.",
+            "returns": "noon"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "stream": [
+                {
+                  "thinking": "Weather first.",
+                  "block": 0
+                },
+                {
+                  "thinking": "",
+                  "block": 0,
+                  "signature": "S0"
+                },
+                {
+                  "call": {
+                    "id": "c1",
+                    "name": "get_weather"
+                  }
+                },
+                {
+                  "thinking": "Then the ti",
+                  "block": 2
+                }
+              ],
+              "finish_reason": "max_tokens"
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "go"
+            },
+            {
+              "role": "assistant",
+              "round": [
+                {
+                  "thinking": "Weather first.",
+                  "signature": "S0"
+                },
+                {
+                  "call": "c1"
+                }
+              ]
+            },
+            {
+              "role": "tool"
+            }
+          ]
+        }
+      ]
+    },
+    "streamed": {
+      "room-1": {
+        "ws": [
+          {
+            "thinking": "Weather first."
+          },
+          {
+            "thinking": "Then the ti"
+          },
+          {
+            "row": {
+              "content": {
+                "tool_name": "get_weather",
+                "status": "pending"
+              }
+            }
+          },
+          {
+            "row": {
+              "content": {
+                "tool_name": "get_weather",
+                "result": "sunny"
+              }
+            }
+          },
+          {
+            "text": "Done."
+          },
+          {
+            "row": {
+              "content": {
+                "body": "Done."
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

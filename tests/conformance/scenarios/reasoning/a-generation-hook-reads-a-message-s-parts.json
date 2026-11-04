@@ -1,0 +1,103 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reasoning/a-generation-hook-reads-a-message-s-parts",
+  "title": "A generation hook reads the messages as the model does: an author's image among a message's parts, in its place",
+  "rules": [
+    "§6.4",
+    "§9.2"
+  ],
+  "notes": "Python: tests/conformance _ai_hooks.py generation_record, messages(context): what the context carries. README: `generation`'s messages, as `models` reads them.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "vision": true,
+          "rounds": [
+            {
+              "text": "Seen."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "generation",
+        "trigger": "before_ai_generation"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "composite",
+        "parts": [
+          {
+            "type": "text",
+            "body": "my lamp"
+          },
+          {
+            "type": "media",
+            "url": "data:image/png;base64,AQIDBA==",
+            "mime_type": "image/png",
+            "filename": "lamp.png"
+          }
+        ]
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "generation": [
+        {
+          "trigger": "before_ai_generation",
+          "generation": {
+            "messages": [
+              {
+                "role": "user",
+                "text": "my lamp",
+                "parts": [
+                  {
+                    "text": "my lamp"
+                  },
+                  {
+                    "image": "data:image/png;base64,AQIDBA==",
+                    "mime_type": "image/png"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

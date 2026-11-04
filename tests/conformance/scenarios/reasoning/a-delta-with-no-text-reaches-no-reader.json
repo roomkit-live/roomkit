@@ -1,0 +1,185 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reasoning/a-delta-with-no-text-reaches-no-reader",
+  "title": "A signature or a redacted block has no words: no reader of the stream and no subscriber hears of them, and the round replays them all the same",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: channels/_ai_stream_round.py _add_thinking (the transcript takes the delta, then a delta with no text stops there), stream (a ThinkingDeltaMarker only for a delta with text).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "get_weather",
+            "description": "The weather.",
+            "returns": "sunny"
+          },
+          {
+            "name": "get_time",
+            "description": "The time.",
+            "returns": "noon"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "stream": [
+                {
+                  "thinking": "",
+                  "block": 0,
+                  "signature": "S0"
+                },
+                {
+                  "thinking": "",
+                  "block": 2,
+                  "redacted": "RRR"
+                },
+                {
+                  "call": {
+                    "id": "c1",
+                    "name": "get_weather"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "response",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "go"
+            },
+            {
+              "role": "assistant",
+              "round": [
+                {
+                  "thinking": "",
+                  "signature": "S0"
+                },
+                {
+                  "thinking": "",
+                  "redacted": "RRR"
+                },
+                {
+                  "call": "c1"
+                }
+              ]
+            },
+            {
+              "role": "tool"
+            }
+          ]
+        }
+      ]
+    },
+    "thinking_events": {
+      "room-1": []
+    },
+    "streamed": {
+      "room-1": {
+        "ws": [
+          {
+            "row": {
+              "content": {
+                "tool_name": "get_weather",
+                "status": "pending"
+              }
+            }
+          },
+          {
+            "row": {
+              "content": {
+                "tool_name": "get_weather",
+                "result": "sunny"
+              }
+            }
+          },
+          {
+            "text": "Done."
+          },
+          {
+            "row": {
+              "content": {
+                "body": "Done."
+              }
+            }
+          }
+        ]
+      }
+    },
+    "hooks": {
+      "response": [
+        {
+          "trigger": "on_ai_response",
+          "response": {
+            "thinking": ""
+          }
+        }
+      ]
+    }
+  }
+}

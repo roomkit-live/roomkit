@@ -1,0 +1,132 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reasoning/a-steered-answer-keeps-its-reasoning",
+  "title": "An answer a steered message asks the model after goes back with its reasoning",
+  "rules": [
+    "§6.4",
+    "§21.3"
+  ],
+  "notes": "Python: channels/_ai_streaming.py _steered_after_answer (the answer is state.transcript.parts([])); tests/test_providers/test_thinking_blocks.py's single block, as an answer.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "gate": "answer",
+              "thinking": [
+                "Weighing."
+              ],
+              "text": "a.py, b.txt"
+            },
+            {
+              "text": "a.py"
+            }
+          ]
+        },
+        "steer_room_turns": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "dev",
+        "content": {
+          "type": "text",
+          "body": "List the files."
+        }
+      },
+      "background": true,
+      "as": "first"
+    },
+    {
+      "wait_for": "answer"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "dev",
+        "content": {
+          "type": "text",
+          "body": "Only the .py files."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "open": "answer"
+    },
+    {
+      "await": "first",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "List the files."
+            },
+            {
+              "role": "assistant",
+              "text": "a.py, b.txt",
+              "round": [
+                {
+                  "thinking": "Weighing."
+                },
+                {
+                  "text": "a.py, b.txt"
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "text": "Only the .py files."
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

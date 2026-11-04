@@ -1,0 +1,138 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reasoning/a-response-read-whole-replays-its-blocks-first",
+  "title": "A provider that does not stream hands a response whose blocks have no known place: they go first, each with its signature or data, then the text, then the calls",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: providers/ai/base.py response_stream_events, thinking_parts_of; tests/test_providers/test_thinking_blocks.py test_a_wrapped_response_hands_each_block_on, test_a_response_read_through_generate_replays_its_blocks_first.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "get_weather",
+            "description": "The weather.",
+            "returns": "sunny"
+          },
+          {
+            "name": "get_time",
+            "description": "The time.",
+            "returns": "noon"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "text": "Looking.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "get_weather"
+                }
+              ],
+              "finish_reason": "tool_use",
+              "whole_response": {
+                "thinking_parts": [
+                  {
+                    "thinking": "a",
+                    "signature": "S0"
+                  },
+                  {
+                    "thinking": "",
+                    "redacted": "RRR"
+                  }
+                ]
+              }
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "go"
+            },
+            {
+              "role": "assistant",
+              "round": [
+                {
+                  "thinking": "a",
+                  "signature": "S0"
+                },
+                {
+                  "thinking": "",
+                  "redacted": "RRR"
+                },
+                {
+                  "text": "Looking."
+                },
+                {
+                  "call": "c1"
+                }
+              ]
+            },
+            {
+              "role": "tool"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

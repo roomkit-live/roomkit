@@ -1,0 +1,540 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reasoning/the-cap-on-a-round-s-calls-keeps-what-came-past-them",
+  "title": "Calls past a round's bound stay out of its replay, the reasoning and the text around them in their place",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: channels/_ai_loop_rules.py _cap_round_tool_calls, then RoundTranscript.parts on the calls kept.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "get_weather",
+            "description": "The weather.",
+            "returns": "sunny"
+          },
+          {
+            "name": "get_time",
+            "description": "The time.",
+            "returns": "noon"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "stream": [
+                {
+                  "thinking": "A",
+                  "block": 0
+                },
+                {
+                  "thinking": "",
+                  "block": 0,
+                  "signature": "S0"
+                },
+                {
+                  "call": {
+                    "id": "c1",
+                    "name": "get_weather",
+                    "arguments": {
+                      "n": 1
+                    }
+                  }
+                },
+                {
+                  "call": {
+                    "id": "c2",
+                    "name": "get_weather",
+                    "arguments": {
+                      "n": 2
+                    }
+                  }
+                },
+                {
+                  "call": {
+                    "id": "c3",
+                    "name": "get_weather",
+                    "arguments": {
+                      "n": 3
+                    }
+                  }
+                },
+                {
+                  "call": {
+                    "id": "c4",
+                    "name": "get_weather",
+                    "arguments": {
+                      "n": 4
+                    }
+                  }
+                },
+                {
+                  "call": {
+                    "id": "c5",
+                    "name": "get_weather",
+                    "arguments": {
+                      "n": 5
+                    }
+                  }
+                },
+                {
+                  "call": {
+                    "id": "c6",
+                    "name": "get_weather",
+                    "arguments": {
+                      "n": 6
+                    }
+                  }
+                },
+                {
+                  "call": {
+                    "id": "c7",
+                    "name": "get_weather",
+                    "arguments": {
+                      "n": 7
+                    }
+                  }
+                },
+                {
+                  "call": {
+                    "id": "c8",
+                    "name": "get_weather",
+                    "arguments": {
+                      "n": 8
+                    }
+                  }
+                },
+                {
+                  "call": {
+                    "id": "c9",
+                    "name": "get_weather",
+                    "arguments": {
+                      "n": 9
+                    }
+                  }
+                },
+                {
+                  "call": {
+                    "id": "c10",
+                    "name": "get_weather",
+                    "arguments": {
+                      "n": 10
+                    }
+                  }
+                },
+                {
+                  "call": {
+                    "id": "c11",
+                    "name": "get_weather",
+                    "arguments": {
+                      "n": 11
+                    }
+                  }
+                },
+                {
+                  "call": {
+                    "id": "c12",
+                    "name": "get_weather",
+                    "arguments": {
+                      "n": 12
+                    }
+                  }
+                },
+                {
+                  "call": {
+                    "id": "c13",
+                    "name": "get_weather",
+                    "arguments": {
+                      "n": 13
+                    }
+                  }
+                },
+                {
+                  "call": {
+                    "id": "c14",
+                    "name": "get_weather",
+                    "arguments": {
+                      "n": 14
+                    }
+                  }
+                },
+                {
+                  "call": {
+                    "id": "c15",
+                    "name": "get_weather",
+                    "arguments": {
+                      "n": 15
+                    }
+                  }
+                },
+                {
+                  "call": {
+                    "id": "c16",
+                    "name": "get_weather",
+                    "arguments": {
+                      "n": 16
+                    }
+                  }
+                },
+                {
+                  "call": {
+                    "id": "c17",
+                    "name": "get_weather",
+                    "arguments": {
+                      "n": 17
+                    }
+                  }
+                },
+                {
+                  "call": {
+                    "id": "c18",
+                    "name": "get_weather",
+                    "arguments": {
+                      "n": 18
+                    }
+                  }
+                },
+                {
+                  "call": {
+                    "id": "c19",
+                    "name": "get_weather",
+                    "arguments": {
+                      "n": 19
+                    }
+                  }
+                },
+                {
+                  "call": {
+                    "id": "c20",
+                    "name": "get_weather",
+                    "arguments": {
+                      "n": 20
+                    }
+                  }
+                },
+                {
+                  "call": {
+                    "id": "c21",
+                    "name": "get_weather",
+                    "arguments": {
+                      "n": 21
+                    }
+                  }
+                },
+                {
+                  "call": {
+                    "id": "c22",
+                    "name": "get_weather",
+                    "arguments": {
+                      "n": 22
+                    }
+                  }
+                },
+                {
+                  "call": {
+                    "id": "c23",
+                    "name": "get_weather",
+                    "arguments": {
+                      "n": 23
+                    }
+                  }
+                },
+                {
+                  "call": {
+                    "id": "c24",
+                    "name": "get_weather",
+                    "arguments": {
+                      "n": 24
+                    }
+                  }
+                },
+                {
+                  "call": {
+                    "id": "c25",
+                    "name": "get_weather",
+                    "arguments": {
+                      "n": 25
+                    }
+                  }
+                },
+                {
+                  "call": {
+                    "id": "c26",
+                    "name": "get_weather",
+                    "arguments": {
+                      "n": 26
+                    }
+                  }
+                },
+                {
+                  "call": {
+                    "id": "c27",
+                    "name": "get_weather",
+                    "arguments": {
+                      "n": 27
+                    }
+                  }
+                },
+                {
+                  "call": {
+                    "id": "c28",
+                    "name": "get_weather",
+                    "arguments": {
+                      "n": 28
+                    }
+                  }
+                },
+                {
+                  "call": {
+                    "id": "c29",
+                    "name": "get_weather",
+                    "arguments": {
+                      "n": 29
+                    }
+                  }
+                },
+                {
+                  "call": {
+                    "id": "c30",
+                    "name": "get_weather",
+                    "arguments": {
+                      "n": 30
+                    }
+                  }
+                },
+                {
+                  "call": {
+                    "id": "c31",
+                    "name": "get_weather",
+                    "arguments": {
+                      "n": 31
+                    }
+                  }
+                },
+                {
+                  "call": {
+                    "id": "c32",
+                    "name": "get_weather",
+                    "arguments": {
+                      "n": 32
+                    }
+                  }
+                },
+                {
+                  "text": "mid"
+                },
+                {
+                  "call": {
+                    "id": "c33",
+                    "name": "get_weather"
+                  }
+                },
+                {
+                  "thinking": "B",
+                  "block": 2
+                },
+                {
+                  "thinking": "",
+                  "block": 2,
+                  "signature": "S2"
+                },
+                {
+                  "text": "after"
+                },
+                {
+                  "call": {
+                    "id": "c34",
+                    "name": "get_weather"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "go"
+            },
+            {
+              "role": "assistant",
+              "round": [
+                {
+                  "thinking": "A",
+                  "signature": "S0"
+                },
+                {
+                  "call": "c1"
+                },
+                {
+                  "call": "c2"
+                },
+                {
+                  "call": "c3"
+                },
+                {
+                  "call": "c4"
+                },
+                {
+                  "call": "c5"
+                },
+                {
+                  "call": "c6"
+                },
+                {
+                  "call": "c7"
+                },
+                {
+                  "call": "c8"
+                },
+                {
+                  "call": "c9"
+                },
+                {
+                  "call": "c10"
+                },
+                {
+                  "call": "c11"
+                },
+                {
+                  "call": "c12"
+                },
+                {
+                  "call": "c13"
+                },
+                {
+                  "call": "c14"
+                },
+                {
+                  "call": "c15"
+                },
+                {
+                  "call": "c16"
+                },
+                {
+                  "call": "c17"
+                },
+                {
+                  "call": "c18"
+                },
+                {
+                  "call": "c19"
+                },
+                {
+                  "call": "c20"
+                },
+                {
+                  "call": "c21"
+                },
+                {
+                  "call": "c22"
+                },
+                {
+                  "call": "c23"
+                },
+                {
+                  "call": "c24"
+                },
+                {
+                  "call": "c25"
+                },
+                {
+                  "call": "c26"
+                },
+                {
+                  "call": "c27"
+                },
+                {
+                  "call": "c28"
+                },
+                {
+                  "call": "c29"
+                },
+                {
+                  "call": "c30"
+                },
+                {
+                  "call": "c31"
+                },
+                {
+                  "call": "c32"
+                },
+                {
+                  "text": "mid"
+                },
+                {
+                  "thinking": "B",
+                  "signature": "S2"
+                },
+                {
+                  "text": "after"
+                }
+              ]
+            },
+            {
+              "role": "tool"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

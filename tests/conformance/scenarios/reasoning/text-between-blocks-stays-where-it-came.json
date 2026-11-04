@@ -1,0 +1,162 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reasoning/text-between-blocks-stays-where-it-came",
+  "title": "The text a round wrote between its reasoning blocks and its calls is replayed where it came",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: RoundTranscript's entries; tests/test_providers/test_thinking_blocks.py TestTheLoopReplaysTheRound::test_text_between_blocks_stays_where_it_came.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "get_weather",
+            "description": "The weather.",
+            "returns": "sunny"
+          },
+          {
+            "name": "get_time",
+            "description": "The time.",
+            "returns": "noon"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "stream": [
+                {
+                  "thinking": "Weather first.",
+                  "block": 0
+                },
+                {
+                  "thinking": "",
+                  "block": 0,
+                  "signature": "S0"
+                },
+                {
+                  "text": "Looking it up."
+                },
+                {
+                  "call": {
+                    "id": "c1",
+                    "name": "get_weather"
+                  }
+                },
+                {
+                  "thinking": "Now the time.",
+                  "block": 2
+                },
+                {
+                  "thinking": "",
+                  "block": 2,
+                  "signature": "S2"
+                },
+                {
+                  "text": "And the time."
+                },
+                {
+                  "call": {
+                    "id": "c2",
+                    "name": "get_time"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "go"
+            },
+            {
+              "role": "assistant",
+              "round": [
+                {
+                  "thinking": "Weather first.",
+                  "signature": "S0"
+                },
+                {
+                  "text": "Looking it up."
+                },
+                {
+                  "call": "c1"
+                },
+                {
+                  "thinking": "Now the time.",
+                  "signature": "S2"
+                },
+                {
+                  "text": "And the time."
+                },
+                {
+                  "call": "c2"
+                }
+              ]
+            },
+            {
+              "role": "tool"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
