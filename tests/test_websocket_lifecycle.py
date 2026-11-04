@@ -262,6 +262,23 @@ class TestStreamingDelivery:
         assert isinstance(final_events[0].content, TextContent)
         assert final_events[0].content.body == "Hi there"
 
+    async def test_a_blank_stream_gives_a_non_streaming_connection_no_text(self) -> None:
+        """A stream of line breaks is no message in the room (RMK-1300): what a
+        connection reads of it is the empty answer, as with no text at all."""
+        ws = WebSocketChannel("ws1")
+        final_events: list[RoomEvent] = []
+
+        async def regular_send(conn_id: str, event: RoomEvent) -> None:
+            final_events.append(event)
+
+        ws.register_connection("c1", regular_send, room_id="room-1")
+
+        await ws.deliver_stream(
+            _text_stream("\n", "\n"), _make_event(), _make_binding(), _make_context()
+        )
+
+        assert [event.content.body for event in final_events] == [""]
+
     async def test_deliver_stream_error_removes_connection(self) -> None:
         """Streaming send failures increment error count and remove after threshold."""
         ws = WebSocketChannel("ws1")

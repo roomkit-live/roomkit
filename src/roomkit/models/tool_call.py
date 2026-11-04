@@ -293,11 +293,12 @@ two segments — never inside one, never at either end.
 def response_transcript(segments: Iterable[str]) -> tuple[list[str], str]:
     """The turn's text as ``ON_AI_RESPONSE`` reports it.
 
-    Drops the empty stretches (a tool round in which the model said nothing)
-    and returns the segments kept, and their join. The one place the contract
-    lives: the AI channel's tool loop and the ACP channel both report through it.
+    Drops the blank stretches (a tool round in which the model said nothing, or
+    a line break, which the room never saw as a message either, RFC §6.4) and
+    returns the segments kept, and their join. The one place the contract lives:
+    the AI channel's tool loop and the ACP channel both report through it.
     """
-    kept = [segment for segment in segments if segment]
+    kept = [segment for segment in segments if segment.strip()]
     return kept, RESPONSE_SEGMENT_SEPARATOR.join(kept)
 
 

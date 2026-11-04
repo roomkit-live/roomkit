@@ -228,7 +228,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A streamed turn stores no blank text segment** (RMK-1300). A reasoning model
   writing a line break before its call left a `MESSAGE` of `"\n\n"` in the room,
   delivered to every channel, an empty SMS included. The stream's reader still
-  reads the deltas; a turn's end goes to its last message.
+  reads the deltas, a turn's end goes to its last message, `ON_AI_RESPONSE`'s
+  segments skip the blank stretch, a buffering channel's `deliver_stream` delivers
+  no text for it, and a delegated turn that says only that fails its task as an
+  empty answer does.
 
 - **One `find_tools` query reveals the same tools from one process to the next**
   (HITL ceb81513, RMK-1053). A tool at exactly half of the best score was kept or

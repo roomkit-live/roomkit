@@ -80,6 +80,15 @@ async def _report(provider: MockAIProvider) -> AIResponseEvent:
     return captured[0]
 
 
+def test_the_transcript_drops_what_says_nothing() -> None:
+    """A blank stretch is no message in the room (RMK-1300), nor in its record:
+    ``segments[-1]`` stays the answer."""
+    assert response_transcript(["\n\n", "Looking.", " ", "Found.", "\t\n"]) == (
+        ["Looking.", "Found."],
+        "Looking.\n\nFound.",
+    )
+
+
 def test_the_transcript_keeps_the_separator_between_segments_only() -> None:
     segments, content = response_transcript(["", "Let me look.", "", "Done.", ""])
     assert segments == ["Let me look.", "Done."]

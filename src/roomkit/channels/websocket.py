@@ -505,8 +505,10 @@ class WebSocketChannel(Channel):
                 update={"content": TextContent(body=""), "metadata": segmented_meta}
             )
         else:
-            # Simple text response — stream_end carries the full text
-            final_event = event.model_copy(update={"content": TextContent(body=running_text)})
+            # Simple text response — stream_end carries the full text, none
+            # when it is blank, of which the room holds no row (RFC §6.4)
+            body = running_text if running_text.strip() else ""
+            final_event = event.model_copy(update={"content": TextContent(body=body)})
 
         # Send stream_end to streaming connections
         end_msg = StreamEnd(room_id=room_id, stream_id=stream_id, event=final_event)

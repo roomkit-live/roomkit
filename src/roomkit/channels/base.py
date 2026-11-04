@@ -427,7 +427,7 @@ class Channel(ABC):
                 if isinstance(chunk, str):
                     chunks.append(chunk)
         except Exception:
-            if chunks:
+            if "".join(chunks).strip():
                 await self.deliver(_buffered(event, chunks), binding, context)
             raise
         return await self.deliver(_buffered(event, chunks), binding, context)
@@ -574,5 +574,7 @@ class Channel(ABC):
 
 
 def _buffered(event: RoomEvent, chunks: list[str]) -> RoomEvent:
-    """*event* carrying the text a buffered stream accumulated."""
-    return event.model_copy(update={"content": TextContent(body="".join(chunks))})
+    """*event* carrying the text a buffered stream accumulated; none when it
+    is blank, which says nothing, as the room holds no row of it (RFC §6.4)."""
+    text = "".join(chunks)
+    return event.model_copy(update={"content": TextContent(body=text if text.strip() else "")})

@@ -35,6 +35,7 @@ from roomkit.models.enums import (
 )
 from roomkit.models.event import RoomEvent, TextContent, ToolCallContent
 from roomkit.models.hook import HookResult
+from roomkit.models.room import Room
 from roomkit.models.streaming import ToolCallStartMarker
 from roomkit.providers.ai.base import (
     AIContext,
@@ -46,6 +47,7 @@ from roomkit.providers.ai.base import (
 from roomkit.voice.backends.mock import MockVoiceBackend
 from roomkit.voice.base import AudioChunk
 from roomkit.voice.tts.base import TTSProvider
+from tests.conftest import make_event
 from tests.test_framework import SimpleChannel
 
 SAID = "Your table is booked. "
@@ -446,6 +448,29 @@ class TestTheChannelThatStreamedIsNotHandedTheTextAgain:
 
         assert isinstance(bench.channel, _BufferingChannel)
         assert [_body(e) for e in bench.channel.delivered if _body(e) == SAID] == [SAID]
+
+
+async def test_a_buffering_channel_delivers_no_text_for_a_blank_stream() -> None:
+    """A stream of line breaks is no message in the room (RMK-1300): the default
+    ``deliver_stream`` delivers the empty answer; failing, it delivers nothing."""
+
+    async def blank(*, fails: bool) -> AsyncIterator[str]:
+        yield "\n\n"
+        if fails:
+            raise RuntimeError("ai down")
+
+    channel = SimpleChannel("buffering")
+    binding = ChannelBinding(
+        channel_id="buffering", room_id="r1", channel_type=channel.channel_type
+    )
+    context = RoomContext(room=Room(id="r1"))
+
+    await channel.deliver_stream(blank(fails=False), make_event(), binding, context)
+    assert [event.content.body for event in channel.delivered] == [""]
+
+    with pytest.raises(RuntimeError):
+        await channel.deliver_stream(blank(fails=True), make_event(), binding, context)
+    assert len(channel.delivered) == 1
 
 
 @pytest.mark.parametrize(
