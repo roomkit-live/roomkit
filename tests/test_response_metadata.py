@@ -349,6 +349,39 @@ class TestLiveRecord:
         assert "cited" not in ai_events[0].metadata or ai_events[0] is ai_events[-1]
         await kit.close()
 
+    async def test_a_value_under_turns_lands_on_no_message(self, streaming: bool) -> None:
+        """``turns`` is the framework's key: a value a tool writes there stays
+        off every MESSAGE, its other keys ride them (RFC §6.7)."""
+
+        async def writes_turns(name: str, args: dict[str, Any]) -> str:
+            record = current_response_metadata()
+            assert record is not None
+            record.update(turns=3, cited=args["page"])
+            return "page text"
+
+        kit = RoomKit()
+        ai = AIChannel(
+            "ai1",
+            provider=MockAIProvider(ai_responses=list(_TOOL_ROUNDS), streaming=streaming),
+            tool_handler=writes_turns,
+        )
+        kit.register_channel(ai)
+        kit.register_channel(SMSChannel("sms1", provider=MockSMSProvider()))
+        await kit.create_room(room_id="r1")
+        await kit.attach_channel(
+            "r1", "ai1", category=ChannelCategory.INTELLIGENCE, metadata=_TOOLS_BINDING_META
+        )
+        await kit.attach_channel("r1", "sms1")
+
+        await kit.process_inbound(
+            InboundMessage(channel_id="sms1", sender_id="user1", content=TextContent(body="read"))
+        )
+
+        answer = (await _ai_message_events(kit))[-1]
+        assert answer.metadata["cited"] == 3
+        assert "turns" not in answer.metadata
+        await kit.close()
+
     async def test_memory_provider_write_lands_on_the_reply(self, advance) -> None:
         from roomkit.channels import SMSChannel
         from roomkit.providers.sms.mock import MockSMSProvider

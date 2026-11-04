@@ -220,6 +220,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A value a turn writes under `turns` stays off its messages** (RFC §6.7). A
+  tool's `record["turns"] = 3` landed on the stored `MESSAGE`; `turns` is the
+  framework's key, and the caller's copy was already right.
+
 - **A binding's `enable_thinking` is read before it is compared** (RFC §6.7,
   Appendix A.9). `"off"`, `"no"` or `0` now turn off a budget a less specific
   level set, as `false` does, where they left the model reasoning and billing on

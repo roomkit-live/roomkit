@@ -19,6 +19,7 @@ from roomkit._media import text_form
 from roomkit.models.delivery import STANDALONE
 from roomkit.models.enums import ChannelCategory, EventType
 from roomkit.models.event import RoomEvent
+from roomkit.models.response_metadata import TURNS_KEY
 
 if TYPE_CHECKING:
     from roomkit.channels.base import Channel
@@ -55,8 +56,10 @@ def without_fingerprint(metadata: Mapping[str, Any]) -> dict[str, Any]:
 def response_metadata(metadata: Mapping[str, Any], trigger: RoomEvent) -> dict[str, Any]:
     """*metadata* of a response to *trigger* as the pipeline commits it: the
     trigger's fingerprint when it is an instruction, in place of whatever the
-    channel wrote under the key, and no such key otherwise."""
+    channel wrote under the key, and no such key otherwise; never a value a
+    turn wrote under ``turns``, the framework's key (RFC §6.7)."""
     kept = without_fingerprint(metadata)
+    kept.pop(TURNS_KEY, None)
     if trigger.type == EventType.INSTRUCTION:
         kept[FINGERPRINT] = fingerprint(trigger)
     return kept
