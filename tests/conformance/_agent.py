@@ -339,6 +339,7 @@ def tool_results(context: AIContext) -> list[dict[str, Any]]:
                 found.append(
                     {
                         "tool_call_id": part.tool_call_id,
+                        "name": part.name,
                         "content": result_content(part.result),
                         "is_error": part.is_error,
                     }
