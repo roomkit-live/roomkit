@@ -255,9 +255,16 @@ class DelegateHandler:
         calling_agent_id: str,
         arguments: dict[str, Any],
     ) -> dict[str, Any]:
-        """Process a delegate_task tool call."""
+        """Process a delegate_task tool call.
+
+        Raises:
+            ValueError: A ``task`` that is no text: nothing is made, and the
+                model reads it as its call's error.
+        """
         agent_id = arguments.get("agent", "")
         task_text = arguments.get("task", "")
+        if not isinstance(task_text, str):
+            raise ValueError("task must be a string")
         passed = _passed_context(arguments.get("context"))
         count = _asked_conversation(arguments.get("conversation"), self._max_conversation)
 
