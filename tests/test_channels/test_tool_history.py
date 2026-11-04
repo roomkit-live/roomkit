@@ -297,6 +297,40 @@ def test_calls_started_together_are_one_round_and_turns_their_own() -> None:
     assert _results(rounds) == ["a", "b", "c", "d"]
 
 
+def test_a_round_s_results_pair_to_its_calls_first_in_first_out() -> None:
+    rows = [
+        _row(EventType.TOOL_CALL_START, 1, "c1", arguments={"q": "first"}),
+        _row(EventType.TOOL_CALL_START, 2, "c1", arguments={"q": "second"}),
+        _row(EventType.TOOL_CALL_END, 3, "c1", result="a"),
+        _row(EventType.TOOL_CALL_END, 4, "c1", result="b"),
+    ]
+
+    rounds = _rounds(rows)
+
+    assert [(p.id, p.arguments) for p in rounds[0].calls.content] == [  # type: ignore[union-attr]
+        ("c1", {"q": "first"}),
+        ("c1_2", {"q": "second"}),
+    ]
+    assert _results(rounds) == ["a", "b"]
+
+
+def test_a_later_round_s_result_is_not_for_a_call_left_without_its_end() -> None:
+    rows = [
+        _row(EventType.TOOL_CALL_START, 1, "c1", arguments={"q": "left"}),
+        *_call_rows(2, "c2", "other"),
+        _row(EventType.TOOL_CALL_START, 4, "c1", arguments={"q": "new"}),
+        _row(EventType.TOOL_CALL_END, 5, "c1", result="its own"),
+    ]
+
+    rounds = _rounds(rows)
+
+    assert [p.arguments for r in rounds for p in r.calls.content] == [  # type: ignore[union-attr]
+        {},
+        {"q": "new"},
+    ]
+    assert _results(rounds) == ["other", "its own"]
+
+
 def test_the_last_calls_are_replayed_the_most_recent_whole() -> None:
     long = "x" * 200
     rows = [row for i in range(REPLAYED_CALLS + 2) for row in _call_rows(2 * i + 1, f"c{i}", long)]

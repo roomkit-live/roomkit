@@ -314,6 +314,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   record rides its last message, else its last row, the call's end, so that a resume
   and an exit summary find a first turn cut while its call runs. A strategy's first
   pass hands its record on and writes it on none of its rows.
+- **A replay gives each call its own result** (RFC §6.4, RMK-1373). Two calls of a
+  round under one id were paired to their end rows by the latest start, so a later
+  turn read the refused call with the served call's result, and the served call
+  gone. A round's results now pair to its calls first in, first out per id.
 
 - **A standalone turn's activation of a skill active in the room delivers the body** (RFC §24.4, RMK-1356). Its prompt carries no active skill, so the acknowledgement left the model holding no rules.
 - **A hook's injected event stays in its message's trace** (RMK-1301).
