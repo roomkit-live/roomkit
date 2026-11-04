@@ -924,7 +924,7 @@ class TestAChannelReadingNoRecipient:
 
         binding = await kit.store.get_binding("bobs", "sms")
         assert result.event is not None and result.event.room_id != "bobs"
-        assert binding is not None and binding.participant_id is None
+        assert binding is not None and binding.participant_id == BOB
         assert (BOB, "alice: hi") not in sms.sent
         assert agent.read == read_by_bobs_agent
 

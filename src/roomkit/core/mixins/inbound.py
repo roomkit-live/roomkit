@@ -11,7 +11,7 @@ from functools import cached_property
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.channels._runtime_record import RUNTIME_RECORD
-from roomkit.channels.addressing import read_recipient
+from roomkit.channels.addressing import UnreadableRecipient, read_recipient
 from roomkit.core._changes import for_channels
 from roomkit.core._closing import Cascades, DoorRuns
 from roomkit.core._delivery_keys import DeliveryKeys, NamedDelivery
@@ -1312,8 +1312,9 @@ class InboundMixin(HelpersMixin):
             binding = await self._attach_unbound(
                 room, channel_id, participant_id=names_no_sender(sender)
             )
+            recipient = None
         if binding is not None and recordable_sender(sender):
-            await self._record_sender(room_id, binding, message, channel)
+            await self._record_sender(room_id, binding, message, channel, recipient)
         return True
 
     async def _attach_unbound(
@@ -1348,9 +1349,18 @@ class InboundMixin(HelpersMixin):
         return await self._store.get_binding(room.id, channel_id)
 
     async def _record_sender(
-        self, room_id: str, binding: ChannelBinding, message: InboundMessage, channel: Channel
+        self,
+        room_id: str,
+        binding: ChannelBinding,
+        message: InboundMessage,
+        channel: Channel,
+        recipient: str | UnreadableRecipient | None,
     ) -> None:
         """Write the sender on *binding*, read under the room lock, where it names no one.
+
+        *recipient* is the one :func:`still_the_messages` found naming the
+        sender (their identity, it may be), which the binding then names;
+        ``None`` for a binding the record's section attached.
 
         The binding that names the sender by their address also gets them as
         its recipient where it holds no value (``channel.reply_metadata``):
@@ -1368,8 +1378,8 @@ class InboundMixin(HelpersMixin):
             # A binding stored with a recipient and no correspondent (before
             # RFC §5.7 named one) is its recipient's: the sender is recorded
             # only on a binding that delivers to no one, or to them.
-            update["participant_id"] = routed_recipient(channel, binding) or _conversation(
-                message, channel
+            update["participant_id"] = (
+                recipient if isinstance(recipient, str) else _conversation(message, channel)
             )
         if _lacks_recipient(binding.model_copy(update=update), message, channel):
             missing = {

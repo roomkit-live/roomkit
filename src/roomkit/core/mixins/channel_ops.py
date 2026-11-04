@@ -6,6 +6,7 @@ import logging
 from collections import OrderedDict
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from roomkit.channels.addressing import UnreadableRecipient
 from roomkit.channels.base import Channel, FrameworkAwareChannel
 from roomkit.channels.declared import DeclaredChannel
 from roomkit.core.exceptions import (
@@ -14,6 +15,7 @@ from roomkit.core.exceptions import (
     ChannelNotRegisteredError,
     ConferenceAlreadyAttachedError,
 )
+from roomkit.core.inbound_router import channel_recipient
 from roomkit.core.mixins.helpers import HelpersMixin
 from roomkit.models._visibility import check_channel_id, parse_given_visibility
 from roomkit.models.channel import ChannelBinding, ChannelDeclaration
@@ -68,10 +70,12 @@ def _named_correspondent(binding: ChannelBinding, channel: Channel) -> ChannelBi
     for them and admits no one else. The framework's own name holds no one's
     place (:func:`~roomkit.core.inbound_router.names_no_sender`): a recipient
     replaces it, and with none the binding keeps it as it is, a channel's form
-    never making it a sender's.
+    never making it a sender's. A value under the channel's recipient key that
+    is not a recipient is kept, and names no one (RFC §5.7).
     """
     update: dict[str, Any] = {}
-    recipient = channel.recipient_address(binding)
+    read = channel_recipient(channel, binding)
+    recipient = None if isinstance(read, UnreadableRecipient) else read
     if recipient is not None:
         written = channel.recipient_metadata(recipient)
         if any(binding.metadata.get(key) != value for key, value in written.items()):

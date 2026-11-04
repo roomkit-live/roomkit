@@ -274,11 +274,12 @@ class Channel(ABC):
         (RFC §5.7, Appendix A), when the recipient is a conversation's
         address: ``phone_number``, ``email_address``, ``telegram_chat_id``...
 
-        Routing reads a binding's recipient under it (§10.4 steps 1 and 3,
-        whatever :meth:`recipient_address` answers there when that answers
-        None). None on a channel that delivers to a destination of its own (a
-        WebSocket's connections, a webhook's URL, a voice session), whose
-        recipient names no one: the default.
+        Step 1 finds a sender by the value under it, as stored (§10.4), and
+        every other read of a recipient falls back on it when
+        :meth:`recipient_address` answers None. None on a channel that
+        delivers to a destination of its own (a WebSocket's connections, a
+        webhook's URL, a voice session), whose recipient names no one: the
+        default.
         """
         return None
 
@@ -291,7 +292,9 @@ class Channel(ABC):
         ``participant_id`` does: the router admits no one else through it.
         None on any other channel (a webhook URL names no one). Routing takes
         this answer first; when it is None, a value under
-        :attr:`recipient_key` still names the conversation.
+        :attr:`recipient_key` still names the conversation. A channel that
+        overrides it delivers there too: routing does not change where its
+        ``deliver`` sends.
         """
         return None
 

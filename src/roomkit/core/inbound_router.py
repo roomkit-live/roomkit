@@ -252,9 +252,8 @@ def routed_recipient(
     """
     if channel is None or binding.group:
         return None
-    key = channel.recipient_key
-    held = read_recipient(binding.metadata, key) if key is not None else None
-    if isinstance(held, UnreadableRecipient):
+    recipient = channel_recipient(channel, binding)
+    if isinstance(recipient, UnreadableRecipient):
         logger.warning(
             "The binding of channel %r in room %r holds a %s under %r, which is not a "
             "recipient: routing reads it as someone else's address, so no sender the "
@@ -262,9 +261,22 @@ def routed_recipient(
             "refused no_recipient (RFC §5.7)",
             binding.channel_id,
             binding.room_id,
-            held.kind,
-            key,
+            recipient.kind,
+            channel.recipient_key,
         )
+    return recipient
+
+
+def channel_recipient(
+    channel: Channel, binding: ChannelBinding
+) -> str | UnreadableRecipient | None:
+    """Who *binding* delivers to by *channel*, whether or not it is ``group``
+    (RFC §5.7): a value under the channel's recipient key that is not a
+    recipient, whatever the channel answers; else the channel's
+    ``recipient_address``; else the value under the key, in its form."""
+    key = channel.recipient_key
+    held = read_recipient(binding.metadata, key) if key is not None else None
+    if isinstance(held, UnreadableRecipient):
         return held
     answered = channel.recipient_address(binding)
     if answered is None and held is not None:

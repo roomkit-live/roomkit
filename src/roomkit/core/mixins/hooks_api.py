@@ -32,12 +32,24 @@ if TYPE_CHECKING:
     from roomkit.channels.base import Channel
     from roomkit.core.hooks import HookEngine, IdentityHookRegistration
     from roomkit.core.mixins.helpers import FrameworkEventHandler, IdentityHookFn
+    from roomkit.models.channel import ChannelBinding
     from roomkit.models.delivery import InboundMessage, InboundResult
     from roomkit.providers.sms.meta import WebhookMeta
     from roomkit.store.base import ConversationStore
 
 
 logger = logging.getLogger("roomkit.framework")
+
+
+def _delivers_to_another(
+    channel: Channel | None, binding: ChannelBinding, recipient: str | None
+) -> bool:
+    """Whether *binding*, naming no participant and not ``group``, is the
+    conversation of someone other than *recipient* (RFC §5.7, §10.4): a status
+    for them is not its room's."""
+    if binding.group or binding.participant_id is not None:
+        return False
+    return routed_recipient(channel, binding) not in (None, recipient)
 
 
 @runtime_checkable
@@ -387,7 +399,10 @@ class HooksApiMixin(HelpersMixin):
                 recipient_key=channel.recipient_key if channel is not None else None,
             )
             if room_id is not None:
-                return room_id
+                # The store read the key; the channel may deliver elsewhere.
+                binding = await self._store.get_binding(room_id, channel_id)
+                if binding is None or not _delivers_to_another(channel, binding, recipient):
+                    return room_id
         candidates = await self._store.find_room_ids_by_channel(channel_id, active, limit=2)
         if len(candidates) != 1:
             return None
@@ -400,11 +415,7 @@ class HooksApiMixin(HelpersMixin):
         binding = await self._store.get_binding(candidates[0], channel_id)
         if binding is None or not binding_admits(binding, frozenset({recipient})):
             return None
-        delivers_to = routed_recipient(channel, binding)
-        named_by_recipient = not binding.group and binding.participant_id is None
-        if named_by_recipient and delivers_to not in (None, recipient):
-            return None
-        return candidates[0]
+        return None if _delivers_to_another(channel, binding, recipient) else candidates[0]
 
     async def add_room_hook(
         self,
