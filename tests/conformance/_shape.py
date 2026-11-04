@@ -229,7 +229,16 @@ SUMMARIZING = {
     "summary_max_tokens",
     "min_events",
 }
-ROOM = {"id", "organization_id", "metadata", "timers", "bindings", "participants", "status"}
+ROOM = {
+    "id",
+    "organization_id",
+    "metadata",
+    "store_metadata",
+    "timers",
+    "bindings",
+    "participants",
+    "status",
+}
 BINDING = {"channel_id", "category", "access", "muted", "visibility", "metadata", "participant_id"}
 HOOK = {
     "name",

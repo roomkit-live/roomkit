@@ -370,6 +370,8 @@ class Harness:
         await store_identities(self.kit, setup.get("identities", []))
         for room in setup.get("rooms", []):
             await create_room(self.kit, room)
+            if "store_metadata" in room:
+                await self.kit.store.patch_room_metadata(room["id"], room["store_metadata"])
             await self._subscribe_thinking(room["id"])
             for binding in room.get("bindings", []):
                 await attach_channel(self.kit, room["id"], binding)
