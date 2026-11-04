@@ -4,8 +4,9 @@
 ``install_router`` the one a router's ``install`` returns and
 ``install_pipeline`` the one a ConversationPipeline's ``install`` returns, each
 under a name the later calls use; ``conversation_pipeline`` builds a pipeline
-and reads it; ``setup_handoff`` serves the tool on an agent; ``handoff.handle``
-and ``handoff.set_language`` are the handler's own calls.
+and reads it; ``setup_handoff`` serves the tool on an agent; ``handoff.handle``,
+``handoff.set_language`` and ``handoff.send_greeting`` are the handler's own
+calls.
 """
 
 from __future__ import annotations
@@ -29,7 +30,7 @@ if TYPE_CHECKING:
 
 async def _handoff_handler(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None:
     allowed = spec.get("allowed_transitions")
-    harness.handoff_handlers[spec["handler"]] = HandoffHandler(
+    handler = HandoffHandler(
         kit,
         router_of(spec["router"]),
         agent_aliases=spec.get("agent_aliases"),
@@ -38,7 +39,11 @@ async def _handoff_handler(kit: RoomKit, harness: Harness, spec: Mapping[str, An
             None if allowed is None else {phase: set(to) for phase, to in allowed.items()}
         ),
         known_agents=set(spec["known_agents"]) if "known_agents" in spec else None,
+        event_channel_id=spec.get("event_channel_id"),
     )
+    if "greeting_map" in spec:
+        handler.greeting_map = spec["greeting_map"]
+    harness.handoff_handlers[spec["handler"]] = handler
 
 
 async def _install_router(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None:
@@ -104,6 +109,11 @@ async def _set_language(kit: RoomKit, harness: Harness, spec: Mapping[str, Any])
     await handler.set_language(spec["room_id"], spec["language"])
 
 
+async def _send_greeting(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None:
+    handler = harness.handoff_handlers[spec["handler"]]
+    await handler.send_greeting(spec["room_id"], channel_id=spec.get("channel_id"))
+
+
 HANDOFF_CALLS: dict[str, Call] = {
     "handoff_handler": _handoff_handler,
     "install_router": _install_router,
@@ -112,6 +122,7 @@ HANDOFF_CALLS: dict[str, Call] = {
     "setup_handoff": _setup_handoff,
     "handoff.handle": _handle,
     "handoff.set_language": _set_language,
+    "handoff.send_greeting": _send_greeting,
 }
 
 HANDOFF_ARGUMENTS: dict[str, set[str]] = {
@@ -122,6 +133,8 @@ HANDOFF_ARGUMENTS: dict[str, set[str]] = {
         "phase_map",
         "allowed_transitions",
         "known_agents",
+        "greeting_map",
+        "event_channel_id",
     },
     "install_router": {
         "handler",
@@ -144,4 +157,5 @@ HANDOFF_ARGUMENTS: dict[str, set[str]] = {
     "setup_handoff": {"agent_id", "handler", "targets", "room_id"},
     "handoff.handle": {"handler", "room_id", "calling_agent_id", "arguments"},
     "handoff.set_language": {"handler", "room_id", "language"},
+    "handoff.send_greeting": {"handler", "room_id", "channel_id"},
 }
