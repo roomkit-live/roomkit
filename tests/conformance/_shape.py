@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from tests.conformance._delegate_tool import DELEGATE_TOOL_ARGUMENTS
 from tests.conformance._discussion import DISCUSSION_ARGUMENTS, DISCUSSION_MEMBERS
 from tests.conformance._handoff import HANDOFF_ARGUMENTS
 from tests.conformance._inputs import INPUT_ARGUMENTS
@@ -395,6 +396,7 @@ CALLS |= VERIFICATION_ARGUMENTS
 CALLS |= STRATEGY_ARGUMENTS
 CALLS |= ROUTING_ARGUMENTS
 CALLS |= HANDOFF_ARGUMENTS
+CALLS |= DELEGATE_TOOL_ARGUMENTS
 CALLS |= DISCUSSION_ARGUMENTS
 STEPS = {"await": {"await", "expect"}, "concurrent": {"concurrent"}, "wait_for": {"wait_for"}}
 STEPS |= {"open": {"open"}, "idle": {"idle"}, "wait_for_lock": {"wait_for_lock", "waiters"}}

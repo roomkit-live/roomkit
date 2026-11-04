@@ -35,7 +35,7 @@ from roomkit.orchestration.base import Orchestration
 from roomkit.orchestration.status_bus import StatusEntry
 from roomkit.realtime import EphemeralEvent, EphemeralEventType, InMemoryRealtime
 from roomkit.store.base import ConversationStore
-from roomkit.tasks import DelegatedTask
+from roomkit.tasks import DelegatedTask, DelegateHandler
 from tests.conformance._agent import ScriptedModel, tool_call_record
 from tests.conformance._ai_hooks import generation_record, response_record, tool_round_record
 from tests.conformance._audits import Auditors
@@ -53,6 +53,7 @@ from tests.conformance._calls import (
     result_event_id,
 )
 from tests.conformance._compare import Check, compare
+from tests.conformance._delegate_tool import DELEGATE_TOOL_CALLS
 from tests.conformance._delivery import (
     backend_busy,
     delivery_options,
@@ -172,6 +173,8 @@ class Harness:
         self.models: dict[str, ScriptedModel] = {}
         self.auditors = Auditors()
         self.handoff_handlers: dict[str, HandoffHandler] = {}
+        self.delegate_handlers: dict[str, DelegateHandler] = {}
+        self.handled_tasks: set[str] = set()
         setup = scenario.get("setup", {})
         self.discussion_done: dict[str, bool] = {}
         self.strategies = strategies(setup, self)
@@ -496,9 +499,8 @@ class Harness:
         """Makes one call; returns its outcome, its error named, never raising."""
         resolved = await self.resolve(dict(spec), scope)
         calls = CALLS | STORE_CALLS | TASK_CALLS | MEMBER_CALLS | INPUT_CALLS | STRATEGY_CALLS
-        call = (calls | VERIFICATION_CALLS | ROUTING_CALLS | HANDOFF_CALLS | DISCUSSION_CALLS)[
-            spec["call"]
-        ]
+        calls |= VERIFICATION_CALLS | ROUTING_CALLS | HANDOFF_CALLS | DISCUSSION_CALLS
+        call = (calls | DELEGATE_TOOL_CALLS)[spec["call"]]
         try:
             result = await asyncio.wait_for(call(self.kit, self, resolved), CALL_BOUND_S)
         except TimeoutError:
@@ -558,6 +560,13 @@ class Harness:
             if not task.done()
         ]
         tasks.extend(task for task in self._background.values() if not task.done())
+        # The tasks a call on a delegate handler started, then what the handler
+        # keeps of their end.
+        running = self.kit.task_runner._tasks  # ty: ignore[attr-defined]
+        held = [running[task_id] for task_id in self.handled_tasks if task_id in running]
+        for handler in self.delegate_handlers.values():
+            held.extend(handler._background_tasks)
+        tasks.extend(task for task in held if not task.done())
         if after_turn:
             tasks.extend(task for task in self._after_turn if not task.done())
         if tasks:
