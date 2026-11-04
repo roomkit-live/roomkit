@@ -109,7 +109,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BREAKING: a handoff to a human holds the room for them** (RMK-1233).
   `ConversationState.human_hold`, false by default: while true the router asks
   no agent, whichever rule or default would, and no supervisor, and the message
-  still reaches the room's transports; an address still asks the agent it names
+  still reaches the room's transports; an address naming an agent still asks it
   and the supervisor beside it. `ON_HANDOFF` names the human, the signal a host
   audits the hold by. A handoff to an agent is refused during the hold, by the tool
   and by `handler.handle`; only the host's transition to an agent takes it off,

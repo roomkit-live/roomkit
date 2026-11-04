@@ -104,6 +104,16 @@ class ConversationRouter:
         self._default_agent_id = default_agent_id
         self._supervisor_id = supervisor_id
 
+    @staticmethod
+    def _watches_address(event: RoomEvent, context: RoomContext) -> bool:
+        """Whether the supervisor is asked beside *event*'s address: always, but
+        while the room is held for a human only when the address names an
+        agent, since no other acts on it (RFC §19.4 step 4)."""
+        if not get_conversation_state(context.room).human_hold:
+            return True
+        bindings = (context.get_binding(channel_id) for channel_id in event.addressed_to or ())
+        return any(b is not None and b.category == ChannelCategory.INTELLIGENCE for b in bindings)
+
     def _routes_phase_to(self, phase: str, agent_id: str) -> bool:
         """Whether a rule of this router asks *agent_id* in *phase*."""
         return any(
@@ -205,7 +215,11 @@ class ConversationRouter:
                     event.id,
                     event.addressed_to,
                 )
-                if self._supervisor_id and self._supervisor_id not in event.addressed_to:
+                if (
+                    self._supervisor_id
+                    and self._supervisor_id not in event.addressed_to
+                    and self._watches_address(event, context)
+                ):
                     updated_metadata = {
                         **(event.metadata or {}),
                         "_always_process": [self._supervisor_id],
