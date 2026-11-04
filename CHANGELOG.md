@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **BREAKING: a value under a channel's declared recipient key names its conversation**
+  (HITL e7dc9966, RMK-1129). A `Channel` subclass declaring `recipient_key` and keeping
+  the base `recipient_address`, which answers `None`, read no recipient at step 3 or under
+  the lock: a stranger writing on it entered the room of the number under the key, read
+  its history through the agent, and the answer went to that number. Routing now reads
+  `recipient_address`, then the value under the key: the stranger gets a room of their
+  own, and that number finds the room. A delivery status reads it the same way. A flow of
+  several senders into such a room declares its binding `group`.
+
 - **BREAKING: a message routed under the name `system` is refused** (HITL e80070ae,
   6200e78d, RMK-1339). Under the room lock the name alone spared a message step 3's
   conditions: on a channel whose senders choose their id (`parse_http_webhook`, the

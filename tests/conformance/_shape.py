@@ -139,7 +139,7 @@ CHANNEL = {
     "memory",
     "agent",
 }
-ADDRESSES = {"normalizes", "conversation_key"}
+ADDRESSES = {"normalizes", "conversation_key", "recipient_at"}
 AGENT = {
     "name",
     "role",

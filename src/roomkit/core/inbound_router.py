@@ -236,16 +236,19 @@ def routed_recipient(
 ) -> str | UnreadableRecipient | None:
     """The recipient *binding* delivers to, as routing reads it (RFC §5.7, §10.4).
 
-    Its address in the channel's form; ``None`` when it holds no value, on a
-    ``group`` binding, whose recipient names no one, or on a channel whose
-    recipient names no conversation (or no channel); an
-    :class:`UnreadableRecipient` for a value under the channel's recipient
-    key that is not a recipient. That one is not "no recipient": it is a
-    recipient no sender is, so on a binding naming no participant it admits
-    no one by step 3 and makes the room no longer a routed message's under
-    the lock, and the record of a sender never writes over it. It is logged
-    as a warning naming the binding and the value's type, never the value,
-    which may be a person's number.
+    Its address in the channel's form, as the channel's ``recipient_address``
+    answers it or, when that answers none, as the channel's declared key
+    holds it: a channel that declares the key and keeps the base method still
+    delivers to that value, so a stranger is not let into its conversation
+    (RMK-1129). ``None`` when it holds no value, on a ``group`` binding, whose
+    recipient names no one, or on a channel whose recipient names no
+    conversation (or no channel); an :class:`UnreadableRecipient` for a value
+    under the channel's recipient key that is not a recipient. That one is
+    not "no recipient": it is a recipient no sender is, so on a binding naming
+    no participant it admits no one by step 3 and makes the room no longer a
+    routed message's under the lock, and the record of a sender never writes
+    over it. It is logged as a warning naming the binding and the value's
+    type, never the value, which may be a person's number.
     """
     if channel is None or binding.group:
         return None
@@ -263,7 +266,10 @@ def routed_recipient(
             key,
         )
         return held
-    return channel.recipient_address(binding)
+    answered = channel.recipient_address(binding)
+    if answered is None and held is not None:
+        return channel.normalize_address(str(held))
+    return answered
 
 
 async def step_three_admits(

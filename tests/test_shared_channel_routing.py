@@ -19,16 +19,18 @@ import pytest
 from roomkit import HookResult, HookTrigger, InboundRoomRouter, RoomKit
 from roomkit.channels import HTTPChannel, SMSChannel, WebSocketChannel
 from roomkit.channels.ai import AIChannel
+from roomkit.channels.base import Channel
 from roomkit.identity.mock import MockIdentityResolver
-from roomkit.models.channel import ChannelBinding
+from roomkit.models.channel import ChannelBinding, ChannelOutput
+from roomkit.models.context import RoomContext
 from roomkit.models.delivery import (
     SYSTEM_SENDER_ID,
     DeliveryStatus,
     InboundMessage,
     InboundResult,
 )
-from roomkit.models.enums import IdentificationStatus, RoomStatus
-from roomkit.models.event import TextContent
+from roomkit.models.enums import ChannelCategory, ChannelType, IdentificationStatus, RoomStatus
+from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.models.identity import Identity
 from roomkit.models.room import RoomTimers
 from roomkit.providers.ai.mock import MockAIProvider
@@ -38,6 +40,7 @@ from roomkit.providers.sms.mock import MockSMSProvider
 from roomkit.store.base import ConversationStore
 from roomkit.store.memory import InMemoryStore
 from roomkit.store.sqlite import SQLiteStore
+from tests.test_framework import SimpleChannel
 
 ALICE, BOB, CAROL = "+15550000001", "+15550000002", "+15550000003"
 
@@ -826,6 +829,104 @@ class TestEitherNameFindsTheNewestRoom:
         assert await shop.room_of(ALICE) == "stored"
         assert await shop.named_on("stored") == ALICE
         assert await shop.room_of(BOB) != "stored"
+
+
+class _KeyedChannel(SimpleChannel):
+    """A host's own channel: it declares where a binding's recipient is written
+    and sends there, and keeps the base ``recipient_address``, which answers none."""
+
+    def __init__(self, channel_id: str) -> None:
+        super().__init__(channel_id)
+        self.sent: list[tuple[str | None, str]] = []
+
+    @property
+    def recipient_key(self) -> str | None:
+        return "phone_number"
+
+    async def handle_inbound(self, message: InboundMessage, context: RoomContext) -> RoomEvent:
+        return RoomEvent(
+            room_id=context.room.id,
+            source=EventSource(
+                channel_id=self.channel_id,
+                channel_type=self.channel_type,
+                participant_id=message.sender_id,
+            ),
+            content=message.content,
+        )
+
+    async def deliver(
+        self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
+    ) -> ChannelOutput:
+        self.sent.append((binding.metadata.get("phone_number"), event.content.body))
+        return ChannelOutput.empty()
+
+
+class _ReadingAgent(Channel):
+    """An agent that keeps what its turn reads of the room, and answers."""
+
+    channel_type = ChannelType.AI
+    category = ChannelCategory.INTELLIGENCE
+
+    def __init__(self, channel_id: str) -> None:
+        super().__init__(channel_id)
+        self.read: list[list[str]] = []
+
+    @property
+    def recent_events_window(self) -> int:
+        return 10
+
+    async def handle_inbound(self, message: InboundMessage, context: RoomContext) -> RoomEvent:
+        raise NotImplementedError
+
+    async def deliver(
+        self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
+    ) -> ChannelOutput:
+        return ChannelOutput.empty()
+
+    async def on_event(
+        self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
+    ) -> ChannelOutput:
+        if event.source.channel_id == self.channel_id:
+            return ChannelOutput.empty()
+        self.read.append([e.content.body for e in context.recent_events])
+        answer = RoomEvent(
+            room_id=event.room_id,
+            source=EventSource(channel_id=self.channel_id, channel_type=self.channel_type),
+            content=TextContent(body="answer"),
+        )
+        return ChannelOutput(responded=True, response_events=[answer])
+
+
+class TestAChannelReadingNoRecipient:
+    """RFC §5.7, §10.4: a value under a channel's declared recipient key names
+    its conversation, whether or not the channel overrides ``recipient_address``."""
+
+    async def test_a_stranger_is_not_admitted_to_the_conversation_of_the_key_s_recipient(
+        self,
+    ) -> None:
+        kit = RoomKit()
+        sms, desk, agent = _KeyedChannel("sms"), SimpleChannel("desk"), _ReadingAgent("agent")
+        for channel in (sms, desk, agent):
+            kit.register_channel(channel)
+        await kit.create_room(room_id="bobs")
+        await kit.attach_channel("bobs", "sms", metadata={"phone_number": BOB})
+        await kit.attach_channel("bobs", "desk")
+        await kit.attach_channel("bobs", "agent")
+        await kit.send_event("bobs", "desk", TextContent(body="Bob, your results are ready"))
+        read_by_bobs_agent = list(agent.read)
+
+        result = await kit.process_inbound(
+            InboundMessage(
+                channel_id="sms", sender_id=ALICE, content=TextContent(body="alice: hi")
+            )
+        )
+        await kit.close()
+
+        binding = await kit.store.get_binding("bobs", "sms")
+        assert result.event is not None and result.event.room_id != "bobs"
+        assert binding is not None and binding.participant_id is None
+        assert (BOB, "alice: hi") not in sms.sent
+        assert agent.read == read_by_bobs_agent
 
 
 class TestAPausedConversation:

@@ -257,7 +257,8 @@ class ScriptedChannel(Channel):
     def recipient_address(self, binding: ChannelBinding) -> str | None:
         if self._addresses is None or self._recipient_key is None:
             return super().recipient_address(binding)
-        held = binding.metadata.get(self._recipient_key)
+        key = self._addresses.get("recipient_at", self._recipient_key)
+        held = binding.metadata.get(key)
         return self.normalize_address(held) if isinstance(held, str) and held.strip() else None
 
     def supports_streaming_delivery_for(self, room_id: str) -> bool:
