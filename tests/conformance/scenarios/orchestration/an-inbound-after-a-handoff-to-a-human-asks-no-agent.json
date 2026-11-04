@@ -1,0 +1,547 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/an-inbound-after-a-handoff-to-a-human-asks-no-agent",
+  "title": "After a handoff to a human the room is held for them: the next message asks no agent, whichever rule or default would pick one, and reaches the room's transports; an address still asks the agent it names; an agent's handoff to an agent is refused, the hold staying, and only the host's transition to an agent takes it off",
+  "rules": [
+    "§19.6",
+    "§19.4",
+    "§19.7.1",
+    "§19.7.2"
+  ],
+  "notes": "Python: orchestration/state.py ConversationState.human_hold, orchestration/router.py select_agent and as_hook, orchestration/handoff.py HandoffHandler.handle. Decided on RMK-1233, answering an automated security finding: a model announced a person, and an agent answered.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "desk",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "agent": {
+          "role": "A"
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "handoff_conversation",
+                  "arguments": {
+                    "target": "human",
+                    "reason": "R.",
+                    "summary": "S.",
+                    "next_phase": "b"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "A person next."
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "handoff_conversation",
+                  "arguments": {
+                    "target": "human",
+                    "reason": "R.",
+                    "summary": "S."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "A person next."
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "agent": {
+          "role": "B"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "B, addressed."
+            }
+          ]
+        }
+      },
+      {
+        "id": "c",
+        "type": "ai",
+        "agent": {
+          "role": "C"
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c5",
+                  "name": "handoff_conversation",
+                  "arguments": {
+                    "target": "a",
+                    "reason": "R.",
+                    "summary": "S."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Still held."
+            },
+            {
+              "text": "C is back."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "desk"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "rejected",
+        "trigger": "on_handoff_rejected",
+        "execution": "async"
+      }
+    ],
+    "strategies": [
+      {
+        "id": "chain",
+        "pipeline": {
+          "agents": [
+            "a",
+            "b"
+          ]
+        }
+      },
+      {
+        "id": "team",
+        "swarm": {
+          "agents": [
+            "a",
+            "c"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "chain"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "One."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Two."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "post",
+      "room_id": "r1",
+      "content": {
+        "type": "text",
+        "body": "Three."
+      },
+      "addressed_to": [
+        "b"
+      ]
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r2",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Four."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Five."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "post",
+      "room_id": "r2",
+      "content": {
+        "type": "text",
+        "body": "Hold on."
+      },
+      "addressed_to": [
+        "c"
+      ]
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "save_conversation_state",
+      "room_id": "r2",
+      "transitions": [
+        {
+          "to_phase": "handling",
+          "to_agent": "c"
+        }
+      ]
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Six."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "One."
+          }
+        },
+        {
+          "type": "tool_call_start"
+        },
+        {
+          "type": "system"
+        },
+        {
+          "type": "tool_call_end"
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "type": "text",
+            "body": "A person next."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Two."
+          },
+          "metadata": {
+            "_routed_to": "_none_"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Three."
+          }
+        },
+        {
+          "source": {
+            "channel_id": "b"
+          },
+          "content": {
+            "type": "text",
+            "body": "B, addressed."
+          }
+        }
+      ],
+      "r2": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Four."
+          }
+        },
+        {
+          "type": "tool_call_start"
+        },
+        {
+          "type": "system"
+        },
+        {
+          "type": "tool_call_end"
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "type": "text",
+            "body": "A person next."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Five."
+          },
+          "metadata": {
+            "_routed_to": "_none_"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Hold on."
+          }
+        },
+        {
+          "type": "tool_call_start"
+        },
+        {
+          "type": "tool_call_end"
+        },
+        {
+          "source": {
+            "channel_id": "c"
+          },
+          "content": {
+            "type": "text",
+            "body": "Still held."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Six."
+          },
+          "metadata": {
+            "_routed_to": "c"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "c"
+          },
+          "content": {
+            "type": "text",
+            "body": "C is back."
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "r1": {
+        "desk": [
+          {
+            "content": {
+              "type": "text",
+              "body": "One."
+            }
+          },
+          {
+            "type": "tool_call_start"
+          },
+          {
+            "type": "system"
+          },
+          {
+            "type": "tool_call_end"
+          },
+          {
+            "source": {
+              "channel_id": "a"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Two."
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Three."
+            }
+          },
+          {
+            "source": {
+              "channel_id": "b"
+            }
+          }
+        ]
+      }
+    },
+    "models": {
+      "a": [
+        {},
+        {},
+        {},
+        {}
+      ],
+      "b": [
+        {}
+      ],
+      "c": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c5",
+              "content": {
+                "$contains": "Room r2 is held for a human"
+              }
+            }
+          ]
+        },
+        {}
+      ]
+    },
+    "hooks": {
+      "rejected": [
+        {
+          "room_id": "r2",
+          "event": {
+            "metadata": {
+              "from_agent": "c",
+              "to_agent": "a",
+              "accepted": false
+            }
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "r1": {
+        "metadata": {
+          "_conversation_state": {
+            "phase": "b",
+            "active_agent_id": null,
+            "human_hold": true
+          }
+        }
+      },
+      "r2": {
+        "metadata": {
+          "_conversation_state": {
+            "phase": "handling",
+            "active_agent_id": "c",
+            "human_hold": false
+          }
+        }
+      }
+    }
+  }
+}

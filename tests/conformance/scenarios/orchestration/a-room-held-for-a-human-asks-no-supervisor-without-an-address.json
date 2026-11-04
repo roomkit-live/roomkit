@@ -1,0 +1,286 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-room-held-for-a-human-asks-no-supervisor-without-an-address",
+  "title": "While a room is held for a human, a message with no address gives no agent a turn, its supervisor included, nor does a post naming nobody or an address naming only a transport; an address naming an agent asks it and the supervisor beside it; and the handoff that started the hold fires ON_HANDOFF, naming the human, the signal a host audits it by",
+  "rules": [
+    "§19.6",
+    "§19.4"
+  ],
+  "notes": "Python: orchestration/router.py as_hook, the supervisor's stamp left out on an event with no address during a hold. Decided on RMK-1233: no agent acts there, and a supervisor's reply reached the person who was promised a human; beside an addressed agent, which still acts, it stays. The hold here comes from the handler's call, not from a turn: Python's reply in the turn that handed off is stamped from the room as that turn began, RMK-1319.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "desk",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "x",
+        "type": "ai",
+        "agent": {
+          "role": "X"
+        },
+        "model": {
+          "rounds": []
+        }
+      },
+      {
+        "id": "y",
+        "type": "ai",
+        "agent": {
+          "role": "Y"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Y, addressed."
+            }
+          ]
+        }
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "SUP"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Noted."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "desk"
+          },
+          {
+            "channel_id": "x"
+          },
+          {
+            "channel_id": "y"
+          },
+          {
+            "channel_id": "sup"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "handed",
+        "trigger": "on_handoff",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_pipeline",
+      "handler": "h",
+      "supervisor_id": "sup",
+      "stages": [
+        {
+          "phase": "intake",
+          "agent_id": "x",
+          "next": "review"
+        },
+        {
+          "phase": "review",
+          "agent_id": "y"
+        }
+      ],
+      "agents": [
+        "x",
+        "y"
+      ]
+    },
+    {
+      "call": "handoff.handle",
+      "handler": "h",
+      "room_id": "r1",
+      "calling_agent_id": "x",
+      "arguments": {
+        "target": "human",
+        "reason": "R.",
+        "summary": "S.",
+        "next_phase": "review"
+      },
+      "expect": {
+        "result": {
+          "accepted": true,
+          "new_agent_id": null,
+          "new_phase": "review"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "One."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "post",
+      "room_id": "r1",
+      "content": {
+        "type": "text",
+        "body": "Posted."
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "post",
+      "room_id": "r1",
+      "content": {
+        "type": "text",
+        "body": "To the desk."
+      },
+      "addressed_to": [
+        "desk"
+      ]
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "post",
+      "room_id": "r1",
+      "content": {
+        "type": "text",
+        "body": "Two."
+      },
+      "addressed_to": [
+        "y"
+      ]
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": {
+        "$unordered": [
+          {
+            "type": "system"
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "One."
+            },
+            "metadata": {
+              "_routed_to": "_none_",
+              "_always_process": []
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Posted."
+            },
+            "metadata": {
+              "_always_process": {
+                "$absent": true
+              }
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "To the desk."
+            },
+            "metadata": {
+              "_always_process": {
+                "$absent": true
+              }
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "Two."
+            },
+            "metadata": {
+              "_always_process": [
+                "sup"
+              ]
+            }
+          },
+          {
+            "source": {
+              "channel_id": "y"
+            },
+            "content": {
+              "type": "text",
+              "body": "Y, addressed."
+            }
+          },
+          {
+            "source": {
+              "channel_id": "sup"
+            },
+            "content": {
+              "type": "text",
+              "body": "Noted."
+            }
+          }
+        ]
+      }
+    },
+    "models": {
+      "x": [],
+      "y": [
+        {}
+      ],
+      "sup": [
+        {}
+      ]
+    },
+    "hooks": {
+      "handed": [
+        {
+          "event": {
+            "metadata": {
+              "from_agent": "x",
+              "to_agent": "human",
+              "accepted": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}
