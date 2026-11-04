@@ -7,11 +7,14 @@ import asyncio
 from collections.abc import AsyncIterator
 from typing import Any
 
+import pytest
+
 from roomkit import AIChannel, RoomKit, VoiceChannel
+from roomkit.channels._voice_tts import _ResponseText
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import EventType
 from roomkit.models.event import TextContent
-from roomkit.models.streaming import SegmentBreakMarker
+from roomkit.models.streaming import SegmentBreakMarker, ThinkingDeltaMarker, UsageMarker
 from roomkit.providers.ai.base import (
     AIContext,
     AIProvider,
@@ -139,6 +142,17 @@ async def test_a_segment_break_ends_the_sentence_however_short() -> None:
         "Let me check.",
         "It is 9.",
     ]
+
+
+@pytest.mark.parametrize(
+    "told", [UsageMarker(usage={"input_tokens": 1}), ThinkingDeltaMarker("x")]
+)
+async def test_a_marker_that_says_nothing_of_the_text_ends_no_sentence(told: Any) -> None:
+    text = _ResponseText()
+
+    read = [item async for item in text.read(_items("Let me ", told, "check."))]
+
+    assert read == ["Let me ", "check."]
 
 
 async def test_a_break_with_nothing_held_says_nothing() -> None:

@@ -662,6 +662,7 @@
     "ToolRoundEvent",
     "TurnEntries",
     "UpdateSystemPrompt",
+    "UsageMarker",
     "VideoContent",
     "Visibility",
     "VoiceDeliveryRecord"

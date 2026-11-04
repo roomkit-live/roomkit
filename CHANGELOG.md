@@ -54,6 +54,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Each generation of a turn tells what it used, and a cut turn keeps it**
+  (RMK-1333). The loop yields a `UsageMarker` (from `roomkit.models`) after each
+  generation, in its order among the text and the rows, which a streaming
+  channel can show and every other reader skips, across the turn backend too. A
+  turn cut once it began records what the markers told as a finished turn does,
+  its end `cancelled`; a generation in flight is not counted, and
+  `ai_usage_complete` is then false.
+
 - **A turn's record keeps its last generation, its model and its provider**
   (RMK-1056). Beside `ai_usage` and `loop_end_reason`, the turn's last message
   carries `ai_last_usage`, `ai_usage_complete`, `ai_model` and `ai_provider`,

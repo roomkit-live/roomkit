@@ -87,6 +87,7 @@ CHANNEL = {
     "on_event",
     "deliver",
     "streams",
+    "reads_usage",
     "deliver_stream",
     "on_room_attached",
     "on_room_detached",

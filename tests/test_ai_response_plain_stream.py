@@ -120,7 +120,7 @@ async def test_plain_stream_hook_failure_does_not_break_delivery() -> None:
 
     channel._after_response_hook = observe
     items = [item async for item in channel._run_streaming_tool_loop(AIContext())]
-    assert items[:-1] == ["ok"]
+    assert [item for item in items if isinstance(item, str)] == ["ok"]
     # The turn's record closes the structured stream (RMK-289)
     assert isinstance(items[-1], LoopEndMarker) and items[-1].reason == "completed"
     assert channel.active_turns == 0

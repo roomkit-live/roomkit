@@ -25,6 +25,7 @@ from roomkit.models.streaming import (
     ThinkingDeltaMarker,
     ToolCallEndMarker,
     ToolCallStartMarker,
+    UsageMarker,
 )
 from roomkit.providers.ai.base import AIImagePart, AITextPart
 from roomkit.providers.ai.tool_intent import with_intent_field
@@ -99,6 +100,14 @@ _ITEM_KINDS = (
         SegmentBreakMarker,
         lambda item, start: {},
         lambda data: SegmentBreakMarker(),
+    ),
+    _ItemKind(
+        "usage",
+        UsageMarker,
+        lambda item, start: dataclasses.asdict(item),
+        lambda data: UsageMarker(
+            usage=data["usage"], model=data.get("model"), provider=data.get("provider")
+        ),
     ),
     _ItemKind(
         "loop_end", LoopEndMarker, lambda item, start: dataclasses.asdict(item), _decode_loop_end

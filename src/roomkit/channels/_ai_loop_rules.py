@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from roomkit.channels._tool_eviction import REREAD_TOOL, ToolEviction
 from roomkit.channels._turn_budget import TurnBudget
-from roomkit.models.streaming import LoopEndReason
+from roomkit.models.streaming import LoopEndReason, add_usage
 from roomkit.providers.ai.base import (
     AIContext,
     AIMessage,
@@ -72,20 +72,6 @@ _FORCE_STOP_NUDGE = (
     "A rejected tool call did not execute. Report its failure and the correction "
     "needed; never claim an action succeeded without a successful tool result."
 )
-
-
-def _accumulate_usage(total: dict[str, int], round_usage: dict[str, Any]) -> None:
-    """Add one round's token counters into a turn's running totals.
-
-    Every integer counter is carried, not just input and output: cache reads
-    and writes are what tell a re-read prefix apart from fresh input, and the
-    two are billed an order of magnitude apart. A turn that only reports its
-    final round's usage under-counts a multi-round loop by every round but
-    the last.
-    """
-    for counter, value in round_usage.items():
-        if isinstance(value, int):
-            total[counter] = total.get(counter, 0) + value
 
 
 # How a tool loop can stop short of its final answer: every end but
@@ -270,7 +256,7 @@ class _ToolLoopState:
     def count(self, total: dict[str, int], usage: dict[str, Any]) -> None:
         """Count one generation's usage: into the turn's *total*, and against
         its budget when it has one."""
-        _accumulate_usage(total, usage)
+        add_usage(total, usage)
         if self.budget is not None:
             self.billed_tokens += self.budget.tokens_of(usage)
             self.spent += self.budget.cost_of(usage)

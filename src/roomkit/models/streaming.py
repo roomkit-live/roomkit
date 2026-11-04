@@ -12,6 +12,7 @@ channels (CLI, web) can render tool calls and thinking inline.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -78,6 +79,24 @@ class ThinkingDeltaMarker:
     """
 
     thinking: str
+
+
+@dataclass(slots=True)
+class UsageMarker:
+    """Yielded after each generation of a turn: what it used, and what it ran on.
+
+    In its order among the text and the rows, as :class:`ThinkingDeltaMarker`,
+    so a channel can show what a long turn uses as it goes. ``usage`` is that
+    generation's alone, empty when it reported no counters; ``model`` and
+    ``provider`` name what served it, a fallback provider when it did. The
+    store holds none of it, and a generation in flight has told nothing: the
+    record of a turn cut there holds what the generations before it told
+    (RFC §6.4). A channel that does not show usage ignores it.
+    """
+
+    usage: dict[str, Any] = field(default_factory=dict)
+    model: str | None = None
+    provider: str | None = None
 
 
 @dataclass(slots=True)
@@ -193,9 +212,31 @@ StreamMarker = (
     ToolCallStartMarker
     | ToolCallEndMarker
     | ThinkingDeltaMarker
+    | UsageMarker
     | SegmentBreakMarker
     | LoopEndMarker
 )
 
 #: A single item in the streaming response: either a text delta or a marker.
 StreamDelta = str | StreamMarker
+
+
+def add_usage(total: dict[str, int], used: Mapping[str, Any]) -> None:
+    """Add a generation's token counters into a turn's running *total*.
+
+    Every integer counter is carried, not just input and output: cache reads
+    and writes are what tell a re-read prefix apart from fresh input, and the
+    two are billed an order of magnitude apart. A turn that kept only its final
+    round's usage under-counts a multi-round loop by everything before the last.
+    """
+    for counter, value in used.items():
+        if isinstance(value, int):
+            total[counter] = total.get(counter, 0) + value
+
+
+def reports_counters(used: Mapping[str, Any]) -> bool:
+    """Whether a generation's usage holds its input and output counters."""
+    return all(
+        type(value := used.get(counter)) is int and value >= 0
+        for counter in ("input_tokens", "output_tokens")
+    )

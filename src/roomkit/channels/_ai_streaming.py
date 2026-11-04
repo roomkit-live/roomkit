@@ -42,6 +42,8 @@ from roomkit.models.streaming import (
     StreamDelta,
     ToolCallEndMarker,
     ToolCallStartMarker,
+    UsageMarker,
+    reports_counters,
 )
 from roomkit.models.tool_call import AIResponseEvent, ToolRoundEvent, response_transcript
 from roomkit.providers.ai.base import (
@@ -146,14 +148,6 @@ class _StreamTurnState:
             model=self.model,
             provider=self.provider,
         )
-
-
-def reports_counters(usage: dict[str, Any]) -> bool:
-    """Whether a generation's *usage* holds its input and output counters."""
-    return all(
-        type(used := usage.get(counter)) is int and used >= 0
-        for counter in ("input_tokens", "output_tokens")
-    )
 
 
 def _turn_span_attributes(turn: _StreamTurnState) -> dict[str, Any]:
@@ -650,6 +644,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         if round_.state.thinking:
             turn.thinking.append(round_.state.thinking)
         turn.count_generation(round_.state, self._served_by(round_.state))
+        yield UsageMarker(usage=dict(round_.state.usage), model=turn.model, provider=turn.provider)
 
     def _served_by(self, state: _StreamRoundState) -> AIProvider:
         """The provider that served a generation."""

@@ -25,6 +25,7 @@ from roomkit.models.streaming import (
     SegmentBreakMarker,
     ThinkingDeltaMarker,
     ToolCallStartMarker,
+    UsageMarker,
 )
 from roomkit.models.tool_call import response_transcript
 from roomkit.telemetry.base import Attr, SpanKind, TelemetryProvider
@@ -451,7 +452,7 @@ class VoiceTTSMixin:
 
     async def deliver_stream(
         self,
-        text_stream: AsyncIterator[str | ThinkingDeltaMarker | RoomEvent],
+        text_stream: AsyncIterator[str | ThinkingDeltaMarker | UsageMarker | RoomEvent],
         event: RoomEvent,
         binding: ChannelBinding,
         context: RoomContext,
@@ -1510,7 +1511,7 @@ class _ResponseText:
         """Each text delta of *text_stream*, kept as it passes, and a
         :class:`SegmentBreakMarker` where a text segment ends.
 
-        Anything but text and reasoning ends the segment: a row the framework
+        Anything but text, reasoning and a generation's usage ends the segment: a row the framework
         writes at a call's start (RFC §12.2 step 13s), or a marker of the loop
         on a stream handed over as the loop made it. The splitter then says
         what the segment held before the call runs (step 12s.a).
@@ -1544,7 +1545,7 @@ class _ResponseText:
                     continue
                 if past_budget(delta):
                     return
-                if not isinstance(delta, ThinkingDeltaMarker) and self._segments[-1]:
+                if not isinstance(delta, ThinkingDeltaMarker | UsageMarker) and self._segments[-1]:
                     self._segments.append([])
                     yield SegmentBreakMarker()
                     # The sentence the break let out may be the budget's last.

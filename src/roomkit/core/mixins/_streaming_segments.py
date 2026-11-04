@@ -30,6 +30,9 @@ from roomkit.models.streaming import (
     ThinkingDeltaMarker,
     ToolCallEndMarker,
     ToolCallStartMarker,
+    UsageMarker,
+    add_usage,
+    reports_counters,
 )
 
 if TYPE_CHECKING:
@@ -118,6 +121,59 @@ def _ended_record(marker: LoopEndMarker) -> dict[str, Any]:
     return record
 
 
+class _GenerationsRead:
+    """What a turn's reader was told of its generations, for the record of a
+    turn cut before its loop's end could tell it (RFC §6.4).
+
+    A generation told its usage ends one. The next starts once the calls that
+    followed it are over, or at a segment break; until it tells, it is in
+    flight. A provider's own calls run within a generation and change nothing.
+    """
+
+    def __init__(self) -> None:
+        self.usage: dict[str, int] = {}
+        self.last_usage: dict[str, Any] | None = None
+        self.complete = True
+        self.model: str | None = None
+        self.provider: str | None = None
+        self._in_flight = True
+        self._open_calls = 0
+
+    def read(self, item: Any) -> None:
+        """Take in one item of the stream."""
+        if isinstance(item, UsageMarker):
+            add_usage(self.usage, item.usage)
+            self.last_usage = item.usage
+            self.complete = self.complete and reports_counters(item.usage)
+            self.model, self.provider = item.model, item.provider
+            self._in_flight = False
+        elif isinstance(item, ToolCallStartMarker):
+            self._open_calls += 1
+        elif isinstance(item, ToolCallEndMarker):
+            self._open_calls -= 1
+            if self._open_calls <= 0:
+                self._in_flight = True
+        elif isinstance(item, SegmentBreakMarker):
+            self._in_flight = True
+
+    def cut_record(self) -> dict[str, Any]:
+        """The record of a turn cut here, as its loop's end would have written
+        it from what the generations told; with no counter told, no usage."""
+        record = _ended_record(
+            LoopEndMarker(
+                reason="cancelled",
+                usage=dict(self.usage),
+                last_usage=self.last_usage,
+                usage_complete=self.complete and not self._in_flight,
+                model=self.model,
+                provider=self.provider,
+            )
+        )
+        if not self.usage:
+            del record["ai_usage"]
+        return record
+
+
 class SegmentWriter:
     """The one writer of a streamed turn's timeline rows.
 
@@ -188,6 +244,7 @@ class SegmentWriter:
         # Whether the reader was handed anything, a thinking delta included:
         # from there the turn began, and a stop cuts it.
         self._began = False
+        self._generations = _GenerationsRead()
         # The rows handed to the target in the stream, by id; whether the
         # room stopped letting it read the stream (``_stopping``, set by
         # :meth:`_hand_to_target`, the read handing it nothing more); and
@@ -233,7 +290,7 @@ class SegmentWriter:
             return
         if recorded_turn_end(stream_record(self._sr)) not in (None, "completed"):
             return
-        self._turn_record = {"loop_end_reason": "cancelled"}
+        self._turn_record = self._generations.cut_record()
         self._record_owed = True
         self._sr.turn_record = self._turn_record
 
@@ -284,11 +341,11 @@ class SegmentWriter:
 
     async def read(
         self, reader: ResponseReader
-    ) -> AsyncGenerator[str | ThinkingDeltaMarker | RoomEvent, None]:
+    ) -> AsyncGenerator[str | ThinkingDeltaMarker | UsageMarker | RoomEvent, None]:
         """Read the response through *reader*, writing each row as it ends.
 
-        Yields every text delta and thinking marker as it arrives, for the
-        channel rendering the stream, and every row committed. Stops at the
+        Yields every text delta, thinking and usage marker as it arrives, for
+        the channel rendering the stream, and every row committed. Stops at the
         stream's end, before the final text is written: the caller writes it.
         """
         while True:
@@ -299,13 +356,14 @@ class SegmentWriter:
                     yield held
                 return
             self._began = True
+            self._generations.read(delta)
             if isinstance(delta, str):
                 self.add_text(delta)
                 if self._silent is None:
                     yield delta
                 elif released := self._release_text(delta):
                     yield released
-            elif isinstance(delta, ThinkingDeltaMarker):
+            elif isinstance(delta, ThinkingDeltaMarker | UsageMarker):
                 yield delta
             else:
                 if held := self._end_held():
@@ -343,7 +401,7 @@ class SegmentWriter:
 
     async def stream(
         self, reader: ResponseReader
-    ) -> AsyncGenerator[str | ThinkingDeltaMarker | RoomEvent, None]:
+    ) -> AsyncGenerator[str | ThinkingDeltaMarker | UsageMarker | RoomEvent, None]:
         """The response as the channel rendering it reads it, its last text row included.
 
         Yields what :meth:`read` yields, then the row of the text it ends on.

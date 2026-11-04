@@ -26,7 +26,7 @@ from roomkit.models.enums import (
     ChannelType,
 )
 from roomkit.models.event import RoomEvent, TextContent
-from roomkit.models.streaming import ThinkingDeltaMarker
+from roomkit.models.streaming import ThinkingDeltaMarker, UsageMarker
 
 if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
@@ -404,7 +404,7 @@ class Channel(ABC):
 
     async def deliver_stream(
         self,
-        text_stream: AsyncIterator[str | ThinkingDeltaMarker | RoomEvent],
+        text_stream: AsyncIterator[str | ThinkingDeltaMarker | UsageMarker | RoomEvent],
         event: RoomEvent,
         binding: ChannelBinding,
         context: RoomContext,
@@ -413,8 +413,9 @@ class Channel(ABC):
 
         *text_stream* yields the response's text as it is written, a
         :class:`~roomkit.models.ThinkingDeltaMarker` for each chunk of the
-        model's reasoning, and each row of the response once the store holds
-        it (a text segment, a tool call's start or end), in order.
+        model's reasoning, a :class:`~roomkit.models.UsageMarker` after each
+        generation, and each row of the response once the store holds it (a
+        text segment, a tool call's start or end), in order.
 
         Default: accumulate text, deliver as complete event. A response that
         fails is not delivered again to the channel that streamed it (RFC

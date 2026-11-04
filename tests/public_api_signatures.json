@@ -3258,6 +3258,9 @@
   "roomkit.models.UpdateSystemPrompt": {
     "__init__": ["def", "*", "type='update_system_prompt'", "append"]
   },
+  "roomkit.models.UsageMarker": {
+    "__init__": ["def", "usage=<factory>", "model=None", "provider=None"]
+  },
   "roomkit.models.VideoContent": {
     "__init__": ["def", "*", "type='video'", "url", "mime_type='video/mp4'", "duration_seconds=None", "thumbnail_url=None"]
   },
