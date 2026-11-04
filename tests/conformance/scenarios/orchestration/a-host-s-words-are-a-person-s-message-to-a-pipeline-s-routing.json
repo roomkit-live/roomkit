@@ -1,0 +1,167 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-host-s-words-are-a-person-s-message-to-a-pipeline-s-routing",
+  "title": "In a Pipeline's room a post solicits no agent unless it names one; a named agent answers; unaddressed, the host channel's words are routed as a person's message, its first stage answering alone",
+  "rules": [
+    "§19.3",
+    "§19.7.1"
+  ],
+  "notes": "Python: tests/test_host_post.py test_the_host_s_words_are_a_person_s_message_to_the_room_s_routing[Pipeline-post], [Pipeline-post to a], [Pipeline-unaddressed].",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "agent": {
+          "role": "A"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "A says."
+            },
+            {
+              "text": "A again."
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "agent": {
+          "role": "B"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "B says."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "pipeline": {
+          "agents": [
+            "a",
+            "b"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "post",
+      "room_id": "r1",
+      "content": {
+        "type": "text",
+        "body": "Your order shipped."
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "post",
+      "room_id": "r1",
+      "content": {
+        "type": "text",
+        "body": "Any question?"
+      },
+      "addressed_to": [
+        "a"
+      ]
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "host",
+      "content": {
+        "type": "text",
+        "body": "Still there?"
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "a": [
+        {},
+        {}
+      ],
+      "b": []
+    },
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Your order shipped."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Any question?"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "type": "text",
+            "body": "A says."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Still there?"
+          },
+          "metadata": {
+            "_routed_to": "a"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "type": "text",
+            "body": "A again."
+          }
+        }
+      ]
+    }
+  }
+}

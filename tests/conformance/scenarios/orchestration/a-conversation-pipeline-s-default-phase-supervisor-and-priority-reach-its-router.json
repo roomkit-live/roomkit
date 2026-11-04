@@ -1,0 +1,240 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-conversation-pipeline-s-default-phase-supervisor-and-priority-reach-its-router",
+  "title": "A ConversationPipeline's default_phase names the agent a phase it does not hold asks, its supervisor_id is asked beside it, and its install's hook_priority is where its hook runs",
+  "rules": [
+    "§19.5",
+    "§19.4"
+  ],
+  "notes": "Python: tests/orchestration/test_pipeline.py TestToRouter::test_custom_default_phase, test_supervisor_propagated, TestPipelineInstall::test_install_custom_hook_priority.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "agent": {
+          "role": "A"
+        },
+        "model": {
+          "rounds": []
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "agent": {
+          "role": "B"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "B by default."
+            }
+          ]
+        }
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "SUP"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Noted."
+            },
+            {
+              "text": "Noted."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a"
+          },
+          {
+            "channel_id": "b"
+          },
+          {
+            "channel_id": "sup"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "early",
+        "trigger": "before_broadcast",
+        "priority": -50
+      },
+      {
+        "name": "late",
+        "trigger": "before_broadcast",
+        "priority": 0
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "save_conversation_state",
+      "room_id": "r1",
+      "transitions": [
+        {
+          "to_phase": "elsewhere"
+        }
+      ]
+    },
+    {
+      "call": "install_pipeline",
+      "handler": "h",
+      "default_phase": "review",
+      "supervisor_id": "sup",
+      "hook_priority": -20,
+      "stages": [
+        {
+          "phase": "intake",
+          "agent_id": "a",
+          "next": "review"
+        },
+        {
+          "phase": "review",
+          "agent_id": "b"
+        }
+      ],
+      "agents": [
+        "a",
+        "b"
+      ]
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hi."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": {
+        "$unordered": [
+          {
+            "content": {
+              "type": "text",
+              "body": "Hi."
+            },
+            "metadata": {
+              "_routed_to": "b",
+              "_always_process": [
+                "sup"
+              ]
+            }
+          },
+          {
+            "source": {
+              "channel_id": "b"
+            },
+            "content": {
+              "type": "text",
+              "body": "B by default."
+            }
+          },
+          {
+            "source": {
+              "channel_id": "sup"
+            },
+            "content": {
+              "type": "text",
+              "body": "Noted."
+            }
+          },
+          {
+            "source": {
+              "channel_id": "sup"
+            },
+            "content": {
+              "type": "text",
+              "body": "Noted."
+            }
+          }
+        ]
+      }
+    },
+    "models": {
+      "a": [],
+      "b": [
+        {}
+      ],
+      "sup": [
+        {},
+        {}
+      ]
+    },
+    "hooks": {
+      "early": {
+        "$unordered": [
+          {
+            "event": {
+              "content": {
+                "body": "Hi."
+              },
+              "metadata": {
+                "_routed_to": {
+                  "$absent": true
+                }
+              }
+            }
+          },
+          {},
+          {},
+          {}
+        ]
+      },
+      "late": {
+        "$unordered": [
+          {
+            "event": {
+              "content": {
+                "body": "Hi."
+              },
+              "metadata": {
+                "_routed_to": "b"
+              }
+            }
+          },
+          {},
+          {},
+          {}
+        ]
+      }
+    }
+  }
+}

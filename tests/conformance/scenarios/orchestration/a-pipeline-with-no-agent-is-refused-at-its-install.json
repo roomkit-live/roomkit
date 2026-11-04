@@ -1,0 +1,126 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-pipeline-with-no-agent-is-refused-at-its-install",
+  "title": "A Pipeline with no agent is built, and refused at its install: its room holds no strategy and routes nothing",
+  "rules": [
+    "§19.7.1"
+  ],
+  "notes": "Python: orchestration/strategies/pipeline.py install (ValueError \"Pipeline needs at least one agent\"), tests/orchestration/test_strategy_pipeline.py test_a_pipeline_with_no_agent_is_refused_at_its_install.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "agent": {
+          "role": "A"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Alone."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "pipeline": {
+          "agents": []
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hi."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hi."
+          },
+          "metadata": {
+            "_routed_to": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "type": "text",
+            "body": "Alone."
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "r1": {
+        "metadata": {
+          "_conversation_state": {
+            "$absent": true
+          }
+        }
+      }
+    }
+  }
+}

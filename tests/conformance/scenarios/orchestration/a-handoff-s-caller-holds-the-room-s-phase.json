@@ -1,0 +1,561 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-handoff-s-caller-holds-the-room-s-phase",
+  "title": "Under allowed transitions and a phase map, a handoff's caller holds the room's phase as its target holds the next: an agent the room moved past, or in no stage, is refused; a known one the map does not name passes, one that is neither passes as the room's active agent, or its default agent while none is active; and a handler with no phase map ties no caller to a phase",
+  "rules": [
+    "§19.5",
+    "§19.6"
+  ],
+  "notes": "Python: orchestration/handoff.py HandoffHandler._caller_holds_room. Decided on RMK-1233.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "agent": {
+          "role": "A"
+        },
+        "model": {
+          "rounds": []
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "agent": {
+          "role": "B"
+        },
+        "model": {
+          "rounds": []
+        }
+      },
+      {
+        "id": "c",
+        "type": "ai",
+        "agent": {
+          "role": "C"
+        },
+        "model": {
+          "rounds": []
+        }
+      },
+      {
+        "id": "z",
+        "type": "ai",
+        "agent": {
+          "role": "Z"
+        },
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a"
+          },
+          {
+            "channel_id": "b"
+          },
+          {
+            "channel_id": "c"
+          },
+          {
+            "channel_id": "z"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a"
+          },
+          {
+            "channel_id": "b"
+          },
+          {
+            "channel_id": "c"
+          },
+          {
+            "channel_id": "z"
+          }
+        ]
+      },
+      {
+        "id": "r3",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a"
+          },
+          {
+            "channel_id": "b"
+          },
+          {
+            "channel_id": "c"
+          },
+          {
+            "channel_id": "z"
+          }
+        ]
+      },
+      {
+        "id": "r4",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a"
+          },
+          {
+            "channel_id": "b"
+          },
+          {
+            "channel_id": "c"
+          },
+          {
+            "channel_id": "z"
+          }
+        ]
+      },
+      {
+        "id": "r5",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a"
+          },
+          {
+            "channel_id": "b"
+          },
+          {
+            "channel_id": "c"
+          },
+          {
+            "channel_id": "z"
+          }
+        ]
+      },
+      {
+        "id": "r6",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a"
+          },
+          {
+            "channel_id": "b"
+          },
+          {
+            "channel_id": "c"
+          },
+          {
+            "channel_id": "z"
+          }
+        ]
+      },
+      {
+        "id": "r7",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a"
+          },
+          {
+            "channel_id": "b"
+          },
+          {
+            "channel_id": "c"
+          },
+          {
+            "channel_id": "z"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_pipeline",
+      "handler": "h",
+      "stages": [
+        {
+          "phase": "intake",
+          "agent_id": "a",
+          "next": "review"
+        },
+        {
+          "phase": "review",
+          "agent_id": "b",
+          "next": "report",
+          "can_return_to": [
+            "intake"
+          ]
+        },
+        {
+          "phase": "report",
+          "agent_id": "c"
+        }
+      ],
+      "agents": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    {
+      "call": "handoff.handle",
+      "handler": "h",
+      "room_id": "r1",
+      "calling_agent_id": "a",
+      "arguments": {
+        "target": "b",
+        "reason": "R.",
+        "summary": "S."
+      },
+      "expect": {
+        "result": {
+          "accepted": true,
+          "new_agent_id": "b",
+          "new_phase": "review",
+          "message": "Conversation transferred to b. Do not respond — the receiving agent will greet the user.",
+          "reason": ""
+        }
+      }
+    },
+    {
+      "call": "handoff.handle",
+      "handler": "h",
+      "room_id": "r1",
+      "calling_agent_id": "a",
+      "arguments": {
+        "target": "c",
+        "reason": "R.",
+        "summary": "S."
+      },
+      "expect": {
+        "result": {
+          "accepted": false,
+          "new_agent_id": null,
+          "new_phase": null,
+          "message": "",
+          "reason": "Agent a does not hold phase 'review'"
+        }
+      }
+    },
+    {
+      "call": "handoff.handle",
+      "handler": "h",
+      "room_id": "r1",
+      "calling_agent_id": "b",
+      "arguments": {
+        "target": "c",
+        "reason": "R.",
+        "summary": "S."
+      },
+      "expect": {
+        "result": {
+          "accepted": true,
+          "new_agent_id": "c",
+          "new_phase": "report",
+          "message": "Conversation transferred to c. Do not respond — the receiving agent will greet the user.",
+          "reason": ""
+        }
+      }
+    },
+    {
+      "call": "handoff.handle",
+      "handler": "h",
+      "room_id": "r2",
+      "calling_agent_id": "a",
+      "arguments": {
+        "target": "human",
+        "reason": "R.",
+        "summary": "S.",
+        "next_phase": "review"
+      },
+      "expect": {
+        "result": {
+          "accepted": true,
+          "new_agent_id": null,
+          "new_phase": "review"
+        }
+      }
+    },
+    {
+      "call": "handoff.handle",
+      "handler": "h",
+      "room_id": "r2",
+      "calling_agent_id": "a",
+      "arguments": {
+        "target": "human",
+        "reason": "R.",
+        "summary": "S.",
+        "next_phase": "report"
+      },
+      "expect": {
+        "result": {
+          "accepted": false,
+          "new_agent_id": null,
+          "new_phase": null,
+          "message": "",
+          "reason": "Agent a does not hold phase 'review'"
+        }
+      }
+    },
+    {
+      "call": "handoff.handle",
+      "handler": "h",
+      "room_id": "r3",
+      "calling_agent_id": "z",
+      "arguments": {
+        "target": "b",
+        "reason": "R.",
+        "summary": "S."
+      },
+      "expect": {
+        "result": {
+          "accepted": false,
+          "new_agent_id": null,
+          "new_phase": null,
+          "message": "",
+          "reason": "Agent z does not hold phase 'intake'"
+        }
+      }
+    },
+    {
+      "call": "handoff_handler",
+      "handler": "known",
+      "router": {
+        "default_agent_id": "a"
+      },
+      "phase_map": {
+        "b": "review"
+      },
+      "allowed_transitions": {
+        "intake": [
+          "review"
+        ]
+      },
+      "known_agents": [
+        "z"
+      ]
+    },
+    {
+      "call": "handoff.handle",
+      "handler": "known",
+      "room_id": "r4",
+      "calling_agent_id": "z",
+      "arguments": {
+        "target": "b",
+        "reason": "R.",
+        "summary": "S."
+      },
+      "expect": {
+        "result": {
+          "accepted": true,
+          "new_agent_id": "b",
+          "new_phase": "review"
+        }
+      }
+    },
+    {
+      "call": "handoff_handler",
+      "handler": "free",
+      "router": {
+        "default_agent_id": "a"
+      },
+      "allowed_transitions": {
+        "intake": [
+          "review"
+        ]
+      }
+    },
+    {
+      "call": "handoff.handle",
+      "handler": "free",
+      "room_id": "r5",
+      "calling_agent_id": "z",
+      "arguments": {
+        "target": "b",
+        "reason": "R.",
+        "summary": "S.",
+        "next_phase": "review"
+      },
+      "expect": {
+        "result": {
+          "accepted": true,
+          "new_agent_id": "b",
+          "new_phase": "review"
+        }
+      }
+    },
+    {
+      "call": "handoff_handler",
+      "handler": "partial",
+      "router": {
+        "default_agent_id": "a"
+      },
+      "phase_map": {
+        "b": "review",
+        "c": "report"
+      },
+      "allowed_transitions": {
+        "intake": [
+          "review"
+        ],
+        "review": [
+          "report"
+        ]
+      }
+    },
+    {
+      "call": "handoff.handle",
+      "handler": "partial",
+      "room_id": "r6",
+      "calling_agent_id": "z",
+      "arguments": {
+        "target": "b",
+        "reason": "R.",
+        "summary": "S."
+      },
+      "expect": {
+        "result": {
+          "accepted": false,
+          "new_agent_id": null,
+          "new_phase": null,
+          "message": "",
+          "reason": "Agent z does not hold phase 'intake'"
+        }
+      }
+    },
+    {
+      "call": "handoff.handle",
+      "handler": "partial",
+      "room_id": "r6",
+      "calling_agent_id": "a",
+      "arguments": {
+        "target": "b",
+        "reason": "R.",
+        "summary": "S."
+      },
+      "expect": {
+        "result": {
+          "accepted": true,
+          "new_agent_id": "b",
+          "new_phase": "review",
+          "message": "Conversation transferred to b. Do not respond — the receiving agent will greet the user.",
+          "reason": ""
+        }
+      }
+    },
+    {
+      "call": "handoff.handle",
+      "handler": "partial",
+      "room_id": "r6",
+      "calling_agent_id": "a",
+      "arguments": {
+        "target": "c",
+        "reason": "R.",
+        "summary": "S."
+      },
+      "expect": {
+        "result": {
+          "accepted": false,
+          "new_agent_id": null,
+          "new_phase": null,
+          "message": "",
+          "reason": "Agent a does not hold phase 'review'"
+        }
+      }
+    },
+    {
+      "call": "save_conversation_state",
+      "room_id": "r7",
+      "transitions": [
+        {
+          "to_phase": "intake",
+          "to_agent": "z"
+        }
+      ]
+    },
+    {
+      "call": "handoff.handle",
+      "handler": "partial",
+      "room_id": "r7",
+      "calling_agent_id": "a",
+      "arguments": {
+        "target": "b",
+        "reason": "R.",
+        "summary": "S."
+      },
+      "expect": {
+        "result": {
+          "accepted": false,
+          "new_agent_id": null,
+          "new_phase": null,
+          "message": "",
+          "reason": "Agent a does not hold phase 'intake'"
+        }
+      }
+    },
+    {
+      "call": "handoff.handle",
+      "handler": "partial",
+      "room_id": "r7",
+      "calling_agent_id": "z",
+      "arguments": {
+        "target": "b",
+        "reason": "R.",
+        "summary": "S."
+      },
+      "expect": {
+        "result": {
+          "accepted": true,
+          "new_agent_id": "b",
+          "new_phase": "review",
+          "message": "Conversation transferred to b. Do not respond — the receiving agent will greet the user.",
+          "reason": ""
+        }
+      }
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "r1": {
+        "metadata": {
+          "_conversation_state": {
+            "phase": "report",
+            "active_agent_id": "c",
+            "previous_agent_id": "b",
+            "handoff_count": 2
+          }
+        }
+      }
+    }
+  }
+}

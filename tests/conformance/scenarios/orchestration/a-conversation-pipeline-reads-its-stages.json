@@ -1,0 +1,219 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-conversation-pipeline-reads-its-stages",
+  "title": "A ConversationPipeline keeps its stages in order and maps each agent to its phase and each phase to where it may go: its next and the phases it can return to, none for a terminal one; one naming no phase is refused, an empty next naming none, and a stage may loop on itself",
+  "rules": [
+    "§19.5"
+  ],
+  "notes": "Python: tests/orchestration/test_pipeline.py TestPipelineValidation (all 5), TestGetPhaseMap::test_maps_agents_to_phases, TestGetAllowedTransitions::test_linear_pipeline, test_pipeline_with_loop, test_terminal_stage. orchestration/pipeline.py.",
+  "setup": {},
+  "steps": [
+    {
+      "call": "conversation_pipeline",
+      "stages": [
+        {
+          "phase": "analysis",
+          "agent_id": "discuss",
+          "next": "coding"
+        },
+        {
+          "phase": "coding",
+          "agent_id": "coder",
+          "next": "review"
+        },
+        {
+          "phase": "review",
+          "agent_id": "reviewer",
+          "next": "report",
+          "can_return_to": [
+            "coding"
+          ]
+        },
+        {
+          "phase": "report",
+          "agent_id": "writer",
+          "description": "Writes it up."
+        }
+      ],
+      "expect": {
+        "result": {
+          "stages": [
+            {
+              "phase": "analysis",
+              "agent_id": "discuss",
+              "next": "coding",
+              "can_return_to": [],
+              "description": null
+            },
+            {
+              "phase": "coding",
+              "agent_id": "coder",
+              "next": "review",
+              "can_return_to": [],
+              "description": null
+            },
+            {
+              "phase": "review",
+              "agent_id": "reviewer",
+              "next": "report",
+              "can_return_to": [
+                "coding"
+              ],
+              "description": null
+            },
+            {
+              "phase": "report",
+              "agent_id": "writer",
+              "next": null,
+              "can_return_to": [],
+              "description": "Writes it up."
+            }
+          ],
+          "phase_map": {
+            "discuss": "analysis",
+            "coder": "coding",
+            "reviewer": "review",
+            "writer": "report"
+          },
+          "allowed_transitions": {
+            "analysis": [
+              "coding"
+            ],
+            "coding": [
+              "review"
+            ],
+            "review": [
+              "coding",
+              "report"
+            ],
+            "report": []
+          }
+        }
+      }
+    },
+    {
+      "call": "conversation_pipeline",
+      "stages": [],
+      "expect": {
+        "result": {
+          "stages": [],
+          "phase_map": {},
+          "allowed_transitions": {}
+        }
+      }
+    },
+    {
+      "call": "conversation_pipeline",
+      "stages": [
+        {
+          "phase": "loop",
+          "agent_id": "a",
+          "next": "loop"
+        }
+      ],
+      "expect": {
+        "result": {
+          "stages": [
+            {
+              "phase": "loop",
+              "agent_id": "a",
+              "next": "loop",
+              "can_return_to": [],
+              "description": null
+            }
+          ],
+          "phase_map": {
+            "a": "loop"
+          },
+          "allowed_transitions": {
+            "loop": [
+              "loop"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "call": "conversation_pipeline",
+      "stages": [
+        {
+          "phase": "a",
+          "agent_id": "x",
+          "next": ""
+        }
+      ],
+      "expect": {
+        "result": {
+          "stages": [
+            {
+              "phase": "a",
+              "agent_id": "x",
+              "next": "",
+              "can_return_to": [],
+              "description": null
+            }
+          ],
+          "phase_map": {
+            "x": "a"
+          },
+          "allowed_transitions": {
+            "a": []
+          }
+        }
+      }
+    },
+    {
+      "call": "conversation_pipeline",
+      "stages": [
+        {
+          "phase": "first",
+          "agent_id": "x"
+        },
+        {
+          "phase": "second",
+          "agent_id": "x"
+        }
+      ],
+      "expect": {
+        "result": {
+          "phase_map": {
+            "x": "second"
+          },
+          "allowed_transitions": {
+            "first": [],
+            "second": []
+          }
+        }
+      }
+    },
+    {
+      "call": "conversation_pipeline",
+      "stages": [
+        {
+          "phase": "a",
+          "agent_id": "x",
+          "next": "nonexistent"
+        }
+      ],
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "conversation_pipeline",
+      "stages": [
+        {
+          "phase": "a",
+          "agent_id": "x",
+          "can_return_to": [
+            "nonexistent"
+          ]
+        }
+      ],
+      "expect": {
+        "error": "invalid_argument"
+      }
+    }
+  ],
+  "expect": {}
+}

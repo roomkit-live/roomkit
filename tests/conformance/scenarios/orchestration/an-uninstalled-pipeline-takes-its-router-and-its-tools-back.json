@@ -1,0 +1,229 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/an-uninstalled-pipeline-takes-its-router-and-its-tools-back",
+  "title": "A Pipeline uninstalled from a room takes back its router, its handoff tools, its state and the agents it attached; the agent the room bound itself answers alone",
+  "rules": [
+    "§19.7",
+    "§19.7.1"
+  ],
+  "notes": "Python: orchestration/base.py uninstall, core/mixins/strategies.py uninstall_strategy, as a Swarm's; tests/orchestration/test_room_installs.py (take-back).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "agent": {
+          "role": "A"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "A with the pipeline."
+            },
+            {
+              "text": "A alone."
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "agent": {
+          "role": "B"
+        },
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "seen",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "pipeline": {
+          "agents": [
+            "a",
+            "b"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "One."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "uninstall_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Two."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "One."
+          },
+          "metadata": {
+            "_routed_to": "a"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "type": "text",
+            "body": "A with the pipeline."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Two."
+          },
+          "metadata": {
+            "_routed_to": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "type": "text",
+            "body": "A alone."
+          }
+        }
+      ]
+    },
+    "bindings": {
+      "r1": {
+        "a": {
+          "category": "intelligence"
+        },
+        "b": {
+          "$absent": true
+        }
+      }
+    },
+    "hooks": {
+      "seen": [
+        {
+          "response": {
+            "channel_id": "a",
+            "declared_tools": {
+              "handoff_conversation": {
+                "description": "Transfer this conversation to another agent.\nAvailable targets:\n  - b",
+                "parameters": {
+                  "properties": {
+                    "target": {
+                      "enum": [
+                        "b"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "response": {
+            "channel_id": "a",
+            "declared_tools": {
+              "handoff_conversation": {
+                "$absent": true
+              }
+            }
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "r1": {
+        "metadata": {
+          "_conversation_state": {
+            "$absent": true
+          }
+        }
+      }
+    }
+  }
+}

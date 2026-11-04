@@ -1,0 +1,263 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-conversation-pipeline-reads-a-phase-in-two-stages",
+  "title": "A ConversationPipeline with a phase in two stages asks the first in that phase, by its rule, and the last for a phase no stage holds, the default phase reading the last of them",
+  "rules": [
+    "§19.5"
+  ],
+  "notes": "Python: orchestration/pipeline.py __init__ (_stage_map, whose last entry wins), to_router.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "x",
+        "type": "ai",
+        "agent": {
+          "role": "X"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "X in p."
+            }
+          ]
+        }
+      },
+      {
+        "id": "y",
+        "type": "ai",
+        "agent": {
+          "role": "Y"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Y by default."
+            }
+          ]
+        }
+      },
+      {
+        "id": "z",
+        "type": "ai",
+        "agent": {
+          "role": "Z"
+        },
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "x"
+          },
+          {
+            "channel_id": "y"
+          },
+          {
+            "channel_id": "z"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "x"
+          },
+          {
+            "channel_id": "y"
+          },
+          {
+            "channel_id": "z"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "seen",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "save_conversation_state",
+      "room_id": "r1",
+      "transitions": [
+        {
+          "to_phase": "p"
+        }
+      ]
+    },
+    {
+      "call": "save_conversation_state",
+      "room_id": "r2",
+      "transitions": [
+        {
+          "to_phase": "elsewhere"
+        }
+      ]
+    },
+    {
+      "call": "install_pipeline",
+      "handler": "h",
+      "stages": [
+        {
+          "phase": "p",
+          "agent_id": "x",
+          "next": "q"
+        },
+        {
+          "phase": "p",
+          "agent_id": "y"
+        },
+        {
+          "phase": "q",
+          "agent_id": "z"
+        }
+      ],
+      "agents": [
+        "x",
+        "y",
+        "z"
+      ]
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "One."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Two."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "metadata": {
+            "_routed_to": "x"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "x"
+          },
+          "content": {
+            "type": "text",
+            "body": "X in p."
+          }
+        }
+      ],
+      "r2": [
+        {
+          "metadata": {
+            "_routed_to": "y"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "y"
+          },
+          "content": {
+            "type": "text",
+            "body": "Y by default."
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "seen": [
+        {
+          "response": {
+            "channel_id": "x",
+            "declared_tools": {
+              "handoff_conversation": {
+                "description": "Transfer this conversation to another agent.\nAvailable targets:\n  - z",
+                "parameters": {
+                  "properties": {
+                    "target": {
+                      "enum": [
+                        "z"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "response": {
+            "channel_id": "y",
+            "declared_tools": {
+              "handoff_conversation": {
+                "description": "Transfer this conversation to another agent or specialist. Use when: the user asks to speak with someone else, the user wants to be transferred or go back to a previous agent, the conversation needs expertise you don't have, or your task is complete and the next step requires a different agent. Always provide a clear summary of the conversation so far.",
+                "parameters": {
+                  "properties": {
+                    "target": {
+                      "enum": {
+                        "$absent": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

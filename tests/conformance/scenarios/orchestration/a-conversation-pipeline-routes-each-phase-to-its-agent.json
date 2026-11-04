@@ -1,0 +1,366 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-conversation-pipeline-routes-each-phase-to-its-agent",
+  "title": "A ConversationPipeline's install hooks every room's broadcast at -100, a hook at -101 reading no stamp and one at -99 the agent, one rule per stage asking its agent in its phase, a phase it does not hold asking the first stage's agent",
+  "rules": [
+    "§19.5",
+    "§19.4"
+  ],
+  "notes": "Python: tests/orchestration/test_pipeline.py TestToRouter::test_generates_rules_per_stage, test_default_agent_is_first_stage, TestPipelineInstall::test_install_registers_hook. orchestration/pipeline.py to_router, install.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "agent": {
+          "role": "A"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "A in intake."
+            },
+            {
+              "text": "A by default."
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "agent": {
+          "role": "B"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "B in review."
+            }
+          ]
+        }
+      },
+      {
+        "id": "c",
+        "type": "ai",
+        "agent": {
+          "role": "C"
+        },
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a"
+          },
+          {
+            "channel_id": "b"
+          },
+          {
+            "channel_id": "c"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a"
+          },
+          {
+            "channel_id": "b"
+          },
+          {
+            "channel_id": "c"
+          }
+        ]
+      },
+      {
+        "id": "r3",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a"
+          },
+          {
+            "channel_id": "b"
+          },
+          {
+            "channel_id": "c"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "early",
+        "trigger": "before_broadcast",
+        "priority": -101
+      },
+      {
+        "name": "late",
+        "trigger": "before_broadcast",
+        "priority": -99
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "save_conversation_state",
+      "room_id": "r2",
+      "transitions": [
+        {
+          "to_phase": "review"
+        }
+      ]
+    },
+    {
+      "call": "save_conversation_state",
+      "room_id": "r3",
+      "transitions": [
+        {
+          "to_phase": "elsewhere"
+        }
+      ]
+    },
+    {
+      "call": "install_pipeline",
+      "handler": "h",
+      "stages": [
+        {
+          "phase": "intake",
+          "agent_id": "a",
+          "next": "review"
+        },
+        {
+          "phase": "review",
+          "agent_id": "b",
+          "next": "report",
+          "can_return_to": [
+            "intake"
+          ]
+        },
+        {
+          "phase": "report",
+          "agent_id": "c"
+        }
+      ],
+      "agents": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "One."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Two."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r3",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Three."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "metadata": {
+            "_routed_to": "a"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "type": "text",
+            "body": "A in intake."
+          }
+        }
+      ],
+      "r2": [
+        {
+          "metadata": {
+            "_routed_to": "b"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "b"
+          },
+          "content": {
+            "type": "text",
+            "body": "B in review."
+          }
+        }
+      ],
+      "r3": [
+        {
+          "metadata": {
+            "_routed_to": "a"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "type": "text",
+            "body": "A by default."
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "early": [
+        {
+          "room_id": "r1",
+          "event": {
+            "metadata": {
+              "_routed_to": {
+                "$absent": true
+              }
+            }
+          }
+        },
+        {
+          "room_id": "r1"
+        },
+        {
+          "room_id": "r2",
+          "event": {
+            "metadata": {
+              "_routed_to": {
+                "$absent": true
+              }
+            }
+          }
+        },
+        {
+          "room_id": "r2"
+        },
+        {
+          "room_id": "r3",
+          "event": {
+            "metadata": {
+              "_routed_to": {
+                "$absent": true
+              }
+            }
+          }
+        },
+        {
+          "room_id": "r3"
+        }
+      ],
+      "late": [
+        {
+          "room_id": "r1",
+          "event": {
+            "metadata": {
+              "_routed_to": "a"
+            }
+          }
+        },
+        {
+          "room_id": "r1"
+        },
+        {
+          "room_id": "r2",
+          "event": {
+            "metadata": {
+              "_routed_to": "b"
+            }
+          }
+        },
+        {
+          "room_id": "r2"
+        },
+        {
+          "room_id": "r3",
+          "event": {
+            "metadata": {
+              "_routed_to": "a"
+            }
+          }
+        },
+        {
+          "room_id": "r3"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,386 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-pipeline-keeps-to-its-chain",
+  "title": "A Pipeline's handoff to the next agent goes through; one leading to a phase its stage does not reach, skipping a stage, going back or leaving the last stage, is refused, its reason naming both phases, the room left where it is",
+  "rules": [
+    "§19.7.1",
+    "§19.6"
+  ],
+  "notes": "Python: tests/orchestration/test_strategy_pipeline.py TestPipelineInstall (the handler's allowed transitions); orchestration/strategies/pipeline.py _handler, pipeline.py get_allowed_transitions.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "agent": {
+          "role": "A"
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "handoff_conversation",
+                  "arguments": {
+                    "target": "c",
+                    "reason": "R.",
+                    "summary": "S."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Not that way."
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "handoff_conversation",
+                  "arguments": {
+                    "target": "b",
+                    "reason": "R.",
+                    "summary": "S."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Moving on."
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "agent": {
+          "role": "B"
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c3",
+                  "name": "handoff_conversation",
+                  "arguments": {
+                    "target": "a",
+                    "reason": "R.",
+                    "summary": "S."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "No way back."
+            },
+            {
+              "calls": [
+                {
+                  "id": "c4",
+                  "name": "handoff_conversation",
+                  "arguments": {
+                    "target": "c",
+                    "reason": "R.",
+                    "summary": "S."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Last stage."
+            }
+          ]
+        }
+      },
+      {
+        "id": "c",
+        "type": "ai",
+        "agent": {
+          "role": "C"
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c5",
+                  "name": "handoff_conversation",
+                  "arguments": {
+                    "target": "a",
+                    "reason": "R.",
+                    "summary": "S."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "I am the last."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "rejected",
+        "trigger": "on_handoff_rejected",
+        "execution": "async"
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "pipeline": {
+          "agents": [
+            "a",
+            "b",
+            "c"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "One."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Two."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Three."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Four."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Five."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "a": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": {
+                "$contains": "Transition from 'a' to 'c' is not allowed"
+              }
+            }
+          ]
+        },
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1"
+            },
+            {
+              "tool_call_id": "c2",
+              "content": {
+                "$contains": "\"accepted\":true"
+              }
+            }
+          ]
+        }
+      ],
+      "b": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c3",
+              "content": {
+                "$contains": "Transition from 'b' to 'a' is not allowed"
+              }
+            }
+          ]
+        },
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c3"
+            },
+            {
+              "tool_call_id": "c4",
+              "content": {
+                "$contains": "\"accepted\":true"
+              }
+            }
+          ]
+        }
+      ],
+      "c": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c5",
+              "content": {
+                "$contains": "Transition from 'c' to 'a' is not allowed"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "hooks": {
+      "rejected": [
+        {
+          "event": {
+            "metadata": {
+              "from_agent": "a",
+              "to_agent": "c",
+              "accepted": false
+            }
+          }
+        },
+        {
+          "event": {
+            "metadata": {
+              "from_agent": "b",
+              "to_agent": "a",
+              "accepted": false
+            }
+          }
+        },
+        {
+          "event": {
+            "metadata": {
+              "from_agent": "c",
+              "to_agent": "a",
+              "accepted": false
+            }
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "r1": {
+        "metadata": {
+          "_conversation_state": {
+            "phase": "c",
+            "active_agent_id": "c",
+            "handoff_count": 2
+          }
+        }
+      }
+    }
+  }
+}

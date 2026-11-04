@@ -1,0 +1,144 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-handoff-to-a-room-s-transport-is-refused",
+  "title": "A handoff's target must be an agent of the room, a human or a known one: a transport the room binds is not found, the room keeping its agent, and a transport the handler knows is taken",
+  "rules": [
+    "§19.6"
+  ],
+  "notes": "Python: orchestration/handoff.py HandoffHandler.handle (the target's binding, category intelligence). Decided on RMK-1233: an active agent that is a transport leaves the room with no agent to answer.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "agent": {
+          "role": "A"
+        },
+        "model": {
+          "rounds": []
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "agent": {
+          "role": "B"
+        },
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a"
+          },
+          {
+            "channel_id": "b"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "handoff_handler",
+      "handler": "h",
+      "router": {
+        "default_agent_id": "a"
+      }
+    },
+    {
+      "call": "handoff_handler",
+      "handler": "known",
+      "router": {
+        "default_agent_id": "a"
+      },
+      "known_agents": [
+        "sms"
+      ]
+    },
+    {
+      "call": "handoff.handle",
+      "handler": "h",
+      "room_id": "r1",
+      "calling_agent_id": "a",
+      "arguments": {
+        "target": "sms",
+        "reason": "R.",
+        "summary": "S."
+      },
+      "expect": {
+        "result": {
+          "accepted": false,
+          "new_agent_id": null,
+          "new_phase": null,
+          "message": "",
+          "reason": "Agent sms not found in room"
+        }
+      }
+    },
+    {
+      "call": "store.get_room",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "metadata": {
+            "_conversation_state": {
+              "$absent": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "handoff.handle",
+      "handler": "h",
+      "room_id": "r1",
+      "calling_agent_id": "a",
+      "arguments": {
+        "target": "b",
+        "reason": "R.",
+        "summary": "S."
+      },
+      "expect": {
+        "result": {
+          "accepted": true,
+          "new_agent_id": "b",
+          "new_phase": "handling",
+          "message": "Conversation transferred to b. Do not respond — the receiving agent will greet the user.",
+          "reason": ""
+        }
+      }
+    },
+    {
+      "call": "handoff.handle",
+      "handler": "known",
+      "room_id": "r1",
+      "calling_agent_id": "b",
+      "arguments": {
+        "target": "sms",
+        "reason": "R.",
+        "summary": "S."
+      },
+      "expect": {
+        "result": {
+          "accepted": true,
+          "new_agent_id": "sms"
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

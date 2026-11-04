@@ -1,0 +1,176 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-pipeline-s-supervisor-is-asked-beside-each-stage",
+  "title": "A Pipeline's supervisor_id reaches its router: an event goes to the room's stage and to the supervisor the room binds, stamped beside it",
+  "rules": [
+    "§19.7.1",
+    "§19.4"
+  ],
+  "notes": "Python: orchestration/strategies/pipeline.py install (ConversationPipeline(stages, supervisor_id=...)); tests/orchestration/test_pipeline.py TestToRouter::test_supervisor_propagated.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "agent": {
+          "role": "A"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "From a."
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "agent": {
+          "role": "B"
+        },
+        "model": {
+          "rounds": []
+        }
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "SUP"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Noted."
+            },
+            {
+              "text": "Noted."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "sup"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "pipeline": {
+          "agents": [
+            "a",
+            "b"
+          ],
+          "supervisor_id": "sup"
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hi."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": {
+        "$unordered": [
+          {
+            "content": {
+              "type": "text",
+              "body": "Hi."
+            },
+            "metadata": {
+              "_routed_to": "a",
+              "_always_process": [
+                "sup"
+              ]
+            }
+          },
+          {
+            "source": {
+              "channel_id": "a"
+            },
+            "content": {
+              "type": "text",
+              "body": "From a."
+            },
+            "metadata": {
+              "_routed_to": "_none_",
+              "_always_process": [
+                "sup"
+              ]
+            }
+          },
+          {
+            "source": {
+              "channel_id": "sup"
+            },
+            "content": {
+              "type": "text",
+              "body": "Noted."
+            }
+          },
+          {
+            "source": {
+              "channel_id": "sup"
+            },
+            "content": {
+              "type": "text",
+              "body": "Noted."
+            }
+          }
+        ]
+      }
+    },
+    "models": {
+      "a": [
+        {}
+      ],
+      "b": [],
+      "sup": [
+        {},
+        {}
+      ]
+    }
+  }
+}

@@ -1,0 +1,271 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-pipeline-s-handoff-leads-its-target-to-a-phase-it-holds",
+  "title": "A Pipeline's handoff naming a phase its target does not hold is refused, though its stage reaches that phase, and the room stays; one naming the target's own phase goes through, and a human holds no phase, the room left with no agent",
+  "rules": [
+    "§19.7.1",
+    "§19.6"
+  ],
+  "notes": "Python: orchestration/handoff.py HandoffHandler._holds_phase. Decided on RMK-1233: a model reads a sender's text and its next_phase is not checked against the tool's enum.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "agent": {
+          "role": "A"
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "handoff_conversation",
+                  "arguments": {
+                    "target": "c",
+                    "reason": "R.",
+                    "summary": "S.",
+                    "next_phase": "b"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Not that way."
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "handoff_conversation",
+                  "arguments": {
+                    "target": "b",
+                    "reason": "R.",
+                    "summary": "S.",
+                    "next_phase": "b"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Moving on."
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "agent": {
+          "role": "B"
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c3",
+                  "name": "handoff_conversation",
+                  "arguments": {
+                    "target": "human",
+                    "reason": "R.",
+                    "summary": "S.",
+                    "next_phase": "c"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "A person next."
+            }
+          ]
+        }
+      },
+      {
+        "id": "c",
+        "type": "ai",
+        "agent": {
+          "role": "C"
+        },
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "rejected",
+        "trigger": "on_handoff_rejected",
+        "execution": "async"
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "pipeline": {
+          "agents": [
+            "a",
+            "b",
+            "c"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "One."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Two."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Three."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "a": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": {
+                "$contains": "Agent c does not hold phase 'b'"
+              }
+            }
+          ]
+        },
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1"
+            },
+            {
+              "tool_call_id": "c2",
+              "content": {
+                "$contains": "\"accepted\":true"
+              }
+            }
+          ]
+        }
+      ],
+      "b": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c3",
+              "content": {
+                "$contains": "\"accepted\":true"
+              }
+            }
+          ]
+        }
+      ],
+      "c": []
+    },
+    "hooks": {
+      "rejected": [
+        {
+          "event": {
+            "metadata": {
+              "from_agent": "a",
+              "to_agent": "c",
+              "accepted": false
+            }
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "r1": {
+        "metadata": {
+          "_conversation_state": {
+            "phase": "c",
+            "active_agent_id": null,
+            "previous_agent_id": "b",
+            "handoff_count": 2
+          }
+        }
+      }
+    }
+  }
+}

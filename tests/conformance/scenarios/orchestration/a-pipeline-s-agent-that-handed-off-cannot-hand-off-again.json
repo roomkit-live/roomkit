@@ -1,0 +1,219 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-pipeline-s-agent-that-handed-off-cannot-hand-off-again",
+  "title": "A Pipeline's agent that handed the room on holds no more of it: a second handoff of its turn, though the room's new phase allows it, is refused and the next agent keeps the room",
+  "rules": [
+    "§19.7.1",
+    "§19.6"
+  ],
+  "notes": "Python: orchestration/handoff.py HandoffHandler._caller_holds_room. Decided on RMK-1233: without it a model calling twice skipped a stage.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "agent": {
+          "role": "A"
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "handoff_conversation",
+                  "arguments": {
+                    "target": "b",
+                    "reason": "R.",
+                    "summary": "S."
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "handoff_conversation",
+                  "arguments": {
+                    "target": "c",
+                    "reason": "R.",
+                    "summary": "S."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "agent": {
+          "role": "B"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "B here."
+            }
+          ]
+        }
+      },
+      {
+        "id": "c",
+        "type": "ai",
+        "agent": {
+          "role": "C"
+        },
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "rejected",
+        "trigger": "on_handoff_rejected",
+        "execution": "async"
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "pipeline": {
+          "agents": [
+            "a",
+            "b",
+            "c"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "One."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Two."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "a": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": {
+                "$contains": "\"accepted\":true"
+              }
+            }
+          ]
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1"
+            },
+            {
+              "tool_call_id": "c2",
+              "content": {
+                "$contains": "Agent a does not hold phase 'b'"
+              }
+            }
+          ]
+        }
+      ],
+      "b": [
+        {}
+      ],
+      "c": []
+    },
+    "hooks": {
+      "rejected": [
+        {
+          "event": {
+            "metadata": {
+              "from_agent": "a",
+              "to_agent": "c",
+              "accepted": false
+            }
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "r1": {
+        "metadata": {
+          "_conversation_state": {
+            "phase": "b",
+            "active_agent_id": "b",
+            "handoff_count": 1
+          }
+        }
+      }
+    }
+  }
+}

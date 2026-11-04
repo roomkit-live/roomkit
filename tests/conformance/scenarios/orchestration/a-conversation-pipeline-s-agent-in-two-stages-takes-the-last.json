@@ -1,0 +1,243 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-conversation-pipeline-s-agent-in-two-stages-takes-the-last",
+  "title": "An agent in two stages of a ConversationPipeline takes the generic tool of its last, terminal stage, though a handoff from its first stage to the next phase still goes through; a target leads to the phase of its last stage, and to its first by naming it",
+  "rules": [
+    "§19.5",
+    "§19.6"
+  ],
+  "notes": "Python: orchestration/pipeline.py get_phase_map, get_allowed_transitions, _wire_handoff (stage_by_agent).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "x",
+        "type": "ai",
+        "agent": {
+          "role": "X"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "X."
+            }
+          ]
+        }
+      },
+      {
+        "id": "y",
+        "type": "ai",
+        "agent": {
+          "role": "Y"
+        },
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "x"
+          },
+          {
+            "channel_id": "y"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "x"
+          },
+          {
+            "channel_id": "y"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "seen",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "save_conversation_state",
+      "room_id": "r1",
+      "transitions": [
+        {
+          "to_phase": "p1",
+          "to_agent": "x"
+        }
+      ]
+    },
+    {
+      "call": "save_conversation_state",
+      "room_id": "r2",
+      "transitions": [
+        {
+          "to_phase": "p1",
+          "to_agent": "x"
+        }
+      ]
+    },
+    {
+      "call": "install_pipeline",
+      "handler": "h",
+      "stages": [
+        {
+          "phase": "p1",
+          "agent_id": "x",
+          "next": "q"
+        },
+        {
+          "phase": "p2",
+          "agent_id": "x"
+        },
+        {
+          "phase": "q",
+          "agent_id": "y",
+          "next": "p1"
+        }
+      ],
+      "agents": [
+        "x",
+        "y"
+      ]
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "One."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "handoff.handle",
+      "handler": "h",
+      "room_id": "r1",
+      "calling_agent_id": "x",
+      "arguments": {
+        "target": "y",
+        "reason": "R.",
+        "summary": "S."
+      },
+      "expect": {
+        "result": {
+          "accepted": true,
+          "new_agent_id": "y",
+          "new_phase": "q",
+          "message": "Conversation transferred to y. Do not respond — the receiving agent will greet the user.",
+          "reason": ""
+        }
+      }
+    },
+    {
+      "call": "handoff.handle",
+      "handler": "h",
+      "room_id": "r1",
+      "calling_agent_id": "y",
+      "arguments": {
+        "target": "x",
+        "reason": "R.",
+        "summary": "S."
+      },
+      "expect": {
+        "result": {
+          "accepted": false,
+          "new_agent_id": null,
+          "new_phase": null,
+          "message": "",
+          "reason": "Transition from 'q' to 'p2' is not allowed"
+        }
+      }
+    },
+    {
+      "call": "handoff.handle",
+      "handler": "h",
+      "room_id": "r1",
+      "calling_agent_id": "y",
+      "arguments": {
+        "target": "x",
+        "reason": "R.",
+        "summary": "S.",
+        "next_phase": "p1"
+      },
+      "expect": {
+        "result": {
+          "accepted": true,
+          "new_agent_id": "x",
+          "new_phase": "p1",
+          "message": "Conversation transferred to x. Do not respond — the receiving agent will greet the user.",
+          "reason": ""
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "seen": [
+        {
+          "response": {
+            "channel_id": "x",
+            "declared_tools": {
+              "handoff_conversation": {
+                "description": "Transfer this conversation to another agent or specialist. Use when: the user asks to speak with someone else, the user wants to be transferred or go back to a previous agent, the conversation needs expertise you don't have, or your task is complete and the next step requires a different agent. Always provide a clear summary of the conversation so far.",
+                "parameters": {
+                  "properties": {
+                    "target": {
+                      "enum": {
+                        "$absent": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "r1": {
+        "metadata": {
+          "_conversation_state": {
+            "phase": "p1",
+            "active_agent_id": "x"
+          }
+        }
+      }
+    }
+  }
+}

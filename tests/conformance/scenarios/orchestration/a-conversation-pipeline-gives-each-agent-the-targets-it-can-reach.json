@@ -1,0 +1,467 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-conversation-pipeline-gives-each-agent-the-targets-it-can-reach",
+  "title": "A ConversationPipeline's install gives each agent a handoff tool naming the agents its next and its return phases hold, in stage order, by the agent's own description else the stage's; a terminal stage, a stage looping on itself and an agent in no stage take the generic tool",
+  "rules": [
+    "§19.5",
+    "§19.6"
+  ],
+  "notes": "Python: tests/orchestration/test_pipeline.py TestPipelineInstall::test_install_wires_handoff_on_all_agents, TestAgentAwareInstall::test_install_per_agent_tool_with_targets, test_install_uses_agent_description, test_install_uses_stage_description_fallback, test_install_terminal_agent_gets_empty_enum. orchestration/pipeline.py _wire_handoff.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "agent": {
+          "role": "A",
+          "description": "Agent A."
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "a."
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "agent": {
+          "role": "B"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "b."
+            }
+          ]
+        }
+      },
+      {
+        "id": "c",
+        "type": "ai",
+        "agent": {
+          "role": "C",
+          "description": "Agent C."
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "c."
+            }
+          ]
+        }
+      },
+      {
+        "id": "d",
+        "type": "ai",
+        "agent": {
+          "role": "D"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "d."
+            }
+          ]
+        }
+      },
+      {
+        "id": "e",
+        "type": "ai",
+        "agent": {
+          "role": "E"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "e."
+            }
+          ]
+        }
+      },
+      {
+        "id": "outside",
+        "type": "ai",
+        "agent": {
+          "role": "OUTSIDE"
+        },
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "ra",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a"
+          }
+        ]
+      },
+      {
+        "id": "rb",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "b"
+          }
+        ]
+      },
+      {
+        "id": "rc",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "c"
+          }
+        ]
+      },
+      {
+        "id": "rd",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "d"
+          }
+        ]
+      },
+      {
+        "id": "re",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "e"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "seen",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_pipeline",
+      "handler": "h",
+      "agents": [
+        "a",
+        "b",
+        "c",
+        "d",
+        "e"
+      ],
+      "stages": [
+        {
+          "phase": "intake",
+          "agent_id": "a",
+          "next": "review",
+          "description": "Stage A."
+        },
+        {
+          "phase": "review",
+          "agent_id": "b",
+          "next": "report",
+          "can_return_to": [
+            "intake"
+          ],
+          "description": "Stage B."
+        },
+        {
+          "phase": "report",
+          "agent_id": "outside",
+          "next": "close",
+          "description": "Stage outside."
+        },
+        {
+          "phase": "close",
+          "agent_id": "c"
+        },
+        {
+          "phase": "loop",
+          "agent_id": "d",
+          "next": "loop"
+        }
+      ]
+    },
+    {
+      "call": "save_conversation_state",
+      "room_id": "ra",
+      "transitions": [
+        {
+          "to_phase": "intake",
+          "to_agent": "a"
+        }
+      ]
+    },
+    {
+      "call": "save_conversation_state",
+      "room_id": "rb",
+      "transitions": [
+        {
+          "to_phase": "review",
+          "to_agent": "b"
+        }
+      ]
+    },
+    {
+      "call": "save_conversation_state",
+      "room_id": "rc",
+      "transitions": [
+        {
+          "to_phase": "close",
+          "to_agent": "c"
+        }
+      ]
+    },
+    {
+      "call": "save_conversation_state",
+      "room_id": "rd",
+      "transitions": [
+        {
+          "to_phase": "loop",
+          "to_agent": "d"
+        }
+      ]
+    },
+    {
+      "call": "save_conversation_state",
+      "room_id": "re",
+      "transitions": [
+        {
+          "to_phase": "out",
+          "to_agent": "e"
+        }
+      ]
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "ra",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "1."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "rb",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "2."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "rc",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "3."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "rd",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "4."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "re",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "5."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "seen": [
+        {
+          "response": {
+            "channel_id": "a",
+            "declared_tools": {
+              "handoff_conversation": {
+                "description": "Transfer this conversation to another agent.\nAvailable targets:\n  - b: Stage B.",
+                "parameters": {
+                  "properties": {
+                    "target": {
+                      "enum": [
+                        "b"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "response": {
+            "channel_id": "b",
+            "declared_tools": {
+              "handoff_conversation": {
+                "description": "Transfer this conversation to another agent.\nAvailable targets:\n  - a: Agent A.\n  - outside: Stage outside.",
+                "parameters": {
+                  "properties": {
+                    "target": {
+                      "enum": [
+                        "a",
+                        "outside"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "response": {
+            "channel_id": "c",
+            "declared_tools": {
+              "handoff_conversation": {
+                "description": "Transfer this conversation to another agent or specialist. Use when: the user asks to speak with someone else, the user wants to be transferred or go back to a previous agent, the conversation needs expertise you don't have, or your task is complete and the next step requires a different agent. Always provide a clear summary of the conversation so far.",
+                "parameters": {
+                  "properties": {
+                    "target": {
+                      "enum": {
+                        "$absent": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "response": {
+            "channel_id": "d",
+            "declared_tools": {
+              "handoff_conversation": {
+                "description": "Transfer this conversation to another agent or specialist. Use when: the user asks to speak with someone else, the user wants to be transferred or go back to a previous agent, the conversation needs expertise you don't have, or your task is complete and the next step requires a different agent. Always provide a clear summary of the conversation so far.",
+                "parameters": {
+                  "properties": {
+                    "target": {
+                      "enum": {
+                        "$absent": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "response": {
+            "channel_id": "e",
+            "declared_tools": {
+              "handoff_conversation": {
+                "description": "Transfer this conversation to another agent or specialist. Use when: the user asks to speak with someone else, the user wants to be transferred or go back to a previous agent, the conversation needs expertise you don't have, or your task is complete and the next step requires a different agent. Always provide a clear summary of the conversation so far.",
+                "parameters": {
+                  "properties": {
+                    "target": {
+                      "enum": {
+                        "$absent": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

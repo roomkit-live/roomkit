@@ -1,0 +1,208 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-pipeline-s-router-hooks-its-room-at-minus-100",
+  "title": "A Pipeline's router hooks the broadcast of the room it is installed in, at -100: a hook at -101 reads no stamp, one at -99 reads the agent, and a room with no install is not routed",
+  "rules": [
+    "§19.7.1",
+    "§19.7"
+  ],
+  "notes": "Python: tests/orchestration/test_strategy_pipeline.py TestPipelineInstall::test_installs_router_hook. orchestration/strategies/pipeline.py install (priority=-100, replace_room_hook).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "agent": {
+          "role": "A"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "One."
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "agent": {
+          "role": "B"
+        },
+        "model": {
+          "rounds": []
+        }
+      },
+      {
+        "id": "c",
+        "type": "ai",
+        "agent": {
+          "role": "C"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Alone."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "c"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "early",
+        "trigger": "before_broadcast",
+        "priority": -101
+      },
+      {
+        "name": "late",
+        "trigger": "before_broadcast",
+        "priority": -99
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "pipeline": {
+          "agents": [
+            "a",
+            "b"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Routed."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Not routed."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "early": [
+        {
+          "room_id": "r1",
+          "event": {
+            "metadata": {
+              "_routed_to": {
+                "$absent": true
+              }
+            }
+          }
+        },
+        {
+          "room_id": "r1"
+        },
+        {
+          "room_id": "r2",
+          "event": {
+            "metadata": {
+              "_routed_to": {
+                "$absent": true
+              }
+            }
+          }
+        },
+        {
+          "room_id": "r2"
+        }
+      ],
+      "late": [
+        {
+          "room_id": "r1",
+          "event": {
+            "metadata": {
+              "_routed_to": "a"
+            }
+          }
+        },
+        {
+          "room_id": "r1"
+        },
+        {
+          "room_id": "r2",
+          "event": {
+            "metadata": {
+              "_routed_to": {
+                "$absent": true
+              }
+            }
+          }
+        },
+        {
+          "room_id": "r2"
+        }
+      ]
+    }
+  }
+}

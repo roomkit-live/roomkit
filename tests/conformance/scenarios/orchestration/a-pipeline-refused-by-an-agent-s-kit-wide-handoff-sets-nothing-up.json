@@ -1,0 +1,185 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-pipeline-refused-by-an-agent-s-kit-wide-handoff-sets-nothing-up",
+  "title": "A Pipeline whose agent serves a kit-wide handoff already is refused at its install, whichever its place in the chain: the room keeps no strategy, no state and no router, it takes back the agent it attached, and the agent the room bound itself gains no tool",
+  "rules": [
+    "§19.7",
+    "§19.6"
+  ],
+  "notes": "Python: orchestration/handoff.py set_up_handoffs (all or none); tests/orchestration/test_room_installs.py test_an_install_refused_halfway_sets_nothing_up, for a Supervisor.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "agent": {
+          "role": "A"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "A alone."
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "agent": {
+          "role": "B"
+        },
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "seen",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "pipeline": {
+          "agents": [
+            "a",
+            "b"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "handoff_handler",
+      "handler": "h",
+      "router": {
+        "default_agent_id": "b"
+      }
+    },
+    {
+      "call": "setup_handoff",
+      "agent_id": "b",
+      "handler": "h"
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team",
+      "expect": {
+        "error": {
+          "name": "invalid_argument"
+        }
+      }
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hi."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "r1": {
+        "metadata": {
+          "_conversation_state": {
+            "$absent": true
+          }
+        }
+      }
+    },
+    "bindings": {
+      "r1": {
+        "a": {
+          "category": "intelligence"
+        },
+        "b": {
+          "$absent": true
+        }
+      }
+    },
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hi."
+          },
+          "metadata": {
+            "_routed_to": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "type": "text",
+            "body": "A alone."
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "seen": [
+        {
+          "response": {
+            "channel_id": "a",
+            "declared_tools": {
+              "handoff_conversation": {
+                "$absent": true
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
