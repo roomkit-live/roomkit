@@ -994,3 +994,26 @@ async def test_a_name_a_sender_stamped_before_the_participant_records_no_ask() -
 
     assert _queue(kit).asked == ()
     await kit.close()
+
+
+async def test_a_person_named_like_a_handle_is_addressed_by_no_name() -> None:
+    """A person whose name reads like an agent's handle (Cyrillic ``а``): an
+    agent writing it believes it asks the agent, so it asks no one. The person
+    still speaks, under their own label."""
+    lookalike = "\u0430lice"
+    a = _provider("noted", f"@{lookalike} can you confirm?")
+    kit = RoomKit()
+    await _room(kit, {"alice": a}, addressed_only=True)
+    await _person(kit, "m", lookalike, ParticipantRole.MEMBER)
+
+    await _say(kit, "@alice hello", sender="m")
+    await _settle(kit)
+    await _say(kit, "@alice please check the deploy", sender="m")
+    await _settle(kit)
+
+    assert _queue(kit).asked == ()
+    said = [str(m.content) for m in a.calls[1].messages]
+    notes = next(text for text in said if "[Discussion:" in text)
+    assert f"asked by “{lookalike}”" in notes
+    assert f"@{lookalike}" not in notes
+    await kit.close()
