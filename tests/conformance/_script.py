@@ -446,12 +446,12 @@ def hook_handler(spec: Mapping[str, Any], harness: Harness) -> HookHandler:
             scope["event"] = payload.id
         if isinstance(payload, PendingInputEvent):
             scope["request"] = payload.pending_id
+        _write_record(reaction, payload)
         hooked = HOOKED.set((payload, context))
         try:
             await perform(harness, reaction, scope)
         finally:
             HOOKED.reset(hooked)
-        _write_record(reaction, payload)
         return hook_result(reaction.get("result"), payload, room_id)
 
     return handler
