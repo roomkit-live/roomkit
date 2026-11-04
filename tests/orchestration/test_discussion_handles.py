@@ -10,6 +10,7 @@ the dispatch policy present agents by their handles; the queue and
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any
 
 import pytest
@@ -21,6 +22,7 @@ from roomkit.core.locks import InMemoryLockManager
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import ChannelCategory
 from roomkit.models.event import RoomEvent, TextContent
+from roomkit.models.room import Room
 from roomkit.orchestration.strategies.discussion import (
     Discussion,
     DispatchCandidate,
@@ -121,6 +123,61 @@ def test_a_configuration_stored_without_handles_addresses_agents_by_channel_id()
     room = DiscussionRoom.following(RoomKit(), "r1", config)
     assert room.handles == {"a": "a", "b": "b"}
     assert room.label("b") == "@b"
+
+
+@pytest.mark.parametrize(
+    "stored",
+    [
+        {"agents": [], "max_depth": 5},
+        {"agents": ["a", "a"], "max_depth": 5},
+        {"agents": ["a"], "max_depth": 0},
+        {"agents": ["a"], "max_depth": 5, "max_turns": 0},
+        {"agents": ["a"], "max_depth": 5, "silent_token": "  "},
+        {"agents": ["a"], "max_depth": 5, "rules": "  "},
+        {"agents": ["a"], "max_depth": 5, "everyone": ["ghost"]},
+        {"agents": ["a"], "max_depth": 5, "handles": {"ghost": "ops"}},
+        {"agents": ["a", "b"], "max_depth": 5, "handles": {"a": "ops", "b": "OPS"}},
+        # An agent stored with no handle is addressed by its channel id.
+        {"agents": ["a", "b"], "max_depth": 5, "handles": {"a": "b"}},
+        {"agents": ["a"], "max_depth": 5, "handles": {"a": "two\nlines"}},
+        {"agents": ["a"], "max_depth": 5, "handles": {"a": "all"}},
+        {"agents": ["a"]},
+    ],
+)
+async def test_what_the_constructor_refuses_stored_reads_as_no_discussion(
+    stored: dict[str, Any], caplog: pytest.LogCaptureFixture
+) -> None:
+    """Something below the kit's API wrote it: no error, which would break
+    every message of the room, and no discussion holding the room either."""
+    agent = _provider("from a")
+    kit = RoomKit()
+    kit.register_channel(SimpleChannel("ops"))
+    kit.register_channel(AIChannel("a", provider=agent))
+    await kit.store.create_room(Room(id="r1", metadata={CONFIG_KEY: stored}))
+    await kit.attach_channel("r1", "ops")
+    await kit.attach_channel("r1", "a", category=ChannelCategory.INTELLIGENCE)
+
+    with caplog.at_level(logging.WARNING, logger="roomkit.orchestration.discussion"):
+        assert DiscussionConfig.stored({CONFIG_KEY: stored}) is None
+    result = await _say(kit, "hello")
+
+    assert "A stored discussion reads as none" in caplog.text
+    assert [e.content.body for e in result.response_events] == ["from a"]
+    assert kit.speak_queue("r1") is None
+    await kit.close()
+
+
+async def test_a_depth_of_1_the_kit_writes_for_a_discussion_is_read_back() -> None:
+    """A discussion with no ``max_depth`` stores the kit's limit, which may be 1
+    where the constructor refuses it for a discussion's own."""
+    kit = RoomKit(max_chain_depth=1)
+    await _room(kit, {"a": _provider("from a")})
+    room = await kit.get_room("r1")
+
+    config = DiscussionConfig.stored(room.metadata)
+
+    assert config is not None and config.max_depth == 1
+    await kit.close()
 
 
 @pytest.mark.parametrize(

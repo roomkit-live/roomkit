@@ -7,16 +7,20 @@ the processes that installed it.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field, ValidationError
 
+from roomkit._handles import is_handle
 from roomkit.channels.declared import id_of
 from roomkit.core._room_metadata import DISCUSSION_CONFIG
 
 if TYPE_CHECKING:
     from .strategy import Discussion
+
+logger = logging.getLogger("roomkit.orchestration.discussion")
 
 CONFIG_KEY = DISCUSSION_CONFIG
 """The room metadata key the configuration is stored under."""
@@ -69,11 +73,54 @@ class DiscussionConfig(BaseModel):
 
     @classmethod
     def stored(cls, metadata: Mapping[str, Any] | None) -> DiscussionConfig | None:
-        """The configuration stored in a room's *metadata*, if one is."""
+        """The configuration stored in a room's *metadata*, if one is. What
+        the constructor would refuse reads as none, with a warning, never an
+        error: this runs for every context the kit builds, and an error would
+        break every message of the room."""
         raw = (metadata or {}).get(CONFIG_KEY)
         if not raw:
             return None
         try:
-            return cls.model_validate(raw)
-        except ValidationError:
+            config = cls.model_validate(raw)
+        except ValidationError as error:
+            logger.warning(
+                "A stored discussion reads as none: %d fields do not read", error.error_count()
+            )
             return None
+        refusal = config._refusal()
+        if refusal is not None:
+            logger.warning("A stored discussion reads as none: %s", refusal)
+            return None
+        return config
+
+    def _refusal(self) -> str | None:
+        """What ``Discussion()`` would refuse in this configuration, if anything."""
+        if not self.agents:
+            return "it holds no agent"
+        if len(set(self.agents)) != len(self.agents):
+            return "its agents are not distinct"
+        if self.max_turns is not None and self.max_turns < 1:
+            return "max_turns is below 1"
+        # 1 is not refused: :meth:`of` writes the kit's max_chain_depth when
+        # the strategy gives none, and a kit may hold 1.
+        if self.max_depth < 1:
+            return "max_depth is below 1"
+        if not self.silent_token.strip():
+            return "silent_token is blank"
+        if self.rules is not None and not self.rules.strip():
+            return "rules is blank"
+        if any(agent not in self.agents for agent in self.everyone or ()):
+            return "everyone names a channel that is not an agent"
+        return self._handles_refusal()
+
+    def _handles_refusal(self) -> str | None:
+        given = self.handles or {}
+        if any(agent not in self.agents for agent in given):
+            return "handles names a channel that is not an agent"
+        if not all(is_handle(handle) for handle in given.values()):
+            return "a handle cannot name an agent"
+        # An agent with no handle stored is addressed by its channel id.
+        addressed = [given.get(agent, agent).casefold() for agent in self.agents]
+        if len(set(addressed)) != len(addressed):
+            return "two agents are addressed alike"
+        return None

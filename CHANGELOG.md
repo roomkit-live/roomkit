@@ -15,7 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   warning, as they do a `roomkit:` key: a forged one no longer holds the room with nobody
   answering, nor stops an installed discussion's turns. A stored handle counts only for a
   channel the discussion lists as an agent and only if it can name one, so a sender is no
-  longer labelled as an agent.
+  longer labelled as an agent. A stored discussion `Discussion()` would refuse (no agents,
+  two alike, `max_turns` 0, a blank token, a handle that cannot name an agent...) reads as
+  none, with a warning, and the room answers.
 
 - **A span's error no longer quotes its text** (RFC §15.7, RMK-1301).
   `PostgresStore`'s `store.*` spans and `TelemetryProvider.span()`'s block wrote
