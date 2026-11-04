@@ -1,0 +1,97 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skills/a-turn-s-tools-and-its-skills-are-both-declared",
+  "title": "A turn's configuration's tools go through the same turn as the skill tools: each declared, the manifest in the prompt",
+  "rules": [
+    "§24.3",
+    "Appendix A.9"
+  ],
+  "notes": "Python: channels/_ai_context.py _given_turn_skills, _add_skills; channels/_ai_policy.py _turn_skills. tests/test_channels/test_turn_config.py::test_provider_tools_flow_through_skill_injection: the resolver's result replaces only the base list.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "skills": [
+          {
+            "name": "s1",
+            "description": "The s1 procedure",
+            "instructions": "Rules for s1."
+          }
+        ],
+        "config_provider": {
+          "room-1": {
+            "tools": [
+              {
+                "name": "gmail",
+                "description": "Mail"
+              }
+            ]
+          }
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "system_prompt": {
+            "$contains": "<available_skills>"
+          },
+          "tools": {
+            "gmail": {
+              "$present": true
+            },
+            "activate_skill": {
+              "$present": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

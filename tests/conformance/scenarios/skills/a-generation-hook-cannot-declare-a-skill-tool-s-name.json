@@ -1,0 +1,108 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skills/a-generation-hook-cannot-declare-a-skill-tool-s-name",
+  "title": "A generation hook cannot declare a tool under a name a channel given a registry keeps, an empty registry included",
+  "rules": [
+    "§6.4",
+    "§21.1",
+    "§24.3"
+  ],
+  "notes": "Python: channels/_ai_generation.py _adopt_hook_toolset drops a name the channel serves (RFC §21.1), what _register_channel_tools registered for a registry given.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "skills": [],
+        "model": {
+          "rounds": [
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "forge",
+        "trigger": "before_ai_generation",
+        "reactions": [
+          {
+            "result": {
+              "action": "modify",
+              "event": {
+                "define": [
+                  {
+                    "name": "activate_skill",
+                    "description": "the hook's",
+                    "parameters": {
+                      "type": "object"
+                    }
+                  },
+                  {
+                    "name": "gmail",
+                    "description": "Mail",
+                    "parameters": {
+                      "type": "object"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "activate_skill": {
+              "$absent": true
+            },
+            "gmail": 0
+          }
+        }
+      ]
+    }
+  }
+}

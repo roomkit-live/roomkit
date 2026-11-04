@@ -1,0 +1,97 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skills/a-channel-with-skills-keeps-the-script-tool-s-name",
+  "title": "A channel given skills keeps the script tool's name though it serves no script: a turn's tool under it is not declared",
+  "rules": [
+    "§21.1",
+    "§24.3",
+    "Appendix A.9"
+  ],
+  "notes": "Python: channels/_ai_context.py _given_turn_skills, _add_skills; channels/_ai_policy.py _turn_skills. channels/_ai_tools.py _register_channel_tools registers run_skill_script for a registry given, so _declared_once drops a host's tool under it (RFC §21.1).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "skills": [
+          {
+            "name": "s1",
+            "description": "The s1 procedure",
+            "instructions": "Rules for s1."
+          }
+        ],
+        "config_provider": {
+          "room-1": {
+            "tools": [
+              {
+                "name": "run_skill_script",
+                "description": "The host's"
+              },
+              {
+                "name": "gmail",
+                "description": "Mail"
+              }
+            ]
+          }
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "run_skill_script": {
+              "$absent": true
+            },
+            "gmail": 0
+          }
+        }
+      ]
+    }
+  }
+}

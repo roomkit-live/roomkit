@@ -1,0 +1,200 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skills/a-stored-activation-past-the-bound-reads-as-activated",
+  "title": "Stored activations are read as activated, the least recently used retired past four, before the turn's registry drops what it lacks; the prompt holds the rest, oldest first",
+  "rules": [
+    "§10.6.3",
+    "§24.3",
+    "§24.4"
+  ],
+  "notes": "Python: channels/_ai_context.py _given_turn_skills, _add_skills; channels/_ai_policy.py _turn_skills. channels/_skill_activation.py seed calls activate for each stored call, then render_prompt drops what the registry lacks: stored a to e under a registry of a to d leaves b, c and d. skills_in_prompt false, so the prompt can be read whole: no base prompt, its blocks each after a blank line (_add_skills).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "skills": [],
+        "skills_in_prompt": false,
+        "config_provider": {
+          "room-1": [
+            {
+              "skills": [
+                {
+                  "name": "a",
+                  "description": "The a procedure",
+                  "instructions": "Rules for a."
+                },
+                {
+                  "name": "b",
+                  "description": "The b procedure",
+                  "instructions": "Rules for b."
+                },
+                {
+                  "name": "c",
+                  "description": "The c procedure",
+                  "instructions": "Rules for c."
+                },
+                {
+                  "name": "d",
+                  "description": "The d procedure",
+                  "instructions": "Rules for d."
+                },
+                {
+                  "name": "e",
+                  "description": "The e procedure",
+                  "instructions": "Rules for e."
+                }
+              ]
+            },
+            {
+              "skills": [
+                {
+                  "name": "a",
+                  "description": "The a procedure",
+                  "instructions": "Rules for a."
+                },
+                {
+                  "name": "b",
+                  "description": "The b procedure",
+                  "instructions": "Rules for b."
+                },
+                {
+                  "name": "c",
+                  "description": "The c procedure",
+                  "instructions": "Rules for c."
+                },
+                {
+                  "name": "d",
+                  "description": "The d procedure",
+                  "instructions": "Rules for d."
+                }
+              ]
+            }
+          ]
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "call-a",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "a"
+                  }
+                },
+                {
+                  "id": "call-b",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "b"
+                  }
+                },
+                {
+                  "id": "call-c",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "c"
+                  }
+                },
+                {
+                  "id": "call-d",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "d"
+                  }
+                },
+                {
+                  "id": "call-e",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "e"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            },
+            {
+              "text": "after"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "room-1",
+      "channel_id": "agent"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "agent",
+      "category": "intelligence"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {
+          "system_prompt": "\n\n# Active skill instructions (binding rules)\n\n## Skill: b\nRules for b.\n\n## Skill: c\nRules for c.\n\n## Skill: d\nRules for d."
+        }
+      ]
+    }
+  }
+}

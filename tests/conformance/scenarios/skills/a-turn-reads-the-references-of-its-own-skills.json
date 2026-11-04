@@ -1,0 +1,130 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skills/a-turn-reads-the-references-of-its-own-skills",
+  "title": "read_skill_reference reads the turn's registry: a reference of its own skill, and no skill only the channel holds",
+  "rules": [
+    "§24.3",
+    "Appendix A.9"
+  ],
+  "notes": "Python: channels/_ai_context.py _given_turn_skills, _add_skills; channels/_ai_policy.py _turn_skills. channels/_ai_tools.py _handle_read_reference reads _turn_skills().",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "skills": [
+          {
+            "name": "shared",
+            "description": "The shared procedure",
+            "instructions": "Rules for shared.",
+            "references": {
+              "notes.md": "The channel's notes."
+            }
+          }
+        ],
+        "config_provider": {
+          "room-1": {
+            "skills": [
+              {
+                "name": "ada-procedure",
+                "description": "The ada-procedure procedure",
+                "instructions": "Rules for ada-procedure.",
+                "references": {
+                  "notes.md": "Ada's notes."
+                }
+              }
+            ]
+          }
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "own",
+                  "name": "read_skill_reference",
+                  "arguments": {
+                    "skill_name": "ada-procedure",
+                    "filename": "notes.md"
+                  }
+                },
+                {
+                  "id": "channel",
+                  "name": "read_skill_reference",
+                  "arguments": {
+                    "skill_name": "shared",
+                    "filename": "notes.md"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "own",
+              "content": {
+                "$contains": "Ada's notes."
+              },
+              "is_error": false
+            },
+            {
+              "tool_call_id": "channel",
+              "content": {
+                "$contains": "Skill 'shared' not found"
+              },
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,178 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skills/a-turn-s-empty-registry-leaves-the-skills-out-and-active",
+  "title": "A turn whose configuration gives an empty registry declares no skill tool and carries no skill in its prompt; the skills active in the room stay active, and the next turn reading them carries their rules",
+  "rules": [
+    "§24.3",
+    "§24.4",
+    "Appendix A.9"
+  ],
+  "notes": "Python: channels/_ai_context.py _given_turn_skills, _add_skills; channels/_ai_policy.py _turn_skills. channels/_ai_context.py _add_skills returns before render_prompt on a registry with no entries, so the room's record is left as it is. A call to a skill tool in that turn is refused as any tool the turn does not declare.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "skills": [
+          {
+            "name": "shared",
+            "description": "The shared procedure",
+            "instructions": "Rules for shared."
+          }
+        ],
+        "config_provider": {
+          "room-1": [
+            null,
+            {
+              "skills": []
+            },
+            null
+          ]
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "shared"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            },
+            {
+              "calls": [
+                {
+                  "id": "call-2",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "shared"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            },
+            {
+              "text": "back"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "content": {
+                "$contains": "Rules for shared."
+              },
+              "is_error": false,
+              "tool_call_id": "call-1"
+            }
+          ]
+        },
+        {
+          "system_prompt": {
+            "$absent": true
+          },
+          "tools": {
+            "activate_skill": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "call-2",
+              "content": "{\"error\": \"Tool 'activate_skill' is not declared.\"}",
+              "is_error": true
+            }
+          ]
+        },
+        {
+          "system_prompt": {
+            "$contains": "Rules for shared."
+          }
+        }
+      ]
+    }
+  }
+}

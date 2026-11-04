@@ -1,0 +1,145 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skills/a-turn-s-registry-is-never-left-on-the-channel",
+  "title": "The next turn that gives no registry reads the channel's, not the last turn's",
+  "rules": [
+    "§24.3",
+    "Appendix A.9"
+  ],
+  "notes": "Python: channels/_ai_context.py _given_turn_skills, _add_skills; channels/_ai_policy.py _turn_skills. tests/test_channels/test_turn_skills.py::test_a_turns_registry_is_never_left_on_the_channel.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "skills": [
+          {
+            "name": "shared",
+            "description": "The shared procedure",
+            "instructions": "Rules for shared."
+          }
+        ],
+        "config_provider": {
+          "room-ada": {
+            "skills": [
+              {
+                "name": "ada-procedure",
+                "description": "The ada-procedure procedure",
+                "instructions": "Rules for ada-procedure."
+              }
+            ]
+          }
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "first"
+            },
+            {
+              "calls": [
+                {
+                  "id": "call-ada-procedure",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "ada-procedure"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-ada",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-bob",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-ada",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-bob",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "system_prompt": {
+            "$contains": "ada-procedure"
+          }
+        },
+        {
+          "system_prompt": {
+            "$lacks": "ada-procedure"
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "call-ada-procedure",
+              "content": "{\"error\": \"Skill 'ada-procedure' not found\", \"available_skills\": [\"shared\"]}",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

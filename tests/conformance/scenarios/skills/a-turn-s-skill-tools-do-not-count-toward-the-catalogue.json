@@ -1,0 +1,110 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skills/a-turn-s-skill-tools-do-not-count-toward-the-catalogue",
+  "title": "A turn's skill tools are the channel's own: Tool Search neither counts nor hides them",
+  "rules": [
+    "§6.4",
+    "§24.3",
+    "Appendix A.9"
+  ],
+  "notes": "Python: channels/_ai_context.py _given_turn_skills, _add_skills; channels/_ai_policy.py _turn_skills. channels/_ai_context.py _collapse_behind_tool_search: at its tool count the catalogue stays declared, the skill tools on top of it.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "skills": [],
+        "tools": [
+          {
+            "name": "widget_0",
+            "description": "Operate widget number 0.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{}"
+          },
+          {
+            "name": "widget_1",
+            "description": "Operate widget number 1.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{}"
+          }
+        ],
+        "tool_search_threshold": 2,
+        "config_provider": {
+          "room-1": {
+            "skills": [
+              {
+                "name": "ada-procedure",
+                "description": "The ada-procedure procedure",
+                "instructions": "Rules for ada-procedure."
+              }
+            ]
+          }
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "widget_0": 0,
+            "widget_1": 1,
+            "activate_skill": 2,
+            "read_skill_reference": 3,
+            "find_tools": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

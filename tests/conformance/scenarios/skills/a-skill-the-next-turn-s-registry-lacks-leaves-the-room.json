@@ -1,0 +1,191 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skills/a-skill-the-next-turn-s-registry-lacks-leaves-the-room",
+  "title": "A skill active in the room that the turn's registry lacks leaves the room's active skills: its rules are not before the next model, and its next activation delivers its body again",
+  "rules": [
+    "§24.3",
+    "§24.4",
+    "Appendix A.9"
+  ],
+  "notes": "Python: channels/_ai_context.py _given_turn_skills, _add_skills; channels/_ai_policy.py _turn_skills. channels/_skill_activation.py render_prompt. tests/test_channels/test_turn_skills.py::test_a_skill_the_next_turns_registry_lacks_leaves_the_room: Ada's turn, Bob's, Ada's again, in one room.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "skills": [],
+        "config_provider": {
+          "room-1": [
+            {
+              "skills": [
+                {
+                  "name": "ada-procedure",
+                  "description": "The ada-procedure procedure",
+                  "instructions": "Rules for ada-procedure."
+                }
+              ]
+            },
+            {
+              "skills": [
+                {
+                  "name": "bob-procedure",
+                  "description": "The bob-procedure procedure",
+                  "instructions": "Rules for bob-procedure."
+                }
+              ]
+            },
+            {
+              "skills": [
+                {
+                  "name": "ada-procedure",
+                  "description": "The ada-procedure procedure",
+                  "instructions": "Rules for ada-procedure."
+                }
+              ]
+            }
+          ]
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "ada-procedure"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            },
+            {
+              "text": "bob's answer"
+            },
+            {
+              "calls": [
+                {
+                  "id": "call-2",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "ada-procedure"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "content": {
+                "$contains": "Rules for ada-procedure."
+              },
+              "is_error": false,
+              "tool_call_id": "call-1"
+            }
+          ]
+        },
+        {
+          "system_prompt": {
+            "$lacks": "Rules for ada-procedure."
+          }
+        },
+        {
+          "system_prompt": {
+            "$lacks": "Rules for ada-procedure."
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "content": {
+                "$contains": "Rules for ada-procedure."
+              },
+              "is_error": false,
+              "tool_call_id": "call-2"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

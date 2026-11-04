@@ -1,0 +1,125 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skills/a-listed-manifest-with-no-base-prompt-opens-after-a-blank-line",
+  "title": "With no base prompt, the skills' preamble and manifest are written after a blank line, a turn's registry as the channel's",
+  "rules": [
+    "§24.3",
+    "Appendix A.9"
+  ],
+  "notes": "Python: channels/_ai_context.py _given_turn_skills, _add_skills; channels/_ai_policy.py _turn_skills. channels/_ai_context.py _add_skills: (system_prompt or '') + f'\\\\n\\\\n{preamble}\\\\n\\\\n{xml}'. The preamble's words past its opening are not compared: an implementation that serves no scripts says so in its own.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "skills": [
+          {
+            "name": "shared",
+            "description": "The shared procedure",
+            "instructions": "Rules for shared."
+          }
+        ],
+        "config_provider": {
+          "room-2": {
+            "skills": [
+              {
+                "name": "ada-procedure",
+                "description": "The ada-procedure procedure",
+                "instructions": "Rules for ada-procedure."
+              }
+            ]
+          }
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "first"
+            },
+            {
+              "text": "second"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "system_prompt": {
+            "$contains": "\n\nYou have access to Agent Skills"
+          }
+        },
+        {
+          "system_prompt": {
+            "$contains": "\n\nYou have access to Agent Skills"
+          }
+        }
+      ]
+    }
+  }
+}

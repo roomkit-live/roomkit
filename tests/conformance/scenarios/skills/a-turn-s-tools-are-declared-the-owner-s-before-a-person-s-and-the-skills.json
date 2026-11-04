@@ -1,0 +1,156 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skills/a-turn-s-tools-are-declared-the-owner-s-before-a-person-s-and-the-skills",
+  "title": "A turn declares its tools in one order: the turn's, the host's, what orchestration set up, a person's, then the skill tools",
+  "rules": [
+    "§19.6",
+    "§21.1",
+    "§24.3",
+    "Appendix A.9"
+  ],
+  "notes": "Python: channels/_ai_context.py _given_turn_skills, _add_skills; channels/_ai_policy.py _turn_skills. channels/_ai_context.py _turn_base_tools then _add_channel_features: the channel's tools, _declared_once, _orchestration_tools, the human-input definitions, then _add_skills. The router's handoff tool is what the room's owner sets up.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "skills": [],
+        "tools": [
+          {
+            "name": "host_tool",
+            "description": "The host's",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{}"
+          }
+        ],
+        "kit_tools": [
+          "task_status"
+        ],
+        "human_input": {
+          "tool_names": [
+            "ask_person"
+          ],
+          "tools": [
+            {
+              "name": "ask_person",
+              "description": "Ask the person.",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          ]
+        },
+        "agent": {
+          "role": "Sales"
+        },
+        "config_provider": {
+          "room-1": {
+            "tools": [
+              {
+                "name": "gmail",
+                "description": "Mail"
+              }
+            ],
+            "skills": [
+              {
+                "name": "ada-procedure",
+                "description": "The ada-procedure procedure",
+                "instructions": "Rules for ada-procedure."
+              }
+            ]
+          }
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "done"
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "agent": {
+          "role": "Support"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Support here."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "b"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_router",
+      "handler": "h",
+      "router": {
+        "default_agent_id": "agent"
+      },
+      "agents": [
+        "agent",
+        "b"
+      ]
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "gmail": 0,
+            "host_tool": 1,
+            "task_status": 2,
+            "handoff_conversation": 3,
+            "ask_person": 4,
+            "activate_skill": 5,
+            "read_skill_reference": 6
+          }
+        }
+      ]
+    }
+  }
+}

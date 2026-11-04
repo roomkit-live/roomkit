@@ -1,0 +1,156 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skills/a-turn-that-gives-none-reads-the-channel-s",
+  "title": "A turn with no configuration, or one that gives no registry, reads the channel's",
+  "rules": [
+    "§24.3",
+    "Appendix A.9"
+  ],
+  "notes": "Python: channels/_ai_context.py _given_turn_skills, _add_skills; channels/_ai_policy.py _turn_skills. tests/test_channels/test_turn_skills.py::test_a_turn_that_gives_none_reads_the_channels (both cases): room-1 has no configuration, room-2's gives no skills.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "skills": [
+          {
+            "name": "shared",
+            "description": "The shared procedure",
+            "instructions": "Rules for shared."
+          }
+        ],
+        "config_provider": {
+          "room-1": null,
+          "room-2": {
+            "temperature": 0.5
+          }
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "shared"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            },
+            {
+              "calls": [
+                {
+                  "id": "call-2",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "shared"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "content": {
+                "$contains": "Rules for shared."
+              },
+              "is_error": false,
+              "tool_call_id": "call-1"
+            }
+          ]
+        },
+        {},
+        {
+          "tool_results": [
+            {
+              "content": {
+                "$contains": "Rules for shared."
+              },
+              "is_error": false,
+              "tool_call_id": "call-2"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

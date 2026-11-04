@@ -1,0 +1,125 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skills/a-standalone-activation-as-a-room-s-first-turn-rides-its-next",
+  "title": "An instruction that stands alone, the first turn a room is served in this process, activates a skill: the room's next turn carries its rules",
+  "rules": [
+    "§10.1.1",
+    "§24.4"
+  ],
+  "notes": "Python: channels/_ai_tools.py _record_activation records it; RFC §24.4. roomkit-rs does not record a standalone activation (RMK-1356, the rest of that question): it reads it from the stored rows at the room's first ordinary turn, so a standalone turn must leave the room unread. Same outcome on both in this case alone.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "skills": [
+          {
+            "name": "shared",
+            "description": "The shared procedure",
+            "instructions": "Rules for shared."
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "call-shared",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "shared"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "alone"
+            },
+            {
+              "text": "next"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Summarize."
+        },
+        "event_type": "instruction",
+        "addressed_to": [
+          "agent"
+        ],
+        "standalone": true
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "content": {
+                "$contains": "Rules for shared."
+              },
+              "is_error": false,
+              "tool_call_id": "call-shared"
+            }
+          ]
+        },
+        {
+          "system_prompt": {
+            "$contains": "Rules for shared."
+          }
+        }
+      ]
+    }
+  }
+}

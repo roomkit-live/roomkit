@@ -1,0 +1,117 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skills/a-turn-s-skill-tools-escape-the-tool-policy",
+  "title": "A turn's skill tools only read or unlock: the tool policy does not govern them, on a channel that declares none of its own",
+  "rules": [
+    "§21.1",
+    "§24.3",
+    "Appendix A.9"
+  ],
+  "notes": "Python: channels/_ai_context.py _given_turn_skills, _add_skills; channels/_ai_policy.py _turn_skills. channels/_ai_policy.py _exempt_tool_names: the channel's own tools, the skill tools among them, whichever registry the turn reads (RFC §21.1).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "skills": [],
+        "tool_policy": {
+          "allow": [
+            "gmail"
+          ]
+        },
+        "config_provider": {
+          "room-1": {
+            "skills": [
+              {
+                "name": "ada-procedure",
+                "description": "The ada-procedure procedure",
+                "instructions": "Rules for ada-procedure."
+              }
+            ]
+          }
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "call-ada-procedure",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "ada-procedure"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "activate_skill": {
+              "$present": true
+            },
+            "read_skill_reference": {
+              "$present": true
+            }
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "content": {
+                "$contains": "Rules for ada-procedure."
+              },
+              "is_error": false,
+              "tool_call_id": "call-ada-procedure"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

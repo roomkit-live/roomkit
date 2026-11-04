@@ -1,0 +1,125 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skills/a-turn-lists-and-activates-its-own-skills",
+  "title": "A turn's configuration's registry is the one its manifest lists and its activation reads, in place of the channel's",
+  "rules": [
+    "§24.3",
+    "Appendix A.9"
+  ],
+  "notes": "Python: channels/_ai_context.py _given_turn_skills, _add_skills; channels/_ai_policy.py _turn_skills. tests/test_channels/test_turn_skills.py::test_a_turn_lists_and_activates_its_own_skills.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "skills": [
+          {
+            "name": "shared",
+            "description": "The shared procedure",
+            "instructions": "Rules for shared."
+          }
+        ],
+        "config_provider": {
+          "room-1": {
+            "skills": [
+              {
+                "name": "shared",
+                "description": "The shared procedure",
+                "instructions": "Rules for shared."
+              },
+              {
+                "name": "ada-procedure",
+                "description": "The ada-procedure procedure",
+                "instructions": "Rules for ada-procedure."
+              }
+            ]
+          }
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "call-ada-procedure",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "ada-procedure"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "system_prompt": {
+            "$contains": "<skill name=\"ada-procedure\">"
+          },
+          "tools": {
+            "activate_skill": {
+              "$present": true
+            },
+            "read_skill_reference": {
+              "$present": true
+            }
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "content": {
+                "$contains": "Rules for ada-procedure."
+              },
+              "is_error": false,
+              "tool_call_id": "call-ada-procedure"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

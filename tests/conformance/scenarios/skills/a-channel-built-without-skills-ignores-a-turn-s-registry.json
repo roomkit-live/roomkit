@@ -1,0 +1,111 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skills/a-channel-built-without-skills-ignores-a-turn-s-registry",
+  "title": "A channel built without a registry declares no skill tools and lists no skill, whatever a turn's configuration gives; a call to a skill tool is refused as any tool no turn declares",
+  "rules": [
+    "§24.3",
+    "Appendix A.9"
+  ],
+  "notes": "Python: channels/_ai_context.py _given_turn_skills, _add_skills; channels/_ai_policy.py _turn_skills. tests/test_channels/test_turn_skills.py::test_a_channel_built_without_skills_ignores_a_turns_registry (the warning it logs is a test in each implementation). The model's call to activate_skill reads what an undeclared tool reads.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "config_provider": {
+          "room-1": {
+            "skills": [
+              {
+                "name": "ada-procedure",
+                "description": "The ada-procedure procedure",
+                "instructions": "Rules for ada-procedure."
+              }
+            ]
+          }
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "call-ada-procedure",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "ada-procedure"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "system_prompt": {
+            "$absent": true
+          },
+          "tools": {
+            "activate_skill": {
+              "$absent": true
+            },
+            "read_skill_reference": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "call-ada-procedure",
+              "content": "{\"error\": \"Tool 'activate_skill' is not declared.\"}",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

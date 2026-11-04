@@ -1,0 +1,155 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skills/a-channel-given-an-empty-registry-keeps-the-skill-tools-names",
+  "title": "A channel given an empty registry declares no skill tool until a turn's registry holds one, and a turn's tool under a skill tool's name is not declared",
+  "rules": [
+    "§21.1",
+    "§24.3",
+    "Appendix A.9"
+  ],
+  "notes": "Python: channels/_ai_context.py _given_turn_skills, _add_skills; channels/_ai_policy.py _turn_skills. channels/_ai_tools.py _register_channel_tools registers the skill tools for a registry given, an empty one too, so _declared_once drops a host's tool under their names (RFC §21.1).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "skills": [],
+        "config_provider": {
+          "room-1": {
+            "tools": [
+              {
+                "name": "activate_skill",
+                "description": "The host's"
+              },
+              {
+                "name": "run_skill_script",
+                "description": "The host's"
+              },
+              {
+                "name": "gmail",
+                "description": "Mail"
+              }
+            ]
+          },
+          "room-2": {
+            "skills": [
+              {
+                "name": "ada-procedure",
+                "description": "The ada-procedure procedure",
+                "instructions": "Rules for ada-procedure."
+              }
+            ]
+          }
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "none"
+            },
+            {
+              "text": "own"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "system_prompt": {
+            "$absent": true
+          },
+          "tools": {
+            "activate_skill": {
+              "$absent": true
+            },
+            "run_skill_script": {
+              "$absent": true
+            },
+            "gmail": {
+              "$present": true
+            }
+          }
+        },
+        {
+          "system_prompt": {
+            "$contains": "ada-procedure"
+          },
+          "tools": {
+            "activate_skill": {
+              "$present": true
+            },
+            "read_skill_reference": {
+              "$present": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

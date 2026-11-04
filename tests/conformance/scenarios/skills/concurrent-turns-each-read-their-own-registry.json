@@ -1,0 +1,179 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skills/concurrent-turns-each-read-their-own-registry",
+  "title": "Two turns of one channel at once each read the registry their configuration gave them: neither reaches the other's",
+  "rules": [
+    "§24.3",
+    "Appendix A.9"
+  ],
+  "notes": "Python: channels/_ai_context.py _given_turn_skills, _add_skills; channels/_ai_policy.py _turn_skills. tests/test_channels/test_turn_skills.py::test_concurrent_turns_each_read_their_own_registry. An agent given an empty registry serves them both; room-1's round is held while room-2's turn runs whole, then activates what only room-2's registry holds.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "skills": [],
+        "config_provider": {
+          "room-ada": {
+            "skills": [
+              {
+                "name": "ada-procedure",
+                "description": "The ada-procedure procedure",
+                "instructions": "Rules for ada-procedure."
+              }
+            ]
+          },
+          "room-bob": {
+            "skills": [
+              {
+                "name": "bob-procedure",
+                "description": "The bob-procedure procedure",
+                "instructions": "Rules for bob-procedure."
+              }
+            ]
+          }
+        },
+        "model": {
+          "rounds": [
+            {
+              "gate": "ada-held",
+              "calls": [
+                {
+                  "id": "call-ada",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "bob-procedure"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "call-bob",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "bob-procedure"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "bob done"
+            },
+            {
+              "text": "ada done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-ada",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-bob",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-ada",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "background": true,
+      "as": "ada"
+    },
+    {
+      "wait_for": "ada-held"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-bob",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "open": "ada-held"
+    },
+    {
+      "await": "ada"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "system_prompt": {
+            "$lacks": "bob-procedure"
+          }
+        },
+        {
+          "system_prompt": {
+            "$lacks": "ada-procedure"
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "content": {
+                "$contains": "Rules for bob-procedure."
+              },
+              "is_error": false,
+              "tool_call_id": "call-bob"
+            }
+          ]
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "call-ada",
+              "content": "{\"error\": \"Skill 'bob-procedure' not found\", \"available_skills\": [\"ada-procedure\"]}",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

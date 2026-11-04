@@ -1,0 +1,128 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skills/a-host-that-lists-its-skills-itself-reads-a-turn-s-active-ones",
+  "title": "skills_in_prompt false leaves the listing to the host whichever registry a turn reads: no manifest, no prompt at all before anything is active, then the instructions of the skills active, after a blank line",
+  "rules": [
+    "§24.3",
+    "§24.4",
+    "Appendix A.9"
+  ],
+  "notes": "Python: channels/_ai_context.py _given_turn_skills, _add_skills; channels/_ai_policy.py _turn_skills. channels/_ai_context.py _add_skills: `_skills_in_prompt` is the channel's, the active bodies are runtime state, written either way, and a prompt that was none stays none.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "skills": [],
+        "skills_in_prompt": false,
+        "config_provider": {
+          "room-1": {
+            "skills": [
+              {
+                "name": "ada-procedure",
+                "description": "The ada-procedure procedure",
+                "instructions": "Rules for ada-procedure."
+              }
+            ]
+          }
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "call-ada-procedure",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "ada-procedure"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            },
+            {
+              "text": "again"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "system_prompt": {
+            "$absent": true
+          },
+          "tools": {
+            "activate_skill": {
+              "$present": true
+            }
+          }
+        },
+        {
+          "system_prompt": {
+            "$absent": true
+          }
+        },
+        {
+          "system_prompt": "\n\n# Active skill instructions (binding rules)\n\n## Skill: ada-procedure\nRules for ada-procedure."
+        }
+      ]
+    }
+  }
+}
