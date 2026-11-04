@@ -16,14 +16,16 @@ from uuid import uuid4
 
 import pytest
 
-from roomkit import AddressLinkedError, IdentityNotFoundError
+from roomkit import AddressLinkedError, EventNotFoundError, IdentityNotFoundError
 from roomkit.core.mixins.verification import HELD_KEY
 from roomkit.models.channel import ChannelBinding
-from roomkit.models.enums import ChannelType, RoomStatus
+from roomkit.models.enums import ChannelType, EventType, RoomStatus
+from roomkit.models.event import EditContent, TextContent
 from roomkit.models.identity import Identity
 from roomkit.models.participant import Participant
 from roomkit.models.room import Room
 from roomkit.models.task import Observation, Task
+from roomkit.store.base import marked_deleted
 from tests.conftest import PoolCheckoutRecorder
 
 POSTGRES_DSN = os.environ.get("POSTGRES_DSN")
@@ -1668,6 +1670,270 @@ async def test_an_add_to_a_missing_room_stays_the_foreign_key_s_refusal(
         await added
     async with store._pool.acquire() as conn:
         assert await conn.fetchval("SELECT count(*) FROM event_sequences") == 0
+
+
+async def _until_a_session(conn: Any, seen: str) -> None:
+    """Return once the query *seen*, a count of sessions, finds one."""
+    deadline = asyncio.get_running_loop().time() + 2
+    async with asyncio.timeout_at(deadline):
+        while not await conn.fetchval(seen):
+            await asyncio.sleep(0.005)
+
+
+@pytest.mark.parametrize("write", ["delete_event", "write_change_target"])
+async def test_a_write_of_a_message_and_its_edits_waits_on_the_room_holding_none_of_them(
+    store, write: str
+) -> None:
+    """A room's deletion holds the room, then takes its events in the order it finds
+    them, a message edited twice after its first edit. A write of a message and its
+    edits waits on the room first, so that it holds nothing the deletion needs: in the
+    other order each waits on what the other holds, and the server kills one (RMK-1394)."""
+    import asyncpg
+
+    await store.create_room(Room(id="r1"))
+    message = await store.commit_event("r1", _make_event(room_id="r1"))
+    deleter = await asyncpg.connect(POSTGRES_DSN)
+    try:
+        async with deleter.transaction():
+            await deleter.execute("SELECT 1 FROM rooms WHERE id = 'r1' FOR UPDATE")
+            if write == "delete_event":
+                written = store.delete_event("r1", message.id)
+            else:
+                written = store.write_change_target("r1", marked_deleted(message))
+            task = asyncio.create_task(written)
+            await _until_blocked_by(deleter)
+            await deleter.execute("DELETE FROM rooms WHERE id = 'r1'")
+        if write == "delete_event":
+            assert await asyncio.wait_for(task, 2) == []
+        else:
+            with pytest.raises(EventNotFoundError):
+                await asyncio.wait_for(task, 2)
+    finally:
+        await deleter.close()
+
+
+@pytest.mark.stress
+@pytest.mark.parametrize("write", ["delete_event", "write_change_target"])
+async def test_a_room_deleted_under_a_message_and_its_edits_never_deadlocks(write: str) -> None:
+    """Unmodified calls: a message edited twice, its writer racing the room's deletion, on
+    a table small enough for the deletion to read it in heap order, where the first edit
+    comes before the message. RMK-1394 measured 29 and 51 of 3200 killed before."""
+    import asyncpg
+
+    from roomkit.store.postgres import PostgresStore
+
+    store = PostgresStore(dsn=POSTGRES_DSN)
+    await store.init(min_size=1, max_size=40)
+    prefix = uuid4().hex
+
+    async def one_room(number: int) -> list[Any]:
+        room_id = f"r-{prefix}-{number}"
+        await store.create_room(Room(id=room_id))
+        message = await store.commit_event(room_id, _make_event(room_id=room_id))
+        for _ in range(2):
+            edit = _make_event(room_id=room_id).model_copy(
+                update={
+                    "type": EventType.EDIT,
+                    "content": EditContent(
+                        target_event_id=message.id, new_content=TextContent(body="edited")
+                    ),
+                }
+            )
+            await store.commit_event(room_id, edit, target=message)
+
+        async def deleted_later() -> bool:
+            await asyncio.sleep(number % 5 / 1000)
+            return await store.delete_room(room_id)
+
+        if write == "delete_event":
+            written = store.delete_event(room_id, message.id)
+        else:
+            written = store.write_change_target(room_id, marked_deleted(message))
+        return await asyncio.gather(written, deleted_later(), return_exceptions=True)
+
+    calls: list[Any] = []
+    try:
+        async with store._pool.acquire() as conn:
+            await conn.execute("TRUNCATE rooms, events CASCADE")
+            await conn.execute("ANALYZE events")
+        for batch in range(80):
+            pairs = await asyncio.gather(*(one_room(batch * 40 + n) for n in range(40)))
+            calls += [outcome for pair in pairs for outcome in pair]
+    finally:
+        await store.close()
+    deadlocks = [o for o in calls if isinstance(o, asyncpg.DeadlockDetectedError)]
+    assert not deadlocks, f"{len(deadlocks)} of {len(calls)} calls killed"
+
+
+@pytest.mark.parametrize("adding", ["add_event", "add_event_auto_index"])
+async def test_an_add_holds_a_room_whose_id_came_back_before_its_sequence(
+    store, adding: str
+) -> None:
+    """An add waits on a room being deleted, its id created again meanwhile with a
+    sequence: its wait finds no row. Had it gone on to the sequence holding nothing, it
+    would then wait on the room through the event's foreign key, and a deletion holding
+    the new room would wait on that sequence: the server kills one (RMK-1394). The
+    trigger stops the add at its insert, the moment that deletion needs."""
+    import asyncpg
+
+    key = 0x524D4B31333934  # This test's alone: "RMK1394".
+    await store.create_room(Room(id="r1"))
+    await store.add_event_auto_index("r1", _make_event(room_id="r1"))
+    event = _make_event(room_id="r1", index=7)
+    event = event.model_copy(
+        update={"source": event.source.model_copy(update={"participant_id": "stopped"})}
+    )
+    outside = await asyncpg.connect(POSTGRES_DSN)
+    deleter = await asyncpg.connect(POSTGRES_DSN)
+    try:
+        await outside.execute(
+            "CREATE FUNCTION rk_test_stop_insert() RETURNS trigger AS $$"
+            f" BEGIN PERFORM pg_advisory_xact_lock({key}); RETURN NEW; END $$ LANGUAGE plpgsql"
+        )
+        await outside.execute(
+            "CREATE TRIGGER rk_test_stop_insert BEFORE INSERT ON events FOR EACH ROW"
+            " WHEN (NEW.source_participant_id = 'stopped')"
+            " EXECUTE FUNCTION rk_test_stop_insert()"
+        )
+        await outside.execute("SELECT pg_advisory_lock($1)", key)
+        async with deleter.transaction():
+            await deleter.execute("DELETE FROM rooms WHERE id = 'r1'")
+            if adding == "add_event":
+                added = store.add_event(event)
+            else:
+                added = store.add_event_auto_index("r1", event)
+            add = asyncio.create_task(added)
+            await _until_blocked_by(deleter)
+            await deleter.execute("INSERT INTO rooms (id) VALUES ('r1')")
+            await deleter.execute(
+                "INSERT INTO event_sequences (room_id, next_index) VALUES ('r1', 5)"
+            )
+        await _until_a_session(
+            outside, "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND NOT granted"
+        )
+        delete = asyncio.create_task(store.delete_room("r1"))
+        await _until_a_session(
+            outside,
+            "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database()"
+            " AND wait_event_type = 'Lock' AND query LIKE 'DELETE FROM rooms%'",
+        )
+        await outside.execute("SELECT pg_advisory_unlock($1)", key)
+        stored, deleted = await asyncio.wait_for(asyncio.gather(add, delete), 3)
+        assert stored.id == event.id
+        assert deleted is True
+    finally:
+        await outside.execute("DROP TRIGGER IF EXISTS rk_test_stop_insert ON events")
+        await outside.execute("DROP FUNCTION IF EXISTS rk_test_stop_insert()")
+        await outside.close()
+        await deleter.close()
+
+
+@pytest.mark.stress
+async def test_a_room_deleted_and_created_again_under_its_adds_never_deadlocks() -> None:
+    """Adds at full pace on one room id, which a loop deletes and creates again: an add is
+    refused, or stored, and never killed (RMK-1394, measured 8 kills in 8 s before)."""
+    import asyncpg
+
+    from roomkit.store.postgres import PostgresStore
+
+    store = PostgresStore(dsn=POSTGRES_DSN)
+    await store.init(min_size=1, max_size=12)
+    room_id = f"r-{uuid4().hex}"
+    await store.create_room(Room(id=room_id))
+    stop = asyncio.Event()
+    killed: list[BaseException] = []
+
+    async def adding() -> None:
+        while not stop.is_set():
+            try:
+                await store.add_event_auto_index(room_id, _make_event(room_id=room_id))
+            except asyncpg.ForeignKeyViolationError:
+                pass
+            except asyncpg.DeadlockDetectedError as error:
+                killed.append(error)
+
+    async def churning() -> None:
+        while not stop.is_set():
+            try:
+                await store.delete_room(room_id)
+                await store.create_room(Room(id=room_id))
+            except asyncpg.DeadlockDetectedError as error:
+                killed.append(error)
+
+    tasks = [asyncio.create_task(adding()) for _ in range(8)]
+    tasks.append(asyncio.create_task(churning()))
+    try:
+        await asyncio.sleep(8)
+    finally:
+        stop.set()
+        await asyncio.gather(*tasks)
+        await store.close()
+    assert not killed, f"{len(killed)} calls killed"
+
+
+async def test_a_dedupe_waiting_on_a_room_holds_nothing_its_commit_needs(store) -> None:
+    """A commit with a target holds the room, then that event. A repair of duplicate
+    indexes holds the room first too: renumbering its events first, it would hold what
+    the commit needs while it waits on the room for its counters (RMK-1394)."""
+    import asyncpg
+
+    async with store._pool.acquire() as conn:
+        await conn.execute(
+            "DROP INDEX IF EXISTS idx_events_room_index; "
+            "CREATE INDEX idx_events_room_index ON events(room_id, index)"
+        )
+    try:
+        await store.create_room(Room(id="r1"))
+        for number in range(3):
+            await store.add_event(_make_event(room_id="r1", index=0, id=f"d{number}"))
+        committer = await asyncpg.connect(POSTGRES_DSN)
+        try:
+            async with committer.transaction():
+                await committer.execute("SELECT 1 FROM rooms WHERE id = 'r1' FOR UPDATE")
+                repair = asyncio.create_task(store.dedupe_event_indices(dry_run=False))
+                await _until_blocked_by(committer)
+                await committer.execute("UPDATE events SET metadata = '{}'")
+            report = await asyncio.wait_for(repair, 2)
+        finally:
+            await committer.close()
+        assert report["action"] == "repaired"
+    finally:
+        async with store._pool.acquire() as conn:
+            await conn.execute("TRUNCATE rooms, events CASCADE")
+            await conn.execute(
+                "DROP INDEX IF EXISTS idx_events_room_index; "
+                "CREATE UNIQUE INDEX idx_events_room_index ON events(room_id, index)"
+            )
+
+
+async def test_a_boot_waiting_on_a_room_holds_nothing_its_commit_needs(store) -> None:
+    """A commit with a target holds the room, then that event. The boot that rewrites a
+    room's events (version 3), then its register (version 4), holds the room first: the
+    other way, it would hold what the commit needs while it waits on the room (RMK-1394)."""
+    import asyncpg
+
+    await store.create_room(
+        Room(id="r1", metadata={"author_register": {"version": 3, "names": {}}})
+    )
+    await store.add_binding(
+        ChannelBinding(
+            room_id="r1", channel_id="ch1", channel_type=ChannelType.SMS, visibility="ws"
+        )
+    )
+    await store.add_event(_make_event(room_id="r1", visibility="all"))
+    async with store._pool.acquire() as conn:
+        await conn.execute("DELETE FROM schema_version WHERE version >= 3")
+    committer = await asyncpg.connect(POSTGRES_DSN)
+    try:
+        async with committer.transaction():
+            await committer.execute("SELECT 1 FROM rooms WHERE id = 'r1' FOR UPDATE")
+            boot = asyncio.create_task(store.init(min_size=1, max_size=3))
+            await _until_blocked_by(committer)
+            await committer.execute("UPDATE events SET channel_data = '{}'")
+        await asyncio.wait_for(boot, 2)
+    finally:
+        await committer.close()
+    assert [e.visibility for e in await store.list_events("r1")] == ["ws"]
 
 
 @pytest.mark.stress
