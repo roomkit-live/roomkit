@@ -1,0 +1,95 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-generation-that-reports-nothing-tells-a-streaming-channel-so",
+  "title": "A generation that reports no counters still tells a streaming channel that reads it, with nothing used: the reader learns the turn's usage is incomplete",
+  "rules": [
+    "§6.1",
+    "§6.4 The turn's record"
+  ],
+  "notes": "Python: channels/_ai_streaming.py _stream_generation (a UsageMarker after each generation), core/mixins/_streaming_segments.py read and end_stopped (RMK-1333). ",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true,
+        "reads_usage": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "name": "opus",
+          "provider": "anthropic",
+          "rounds": [
+            {
+              "text": "One."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "streamed": {
+      "room-1": {
+        "ws": [
+          {
+            "text": "One."
+          },
+          {
+            "usage": {
+              "input_tokens": {
+                "$absent": true
+              },
+              "output_tokens": {
+                "$absent": true
+              }
+            },
+            "model": "opus",
+            "provider": "anthropic"
+          },
+          {
+            "row": {
+              "content": {
+                "body": "One."
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

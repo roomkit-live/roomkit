@@ -1,0 +1,112 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-generation-the-fallback-served-names-it-to-a-streaming-channel",
+  "title": "A generation the fallback provider served tells a streaming channel that reads it the fallback's model and provider",
+  "rules": [
+    "§6.1",
+    "§6.4 The turn's record"
+  ],
+  "notes": "Python: channels/_ai_streaming.py _stream_generation (a UsageMarker after each generation), core/mixins/_streaming_segments.py read and end_stopped (RMK-1333). ",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true,
+        "reads_usage": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "name": "opus",
+          "provider": "anthropic",
+          "rounds": [
+            {
+              "refuses": {
+                "status": 503,
+                "message": "overloaded",
+                "retryable": true
+              }
+            }
+          ]
+        },
+        "retry_policy": {
+          "max_retries": 0,
+          "base_delay_ms": 1
+        },
+        "fallback_model": {
+          "name": "gpt",
+          "provider": "openai",
+          "rounds": [
+            {
+              "text": "Hello.",
+              "usage": {
+                "input_tokens": 5,
+                "output_tokens": 2
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "streamed": {
+      "room-1": {
+        "ws": [
+          {
+            "text": "Hello."
+          },
+          {
+            "usage": {
+              "input_tokens": 5,
+              "output_tokens": 2
+            },
+            "model": "gpt",
+            "provider": "openai"
+          },
+          {
+            "row": {
+              "content": {
+                "body": "Hello."
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

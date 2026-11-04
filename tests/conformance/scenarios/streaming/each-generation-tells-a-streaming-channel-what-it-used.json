@@ -1,0 +1,241 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/each-generation-tells-a-streaming-channel-what-it-used",
+  "title": "A streaming channel that reads it is told after each generation what the generation used, the model and the provider, in its order among the text and the rows; the store holds none of it",
+  "rules": [
+    "§6.1",
+    "§6.4 The turn's record"
+  ],
+  "notes": "Python: channels/_ai_streaming.py _stream_generation (a UsageMarker after each generation), core/mixins/_streaming_segments.py read and end_stopped (RMK-1333). The maintainer's choice of form: HITL 23e2e1c2.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true,
+        "reads_usage": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "name": "opus",
+          "provider": "anthropic",
+          "rounds": [
+            {
+              "text": "One.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 1000,
+                "output_tokens": 10
+              }
+            },
+            {
+              "text": "Two.",
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 2000,
+                "output_tokens": 10
+              }
+            },
+            {
+              "text": "Three.",
+              "usage": {
+                "input_tokens": 3000,
+                "output_tokens": 10
+              }
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up.",
+            "returns": "found"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "streamed": {
+      "room-1": {
+        "ws": [
+          {
+            "text": "One."
+          },
+          {
+            "usage": {
+              "input_tokens": 1000,
+              "output_tokens": 10
+            },
+            "model": "opus",
+            "provider": "anthropic"
+          },
+          {
+            "row": {
+              "content": {
+                "body": "One."
+              }
+            }
+          },
+          {
+            "row": {
+              "content": {
+                "tool_name": "lookup",
+                "status": "pending"
+              }
+            }
+          },
+          {
+            "row": {
+              "content": {
+                "tool_name": "lookup",
+                "result": "found"
+              }
+            }
+          },
+          {
+            "text": "Two."
+          },
+          {
+            "usage": {
+              "input_tokens": 2000,
+              "output_tokens": 10
+            },
+            "model": "opus",
+            "provider": "anthropic"
+          },
+          {
+            "row": {
+              "content": {
+                "body": "Two."
+              }
+            }
+          },
+          {
+            "row": {
+              "content": {
+                "tool_name": "lookup",
+                "status": "pending"
+              }
+            }
+          },
+          {
+            "row": {
+              "content": {
+                "tool_name": "lookup",
+                "result": "found"
+              }
+            }
+          },
+          {
+            "text": "Three."
+          },
+          {
+            "usage": {
+              "input_tokens": 3000,
+              "output_tokens": 10
+            },
+            "model": "opus",
+            "provider": "anthropic"
+          },
+          {
+            "row": {
+              "content": {
+                "body": "Three."
+              }
+            }
+          }
+        ]
+      }
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0
+        },
+        {
+          "index": 1
+        },
+        {
+          "index": 2
+        },
+        {
+          "index": 3
+        },
+        {
+          "index": 4
+        },
+        {
+          "index": 5
+        },
+        {
+          "index": 6
+        },
+        {
+          "index": 7,
+          "content": {
+            "body": "Three."
+          },
+          "metadata": {
+            "loop_end_reason": "completed",
+            "ai_usage": {
+              "input_tokens": 6000,
+              "output_tokens": 30
+            },
+            "ai_last_usage": {
+              "input_tokens": 3000,
+              "output_tokens": 10
+            },
+            "ai_usage_complete": true,
+            "ai_model": "opus",
+            "ai_provider": "anthropic"
+          }
+        }
+      ]
+    }
+  }
+}

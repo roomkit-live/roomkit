@@ -1,0 +1,138 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-reader-that-stops-keeps-what-the-generations-used",
+  "title": "A reader that stops reading in a later generation leaves the same record as a turn cut from outside: the generation it stopped in is not counted",
+  "rules": [
+    "§6.1",
+    "§6.4 The turn's record",
+    "§12.2 step 13s"
+  ],
+  "notes": "Python: channels/_ai_streaming.py _stream_generation (a UsageMarker after each generation), core/mixins/_streaming_segments.py read and end_stopped (RMK-1333). core/mixins/inbound_streaming.py _stop_reading; end_stopped.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true,
+        "deliver_stream": [
+          {
+            "stop_after": "Two "
+          }
+        ]
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "name": "opus",
+          "provider": "anthropic",
+          "rounds": [
+            {
+              "text": "One.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 1000,
+                "output_tokens": 10
+              }
+            },
+            {
+              "deltas": [
+                "Two ",
+                "more."
+              ],
+              "usage": {
+                "input_tokens": 2000,
+                "output_tokens": 10
+              }
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up.",
+            "returns": "found"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0
+        },
+        {
+          "index": 1,
+          "content": {
+            "body": "One."
+          }
+        },
+        {
+          "index": 2
+        },
+        {
+          "index": 3
+        },
+        {
+          "index": 4,
+          "content": {
+            "body": "Two "
+          },
+          "metadata": {
+            "loop_end_reason": "cancelled",
+            "ai_usage": {
+              "input_tokens": 1000,
+              "output_tokens": 10
+            },
+            "ai_last_usage": {
+              "input_tokens": 1000,
+              "output_tokens": 10
+            },
+            "ai_usage_complete": false,
+            "ai_model": "opus",
+            "ai_provider": "anthropic"
+          }
+        }
+      ]
+    }
+  }
+}
