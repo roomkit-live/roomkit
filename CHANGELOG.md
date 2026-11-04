@@ -331,11 +331,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A standalone turn's activation of a skill active in the room delivers the body** (RFC §24.4, RMK-1356). Its prompt carries no active skill, so the acknowledgement left the model holding no rules.
 
 - **`PostgresStore`'s writes of an event take a room's locks in one order** (HITL
-  a8c2f7bd, RMK-1365). `commit_event` holds the room, then its sequence;
+  a8c2f7bd, 0affbb3b, RMK-1365). `commit_event` holds the room, then its sequence;
   `add_event` and `add_event_auto_index` held the sequence, then the room through
   the event's foreign key. Called together on one room, each waited on the other,
   and the server killed one with `DeadlockDetectedError`. They now hold the room
-  first, one more statement; a missing room is refused as before.
+  first, `FOR NO KEY UPDATE`, one more statement: for its few statements an add also
+  waits on `update_room`, `patch_room_metadata` and `advance_delivered_index`, and
+  they on it. A missing room is refused as before.
 
 - **A hook's injected event stays in its message's trace** (RMK-1301).
   Its `framework.broadcast` was a root span, a trace apart from the call's: it is

@@ -1674,8 +1674,8 @@ async def test_the_writers_of_one_room_at_once_never_deadlock() -> None:
 @pytest.mark.parametrize("waiting", ["commit_event", "update_room_if"])
 async def test_a_stream_of_adds_starves_nothing_on_its_room(waiting: str) -> None:
     """Four sessions adding to one room without a pause: what takes the room's row
-    ``FOR UPDATE`` still gets its turn. An add holds the room while it queues on the
-    sequence, and a lock an add's next one can share would never leave the row free."""
+    ``FOR UPDATE`` still gets its turn (HITL 0affbb3b). An add holds the room while it
+    queues on the sequence, and a lock the next add could share would never free it."""
     from roomkit.store.postgres import PostgresStore
 
     store = PostgresStore(dsn=POSTGRES_DSN)
