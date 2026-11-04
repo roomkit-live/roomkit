@@ -411,6 +411,7 @@ class HandoffHandler:
                             "handoff_from": calling_agent_id,
                             "handoff_reason": request.reason,
                         },
+                        "human_hold": request.target_agent_id == "human",
                     }
                 )
 

@@ -63,6 +63,9 @@ class ConversationState(BaseModel):
     phase_started_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     phase_history: list[PhaseTransition] = Field(default_factory=list)
     context: dict[str, Any] = Field(default_factory=dict)
+    # A handoff to a human holds the room for them: the router asks no agent
+    # until a transition gives it to one (RFC §19.6).
+    human_hold: bool = False
 
     def transition(
         self,
@@ -91,6 +94,7 @@ class ConversationState(BaseModel):
                 "previous_agent_id": self.active_agent_id,
                 "active_agent_id": to_agent,
                 "handoff_count": self.handoff_count + (1 if agent_changed else 0),
+                "human_hold": self.human_hold and to_agent is None,
                 "phase_started_at": datetime.now(UTC),
                 "phase_history": [*self.phase_history, record],
             }

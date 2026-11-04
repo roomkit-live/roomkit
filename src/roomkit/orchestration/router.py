@@ -125,6 +125,8 @@ class ConversationRouter:
         reaches here — :meth:`as_hook` returns before calling this, because
         an address outranks every rule below (RFC §19.4, step 0).
 
+        A room held for a human selects no agent (RFC §19.6).
+
         Priority order:
         1. If active_agent_id is set and the agent is still in the room
            -> sticky affinity (agent keeps handling)
@@ -134,6 +136,9 @@ class ConversationRouter:
         # Don't route events FROM intelligence channels (prevent loops)
         source_binding = context.get_binding(event.source.channel_id)
         if source_binding and source_binding.category == ChannelCategory.INTELLIGENCE:
+            return None
+
+        if state.human_hold:
             return None
 
         # Agent affinity: if an agent is actively handling, stick with it
@@ -218,8 +223,11 @@ class ConversationRouter:
                 # AI-to-AI reentry loops (agent A responds → agent B responds
                 # → agent A …). Transport channels still receive the event
                 # (e.g. VoiceChannel for TTS).
+                # A room held for a human asks no agent either.
                 source_binding = context.get_binding(event.source.channel_id)
-                if source_binding and source_binding.category == ChannelCategory.INTELLIGENCE:
+                if state.human_hold or (
+                    source_binding and source_binding.category == ChannelCategory.INTELLIGENCE
+                ):
                     always_process: list[str] = []
                     if self._supervisor_id:
                         always_process.append(self._supervisor_id)

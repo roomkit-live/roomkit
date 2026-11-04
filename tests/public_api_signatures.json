@@ -648,7 +648,7 @@
     "select_agent": ["def", "event", "context", "state"]
   },
   "roomkit.ConversationState": {
-    "__init__": ["def", "*", "phase=<ConversationPhase.INTAKE: 'intake'>", "active_agent_id=None", "previous_agent_id=None", "handoff_count=0", "phase_started_at=<factory>", "phase_history=<factory>", "context=<factory>"],
+    "__init__": ["def", "*", "phase=<ConversationPhase.INTAKE: 'intake'>", "active_agent_id=None", "previous_agent_id=None", "handoff_count=0", "phase_started_at=<factory>", "phase_history=<factory>", "context=<factory>", "human_hold=False"],
     "transition": ["def", "to_phase", "to_agent=None", "reason=''", "metadata=None"]
   },
   "roomkit.ConversationStore": {
