@@ -532,6 +532,7 @@ class TestLLMTelemetry:
         await kit.close()
 
         assert mock.get_spans(SpanKind.LLM_GENERATE) == []
+        assert mock.get_active_spans() == []
 
     async def test_a_stream_a_cut_left_unread_opens_no_llm_span(self) -> None:
         """The first agent's stream is read while its tool holds, the delivery
@@ -574,6 +575,7 @@ class TestLLMTelemetry:
         await kit.close()
 
         assert [s.channel_id for s in mock.get_spans(SpanKind.LLM_GENERATE)] == ["first"]
+        assert mock.get_active_spans() == []
 
     async def test_ai_channel_tool_call_span(self, streaming: bool) -> None:
         mock = MockTelemetryProvider()
