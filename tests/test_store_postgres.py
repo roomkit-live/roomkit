@@ -645,6 +645,23 @@ class TestIdentityDetails:
         assert await store.get_identity("i1") == first
         assert await store.resolve_identity("sms", "+1", organization_id="acme") == first
 
+    async def test_two_replacements_swapping_addresses_are_refused_without_a_deadlock(
+        self, store
+    ) -> None:
+        """Each new address filed before the old ones go: neither waits on what
+        the other removes, and each reads the refusal, not a deadlock."""
+        for number in range(8):
+            one, two = f"i{number}a", f"i{number}b"
+            first, second = f"+1{number}", f"+2{number}"
+            await store.create_identity(Identity(id=one, channel_addresses={"sms": [first]}))
+            await store.create_identity(Identity(id=two, channel_addresses={"sms": [second]}))
+            swapped = await asyncio.gather(
+                store.create_identity(Identity(id=one, channel_addresses={"sms": [second]})),
+                store.create_identity(Identity(id=two, channel_addresses={"sms": [first]})),
+                return_exceptions=True,
+            )
+            assert all(isinstance(outcome, AddressLinkedError) for outcome in swapped), swapped
+
 
 class TestTaskOperations:
     async def test_add_and_get(self, store) -> None:

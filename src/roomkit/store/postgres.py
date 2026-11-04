@@ -1901,17 +1901,30 @@ class PostgresStore(ConversationStore):
             )
             if status == "INSERT 0 0":
                 raise IdentityNotFoundError(f"Identity {identity.id} not found")
-            # What it no longer holds stops resolving to it.
+            declared = [
+                (ch_type, addr)
+                for ch_type, addresses in identity.channel_addresses.items()
+                for addr in addresses
+            ]
+            for ch_type, addr in declared:
+                # The identity's own organization: an address declared on
+                # the identity belongs to the tenant that owns it.
+                await _file_address(
+                    conn, ch_type, addr, identity.id, identity.organization_id or ""
+                )
+            # What it no longer holds stops resolving to it. After the filing,
+            # so that a replacement refused for an address it takes from another
+            # has locked nothing that other is removing: two that swap addresses
+            # read the refusal, not a deadlock.
             await conn.execute(
-                "DELETE FROM identity_addresses WHERE identity_id = $1", identity.id
+                "DELETE FROM identity_addresses WHERE identity_id = $1 AND NOT EXISTS ("
+                " SELECT 1 FROM unnest($2::text[], $3::text[]) AS kept(channel_type, address)"
+                " WHERE kept.channel_type = identity_addresses.channel_type"
+                " AND kept.address = identity_addresses.address)",
+                identity.id,
+                [ch_type for ch_type, _ in declared],
+                [addr for _, addr in declared],
             )
-            for ch_type, addresses in identity.channel_addresses.items():
-                for addr in addresses:
-                    # The identity's own organization: an address declared on
-                    # the identity belongs to the tenant that owns it.
-                    await _file_address(
-                        conn, ch_type, addr, identity.id, identity.organization_id or ""
-                    )
         return identity
 
     async def get_identity(self, identity_id: str) -> Identity | None:
