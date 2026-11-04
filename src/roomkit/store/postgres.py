@@ -1912,18 +1912,21 @@ class PostgresStore(ConversationStore):
                 await _file_address(
                     conn, ch_type, addr, identity.id, identity.organization_id or ""
                 )
-            # What it no longer holds stops resolving to it. After the filing,
+            # What it no longer holds stops resolving to it, a row of another
+            # scope for an address it keeps among them (RFC §17.2). After the filing,
             # so that a replacement refused for an address it takes from another
             # has locked nothing that other is removing: two that swap addresses
             # read the refusal, not a deadlock.
             await conn.execute(
-                "DELETE FROM identity_addresses WHERE identity_id = $1 AND NOT EXISTS ("
+                "DELETE FROM identity_addresses WHERE identity_id = $1"
+                " AND (organization_id <> $4 OR NOT EXISTS ("
                 " SELECT 1 FROM unnest($2::text[], $3::text[]) AS kept(channel_type, address)"
                 " WHERE kept.channel_type = identity_addresses.channel_type"
-                " AND kept.address = identity_addresses.address)",
+                " AND kept.address = identity_addresses.address))",
                 identity.id,
                 [ch_type for ch_type, _ in declared],
                 [addr for _, addr in declared],
+                identity.organization_id or "",
             )
         return identity
 

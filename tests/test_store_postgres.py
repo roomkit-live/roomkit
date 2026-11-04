@@ -645,6 +645,22 @@ class TestIdentityDetails:
         assert await store.get_identity("i1") == first
         assert await store.resolve_identity("sms", "+1", organization_id="acme") == first
 
+    async def test_a_replacement_removes_a_row_of_another_scope_for_a_kept_address(
+        self, store
+    ) -> None:
+        """An address it keeps, under its own organization: a row of another scope
+        for the same address, one left unscoped by an upgrade, stops resolving."""
+        identity = Identity(id="i1", organization_id="acme", channel_addresses={"sms": ["+1555"]})
+        await store.create_identity(identity)
+        async with store._pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO identity_addresses (channel_type, address, identity_id,"
+                " organization_id) VALUES ('sms', '+1555', 'i1', '')"
+            )
+        await store.create_identity(identity)
+        assert await store.resolve_identity("sms", "+1555") is None
+        assert await store.resolve_identity("sms", "+1555", organization_id="acme") == identity
+
     async def test_two_replacements_swapping_addresses_are_refused_without_a_deadlock(
         self, store
     ) -> None:
