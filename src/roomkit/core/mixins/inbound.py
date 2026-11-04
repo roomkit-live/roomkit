@@ -1181,15 +1181,16 @@ class InboundMixin(HelpersMixin):
                     metadata=channel.reply_metadata(message) if recorded and channel else {},
                 )
                 if named == SYSTEM_SENDER_ID and binding is not None:
-                    await self._close_hooks_binding(binding)
+                    await self._close_hooks_binding(binding, channel)
         return room.id
 
-    async def _close_hooks_binding(self, binding: ChannelBinding) -> None:
+    async def _close_hooks_binding(self, binding: ChannelBinding, channel: Channel | None) -> None:
         """Write the name no sender is on *binding*, the room's binding of a
         routed message with no address (RFC §5.7, §10.4), if it names no one:
         one an ON_ROOM_CREATED hook made is kept, and left unnamed it would
-        pass step 3 for the next sender. Under the room lock its caller holds."""
-        if not binding_names_no_one(binding):
+        pass step 3 for the next sender. A binding holding a recipient names
+        them, or no sender, already. Under the room lock its caller holds."""
+        if not binding_names_no_one(binding) or routed_recipient(channel, binding) is not None:
             return
         closed = binding.model_copy(update={"participant_id": SYSTEM_SENDER_ID})
         await self._store.update_binding(closed)
