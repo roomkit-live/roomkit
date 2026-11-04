@@ -375,6 +375,16 @@ class HandoffHandler:
                                 f"'{new_phase}'"
                             ),
                         )
+                    elif not self._holds_phase(calling_agent_id, state.phase):
+                        logger.warning(
+                            "Handoff rejected: caller %s does not hold phase %s",
+                            calling_agent_id,
+                            state.phase,
+                        )
+                        rejected_result = HandoffResult(
+                            accepted=False,
+                            reason=f"Agent {calling_agent_id} does not hold phase '{state.phase}'",
+                        )
 
             if rejected_result is None:
                 # Handle "human" target — set active_agent to None
@@ -666,18 +676,19 @@ class HandoffHandler:
                 return getattr(agent, "language", None)
         return None
 
-    def _holds_phase(self, target: str, phase: str) -> bool:
-        """Whether a handoff under allowed transitions may lead *target* to
-        *phase* (RFC §19.6). With no phase map nothing ties an agent to a
-        phase. With one, a human or a known target it does not name passes;
-        any other holds its own phase and those the router's rules give it,
-        and no phase otherwise."""
+    def _holds_phase(self, agent_id: str, phase: str) -> bool:
+        """Whether, under allowed transitions, *agent_id* holds *phase*: as a
+        handoff's target, the phase it is led to; as its caller, the room's
+        (RFC §19.6). With no phase map nothing ties an agent to a phase. With
+        one, a human or a known agent it does not name passes; any other holds
+        its own phase and those the router's rules give it, and no phase
+        otherwise."""
         if not self._phase_map:
             return True
-        own = self._phase_map.get(target)
-        if own is None and (target == "human" or target in self._known_agents):
+        own = self._phase_map.get(agent_id)
+        if own is None and (agent_id == "human" or agent_id in self._known_agents):
             return True
-        return own == phase or self._router._routes_phase_to(phase, target)
+        return own == phase or self._router._routes_phase_to(phase, agent_id)
 
     def _resolve_alias(self, target: str) -> str:
         return self._aliases.get(target, target)

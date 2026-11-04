@@ -121,7 +121,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only to a phase it holds, a human or a known target the map does not name
   excepted: `{target: "c", next_phase: "b"}` no longer skips a stage of a
   pipeline, realtime included, nor reaches an agent in no stage, and answers
-  `Agent c does not hold phase 'b'` (RMK-1233).
+  `Agent c does not hold phase 'b'`. The caller holds the room's phase by the
+  same rule: an agent calling twice no longer skips a stage (RMK-1233).
 - **Two senders with no name on one channel read as two speakers** (RFC
   §6.4, RMK-1221). An event the application sent from a channel with no
   participant and a message a nameless sender sent through it both read
