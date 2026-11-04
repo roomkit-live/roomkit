@@ -1,0 +1,90 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "resilience/a-done-event-alone-counts-as-handed",
+  "title": "A generation that handed its done event alone then fails is never read again, not even compacted: the usage it reported is already counted",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: tests/test_channels/test_ai_streaming_compaction.py::test_stream_done_counts_as_emission.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "usage": {
+                "input_tokens": 100
+              },
+              "refuses": {
+                "status": 400,
+                "message": "maximum context length exceeded",
+                "context_overflow": true
+              },
+              "failure_after_done": true
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "maximum context length exceeded"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Go."
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

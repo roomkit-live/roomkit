@@ -1,0 +1,126 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-record/what-a-failed-generation-reported-counts-on-the-record",
+  "title": "A generation that reported its usage then failed counts on the turn's usage, as its done event came, and leaves no last usage: the turn's record reads incomplete",
+  "rules": [
+    "§6.4 The turn's record"
+  ],
+  "notes": "Python: _StreamRound.stream records a generation's usage at its StreamDone (_record_stream_usage), and _StreamTurnState.generation_failed clears the last usage.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "text": "Checking.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 100,
+                "output_tokens": 10
+              }
+            },
+            {
+              "usage": {
+                "input_tokens": 20,
+                "output_tokens": 5
+              },
+              "fails": "provider unavailable",
+              "failure_after_done": true
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "provider unavailable"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0
+        },
+        {
+          "index": 1,
+          "content": {
+            "body": "Checking."
+          },
+          "metadata": {
+            "loop_end_reason": "error",
+            "ai_usage": {
+              "input_tokens": 120,
+              "output_tokens": 15
+            },
+            "ai_last_usage": null,
+            "ai_usage_complete": false
+          }
+        },
+        {
+          "index": 2
+        },
+        {
+          "index": 3
+        }
+      ]
+    }
+  }
+}

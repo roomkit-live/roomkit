@@ -1,0 +1,112 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/an-unexpected-call-is-told-and-tried-again-on-the-first-round",
+  "title": "A round that ends on a call to a tool the request did not enable is told so, in words of its own, and tried again",
+  "rules": [
+    "§6.4",
+    "Appendix A.9"
+  ],
+  "notes": "Python: tests/test_channels/test_ai_empty_retry.py::test_a_malformed_call_is_told_and_retried_on_the_first_round[UNEXPECTED_TOOL_CALL] (malformed_call_nudge).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "text": "",
+              "finish_reason": "UNEXPECTED_TOOL_CALL"
+            },
+            {
+              "text": "Done"
+            }
+          ]
+        },
+        "max_empty_retries": 1
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$contains": "Go."
+              }
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$contains": "Go."
+              }
+            },
+            {
+              "role": "user",
+              "text": "The tool you called is not available in this request, so it did not run. Use one of the declared tools, or answer in plain text."
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

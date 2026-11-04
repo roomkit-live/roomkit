@@ -1,0 +1,126 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "resilience/a-stream-that-fails-after-its-done-event-fails-the-turn",
+  "title": "A generation that fails once its done event came fails the turn, the text it handed kept: the stream is read to its end, and neither a retry nor the fallback provider reads it again",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python's _StreamRound.stream reads a provider's stream to its end, an error after StreamDone included, and any event counts as handed (_ai_resilience.py).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Voici",
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              },
+              "refuses": {
+                "status": 503,
+                "message": "the provider went away",
+                "retryable": true
+              },
+              "failure_after_done": true
+            }
+          ]
+        },
+        "retry_policy": {
+          "max_retries": 3,
+          "base_delay_ms": 1
+        },
+        "fallback_model": {
+          "rounds": [
+            {
+              "text": "fallback"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "the provider went away"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "type": "text",
+            "body": "Go."
+          }
+        },
+        {
+          "index": 1,
+          "source": {
+            "channel_id": "agent",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "Voici"
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Go."
+            }
+          ]
+        }
+      ],
+      "agent/fallback": []
+    }
+  }
+}
