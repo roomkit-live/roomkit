@@ -1,0 +1,108 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-record/a-memory-s-write-rides-the-reply",
+  "title": "What a memory writes on the turn's record while it reads the room rides the reply and reaches the caller's result",
+  "rules": [
+    "§6.7",
+    "§20"
+  ],
+  "notes": "Python: tests/test_response_metadata.py::TestLiveRecord::test_memory_provider_write_lands_on_the_reply.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "memory": {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Read page 3"
+            }
+          ],
+          "writes_record": {
+            "rag_sources": [
+              "doc-1"
+            ]
+          }
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "AI says hi"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Read page 3"
+        }
+      },
+      "expect": {
+        "result": {
+          "response_metadata": {
+            "rag_sources": [
+              "doc-1"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "Read page 3"
+          }
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "content": {
+            "body": "AI says hi"
+          },
+          "metadata": {
+            "rag_sources": [
+              "doc-1"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

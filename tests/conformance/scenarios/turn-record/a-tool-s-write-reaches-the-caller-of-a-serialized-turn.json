@@ -1,0 +1,163 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-record/a-tool-s-write-reaches-the-caller-of-a-serialized-turn",
+  "title": "A turn that waited its place in the room hands its record on all the same",
+  "rules": [
+    "§6.7"
+  ],
+  "notes": "Python: tests/test_response_metadata.py::TestLiveRecord::test_tool_handler_write_lands_on_the_answer[one at a time].",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "read_page",
+            "description": "Read a page.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "integer"
+                }
+              }
+            },
+            "returns": "page text",
+            "writes_record": {
+              "cited": [
+                {
+                  "tool": "read_page",
+                  "page": 3
+                }
+              ]
+            }
+          }
+        ],
+        "serialize_room_turns": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "Let me read.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "read_page",
+                  "arguments": {
+                    "page": 3
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Page 3 says so."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Read page 3"
+        }
+      },
+      "expect": {
+        "result": {
+          "error": null,
+          "response_metadata": {
+            "cited": [
+              {
+                "tool": "read_page",
+                "page": 3
+              }
+            ],
+            "turns": {
+              "agent": {
+                "loop_end_reason": "completed"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "Read page 3"
+          }
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "content": {
+            "body": "Let me read."
+          },
+          "metadata": {
+            "cited": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "index": 2,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 3,
+          "type": "tool_call_end"
+        },
+        {
+          "index": 4,
+          "type": "message",
+          "content": {
+            "body": "Page 3 says so."
+          },
+          "metadata": {
+            "cited": [
+              {
+                "tool": "read_page",
+                "page": 3
+              }
+            ],
+            "loop_end_reason": "completed"
+          }
+        }
+      ]
+    }
+  }
+}

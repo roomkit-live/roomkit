@@ -1,12 +1,12 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "turn-config/an-off-turns-off-a-less-specific-budget",
-  "title": "An enable_thinking of false turns off a thinking budget a less specific level set; a budget set at the same level or a more specific one still decides",
+  "title": "An enable_thinking of false, however it is written, turns off a thinking budget a less specific level set; a budget set at the same level or a more specific one still decides",
   "rules": [
     "§6.7",
     "Appendix A.9"
   ],
-  "notes": "Python: channels/_ai_context.py _turn_settings, _thinking_turned_off, _turn_source; tests/test_channels/test_turn_config.py TestThinkingOffAcrossLevels::test_off_turns_off_a_less_specific_budget (its six cases, in its order): the agent's budget is 2048. room-7: a binding's false written otherwise, which AIContext reads as false: Python's _thinking_turned_off compares the value as written (`enabled is False`), so the agent's budget stands.",
+  "notes": "Python: channels/_ai_context.py _turn_settings, _thinking_turned_off, _reads_off, _turn_source; tests/test_channels/test_turn_config.py TestThinkingOffAcrossLevels::test_off_turns_off_a_less_specific_budget: the agent's budget is 2048. room-7: a binding's false written otherwise is read before it is compared (HITL e92720b1).",
   "setup": {
     "channels": [
       {
@@ -298,7 +298,7 @@
           "enable_thinking": false
         },
         {
-          "thinking_budget": 2048,
+          "thinking_budget": null,
           "enable_thinking": false
         }
       ]

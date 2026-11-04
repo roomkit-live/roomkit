@@ -1,0 +1,151 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-blank-last-text-leaves-the-turn-s-end-on-its-last-message",
+  "title": "A turn whose last text is blank stores no message for it: the turn's end and usage are written on the last message it stored",
+  "rules": [
+    "§6.4",
+    "§12.2 step 13s"
+  ],
+  "notes": "Python: core/mixins/_streaming_segments.py flush_text, a blank segment writes nothing (RMK-1300, HITL b3dd82fe); tests/test_interrupted_turn.py::test_a_blank_segment_writes_no_message. The blank round comes back empty, so the loop asks once more (test_ai_empty_retry.py) and the second blank ends the turn.",
+  "setup": {
+    "channels": [
+      {
+        "id": "web",
+        "type": "webhook",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up.",
+            "returns": "found"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "text": "Looking.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "output_tokens": 5
+              }
+            },
+            {
+              "deltas": [
+                "\n\n"
+              ]
+            },
+            {
+              "deltas": [
+                "\n"
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message",
+          "content": {
+            "body": "hi"
+          }
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "content": {
+            "body": "Looking."
+          },
+          "metadata": {
+            "loop_end_reason": "empty_response",
+            "ai_usage": {
+              "output_tokens": 5
+            }
+          }
+        },
+        {
+          "index": 2,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 3,
+          "type": "tool_call_end"
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "web": [
+          {
+            "index": 0
+          },
+          {
+            "index": 1,
+            "type": "message"
+          },
+          {
+            "index": 2,
+            "type": "tool_call_start"
+          },
+          {
+            "index": 3,
+            "type": "tool_call_end"
+          }
+        ]
+      }
+    }
+  }
+}

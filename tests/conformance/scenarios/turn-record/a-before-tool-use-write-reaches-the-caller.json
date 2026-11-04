@@ -1,0 +1,110 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-record/a-before-tool-use-write-reaches-the-caller",
+  "title": "What a BEFORE_TOOL_USE hook writes through current_response_metadata reaches the caller's result, a hook running under the call's turn",
+  "rules": [
+    "§6.7"
+  ],
+  "notes": "Python: tests/test_response_metadata.py::test_a_before_tool_use_write_reaches_the_inbound_result[False].",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "read_page",
+            "description": "Read a page.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "integer"
+                }
+              }
+            },
+            "returns": "page text"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "text": "Let me read.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "read_page",
+                  "arguments": {
+                    "page": 3
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Page 3 says so."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "counts",
+        "trigger": "before_tool_use",
+        "priority": 0,
+        "reactions": [
+          {
+            "writes_record": {
+              "calls_started": 1
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Read page 3"
+        }
+      },
+      "expect": {
+        "result": {
+          "error": null,
+          "response_metadata": {
+            "calls_started": 1
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ]
+}

@@ -1,0 +1,169 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-record/a-deferred-wait-reads-what-the-stream-wrote",
+  "title": "A deferred delivery's wait reads what a tool wrote on the turn's record during the stream",
+  "rules": [
+    "§6.7",
+    "§10.1 step 18"
+  ],
+  "notes": "Python: core/mixins/lane_execution.py _consume, merge_caller_record; tests/test_response_metadata.py::TestInboundResultResponseMetadata::test_deferred_wait_backfills_writes_made_during_the_stream. The record at the commit is not compared: it MAY be empty (§10.1 step 18).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "read_page",
+            "description": "Read a page.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "integer"
+                }
+              }
+            },
+            "returns": "page text",
+            "writes_record": {
+              "cited": [
+                {
+                  "tool": "read_page",
+                  "page": 3
+                }
+              ]
+            }
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "text": "Let me read.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "read_page",
+                  "arguments": {
+                    "page": 3
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Page 3 says so."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Read page 3"
+        }
+      },
+      "defer_delivery": true,
+      "as": "read"
+    },
+    {
+      "call": "delivery.wait",
+      "of": "read",
+      "expect": {
+        "result": {
+          "error": null,
+          "response_metadata": {
+            "cited": [
+              {
+                "tool": "read_page",
+                "page": 3
+              }
+            ],
+            "turns": {
+              "agent": {
+                "loop_end_reason": "completed"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "Read page 3"
+          }
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "content": {
+            "body": "Let me read."
+          },
+          "metadata": {
+            "cited": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "index": 2,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 3,
+          "type": "tool_call_end"
+        },
+        {
+          "index": 4,
+          "type": "message",
+          "content": {
+            "body": "Page 3 says so."
+          },
+          "metadata": {
+            "cited": [
+              {
+                "tool": "read_page",
+                "page": 3
+              }
+            ],
+            "loop_end_reason": "completed"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,111 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-record/an-async-observer-of-a-call-writes-the-turn-s-record",
+  "title": "An ASYNC ON_TOOL_CALL hook runs under the call's turn: what it writes through current_response_metadata is the turn's record",
+  "rules": [
+    "§6.7"
+  ],
+  "notes": "Python: core/hooks.py runs an ASYNC hook on a task that copies the turn's context; review of RMK-1254.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "read_page",
+            "description": "Read a page.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "integer"
+                }
+              }
+            },
+            "returns": "page text"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "text": "Let me read.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "read_page",
+                  "arguments": {
+                    "page": 3
+                  }
+                }
+              ]
+            },
+            {
+              "deltas": [
+                "Page 3 ",
+                "says so."
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "observes",
+        "trigger": "on_tool_call",
+        "execution": "async",
+        "reactions": [
+          {
+            "writes_record": {
+              "observed": true
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Read page 3"
+        }
+      },
+      "expect": {
+        "result": {
+          "response_metadata": {
+            "observed": true
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ]
+}

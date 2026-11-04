@@ -1,0 +1,105 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-blank-answer-writes-no-message",
+  "title": "A streamed answer that is only blank stores no message and delivers none; its caller still reads how the turn ended",
+  "rules": [
+    "§6.4",
+    "§12.2 step 13s"
+  ],
+  "notes": "Python: core/mixins/_streaming_segments.py flush_text, a blank segment writes nothing (RMK-1300, HITL b3dd82fe); tests/test_interrupted_turn.py::test_a_blank_segment_writes_no_message.",
+  "setup": {
+    "channels": [
+      {
+        "id": "web",
+        "type": "webhook",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "\n\n"
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "response_metadata": {
+            "turns": {
+              "agent": {
+                "loop_end_reason": "completed"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message",
+          "content": {
+            "body": "hi"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "web": [
+          {
+            "index": 0
+          }
+        ]
+      }
+    }
+  }
+}

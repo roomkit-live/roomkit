@@ -1,0 +1,97 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-record/a-turn-that-writes-nothing-adds-nothing",
+  "title": "A turn nothing wrote on leaves only its end under turns in its caller's record, and only its end on its message",
+  "rules": [
+    "§6.7"
+  ],
+  "notes": "Python: tests/test_response_metadata.py::TestResponseMetadataDirect::test_no_hook_means_empty_response_metadata.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Hello."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Read page 3"
+        }
+      },
+      "expect": {
+        "result": {
+          "response_metadata": {
+            "rag_sources": {
+              "$absent": true
+            },
+            "turns": {
+              "agent": {
+                "loop_end_reason": "completed"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "Read page 3"
+          }
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "metadata": {
+            "loop_end_reason": "completed",
+            "rag_sources": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

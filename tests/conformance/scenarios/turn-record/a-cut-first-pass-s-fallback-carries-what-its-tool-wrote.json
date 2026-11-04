@@ -1,0 +1,192 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-record/a-cut-first-pass-s-fallback-carries-what-its-tool-wrote",
+  "title": "A first pass cut short answers its supervisor's fallback carrying the turn's whole record, what its tool wrote included, which reaches the caller's result",
+  "rules": [
+    "§6.7",
+    "§19.6"
+  ],
+  "notes": "Python: orchestration/strategies/supervisor/delegate.py _with_record, _pass1_answer; tests/orchestration/test_supervisor_pass1_cut.py::test_a_cut_pass_answers_with_the_supervisors_fallback (kb_source).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Still checking.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "text": "Still checking.",
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "lookup"
+                }
+              ]
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "look up",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found",
+            "writes_record": {
+              "kb_source": "doc-42"
+            }
+          }
+        ],
+        "max_tool_rounds": 1
+      },
+      {
+        "id": "analyst",
+        "type": "ai",
+        "agent": {
+          "role": "Analyst"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Numbers."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "analyst"
+          ],
+          "strategy": "parallel",
+          "auto_delegate": true
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Look into Acme."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null,
+          "response_metadata": {
+            "turns": {
+              "sup": {
+                "loop_end_reason": "max_rounds"
+              }
+            },
+            "kb_source": "doc-42"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "sms"
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "source": {
+            "channel_id": "sup"
+          },
+          "content": {
+            "tool_id": "c1"
+          },
+          "chain_depth": 1,
+          "responds_to": "r1#0"
+        },
+        {
+          "type": "tool_call_end",
+          "source": {
+            "channel_id": "sup"
+          },
+          "content": {
+            "tool_id": "c1",
+            "outcome": "served"
+          },
+          "chain_depth": 1,
+          "responds_to": "r1#0"
+        },
+        {
+          "source": {
+            "channel_id": "sup",
+            "channel_type": "ai"
+          },
+          "content": {
+            "type": "text",
+            "body": "The delegated work could not be completed."
+          },
+          "chain_depth": 1,
+          "responds_to": "r1#0",
+          "correlation_id": {
+            "$absent": true
+          },
+          "metadata": {
+            "loop_end_reason": "max_rounds",
+            "ai_usage": {},
+            "kb_source": "doc-42"
+          }
+        }
+      ]
+    },
+    "models": {
+      "analyst": []
+    }
+  }
+}

@@ -1,0 +1,153 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-record/a-value-a-turn-writes-under-turns-is-not-carried",
+  "title": "A value a turn's tool writes under turns, the framework's key, is not carried to the caller, whose turns keeps each channel's end; the tool's other keys are",
+  "rules": [
+    "§6.7"
+  ],
+  "notes": "Python: models/response_metadata.py merge_channel_record; tests/test_inbound_turns_record.py::test_a_host_value_under_turns_is_not_carried.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "read_page",
+            "description": "Read a page.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "integer"
+                }
+              }
+            },
+            "returns": "page text",
+            "writes_record": {
+              "turns": 3,
+              "cited": [
+                {
+                  "tool": "read_page",
+                  "page": 3
+                }
+              ]
+            }
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "text": "Let me read.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "read_page",
+                  "arguments": {
+                    "page": 3
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Page 3 says so."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Read page 3"
+        }
+      },
+      "expect": {
+        "result": {
+          "response_metadata": {
+            "cited": [
+              {
+                "tool": "read_page",
+                "page": 3
+              }
+            ],
+            "turns": {
+              "agent": {
+                "loop_end_reason": "completed"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "Read page 3"
+          }
+        },
+        {
+          "index": 1,
+          "type": "message"
+        },
+        {
+          "index": 2,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 3,
+          "type": "tool_call_end"
+        },
+        {
+          "index": 4,
+          "type": "message",
+          "metadata": {
+            "cited": [
+              {
+                "tool": "read_page",
+                "page": 3
+              }
+            ],
+            "turns": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

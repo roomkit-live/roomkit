@@ -1,0 +1,101 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-provider-that-fails-after-a-blank-delta-stores-no-text",
+  "title": "A provider that fails after a blank delta stores no text for it: its error reaches the caller",
+  "rules": [
+    "§6.4",
+    "§12.2 step 13s"
+  ],
+  "notes": "Python: core/mixins/_streaming_segments.py end_failed, flush_text (RMK-1300).",
+  "setup": {
+    "channels": [
+      {
+        "id": "web",
+        "type": "webhook",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "\n\n"
+              ],
+              "fails": "upstream down"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "error": {
+            "$contains": "upstream down"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "hi"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "web": [
+          {
+            "index": 0
+          }
+        ]
+      }
+    }
+  }
+}

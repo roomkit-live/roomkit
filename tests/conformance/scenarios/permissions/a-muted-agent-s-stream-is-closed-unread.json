@@ -1,0 +1,141 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "permissions/a-muted-agent-s-stream-is-closed-unread",
+  "title": "A muted agent's stream is closed unread: its reply is never generated, its tools never run, and nothing of its record reaches the caller",
+  "rules": [
+    "§7.5",
+    "§10.6.4"
+  ],
+  "notes": "Python: core/event_router.py (binding.muted: _aclose_stream); tests/test_router.py::test_muted_target_streaming_response_suppressed. RFC §7.5 rule 2, §10.6.4.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "read_page",
+            "description": "Read a page.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "integer"
+                }
+              }
+            },
+            "returns": "page text",
+            "writes_record": {
+              "cited": [
+                {
+                  "tool": "read_page",
+                  "page": 3
+                }
+              ]
+            }
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "text": "Let me read.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "read_page",
+                  "arguments": {
+                    "page": 3
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Page 3 says so."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "muted": true
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "cites",
+        "trigger": "before_ai_generation",
+        "priority": 0,
+        "reactions": [
+          {
+            "writes_record": {
+              "hook": true
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Read page 3"
+        }
+      },
+      "expect": {
+        "result": {
+          "response_metadata": {
+            "hook": {
+              "$absent": true
+            },
+            "cited": {
+              "$absent": true
+            },
+            "turns": {
+              "$absent": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "Read page 3"
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": []
+    }
+  }
+}

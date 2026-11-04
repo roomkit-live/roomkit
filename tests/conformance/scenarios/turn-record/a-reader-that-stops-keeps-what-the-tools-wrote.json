@@ -1,0 +1,162 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-record/a-reader-that-stops-keeps-what-the-tools-wrote",
+  "title": "A reader that stops leaves the caller's result what the turn's tools wrote: the record is the turn's last, and rides the text kept",
+  "rules": [
+    "§6.7"
+  ],
+  "notes": "Python: turns/_owner_turn.py close_stream, reader_stopped; tests/test_turns_pull.py::test_a_reader_that_stops_after_its_turn_ended_reads_the_turn_s_last_record.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "deliver_stream": [
+          {
+            "stop_after": "Page "
+          }
+        ],
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "read_page",
+            "description": "Read a page.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "integer"
+                }
+              }
+            },
+            "returns": "page text",
+            "writes_record": {
+              "cited": [
+                {
+                  "tool": "read_page",
+                  "page": 3
+                }
+              ]
+            }
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "text": "Let me read.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "read_page",
+                  "arguments": {
+                    "page": 3
+                  }
+                }
+              ]
+            },
+            {
+              "deltas": [
+                "Page ",
+                "3 says so."
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Read page 3"
+        }
+      },
+      "expect": {
+        "result": {
+          "response_metadata": {
+            "cited": [
+              {
+                "tool": "read_page",
+                "page": 3
+              }
+            ],
+            "turns": {
+              "agent": {
+                "loop_end_reason": "cancelled"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "Read page 3"
+          }
+        },
+        {
+          "index": 1,
+          "type": "message"
+        },
+        {
+          "index": 2,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 3,
+          "type": "tool_call_end"
+        },
+        {
+          "index": 4,
+          "type": "message",
+          "content": {
+            "body": "Page "
+          },
+          "metadata": {
+            "cited": [
+              {
+                "tool": "read_page",
+                "page": 3
+              }
+            ],
+            "cancelled": true,
+            "loop_end_reason": "cancelled"
+          }
+        }
+      ]
+    }
+  }
+}

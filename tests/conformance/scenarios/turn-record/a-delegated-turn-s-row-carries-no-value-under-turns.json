@@ -1,0 +1,136 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-record/a-delegated-turn-s-row-carries-no-value-under-turns",
+  "title": "A value a delegated turn's tool writes under turns is on none of its rows; its other keys are",
+  "rules": [
+    "§6.7",
+    "§23.3"
+  ],
+  "notes": "Python: core/_instructions.py response_metadata, core/mixins/_streaming_segments.py _build; HITL f491f106.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "read_page",
+            "description": "Read a page.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "integer"
+                }
+              }
+            },
+            "returns": "page text",
+            "writes_record": {
+              "turns": "mine",
+              "cited": [
+                {
+                  "tool": "read_page",
+                  "page": 3
+                }
+              ]
+            }
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "text": "Let me read.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "read_page",
+                  "arguments": {
+                    "page": 3
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Page 3 says so."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "Do the task.",
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "completed"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [],
+      "$r1": [
+        {
+          "index": 0
+        },
+        {
+          "source": {
+            "channel_id": "worker"
+          },
+          "content": {
+            "body": "Let me read."
+          }
+        },
+        {
+          "type": "tool_call_start"
+        },
+        {
+          "type": "tool_call_end"
+        },
+        {
+          "source": {
+            "channel_id": "worker"
+          },
+          "content": {
+            "body": "Page 3 says so."
+          },
+          "metadata": {
+            "cited": [
+              {
+                "tool": "read_page",
+                "page": 3
+              }
+            ],
+            "turns": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,112 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-record/a-before-tool-use-write-reaches-the-caller-of-a-failed-turn",
+  "title": "What a BEFORE_TOOL_USE hook writes reaches the caller's result when the turn then fails",
+  "rules": [
+    "§6.7"
+  ],
+  "notes": "Python: tests/test_response_metadata.py::test_a_before_tool_use_write_reaches_the_inbound_result[True].",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "read_page",
+            "description": "Read a page.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "integer"
+                }
+              }
+            },
+            "returns": "page text"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "text": "Let me read.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "read_page",
+                  "arguments": {
+                    "page": 3
+                  }
+                }
+              ]
+            },
+            {
+              "fails": "upstream down"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "counts",
+        "trigger": "before_tool_use",
+        "priority": 0,
+        "reactions": [
+          {
+            "writes_record": {
+              "calls_started": 1
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Read page 3"
+        }
+      },
+      "expect": {
+        "result": {
+          "error": {
+            "$contains": "upstream down"
+          },
+          "response_metadata": {
+            "calls_started": 1
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ]
+}

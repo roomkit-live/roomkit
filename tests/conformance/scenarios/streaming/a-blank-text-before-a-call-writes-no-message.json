@@ -1,0 +1,193 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-blank-text-before-a-call-writes-no-message",
+  "title": "A round whose text is blank before its call, as a reasoning server writes it, stores no message and delivers none: the call's start is the first row of the answer",
+  "rules": [
+    "§6.4",
+    "§12.2 step 13s"
+  ],
+  "notes": "Python: core/mixins/_streaming_segments.py flush_text, a blank segment writes nothing (RMK-1300, HITL b3dd82fe); tests/test_interrupted_turn.py::test_a_blank_segment_writes_no_message. The rendering channel is still handed the deltas: they are the stream, not a row.",
+  "setup": {
+    "channels": [
+      {
+        "id": "web",
+        "type": "webhook",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up.",
+            "returns": "found"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "thinking": [
+                "First."
+              ],
+              "deltas": [
+                "\n\n"
+              ],
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "thinking": [
+                "Second."
+              ],
+              "text": "Done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message",
+          "content": {
+            "body": "hi"
+          }
+        },
+        {
+          "index": 1,
+          "type": "tool_call_start",
+          "content": {
+            "tool_id": "c1",
+            "status": "pending"
+          }
+        },
+        {
+          "index": 2,
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "c1",
+            "status": "completed"
+          }
+        },
+        {
+          "index": 3,
+          "type": "message",
+          "content": {
+            "body": "Done."
+          },
+          "metadata": {
+            "loop_end_reason": "completed"
+          }
+        }
+      ]
+    },
+    "streamed": {
+      "room-1": {
+        "ws": [
+          {
+            "thinking": "First."
+          },
+          {
+            "text": "\n\n"
+          },
+          {
+            "row": {
+              "index": 1,
+              "type": "tool_call_start"
+            }
+          },
+          {
+            "row": {
+              "index": 2,
+              "type": "tool_call_end"
+            }
+          },
+          {
+            "thinking": "Second."
+          },
+          {
+            "text": "Done."
+          },
+          {
+            "row": {
+              "index": 3,
+              "type": "message",
+              "content": {
+                "body": "Done."
+              }
+            }
+          }
+        ]
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "web": [
+          {
+            "index": 0
+          },
+          {
+            "index": 1,
+            "type": "tool_call_start"
+          },
+          {
+            "index": 2,
+            "type": "tool_call_end"
+          },
+          {
+            "index": 3,
+            "type": "message"
+          }
+        ]
+      }
+    }
+  }
+}
