@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **`create_identity` never crosses an organization** (HITL b5e932a6, RMK-1277).
+  On the memory and SQLite stores, an id another organization holds was
+  overwritten and moved to the caller's organization, and a replaced identity kept
+  resolving at the addresses it no longer held. It now replaces an identity within
+  its organization only, refusing `IdentityNotFoundError` for another's, as
+  `link_address` does, and a replacement removes what it no longer holds. Every
+  store does the same; `PostgresStore`'s replacement arrives with it.
+
 - **BREAKING: a model's reasoning text is private by default on a room's
   realtime channel** (RMK-1052). `THINKING_DELTA` and `THINKING_END` carried up
   to 1000 characters of the reasoning to every subscriber, with no visibility
@@ -270,9 +278,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`PostgresStore` keeps what the other stores keep** (HITL f01854e2,
   RMK-1277). It had no column for a participant's `candidates`, nor for an
   identity's `phone`, `external_id` and `external_ids`, and lost them silently;
-  `create_identity` under a held id raised where the other stores replace: it
-  replaces the identity within its organization, its old addresses gone, and
-  refuses `IdentityNotFoundError` for an id another organization holds; and a
+  `create_identity` under a held id raised where the other stores replace; and a
   `confidence` written 0.42 read 0.41999998688697815 (now `DOUBLE PRECISION`, a
   stored value widened through its digits, once). The columns are additive.
 

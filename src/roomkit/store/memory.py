@@ -880,6 +880,11 @@ class InMemoryStore(ConversationStore):
 
     async def create_identity(self, identity: Identity) -> Identity:
         scope = identity.organization_id or ""
+        held = self._identities.get(identity.id)
+        # It replaces the stored identity within its organization only (RFC §5.6,
+        # §17.2): an identity of another is never overwritten.
+        if held is not None:
+            link_target(held, identity.id, identity.organization_id)
         keys = [
             (ch_type, addr, scope)
             for ch_type, addresses in identity.channel_addresses.items()
@@ -888,6 +893,10 @@ class InMemoryStore(ConversationStore):
         for key in keys:
             if self._address_index.get(key, identity.id) != identity.id:
                 raise address_linked(key[0])
+        # What it no longer holds stops resolving to it.
+        for ch_type, addresses in held.channel_addresses.items() if held is not None else ():
+            for addr in addresses:
+                self._address_index.pop((ch_type, addr, scope), None)
         self._identities[identity.id] = identity
         for key in keys:
             self._address_index[key] = identity.id

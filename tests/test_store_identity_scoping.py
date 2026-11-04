@@ -102,6 +102,81 @@ class TestSQLite:
             await store.close()
 
 
+class TestCreatingOverAHeldId:
+    """An identity created under an id the store holds replaces the stored one
+    within its organization (RFC §5.6, §17.2), and never across one."""
+
+    async def test_an_id_another_organization_holds_is_refused(
+        self, contract_store: ConversationStore
+    ) -> None:
+        address = f"+1555{uuid4().int % 10**7:07d}"
+        held = Identity(
+            id=f"id-{uuid4().hex}",
+            organization_id="acme",
+            display_name="Alice",
+            channel_addresses={"sms": [address]},
+        )
+        await contract_store.create_identity(held)
+
+        with pytest.raises(IdentityNotFoundError):
+            await contract_store.create_identity(
+                Identity(id=held.id, organization_id="globex", display_name="Intruder")
+            )
+
+        assert await contract_store.get_identity(held.id) == held
+        resolved = await contract_store.resolve_identity("sms", address, "acme")
+        assert resolved == held
+
+    async def test_a_replaced_identity_stops_resolving_at_what_it_no_longer_holds(
+        self, contract_store: ConversationStore
+    ) -> None:
+        old, new = (f"+1555{uuid4().int % 10**7:07d}" for _ in range(2))
+        first = Identity(
+            id=f"id-{uuid4().hex}", organization_id="acme", channel_addresses={"sms": [old]}
+        )
+        await contract_store.create_identity(first)
+        replaced = first.model_copy(update={"channel_addresses": {"sms": [new]}})
+
+        await contract_store.create_identity(replaced)
+
+        assert await contract_store.resolve_identity("sms", old, "acme") is None
+        assert await contract_store.resolve_identity("sms", new, "acme") == replaced
+
+    @pytest.mark.parametrize(("stored", "given"), [(None, "acme"), ("acme", None)])
+    async def test_no_organization_counts_as_another(
+        self, contract_store: ConversationStore, stored: str | None, given: str | None
+    ) -> None:
+        held = Identity(id=f"id-{uuid4().hex}", organization_id=stored, display_name="Alice")
+        await contract_store.create_identity(held)
+
+        with pytest.raises(IdentityNotFoundError):
+            await contract_store.create_identity(Identity(id=held.id, organization_id=given))
+
+        assert await contract_store.get_identity(held.id) == held
+
+    async def test_a_replacement_refused_for_an_address_keeps_the_old_ones(
+        self, contract_store: ConversationStore
+    ) -> None:
+        kept, taken = (f"+1555{uuid4().int % 10**7:07d}" for _ in range(2))
+        first = Identity(
+            id=f"id-{uuid4().hex}", organization_id="acme", channel_addresses={"sms": [kept]}
+        )
+        await contract_store.create_identity(first)
+        await contract_store.create_identity(
+            Identity(
+                id=f"id-{uuid4().hex}", organization_id="acme", channel_addresses={"sms": [taken]}
+            )
+        )
+
+        with pytest.raises(AddressLinkedError):
+            await contract_store.create_identity(
+                first.model_copy(update={"channel_addresses": {"sms": [taken]}})
+            )
+
+        assert await contract_store.get_identity(first.id) == first
+        assert await contract_store.resolve_identity("sms", kept, "acme") == first
+
+
 class TestOneIdentityPerAddress:
     """An address belongs to one identity per organization and channel type
     (RFC §5.6, §14.1): a resolution never chooses, and an address moves only

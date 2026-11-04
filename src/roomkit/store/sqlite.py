@@ -2076,6 +2076,11 @@ class SQLiteStore(ConversationStore):
         conn = self._db()
         scope = identity.organization_id or ""
         with _write_transaction(conn):
+            # It replaces the stored identity within its organization only (RFC
+            # §5.6, §17.2): an identity of another is never overwritten.
+            held = self._x_get_identity(identity.id)
+            if held is not None:
+                link_target(held, identity.id, identity.organization_id)
             for channel_type, addresses in identity.channel_addresses.items():
                 for address in addresses:
                     self._x_refuse_held_address(conn, channel_type, address, scope, identity.id)
@@ -2095,7 +2100,33 @@ class SQLiteStore(ConversationStore):
                         # it and an unscoped caller can.
                         (channel_type, address, identity.id, scope),
                     )
+            self._x_drop_addresses_no_longer_held(conn, identity, scope)
         return identity
+
+    @staticmethod
+    def _x_drop_addresses_no_longer_held(
+        conn: sqlite3.Connection, identity: Identity, scope: str
+    ) -> None:
+        """Removes what a replaced identity no longer holds, so that it stops
+        resolving to it, a row of another scope for an address it keeps among
+        them (RFC §17.2)."""
+        declared = {
+            (channel_type, address)
+            for channel_type, addresses in identity.channel_addresses.items()
+            for address in addresses
+        }
+        rows = conn.execute(
+            "SELECT channel_type, address, organization_id FROM identity_addresses"
+            " WHERE identity_id = ?",
+            (identity.id,),
+        ).fetchall()
+        for channel_type, address, organization_id in rows:
+            if organization_id != scope or (channel_type, address) not in declared:
+                conn.execute(
+                    "DELETE FROM identity_addresses WHERE channel_type = ? AND address = ?"
+                    " AND organization_id = ?",
+                    (channel_type, address, organization_id),
+                )
 
     @staticmethod
     def _x_refuse_held_address(

@@ -12,6 +12,7 @@ import asyncio
 import logging
 import re
 import sqlite3
+from pathlib import Path
 
 import pytest
 
@@ -21,6 +22,7 @@ from roomkit.core.mixins.verification import HELD_KEY
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.enums import ChannelType, EventStatus, EventType, RoomStatus
 from roomkit.models.event import DeleteContent
+from roomkit.models.identity import Identity
 from roomkit.models.participant import Participant
 from roomkit.models.room import Room
 from roomkit.models.store_filter import RoomFilter
@@ -710,3 +712,25 @@ class TestRoutingPlans:
             plan for plan in plans if re.match(r"SCAN (TABLE )?(p|r|participants|rooms)\b", plan)
         ]
         assert plans and scans == [], plans
+
+
+async def test_a_replacement_removes_a_row_of_another_scope_for_a_kept_address(
+    tmp_path: Path,
+) -> None:
+    """An address it keeps, under its own organization: a row of another scope
+    for the same address, one a file's migration left unscoped, stops resolving."""
+    path = tmp_path / "scoped.db"
+    store = SQLiteStore(path)
+    identity = Identity(id="i1", organization_id="acme", channel_addresses={"sms": ["+1555"]})
+    await store.create_identity(identity)
+    conn = sqlite3.connect(path)
+    conn.execute(
+        "INSERT INTO identity_addresses (channel_type, address, identity_id, organization_id)"
+        " VALUES ('sms', '+1555', 'i1', '')"
+    )
+    conn.commit()
+    conn.close()
+    await store.create_identity(identity)
+    assert await store.resolve_identity("sms", "+1555") is None
+    assert await store.resolve_identity("sms", "+1555", organization_id="acme") == identity
+    await store.close()
