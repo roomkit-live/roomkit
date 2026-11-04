@@ -505,10 +505,17 @@ async def test_a_history_opens_on_no_calls_when_the_answered_event_reads_as_noth
     await kit.close()
 
 
-@pytest.mark.parametrize("earlier", [False, True], ids=["alone", "after_a_message"])
-async def test_an_instruction_reads_before_a_round_at_its_own_index(earlier: bool) -> None:
+@pytest.mark.parametrize(
+    ("earlier", "at", "replayed"),
+    [(False, 0, True), (True, 0, True), (False, -1, False)],
+    ids=["alone", "after_a_message", "a_round_before_it"],
+)
+async def test_an_instruction_reads_before_a_round_at_its_own_index(
+    earlier: bool, at: int, replayed: bool
+) -> None:
     """Never stored, an instruction holds the index of what followed it, a round
-    among them: the round reads after it, whatever came before (RFC §19.7.5)."""
+    among them: the round reads after it, whatever came before (RFC §19.7.5). One
+    before that index is older than the turn, with no turn to read after."""
     a = _provider("my answer")
     kit = RoomKit()
     await _room(kit, a=a)
@@ -518,7 +525,9 @@ async def test_an_instruction_reads_before_a_round_at_its_own_index(earlier: boo
     context = await kit._build_context("r1")
     index = context.room.latest_index + 1
     agent = kit.channels["a"]
-    agent._tool_history_loader = AsyncMock(return_value=_round_rows(index))  # type: ignore[attr-defined]
+    agent._tool_history_loader = AsyncMock(  # type: ignore[attr-defined]
+        return_value=_round_rows(index + at)
+    )
     binding = context.get_binding("a")
     assert binding is not None
     mark = issue_mark([])
@@ -534,7 +543,8 @@ async def test_an_instruction_reads_before_a_round_at_its_own_index(earlier: boo
     await _answer(agent, trigger, binding, context)
     retire_mark(mark)
 
-    roles = [m.role for m in a.calls[0].messages]
-    assert roles == (["user"] if earlier else []) + ["user", "assistant", "tool"]
-    assert "Introduce yourself" in str(a.calls[0].messages[-3].content)
+    messages = a.calls[0].messages
+    rounds = ["assistant", "tool"] if replayed else []
+    assert [m.role for m in messages] == ["user"] * (2 if earlier else 1) + rounds
+    assert "Introduce yourself" in str(messages[-1 - len(rounds)].content)
     await kit.close()

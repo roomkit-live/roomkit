@@ -146,8 +146,8 @@ def with_tool_rounds(
     A round older than the history's first turn is not replayed: its turn's
     input is out of the window, and a history never opens on the assistant's
     calls. Nor is one at or after *before*, the turn's own event. *answered*
-    is the index of the event a discussion's turn reads at its place, which
-    may open the history or be all of it: a round after it reads after it.
+    is what a round must come after to read after the event a discussion's turn
+    reads at its place, which may open the history or be all of it.
     """
     known = [index for index in indexes if index is not None]
     if not known and answered is None:
