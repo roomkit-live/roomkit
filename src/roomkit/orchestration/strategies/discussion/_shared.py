@@ -15,10 +15,12 @@ import time
 from collections.abc import AsyncGenerator
 from typing import Any
 
+from roomkit.core._room_metadata import SPEAK_QUEUE
+
 from ._config import CONFIG_KEY, DiscussionConfig
 from ._queue import SpeakQueueState
 
-STATE_KEY = "_speak_queue"
+STATE_KEY = SPEAK_QUEUE
 """The room metadata key the speak queue is stored under."""
 
 LEASE_SECONDS = 15.0

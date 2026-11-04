@@ -12,8 +12,8 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field, ValidationError
 
-from roomkit.channels._discussion_turn import DISCUSSION_CONFIG
 from roomkit.channels.declared import id_of
+from roomkit.core._room_metadata import DISCUSSION_CONFIG
 
 if TYPE_CHECKING:
     from .strategy import Discussion

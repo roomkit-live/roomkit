@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **A discussion's stored key is the framework's** (RFC §19.7.5 rule 16, HITL 9247da98,
+  RMK-1337). `create_room(metadata=)`, `update_room_metadata`, a hook's body, a channel's
+  `metadata_updates` and a turn's `TurnHost` drop `_discussion` and `_speak_queue` with a
+  warning, as they do a `roomkit:` key: a forged one no longer holds the room with nobody
+  answering, nor stops an installed discussion's turns. A stored handle counts only for a
+  channel the discussion lists as an agent and only if it can name one, so a sender is no
+  longer labelled as an agent.
+
 - **A span's error no longer quotes its text** (RFC §15.7, RMK-1301).
   `PostgresStore`'s `store.*` spans and `TelemetryProvider.span()`'s block wrote
   `str(exc)` into `error_message`, which a driver's error can fill with a row's

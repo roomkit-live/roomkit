@@ -8,7 +8,9 @@ Two kinds:
   channel (``roomkit:channel_state:<id>``, §10.6.2);
 - a key of the room's private state (RFC §14.1,
   :mod:`roomkit.core._private_state`): the register of authors, a
-  discussion's results to post.
+  discussion's results to post;
+- a discussion's stored configuration and speak queue (RFC §19.7.5 rule 16),
+  which the strategy writes through the store.
 
 Every writer the kit hands a room's metadata from outside has them dropped
 with a warning, the rest written (:func:`without_framework_keys`): the kit's
@@ -36,10 +38,22 @@ logger = logging.getLogger("roomkit.room_metadata")
 FRAMEWORK_NAMESPACE = "roomkit:"
 """The prefix of the room-metadata keys the framework keeps for the room."""
 
+DISCUSSION_CONFIG = "_discussion"
+"""The room metadata key a discussion's configuration is stored under
+(RFC §19.7.5 rule 16)."""
+
+SPEAK_QUEUE = "_speak_queue"
+"""The room metadata key a discussion's speak queue is stored under
+(RFC §19.7.5 rule 16)."""
+
+_DISCUSSION_KEYS = frozenset({DISCUSSION_CONFIG, SPEAK_QUEUE})
+
 
 def the_framework_s(key: str) -> bool:
     """Whether only the framework writes *key* of a room's metadata."""
-    return key.startswith(FRAMEWORK_NAMESPACE) or key in PRIVATE_STATE_KEYS
+    return (
+        key.startswith(FRAMEWORK_NAMESPACE) or key in PRIVATE_STATE_KEYS or key in _DISCUSSION_KEYS
+    )
 
 
 def without_framework_keys(

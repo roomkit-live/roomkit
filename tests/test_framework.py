@@ -161,6 +161,8 @@ class TestRoomLifecycle:
             "roomkit:detached_channels",
             "roomkit:channel_state:ws",
             "roomkit:anything",
+            "_discussion",
+            "_speak_queue",
         ],
     )
     async def test_a_key_only_the_framework_writes_is_dropped_with_a_warning(

@@ -24,14 +24,12 @@ from collections.abc import Mapping
 from typing import Any
 from uuid import uuid4
 
+from roomkit._handles import is_handle
+from roomkit.core._room_metadata import DISCUSSION_CONFIG as DISCUSSION_CONFIG
 from roomkit.models.event import RoomEvent
 
 DISCUSSION_TURN = "_discussion_turn"
 """The metadata key a discussion's turn trigger carries."""
-
-DISCUSSION_CONFIG = "_discussion"
-"""The room metadata key a discussion's configuration is stored under
-(RFC §19.7.5 rule 16)."""
 
 # The notes of each turn this process issued and has not retired yet.
 _issued: dict[str, tuple[str, ...]] = {}
@@ -80,9 +78,13 @@ def agent_handle(metadata: Mapping[str, Any] | None, channel_id: str) -> str:
 def discussion_handles(metadata: Mapping[str, Any] | None) -> dict[str, str]:
     """The handle each agent of the discussion a room's *metadata* stores is
     addressed by, by channel id: empty when the room holds no discussion, or
-    one stored without handles (RFC §19.7.5 rule 4)."""
+    one stored without handles (RFC §19.7.5 rule 4). A handle counts only for
+    a channel the discussion holds as an agent and only if it can name one, so
+    what a store holds never labels a person as an agent."""
     config = (metadata or {}).get(DISCUSSION_CONFIG)
-    handles = config.get("handles") if isinstance(config, Mapping) else None
-    if not isinstance(handles, Mapping):
+    if not isinstance(config, Mapping):
         return {}
-    return {k: v for k, v in handles.items() if isinstance(k, str) and isinstance(v, str)}
+    handles, agents = config.get("handles"), config.get("agents")
+    if not isinstance(handles, Mapping) or not isinstance(agents, list):
+        return {}
+    return {k: v for k, v in handles.items() if k in agents and is_handle(v)}

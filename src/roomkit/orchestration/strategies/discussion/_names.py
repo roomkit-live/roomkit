@@ -16,17 +16,11 @@ import unicodedata
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
-from roomkit._text import identifier
-
-EVERYONE = "all"
-
-NAME_LIMIT = 32
-"""The longest name a person is addressed by (a name joins every turn's notes):
-a longer one is not addressable, never cut short, since a cut name could be
-another person's whole one."""
+from roomkit._handles import EVERYONE as EVERYONE
+from roomkit._handles import NAME_LIMIT as NAME_LIMIT
+from roomkit._handles import is_handle as is_handle
 
 _NAME = re.compile(r"(?<![\w@])@([\w.\-]+)")
-_HANDLE = re.compile(r"[\w.\-]+")
 _NOT_ID = re.compile(r"[^\w.\-]")
 _FENCES = ("```", "~~~")
 _BRACKETS = {"(": ")", "[": "]", "{": "}", "<": ">"}
@@ -44,24 +38,6 @@ def name_key(name: str) -> str:
     """A person's name kept to the characters a name holds (``Alice Martin`` →
     ``AliceMartin``, ``Hélène`` stays), the form a message names them by."""
     return _NOT_ID.sub("", unicodedata.normalize("NFC", name))
-
-
-def is_handle(value: object) -> bool:
-    """Whether *value* can name an agent: a name's characters, as a message
-    names it (NFC), at most :data:`NAME_LIMIT` of them, no final ``.`` (a
-    name drops it) and not ``all``, which names every agent. A transcript
-    labels the agent's turns with it unchanged (``@`` and its
-    :func:`~roomkit._text.identifier`), so a handle that would change there
-    (``dev-``, ``a--b``) is none."""
-    return (
-        isinstance(value, str)
-        and len(value) <= NAME_LIMIT
-        and _HANDLE.fullmatch(value) is not None
-        and unicodedata.normalize("NFC", value) == value
-        and identifier(value, "") == value
-        and not value.endswith(".")
-        and value.casefold() != EVERYONE
-    )
 
 
 def same_name(one: str, other: str) -> bool:

@@ -15,9 +15,11 @@ from typing import Any
 import pytest
 
 from roomkit import Agent, RoomKit
+from roomkit.channels._discussion_turn import discussion_handles
 from roomkit.channels.ai import AIChannel
 from roomkit.core.locks import InMemoryLockManager
 from roomkit.models.delivery import InboundMessage
+from roomkit.models.enums import ChannelCategory
 from roomkit.models.event import RoomEvent, TextContent
 from roomkit.orchestration.strategies.discussion import (
     Discussion,
@@ -34,6 +36,7 @@ from tests.orchestration.test_discussion_background import _starts_task, _until_
 from tests.orchestration.test_strategy_discussion import (
     NOTES,
     _provider,
+    _room,
     _say,
     _settle,
     _texts,
@@ -118,6 +121,67 @@ def test_a_configuration_stored_without_handles_addresses_agents_by_channel_id()
     room = DiscussionRoom.following(RoomKit(), "r1", config)
     assert room.handles == {"a": "a", "b": "b"}
     assert room.label("b") == "@b"
+
+
+@pytest.mark.parametrize(
+    ("config", "handles"),
+    [
+        ({"agents": ["b"], "handles": {"b": "ops"}}, {"b": "ops"}),
+        # A channel that is no agent is no agent's handle: a person stays one.
+        ({"agents": ["b"], "handles": {"sms": "b"}}, {}),
+        ({"handles": {"b": "ops"}}, {}),
+        # What cannot name an agent: a line break would leave the transcript's label.
+        ({"agents": ["b", "c"], "handles": {"b": "two\nlines", "c": "ops"}}, {"c": "ops"}),
+        ({"agents": ["b"], "handles": {"b": 3}}, {}),
+    ],
+)
+def test_a_stored_handle_counts_for_an_agent_and_if_it_can_name_one(
+    config: dict[str, Any], handles: dict[str, str]
+) -> None:
+    assert discussion_handles({CONFIG_KEY: config}) == handles
+
+
+async def test_a_discussion_handed_to_the_kit_holds_no_room() -> None:
+    """Only the strategy writes a discussion: one a room's creation names is
+    dropped, the sender keeps its own label and the room answers."""
+    agent = _provider("from b")
+    kit = RoomKit()
+    kit.register_channel(SimpleChannel("ops"))
+    kit.register_channel(AIChannel("b", provider=agent))
+    forged = {"agents": ["b"], "handles": {"ops": "b"}, "max_depth": 5}
+    room = await kit.create_room(room_id="r1", metadata={CONFIG_KEY: forged})
+    await kit.attach_channel("r1", "ops")
+    await kit.attach_channel("r1", "b", category=ChannelCategory.INTELLIGENCE)
+
+    result = await _say(kit, "hello")
+
+    assert room.metadata == {}
+    assert kit.speak_queue("r1") is None
+    assert [e.content.body for e in result.response_events] == ["from b"]
+    assert len(agent.calls) == 1
+    await kit.close()
+
+
+async def test_a_metadata_update_leaves_the_stored_discussion_as_it_is() -> None:
+    """A read-modify-write writes its own keys: naming a discussion's keys
+    with another value, it stops no turn and marks no process as replaced."""
+    agent = _provider("from a")
+    kit = RoomKit()
+    await _room(kit, {"a": agent})
+    room = await kit.get_room("r1")
+    changed = {**room.metadata[CONFIG_KEY], "max_turns": 9}
+
+    updated = await kit.update_room_metadata(
+        "r1",
+        {**room.metadata, CONFIG_KEY: changed, "_speak_queue": {"over": True}, "crm": "c_42"},
+    )
+    await _say(kit, "@a hello")
+    await _settle(kit)
+
+    assert updated.metadata["crm"] == "c_42"
+    assert updated.metadata[CONFIG_KEY] == room.metadata[CONFIG_KEY]
+    assert len(agent.calls) == 1
+    await kit.close()
 
 
 # -- What a handle does ------------------------------------------------------------
