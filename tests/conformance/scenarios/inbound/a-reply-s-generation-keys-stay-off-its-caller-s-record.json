@@ -1,0 +1,118 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-reply-s-generation-keys-stay-off-its-caller-s-record",
+  "title": "What a reply's record says of its generations rides its last message, never the top of its caller's record: only its end and its usage go, under turns",
+  "rules": [
+    "§6.4 The turn's record",
+    "§10.1 step 18"
+  ],
+  "notes": "Python: models/response_metadata.py merge_channel_record, _TURN_RECORD_KEYS (RMK-1056).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "bot",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "hi"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Done."
+                }
+              }
+            ],
+            "output": {
+              "response_metadata": {
+                "loop_end_reason": "completed",
+                "ai_usage": {
+                  "input_tokens": 3,
+                  "output_tokens": 2
+                },
+                "ai_last_usage": {
+                  "input_tokens": 3,
+                  "output_tokens": 2
+                },
+                "ai_usage_complete": true,
+                "ai_model": "m",
+                "ai_provider": "p",
+                "x": 1
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "bot",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "response_metadata": {
+            "x": 1,
+            "ai_last_usage": {
+              "$absent": true
+            },
+            "ai_usage_complete": {
+              "$absent": true
+            },
+            "ai_model": {
+              "$absent": true
+            },
+            "ai_provider": {
+              "$absent": true
+            },
+            "turns": {
+              "bot": {
+                "loop_end_reason": "completed",
+                "ai_usage": {
+                  "input_tokens": 3,
+                  "output_tokens": 2
+                },
+                "ai_model": {
+                  "$absent": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ]
+}
