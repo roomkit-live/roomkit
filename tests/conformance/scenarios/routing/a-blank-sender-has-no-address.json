@@ -1,0 +1,89 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-blank-sender-has-no-address",
+  "title": "A sender id that is blank has no address: its room names no sender, and each such message holds a room of its own",
+  "rules": [
+    "§5.7",
+    "§10.4"
+  ],
+  "notes": "HITL cdec52d7: a blank identifies no one, as under a recipient key (§5.7). Same as an empty id: routing/a-room-opened-with-no-address-takes-in-no-one-else.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "  ",
+        "content": {
+          "type": "text",
+          "body": "one"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "  ",
+        "content": {
+          "type": "text",
+          "body": "two"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r2"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "$r1": {
+        "sms": {
+          "participant_id": "system"
+        }
+      },
+      "$r2": {
+        "sms": {
+          "participant_id": "system"
+        }
+      }
+    },
+    "timeline": {
+      "$r1": [
+        {
+          "content": {
+            "body": "one"
+          }
+        }
+      ],
+      "$r2": [
+        {
+          "content": {
+            "body": "two"
+          }
+        }
+      ]
+    }
+  }
+}

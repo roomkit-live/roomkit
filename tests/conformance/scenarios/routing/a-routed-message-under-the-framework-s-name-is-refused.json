@@ -1,0 +1,94 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-routed-message-under-the-framework-s-name-is-refused",
+  "title": "A message routed under the framework's name is refused before its router is asked: nothing is written and no room is opened",
+  "rules": [
+    "§10.1 step 2",
+    "§10.4"
+  ],
+  "notes": "The framework names the room it writes to and is never routed, so this is a sender borrowing the name, on a channel whose senders choose their id. The router would answer room-1, which Carol wrote in. Translates tests/test_shared_channel_routing.py::TestTheFrameworksOwnSender::test_a_borrowed_name_is_refused_before_the_router_is_asked.",
+  "setup": {
+    "kit": {
+      "router": {
+        "room_id": "room-1"
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "created",
+        "trigger": "on_room_created",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000003",
+        "content": {
+          "type": "text",
+          "body": "carol: hi"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "system",
+        "content": {
+          "type": "text",
+          "body": "let me in"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "reserved_sender",
+          "event": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "room-1": {
+        "sms": {
+          "participant_id": null
+        }
+      }
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "carol: hi"
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "created": []
+    }
+  }
+}

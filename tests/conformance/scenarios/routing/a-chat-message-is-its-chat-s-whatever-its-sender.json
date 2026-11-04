@@ -1,0 +1,119 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-chat-message-is-its-chat-s-whatever-its-sender",
+  "title": "A chat message with an empty or blank sender is its chat's: it is routed and recorded by the chat, and all of them share the chat's room",
+  "rules": [
+    "§5.7",
+    "§10.4"
+  ],
+  "notes": "A Telegram channel post has no author. HITL 67dc3147: the chat wins over an empty sender, Python as Rust, as §5.7 says. The name system is another case: routing/a-sender-under-the-framework-s-name-in-a-chat-of-another-name-is-refused.",
+  "setup": {
+    "channels": [
+      {
+        "id": "tg",
+        "type": "telegram",
+        "category": "transport",
+        "recipient_key": "telegram_chat_id",
+        "addresses": {
+          "conversation_key": "chat_id"
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "tg",
+        "sender_id": "",
+        "metadata": {
+          "chat_id": "5"
+        },
+        "content": {
+          "type": "text",
+          "body": "one"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "tg",
+        "sender_id": "  ",
+        "metadata": {
+          "chat_id": "5"
+        },
+        "content": {
+          "type": "text",
+          "body": "two"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "tg",
+        "sender_id": "",
+        "metadata": {
+          "chat_id": "5"
+        },
+        "content": {
+          "type": "text",
+          "body": "three"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "$r1": {
+        "tg": {
+          "participant_id": "5"
+        }
+      }
+    },
+    "timeline": {
+      "$r1": [
+        {
+          "content": {
+            "body": "one"
+          }
+        },
+        {
+          "content": {
+            "body": "two"
+          }
+        },
+        {
+          "content": {
+            "body": "three"
+          }
+        }
+      ]
+    }
+  }
+}

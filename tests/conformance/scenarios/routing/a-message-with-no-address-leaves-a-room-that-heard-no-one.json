@@ -1,0 +1,79 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-message-with-no-address-leaves-a-room-that-heard-no-one",
+  "title": "Under the lock, a routed message with no address is admitted through a group binding only: a room that heard no one is not its room, and stays as it was",
+  "rules": [
+    "§10.1 step 2",
+    "§10.4"
+  ],
+  "notes": "HITL 474148bb, option 1. The router answers room-1, whose binding names no one. Before: the message entered and the next sender read it. It was routing/a-message-with-no-address-stays-in-a-room-that-heard-no-one.",
+  "setup": {
+    "kit": {
+      "router": {
+        "room_id": "room-1"
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "",
+        "content": {
+          "type": "text",
+          "body": "no one: hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "room-1": {
+        "sms": {
+          "participant_id": null
+        }
+      },
+      "$r1": {
+        "sms": {
+          "participant_id": "system"
+        }
+      }
+    },
+    "timeline": {
+      "room-1": [],
+      "$r1": [
+        {
+          "content": {
+            "body": "no one: hello"
+          }
+        }
+      ]
+    }
+  }
+}

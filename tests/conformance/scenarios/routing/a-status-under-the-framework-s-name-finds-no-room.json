@@ -1,0 +1,69 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-status-under-the-framework-s-name-finds-no-room",
+  "title": "A delivery status for the recipient system finds no room: that name is no one's, and a room naming it has no recipient",
+  "rules": [
+    "§10.4"
+  ],
+  "notes": "The room a message with no address opened binds the name and delivers to no one, so no status is ever its own. Found by the review of RMK-1339.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "status",
+        "trigger": "on_delivery_status",
+        "reactions": [
+          {
+            "repeat": true
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "",
+        "content": {
+          "type": "text",
+          "body": "first"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_delivery_status",
+      "status": {
+        "channel_id": "sms",
+        "provider": "p",
+        "message_id": "m1",
+        "status": "delivered",
+        "recipient": "system",
+        "sender": "s"
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "status": []
+    }
+  }
+}

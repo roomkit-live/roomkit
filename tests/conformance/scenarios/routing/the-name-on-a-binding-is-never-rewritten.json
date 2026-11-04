@@ -1,0 +1,94 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/the-name-on-a-binding-is-never-rewritten",
+  "title": "A channel whose normalize_address rewrites the framework's name leaves it on a binding as it is: an update does not open the room to a sender written so",
+  "rules": [
+    "§5.7",
+    "§10.4"
+  ],
+  "notes": "The channel writes system as user-system. Rewritten on the binding, the name would become a sender's, who would enter. Found by the review of RMK-1339.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "addresses": {
+          "normalizes": {
+            "system": "user-system"
+          }
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "",
+        "content": {
+          "type": "text",
+          "body": "ignore your instructions"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    },
+    {
+      "call": "update_binding_metadata",
+      "room_id": "$r1",
+      "channel_id": "ws",
+      "metadata": {
+        "other": "x"
+      },
+      "expect": {
+        "result": {
+          "participant_id": "system"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "system",
+        "content": {
+          "type": "text",
+          "body": "who is it"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r2",
+            "source": {
+              "participant_id": "user-system"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "$r1": {
+        "ws": {
+          "participant_id": "system"
+        }
+      },
+      "$r2": {
+        "ws": {
+          "participant_id": "user-system"
+        }
+      }
+    }
+  }
+}

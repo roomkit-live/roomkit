@@ -1,0 +1,83 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-room-named-for-the-framework-s-sender-names-no-one",
+  "title": "A room the caller names and the store lacks, opened by a message under the framework's sender, names no one: the caller chose the room",
+  "rules": [
+    "§10.1 step 2",
+    "§10.4"
+  ],
+  "notes": "The other side of routing/a-routed-message-under-the-framework-s-name-is-refused: no routing here, and a routed sender is admitted as to any room that heard no one.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-9",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "system",
+        "content": {
+          "type": "text",
+          "body": "your appointment is tomorrow"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "room-9"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "thanks"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "room-9"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "room-9": {
+        "sms": {
+          "participant_id": "+15550000002"
+        }
+      }
+    },
+    "timeline": {
+      "room-9": [
+        {
+          "content": {
+            "body": "your appointment is tomorrow"
+          }
+        },
+        {
+          "content": {
+            "body": "thanks"
+          }
+        }
+      ]
+    }
+  }
+}

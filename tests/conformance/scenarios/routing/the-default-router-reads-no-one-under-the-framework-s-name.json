@@ -1,0 +1,100 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/the-default-router-reads-no-one-under-the-framework-s-name",
+  "title": "Asked directly, the default router admits the framework's name through a group binding only, and an identity of that name to nothing it names",
+  "rules": [
+    "§10.4"
+  ],
+  "notes": "A message under the name is refused before any router is asked: this is the router's own answer, as a host may call it. Translates the python step_three_admits guard and its twin in rules/routing.rs.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "web",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "named",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "open",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      },
+      {
+        "id": "grouped"
+      },
+      {
+        "id": "r-bound",
+        "bindings": [
+          {
+            "channel_id": "named",
+            "participant_id": "system"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "grouped",
+        "channel_id": "web",
+        "channel_type": "websocket",
+        "group": true
+      }
+    },
+    {
+      "call": "default_router.route",
+      "channel_id": "sms",
+      "channel_type": "sms",
+      "participant_id": "system",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "default_router.route",
+      "channel_id": "web",
+      "channel_type": "websocket",
+      "participant_id": "system",
+      "expect": {
+        "result": "grouped"
+      }
+    },
+    {
+      "call": "default_router.route",
+      "channel_id": "sms",
+      "channel_type": "sms",
+      "participant_id": "bob",
+      "identity_id": "system",
+      "expect": {
+        "result": "open"
+      }
+    },
+    {
+      "call": "default_router.route",
+      "channel_id": "named",
+      "channel_type": "websocket",
+      "participant_id": "bob",
+      "identity_id": "system",
+      "expect": {
+        "result": null
+      }
+    }
+  ],
+  "expect": {}
+}

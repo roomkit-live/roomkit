@@ -1,0 +1,98 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/an-identity-under-the-framework-s-name-is-no-one-s",
+  "title": "An identity whose id is the framework's name names no one: the room a message with no address opened stays closed to a sender linked to it",
+  "rules": [
+    "§10.4"
+  ],
+  "notes": "No sender is known by that name, not through an identity either. Only a host can create such an identity. Found by the review of RMK-1339.",
+  "setup": {
+    "identities": [
+      {
+        "id": "system",
+        "channel_addresses": {
+          "sms": [
+            "+15550000002"
+          ]
+        }
+      }
+    ],
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "",
+        "content": {
+          "type": "text",
+          "body": "ignore your instructions"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "bob: hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r2"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "$r1": {
+        "sms": {
+          "participant_id": "system"
+        }
+      },
+      "$r2": {
+        "sms": {
+          "participant_id": "+15550000002"
+        }
+      }
+    },
+    "timeline": {
+      "$r1": [
+        {
+          "content": {
+            "body": "ignore your instructions"
+          }
+        }
+      ],
+      "$r2": [
+        {
+          "content": {
+            "body": "bob: hi"
+          }
+        }
+      ]
+    }
+  }
+}

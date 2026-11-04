@@ -1,11 +1,11 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "routing/the-default-router-reads-who-the-room-heard",
-  "title": "The default router takes a sender, or a message with no address, into a room that heard no one, its own messages aside: another sender's message on the channel refuses them",
+  "title": "The default router takes a sender into a room that heard no one, their own messages aside: another sender's message on the channel refuses them. A message with no address it takes through a group binding only",
   "rules": [
     "§10.4"
   ],
-  "notes": "Python: tests/test_inbound_routing_ambiguity.py::TestStepThreeAdmitsOneConversation::test_a_message_received_from_another_sender_refuses, test_a_sender_with_no_address_is_held_to_the_same_rule. The router itself: the lock's own check would refuse the room anyway.",
+  "notes": "Python: tests/test_inbound_routing_ambiguity.py::TestStepThreeAdmitsOneConversation::test_a_message_received_from_another_sender_refuses, test_a_sender_with_no_address_is_admitted_through_a_group_binding_only. The router itself: the lock's own check would refuse the room anyway.",
   "setup": {
     "channels": [
       {
@@ -40,7 +40,7 @@
       "channel_id": "ws",
       "channel_type": "websocket",
       "expect": {
-        "result": "r1"
+        "result": null
       }
     },
     {

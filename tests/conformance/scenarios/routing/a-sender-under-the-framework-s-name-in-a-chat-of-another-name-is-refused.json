@@ -1,0 +1,46 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-sender-under-the-framework-s-name-in-a-chat-of-another-name-is-refused",
+  "title": "A sender under the framework's name is refused whatever chat it carries",
+  "rules": [
+    "§10.1 step 2",
+    "§10.4"
+  ],
+  "notes": "The other side of routing/a-chat-under-the-framework-s-name-is-refused: the address it would be routed by is team, its sender is the name.",
+  "setup": {
+    "channels": [
+      {
+        "id": "chat",
+        "type": "websocket",
+        "category": "transport",
+        "addresses": {
+          "conversation_key": "chat"
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "chat",
+        "sender_id": "system",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        },
+        "metadata": {
+          "chat": "team"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "reserved_sender",
+          "event": null
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

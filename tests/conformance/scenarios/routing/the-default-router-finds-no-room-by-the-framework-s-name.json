@@ -1,0 +1,71 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/the-default-router-finds-no-room-by-the-framework-s-name",
+  "title": "The default router finds no room for the framework's name at step 1, neither through a binding naming it nor through a participant under it",
+  "rules": [
+    "§10.4"
+  ],
+  "notes": "The name is no sender's: a binding naming it is closed to everyone, the name included, and the framework names the room it writes to. A participant the host added under the name changes nothing.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "web",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r-bound",
+        "bindings": [
+          {
+            "channel_id": "sms",
+            "participant_id": "system"
+          }
+        ]
+      },
+      {
+        "id": "r-member",
+        "bindings": [
+          {
+            "channel_id": "web"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.add_participant",
+      "participant": {
+        "id": "system",
+        "room_id": "r-member",
+        "channel_id": "web"
+      }
+    },
+    {
+      "call": "default_router.route",
+      "channel_id": "sms",
+      "channel_type": "sms",
+      "participant_id": "system",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "default_router.route",
+      "channel_id": "web",
+      "channel_type": "websocket",
+      "participant_id": "system",
+      "expect": {
+        "result": null
+      }
+    }
+  ],
+  "expect": {}
+}

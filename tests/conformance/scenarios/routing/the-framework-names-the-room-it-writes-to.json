@@ -1,0 +1,94 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/the-framework-names-the-room-it-writes-to",
+  "title": "A delivery names its room: it writes there under the framework's sender whatever the room heard and whatever a router answers",
+  "rules": [
+    "§10.4",
+    "§22.2"
+  ],
+  "notes": "The other side of routing/a-routed-message-under-the-framework-s-name-is-refused: the same sender on the stored event, and no routing: the framework never relied on the name to enter a room. The router answers room-2, which holds nothing.",
+  "setup": {
+    "kit": {
+      "router": {
+        "room_id": "room-2"
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000003",
+        "content": {
+          "type": "text",
+          "body": "carol: hi"
+        }
+      }
+    },
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "a reminder",
+      "expect": {
+        "result": {
+          "status": "sent"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "room-1": {
+        "sms": {
+          "participant_id": null
+        }
+      }
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "carol: hi"
+          }
+        },
+        {
+          "content": {
+            "body": "a reminder"
+          },
+          "source": {
+            "channel_id": "sms",
+            "participant_id": "system"
+          }
+        }
+      ],
+      "room-2": []
+    }
+  }
+}

@@ -1,0 +1,90 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/an-identity-of-the-framework-s-name-enters-no-room-a-router-answers",
+  "title": "Under the lock, a sender linked to an identity of the framework's name is not the correspondent of a binding naming it",
+  "rules": [
+    "§10.1 step 2",
+    "§10.4"
+  ],
+  "notes": "The router answers room-1, which names system; the default router's own read is routing/the-default-router-reads-no-one-under-the-framework-s-name. Found by the light review of RMK-1339.",
+  "setup": {
+    "kit": {
+      "router": {
+        "room_id": "room-1"
+      }
+    },
+    "identities": [
+      {
+        "id": "system",
+        "channel_addresses": {
+          "sms": [
+            "+15550000002"
+          ]
+        }
+      }
+    ],
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms",
+            "participant_id": "system"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "bob: hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "room-1": {
+        "sms": {
+          "participant_id": "system"
+        }
+      },
+      "$r1": {
+        "sms": {
+          "participant_id": "+15550000002"
+        }
+      }
+    },
+    "timeline": {
+      "room-1": [],
+      "$r1": [
+        {
+          "content": {
+            "body": "bob: hi"
+          }
+        }
+      ]
+    }
+  }
+}

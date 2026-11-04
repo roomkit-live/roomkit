@@ -1,0 +1,92 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-group-room-refuses-a-message-routed-under-the-framework-s-name",
+  "title": "A group binding takes in whoever writes on the channel, but not a message routed under the framework's name",
+  "rules": [
+    "§10.1 step 2",
+    "§10.4"
+  ],
+  "notes": "The refusal comes before the router and whatever it answers. The same message naming the room is the host's, and enters.",
+  "setup": {
+    "kit": {
+      "router": {
+        "room_id": "room-1"
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-1",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "group": true
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "system",
+        "content": {
+          "type": "text",
+          "body": "routed"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "reserved_sender",
+          "event": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "system",
+        "content": {
+          "type": "text",
+          "body": "named"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "room-1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "named"
+          },
+          "source": {
+            "participant_id": "system"
+          }
+        }
+      ]
+    }
+  }
+}

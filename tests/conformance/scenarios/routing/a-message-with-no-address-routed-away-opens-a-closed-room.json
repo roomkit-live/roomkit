@@ -1,12 +1,13 @@
 {
   "$schema": "../../scenario.schema.json",
-  "id": "routing/a-message-with-no-address-stays-in-a-room-that-heard-no-one",
-  "title": "Under the lock, a message with no address stays in a room that heard no one on the channel, and records no one",
+  "id": "routing/a-message-with-no-address-routed-away-opens-a-closed-room",
+  "title": "A message with no address a router's room turns away twice gets a new room, as closed as any it opens",
   "rules": [
+    "§5.7",
     "§10.1 step 2",
     "§10.4"
   ],
-  "notes": "The other side of routing/a-message-with-no-address-is-held-to-step-three-under-the-lock: step 3's conditions hold, the message is the room's, and with no address nothing is written on the binding.",
+  "notes": "room-1 is Bob's. The router answers it twice, the lock refuses it twice, and the message's new room names no sender.",
   "setup": {
     "kit": {
       "router": {
@@ -25,7 +26,8 @@
         "id": "room-1",
         "bindings": [
           {
-            "channel_id": "sms"
+            "channel_id": "sms",
+            "participant_id": "+15550000002"
           }
         ]
       }
@@ -39,14 +41,14 @@
         "sender_id": "",
         "content": {
           "type": "text",
-          "body": "no one: hello"
+          "body": "first"
         }
       },
       "expect": {
         "result": {
           "blocked": false,
           "event": {
-            "room_id": "room-1"
+            "room_id": "$r1"
           }
         }
       }
@@ -54,20 +56,16 @@
   ],
   "expect": {
     "bindings": {
+      "$r1": {
+        "sms": {
+          "participant_id": "system"
+        }
+      },
       "room-1": {
         "sms": {
-          "participant_id": null
+          "participant_id": "+15550000002"
         }
       }
-    },
-    "timeline": {
-      "room-1": [
-        {
-          "content": {
-            "body": "no one: hello"
-          }
-        }
-      ]
     }
   }
 }

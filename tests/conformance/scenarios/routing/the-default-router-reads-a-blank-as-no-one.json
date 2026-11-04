@@ -1,0 +1,41 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/the-default-router-reads-a-blank-as-no-one",
+  "title": "Asked directly, the default router reads a blank sender as no address: a binding that names a blank is not its room",
+  "rules": [
+    "§10.4"
+  ],
+  "notes": "HITL cdec52d7: a blank identifies no one. Found by the light review of RMK-1339.",
+  "setup": {
+    "channels": [
+      {
+        "id": "named",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r-bound",
+        "bindings": [
+          {
+            "channel_id": "named",
+            "participant_id": "  "
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "default_router.route",
+      "channel_id": "named",
+      "channel_type": "websocket",
+      "participant_id": "  ",
+      "expect": {
+        "result": null
+      }
+    }
+  ],
+  "expect": {}
+}
