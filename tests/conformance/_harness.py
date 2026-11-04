@@ -30,7 +30,7 @@ from roomkit.models.tool_call import (
     ToolCallEvent,
     ToolRoundEvent,
 )
-from roomkit.orchestration import HandoffHandler
+from roomkit.orchestration import HandoffHandler, SpeakQueueEvent
 from roomkit.orchestration.base import Orchestration
 from roomkit.orchestration.status_bus import StatusEntry
 from roomkit.realtime import EphemeralEvent, EphemeralEventType
@@ -59,7 +59,7 @@ from tests.conformance._delivery import (
     start_backend,
     wait_for_lock,
 )
-from tests.conformance._discussion import DISCUSSION_CALLS
+from tests.conformance._discussion import DISCUSSION_CALLS, discussions_busy, speak_queue_record
 from tests.conformance._handoff import HANDOFF_CALLS
 from tests.conformance._identity import kit_options, register_identity_hook
 from tests.conformance._inputs import INPUT_CALLS, request_record
@@ -158,6 +158,7 @@ class Harness:
         self.auditors = Auditors()
         self.handoff_handlers: dict[str, HandoffHandler] = {}
         setup = scenario.get("setup", {})
+        self.discussion_done: dict[str, bool] = {}
         self.strategies = strategies(setup, self)
         kit_setup = setup.get("kit", {})
         kwargs: dict[str, Any] = {}
@@ -242,6 +243,8 @@ class Harness:
             call["status_entry"] = payload.model_dump(mode="json")
         if isinstance(payload, Observation):
             call["observation"] = payload.model_dump(mode="json")
+        if isinstance(payload, SpeakQueueEvent):
+            call["speak_queue"] = speak_queue_record(payload)
         if isinstance(payload, PendingInputEvent):
             self.saw_request(payload.pending_id)
             call["request"] = request_record(payload)
@@ -546,6 +549,9 @@ class Harness:
         if await backend_busy(self.kit):
             busy = True
             await asyncio.sleep(0.005)
+        if discussions_busy(self.kit):
+            busy = True
+            await asyncio.sleep(0.001)
         return busy
 
     # -- references -------------------------------------------------------

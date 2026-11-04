@@ -80,6 +80,9 @@ class TurnDriver:
         self._drain = True
         """Whether a turn cut by a stop waits for its delivery to unwind."""
         self._seen_version = -1
+        self.settled = False
+        """Whether its last look found nothing to do, and no wake came since:
+        a test's way to tell a driver at rest from one about to give a turn."""
         self._dispatcher = Dispatcher(room)
 
     @property
@@ -103,6 +106,7 @@ class TurnDriver:
         self._wake.set()
 
     def wake(self) -> None:
+        self.settled = False
         self._wake.set()
 
     async def stop(self) -> None:
@@ -143,7 +147,9 @@ class TurnDriver:
                     await self._wait(min(2.0 ** (failures - 1), _RETRY_MAX))
                     continue
                 if turn is None:
+                    self.settled = not self._wake.is_set()
                     await self._wait(POLL_SECONDS)
+                    self.settled = False
                 else:
                     await self._run(turn)
         except asyncio.CancelledError:

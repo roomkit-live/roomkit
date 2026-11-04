@@ -17,13 +17,24 @@ from typing import TYPE_CHECKING, Any
 from roomkit import RoomKit
 from roomkit.orchestration import Loop, Pipeline, Supervisor, Swarm
 from roomkit.orchestration.base import Orchestration
+from tests.conformance._discussion import installed_discussion
 from tests.conformance._script import perform
 
 if TYPE_CHECKING:
     from tests.conformance._calls import Call
     from tests.conformance._harness import Harness
 
-STRATEGY = {"id", "agents", "install", "uninstall", "loop", "supervisor", "swarm", "pipeline"}
+STRATEGY = {
+    "id",
+    "agents",
+    "install",
+    "uninstall",
+    "loop",
+    "supervisor",
+    "swarm",
+    "pipeline",
+    "discussion",
+}
 SWARM = {"agents", "entry"}
 PIPELINE = {"agents", "supervisor_id"}
 STRATEGY_STEP = {"gate", "do", "refuse"}
@@ -112,6 +123,8 @@ def _strategy(spec: Mapping[str, Any], harness: Harness) -> Orchestration:
     if "pipeline" in spec:
         pipeline = spec["pipeline"]
         return Pipeline(pipeline["agents"], supervisor_id=pipeline.get("supervisor_id"))
+    if "discussion" in spec:
+        return installed_discussion(spec["id"], spec["discussion"], harness)
     return ScriptedStrategy(spec, harness)
 
 

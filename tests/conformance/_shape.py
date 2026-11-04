@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from tests.conformance._discussion import DISCUSSION_ARGUMENTS
+from tests.conformance._discussion import DISCUSSION_ARGUMENTS, DISCUSSION_MEMBERS
 from tests.conformance._handoff import HANDOFF_ARGUMENTS
 from tests.conformance._inputs import INPUT_ARGUMENTS
 from tests.conformance._media import ATTACHED_MEDIA, MEDIA_RESOLVER
@@ -447,6 +447,8 @@ def _strategy(strategy: Mapping[str, Any], path: str, found: list[str]) -> None:
         _members(strategy["swarm"], SWARM, f"{path}.swarm", found)
     if "pipeline" in strategy:
         _members(strategy["pipeline"], PIPELINE, f"{path}.pipeline", found)
+    if "discussion" in strategy:
+        _members(strategy["discussion"], DISCUSSION_MEMBERS, f"{path}.discussion", found)
     for member, known in (("install", STRATEGY_STEP), ("uninstall", STRATEGY_UNINSTALL)):
         step = strategy.get(member, {})
         _members(step, known, f"{path}.{member}", found)
