@@ -57,7 +57,7 @@ class TestDefaultInboundRoomRouter:
         )
 
         router = DefaultInboundRoomRouter(store)
-        result = await router.route("sms1", ChannelType.SMS)
+        result = await router.route("sms1", ChannelType.SMS, "+15550000001")
         assert result is None
 
     async def test_returns_none_for_unknown_channel(self) -> None:

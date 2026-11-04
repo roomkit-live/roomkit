@@ -45,7 +45,7 @@ class TestAmbiguityIsRefused:
         store = await _store_with_rooms("r1", "r2")
         router = DefaultInboundRoomRouter(store)
 
-        assert await router.route("ws", ChannelType.WEBSOCKET) is None
+        assert await router.route("ws", ChannelType.WEBSOCKET, "alice") is None
 
     async def test_a_closed_room_does_not_make_it_ambiguous(self) -> None:
         """Only ACTIVE rooms are candidates, so closing one disambiguates."""
