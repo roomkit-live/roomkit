@@ -1,0 +1,115 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-second-call-under-a-held-id-is-refused-before-it-reads-as-cut",
+  "title": "A call under an id its round holds is refused for that, before what is wrong with it otherwise: the response cut over its arguments reads as neither",
+  "rules": [
+    "§6.4",
+    "§12.4"
+  ],
+  "notes": "Python: channels/_ai_tools.py _serve_entry refuses a duplicate before _run_call and _gate_call, which reads a partial call.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "fine"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "finish_reason": "length",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {
+                    "q": "first"
+                  }
+                },
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {},
+                  "cut": true
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "fine",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c1",
+              "content": "{\"error\": \"Tool call 'c1' has not had its result yet\"}",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

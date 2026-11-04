@@ -1,0 +1,190 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tool-search/a-max-results-past-every-integer-width-is-bounded",
+  "title": "A max_results wider than any integer type, written or quoted, is an integer, bounded as any: to the threshold at the most, one match at the least",
+  "rules": [
+    "§21.1",
+    "§6.4"
+  ],
+  "notes": "RMK-1308 point 3, HITL 960d2313 option 1. Python: tools/validation.py reads any int, _tool_search.py normalize_max_results clamps it, repair_tool_arguments reads the quoted one as its declared type. roomkit-rs holds it as a float (docs/architecture.md, what the language forces).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "find_tools",
+                  "arguments": {
+                    "query": "operate widget",
+                    "max_results": 1000000000000000000000000
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "find_tools",
+                  "arguments": {
+                    "query": "operate widget",
+                    "max_results": -1000000000000000000000000
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c3",
+                  "name": "find_tools",
+                  "arguments": {
+                    "query": "operate widget number",
+                    "max_results": "1000000000000000000000000"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "widget_0",
+            "description": "Operate widget number 0.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "widget_1",
+            "description": "Operate widget number 1.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "widget_2",
+            "description": "Operate widget number 2.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "widget_3",
+            "description": "Operate widget number 3.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          }
+        ],
+        "tool_search": true,
+        "tool_search_threshold": 2
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go 1."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tools": {
+            "widget_0": 0,
+            "widget_1": 1,
+            "find_tools": 2,
+            "list_tools": 3,
+            "widget_2": {
+              "$absent": true
+            },
+            "widget_3": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "widget_0": 0,
+            "find_tools": 1,
+            "list_tools": 2,
+            "widget_1": {
+              "$absent": true
+            },
+            "widget_2": {
+              "$absent": true
+            },
+            "widget_3": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "widget_0": 0,
+            "widget_1": 1,
+            "find_tools": 2,
+            "list_tools": 3,
+            "widget_2": {
+              "$absent": true
+            },
+            "widget_3": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

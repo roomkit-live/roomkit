@@ -1,0 +1,198 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-cut-turn-closes-each-of-two-open-calls-under-one-id",
+  "title": "A turn cut while two calls under one id are open closes each, one end per start, and reports each once: the first running reads cancelled, the second refused",
+  "rules": [
+    "§9.3",
+    "§12.4"
+  ],
+  "notes": "Python: tests/test_turn_calls_per_call.py::test_a_cut_turn_closes_each_of_two_open_calls_under_one_id, the second's end row's outcome left out: a call's end known before a cut is its own card.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "fine",
+            "gate": "held"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {
+                    "q": "first"
+                  }
+                },
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {
+                    "q": "second"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "never"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "audit",
+        "trigger": "on_tool_call",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "defer_delivery": true,
+      "as": "a"
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "call": "delivery.cancel",
+      "of": "a",
+      "reason": "stopped"
+    },
+    {
+      "open": "held"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "audit": {
+        "$unordered": [
+          {
+            "trigger": "on_tool_call",
+            "tool_call": {
+              "name": "lookup",
+              "tool_call_id": "c1",
+              "arguments": {
+                "q": "first"
+              },
+              "refused": false,
+              "cancelled": true,
+              "is_error": true
+            }
+          },
+          {
+            "trigger": "on_tool_call",
+            "tool_call": {
+              "name": "lookup",
+              "tool_call_id": "c1",
+              "arguments": {
+                "q": "second"
+              },
+              "refused": true,
+              "cancelled": false,
+              "is_error": true
+            }
+          }
+        ]
+      }
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "type": "message"
+        },
+        {
+          "type": "tool_call_start",
+          "content": {
+            "tool_id": "c1",
+            "tool_name": "lookup",
+            "arguments": {
+              "q": "first"
+            }
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "content": {
+            "tool_id": "c1",
+            "tool_name": "lookup",
+            "arguments": {
+              "q": "second"
+            }
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "c1",
+            "tool_name": "lookup",
+            "arguments": {
+              "q": "first"
+            },
+            "outcome": "cancelled"
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "c1",
+            "tool_name": "lookup",
+            "arguments": {
+              "q": "second"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

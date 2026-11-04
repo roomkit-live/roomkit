@@ -1,0 +1,182 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-turn-that-fails-before-its-stream-is-recorded-on-its-event",
+  "title": "A turn that fails before it hands its stream is a failed delivery, recorded on the event it answers; a turn whose stream fails with no streaming target was delivered, and its event's record says nothing of it",
+  "rules": [
+    "§5.13",
+    "§10.1 step 18",
+    "§14.3"
+  ],
+  "notes": "RMK-1308 point 2: Python: core/mixins/lane_execution.py _record_failed_deliveries reads the set as process_inbound returns it; a stream read after the set (inbound_streaming.py, no targets) fails on the turn's error and its ON_ERROR, not on the set.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [],
+        "model": {
+          "rounds": [
+            {
+              "fails": "the model is down"
+            },
+            {
+              "refuses": {
+                "status": 500,
+                "message": "refused"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-3",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "temperature": "hot"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "expect": {
+        "result": {
+          "error": {
+            "$contains": "the model is down"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "expect": {
+        "result": {
+          "error": {
+            "$contains": "refused"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-3",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "expect": {
+        "result": {
+          "error": {
+            "$present": true
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "type": "message",
+          "delivery_results": {
+            "agent": {
+              "$absent": true
+            }
+          }
+        }
+      ],
+      "room-2": [
+        {
+          "type": "message",
+          "delivery_results": {
+            "agent": {
+              "$absent": true
+            }
+          }
+        }
+      ],
+      "room-3": [
+        {
+          "type": "message",
+          "delivery_results": {
+            "agent": {
+              "channel_id": "agent",
+              "status": "failed"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

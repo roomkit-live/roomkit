@@ -1,0 +1,115 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-round-s-results-each-keep-their-tool-s-name",
+  "title": "Two calls of a round under one id, to two tools: each result the provider reads names its own tool",
+  "rules": [
+    "§6.4",
+    "§12.4"
+  ],
+  "notes": "Python: channels/_ai_tools.py _refuse_id_in_flight, ToolOutcome.as_part(tc.id, tc.name): a result carries its call's name.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "fine"
+          },
+          {
+            "name": "other",
+            "description": "Another",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "never"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {}
+                },
+                {
+                  "id": "c1",
+                  "name": "other",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "name": "lookup",
+              "content": "fine",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c1",
+              "name": "other",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

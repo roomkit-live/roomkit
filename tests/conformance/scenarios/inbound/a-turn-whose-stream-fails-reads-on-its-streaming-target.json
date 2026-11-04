@@ -1,0 +1,135 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-turn-whose-stream-fails-reads-on-its-streaming-target",
+  "title": "A turn whose stream fails with a streaming target leaves no record of the agent on its event: the set was delivered, the failure is the stream's",
+  "rules": [
+    "§5.13",
+    "§10.1 step 18",
+    "§14.3"
+  ],
+  "notes": "RMK-1308 point 2, the streaming case: Python's inbound_streaming.py logs and reports it on the stream's reader, after _record_failed_deliveries read the set.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [],
+        "model": {
+          "rounds": [
+            {
+              "fails": "the model is down"
+            },
+            {
+              "refuses": {
+                "status": 500,
+                "message": "refused"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "expect": {
+        "result": {
+          "error": {
+            "$contains": "the model is down"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "expect": {
+        "result": {
+          "error": {
+            "$contains": "refused"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "type": "message",
+          "delivery_results": {
+            "agent": {
+              "$absent": true
+            }
+          }
+        }
+      ],
+      "room-2": [
+        {
+          "type": "message",
+          "delivery_results": {
+            "agent": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

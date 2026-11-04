@@ -1,0 +1,202 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/an-integer-past-64-bits-is-an-integer",
+  "title": "An argument wider than 64 bits, written or quoted, is of its declared integer type and the call runs; a number with a decimal point stays no integer",
+  "rules": [
+    "§21.1"
+  ],
+  "notes": "RMK-1308 point 3, HITL 960d2313 option 1. Python: tools/validation.py _TYPE_CHECKS, _literal. What the tool reads of such a number is not compared: Python its digits, roomkit-rs a float (docs/architecture.md, what the language forces).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "tally",
+            "description": "Tally",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "count": {
+                  "type": "integer"
+                }
+              }
+            },
+            "returns": "counted"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "tally",
+                  "arguments": {
+                    "count": 1000000000000000000000000
+                  }
+                },
+                {
+                  "id": "c2",
+                  "name": "tally",
+                  "arguments": {
+                    "count": -1000000000000000000000000
+                  }
+                },
+                {
+                  "id": "c3",
+                  "name": "tally",
+                  "arguments": {
+                    "count": "1000000000000000000000000"
+                  }
+                },
+                {
+                  "id": "c4",
+                  "name": "tally",
+                  "arguments": {
+                    "count": 18446744073709551615
+                  }
+                },
+                {
+                  "id": "c7",
+                  "name": "tally",
+                  "arguments": {
+                    "count": -9223372036854775809
+                  }
+                },
+                {
+                  "id": "c8",
+                  "name": "tally",
+                  "arguments": {
+                    "count": "-9223372036854775809"
+                  }
+                },
+                {
+                  "id": "c5",
+                  "name": "tally",
+                  "arguments": {
+                    "count": 2.0
+                  }
+                },
+                {
+                  "id": "c6",
+                  "name": "tally",
+                  "arguments": {
+                    "count": 2.5
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": {
+                "$contains": "counted"
+              },
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c2",
+              "content": {
+                "$contains": "counted"
+              },
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c3",
+              "content": {
+                "$contains": "counted"
+              },
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c4",
+              "content": {
+                "$contains": "counted"
+              },
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c7",
+              "content": {
+                "$contains": "counted"
+              },
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c8",
+              "content": {
+                "$contains": "counted"
+              },
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c5",
+              "content": {
+                "$contains": "argument 'count' must be of type integer"
+              },
+              "is_error": true
+            },
+            {
+              "tool_call_id": "c6",
+              "content": {
+                "$contains": "argument 'count' must be of type integer"
+              },
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

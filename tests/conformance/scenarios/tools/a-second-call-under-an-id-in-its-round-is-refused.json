@@ -1,0 +1,262 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-second-call-under-an-id-in-its-round-is-refused",
+  "title": "A second call of a round under an id the first holds is refused before any gate and reported as a call of its own: the first keeps the id and runs, each has its own report and its own end row",
+  "rules": [
+    "§9.3",
+    "§12.4"
+  ],
+  "notes": "Python: tools/_turn_calls.py TurnCalls.announce, channels/_ai_tools.py _serve_entry, _refuse_id_in_flight. tests/test_tool_report_doors.py::test_two_calls_under_one_id_are_two_calls_the_second_refused, tests/test_turn_calls_per_call.py: the scripted model hands both calls under c1, as a provider that does not number them apart would; a provider reading a wire gives the second an id of its own first (CallIds, a test in each implementation).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "fine"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {
+                    "q": "first"
+                  }
+                },
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {
+                    "q": "second"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            },
+            {
+              "text": "again"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "audit",
+        "trigger": "on_tool_call",
+        "execution": "async"
+      },
+      {
+        "name": "gate",
+        "trigger": "before_tool_use"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "More."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "fine",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c1",
+              "content": "{\"error\": \"Tool call 'c1' has not had its result yet\"}",
+              "is_error": true
+            }
+          ]
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "fine",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    },
+    "hooks": {
+      "audit": {
+        "$unordered": [
+          {
+            "trigger": "on_tool_call",
+            "tool_call": {
+              "name": "lookup",
+              "tool_call_id": "c1",
+              "arguments": {
+                "q": "first"
+              },
+              "result": "fine",
+              "is_error": false,
+              "refused": false,
+              "cancelled": false
+            }
+          },
+          {
+            "trigger": "on_tool_call",
+            "tool_call": {
+              "name": "lookup",
+              "tool_call_id": "c1",
+              "arguments": {
+                "q": "second"
+              },
+              "result": "{\"error\": \"Tool call 'c1' has not had its result yet\"}",
+              "is_error": true,
+              "refused": true,
+              "cancelled": false
+            }
+          }
+        ]
+      },
+      "gate": [
+        {
+          "trigger": "before_tool_use",
+          "tool_call": {
+            "tool_call_id": "c1",
+            "arguments": {
+              "q": "first"
+            }
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "type": "message"
+        },
+        {
+          "type": "tool_call_start",
+          "content": {
+            "tool_id": "c1",
+            "tool_name": "lookup",
+            "arguments": {
+              "q": "first"
+            }
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "content": {
+            "tool_id": "c1",
+            "tool_name": "lookup",
+            "arguments": {
+              "q": "second"
+            }
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "c1",
+            "tool_name": "lookup",
+            "arguments": {
+              "q": "first"
+            },
+            "outcome": "served"
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "c1",
+            "tool_name": "lookup",
+            "arguments": {
+              "q": "second"
+            },
+            "outcome": "refused"
+          }
+        },
+        {
+          "type": "message",
+          "content": {
+            "body": "done"
+          }
+        },
+        {
+          "type": "message"
+        },
+        {
+          "type": "message",
+          "content": {
+            "body": "again"
+          }
+        }
+      ]
+    }
+  }
+}
