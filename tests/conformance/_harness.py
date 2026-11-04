@@ -33,7 +33,7 @@ from roomkit.models.tool_call import (
 from roomkit.orchestration import HandoffHandler, SpeakQueueEvent
 from roomkit.orchestration.base import Orchestration
 from roomkit.orchestration.status_bus import StatusEntry
-from roomkit.realtime import EphemeralEvent, EphemeralEventType
+from roomkit.realtime import EphemeralEvent, EphemeralEventType, InMemoryRealtime
 from roomkit.store.base import ConversationStore
 from roomkit.tasks import DelegatedTask
 from tests.conformance._agent import ScriptedModel, tool_call_record
@@ -135,6 +135,21 @@ _THINKING_EVENTS = {
 }
 
 
+class _TextRecorder(InMemoryRealtime):
+    """The answer's text a kit's realtime is handed, a room minted during the
+    scenario included, which nothing could subscribe to ahead (README:
+    ``text_events``)."""
+
+    def __init__(self, recorded: dict[str, list[Any]]) -> None:
+        super().__init__()
+        self._recorded = recorded
+
+    async def publish(self, channel: str, event: EphemeralEvent) -> None:
+        if event.type == EphemeralEventType.TEXT_DELTA:
+            self._recorded.setdefault(event.room_id, []).append(dict(event.data))
+        await super().publish(channel, event)
+
+
 class Harness:
     """One run of one scenario."""
 
@@ -179,6 +194,8 @@ class Harness:
         kwargs |= verification_options(kit_setup)
         kwargs |= media_options(kit_setup, self)
         kwargs |= kit_orchestration(kit_setup, self)
+        if "text_events" in self.scenario.get("expect", {}):
+            kwargs["realtime"] = _TextRecorder(self.observed.text_events)
         self.kit = RoomKit(**kwargs)
 
     def strategy(self, strategy_id: str) -> Orchestration:

@@ -51,6 +51,7 @@ class Observed:
     contexts: dict[str, dict[str, list[Any]]] = field(default_factory=dict)
     streamed: dict[str, dict[str, list[Any]]] = field(default_factory=dict)
     thinking_events: dict[str, list[Any]] = field(default_factory=dict)
+    text_events: dict[str, list[Any]] = field(default_factory=dict)
     room_callbacks: dict[str, dict[str, list[Any]]] = field(default_factory=dict)
     turns: dict[str, dict[str, list[Any]]] = field(default_factory=dict)
     observations: dict[str, list[Any]] = field(default_factory=dict)
