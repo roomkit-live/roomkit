@@ -383,9 +383,8 @@ The value is never written over, and routing logs a warning naming the
 binding and the value's type. A delivery to either is refused
 `no_recipient`. Under a message's chat key, either is no chat. On a channel
 whose replies go to a chat only, a message that does not carry its chat has no
-address: it records no one, and a room opened for it names neither
-correspondent nor recipient (deliveries refused `no_recipient` until the host
-names one).
+address: it records no one, and a room routing opens for it names no recipient
+and no sender (deliveries refused `no_recipient` until the host names one).
 
 A message without a `room_id` is routed by the default strategy (RFC §10.4),
 scoped to the caller's organization:
@@ -402,6 +401,11 @@ scoped to the caller's organization:
    ACTIVE rooms bound to the channel and the PAUSED ones whose binding is
    `group`, "exactly one" counting both.
 3. Otherwise a new room.
+
+A message with no `room_id` under the framework's own name, `system`, is refused
+`reserved_sender`, with nothing written: the framework names the room it writes
+to, and a host writing under that name passes `room_id`. A message with no
+address, its sender empty or blank, opens a room no other sender is admitted to.
 
 The store answers step 1 with `find_room_id_by_binding(channel_id,
 participant_id, identity_id, room_filter, *, recipient_key=None)` and
