@@ -228,8 +228,10 @@ class ConversationRouter:
                 if state.human_hold or (
                     source_binding and source_binding.category == ChannelCategory.INTELLIGENCE
                 ):
+                    # With no address, no agent acts in a room held for a
+                    # human: nothing to watch, and no turn (RFC §19.4).
                     always_process: list[str] = []
-                    if self._supervisor_id:
+                    if self._supervisor_id and not state.human_hold:
                         always_process.append(self._supervisor_id)
                     updated_metadata = {
                         **(event.metadata or {}),
