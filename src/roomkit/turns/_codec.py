@@ -123,8 +123,8 @@ _DELTA_NAMES = frozenset(kind.name for kind in _ITEM_KINDS if kind.delta)
 
 
 def is_delta(item: Any) -> bool:
-    """Whether *item* is a text or reasoning delta, which the executor reads
-    ahead of the owner's reader (RFC §10.6.4)."""
+    """Whether *item* is a text or reasoning delta or what a generation used,
+    which the executor reads ahead of the owner's reader (RFC §10.6.4)."""
     return isinstance(item, _DELTA_TYPES)
 
 

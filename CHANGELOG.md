@@ -60,7 +60,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   channel can show and every other reader skips, across the turn backend too. A
   turn cut once it began records what the markers told as a finished turn does,
   its end `cancelled`; a generation in flight is not counted, and
-  `ai_usage_complete` is then false. An owner and its executors across Redis
+  `ai_usage_complete` is then false; cut before anything told, the record names
+  only its end. An owner and its executors across Redis
   upgrade together: an older owner refuses the new item.
 
 - **A turn's record keeps its last generation, its model and its provider**

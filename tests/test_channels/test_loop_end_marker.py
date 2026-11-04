@@ -267,6 +267,7 @@ _END = ToolCallEndMarker(tool_name="t", tool_id="c")
         pytest.param([_TOLD, _START, _END], False, id="its-calls-over-the-next-starts"),
         pytest.param([_TOLD, SegmentBreakMarker()], False, id="tried-again"),
         pytest.param([_START, _END, _TOLD], True, id="a-provider-s-call-within-it"),
+        pytest.param([_TOLD, _START, _END, _START], False, id="a-provider-s-call-in-the-next-one"),
         pytest.param([_TOLD, _START, _END, _START, _END, _TOLD], True, id="told-again"),
     ],
 )

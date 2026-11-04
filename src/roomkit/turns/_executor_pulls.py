@@ -1,11 +1,11 @@
 """What the owner's pulls let the executor read of a turn's stream (RFC §10.6.4).
 
-A pull grants a number of items. The executor reads text and reasoning deltas
-ahead of the owner's reader within what was granted, and never past any other
-item (a call's start, a segment break, the loop's end) until a pull its reader
-sent once it read that item: each pull says how many items the reader read, a
-joined burst counting its deltas, and one that says fewer than were read
-through such an item grants nothing.
+A pull grants a number of items. The executor reads text and reasoning deltas,
+and what a generation used, ahead of the owner's reader within what was granted,
+and never past any other item (a call's start, a segment break, the loop's end)
+until a pull its reader sent once it read that item: each pull says how many
+items the reader read, a joined burst counting its deltas, and one that says
+fewer than were read through such an item grants nothing.
 """
 
 from __future__ import annotations

@@ -24,10 +24,11 @@ from roomkit.channels._tool_registry import set_turn_owner_tools
 from roomkit.core._turn_scope import enter_turn
 from roomkit.core.exceptions import ChannelNotRegisteredError, TurnLinkError
 from roomkit.core.hooks import set_turn_room_hooks
+from roomkit.models.streaming import UsageMarker
 from roomkit.telemetry.context import get_current_span, set_current_span
 from roomkit.tools._turn_inputs import set_turn_inputs
 from roomkit.turns._between_turns import BetweenTurns
-from roomkit.turns._codec import encode_output
+from roomkit.turns._codec import encode_item, encode_output
 from roomkit.turns._error_codec import error_record
 from roomkit.turns._executor_calls import ExecutorCalls
 from roomkit.turns._executor_changes import ChannelChanges
@@ -311,6 +312,8 @@ class ExecutorTurn:
             await self._changes.report(before=item)
             if isinstance(item, str):
                 await self._add_text(item)
+            elif isinstance(item, UsageMarker):
+                self._frames.add_item(Item(item=encode_item(item)))
             else:
                 await self._changes.send_item(item)
             return True

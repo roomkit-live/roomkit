@@ -15,8 +15,14 @@ import pytest
 from roomkit.core._turn_scope import current_turn_id
 from roomkit.core.exceptions import TurnLinkError
 from roomkit.models.steering import Cancel
-from roomkit.models.streaming import SegmentBreakMarker, ThinkingDeltaMarker, ToolCallStartMarker
+from roomkit.models.streaming import (
+    SegmentBreakMarker,
+    ThinkingDeltaMarker,
+    ToolCallStartMarker,
+    UsageMarker,
+)
 from roomkit.turns import InMemoryTurnBackend, TurnClient, TurnExecutor, memory
+from roomkit.turns._codec import encode_item
 from roomkit.turns._frame_sender import FrameSender
 from roomkit.turns.wire import Item
 from tests.test_turns_backend import ScriptedChannel, _client, _run
@@ -183,9 +189,8 @@ async def test_the_record_a_reader_reads_is_the_one_sent_before_its_item() -> No
 async def test_a_burst_naming_no_positive_number_of_deltas_is_an_invalid_frame(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def foreign_burst(self: FrameSender) -> None:
-        if self._text:
-            texts, self._text = self._text, []
+    async def foreign_burst(self: FrameSender, texts: list[str]) -> None:
+        if texts:
             await self._send(Item(item={"kind": "text", "text": "".join(texts), "deltas": "two"}))
 
     monkeypatch.setattr(FrameSender, "_send_text", foreign_burst)
@@ -204,6 +209,33 @@ async def test_a_burst_naming_no_positive_number_of_deltas_is_an_invalid_frame(
     assert raised.value.reason == "frame_invalid"
     assert turn.over  # the turn ends, its reader told why
     await client.close()
+
+
+async def test_what_a_generation_used_waits_on_no_link_and_keeps_its_place() -> None:
+    sent: list[dict[str, object]] = []
+    link_open = asyncio.Event()
+
+    async def link(frame: Any) -> int:
+        await link_open.wait()
+        sent.append(frame.item)
+        return len(sent)
+
+    frames = FrameSender(link)
+    frames.add_text("a")
+    frames.add_text("b")
+    # No await: the loop goes on to decide its round whatever the link does.
+    frames.add_item(Item(item=encode_item(UsageMarker(usage={"input_tokens": 1}))))
+    frames.add_text("c")
+    await asyncio.sleep(0)
+    link_open.set()
+    await frames.send(Item(item={"kind": "stream_end"}))
+
+    assert [item.get("text") or item["kind"] for item in sent] == [
+        "ab",
+        "usage",
+        "c",
+        "stream_end",
+    ]
 
 
 class _DirectChannel(ScriptedChannel):

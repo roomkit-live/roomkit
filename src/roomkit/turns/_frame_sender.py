@@ -24,12 +24,14 @@ logger = logging.getLogger("roomkit.turns")
 
 
 class FrameSender:
-    """Sends a turn's frames one at a time, its text deltas by burst."""
+    """Sends a turn's frames one at a time, its text deltas by burst, and
+    what a generation used among them, so the stream never waits on the link
+    between a generation's last text and what the loop does next."""
 
     def __init__(self, send: Callable[[Frame], Awaitable[int]]) -> None:
         self._send = send
         self._lock = asyncio.Lock()
-        self._text: list[str] = []
+        self._kept: list[str | Item] = []
         self._flush: asyncio.Task[None] | None = None
         # A burst the link failed to carry: the next send raises it.
         self._failure: Exception | None = None
@@ -39,7 +41,14 @@ class FrameSender:
         frame can carry (a lone surrogate) raises ``ValueError`` here, before
         it spoils the burst."""
         text.encode()
-        self._text.append(text)
+        self._keep(text)
+
+    def add_item(self, item: Item) -> None:
+        """Keep *item* for the burst, in its order among the text."""
+        self._keep(item)
+
+    def _keep(self, kept: str | Item) -> None:
+        self._kept.append(kept)
         if self._flush is None:
             # Runs at the loop's next turn: once the stream's task waits.
             self._flush = asyncio.get_running_loop().create_task(self._flush_burst())
@@ -52,7 +61,7 @@ class FrameSender:
             if (failure := self._failure) is not None:
                 self._failure = None
                 raise failure
-            await self._send_text()
+            await self._send_kept()
             return await self._send(frame)
 
     async def _flush_burst(self) -> None:
@@ -60,18 +69,29 @@ class FrameSender:
             async with self._lock:
                 # Text kept while a send suspended goes too: no flush was
                 # scheduled for it.
-                while self._text:
-                    await self._send_text()
+                while self._kept:
+                    await self._send_kept()
         except Exception as exc:
             logger.debug("A burst of text deltas could not be sent", exc_info=True)
             self._failure = exc
         finally:
             self._flush = None
 
-    async def _send_text(self) -> None:
-        if not self._text:
+    async def _send_kept(self) -> None:
+        kept, self._kept = self._kept, []
+        texts: list[str] = []
+        for part in kept:
+            if isinstance(part, str):
+                texts.append(part)
+                continue
+            await self._send_text(texts)
+            texts = []
+            await self._send(part)
+        await self._send_text(texts)
+
+    async def _send_text(self, texts: list[str]) -> None:
+        if not texts:
             return
-        texts, self._text = self._text, []
         item: dict[str, object] = {"kind": "text", "text": "".join(texts)}
         if len(texts) > 1:
             item["deltas"] = len(texts)
