@@ -302,3 +302,23 @@ def test_a_rebuilt_activation_keeps_what_the_model_wrote_and_what_ran() -> None:
     [call] = remembered_calls(rows)
 
     assert (call["arguments"], call["ran_with"]) == ({"name": "alpha"}, {"name": "beta"})
+
+
+def test_a_deleted_start_leaves_its_activation_what_ran() -> None:
+    name = "activate_skill"
+    start = _row(EventType.TOOL_CALL_START, "c1", name, arguments={"name": "alpha"})
+    rows = [
+        start.model_copy(update={"metadata": {"deleted": True}}),
+        _row(
+            EventType.TOOL_CALL_END,
+            "c1",
+            name,
+            arguments={"name": "alpha"},
+            result="{}",
+            outcome="served",
+        ),
+    ]
+
+    [call] = remembered_calls(rows)
+
+    assert (call["arguments"], call["ran_with"]) == ({}, {"name": "alpha"})

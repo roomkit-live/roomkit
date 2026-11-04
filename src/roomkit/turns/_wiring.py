@@ -84,6 +84,22 @@ def _standing_decision(event: SpeakDecisionEvent, result: SyncPipelineResult) ->
     return event.decision
 
 
+def _remembered(end: ToolCallContent, arguments: dict[str, Any]) -> dict[str, Any]:
+    """The call the end row *end* closes, *arguments* what the model wrote."""
+    call: dict[str, Any] = {
+        "name": end.tool_name,
+        "arguments": arguments,
+        "result": end.result or "",
+        "outcome": end.outcome,
+    }
+    # What ran, a rewrite's included: the rules an activation put before the
+    # model are this call's, whatever it asked. No other call's are kept: a
+    # deleted start's arguments stay out of the memory.
+    if end.tool_name == TOOL_ACTIVATE_SKILL:
+        call["ran_with"] = end.arguments
+    return call
+
+
 def remembered_calls(events: list[RoomEvent]) -> list[dict[str, Any]]:
     """The calls a tool memory keeps, read off a channel's stored tool rows,
     in the order they were written."""
@@ -114,18 +130,7 @@ def remembered_calls(events: list[RoomEvent]) -> list[dict[str, Any]]:
         # refusal or a call nothing served is not kept.
         if not kept_in_tool_memory(content.outcome):
             continue
-        call: dict[str, Any] = {
-            "name": name,
-            "arguments": arguments,
-            "result": content.result or "",
-            "outcome": content.outcome,
-        }
-        # What ran, a rewrite's included: the rules an activation put before
-        # the model are this call's, whatever it asked. No other call's are
-        # kept: a deleted start's arguments stay out of the memory.
-        if name == TOOL_ACTIVATE_SKILL:
-            call["ran_with"] = content.arguments
-        calls.append(call)
+        calls.append(_remembered(content, arguments))
     return calls
 
 
