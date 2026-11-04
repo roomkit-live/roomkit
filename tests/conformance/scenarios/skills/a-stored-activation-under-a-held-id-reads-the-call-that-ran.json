@@ -1,0 +1,133 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skills/a-stored-activation-under-a-held-id-reads-the-call-that-ran",
+  "title": "A room the agent serves anew reads the skill the call that held the id activated, never the one refused under it",
+  "rules": [
+    "§24.4",
+    "§12.4"
+  ],
+  "notes": "Python: turns/_wiring.py remembered_calls, tools/_open_calls.py, channels/_skill_activation.py seed (HITL 9763c3cd). Pairing an end row to the latest start under its id activated the skill the refused call named, and the agent lost the rules it had loaded.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "skills": [
+          {
+            "name": "alpha",
+            "description": "The alpha procedure",
+            "instructions": "Rules for alpha."
+          },
+          {
+            "name": "beta",
+            "description": "The beta procedure",
+            "instructions": "Rules for beta."
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "alpha"
+                  }
+                },
+                {
+                  "id": "c1",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "beta"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            },
+            {
+              "text": "hers"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "room-1",
+      "channel_id": "agent"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "agent",
+      "category": "intelligence"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {
+          "system_prompt": {
+            "$contains": "Rules for alpha."
+          }
+        }
+      ]
+    }
+  }
+}
