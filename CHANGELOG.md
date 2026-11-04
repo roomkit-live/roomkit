@@ -17,11 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with nothing written, no room opened and no router asked. What the framework writes
   names its room and is not routed; a host writing under that name passes `room_id`.
 
-- **A room a routed message with no address opens admits no other sender** (HITL
-  8ea30e4a, RMK-1339). Unnamed, it passed step 3: the next sender was stored there and
-  their agent read what the message left. The binding step 2 makes for such a message
-  now names `system`, which no sender is, until the integrator gives it a recipient. Two
-  such messages no longer share a room; one naming its room is unchanged. A blank sender
+- **BREAKING: a routed message with no address enters a room only through a `group`
+  binding, and the room it opens admits no other sender** (HITL 8ea30e4a, 474148bb,
+  RMK-1339). It entered a room the host prepared, or opened one naming no one, and
+  either way the next sender passed step 3 and their agent read what it left. The
+  binding step 2 makes for such a message now names `system`, which no sender is, until
+  the integrator gives it a recipient. Two such messages no longer share a room: a flow
+  of them into one room declares its binding `group` or passes `room_id`. A blank sender
   id has no address either (HITL cdec52d7), as an empty one, where it was a sender of
   that name. On a chat channel the chat wins over an empty or blank sender (HITL
   67dc3147): a Telegram channel post is its chat's.

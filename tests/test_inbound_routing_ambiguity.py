@@ -39,7 +39,7 @@ class TestAmbiguityIsRefused:
         store = await _store_with_rooms("r1")
         router = DefaultInboundRoomRouter(store)
 
-        assert await router.route("ws", ChannelType.WEBSOCKET) == "r1"
+        assert await router.route("ws", ChannelType.WEBSOCKET, "alice") == "r1"
 
     async def test_two_bound_rooms_refuse_to_route(self) -> None:
         store = await _store_with_rooms("r1", "r2")
@@ -55,7 +55,7 @@ class TestAmbiguityIsRefused:
         await store.update_room(room.model_copy(update={"status": RoomStatus.CLOSED}))
         router = DefaultInboundRoomRouter(store)
 
-        assert await router.route("ws", ChannelType.WEBSOCKET) == "r1"
+        assert await router.route("ws", ChannelType.WEBSOCKET, "alice") == "r1"
 
     async def test_no_binding_at_all_returns_none(self) -> None:
         store = InMemoryStore()
@@ -118,7 +118,7 @@ class TestDeterminism:
         store = await _store_with_rooms("r1")
         router = DefaultInboundRoomRouter(store)
 
-        answers = {await router.route("ws", ChannelType.WEBSOCKET) for _ in range(20)}
+        answers = {await router.route("ws", ChannelType.WEBSOCKET, "alice") for _ in range(20)}
         assert answers == {"r1"}
 
     async def test_candidates_are_ordered_by_room_age(self) -> None:
@@ -207,14 +207,17 @@ class TestStepThreeAdmitsOneConversation:
 
         assert await self._route(store) is None
 
-    async def test_a_sender_with_no_address_is_held_to_the_same_rule(self) -> None:
+    async def test_a_sender_with_no_address_is_admitted_through_a_group_binding_only(self) -> None:
+        """Admitted to a room that heard no one, the next sender would be too,
+        and would read what it left (RFC §10.4)."""
         store = await _store_with_rooms("r1")
-        assert await self._route(store, sender=None) == "r1"
-        await store.add_event_auto_index(
-            "r1", make_event(room_id="r1", channel_id="ws", participant_id="alice")
-        )
-
         assert await self._route(store, sender=None) is None
+
+        binding = await store.get_binding("r1", "ws")
+        assert binding is not None
+        await store.update_binding(binding.model_copy(update={"group": True}))
+
+        assert await self._route(store, sender=None) == "r1"
 
     async def test_a_group_binding_admits_everyone(self) -> None:
         store = await _store_with_rooms("r1")

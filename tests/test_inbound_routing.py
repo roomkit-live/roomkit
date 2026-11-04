@@ -41,7 +41,7 @@ class TestDefaultInboundRoomRouter:
         )
 
         router = DefaultInboundRoomRouter(store)
-        result = await router.route("sms1", ChannelType.SMS)
+        result = await router.route("sms1", ChannelType.SMS, "+15550000001")
         assert result == "r1"
 
     async def test_skips_closed_rooms(self) -> None:

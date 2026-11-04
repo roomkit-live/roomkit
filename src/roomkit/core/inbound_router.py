@@ -285,10 +285,10 @@ async def step_three_admits(
     """
     if binding.group:
         return True
-    if sender == SYSTEM_SENDER_ID:
-        # The framework names the room it writes to, and nothing it writes
-        # counts as a correspondent's: a sender borrowing the name, on a
-        # channel whose senders choose their id, gets a room of its own.
+    if not recordable_sender(sender):
+        # No one's: the framework's name, and a message with no address, whose
+        # words the next sender admitted here would read, what it wrote
+        # counting as no one heard. It opens a room of its own (RFC §10.4).
         return False
     if not binding_admits(binding, own):
         return False
@@ -330,9 +330,9 @@ async def still_the_messages(
     recipient being no sender's, RFC §5.7); a binding naming no one that the
     room no longer opens to the sender by step 3's conditions, unless the
     sender is a participant reached through the channel; a message with no
-    address is held to those conditions too, and is recorded on no binding.
-    A message under the framework's own name is not routed at all: its
-    caller refuses it first (RFC §10.1 step 2).
+    address is held to those conditions too, which it meets through no such
+    binding, and is recorded on none. A message under the framework's own
+    name is not routed at all: its caller refuses it first (RFC §10.1 step 2).
     """
     if room.status in _REFUSING:
         return False
@@ -362,9 +362,9 @@ async def still_the_messages(
         return named
     if members:
         return True
-    # A message with no address is held to step 3's conditions as any sender
-    # is (RFC §10.4): someone heard or reached on the channel since the
-    # router read the room makes it no longer the message's.
+    # Whoever chose the room, step 3's conditions hold under the lock (RFC
+    # §10.4): someone heard or reached on the channel since the router read
+    # the room makes it no longer the message's.
     return await step_three_admits(store, binding, sender or None, own, recipient)
 
 

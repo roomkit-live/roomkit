@@ -405,8 +405,10 @@ scoped to the caller's organization:
 A message with no `room_id` under the framework's own name, `system`, is refused
 `reserved_sender`, with nothing written: the framework names the room it writes
 to, and a host writing under that name passes `room_id`. A message with no
-address, its sender empty or blank and no chat, opens a room no other sender is
-admitted to.
+address, its sender empty or blank and no chat, enters a room only through a
+`group` binding: otherwise it opens a room of its own, no other sender admitted.
+A flow of anonymous messages into one room declares its binding `group` or passes
+`room_id`.
 
 A custom router's answer is the host's decision, as a `room_id` is. A room that
 binds the channel is still held to step 3's conditions under the lock, but one
