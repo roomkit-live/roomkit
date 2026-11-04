@@ -26,7 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of them into one room declares its binding `group` or passes `room_id`. A blank sender
   id has no address either (HITL cdec52d7), as an empty one, where it was a sender of
   that name. On a chat channel the chat wins over an empty or blank sender (HITL
-  67dc3147): a Telegram channel post is its chat's.
+  67dc3147): a Telegram channel post is its chat's. A custom router is told `None` for
+  a message with no address, where it was told the raw id (HITL 710a6c27).
 
 - **A discussion's stored key is the framework's** (RFC §19.7.5 rule 16, HITL 9247da98,
   RMK-1337). `create_room(metadata=)`, `update_room_metadata`, a hook's body, a channel's

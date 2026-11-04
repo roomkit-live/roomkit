@@ -237,7 +237,8 @@ class InboundMixin(HelpersMixin):
         A message with no *room_id* under the framework's own name, ``system``,
         is refused ``reserved_sender`` with nothing read or written (RFC §10.1
         step 2): the framework names the room it writes to, and a host writing
-        under that name passes *room_id*.
+        under that name passes *room_id*. A host naming the room sets
+        ``sender_id`` itself, and never copies a client's.
 
         Raises:
             ChannelNotRegisteredError: the message's channel is not registered
@@ -994,12 +995,13 @@ class InboundMixin(HelpersMixin):
         """
         routed = room_id is None
         if room_id is None:
+            sender = _conversation(message, channel)
             room_id = await _by(
                 deadline,
                 self._inbound_router.route(
                     channel_id=message.channel_id,
                     channel_type=channel.channel_type,
-                    participant_id=_conversation(message, channel),
+                    participant_id=sender if recordable_sender(sender) else None,
                     channel_data=message.metadata,
                     organization_id=organization_id,
                     identity=identity,

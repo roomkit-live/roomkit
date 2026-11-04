@@ -55,8 +55,9 @@ class InboundRoomRouter(ABC):
 
         *participant_id* is the address naming the message's conversation
         (``Channel.conversation_address``): the sender's, or on a chat
-        channel the chat it was posted in. *channel_data* is the message's
-        metadata.
+        channel the chat it was posted in; ``None`` for a message with no
+        address, its sender empty or blank and no chat. *channel_data* is the
+        message's metadata.
 
         *organization_id* is the organization the caller acts for (RFC
         §17.2), ``None`` when the call names none. *identity* is the one the

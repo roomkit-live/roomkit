@@ -912,7 +912,8 @@ scoped to the caller's organization:
 
 A message with no `room_id` under the framework's own name, `system`, is refused
 `reserved_sender`, with nothing written: the framework names the room it writes
-to, and a host writing under that name passes `room_id`. A message with no
+to, and a host writing under that name passes `room_id`, its own write: a host
+naming the room sets `sender_id` itself, and never copies a client's. A message with no
 address, its sender empty or blank and no chat, enters a room only through a
 `group` binding: otherwise it opens a room of its own, no other sender admitted.
 A flow of anonymous messages into one room declares its binding `group` or passes

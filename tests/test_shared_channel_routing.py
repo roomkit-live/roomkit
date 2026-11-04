@@ -1001,6 +1001,20 @@ class TestTheFrameworksOwnSender:
 
 
 class TestAMessageWithNoAddress:
+    async def test_a_router_is_told_no_address_as_none(self, store: ConversationStore) -> None:
+        """One way to say it, whichever id it came with (HITL 710a6c27)."""
+        router = _ByTicket()
+        kit = RoomKit(store=store, inbound_router=router)
+        kit.register_channel(HTTPChannel("web"))
+
+        for sender in ("", "  ", "bob"):
+            await kit.process_inbound(
+                InboundMessage(channel_id="web", sender_id=sender, content=TextContent(body="x"))
+            )
+        await kit.close()
+
+        assert router.asked == [None, None, "bob"]
+
     @pytest.mark.parametrize("sender", ["", "  "], ids=["empty", "blank"])
     async def test_a_room_it_opens_takes_in_no_one_else(
         self, store: ConversationStore, sender: str
