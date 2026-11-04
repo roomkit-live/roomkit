@@ -24,11 +24,14 @@ from roomkit.channels.agent import Agent
 from roomkit.models.channel import ChannelBinding, ChannelOutput
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
-from roomkit.models.enums import ChannelCategory, TaskStatus
+from roomkit.models.enums import ChannelCategory, ChannelType, EventType, TaskStatus
 from roomkit.models.event import RoomEvent, TextContent
 from roomkit.models.streaming import ThinkingDeltaMarker
 from roomkit.providers.ai.base import (
     AIContext,
+    AIResponse,
+    AITool,
+    AIToolCall,
     StreamEvent,
     StreamTextDelta,
     StreamThinkingDelta,
@@ -171,3 +174,72 @@ async def test_a_room_turn_its_transport_stopped_tells_its_caller_cancelled(
     assert dict(result.response_metadata).get("turns") == {
         agent_id: {"loop_end_reason": "cancelled"}
     }
+
+
+async def test_a_reader_gone_while_a_call_runs_leaves_no_generation_in_flight() -> None:
+    """The round that runs ends, its end stored, and no model is asked again:
+    the record reads complete (RFC §6.4)."""
+    running = asyncio.Event()
+    release = asyncio.Event()
+
+    class Leaves(SimpleChannel):
+        @property
+        def supports_streaming_delivery(self) -> bool:
+            return True
+
+        async def deliver_stream(
+            self,
+            text_stream: AsyncIterator[Any],
+            event: RoomEvent,
+            binding: ChannelBinding,
+            context: RoomContext,
+        ) -> ChannelOutput:
+            async for item in text_stream:
+                if isinstance(item, RoomEvent) and item.type == EventType.TOOL_CALL_START:
+                    break
+            # Its next read runs the call, and its target leaves meanwhile.
+            read = asyncio.ensure_future(anext(text_stream))
+            await running.wait()
+            release.set()
+            read.cancel()
+            return ChannelOutput.empty()
+
+    async def wait(name: str, arguments: dict[str, Any]) -> str:
+        running.set()
+        await release.wait()
+        return "found"
+
+    provider = MockAIProvider(
+        ai_responses=[
+            AIResponse(
+                content="Checking.",
+                tool_calls=[AIToolCall(id="c1", name="lookup", arguments={})],
+                usage={"input_tokens": 1000, "output_tokens": 10},
+            )
+        ],
+        streaming=True,
+    )
+    kit = RoomKit()
+    kit.register_channel(Leaves("ws", ChannelType.WEBSOCKET))
+    kit.register_channel(
+        Agent(
+            "ai",
+            provider=provider,
+            tools=[AITool(name="lookup", description="d", parameters={"type": "object"})],
+            tool_handler=wait,
+        )
+    )
+    await kit.create_room(room_id="r")
+    await kit.attach_channel("r", "ws")
+    await kit.attach_channel("r", "ai", category=ChannelCategory.INTELLIGENCE)
+    asked = InboundMessage(channel_id="ws", sender_id="u", content=TextContent(body="Go."))
+    await asyncio.wait_for(kit.process_inbound(asked, room_id="r"), 5)
+
+    rows = await kit.store.list_events("r", limit=20)
+    said = next(
+        row for row in rows if row.type == EventType.MESSAGE and row.source.channel_id == "ai"
+    )
+    assert said.metadata["loop_end_reason"] == "cancelled"
+    assert said.metadata["ai_usage_complete"] is True
+    assert len(provider.calls) == 1
+    await kit.close()
