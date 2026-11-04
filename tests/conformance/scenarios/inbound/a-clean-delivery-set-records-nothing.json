@@ -1,0 +1,78 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-clean-delivery-set-records-nothing",
+  "title": "A delivery set that all succeeded writes nothing on its event",
+  "rules": [
+    "§5.13",
+    "§10.1 step 18",
+    "§14.3"
+  ],
+  "notes": "Translates roomkit tests/test_delivery_outcomes.py::TestOnlyAFailingSetIsRemembered::test_a_clean_delivery_writes_nothing: the call still reports each delivery, the stored event holds none of them.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "delivery_results": {
+            "ws": {
+              "status": "sent"
+            }
+          },
+          "event": {
+            "status": "delivered"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "status": "delivered",
+          "delivery_results": {
+            "ws": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

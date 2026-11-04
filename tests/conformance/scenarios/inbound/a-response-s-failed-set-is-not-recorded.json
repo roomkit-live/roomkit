@@ -1,0 +1,128 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-response-s-failed-set-is-not-recorded",
+  "title": "Only the root pass's delivery set is recorded: a response whose delivery fails leaves its event without a record",
+  "rules": [
+    "§5.13",
+    "§10.1 step 18",
+    "§14.3"
+  ],
+  "notes": "The record describes the trigger's own delivery set, never a reentry's (roomkit's _post_plan_effects reports the root pass only). The first message's set succeeds and records nothing; the agent's answer fails on ws and records nothing either.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "deliver": [
+          {
+            "when": {
+              "source_channel_id": "ai"
+            },
+            "fail": "socket closed"
+          }
+        ]
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "An answer"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello"
+          },
+          "delivery_results": {
+            "ws": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "An answer"
+          },
+          "delivery_results": {
+            "ws": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    },
+    "framework_events": {
+      "room-1": [
+        {
+          "$unordered": [
+            {
+              "event": "delivery_succeeded",
+              "channel_id": "ws"
+            },
+            {
+              "event": "event_processed"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

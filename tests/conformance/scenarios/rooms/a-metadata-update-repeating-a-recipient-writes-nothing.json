@@ -1,0 +1,69 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/a-metadata-update-repeating-a-recipient-writes-nothing",
+  "title": "A binding metadata update writing the recipient the binding holds in another spelling changes nothing, and records nothing",
+  "rules": [
+    "§5.7",
+    "§7.2"
+  ],
+  "notes": "The naming runs before the comparison: the merged binding, written in the channel's form, equals the stored one, so nothing is written and no lifecycle record is committed (RFC 7.2: an update that changes nothing writes nothing).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {
+          "normalizes": {
+            "555-000-0001": "+15550000001",
+            "555.000.0002": "+15550000002"
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms",
+            "metadata": {
+              "phone_number": "+15550000002"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "update_binding_metadata",
+      "room_id": "r1",
+      "channel_id": "sms",
+      "metadata": {
+        "phone_number": "555.000.0002"
+      },
+      "expect": {
+        "result": {
+          "participant_id": "+15550000002",
+          "metadata": {
+            "phone_number": "+15550000002"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "lifecycle": {
+      "r1": [
+        {
+          "type": "channel_attached"
+        }
+      ]
+    },
+    "framework_events": {
+      "r1": []
+    }
+  }
+}

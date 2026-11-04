@@ -1,0 +1,58 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/a-metadata-update-of-a-channel-no-longer-registered-names-no-one",
+  "title": "A binding metadata update for a channel the kit no longer holds is merged as given, naming no one",
+  "rules": [
+    "§5.7",
+    "§7.2"
+  ],
+  "notes": "roomkit's update_binding_metadata names the correspondent only for a channel it holds: nothing else can write the address in the channel's form.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {
+          "normalizes": {
+            "555-000-0001": "+15550000001",
+            "555.000.0002": "+15550000002"
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "unregister_channel",
+      "channel_id": "sms"
+    },
+    {
+      "call": "update_binding_metadata",
+      "room_id": "r1",
+      "channel_id": "sms",
+      "metadata": {
+        "phone_number": "555.000.0002"
+      },
+      "expect": {
+        "result": {
+          "participant_id": null,
+          "metadata": {
+            "phone_number": "555.000.0002"
+          }
+        }
+      }
+    }
+  ]
+}

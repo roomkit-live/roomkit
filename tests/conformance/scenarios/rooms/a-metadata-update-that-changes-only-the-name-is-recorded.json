@@ -1,0 +1,99 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/a-metadata-update-that-changes-only-the-name-is-recorded",
+  "title": "A binding metadata update that leaves the metadata as it was and writes the correspondent in the channel's form is a change, recorded as one",
+  "rules": [
+    "§5.7",
+    "§7.2"
+  ],
+  "notes": "The binding holds team=blue and names 555-000-0001, stored so by the host. The update repeats team=blue: only the naming changes the binding, which is written, and its channel_updated record committed, as roomkit's update_binding_metadata treats any change of the binding.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {
+          "normalizes": {
+            "555-000-0001": "+15550000001",
+            "555.000.0002": "+15550000002"
+          }
+        }
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "r1",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "participant_id": "555-000-0001",
+        "metadata": {
+          "team": "blue"
+        }
+      }
+    },
+    {
+      "call": "update_binding_metadata",
+      "room_id": "r1",
+      "channel_id": "sms",
+      "metadata": {
+        "team": "blue"
+      },
+      "expect": {
+        "result": {
+          "participant_id": "+15550000001",
+          "metadata": {
+            "team": "blue"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "r1": {
+        "sms": {
+          "participant_id": "+15550000001"
+        }
+      }
+    },
+    "lifecycle": {
+      "r1": [
+        {
+          "type": "channel_attached"
+        },
+        {
+          "type": "channel_updated",
+          "content": {
+            "code": "channel_metadata_updated",
+            "data": {
+              "channel_id": "sms",
+              "keys": [
+                "team"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

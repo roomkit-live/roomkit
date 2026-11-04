@@ -1,0 +1,73 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-sent-event-s-failed-set-is-recorded",
+  "title": "An event a host sends keeps the record of its failed delivery set, as a message does",
+  "rules": [
+    "§5.13",
+    "§10.1 step 18",
+    "§10.5",
+    "§14.3"
+  ],
+  "notes": "send_event runs the same root pass as process_inbound (roomkit's plan.emit_processed), so its set with a failure is recorded on the event it committed.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "deliver": [
+          {
+            "fail": "socket closed"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "content": {
+        "type": "text",
+        "body": "Notice"
+      },
+      "expect": {
+        "result": {
+          "status": "delivered"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "delivery_results": {
+            "ws": {
+              "status": "failed"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

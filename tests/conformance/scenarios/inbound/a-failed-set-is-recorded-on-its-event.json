@@ -1,0 +1,103 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-failed-set-is-recorded-on-its-event",
+  "title": "A delivery set with a failure is recorded on its event, every target's outcome, the successes too",
+  "rules": [
+    "§5.13",
+    "§10.1 step 18",
+    "§14.3"
+  ],
+  "notes": "Translates roomkit tests/test_delivery_outcomes.py::TestOnlyAFailingSetIsRemembered: test_a_failure_survives_the_call, test_the_record_keeps_the_successes_too. The live delivery_failed is gone hours later: the stored event answers which channels it never reached.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "deliver": [
+          {
+            "refuse": {
+              "error": "rejected",
+              "code": "550",
+              "retryable": false
+            }
+          }
+        ]
+      },
+      {
+        "id": "email",
+        "type": "email",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "email"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "status": "delivered"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "status": "delivered",
+          "delivery_results": {
+            "ws": {
+              "channel_id": "ws",
+              "status": "failed",
+              "error": {
+                "code": "550",
+                "retryable": false
+              }
+            },
+            "email": {
+              "channel_id": "email",
+              "status": "sent"
+            },
+            "sms": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

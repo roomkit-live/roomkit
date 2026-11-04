@@ -1,0 +1,123 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-hook-s-injected-event-s-failed-set-is-not-recorded",
+  "title": "An event a hook injects is delivered with no record of its set, whatever failed",
+  "rules": [
+    "§5.13",
+    "§9.4",
+    "§10.1 step 18",
+    "§14.3"
+  ],
+  "notes": "An injected event has no delivery report (roomkit's _post_plan_effects returns before the root pass's), so its failed delivery is on no stored event.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "deliver": [
+          {
+            "when": {
+              "text": "notice"
+            },
+            "fail": "socket closed"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "notify",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "Hello"
+            },
+            "result": {
+              "action": "allow",
+              "injected_events": [
+                {
+                  "target_channel_ids": [
+                    "ws"
+                  ],
+                  "event": {
+                    "content": {
+                      "type": "text",
+                      "body": "notice"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello"
+          },
+          "delivery_results": {
+            "ws": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "notice"
+          },
+          "delivery_results": {
+            "ws": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

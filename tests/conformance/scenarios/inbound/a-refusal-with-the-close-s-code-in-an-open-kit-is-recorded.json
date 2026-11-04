@@ -1,0 +1,82 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-refusal-with-the-close-s-code-in-an-open-kit-is-recorded",
+  "title": "A provider's refusal whose code reads kit_closed, in a kit that is open, is a failure as any other, recorded on its event",
+  "rules": [
+    "§5.13",
+    "§10.1 step 18",
+    "§14.3"
+  ],
+  "notes": "What a set's record depends on is whether the set ran its aftermath, never the words a target's failure declares: the kit is open, the code is the provider's.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "deliver": [
+          {
+            "refuse": {
+              "error": "closed",
+              "code": "kit_closed",
+              "retryable": false
+            }
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "delivery_results": {
+            "ws": {
+              "status": "failed",
+              "error": {
+                "code": "kit_closed"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,71 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/a-metadata-update-keeps-the-correspondent-a-binding-names",
+  "title": "A binding metadata update giving another recipient keeps the correspondent the binding names, written in the channel's form",
+  "rules": [
+    "§5.7",
+    "§7.2",
+    "§10.4"
+  ],
+  "notes": "The binding names 555-000-0001, stored so by the host: the update's naming writes it +15550000001 and never replaces it by the recipient, which is written in the channel's form too.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {
+          "normalizes": {
+            "555-000-0001": "+15550000001",
+            "555.000.0002": "+15550000002"
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "r1",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "participant_id": "555-000-0001"
+      }
+    },
+    {
+      "call": "update_binding_metadata",
+      "room_id": "r1",
+      "channel_id": "sms",
+      "metadata": {
+        "phone_number": "555.000.0002"
+      },
+      "expect": {
+        "result": {
+          "participant_id": "+15550000001",
+          "metadata": {
+            "phone_number": "+15550000002"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "r1": {
+        "sms": {
+          "participant_id": "+15550000001",
+          "metadata": {
+            "phone_number": "+15550000002"
+          }
+        }
+      }
+    }
+  }
+}

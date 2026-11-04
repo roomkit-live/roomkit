@@ -1,0 +1,74 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-greeting-s-failed-set-is-not-recorded",
+  "title": "A greeting is delivered with no record of its set, whatever failed",
+  "rules": [
+    "§5.13",
+    "§10.1 step 18",
+    "§14.3",
+    "§19.1"
+  ],
+  "notes": "A greeting's delivery set is no root pass's: its failed delivery is on no stored event.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "deliver": [
+          {
+            "fail": "socket closed"
+          }
+        ]
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": []
+        },
+        "agent": {
+          "greeting": "Welcome!",
+          "auto_greet": false
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_greeting",
+      "room_id": "room-1"
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Welcome!"
+          },
+          "delivery_results": {
+            "ws": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}
