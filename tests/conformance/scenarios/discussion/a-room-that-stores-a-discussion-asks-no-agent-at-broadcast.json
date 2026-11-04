@@ -1,0 +1,136 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-room-that-stores-a-discussion-asks-no-agent-at-broadcast",
+  "title": "A room that stores a discussion asks no agent at broadcast: a bound agent is no unavailable target, an address it does not bind is",
+  "rules": [
+    "§19.7.5 rule 16",
+    "§10.1 step 18"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a1",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "from a1"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "a2",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "from a2"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-1",
+        "metadata": {
+          "_discussion": {
+            "agents": [
+              "a1",
+              "a2"
+            ],
+            "max_depth": 5
+          }
+        }
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "sms"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "a1",
+      "category": "intelligence"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "a2",
+      "category": "intelligence"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "@a1 hello"
+        },
+        "addressed_to": [
+          "a1",
+          "ghost"
+        ]
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "unavailable_targets": [
+            "ghost"
+          ]
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello to all"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "unavailable_targets": []
+        }
+      }
+    }
+  ],
+  "expect": {
+    "turns": {
+      "room-1": {
+        "a1": [],
+        "a2": []
+      }
+    }
+  }
+}
