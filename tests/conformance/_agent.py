@@ -24,6 +24,7 @@ from roomkit.core.exceptions import ToolFailedError, ToolRefusedError, UnservedT
 from roomkit.models.channel import RetryPolicy
 from roomkit.models.tool_call import ToolCallEvent
 from roomkit.providers.ai import (
+    OPENAI_CHAT,
     AIContext,
     AIImagePart,
     AIProvider,
@@ -34,6 +35,7 @@ from roomkit.providers.ai import (
     AIToolCall,
     ModelInfo,
     ModelPricing,
+    chat_messages,
 )
 from roomkit.providers.ai.base import (
     ProviderError,
@@ -44,6 +46,7 @@ from roomkit.providers.ai.base import (
     response_stream_events,
     stream_call_of,
 )
+from roomkit.providers.deepseek.ai import DEEPSEEK_CHAT
 from roomkit.skills.registry import SkillRegistry
 from roomkit.tasks import CancelTaskTool, TaskStatusTool
 from roomkit.tools import current_response_metadata
@@ -70,6 +73,10 @@ TOOL_SEARCH_SETTINGS = (
 )
 
 
+CHAT_DIALECTS = {"openai": OPENAI_CHAT, "deepseek": DEEPSEEK_CHAT}
+"""The renderings a scripted model's ``chat_dialect`` names."""
+
+
 class ModelPastItsScriptError(Exception):
     """The agent asked the scripted model for a generation its script lacks."""
 
@@ -94,7 +101,9 @@ class ScriptedModel(AIProvider):
         context_window: int | None = None,
         name: str = "scripted",
         provider: str = "scripted",
+        chat_dialect: str | None = None,
     ) -> None:
+        self._chat_dialect = None if chat_dialect is None else CHAT_DIALECTS[chat_dialect]
         self._context_window = context_window
         self._name = name
         self._provider = provider
@@ -199,6 +208,13 @@ class ScriptedModel(AIProvider):
                 },
             }
         )
+        if self._chat_dialect is not None:
+            self.requests[-1]["chat_messages"] = chat_messages(
+                context.messages,
+                context.system_prompt,
+                self._chat_dialect,
+                provider=self._provider,
+            )
         position = len(self.requests) - 1
         if position >= len(self._rounds):
             raise ModelPastItsScriptError(f"generation {position + 1} is past the script")
@@ -435,6 +451,7 @@ def scripted_agent(
         context_window=spec["model"].get("context_window"),
         name=spec["model"].get("name", "scripted"),
         provider=spec["model"].get("provider", "scripted"),
+        chat_dialect=spec["model"].get("chat_dialect"),
     )
     models = {spec["id"]: model}
     tools = spec.get("tools", [])
@@ -486,6 +503,7 @@ def scripted_agent(
             pricing=spec["fallback_model"].get("pricing"),
             name=spec["fallback_model"].get("name", "scripted"),
             provider=spec["fallback_model"].get("provider", "scripted"),
+            chat_dialect=spec["fallback_model"].get("chat_dialect"),
         )
         models[f"{spec['id']}/fallback"] = fallback
         kwargs["fallback_provider"] = fallback
