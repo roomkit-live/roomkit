@@ -237,6 +237,54 @@ async def test_a_turn_replays_the_tool_calls_made_after_the_answered_event() -> 
     await kit.close()
 
 
+async def test_a_turn_replays_the_tool_calls_it_made_right_after_the_answered_event() -> None:
+    """The answered event opens the history: the round after it reads after it,
+    never lost for coming before the history's first turn (RFC §19.7.5)."""
+    a = _provider("my answer")
+    kit = RoomKit()
+    await _room(kit, a=a, b=_provider())
+    kit._discussions["r1"] = _Held()
+    asked = (await _say(kit, "first: what is the error rate?")).event
+    later = (await _say(kit, "second: and since when?")).event
+    rows = [
+        RoomEvent(
+            room_id="r1",
+            type=kind,
+            index=asked.index + offset,
+            correlation_id="t-asked",
+            status=EventStatus.DELIVERED,
+            source=EventSource(channel_id="a", channel_type=ChannelType.AI),
+            content=ToolCallContent(
+                tool_name="error_rate",
+                tool_id="c1",
+                result="4% since Monday" if kind == EventType.TOOL_CALL_END else None,
+                status="completed" if kind == EventType.TOOL_CALL_END else "pending",
+            ),
+        )
+        for offset, kind in ((1, EventType.TOOL_CALL_START), (2, EventType.TOOL_CALL_END))
+    ]
+    agent = kit.channels["a"]
+    agent._tool_history_loader = AsyncMock(return_value=rows)  # type: ignore[attr-defined]
+    context = await kit._build_context("r1")
+    binding = context.get_binding("a")
+    assert binding is not None
+    # The message that followed stands after the round, as the store numbers them.
+    moved = later.model_copy(update={"index": asked.index + 3})
+    context.recent_events = [moved if e.id == later.id else e for e in context.recent_events]
+    mark = issue_mark([])
+    trigger = asked.model_copy(update={"metadata": {**asked.metadata, DISCUSSION_TURN: mark}})
+
+    await _answer(agent, trigger, binding, context)
+    retire_mark(mark)
+
+    sent = a.calls[0].messages
+    assert [m.role for m in sent] == ["user", "assistant", "tool", "user"]
+    assert "first: what is" in str(sent[0].content)
+    assert "4% since Monday" in str(sent[2].content)
+    assert "second: and since" in str(sent[3].content)
+    await kit.close()
+
+
 async def test_without_the_mark_the_turn_input_still_reads_last() -> None:
     a = _provider("my answer")
     kit = RoomKit()

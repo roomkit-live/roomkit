@@ -549,7 +549,11 @@ class AIContextMixin(_AIChannelContract):
             for role, content, speaker in past_turns
         ]
         past, past_indexes = with_tool_rounds(
-            past, past_indexes, rounds, before=_rounds_before(event)
+            past,
+            past_indexes,
+            rounds,
+            before=_rounds_before(event),
+            answered=_answered_index(event),
         )
         messages: list[AIMessage] = [*memory, *past]
 
@@ -1206,6 +1210,13 @@ def _rounds_before(event: RoomEvent) -> int | None:
     if discussion_turn(event) is not None:
         return None
     return event.index or None
+
+
+def _answered_index(event: RoomEvent) -> int | None:
+    """Where the event a discussion's turn answers stands in the timeline, read
+    at its place among the history's turns (§19.7.5); None for any other turn,
+    or an event the store never numbered."""
+    return (event.index or None) if discussion_turn(event) is not None else None
 
 
 def _answered_position(event: RoomEvent, past_indexes: list[int | None]) -> int | None:
