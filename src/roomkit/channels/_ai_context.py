@@ -6,7 +6,7 @@ import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from pydantic import TypeAdapter, ValidationError
+from pydantic import ValidationError
 
 from roomkit._media import content_text, media_label, text_form
 from roomkit.channels._ai_cuts import CUT_NOTE, cut_answers, cut_mark, cut_records
@@ -1175,15 +1175,12 @@ def _without_former_vision(binding: ChannelBinding) -> ChannelBinding:
     return binding.model_copy(update={"metadata": metadata})
 
 
-_THINKING_SWITCH = TypeAdapter(bool | None)
-
-
 def _reads_off(enabled: object) -> bool:
     """Whether *enabled* reads as false, as ``AIContext`` reads its
     ``enable_thinking`` (RFC Appendix A.9): ``"off"`` and ``0`` as ``False``.
     A value it refuses is no off: it fails the turn when the context is built."""
     try:
-        return _THINKING_SWITCH.validate_python(enabled) is False
+        return AIContext.model_validate({"enable_thinking": enabled}).enable_thinking is False
     except ValidationError:
         return False
 
