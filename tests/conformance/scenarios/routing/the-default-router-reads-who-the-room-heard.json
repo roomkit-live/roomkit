@@ -1,0 +1,86 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/the-default-router-reads-who-the-room-heard",
+  "title": "The default router takes a sender, or a message with no address, into a room that heard no one, its own messages aside: another sender's message on the channel refuses them",
+  "rules": [
+    "§10.4"
+  ],
+  "notes": "Python: tests/test_inbound_routing_ambiguity.py::TestStepThreeAdmitsOneConversation::test_a_message_received_from_another_sender_refuses, test_a_sender_with_no_address_is_held_to_the_same_rule. The router itself: the lock's own check would refuse the room anyway.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "default_router.route",
+      "channel_id": "ws",
+      "channel_type": "websocket",
+      "participant_id": "bob",
+      "expect": {
+        "result": "r1"
+      }
+    },
+    {
+      "call": "default_router.route",
+      "channel_id": "ws",
+      "channel_type": "websocket",
+      "expect": {
+        "result": "r1"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hi"
+        }
+      },
+      "room_id": "r1"
+    },
+    {
+      "call": "default_router.route",
+      "channel_id": "ws",
+      "channel_type": "websocket",
+      "participant_id": "bob",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "default_router.route",
+      "channel_id": "ws",
+      "channel_type": "websocket",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "default_router.route",
+      "channel_id": "ws",
+      "channel_type": "websocket",
+      "participant_id": "alice",
+      "expect": {
+        "result": "r1"
+      }
+    }
+  ],
+  "expect": {}
+}

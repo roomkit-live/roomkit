@@ -1,0 +1,72 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/the-default-router-skips-a-closed-room",
+  "title": "The default router answers no room for a channel whose one room is closed, and a closed room beside an active one leaves no ambiguity",
+  "rules": [
+    "§10.4"
+  ],
+  "notes": "Python: tests/test_inbound_routing.py::TestDefaultInboundRoomRouter::test_skips_closed_rooms, tests/test_inbound_routing_ambiguity.py::TestAmbiguityIsRefused::test_a_closed_room_does_not_make_it_ambiguous.",
+  "setup": {
+    "channels": [
+      {
+        "id": "alone",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "beside",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "closed-alone",
+        "status": "closed",
+        "bindings": [
+          {
+            "channel_id": "alone"
+          }
+        ]
+      },
+      {
+        "id": "closed-beside",
+        "status": "closed",
+        "bindings": [
+          {
+            "channel_id": "beside"
+          }
+        ]
+      },
+      {
+        "id": "active",
+        "bindings": [
+          {
+            "channel_id": "beside"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "default_router.route",
+      "channel_id": "alone",
+      "channel_type": "websocket",
+      "participant_id": "bob",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "default_router.route",
+      "channel_id": "beside",
+      "channel_type": "websocket",
+      "participant_id": "bob",
+      "expect": {
+        "result": "active"
+      }
+    }
+  ],
+  "expect": {}
+}

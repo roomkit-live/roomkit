@@ -1,0 +1,65 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/the-one-room-holding-an-object-under-its-recipient-key-is-not-the-status",
+  "title": "The one active room bound to the channel, its binding holding this value under the recipient key, is not given the status",
+  "rules": [
+    "§10.4 A delivery status follows its message",
+    "§5.7"
+  ],
+  "notes": "Python: tests/test_shared_channel_routing.py::TestADeliveryStatus::test_the_one_room_delivering_to_another_number_is_not_the_status, its value.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {
+          "normalizes": {}
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "free"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "status",
+        "trigger": "on_delivery_status",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "free",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "metadata": {
+          "phone_number": {
+            "number": "+15550000001"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_delivery_status",
+      "status": {
+        "provider": "mock",
+        "message_id": "m",
+        "status": "sent",
+        "channel_id": "sms",
+        "recipient": "+15550000002"
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "status": []
+    }
+  }
+}

@@ -1,0 +1,101 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-room-that-heard-two-people-admits-no-newcomer",
+  "title": "A room mixed before its binding could name anyone is judged by what it received: a newcomer gets another room",
+  "rules": [
+    "§10.4"
+  ],
+  "notes": "Python: tests/test_shared_channel_routing.py::TestARoomTheHostOpened::test_a_room_that_already_heard_two_people_admits_no_newcomer.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "free",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "room_id": "free"
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000003",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "room_id": "free"
+    },
+    {
+      "call": "default_router.route",
+      "channel_id": "sms",
+      "channel_type": "sms",
+      "participant_id": "+15550000002",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "$r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          }
+        }
+      ]
+    },
+    "bindings": {
+      "$r1": {
+        "sms": {
+          "participant_id": "+15550000002"
+        }
+      }
+    }
+  }
+}

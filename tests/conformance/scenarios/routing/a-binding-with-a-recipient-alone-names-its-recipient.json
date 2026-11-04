@@ -1,0 +1,115 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-binding-with-a-recipient-alone-names-its-recipient",
+  "title": "A binding the host stored with a recipient and no correspondent is its recipient's conversation, found through it on a number serving other rooms, and its recipient recorded on it",
+  "rules": [
+    "§5.7",
+    "§10.4"
+  ],
+  "notes": "Python: tests/test_shared_channel_routing.py::TestEitherNameFindsTheNewestRoom::test_a_binding_stored_with_a_recipient_alone_names_its_recipient.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "carols",
+        "bindings": [
+          {
+            "channel_id": "sms",
+            "metadata": {
+              "phone_number": "+15550000003"
+            }
+          }
+        ]
+      },
+      {
+        "id": "stored"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "stored",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "metadata": {
+          "phone_number": "+15550000001"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "stored"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "stored": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hi"
+          }
+        }
+      ],
+      "$r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          }
+        }
+      ]
+    },
+    "bindings": {
+      "stored": {
+        "sms": {
+          "participant_id": "+15550000001",
+          "metadata": {
+            "phone_number": "+15550000001"
+          }
+        }
+      }
+    }
+  }
+}

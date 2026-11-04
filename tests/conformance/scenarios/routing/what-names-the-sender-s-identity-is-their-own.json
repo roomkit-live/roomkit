@@ -1,0 +1,83 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/what-names-the-sender-s-identity-is-their-own",
+  "title": "A room that heard an identity is that identity's: the router admits who it is given as that identity, not the addresses",
+  "rules": [
+    "§10.4"
+  ],
+  "notes": "Python: tests/test_inbound_routing_ambiguity.py::TestStepThreeAdmitsOneConversation::test_what_names_the_senders_identity_is_their_own.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.add_participant",
+      "participant": {
+        "id": "id-bob",
+        "room_id": "r1",
+        "channel_id": "ws",
+        "identity_id": "id-bob"
+      }
+    },
+    {
+      "call": "store.add_event_auto_index",
+      "room_id": "r1",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "Hi"
+        },
+        "source": {
+          "channel_id": "ws",
+          "channel_type": "websocket",
+          "participant_id": "id-bob"
+        }
+      }
+    },
+    {
+      "call": "default_router.route",
+      "channel_id": "ws",
+      "channel_type": "websocket",
+      "participant_id": "bob",
+      "identity_id": "id-bob",
+      "expect": {
+        "result": "r1"
+      }
+    },
+    {
+      "call": "default_router.route",
+      "channel_id": "ws",
+      "channel_type": "websocket",
+      "participant_id": "bob",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "default_router.route",
+      "channel_id": "ws",
+      "channel_type": "websocket",
+      "participant_id": "carol",
+      "expect": {
+        "result": null
+      }
+    }
+  ],
+  "expect": {}
+}

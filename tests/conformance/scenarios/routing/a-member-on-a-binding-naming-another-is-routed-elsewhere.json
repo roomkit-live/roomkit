@@ -1,0 +1,86 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-member-on-a-binding-naming-another-is-routed-elsewhere",
+  "title": "A sender a room holds as a member, its binding of the channel naming another, is found by that record, but the room's answers go to the other: the message is not let in, the binding stays and nothing reaches the other",
+  "rules": [
+    "§10.1 step 2",
+    "§10.4"
+  ],
+  "notes": "Python: tests/test_shared_channel_routing.py::TestTheLockChecksTheRoomAgain::test_a_member_on_a_binding_naming_another_correspondent_is_routed_elsewhere.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {
+          "normalizes": {}
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-alice",
+        "bindings": [
+          {
+            "channel_id": "sms",
+            "metadata": {
+              "phone_number": "+15550000001"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "add_member",
+      "room_id": "room-alice",
+      "channel_id": "sms",
+      "participant_id": "+15550000002"
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "bob: hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "$r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "bob: hello"
+          }
+        }
+      ]
+    },
+    "bindings": {
+      "room-alice": {
+        "sms": {
+          "participant_id": "+15550000001"
+        }
+      }
+    },
+    "deliveries": {
+      "room-alice": {
+        "sms": []
+      }
+    }
+  }
+}

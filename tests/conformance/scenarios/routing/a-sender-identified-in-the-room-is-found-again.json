@@ -1,0 +1,143 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-sender-identified-in-the-room-is-found-again",
+  "title": "A sender the resolver identifies in the room opened for them comes back to it, another sender getting a room of their own",
+  "rules": [
+    "§10.4",
+    "§11"
+  ],
+  "notes": "Python: tests/test_shared_channel_routing.py::TestAnIdentifiedCorrespondent::test_a_sender_identified_in_the_room_is_found_again.",
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "when": {
+              "sender_id": "+15550000001"
+            },
+            "repeat": true,
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "id-alice",
+                "display_name": "Alice"
+              }
+            }
+          },
+          {
+            "when": {
+              "sender_id": "+15550000002"
+            },
+            "repeat": true,
+            "result": {
+              "status": "unknown"
+            }
+          }
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-alice",
+        "bindings": [
+          {
+            "channel_id": "sms",
+            "metadata": {
+              "phone_number": "+15550000001"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "one"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "room-alice"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "two"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "room-alice"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-alice": [
+        {
+          "content": {
+            "type": "text",
+            "body": "one"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "two"
+          }
+        }
+      ],
+      "$r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          }
+        }
+      ]
+    }
+  }
+}

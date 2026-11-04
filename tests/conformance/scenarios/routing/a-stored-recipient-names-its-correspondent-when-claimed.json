@@ -1,0 +1,109 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-stored-recipient-names-its-correspondent-when-claimed",
+  "title": "A router that sends two senders to a binding stored with a recipient alone: the other sender is routed elsewhere, the binding untouched, its recipient recorded on it",
+  "rules": [
+    "§5.7",
+    "§10.1 step 2"
+  ],
+  "notes": "Python: tests/test_transport_recipient.py::test_a_stored_recipient_names_its_correspondent_when_claimed.",
+  "setup": {
+    "kit": {
+      "router": {
+        "room_id": "stored"
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {
+          "normalizes": {}
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "stored"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "stored",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "metadata": {
+          "phone_number": "+15550000001"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "stored"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "stored": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hi"
+          }
+        }
+      ],
+      "$r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          }
+        }
+      ]
+    },
+    "bindings": {
+      "stored": {
+        "sms": {
+          "participant_id": "+15550000001"
+        }
+      }
+    }
+  }
+}

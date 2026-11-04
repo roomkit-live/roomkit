@@ -1,0 +1,233 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/the-default-router-reads-what-a-room-holds-for-its-channel",
+  "title": "The default router refuses a sender a room's binding or a member through the channel makes another's, and takes them into a room holding only a member through another channel, a group binding, or messages that name no one, are blocked, or are the framework's",
+  "rules": [
+    "§10.4"
+  ],
+  "notes": "Python: tests/test_inbound_routing_ambiguity.py::TestStepThreeAdmitsOneConversation::test_a_binding_naming_another_sender_refuses, test_a_participant_joined_through_the_channel_refuses, test_a_participant_joined_through_another_channel_does_not, test_a_message_naming_no_one_or_blocked_does_not, test_a_group_binding_admits_everyone, test_the_frameworks_own_messages_do_not. The router itself: the lock's own check would refuse each room anyway. One channel per case.",
+  "setup": {
+    "channels": [
+      {
+        "id": "named",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "member-here",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "member-elsewhere",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "voice",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "group",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "quiet",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r-named",
+        "bindings": [
+          {
+            "channel_id": "named",
+            "participant_id": "alice"
+          }
+        ]
+      },
+      {
+        "id": "r-here",
+        "bindings": [
+          {
+            "channel_id": "member-here"
+          }
+        ]
+      },
+      {
+        "id": "r-elsewhere",
+        "bindings": [
+          {
+            "channel_id": "member-elsewhere"
+          }
+        ]
+      },
+      {
+        "id": "r-quiet",
+        "bindings": [
+          {
+            "channel_id": "quiet"
+          }
+        ]
+      },
+      {
+        "id": "r-group"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "r-group",
+        "channel_id": "group",
+        "channel_type": "websocket",
+        "group": true,
+        "participant_id": "alice"
+      }
+    },
+    {
+      "call": "store.add_participant",
+      "participant": {
+        "id": "alice",
+        "room_id": "r-here",
+        "channel_id": "member-here"
+      }
+    },
+    {
+      "call": "store.add_participant",
+      "participant": {
+        "id": "alice",
+        "room_id": "r-elsewhere",
+        "channel_id": "voice"
+      }
+    },
+    {
+      "call": "store.add_event_auto_index",
+      "room_id": "r-group",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "Hi"
+        },
+        "source": {
+          "channel_id": "group",
+          "channel_type": "websocket",
+          "participant_id": "alice"
+        }
+      }
+    },
+    {
+      "call": "store.add_event_auto_index",
+      "room_id": "r-quiet",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "Hi"
+        },
+        "source": {
+          "channel_id": "quiet",
+          "channel_type": "websocket"
+        }
+      }
+    },
+    {
+      "call": "store.add_event_auto_index",
+      "room_id": "r-quiet",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "Hi"
+        },
+        "source": {
+          "channel_id": "quiet",
+          "channel_type": "websocket",
+          "participant_id": "alice"
+        },
+        "status": "blocked"
+      }
+    },
+    {
+      "call": "store.add_event_auto_index",
+      "room_id": "r-quiet",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "Hi"
+        },
+        "source": {
+          "channel_id": "quiet",
+          "channel_type": "websocket",
+          "participant_id": "system"
+        }
+      }
+    },
+    {
+      "call": "default_router.route",
+      "channel_id": "named",
+      "channel_type": "websocket",
+      "participant_id": "bob",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "default_router.route",
+      "channel_id": "named",
+      "channel_type": "websocket",
+      "participant_id": "alice",
+      "expect": {
+        "result": "r-named"
+      }
+    },
+    {
+      "call": "default_router.route",
+      "channel_id": "member-here",
+      "channel_type": "websocket",
+      "participant_id": "bob",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "default_router.route",
+      "channel_id": "member-here",
+      "channel_type": "websocket",
+      "participant_id": "alice",
+      "expect": {
+        "result": "r-here"
+      }
+    },
+    {
+      "call": "default_router.route",
+      "channel_id": "member-elsewhere",
+      "channel_type": "websocket",
+      "participant_id": "bob",
+      "expect": {
+        "result": "r-elsewhere"
+      }
+    },
+    {
+      "call": "default_router.route",
+      "channel_id": "group",
+      "channel_type": "websocket",
+      "participant_id": "bob",
+      "expect": {
+        "result": "r-group"
+      }
+    },
+    {
+      "call": "default_router.route",
+      "channel_id": "quiet",
+      "channel_type": "websocket",
+      "participant_id": "bob",
+      "expect": {
+        "result": "r-quiet"
+      }
+    }
+  ],
+  "expect": {}
+}

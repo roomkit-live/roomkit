@@ -1,0 +1,134 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-paused-room-counts-among-the-channel-s-rooms-only-as-a-group",
+  "title": "A paused room bound to the channel is no one's to be admitted into and does not count, but a paused group room does, beside the one active room, which leaves step 3 no answer",
+  "rules": [
+    "§5.1",
+    "§10.4"
+  ],
+  "notes": "Python: tests/test_shared_channel_routing.py::TestAPausedConversation::test_a_paused_room_counts_among_the_channels_rooms_when_group_only.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms-a",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sms-b",
+        "type": "sms",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "free-a",
+        "bindings": [
+          {
+            "channel_id": "sms-a"
+          }
+        ]
+      },
+      {
+        "id": "free-b",
+        "bindings": [
+          {
+            "channel_id": "sms-b"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "paused-a",
+        "status": "paused"
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "paused-a",
+        "channel_id": "sms-a",
+        "channel_type": "sms"
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "paused-b",
+        "status": "paused"
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "paused-b",
+        "channel_id": "sms-b",
+        "channel_type": "sms",
+        "group": true
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms-a",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "hello a"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "free-a"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms-b",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "hello b"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "free-a": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello a"
+          }
+        }
+      ],
+      "paused-a": [],
+      "free-b": [],
+      "paused-b": [],
+      "$r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello b"
+          }
+        }
+      ]
+    }
+  }
+}
