@@ -94,6 +94,9 @@ class TestCompletedTaskCache:
         assert cache.get("room-1", "agent-a", "task") == {"n": "the host's"}
         assert cache._answer_for("room-1", "agent-a", "task", None, "boss") == {"n": "the host's"}
 
+        cache._keep("room-1", "agent-a", "task", {"n": "third"}, None, "boss", answers=True)
+        assert cache._answer_for("room-1", "agent-a", "task", None, "boss") == {"n": "third"}
+
     def test_recent_context_lists_a_task_once(self) -> None:
         cache = CompletedTaskCache()
         cache.put("room-1", "agent-a", "Other.", {})
