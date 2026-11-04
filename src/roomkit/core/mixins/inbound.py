@@ -1312,7 +1312,6 @@ class InboundMixin(HelpersMixin):
             binding = await self._attach_unbound(
                 room, channel_id, participant_id=names_no_sender(sender)
             )
-            recipient = None
         if binding is not None and recordable_sender(sender):
             await self._record_sender(room_id, binding, message, channel, recipient)
         return True

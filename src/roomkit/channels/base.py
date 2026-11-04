@@ -293,8 +293,9 @@ class Channel(ABC):
         None on any other channel (a webhook URL names no one). Routing takes
         this answer first; when it is None, a value under
         :attr:`recipient_key` still names the conversation. A channel that
-        overrides it delivers there too: routing does not change where its
-        ``deliver`` sends.
+        overrides it must also send there from its ``deliver``: routing does
+        not change where that sends, and ``TransportChannel.deliver`` sends
+        to the key.
         """
         return None
 
