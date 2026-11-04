@@ -15,6 +15,7 @@ from typing import Any
 
 import pytest
 
+from roomkit import AddressLinkedError, IdentityNotFoundError
 from roomkit.core.mixins.verification import HELD_KEY
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.enums import ChannelType, RoomStatus
@@ -575,6 +576,74 @@ class TestIdentityDetails:
         renamed = Identity(id="i1", display_name="Alice B.")
         assert await store.create_identity(renamed) == renamed
         assert await store.get_identity("i1") == renamed
+
+    async def test_an_id_another_organization_holds_is_refused(self, store) -> None:
+        """RFC §5.6, §17.2: never an overwrite across organizations, nothing written."""
+        held = Identity(
+            id="i1",
+            organization_id="acme",
+            display_name="Alice",
+            channel_addresses={"sms": ["+1555"]},
+        )
+        await store.create_identity(held)
+        with pytest.raises(IdentityNotFoundError):
+            await store.create_identity(
+                Identity(id="i1", organization_id="globex", display_name="Intruder")
+            )
+        assert await store.get_identity("i1") == held
+        assert await store.resolve_identity("sms", "+1555", organization_id="acme") == held
+
+    async def test_an_identity_of_no_organization_is_not_replaced_by_one_of_an_organization(
+        self, store
+    ) -> None:
+        await store.create_identity(Identity(id="i1", display_name="Alice"))
+        with pytest.raises(IdentityNotFoundError):
+            await store.create_identity(Identity(id="i1", organization_id="acme"))
+        assert await store.get_identity("i1") == Identity(id="i1", display_name="Alice")
+
+    async def test_a_creation_racing_another_organization_s_is_refused(self, store) -> None:
+        """The refusal is the write's own: a creation that waits on another's
+        uncommitted row reads it once that commits, and writes nothing."""
+        import asyncpg
+
+        creator = await asyncpg.connect(POSTGRES_DSN)
+        try:
+            async with creator.transaction():
+                await creator.execute(
+                    "INSERT INTO identities (id, organization_id) VALUES ('i1', 'acme')"
+                )
+                racing = asyncio.create_task(
+                    store.create_identity(Identity(id="i1", organization_id="globex"))
+                )
+                await _until_blocked_by(creator)
+            with pytest.raises(IdentityNotFoundError):
+                await asyncio.wait_for(racing, 2)
+        finally:
+            await creator.close()
+        assert await store.get_identity("i1") == Identity(id="i1", organization_id="acme")
+
+    async def test_a_replaced_identity_stops_resolving_at_what_it_no_longer_holds(
+        self, store
+    ) -> None:
+        first = Identity(id="i1", organization_id="acme", channel_addresses={"sms": ["+1"]})
+        await store.create_identity(first)
+        replaced = first.model_copy(update={"channel_addresses": {"sms": ["+2"]}})
+        await store.create_identity(replaced)
+        assert await store.resolve_identity("sms", "+1", organization_id="acme") is None
+        assert await store.resolve_identity("sms", "+2", organization_id="acme") == replaced
+
+    async def test_a_replacement_refused_for_an_address_keeps_the_old_ones(self, store) -> None:
+        first = Identity(id="i1", organization_id="acme", channel_addresses={"sms": ["+1"]})
+        await store.create_identity(first)
+        await store.create_identity(
+            Identity(id="i2", organization_id="acme", channel_addresses={"sms": ["+2"]})
+        )
+        with pytest.raises(AddressLinkedError):
+            await store.create_identity(
+                first.model_copy(update={"channel_addresses": {"sms": ["+2"]}})
+            )
+        assert await store.get_identity("i1") == first
+        assert await store.resolve_identity("sms", "+1", organization_id="acme") == first
 
 
 class TestTaskOperations:

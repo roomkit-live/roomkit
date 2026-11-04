@@ -1153,8 +1153,8 @@ class TestPostgresStore:
         identity = Identity(id="id-2", channel_addresses={})
         result = await store.create_identity(identity)
         assert result.id == "id-2"
-        # Only the identities INSERT, no address inserts
-        assert mock_conn.execute.await_count == 1
+        # The identities INSERT and the removal of what it held, no address inserts
+        assert mock_conn.execute.await_count == 2
 
     async def test_get_identity_found(self) -> None:
         store, mock_conn = _make_store_with_pool()

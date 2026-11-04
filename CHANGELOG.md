@@ -270,7 +270,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`PostgresStore` keeps what the other stores keep** (HITL f01854e2,
   RMK-1277). It had no column for a participant's `candidates`, nor for an
   identity's `phone`, `external_id` and `external_ids`, and lost them silently;
-  `create_identity` under a held id raised where the other stores replace; and a
+  `create_identity` under a held id raised where the other stores replace: it
+  replaces the identity within its organization, its old addresses gone, and
+  refuses `IdentityNotFoundError` for an id another organization holds; and a
   `confidence` written 0.42 read 0.41999998688697815 (now `DOUBLE PRECISION`, a
   stored value widened through its digits, once). The columns are additive.
 

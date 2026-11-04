@@ -1876,16 +1876,19 @@ class PostgresStore(ConversationStore):
 
     async def create_identity(self, identity: Identity) -> Identity:
         async with self._acquire() as conn, conn.transaction():
-            # Under an id the store holds it replaces the stored identity, as
-            # the other stores do.
-            await conn.execute(
+            # Under an id the store holds it replaces the stored identity, within
+            # its organization only: an identity of another is never overwritten
+            # (RFC §5.6, §17.2). The refusal is the write's own, so that a
+            # creation racing another's reads it once that commits.
+            status = await conn.execute(
                 "INSERT INTO identities"
                 " (id, organization_id, display_name, email, phone, channel_addresses,"
                 "  external_id, external_ids, metadata)"
                 " VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"
                 " ON CONFLICT (id) DO UPDATE SET"
                 "  organization_id=$2, display_name=$3, email=$4, phone=$5,"
-                "  channel_addresses=$6, external_id=$7, external_ids=$8, metadata=$9",
+                "  channel_addresses=$6, external_id=$7, external_ids=$8, metadata=$9"
+                " WHERE COALESCE(identities.organization_id, '') = COALESCE($2, '')",
                 identity.id,
                 identity.organization_id,
                 identity.display_name,
@@ -1895,6 +1898,12 @@ class PostgresStore(ConversationStore):
                 identity.external_id,
                 identity.external_ids,
                 identity.metadata,
+            )
+            if status == "INSERT 0 0":
+                raise IdentityNotFoundError(f"Identity {identity.id} not found")
+            # What it no longer holds stops resolving to it.
+            await conn.execute(
+                "DELETE FROM identity_addresses WHERE identity_id = $1", identity.id
             )
             for ch_type, addresses in identity.channel_addresses.items():
                 for addr in addresses:
