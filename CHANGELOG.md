@@ -360,6 +360,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   record rides its last message, else its last row, the call's end, so that a resume
   and an exit summary find a first turn cut while its call runs. A strategy's first
   pass hands its record on and writes it on none of its rows.
+- **A skill a hook rewrote reads back as what ran** (RFC §24.4, HITL 2ddedc88, RMK-1406).
+  A room the agent served anew activated the skill the model named, whose rules it never
+  received, and lost the one `BEFORE_TOOL_USE` rewrote the call to. The stored end row says.
 - **A skill read back under a held id is the one that ran** (RFC §24.4, HITL 9763c3cd, RMK-1400).
   A room the agent served anew read the skill a refused call named, for two calls of a
   round under one id, and lost the rules the first call had loaded.

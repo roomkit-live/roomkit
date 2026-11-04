@@ -27,7 +27,7 @@ def _call(
 ) -> dict[str, object]:
     return {
         "name": "activate_skill",
-        "arguments": {"name": name},
+        "ran_with": {"name": name},
         "result": result,
         "outcome": outcome,
     }

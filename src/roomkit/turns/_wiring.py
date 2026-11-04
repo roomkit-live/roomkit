@@ -117,6 +117,9 @@ def remembered_calls(events: list[RoomEvent]) -> list[dict[str, Any]]:
             {
                 "name": name,
                 "arguments": arguments,
+                # What ran, a rewrite's included: the rules a skill's activation
+                # put before the model are this call's, whatever it asked.
+                "ran_with": content.arguments,
                 "result": content.result or "",
                 "outcome": content.outcome,
             }

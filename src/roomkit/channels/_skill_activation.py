@@ -161,7 +161,7 @@ class SkillActivationMemory:
         for call in calls:
             if call.get("name") != TOOL_ACTIVATE_SKILL:
                 continue
-            name = (call.get("arguments") or {}).get("name", "")
+            name = (call.get("ran_with") or {}).get("name", "")
             if name and _succeeded(call) and not (skip is not None and skip(name)):
                 self.activate(room_id, name)
 

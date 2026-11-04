@@ -283,3 +283,21 @@ def test_a_later_round_s_call_under_an_id_takes_its_own_end_in_the_rebuild() -> 
         ({"q": "other"}, "its"),
         ({"q": "new"}, "its own"),
     ]
+
+
+def test_a_rebuilt_call_keeps_what_the_model_wrote_and_what_ran() -> None:
+    rows = [
+        _row(EventType.TOOL_CALL_START, "c1", "lookup", arguments={"q": "<TOKEN>"}),
+        _row(
+            EventType.TOOL_CALL_END,
+            "c1",
+            "lookup",
+            arguments={"q": "real"},
+            result="its own",
+            outcome="served",
+        ),
+    ]
+
+    [call] = remembered_calls(rows)
+
+    assert (call["arguments"], call["ran_with"]) == ({"q": "<TOKEN>"}, {"q": "real"})

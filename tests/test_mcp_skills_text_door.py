@@ -219,7 +219,7 @@ async def test_a_served_script_is_never_run(streaming: bool, approved: bool, err
 def test_a_served_activation_is_not_replayed_from_history() -> None:
     memory = SkillActivationMemory()
     calls = [
-        {"name": "activate_skill", "arguments": {"name": n}, "result": "{}", "outcome": "served"}
+        {"name": "activate_skill", "ran_with": {"name": n}, "result": "{}", "outcome": "served"}
         for n in ("local", NAME)
     ]
     memory.seed("r1", calls, skip=lambda name: name == NAME)
