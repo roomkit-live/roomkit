@@ -945,6 +945,8 @@ async def test_an_install_refused_by_an_agent_s_tool_sets_nothing_up(via: str) -
 
     with pytest.raises(ToolNameCollisionError, match="handoff_conversation"):
         install(kit, ["agent-a", "clash"])
+    with pytest.raises(ToolNameCollisionError, match="handoff_conversation"):
+        install(kit, ["agent-a", _mock_agent("live-clash", tools=[tool])])
     with pytest.raises(RuntimeError, match="already called"):
         install(kit, ["agent-a", "agent-a"])
 

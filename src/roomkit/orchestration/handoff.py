@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 from roomkit._text import CONVERSATION_SUMMARY_TAG, fence, identifier, quoted
 from roomkit.channels._mark_copies import without_mark_copies
 from roomkit.channels._runtime_record import HANDED_ON_CONTEXT, HANDOFF_OPENING, runtime_record
-from roomkit.channels._tool_registry import ToolEntry, orchestration_tool
+from roomkit.channels._tool_registry import ChannelRegistry, ToolEntry, orchestration_tool
 from roomkit.channels.agent import Agent
 from roomkit.channels.declared import id_of, owner_tools_of
 from roomkit.channels.realtime_voice import RealtimeVoiceChannel
@@ -850,7 +850,12 @@ def refuse_handoffs(
         if channel_id in seen or registry.lookup(HANDOFF_TOOL_NAME, None) is not None:
             raise RuntimeError(f"setup_handoff() already called for channel '{channel_id}'")
         seen.add(channel_id)
-        registry.check(handoff_entry(agent, handler, None))
+        entry = handoff_entry(agent, handler, None)
+        registry.check(entry)
+        # A live agent the kit does not hold yet: its own tools are its own.
+        own = getattr(agent, "_registry", None)
+        if isinstance(own, ChannelRegistry):
+            own.check(entry)
 
 
 def set_up_handoffs(
