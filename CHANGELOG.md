@@ -240,6 +240,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The kit's close cuts a greeting that waits for the room's lock** (RMK-1264,
+  HITL 8a258410). It went on through the close and was stored, where the RFC
+  (§12.10.4) cuts a call waiting for its room's lock, nothing of it stored. A
+  text session's `send_greeting` now raises `KitClosedError` there, as
+  `send_event` does, and is cut as any call until its commit; its delivery goes
+  on after it. The voice paths are unchanged.
 - **A greeting from the room's own work stops at the limit** (RMK-1264, HITL
   1db22649). `send_greeting` from a hook's body or a delivery took a budget of
   its own at depth 0, so a hook greeting on every answer drove the model without

@@ -71,6 +71,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
 
     from roomkit.channels.base import Channel
+    from roomkit.core._closing import DoorRuns
     from roomkit.core.event_router import BroadcastResult, EventRouter
     from roomkit.core.hooks import HookEngine, SyncPipelineResult
     from roomkit.core.lanes import DeliveryCascade, DeliveryPlan, RoomLaneRegistry
@@ -233,6 +234,7 @@ class LaneExecutionHost(Protocol):
     _channels: dict[str, Channel]
     _hook_engine: HookEngine
     _lock_manager: RoomLockManager
+    _door_runs: DoorRuns
     _lanes: RoomLaneRegistry
     _max_chain_depth: int
     _telemetry: TelemetryProvider
@@ -424,9 +426,11 @@ class LaneExecutionMixin(HelpersMixin):
                     _log_refused(room_id, event)
                     return None
                 resolved = _delivery_source(context, source)
+                stamped = _stamped(await self._with_thread_root(room_id, event), resolved)
+                self._door_runs.committing(stamped)
                 committed = await self._commit_to_lane(
                     room_id,
-                    _stamped(await self._with_thread_root(room_id, event), resolved),
+                    stamped,
                     cascade,
                     self._plan_factory(resolved, exclude_delivery, hook_result),
                     policy_aware=policy_aware,
@@ -464,6 +468,9 @@ class LaneExecutionMixin(HelpersMixin):
                     hook_result.injected_events, room_id, cascade, cause=committed or event
                 )
 
+        # Past its commit: the kit's close no longer cuts the call, but its
+        # delivery (RFC §12.10.4).
+        self._door_runs.committed()
         # Off the lock: waiting under it would deadlock the lane against its
         # own caller, and ``wait()`` short-circuits rather than hang.
         if own_cascade:

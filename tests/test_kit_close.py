@@ -696,6 +696,7 @@ _LOCKED_CALLS: dict[str, Callable[[RoomKit], Awaitable[Any]]] = {
     "commit_event": lambda kit: kit.commit_event("r", _record("waiter")),
     "attach_channel": lambda kit: kit.attach_channel("r", "late"),
     "update_room_metadata": lambda kit: kit.update_room_metadata("r", {"waiter": True}),
+    "send_greeting": lambda kit: kit.send_greeting("r", agent_id="greeter", greeting="waiter"),
     "close_room": lambda kit: kit.close_room("r"),
 }
 
@@ -710,6 +711,7 @@ async def test_a_call_waiting_for_its_room_lock_is_cut_at_once(
     transport = _Transport("ws")
     kit = await _kit(transport)
     kit.register_channel(SimpleChannel("late"))
+    kit.register_channel(Agent("greeter", provider=MockAIProvider()))
     in_hook, release = asyncio.Event(), asyncio.Event()
 
     @kit.hook(HookTrigger.BEFORE_BROADCAST, name="holds-the-lock")

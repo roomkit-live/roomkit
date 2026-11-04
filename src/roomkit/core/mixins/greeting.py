@@ -7,8 +7,9 @@ import contextlib
 import logging
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from roomkit.core._closing import DoorRuns, event_cut_result
 from roomkit.core._reentrance import RoomWork, chain_floor
-from roomkit.core.exceptions import RoomClosedError
+from roomkit.core.exceptions import KitClosedError, RoomClosedError
 from roomkit.core.mixins.helpers import HelpersMixin
 from roomkit.core.visibility import with_committed_visibility
 from roomkit.models.enums import (
@@ -42,6 +43,7 @@ class GreetingHost(Protocol):
 
     Attributes also provided by the host's ``__init__``:
         _room_work: Tells the greeting what it is to the room's work.
+        _door_runs: The calls the kit's close cuts.
 
     Cross-mixin methods (provided by other mixins in the MRO):
         _commit_and_deliver: From :class:`LaneExecutionMixin`.
@@ -53,6 +55,7 @@ class GreetingHost(Protocol):
     _greeting_gates: dict[str, asyncio.Event]
     _greeting_gate_counts: dict[str, int]
     _room_work: RoomWork
+    _door_runs: DoorRuns
 
 
 class GreetingMixin(HelpersMixin):
@@ -70,6 +73,7 @@ class GreetingMixin(HelpersMixin):
     _commit_and_deliver: Any  # LaneExecutionMixin
     get_room: Any  # RoomLifecycleMixin
     _room_work: RoomWork  # RoomKit
+    _door_runs: DoorRuns  # RoomKit
     _store_entry_past_cap: Any  # RoomKit
 
     async def send_greeting(
@@ -144,21 +148,40 @@ class GreetingMixin(HelpersMixin):
                 await voice_ch.say(session, text, voice=voice)
             return
 
-        # Text path: commit the greeting and deliver it through the room's
-        # lane, which is what keeps its index and its delivery in the same
-        # order as every other event's (RFC §10.2). Made in the room's own
-        # work, a hook's body or a delivery, it is that work's write as
-        # send_event's is: at its depth, on its budget (RFC §8.3, §9.5.1), so
-        # that a hook greeting on every answer stops at the limit.
-        entry = self._room_work.entry(room_id)
-        event = self._make_greeting_event(
-            room_id, agent_channel_id, text, chain_depth=chain_floor()
-        )
-        if entry.charged and not entry.draw():
-            with contextlib.suppress(RoomClosedError):
-                await self._store_entry_past_cap(room_id, event)
-            return
-        await self._commit_and_deliver(room_id, event, agent_channel_id, budget=entry.budget)
+        await self._greet_in_text(room_id, agent_channel_id, text)
+
+    async def _greet_in_text(self, room_id: str, agent_channel_id: str, text: str) -> None:
+        """The text path: commit the greeting and deliver it through the room's
+        lane, which is what keeps its index and its delivery in the same order
+        as every other event's (RFC §10.2).
+
+        Made in the room's own work, a hook's body or a delivery, it is that
+        work's write as send_event's is: at its depth, on its budget (RFC §8.3,
+        §9.5.1), so that a hook greeting on every answer stops at the limit.
+
+        It is a call the kit's close cuts before its commit, at once while it
+        waits for the room's lock (RFC §12.10.4). The voice paths hand their
+        work off (``_HANDING_OFF``).
+
+        Raises:
+            KitClosedError: the close cut it; nothing of it is stored.
+        """
+        try:
+            async with self._door_runs.run("send_greeting", own=True):
+                entry = self._room_work.entry(room_id)
+                event = self._make_greeting_event(
+                    room_id, agent_channel_id, text, chain_depth=chain_floor()
+                )
+                if entry.charged and not entry.draw():
+                    with contextlib.suppress(RoomClosedError):
+                        await self._store_entry_past_cap(room_id, event)
+                    return
+                await self._commit_and_deliver(
+                    room_id, event, agent_channel_id, budget=entry.budget
+                )
+        except KitClosedError as cut:
+            # A commit that landed as the close cut it stands.
+            event_cut_result(cut)
 
     async def _greeting_agent(
         self, room_id: str, channel_id: str | None
