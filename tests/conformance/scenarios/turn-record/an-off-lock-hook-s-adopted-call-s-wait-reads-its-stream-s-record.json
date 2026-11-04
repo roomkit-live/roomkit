@@ -1,0 +1,163 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-record/an-off-lock-hook-s-adopted-call-s-wait-reads-its-stream-s-record",
+  "title": "A deferred call an off-lock hook makes into its own room is told its delivery before its stream is read: a wait after it reads the stream's record and end all the same",
+  "rules": [
+    "§6.7",
+    "§10.1 step 18"
+  ],
+  "notes": "Python: core/mixins/lane_execution.py _consume, merge_caller_record; RFC §10.1 step 18; light review of RMK-1254.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "read_page",
+            "description": "Read a page.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "integer"
+                }
+              }
+            },
+            "returns": "page text",
+            "writes_record": {
+              "cited": [
+                {
+                  "tool": "read_page",
+                  "page": 3
+                }
+              ]
+            }
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "text": "Let me read.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "read_page",
+                  "arguments": {
+                    "page": 3
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Page 3 says so."
+            },
+            {
+              "text": "Let me read.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "read_page",
+                  "arguments": {
+                    "page": 3
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Page 3 says so."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "adopts",
+        "trigger": "before_broadcast",
+        "priority": 0,
+        "reactions": [
+          {
+            "when": {
+              "text": "outer"
+            },
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "ws",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "inner"
+                  }
+                },
+                "defer_delivery": true,
+                "as": "inner"
+              }
+            ]
+          }
+        ],
+        "needs_lock": false
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "outer"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "delivery.wait",
+      "of": "inner",
+      "expect": {
+        "result": {
+          "response_metadata": {
+            "cited": [
+              {
+                "tool": "read_page",
+                "page": 3
+              }
+            ],
+            "turns": {
+              "agent": {
+                "loop_end_reason": "completed"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

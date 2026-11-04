@@ -1,0 +1,133 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "permissions/a-muted-supervisor-s-second-pass-is-closed-unread",
+  "title": "A muted supervisor's first pass runs, and its second pass's stream is closed unread: the model is asked once, and no end reaches the caller",
+  "rules": [
+    "§7.5",
+    "§10.6.4"
+  ],
+  "notes": "Python: core/event_router.py (binding.muted: _aclose_stream), orchestration/strategies/supervisor/delegate.py; RFC §7.5, §10.6.4; light review of RMK-1254.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Acme"
+            },
+            {
+              "text": "Acme, in short."
+            }
+          ]
+        }
+      },
+      {
+        "id": "analyst",
+        "type": "ai",
+        "agent": {
+          "role": "Analyst"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Numbers."
+            }
+          ]
+        }
+      },
+      {
+        "id": "critic",
+        "type": "ai",
+        "agent": {
+          "role": "Critic"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Risks."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "sup",
+            "category": "intelligence",
+            "muted": true
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "analyst",
+            "critic"
+          ],
+          "strategy": "parallel",
+          "auto_delegate": true
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Look into Acme."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null,
+          "response_metadata": {
+            "turns": {
+              "$absent": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "sup": [
+        {}
+      ]
+    }
+  }
+}

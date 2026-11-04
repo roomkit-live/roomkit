@@ -1,0 +1,149 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-record/an-async-input-observer-writes-the-turn-s-record",
+  "title": "An ASYNC ON_USER_INPUT_REQUIRED hook runs under the call's turn: what it writes through current_response_metadata is the turn's record",
+  "rules": [
+    "§6.7",
+    "§9.3"
+  ],
+  "notes": "Python: core/hooks.py runs an ASYNC hook on a task that copies the turn's context; light review of RMK-1254. The hook writes, then holds at its gate; the next round holds until the write is known.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "ask_user",
+                  "arguments": {
+                    "question": "Color?"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Thanks.",
+              "gate": "next-round"
+            }
+          ]
+        },
+        "human_input": {
+          "tool_names": [
+            "ask_user"
+          ],
+          "timeout_ms": 5000,
+          "tools": [
+            {
+              "name": "ask_user",
+              "description": "Ask the user.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "question": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "asked",
+        "trigger": "on_user_input_required",
+        "reactions": [
+          {
+            "gate": "notified"
+          }
+        ]
+      },
+      {
+        "name": "watches",
+        "trigger": "on_user_input_required",
+        "execution": "async",
+        "reactions": [
+          {
+            "writes_record": {
+              "observed": true
+            },
+            "gate": "watched"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "ops",
+        "content": {
+          "type": "text",
+          "body": "Hi"
+        }
+      },
+      "background": true,
+      "as": "turn"
+    },
+    {
+      "wait_for": "notified"
+    },
+    {
+      "call": "answer_input",
+      "request_id": "$p1",
+      "value": "Blue",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "open": "notified"
+    },
+    {
+      "wait_for": "watched"
+    },
+    {
+      "open": "watched"
+    },
+    {
+      "open": "next-round"
+    },
+    {
+      "await": "turn",
+      "expect": {
+        "result": {
+          "response_metadata": {
+            "observed": true
+          }
+        }
+      }
+    }
+  ]
+}
