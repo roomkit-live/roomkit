@@ -770,26 +770,40 @@ async def test_opening_moves_an_unscoped_address_to_its_identity_s_organization(
     tmp_path: Path,
 ) -> None:
     """HITL 0f96a597, RFC §17.2: a row version 3's migration left unscoped moves to
-    the organization of its identity, once; one whose organization holds the address
-    already yields to that row. An identity of no organization keeps its unscoped
-    row, and a row of another organization is left alone, which no read serves."""
+    the organization of its identity, once, if the identity still declares the
+    address; one whose organization holds the address already yields to that row. A
+    link since revoked is not restored. An identity of no organization keeps its
+    unscoped row, and a row of another organization is left alone, which no read
+    serves."""
     path = tmp_path / "older.db"
     store = SQLiteStore(path)
-    alice = Identity(id="alice", organization_id="acme")
     bob = Identity(id="bob", organization_id="acme", channel_addresses={"sms": ["+2"]})
     carol = Identity(id="carol", channel_addresses={"sms": ["+3"]})
-    for identity in (alice, bob, carol):
+    for identity in (Identity(id="alice", organization_id="acme"), bob, carol):
         await store.create_identity(identity)
     await store.close()
-    _insert_address(path, ("+1", "alice", ""), ("+2", "alice", ""), ("+4", "alice", "globex"))
+    _insert_address(
+        path,
+        ("+1", "alice", ""),
+        ("+2", "alice", ""),
+        ("+4", "alice", "globex"),
+        ("+5", "alice", ""),
+    )
     conn = sqlite3.connect(path)
+    conn.execute(
+        "UPDATE identities SET data = json_set(data, '$.channel_addresses',"
+        ' json(\'{"sms": ["+1", "+2"]}\')) WHERE id = \'alice\''
+    )
     conn.execute("PRAGMA user_version=13")
     conn.commit()
     conn.close()
 
     reopened = SQLiteStore(path)
-    assert await reopened.resolve_identity("sms", "+1", organization_id="acme") == alice
+    moved = await reopened.resolve_identity("sms", "+1", organization_id="acme")
+    assert moved is not None and moved.id == "alice"
     assert await reopened.resolve_identity("sms", "+1") is None
+    for scope in (None, "acme"):
+        assert await reopened.resolve_identity("sms", "+5", organization_id=scope) is None
     await reopened.close()
 
     assert _address_rows(path) == [
@@ -797,4 +811,18 @@ async def test_opening_moves_an_unscoped_address_to_its_identity_s_organization(
         ("+2", "bob", "acme"),
         ("+3", "carol", ""),
         ("+4", "alice", "globex"),
+        ("+5", "alice", ""),
     ]
+
+
+async def test_an_unlink_removes_the_identity_s_rows_in_every_scope(tmp_path: Path) -> None:
+    """RFC §5.6: a link revoked is revoked, a row a file's migration left in another
+    scope with it, so that no later rewrite can restore it."""
+    path = tmp_path / "unlink.db"
+    store = SQLiteStore(path)
+    identity = Identity(id="i1", organization_id="acme", channel_addresses={"sms": ["+1"]})
+    await store.create_identity(identity)
+    _insert_address(path, ("+1", "i1", ""))
+    await store.unlink_address("i1", "sms", "+1", organization_id="acme")
+    assert _address_rows(path) == []
+    await store.close()

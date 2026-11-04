@@ -656,6 +656,21 @@ class TestIdentityDetails:
             )
             assert all(isinstance(outcome, AddressLinkedError) for outcome in swapped), swapped
 
+    async def test_an_unlink_removes_the_identity_s_rows_in_every_scope(self, store) -> None:
+        """RFC §5.6: a link revoked is revoked, a row an upgrade left in another
+        scope with it, so that no later rewrite can restore it."""
+        identity = Identity(id="i1", organization_id="acme", channel_addresses={"sms": ["+1"]})
+        await store.create_identity(identity)
+        async with store._pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO identity_addresses (channel_type, address, identity_id,"
+                " organization_id) VALUES ('sms', '+1', 'i1', '')"
+            )
+        await store.unlink_address("i1", "sms", "+1", organization_id="acme")
+        async with store._pool.acquire() as conn:
+            left = await conn.fetchval("SELECT count(*) FROM identity_addresses")
+        assert left == 0
+
 
 class TestTaskOperations:
     async def test_add_and_get(self, store) -> None:
@@ -1111,10 +1126,11 @@ async def test_init_adds_what_an_identity_holds_to_a_table_without_it(store) -> 
 
 async def test_init_moves_an_unscoped_address_to_its_identity_s_organization(store) -> None:
     """HITL 0f96a597, RFC §17.2: a row the upgrade left unscoped moves to the
-    organization of its identity, once, so that its sender stays identified there;
-    one whose organization holds the address already yields to that row. An identity
-    of no organization keeps its unscoped row, and a row of another organization is
-    left alone, which no read serves."""
+    organization of its identity, once, if the identity still declares the address,
+    so that its sender stays identified there; one whose organization holds the
+    address already yields to that row. A link since revoked is not restored. An
+    identity of no organization keeps its unscoped row, and a row of another
+    organization is left alone, which no read serves."""
     alice = Identity(id="alice", organization_id="acme")
     bob = Identity(id="bob", organization_id="acme", channel_addresses={"sms": ["+2"]})
     carol = Identity(id="carol", channel_addresses={"sms": ["+3"]})
@@ -1122,10 +1138,19 @@ async def test_init_moves_an_unscoped_address_to_its_identity_s_organization(sto
         await store.create_identity(identity)
     rows = "SELECT address, identity_id, organization_id FROM identity_addresses ORDER BY 1, 3"
     async with store._pool.acquire() as conn:
+        await conn.execute(
+            'UPDATE identities SET channel_addresses = \'{"sms": ["+1", "+2"]}\''
+            " WHERE id = 'alice'"
+        )
         await conn.executemany(
             "INSERT INTO identity_addresses (channel_type, address, identity_id,"
             " organization_id) VALUES ('sms', $1, $2, $3)",
-            [("+1", "alice", ""), ("+2", "alice", ""), ("+4", "alice", "globex")],
+            [
+                ("+1", "alice", ""),
+                ("+2", "alice", ""),
+                ("+4", "alice", "globex"),
+                ("+5", "alice", ""),
+            ],
         )
         await conn.execute("DELETE FROM schema_version WHERE version >= 5")
     await store.init()
@@ -1137,9 +1162,13 @@ async def test_init_moves_an_unscoped_address_to_its_identity_s_organization(sto
         ("+2", "bob", "acme"),
         ("+3", "carol", ""),
         ("+4", "alice", "globex"),
+        ("+5", "alice", ""),
     ]
-    assert await store.resolve_identity("sms", "+1", organization_id="acme") == alice
+    moved = await store.resolve_identity("sms", "+1", organization_id="acme")
+    assert moved is not None and moved.id == "alice"
     assert await store.resolve_identity("sms", "+1") is None
+    for scope in (None, "acme"):
+        assert await store.resolve_identity("sms", "+5", organization_id=scope) is None
 
 
 async def test_binding_policy_migration_preserves_old_rows(store) -> None:

@@ -1985,13 +1985,13 @@ class PostgresStore(ConversationStore):
     ) -> None:
         async with self._acquire() as conn, conn.transaction():
             ch_addr = await _locked_addresses(conn, identity_id, organization_id)
-            # Its own row only: an address another identity holds stays theirs.
+            # Its own rows only, in every scope: an address another identity holds
+            # stays theirs, and a row an upgrade left elsewhere goes with the link.
             await conn.execute(
                 "DELETE FROM identity_addresses WHERE channel_type = $1 AND address = $2"
-                " AND organization_id = $3 AND identity_id = $4",
+                " AND identity_id = $3",
                 channel_type,
                 address,
-                organization_id or "",
                 identity_id,
             )
             remaining = without_address(ch_addr, channel_type, address)

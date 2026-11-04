@@ -674,8 +674,9 @@ def _migrate_v12_to_v13(conn: sqlite3.Connection) -> None:
 
 def _migrate_v13_to_v14(conn: sqlite3.Connection) -> None:
     """An address version 3's migration left unscoped (``''``) for an identity of
-    an organization moves to that organization: a read serves an identity in its
-    own organization only (RFC §17.2), and its sender stays identified there. One
+    an organization moves to that organization, if the identity still declares it:
+    a read serves an identity in its own organization only (RFC §17.2), and its
+    sender stays identified there, while a link since revoked is not restored. One
     whose organization holds the address already yields to that row, whose identity
     keeps it. A row of another organization is left: no API writes one, and no read
     serves it."""
@@ -703,7 +704,14 @@ def _migrate_v13_to_v14(conn: sqlite3.Connection) -> None:
                WHERE organization_id = ''
                  AND COALESCE((
                      SELECT json_extract(i.data, '$.organization_id') FROM identities i
-                     WHERE i.id = identity_addresses.identity_id), '') <> ''"""
+                     WHERE i.id = identity_addresses.identity_id), '') <> ''
+                 AND EXISTS (
+                     SELECT 1 FROM identities i,
+                          json_each(i.data, '$.channel_addresses') declared,
+                          json_each(declared.value) held
+                     WHERE i.id = identity_addresses.identity_id
+                       AND declared.key = identity_addresses.channel_type
+                       AND held.value = identity_addresses.address)"""
         )
         conn.execute("PRAGMA user_version=14")
         conn.execute("COMMIT")
@@ -2273,11 +2281,12 @@ class SQLiteStore(ConversationStore):
         conn = self._db()
         with _write_transaction(conn):
             identity = link_target(self._x_get_identity(identity_id), identity_id, organization_id)
-            # Its own row only: an address another identity holds stays theirs.
+            # Its own rows only, in every scope: an address another identity holds
+            # stays theirs, and a row a migration left elsewhere goes with the link.
             conn.execute(
                 "DELETE FROM identity_addresses WHERE channel_type = ? AND address = ?"
-                " AND organization_id = ? AND identity_id = ?",
-                (channel_type, address, organization_id, identity_id),
+                " AND identity_id = ?",
+                (channel_type, address, identity_id),
             )
             addresses = without_address(identity.channel_addresses, channel_type, address)
             if addresses != identity.channel_addresses:
