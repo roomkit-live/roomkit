@@ -11,7 +11,11 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import shutil
+import tempfile
+import weakref
 from collections.abc import AsyncIterator, Callable, Mapping
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from roomkit import Agent, AIChannelTurnConfig
@@ -38,6 +42,7 @@ from roomkit.providers.ai.base import (
     StreamThinkingDelta,
     response_stream_events,
 )
+from roomkit.skills.registry import SkillRegistry
 from roomkit.tasks import CancelTaskTool, TaskStatusTool
 from roomkit.tools import current_response_metadata
 from roomkit.tools.human_input import HumanInputToolHandler
@@ -406,6 +411,8 @@ def scripted_agent(
             kwargs[setting] = spec[setting]
     if "config_provider" in spec:
         kwargs["config_provider"] = _config_provider(spec["config_provider"], gates)
+    if "skills" in spec:
+        kwargs["skills"] = _skill_registry(spec["skills"])
     if "turn_budget_usd" in spec:
         kwargs["turn_budget_usd"] = spec["turn_budget_usd"]
     if "retry_policy" in spec:
@@ -481,18 +488,28 @@ def _config_provider(by_room: Mapping[str, Any], gates: Gates) -> ConfigProvider
     the binding's room, none for a room it does not name (README, "Scripted
     agents")."""
 
+    turns: dict[str, int] = {}
+
     async def provider(
         binding: ChannelBinding, context: RoomContext
     ) -> AIChannelTurnConfig | None:
         if context.room.id != binding.room_id:
             raise AssertionError(f"called for {binding.room_id} in {context.room.id}")
         spec = by_room.get(binding.room_id)
+        if isinstance(spec, list):
+            turn = turns.get(binding.room_id, 0)
+            turns[binding.room_id] = turn + 1
+            spec = spec[min(turn, len(spec) - 1)]
         if spec is None:
             return None
         settings = {
-            key: value for key, value in spec.items() if key not in ("tools", "tool_handler")
+            key: value
+            for key, value in spec.items()
+            if key not in ("tools", "tool_handler", "skills")
         }
         config = AIChannelTurnConfig(**settings)
+        if "skills" in spec:
+            config.skills = _skill_registry(spec["skills"])
         if (tools := spec.get("tools")) is not None:
             config.tools = [
                 AITool(
@@ -507,6 +524,27 @@ def _config_provider(by_room: Mapping[str, Any], gates: Gates) -> ConfigProvider
         return config
 
     return provider
+
+
+def _skill_registry(skills: list[Mapping[str, Any]]) -> SkillRegistry:
+    """A scripted skill registry: each skill written to a directory of its
+    own, removed with the registry, and discovered from there (README,
+    "Scripted agents")."""
+    root = Path(tempfile.mkdtemp(prefix="roomkit-conformance-skills-"))
+    for skill in skills:
+        directory = root / skill["name"]
+        (directory / "references").mkdir(parents=True)
+        (directory / "SKILL.md").write_text(
+            f"---\nname: {skill['name']}\ndescription: {skill['description']}\n---\n"
+            f"{skill.get('instructions', '')}",
+            encoding="utf-8",
+        )
+        for name, text in skill.get("references", {}).items():
+            (directory / "references" / name).write_text(text, encoding="utf-8")
+    registry = SkillRegistry()
+    registry.discover(root)
+    weakref.finalize(registry, shutil.rmtree, root, ignore_errors=True)
+    return registry
 
 
 def _retry_policy(spec: Mapping[str, Any]) -> RetryPolicy:

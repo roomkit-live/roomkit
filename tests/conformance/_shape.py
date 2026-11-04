@@ -106,6 +106,7 @@ CHANNEL = {
     "temperature",
     "max_tokens",
     "config_provider",
+    "skills",
     "thinking_budget",
     "enable_thinking",
     "thinking_coalesce_ms",
@@ -193,8 +194,10 @@ TURN_CONFIG = {
     "turn_budget_tokens",
     "turn_budget_usd",
     "tool_handler",
+    "skills",
 }
 TURN_TOOL = {"name", "description", "parameters"}
+SKILL = {"name", "description", "instructions", "references"}
 HUMAN_TOOL = {"name", "description", "parameters"}
 POLICY = {"allow", "deny"}
 MEMORY = {
@@ -494,7 +497,13 @@ def _channel(channel: Mapping[str, Any], path: str, found: list[str]) -> None:
     if "memory" in channel:
         _memory(channel["memory"], f"{path}.memory", found)
     for room_id, config in channel.get("config_provider", {}).items():
-        _turn_config(config or {}, f"{path}.config_provider.{room_id}", found)
+        path_of = f"{path}.config_provider.{room_id}"
+        if isinstance(config, list):
+            for turn, given in enumerate(config):
+                _turn_config(given or {}, f"{path_of}[{turn}]", found)
+        else:
+            _turn_config(config or {}, path_of, found)
+    _skills(channel.get("skills", []), f"{path}.skills", found)
     if "human_input" in channel:
         human = channel["human_input"]
         _members(human, HUMAN_INPUT, f"{path}.human_input", found)
@@ -508,6 +517,12 @@ def _turn_config(config: Mapping[str, Any], path: str, found: list[str]) -> None
         _members(tool, TURN_TOOL, f"{path}.tools[{index}]", found)
     for index, tool in enumerate(config.get("tool_handler", [])):
         _members(tool, TOOL, f"{path}.tool_handler[{index}]", found)
+    _skills(config.get("skills", []), f"{path}.skills", found)
+
+
+def _skills(skills: list[Mapping[str, Any]], path: str, found: list[str]) -> None:
+    for index, skill in enumerate(skills):
+        _members(skill, SKILL, f"{path}[{index}]", found)
 
 
 def _memory(memory: Mapping[str, Any], path: str, found: list[str]) -> None:
