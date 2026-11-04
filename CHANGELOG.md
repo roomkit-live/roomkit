@@ -112,6 +112,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   passing `routing=` raises `TypeError`.
 - `Pipeline(agents=[])` is refused at its install with `ValueError("Pipeline
   needs at least one agent")`, where it raised `IndexError` (RMK-1233).
+- `ConversationPipeline.install` reads every agent before it installs anything,
+  as `ConversationRouter.install` does: one that takes no owner tools refuses
+  the install and leaves no hook or tool behind (RMK-1233).
 - **Two senders with no name on one channel read as two speakers** (RFC
   §6.4, RMK-1221). An event the application sent from a channel with no
   participant and a message a nameless sender sent through it both read

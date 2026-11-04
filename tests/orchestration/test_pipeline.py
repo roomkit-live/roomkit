@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from roomkit import ChannelDeclaration, RoomKit
 from roomkit.channels._realtime_tool_calls import RealtimeToolCall
 from roomkit.channels.agent import Agent
 from roomkit.channels.realtime_voice import RealtimeVoiceChannel, _current_voice_session
@@ -391,6 +392,21 @@ class TestPipelineInstall:
             execution=HookExecution.SYNC,
             priority=-50,
         )
+
+
+async def test_an_install_refused_on_an_agent_sets_nothing_up() -> None:
+    """Every agent read before anything is installed, as the router's install:
+    the refused install leaves no hook and no tool behind."""
+    kit = RoomKit()
+    kit.register_channel(_mock_agent("agent-a"))
+    kit.register_channel(ChannelDeclaration(channel_id="quiet", takes_owner_tools=False))
+    pipeline = ConversationPipeline(stages=[PipelineStage(phase="a", agent_id="agent-a")])
+
+    with pytest.raises(ValueError, match="does not take the tools"):
+        pipeline.install(kit, ["agent-a", "quiet"])
+
+    pipeline.install(kit, ["agent-a"])
+    await kit.close()
 
 
 # -- greet_on_handoff ---------------------------------------------------------

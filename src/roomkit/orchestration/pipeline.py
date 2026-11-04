@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel, Field
 
 from roomkit.channels.agent import Agent
+from roomkit.channels.declared import owner_tools_of
 from roomkit.channels.realtime_voice import RealtimeVoiceChannel
 from roomkit.channels.voice import VoiceChannel
 from roomkit.models.enums import HookExecution, HookTrigger
@@ -180,6 +181,10 @@ class ConversationPipeline:
             # Refused before anything is installed.
             require_live_agents(held_agents)
             refuse_agents_with_unserved(live, voice_channel_id)  # ty: ignore[invalid-argument-type]
+        else:
+            # Every agent read before anything is installed, as the router's install.
+            for agent in held_agents:
+                owner_tools_of(kit, agent)
 
         router = self.to_router()
 
