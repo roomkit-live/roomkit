@@ -10,6 +10,8 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import AsyncMock
 
+import pytest
+
 from roomkit.channels._discussion_turn import DISCUSSION_TURN, issue_mark, retire_mark
 from roomkit.channels.ai import AIChannel
 from roomkit.core.event_router import CHAIN_DEPTH_LIMIT
@@ -500,4 +502,39 @@ async def test_a_history_opens_on_no_calls_when_the_answered_event_reads_as_noth
     retire_mark(mark)
 
     assert [m.role for m in a.calls[0].messages] == ["user"]
+    await kit.close()
+
+
+@pytest.mark.parametrize("earlier", [False, True], ids=["alone", "after_a_message"])
+async def test_an_instruction_reads_before_a_round_at_its_own_index(earlier: bool) -> None:
+    """Never stored, an instruction holds the index of what followed it, a round
+    among them: the round reads after it, whatever came before (RFC §19.7.5)."""
+    a = _provider("my answer")
+    kit = RoomKit()
+    await _room(kit, a=a)
+    kit._discussions["r1"] = _Held()
+    if earlier:
+        await _say(kit, "first: what is the error rate?")
+    context = await kit._build_context("r1")
+    index = context.room.latest_index + 1
+    agent = kit.channels["a"]
+    agent._tool_history_loader = AsyncMock(return_value=_round_rows(index))  # type: ignore[attr-defined]
+    binding = context.get_binding("a")
+    assert binding is not None
+    mark = issue_mark([])
+    trigger = RoomEvent(
+        room_id="r1",
+        type=EventType.INSTRUCTION,
+        index=index,
+        source=EventSource(channel_id="ops", channel_type=ChannelType.SMS),
+        content=TextContent(body="Introduce yourself"),
+        metadata={DISCUSSION_TURN: mark},
+    )
+
+    await _answer(agent, trigger, binding, context)
+    retire_mark(mark)
+
+    roles = [m.role for m in a.calls[0].messages]
+    assert roles == (["user"] if earlier else []) + ["user", "assistant", "tool"]
+    assert "Introduce yourself" in str(a.calls[0].messages[-3].content)
     await kit.close()

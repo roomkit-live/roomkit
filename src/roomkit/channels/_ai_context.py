@@ -1214,10 +1214,14 @@ def _rounds_before(event: RoomEvent) -> int | None:
 
 
 def _answered_index(event: RoomEvent) -> int | None:
-    """Where the event a discussion's turn answers stands in the timeline, read
-    at its place among the history's turns (§19.7.5); None for any other turn,
-    or an event the store never numbered."""
-    return (event.index or None) if discussion_turn(event) is not None else None
+    """What a round must come after to read after the event a discussion's turn
+    answers, read at its place among the history's turns (§19.7.5): that event's
+    index, one less for an instruction, which, never stored, holds the index of
+    what followed it, a round among them; None for any other turn, or an event
+    the store never numbered."""
+    if discussion_turn(event) is None or not event.index:
+        return None
+    return event.index - 1 if event.type == EventType.INSTRUCTION else event.index
 
 
 def _answered_position(event: RoomEvent, past_indexes: list[int | None]) -> int | None:
