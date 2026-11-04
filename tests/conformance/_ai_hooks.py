@@ -105,7 +105,12 @@ def tool_round_record(payload: ToolRoundEvent) -> dict[str, Any]:
         "channel_id": payload.channel_id,
         "round_index": payload.round_index,
         "calls": [
-            {"tool_call_id": call.id, "name": call.name, "arguments": call.arguments}
+            {
+                "tool_call_id": call.id,
+                "name": call.name,
+                "arguments": call.arguments,
+                "metadata": call.metadata,
+            }
             for call in payload.calls
         ],
         "results": [

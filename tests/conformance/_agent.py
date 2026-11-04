@@ -304,7 +304,7 @@ def _round_of(content: Any) -> list[dict[str, Any]] | None:
         elif kind == "text":
             read.append({"text": part.text})
         elif kind == "tool_call":
-            read.append({"call": part.id, "metadata": part.metadata})
+            read.append({"call": part.id, "arguments": part.arguments, "metadata": part.metadata})
     return read
 
 
