@@ -21,6 +21,7 @@ from roomkit.models.participant import Participant
 from roomkit.models.room import Room
 from roomkit.models.store_filter import EventFilter, RoomFilter
 from roomkit.models.task import Observation, Task
+from roomkit.telemetry.mock import MockTelemetryProvider
 from tests.private_module import load_private_copy
 
 
@@ -1262,10 +1263,22 @@ class TestPostgresStore:
         with store._query_span("test_op", "test_table"):
             pass  # no exception
 
-    async def test_query_span_on_error(self) -> None:
+    @pytest.mark.parametrize(
+        ("sensitive", "read"),
+        [(False, "ValueError"), (True, "duplicate key (+15145550123)")],
+        ids=["by_default", "when_asked"],
+    )
+    async def test_query_span_on_error(self, sensitive: bool, read: str) -> None:
+        """A driver's error can quote a row: the span reads its class unless
+        the kit's ``record_sensitive_data`` asks for its text (RFC §15.7)."""
         store, _ = _make_store_with_pool()
+        telemetry = MockTelemetryProvider()
+        telemetry._record_sensitive_data = sensitive
+        store._telemetry = telemetry
         with (
-            pytest.raises(ValueError, match="boom"),
+            pytest.raises(ValueError, match="duplicate key"),
             store._query_span("test_op", "test_table"),
         ):
-            raise ValueError("boom")
+            raise ValueError("duplicate key (+15145550123)")
+        (span,) = telemetry.spans
+        assert (span.status, span.error_message) == ("error", read)

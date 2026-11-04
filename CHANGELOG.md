@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **A span's error no longer quotes its text** (RFC §15.7, RMK-1301).
+  `PostgresStore`'s `store.*` spans and `TelemetryProvider.span()`'s block wrote
+  `str(exc)` into `error_message`, which a driver's error can fill with a row's
+  values, `record_sensitive_data` off. They read the error's class now, its
+  text only when `TelemetryConfig.record_sensitive_data` asks for it.
+
 - **An identity resolves in its own organization only** (HITL 0f96a597, RMK-1336).
   `PostgresStore` and `SQLiteStore` read an address row without comparing its
   organization with its identity's, so a row the move to per-organization

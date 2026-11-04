@@ -256,15 +256,16 @@ class TelemetryProvider(ABC):
     ) -> Generator[str, None, None]:
         """Context manager for span lifecycle.
 
-        Yields the span ID. Automatically ends the span on exit,
-        recording error status if an exception occurs.
+        Yields the span ID. Automatically ends the span on exit, recording
+        error status if an exception occurs: its class, or its text when the
+        kit's ``record_sensitive_data`` asks for it (:func:`span_error`).
         """
         span_id = self.start_span(kind, name, **kwargs)
         try:
             yield span_id
             self.end_span(span_id)
         except Exception as exc:
-            self.end_span(span_id, status="error", error_message=str(exc))
+            self.end_span(span_id, status="error", error_message=span_error(self, exc))
             raise
 
 

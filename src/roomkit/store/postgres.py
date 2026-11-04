@@ -595,7 +595,7 @@ class PostgresStore(ConversationStore):
     @contextmanager
     def _query_span(self, operation: str, table: str) -> Generator[str, None, None]:
         """Context manager for STORE_QUERY telemetry spans."""
-        from roomkit.telemetry.base import Attr, SpanKind
+        from roomkit.telemetry.base import Attr, SpanKind, span_error
         from roomkit.telemetry.context import get_current_span
         from roomkit.telemetry.noop import NoopTelemetryProvider
 
@@ -613,7 +613,7 @@ class PostgresStore(ConversationStore):
             yield span_id
             telemetry.end_span(span_id)
         except Exception as exc:
-            telemetry.end_span(span_id, status="error", error_message=str(exc))
+            telemetry.end_span(span_id, status="error", error_message=span_error(telemetry, exc))
             raise
 
     @staticmethod

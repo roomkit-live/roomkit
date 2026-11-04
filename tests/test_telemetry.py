@@ -231,7 +231,7 @@ class TestMockProvider:
             raise ValueError("boom")
         assert len(p.spans) == 1
         assert p.spans[0].status == "error"
-        assert p.spans[0].error_message == "boom"
+        assert p.spans[0].error_message == "ValueError"
 
     def test_span_with_parent(self) -> None:
         p = MockTelemetryProvider()
@@ -958,6 +958,13 @@ class TestSensitiveData:
         assert route.attributes["sender_id"] == "+15145550123"
         [hook] = mock.get_spans(SpanKind.HOOK_SYNC)
         assert hook.error_message == "+15145550123 is refused"
+
+    def test_a_span_block_reads_its_error_s_text_only_when_asked(self) -> None:
+        mock = MockTelemetryProvider()
+        RoomKit(telemetry=TelemetryConfig(provider=mock, record_sensitive_data=True))
+        with pytest.raises(ValueError), mock.span(SpanKind.CUSTOM, "err_test"):
+            raise ValueError("+15145550123 is refused")
+        assert mock.spans[0].error_message == "+15145550123 is refused"
 
     async def test_a_delivery_span_holds_no_recipient_and_no_error_by_default(self) -> None:
         from roomkit.channels.transport import TransportChannel
