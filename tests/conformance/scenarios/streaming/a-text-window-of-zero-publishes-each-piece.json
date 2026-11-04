@@ -1,0 +1,74 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-text-window-of-zero-publishes-each-piece",
+  "title": "A text window of 0 ms publishes each piece as it comes",
+  "rules": [
+    "§6.4",
+    "§23.3"
+  ],
+  "notes": "tests/test_ai_streaming_text_events.py::test_a_delegated_answer_is_published_as_its_text_on_a_window, window off.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "ab",
+                "cd"
+              ]
+            }
+          ]
+        },
+        "text_coalesce_ms": 0,
+        "publish_text_deltas": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "parent",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "worker",
+      "task": "Go.",
+      "wait": true
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "text_events": {
+      "$r1": [
+        {
+          "text": "ab",
+          "round": 0,
+          "channel_id": "worker"
+        },
+        {
+          "text": "cd",
+          "round": 0,
+          "channel_id": "worker"
+        }
+      ]
+    }
+  }
+}

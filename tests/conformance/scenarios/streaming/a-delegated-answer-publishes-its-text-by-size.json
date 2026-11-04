@@ -1,0 +1,76 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-delegated-answer-publishes-its-text-by-size",
+  "title": "An answer read as a delegated task's trace publishes its text on a window, by size: nothing lost, the rest at the round's end",
+  "rules": [
+    "§6.4",
+    "§23.3"
+  ],
+  "notes": "Python: channels/_ai_coalescers.py _TextCoalescer; tests/test_ai_streaming_text_events.py::test_a_delegated_answer_is_published_as_its_text_on_a_window, by its size half.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "ab",
+                "cd",
+                "ef"
+              ]
+            }
+          ]
+        },
+        "text_coalesce_ms": 60000,
+        "text_coalesce_chars": 4,
+        "publish_text_deltas": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "parent",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "worker",
+      "task": "Go.",
+      "wait": true
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "text_events": {
+      "$r1": [
+        {
+          "text": "abcd",
+          "round": 0,
+          "channel_id": "worker"
+        },
+        {
+          "text": "ef",
+          "round": 0,
+          "channel_id": "worker"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,70 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-turn-of-its-room-publishes-no-text-though-asked",
+  "title": "An answer a room's hooks judge publishes no text, the channel asking for it or not: BEFORE_BROADCAST does not see that stream",
+  "rules": [
+    "§6.4",
+    "§23.3"
+  ],
+  "notes": "Python: turns/_owner_publish.py publish_frame; tests/test_ai_streaming_text_events.py::test_an_answer_a_hook_judges_is_never_published_as_text, its room half.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "Secret."
+              ]
+            }
+          ]
+        },
+        "publish_text_deltas": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "worker",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "text_events": {
+      "room-1": []
+    }
+  }
+}

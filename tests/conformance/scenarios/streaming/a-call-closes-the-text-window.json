@@ -1,0 +1,101 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-call-closes-the-text-window",
+  "title": "A call closes the answer's text window, whatever it still holds: an observer reads text and calls in the order they came",
+  "rules": [
+    "§6.4",
+    "§23.3"
+  ],
+  "notes": "Python: channels/_ai_stream_round.py stream, _flush_text at StreamToolCall. RFC §6.4.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "publish_text_deltas": true,
+        "text_coalesce_ms": 60000,
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up.",
+            "returns": "shipped"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "stream": [
+                {
+                  "text": "ab"
+                },
+                {
+                  "call": {
+                    "id": "c1",
+                    "name": "lookup"
+                  }
+                },
+                {
+                  "text": "cd"
+                }
+              ]
+            },
+            {
+              "deltas": [
+                "Done."
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "parent",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "worker",
+      "task": "Go.",
+      "wait": true
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "text_events": {
+      "$r1": [
+        {
+          "text": "ab",
+          "round": 0,
+          "channel_id": "worker"
+        },
+        {
+          "text": "cd",
+          "round": 0,
+          "channel_id": "worker"
+        },
+        {
+          "text": "Done.",
+          "round": 1,
+          "channel_id": "worker"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,134 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-first-pass-in-a-task-s-room-publishes-no-text",
+  "title": "A strategy's first pass in a task's room is kept out of the room, so its text is not published, the trace's own turns' is",
+  "rules": [
+    "§6.4",
+    "§23.3"
+  ],
+  "notes": "Python: core/mixins/_child_execution.py persist_tool_calls never calls read_as_trace, _persist_child_stream does. RFC §19.7.3.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "category": "intelligence",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "publish_text_deltas": true,
+        "text_coalesce_ms": 0,
+        "model": {
+          "rounds": [
+            {
+              "gate": "g",
+              "deltas": [
+                "Turn one."
+              ]
+            },
+            {
+              "deltas": [
+                "Pass one."
+              ]
+            },
+            {
+              "deltas": [
+                "Pass two."
+              ]
+            },
+            {
+              "deltas": [
+                "Pass three."
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": "analyst",
+        "type": "ai",
+        "agent": {
+          "role": "Analyst"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Numbers."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "parent",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "analyst"
+          ],
+          "strategy": "parallel",
+          "auto_delegate": true
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "sup",
+      "task": "Go.",
+      "wait": true,
+      "background": true,
+      "as": "t",
+      "require_structured_result": true,
+      "max_result_retries": 1
+    },
+    {
+      "wait_for": "g"
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "$r1",
+      "strategy": "team"
+    },
+    {
+      "open": "g"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "text_events": {
+      "$r1": [
+        {
+          "text": "Turn one.",
+          "round": 0,
+          "channel_id": "sup"
+        },
+        {
+          "text": "Pass two.",
+          "round": 0,
+          "channel_id": "sup"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,90 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-delegated-answer-publishes-each-round-s-text-under-its-round",
+  "title": "Text before a call is published under its round, closed by the call, and the next round's under its own",
+  "rules": [
+    "§6.4",
+    "§23.3"
+  ],
+  "notes": "tests/test_ai_streaming_text_events.py::test_text_before_a_tool_call_is_published_before_it_with_its_round: its order against TOOL_CALL_START is not read here.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "Let me check. "
+              ],
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "deltas": [
+                "It shipped today."
+              ]
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up.",
+            "returns": "shipped"
+          }
+        ],
+        "publish_text_deltas": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "parent",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "worker",
+      "task": "Go.",
+      "wait": true
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "text_events": {
+      "$r1": [
+        {
+          "text": "Let me check. ",
+          "round": 0,
+          "channel_id": "worker"
+        },
+        {
+          "text": "It shipped today.",
+          "round": 1,
+          "channel_id": "worker"
+        }
+      ]
+    }
+  }
+}

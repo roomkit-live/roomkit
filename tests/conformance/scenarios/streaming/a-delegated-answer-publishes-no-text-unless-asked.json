@@ -1,0 +1,60 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-delegated-answer-publishes-no-text-unless-asked",
+  "title": "A delegated answer publishes no text unless the channel asks for it",
+  "rules": [
+    "§6.4",
+    "§23.3"
+  ],
+  "notes": "channels/ai.py publish_text_deltas, False by default.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "Secret."
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "parent",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "worker",
+      "task": "Go.",
+      "wait": true
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "text_events": {
+      "$r1": []
+    }
+  }
+}

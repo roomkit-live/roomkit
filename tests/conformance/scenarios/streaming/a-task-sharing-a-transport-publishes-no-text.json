@@ -1,0 +1,64 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-task-sharing-a-transport-publishes-no-text",
+  "title": "A delegated turn whose room shares a transport crosses the room's hooks, so it publishes no text",
+  "rules": [
+    "§6.4",
+    "§23.3"
+  ],
+  "notes": "tests/test_ai_streaming_text_events.py::test_an_answer_a_hook_judges_is_never_published_as_text, the task sharing the sms.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "Secret."
+              ]
+            }
+          ]
+        },
+        "publish_text_deltas": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "parent",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "worker",
+      "task": "Go.",
+      "wait": true,
+      "share_channels": [
+        "sms"
+      ]
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "text_events": {
+      "$r1": []
+    }
+  }
+}
