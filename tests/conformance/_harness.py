@@ -59,6 +59,7 @@ from tests.conformance._delivery import (
     start_backend,
     wait_for_lock,
 )
+from tests.conformance._discussion import DISCUSSION_CALLS
 from tests.conformance._handoff import HANDOFF_CALLS
 from tests.conformance._identity import kit_options, register_identity_hook
 from tests.conformance._inputs import INPUT_CALLS, request_record
@@ -473,7 +474,9 @@ class Harness:
         """Makes one call; returns its outcome, its error named, never raising."""
         resolved = await self.resolve(dict(spec), scope)
         calls = CALLS | STORE_CALLS | TASK_CALLS | MEMBER_CALLS | INPUT_CALLS | STRATEGY_CALLS
-        call = (calls | VERIFICATION_CALLS | ROUTING_CALLS | HANDOFF_CALLS)[spec["call"]]
+        call = (calls | VERIFICATION_CALLS | ROUTING_CALLS | HANDOFF_CALLS | DISCUSSION_CALLS)[
+            spec["call"]
+        ]
         try:
             result = await asyncio.wait_for(call(self.kit, self, resolved), CALL_BOUND_S)
         except TimeoutError:
