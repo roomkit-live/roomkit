@@ -24,6 +24,12 @@ DEEPSEEK_BASE_URLS = ("https://api.deepseek.com/v1", "https://api.deepseek.com")
 MISTRAL_BASE_URL = "https://api.mistral.ai"
 """Mistral's API, the SDK's default server."""
 
+MINIMAX_BASE_URL = "https://api.minimax.io/v1"
+"""MiniMax's OpenAI-compatible endpoint."""
+
+KIMI_BASE_URL = "https://api.moonshot.ai/v1"
+"""Kimi's OpenAI-compatible endpoint."""
+
 _DEFAULT_PORTS = {"http": 80, "https": 443, "ws": 80, "wss": 443}
 
 

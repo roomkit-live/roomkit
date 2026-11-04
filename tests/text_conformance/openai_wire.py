@@ -23,12 +23,16 @@ from roomkit.providers.cerebras.ai import CerebrasAIProvider
 from roomkit.providers.cerebras.config import CerebrasConfig
 from roomkit.providers.deepseek.ai import DeepSeekAIProvider
 from roomkit.providers.deepseek.config import DeepSeekConfig
+from roomkit.providers.kimi.ai import KimiAIProvider
+from roomkit.providers.kimi.config import KimiConfig
 from roomkit.providers.litellm.ai import LiteLLMAIProvider
 from roomkit.providers.litellm.config import LiteLLMConfig
 from roomkit.providers.llamacpp.ai import LlamaCppAIProvider
 from roomkit.providers.llamacpp.config import LlamaCppConfig
 from roomkit.providers.meta.ai import MetaAIProvider
 from roomkit.providers.meta.config import MetaConfig
+from roomkit.providers.minimax.ai import MiniMaxAIProvider
+from roomkit.providers.minimax.config import MiniMaxConfig
 from roomkit.providers.openai.ai import OpenAIAIProvider
 from roomkit.providers.openai.config import OpenAIConfig
 from roomkit.providers.openrouter.ai import OpenRouterAIProvider
@@ -318,6 +322,20 @@ def wires() -> list[Driver]:
             reasoning="field",
             refused_names=("files.read",),
             accepted_names=("lookup",),
+        ),
+        OpenAIWire(
+            KimiAIProvider,
+            lambda: KimiAIProvider(KimiConfig(api_key="k", model="kimi-k3.1-pro")),
+            label="kimi",
+            reasoning="field",
+            refused_names=("files.read",),
+            accepted_names=("lookup",),
+        ),
+        OpenAIWire(
+            MiniMaxAIProvider,
+            lambda: MiniMaxAIProvider(MiniMaxConfig(api_key="k", model="MiniMax-M3.1-Flash")),
+            label="minimax",
+            reasoning="field",
         ),
         OpenAIWire(
             LiteLLMAIProvider,

@@ -26,10 +26,14 @@ from roomkit.providers.deepseek.ai import DeepSeekAIProvider
 from roomkit.providers.deepseek.config import DeepSeekConfig
 from roomkit.providers.gemini.ai import GeminiAIProvider
 from roomkit.providers.gemini.config import GeminiConfig
+from roomkit.providers.kimi.ai import KimiAIProvider
+from roomkit.providers.kimi.config import KimiConfig
 from roomkit.providers.litellm.ai import LiteLLMAIProvider
 from roomkit.providers.litellm.config import LiteLLMConfig
 from roomkit.providers.meta.ai import MetaAIProvider
 from roomkit.providers.meta.config import MetaConfig
+from roomkit.providers.minimax.ai import MiniMaxAIProvider
+from roomkit.providers.minimax.config import MiniMaxConfig
 from roomkit.providers.mistral.ai import MistralAIProvider
 from roomkit.providers.mistral.config import MistralConfig
 from roomkit.providers.ollama.ai import OllamaAIProvider
@@ -96,6 +100,8 @@ _EFFORT: dict[str, Effort] = {
     "meta": (_with(MetaAIProvider, MetaConfig), _top_level),
     "litellm": (_with(LiteLLMAIProvider, LiteLLMConfig, model="m"), _top_level),
     "deepseek": (_with(DeepSeekAIProvider, DeepSeekConfig, model="m"), _deepseek),
+    "kimi": (_with(KimiAIProvider, KimiConfig, model="m"), _top_level),
+    "minimax": (_with(MiniMaxAIProvider, MiniMaxConfig, model="m"), _top_level),
     "mistral": (_with(MistralAIProvider, MistralConfig), _mistral),
 }
 
@@ -109,7 +115,9 @@ _NOT_ON_TOOL_TURNS = {"litellm"}
 _VENDOR_RULE_CONFIGS = [
     CerebrasConfig,
     DeepSeekConfig,
+    KimiConfig,
     MetaConfig,
+    MiniMaxConfig,
     OpenRouterConfig,
     QwenConfig,
     XAIConfig,

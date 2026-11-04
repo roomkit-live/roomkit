@@ -170,6 +170,16 @@ UNMIRRORED_CATALOGS: dict[str, str] = {
         "and Cerebras model cards (checked 2026-09-09); Qwen's public zero prices "
         "disagree with its card, so the catalog uses the card's Developer rates."
     ),
+    "kimi": (
+        "the mirror's moonshotai/ rows quote routed hosts, at rates and cache prices "
+        "that are not Kimi's own, and list no -highspeed id. Verify against "
+        "https://platform.kimi.ai/docs/pricing/chat (checked 2026-11-04)."
+    ),
+    "minimax": (
+        "the mirror's minimax/ rows use other ids (minimax-m3, not MiniMax-M3) and quote "
+        "routed hosts, half MiniMax's rate on M3.1-Flash. Verify against "
+        "https://platform.minimax.io/docs/guides/pricing-paygo (checked 2026-11-04)."
+    ),
     "openai-realtime": (
         "the mirror routes chat completions; the gpt-realtime-* lineup lives on the "
         "Realtime WebSocket API and is absent from it — its gpt-audio/gpt-audio-mini "

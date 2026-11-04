@@ -915,6 +915,10 @@
     "sniff_mime_type",
     "to_data_uri"
   ],
+  "roomkit.providers.kimi": [
+    "KimiAIProvider",
+    "KimiConfig"
+  ],
   "roomkit.providers.litellm": [
     "LiteLLMAIProvider",
     "LiteLLMConfig"
@@ -935,6 +939,10 @@
     "MetaConfig",
     "MetaImageConfig",
     "MetaImageProvider"
+  ],
+  "roomkit.providers.minimax": [
+    "MiniMaxAIProvider",
+    "MiniMaxConfig"
   ],
   "roomkit.providers.mistral": [
     "MistralAIProvider",

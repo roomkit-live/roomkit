@@ -30,19 +30,23 @@ class ChatDialect:
 
     thinking_field: str | None = None
     """The assistant message field a vendor reads a model's earlier reasoning
-    from (Cerebras ``reasoning``, DeepSeek ``reasoning_content``). ``None`` sends
-    no earlier reasoning (RFC §6.4): any other server would read it as text the
-    model said, and its prompt cache would not survive it."""
+    from (Cerebras ``reasoning``; DeepSeek, MiniMax and Kimi
+    ``reasoning_content``). ``None`` sends no earlier reasoning (RFC §6.4): any
+    other server would read it as text the model said, and its prompt cache would
+    not survive it."""
     names_tool_results: bool = False
     """Each tool message names its tool (Mistral, PolarGrid)."""
     flattens_text: bool = False
     """A message of text parts goes as one string, and an empty message is not
     sent; only one carrying an image goes as parts (PolarGrid)."""
     round_thinking_required: bool = False
-    """Every round that called tools carries the thinking field, empty when the
-    round did not reason: DeepSeek in thinking mode refuses a round of the turn
+    """Every round that called tools carries the thinking field, even a round
+    that did not reason: DeepSeek in thinking mode refuses a round of the turn
     in progress without its ``reasoning_content``, unless it issued the round's
-    call ids itself a moment ago."""
+    call ids itself a moment ago, and Kimi any round without it."""
+    round_thinking_placeholder: str = ""
+    """What a required thinking field holds for a round that did not reason:
+    DeepSeek takes it empty, and Kimi reads an empty one as missing."""
 
     def __post_init__(self) -> None:
         if self.round_thinking_required and self.thinking_field is None:
@@ -178,12 +182,12 @@ def _with_thinking_field(
     rendered: dict[str, Any], message: AIMessage, dialect: ChatDialect, *, required: bool = False
 ) -> dict[str, Any]:
     """*rendered*, an assistant's reasoning in the dialect's field when it has
-    one; a *required* field goes even empty."""
+    one; a *required* field goes without any, holding the dialect's placeholder."""
     field = dialect.thinking_field
     if field is not None and message.role == "assistant":
         thinking = _thinking(list(message.content))
         if thinking or required:
-            rendered[field] = thinking
+            rendered[field] = thinking or dialect.round_thinking_placeholder
     return rendered
 
 

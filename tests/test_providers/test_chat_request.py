@@ -22,6 +22,8 @@ from roomkit.providers.ai.base import (
 from roomkit.providers.ai.chat_request import OPENAI_CHAT, ChatDialect, chat_messages
 from roomkit.providers.cerebras.ai import CerebrasAIProvider
 from roomkit.providers.deepseek.ai import DEEPSEEK_CHAT
+from roomkit.providers.kimi.ai import KIMI_CHAT
+from roomkit.providers.minimax.ai import MINIMAX_CHAT
 from roomkit.providers.mistral.ai import MISTRAL_CHAT, MistralAIProvider
 from roomkit.providers.mistral.config import MistralConfig
 from roomkit.providers.openai.ai import OpenAIAIProvider
@@ -124,8 +126,13 @@ def test_an_answer_of_reasoning_alone_is_an_empty_text() -> None:
 
 @pytest.mark.parametrize(
     ("dialect", "field"),
-    [(CerebrasAIProvider._chat_dialect, "reasoning"), (DEEPSEEK_CHAT, "reasoning_content")],
-    ids=["cerebras", "deepseek"],
+    [
+        (CerebrasAIProvider._chat_dialect, "reasoning"),
+        (DEEPSEEK_CHAT, "reasoning_content"),
+        (MINIMAX_CHAT, "reasoning_content"),
+        (KIMI_CHAT, "reasoning_content"),
+    ],
+    ids=["cerebras", "deepseek", "minimax", "kimi"],
 )
 def test_a_dialect_with_a_reasoning_field_carries_it_there(
     dialect: ChatDialect, field: str
@@ -134,6 +141,23 @@ def test_a_dialect_with_a_reasoning_field_carries_it_there(
     [answer] = _render(dialect, AIMessage(role="assistant", content=[_THOUGHT]))
     assert (round_["content"], round_[field]) == ("Looking.", "why")
     assert answer == {"role": "assistant", "content": "", field: "why"}
+
+
+@pytest.mark.parametrize(
+    ("dialect", "field"),
+    [(DEEPSEEK_CHAT, {"reasoning_content": ""}), (KIMI_CHAT, {"reasoning_content": " "})],
+    ids=["deepseek-empty", "kimi-a-space"],
+)
+def test_a_required_field_goes_on_a_round_with_no_reasoning(
+    dialect: ChatDialect, field: dict[str, str]
+) -> None:
+    [round_] = _render(dialect, _round())
+    assert {key: round_[key] for key in field} == field
+
+
+def test_a_round_with_no_reasoning_sends_no_field_where_it_is_not_required() -> None:
+    [round_] = _render(MINIMAX_CHAT, _round())
+    assert "reasoning_content" not in round_
 
 
 def test_an_image_result_rides_a_user_message_after_the_tool_messages() -> None:

@@ -47,6 +47,8 @@ from roomkit.providers.ai.base import (
     stream_call_of,
 )
 from roomkit.providers.deepseek.ai import DEEPSEEK_CHAT
+from roomkit.providers.kimi.ai import KIMI_CHAT
+from roomkit.providers.minimax.ai import MINIMAX_CHAT
 from roomkit.skills.registry import SkillRegistry
 from roomkit.tasks import CancelTaskTool, TaskStatusTool
 from roomkit.tools import current_response_metadata
@@ -73,7 +75,12 @@ TOOL_SEARCH_SETTINGS = (
 )
 
 
-CHAT_DIALECTS = {"openai": OPENAI_CHAT, "deepseek": DEEPSEEK_CHAT}
+CHAT_DIALECTS = {
+    "openai": OPENAI_CHAT,
+    "deepseek": DEEPSEEK_CHAT,
+    "minimax": MINIMAX_CHAT,
+    "kimi": KIMI_CHAT,
+}
 """The renderings a scripted model's ``chat_dialect`` names."""
 
 

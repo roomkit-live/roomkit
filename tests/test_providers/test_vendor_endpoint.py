@@ -18,6 +18,8 @@ from roomkit.providers.anthropic.config import AnthropicConfig
 from roomkit.providers.anthropic.request import build_kwargs
 from roomkit.providers.deepseek.ai import DeepSeekAIProvider
 from roomkit.providers.deepseek.config import DeepSeekConfig
+from roomkit.providers.kimi.ai import KimiAIProvider
+from roomkit.providers.kimi.config import KimiConfig
 from roomkit.providers.mistral.ai import MistralAIProvider
 from roomkit.providers.mistral.config import MistralConfig
 from roomkit.providers.openai.ai import OpenAIAIProvider
@@ -53,6 +55,10 @@ def _live(base_url: str | None) -> OpenAILiveProvider:
 def _deepseek(base_url: str) -> DeepSeekAIProvider:
     config = DeepSeekConfig(api_key="k", model="deepseek-chat", base_url=base_url)
     return DeepSeekAIProvider(config)
+
+
+def _kimi(base_url: str) -> KimiAIProvider:
+    return KimiAIProvider(KimiConfig(api_key="k", model="kimi-k3", base_url=base_url))
 
 
 def _mistral_names_checked(server_url: str | None) -> bool:
@@ -110,6 +116,10 @@ OWN = {
     "deepseek": (
         lambda url: _deepseek(url)._tool_name_rule is not None,
         ["https://api.deepseek.com/v1", "https://api.deepseek.com"],
+    ),
+    "kimi": (
+        lambda url: _kimi(url)._tool_name_rule is not None,
+        ["https://api.moonshot.ai/v1", "https://api.moonshot.ai/v1/"],
     ),
 }
 

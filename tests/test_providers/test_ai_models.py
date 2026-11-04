@@ -26,6 +26,10 @@ from roomkit.providers.azure.ai import AzureAIProvider
 from roomkit.providers.cerebras import CerebrasAIProvider, CerebrasConfig
 from roomkit.providers.gemini.ai import GeminiAIProvider
 from roomkit.providers.gemini.config import GeminiConfig
+from roomkit.providers.kimi.ai import KimiAIProvider
+from roomkit.providers.kimi.config import KimiConfig
+from roomkit.providers.minimax.ai import MiniMaxAIProvider
+from roomkit.providers.minimax.config import MiniMaxConfig
 from roomkit.providers.mistral.ai import MistralAIProvider
 from roomkit.providers.mistral.config import MistralConfig
 from roomkit.providers.ollama.ai import OllamaAIProvider
@@ -39,6 +43,8 @@ from roomkit.providers.xai.ai import XAIAIProvider
 # (provider class, config class) for the providers that ship a curated catalog.
 CURATED = [
     (CerebrasAIProvider, CerebrasConfig),
+    (KimiAIProvider, KimiConfig),
+    (MiniMaxAIProvider, MiniMaxConfig),
     (AnthropicAIProvider, AnthropicConfig),
     (OpenAIAIProvider, OpenAIConfig),
     (GeminiAIProvider, GeminiConfig),
@@ -62,6 +68,8 @@ DEFAULTED_CURATED = [
 # model is not advertised, so the guard never reaches it.
 PRICED = [
     CerebrasAIProvider,
+    KimiAIProvider,
+    MiniMaxAIProvider,
     AnthropicAIProvider,
     OpenAIAIProvider,
     GeminiAIProvider,

@@ -3434,7 +3434,7 @@
     "__init__": ["def"]
   },
   "roomkit.providers.ai.ChatDialect": {
-    "__init__": ["def", "thinking_field=None", "names_tool_results=False", "flattens_text=False", "round_thinking_required=False"]
+    "__init__": ["def", "thinking_field=None", "names_tool_results=False", "flattens_text=False", "round_thinking_required=False", "round_thinking_placeholder=''"]
   },
   "roomkit.providers.ai.CutArguments": {},
   "roomkit.providers.ai.MockAIProvider": {
@@ -4030,6 +4030,28 @@
   "roomkit.providers.image.to_data_uri": {
     "__call__": ["def", "data", "mime_type"]
   },
+  "roomkit.providers.kimi.KimiAIProvider": {
+    "__init__": ["def", "config", "*", "transport=None"],
+    "available_models": ["classmethod"],
+    "catalog_entry": ["def"],
+    "close": ["async def"],
+    "context_window": ["property"],
+    "generate": ["async def", "context"],
+    "generate_stream": ["async gen def", "context"],
+    "generate_structured_stream": ["async gen def", "context"],
+    "list_models": ["async def"],
+    "model_name": ["property"],
+    "name": ["property"],
+    "supports_deferred_tools": ["property"],
+    "supports_response_schema": ["property"],
+    "supports_response_schema_with_tools": ["property"],
+    "supports_streaming": ["property"],
+    "supports_structured_streaming": ["property"],
+    "supports_vision": ["property"]
+  },
+  "roomkit.providers.kimi.KimiConfig": {
+    "__init__": ["def", "*", "api_key", "base_url='https://api.moonshot.ai/v1'", "model", "max_tokens=None", "timeout=30.0", "connect_timeout=5.0", "max_retries=0", "include_stream_usage=True", "use_max_completion_tokens=False", "supports_custom_temperature=False", "reasoning_effort=None", "default_headers=None", "extra_body=None", "supports_response_schema=None", "supports_response_schema_with_tools=None", "supports_reasoning_effort_with_tools=None"]
+  },
   "roomkit.providers.litellm.LiteLLMAIProvider": {
     "__init__": ["def", "config", "*", "transport=None"],
     "available_models": ["classmethod"],
@@ -4138,6 +4160,28 @@
     "model_name": ["property"],
     "name": ["property"],
     "supports_editing": ["property"]
+  },
+  "roomkit.providers.minimax.MiniMaxAIProvider": {
+    "__init__": ["def", "config", "*", "transport=None"],
+    "available_models": ["classmethod"],
+    "catalog_entry": ["def"],
+    "close": ["async def"],
+    "context_window": ["property"],
+    "generate": ["async def", "context"],
+    "generate_stream": ["async gen def", "context"],
+    "generate_structured_stream": ["async gen def", "context"],
+    "list_models": ["async def"],
+    "model_name": ["property"],
+    "name": ["property"],
+    "supports_deferred_tools": ["property"],
+    "supports_response_schema": ["property"],
+    "supports_response_schema_with_tools": ["property"],
+    "supports_streaming": ["property"],
+    "supports_structured_streaming": ["property"],
+    "supports_vision": ["property"]
+  },
+  "roomkit.providers.minimax.MiniMaxConfig": {
+    "__init__": ["def", "*", "api_key", "base_url='https://api.minimax.io/v1'", "model", "max_tokens=None", "timeout=30.0", "connect_timeout=5.0", "max_retries=0", "include_stream_usage=True", "use_max_completion_tokens=False", "supports_custom_temperature=True", "reasoning_effort=None", "default_headers=None", "extra_body=None", "supports_response_schema=None", "supports_response_schema_with_tools=None", "supports_reasoning_effort_with_tools=None"]
   },
   "roomkit.providers.mistral.MistralAIProvider": {
     "__init__": ["def", "config"],
