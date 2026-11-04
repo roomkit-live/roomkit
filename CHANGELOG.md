@@ -15,7 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   warning, as they do a `roomkit:` key: a forged one no longer holds the room with nobody
   answering, nor stops an installed discussion's turns. A stored handle counts only for a
   channel the discussion lists as an agent and only if it can name one, so a sender is no
-  longer labelled as an agent. A stored discussion `Discussion()` would refuse (no agents,
+  longer labelled as an agent. `_conversation_state` joins them (RFC §19.2):
+  `save_conversation_state` writes it, and one named to the kit no longer moves the room to
+  another agent, holds it, or, malformed, fails its router and its turns; a host that
+  seeded a state through `create_room(metadata=)` calls `save_conversation_state` instead.
+  A stored discussion `Discussion()` would refuse (no agents,
   two alike, `max_turns` 0, a blank token, a handle that cannot name an agent...) reads as
   none, with a warning, and the room answers. A person whose name reads like a handle
   (`аlice` with a Cyrillic `а`, beside the agent `alice`) or like `all` is addressed by no

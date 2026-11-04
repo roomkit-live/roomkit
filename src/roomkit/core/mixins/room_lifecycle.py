@@ -104,8 +104,9 @@ class RoomLifecycleMixin(HelpersMixin):
             room_id: Optional explicit room ID (auto-generated if omitted).
             metadata: Optional room metadata dict; a key only the
                 framework writes, under ``roomkit:``, of the room's private
-                state (``author_register``) or a discussion's (``_discussion``,
-                ``_speak_queue``), is dropped with a warning.
+                state (``author_register``) or orchestration's
+                (``_conversation_state``, ``_discussion``, ``_speak_queue``), is
+                dropped with a warning.
             recorders: Optional list of :class:`RoomRecorderBinding` for
                 room-level media recording.
             orchestration: Orchestration strategy for this room. Overrides
@@ -518,9 +519,10 @@ class RoomLifecycleMixin(HelpersMixin):
         (``roomkit:detached_channels``) and what the room keeps for a channel
         (``roomkit:channel_state:``) among them, a key of the room's
         private state (``author_register``, ``_speak_queue_results``, RFC
-        §14.1) or a discussion's (``_discussion``, ``_speak_queue``, RFC
-        §19.7.5 rule 16). So a read-modify-write (``{**room.metadata, ...}``)
-        writes its own keys and leaves the framework's as they are.
+        §14.1) or orchestration's (``_conversation_state``, RFC §19.2;
+        ``_discussion``, ``_speak_queue``, RFC §19.7.5 rule 16). So a
+        read-modify-write (``{**room.metadata, ...}``) writes its own keys and
+        leaves the framework's as they are.
         """
         metadata = without_framework_keys(metadata, room_id=room_id, writer="update_room_metadata")
         async with self._lock_manager.locked(room_id):

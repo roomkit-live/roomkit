@@ -163,6 +163,7 @@ class TestRoomLifecycle:
             "roomkit:anything",
             "_discussion",
             "_speak_queue",
+            "_conversation_state",
         ],
     )
     async def test_a_key_only_the_framework_writes_is_dropped_with_a_warning(

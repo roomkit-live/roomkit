@@ -13,6 +13,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from roomkit.core._room_metadata import CONVERSATION_STATE
 from roomkit.core.exceptions import RoomNotFoundError
 from roomkit.models.room import Room
 from roomkit.store.base import ConversationStore
@@ -34,7 +35,7 @@ class ConversationPhase(StrEnum):
     FOLLOWUP = "followup"
 
 
-_STATE_KEY = "_conversation_state"
+_STATE_KEY = CONVERSATION_STATE
 
 
 class PhaseTransition(BaseModel):

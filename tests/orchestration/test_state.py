@@ -3,8 +3,17 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 
+import pytest
+
+from roomkit import Agent
+from roomkit.core.framework import RoomKit
+from roomkit.models.delivery import InboundMessage
+from roomkit.models.enums import ChannelCategory
+from roomkit.models.event import TextContent
 from roomkit.models.room import Room
+from roomkit.orchestration import ConversationRouter
 from roomkit.orchestration.state import (
     ConversationPhase,
     ConversationState,
@@ -12,6 +21,9 @@ from roomkit.orchestration.state import (
     get_conversation_state,
     set_conversation_state,
 )
+from roomkit.providers.ai.base import AIResponse
+from roomkit.providers.ai.mock import MockAIProvider
+from tests.test_framework import SimpleChannel
 
 # -- ConversationPhase --------------------------------------------------------
 
@@ -259,3 +271,40 @@ class TestPhaseTransition:
     def test_timestamp_is_utc(self):
         t = PhaseTransition(from_phase="a", to_phase="b")
         assert t.timestamp.tzinfo is not None
+
+
+@pytest.mark.parametrize(
+    "state",
+    [
+        {"active_agent_id": "second"},
+        {"human_hold": True},
+        {"handoff_count": "many"},
+    ],
+    ids=["moves_the_room", "holds_the_room", "reads_as_nothing"],
+)
+async def test_a_state_written_through_the_kit_changes_who_answers_nothing(
+    state: dict[str, Any],
+) -> None:
+    """Only ``save_conversation_state`` and the store write a room's state (RFC
+    §19.2): named to ``update_room_metadata`` it is dropped, so it neither
+    moves the room to another agent, nor silences it, nor breaks its turns."""
+    first = MockAIProvider(ai_responses=[AIResponse(content="from first")])
+    second = MockAIProvider(ai_responses=[AIResponse(content="from second")])
+    kit = RoomKit()
+    kit.register_channel(SimpleChannel("ops"))
+    kit.register_channel(Agent("first", provider=first))
+    kit.register_channel(Agent("second", provider=second))
+    await kit.create_room(room_id="r1")
+    await kit.attach_channel("r1", "ops")
+    for agent in ("first", "second"):
+        await kit.attach_channel("r1", agent, category=ChannelCategory.INTELLIGENCE)
+    ConversationRouter(default_agent_id="first").install(kit, ["first", "second"])
+
+    await kit.update_room_metadata("r1", {"_conversation_state": state})
+    result = await kit.process_inbound(
+        InboundMessage(channel_id="ops", sender_id="oncall", content=TextContent(body="hello"))
+    )
+
+    assert result.error is None
+    assert (len(first.calls), len(second.calls)) == (1, 0)
+    await kit.close()

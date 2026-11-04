@@ -1,6 +1,6 @@
 """The keys of a room's metadata only the framework writes (RFC §5.1, §14.1).
 
-Two kinds:
+Three kinds:
 
 - the implementation's namespace, ``roomkit:`` (RFC §5.1): what the
   framework keeps for the room, a detach's revocation
@@ -9,8 +9,9 @@ Two kinds:
 - a key of the room's private state (RFC §14.1,
   :mod:`roomkit.core._private_state`): the register of authors, a
   discussion's results to post;
-- a discussion's stored configuration and speak queue (RFC §19.7.5 rule 16),
-  which the strategy writes through the store.
+- what orchestration keeps for the room, written through the store: its
+  conversation state (RFC §19.2), a discussion's configuration and speak queue
+  (RFC §19.7.5 rule 16).
 
 Every writer the kit hands a room's metadata from outside has them dropped
 with a warning, the rest written (:func:`without_framework_keys`): the kit's
@@ -46,13 +47,19 @@ SPEAK_QUEUE = "_speak_queue"
 """The room metadata key a discussion's speak queue is stored under
 (RFC §19.7.5 rule 16)."""
 
-_DISCUSSION_KEYS = frozenset({DISCUSSION_CONFIG, SPEAK_QUEUE})
+CONVERSATION_STATE = "_conversation_state"
+"""The room metadata key a room's conversation state is stored under (RFC §19.2):
+``save_conversation_state`` writes it, a room's metadata being no way to (§19.2)."""
+
+_ORCHESTRATION_KEYS = frozenset({CONVERSATION_STATE, DISCUSSION_CONFIG, SPEAK_QUEUE})
 
 
 def the_framework_s(key: str) -> bool:
     """Whether only the framework writes *key* of a room's metadata."""
     return (
-        key.startswith(FRAMEWORK_NAMESPACE) or key in PRIVATE_STATE_KEYS or key in _DISCUSSION_KEYS
+        key.startswith(FRAMEWORK_NAMESPACE)
+        or key in PRIVATE_STATE_KEYS
+        or key in _ORCHESTRATION_KEYS
     )
 
 
