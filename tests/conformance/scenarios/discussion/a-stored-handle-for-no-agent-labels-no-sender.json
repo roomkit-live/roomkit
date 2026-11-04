@@ -1,0 +1,213 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-stored-handle-for-no-agent-labels-no-sender",
+  "title": "A stored handle counts only for an agent of the discussion the room stores: two nameless senders of a channel it names keep the channel's label, when it names no agent and when the configuration reads as none",
+  "rules": [
+    "§19.7.5 rule 4",
+    "§6.4"
+  ],
+  "notes": "Python: tests/orchestration/test_discussion_handles.py test_a_stored_handle_counts_for_an_agent_and_if_it_can_name_one. The forged configuration holds no room, so the agent answers and its transcript shows the labels. Before: @b and @b (2) (HITL 9247da98). room-2 stores no max_depth: a configuration that reads as none, whose handle of an agent labels nobody either.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Seen 0."
+            },
+            {
+              "text": "Seen 1."
+            },
+            {
+              "text": "Seen 2."
+            },
+            {
+              "text": "Seen 3."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "store_metadata": {
+          "_discussion": {
+            "agents": [
+              "agent"
+            ],
+            "handles": {
+              "ws": "b"
+            },
+            "max_depth": 5
+          }
+        },
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "store_metadata": {
+          "_discussion": {
+            "agents": [
+              "agent",
+              "ws"
+            ],
+            "handles": {
+              "ws": "b"
+            }
+          }
+        },
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "compare with mine"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "what colour is its foot?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-2",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "compare with mine"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "what colour is its foot?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "compare with mine"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "@ws: \"compare with mine\""
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 0."
+            },
+            {
+              "role": "user",
+              "text": {
+                "$contains": "@ws (2): \"what colour is its foot?\""
+              }
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "compare with mine"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "@ws: \"compare with mine\""
+            },
+            {
+              "role": "assistant",
+              "text": "Seen 2."
+            },
+            {
+              "role": "user",
+              "text": {
+                "$contains": "@ws (2): \"what colour is its foot?\""
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

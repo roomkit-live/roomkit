@@ -28,7 +28,7 @@
     "rooms": [
       {
         "id": "r1",
-        "metadata": {
+        "store_metadata": {
           "_conversation_state": {
             "active_agent_id": "b"
           }

@@ -1,0 +1,944 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-stored-discussion-the-constructor-refuses-holds-no-room",
+  "title": "A stored discussion the constructor would refuse, or that does not read as it writes, reads as none, so its room's agent answers and an instruction is no instruction to one over; max_depth 1, which a kit may write, still holds the room",
+  "rules": [
+    "§19.7.5 rule 16"
+  ],
+  "notes": "Python: tests/orchestration/test_discussion_handles.py test_what_the_constructor_refuses_stored_reads_as_no_discussion, test_a_depth_of_1_the_kit_writes_for_a_discussion_is_read_back. The read runs for every context built, so it warns and never raises (HITL 9247da98).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a1",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "repeat": true,
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "from a1"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "no-agent",
+        "store_metadata": {
+          "_discussion": {
+            "agents": [],
+            "max_depth": 5
+          }
+        },
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a1",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "twins",
+        "store_metadata": {
+          "_discussion": {
+            "agents": [
+              "a1",
+              "a1"
+            ],
+            "max_depth": 5
+          }
+        },
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a1",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "no-depth",
+        "store_metadata": {
+          "_discussion": {
+            "agents": [
+              "a1"
+            ],
+            "max_depth": 0
+          }
+        },
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a1",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "no-turn",
+        "store_metadata": {
+          "_discussion": {
+            "agents": [
+              "a1"
+            ],
+            "max_depth": 5,
+            "max_turns": 0
+          }
+        },
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a1",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "blank-token",
+        "store_metadata": {
+          "_discussion": {
+            "agents": [
+              "a1"
+            ],
+            "max_depth": 5,
+            "silent_token": "  "
+          }
+        },
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a1",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "blank-rules",
+        "store_metadata": {
+          "_discussion": {
+            "agents": [
+              "a1"
+            ],
+            "max_depth": 5,
+            "rules": "  "
+          }
+        },
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a1",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "everyone-else",
+        "store_metadata": {
+          "_discussion": {
+            "agents": [
+              "a1"
+            ],
+            "max_depth": 5,
+            "everyone": [
+              "ghost"
+            ]
+          }
+        },
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a1",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "handle-of-another",
+        "store_metadata": {
+          "_discussion": {
+            "agents": [
+              "a1"
+            ],
+            "max_depth": 5,
+            "handles": {
+              "ghost": "ops"
+            }
+          }
+        },
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a1",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "handle-alike",
+        "store_metadata": {
+          "_discussion": {
+            "agents": [
+              "a1",
+              "a2"
+            ],
+            "max_depth": 5,
+            "handles": {
+              "a1": "ops",
+              "a2": "OPS"
+            }
+          }
+        },
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a1",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "handle-of-an-id",
+        "store_metadata": {
+          "_discussion": {
+            "agents": [
+              "a1",
+              "a2"
+            ],
+            "max_depth": 5,
+            "handles": {
+              "a1": "a2"
+            }
+          }
+        },
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a1",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "handle-of-two-lines",
+        "store_metadata": {
+          "_discussion": {
+            "agents": [
+              "a1"
+            ],
+            "max_depth": 5,
+            "handles": {
+              "a1": "two\nlines"
+            }
+          }
+        },
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a1",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "handle-all",
+        "store_metadata": {
+          "_discussion": {
+            "agents": [
+              "a1"
+            ],
+            "max_depth": 5,
+            "handles": {
+              "a1": "all"
+            }
+          }
+        },
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a1",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "text-depth",
+        "store_metadata": {
+          "_discussion": {
+            "agents": [
+              "a1"
+            ],
+            "max_depth": "5"
+          }
+        },
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a1",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "true-depth",
+        "store_metadata": {
+          "_discussion": {
+            "agents": [
+              "a1"
+            ],
+            "max_depth": true
+          }
+        },
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a1",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "control-token",
+        "store_metadata": {
+          "_discussion": {
+            "agents": [
+              "a1"
+            ],
+            "max_depth": 5,
+            "silent_token": "\u001c"
+          }
+        },
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a1",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "refused-over",
+        "store_metadata": {
+          "_discussion": {
+            "agents": [],
+            "max_depth": 5
+          },
+          "_speak_queue": {
+            "over": true
+          }
+        },
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a1",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "depth-1",
+        "store_metadata": {
+          "_discussion": {
+            "agents": [
+              "a1"
+            ],
+            "max_depth": 1
+          }
+        },
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a1",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "no-agent",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "twins",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "no-depth",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "no-turn",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "blank-token",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "blank-rules",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "everyone-else",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "handle-of-another",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "handle-alike",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "handle-of-an-id",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "handle-of-two-lines",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "handle-all",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "text-depth",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "true-depth",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "control-token",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "refused-over",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Introduce yourself"
+        },
+        "event_type": "instruction",
+        "addressed_to": [
+          "a1"
+        ]
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "depth-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "no-agent": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "from a1"
+          }
+        }
+      ],
+      "twins": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "from a1"
+          }
+        }
+      ],
+      "no-depth": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "from a1"
+          }
+        }
+      ],
+      "no-turn": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "from a1"
+          }
+        }
+      ],
+      "blank-token": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "from a1"
+          }
+        }
+      ],
+      "blank-rules": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "from a1"
+          }
+        }
+      ],
+      "everyone-else": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "from a1"
+          }
+        }
+      ],
+      "handle-of-another": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "from a1"
+          }
+        }
+      ],
+      "handle-alike": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "from a1"
+          }
+        }
+      ],
+      "handle-of-an-id": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "from a1"
+          }
+        }
+      ],
+      "handle-of-two-lines": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "from a1"
+          }
+        }
+      ],
+      "handle-all": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "from a1"
+          }
+        }
+      ],
+      "depth-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          }
+        }
+      ],
+      "text-depth": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "from a1"
+          }
+        }
+      ],
+      "true-depth": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "from a1"
+          }
+        }
+      ],
+      "control-token": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "from a1"
+          }
+        }
+      ],
+      "refused-over": [
+        {
+          "content": {
+            "type": "text",
+            "body": "from a1"
+          }
+        }
+      ]
+    }
+  }
+}

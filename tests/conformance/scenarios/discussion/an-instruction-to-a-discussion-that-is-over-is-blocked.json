@@ -92,23 +92,6 @@
         "sender_id": "+15551234567",
         "content": {
           "type": "text",
-          "body": "A person speaks"
-        }
-      },
-      "expect": {
-        "result": {
-          "blocked": false
-        }
-      }
-    },
-    {
-      "call": "process_inbound",
-      "room_id": "room-1",
-      "message": {
-        "channel_id": "sms",
-        "sender_id": "+15551234567",
-        "content": {
-          "type": "text",
           "body": "Introduce yourself"
         },
         "event_type": "instruction",
@@ -132,5 +115,6 @@
         "a2": []
       }
     }
-  }
+  },
+  "notes": "The room's first call in a process: the stored queue is read, not what this process last read of it (HITL 0d726397)."
 }

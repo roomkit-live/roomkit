@@ -1,0 +1,297 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-conversation-state-written-through-the-kit-moves-no-agent",
+  "title": "A conversation state named to update_room_metadata is dropped: it neither moves the room to another agent, nor holds it, nor breaks its turns",
+  "rules": [
+    "§5.1 The implementation's metadata keys",
+    "§19.2"
+  ],
+  "notes": "Python: tests/orchestration/test_state.py test_a_state_written_through_the_kit_changes_who_answers_nothing. save_conversation_state writes it through the store. Before: moved asked second, held asked nobody, unread failed every target and the room's router.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "first",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "repeat": true,
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "from first"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "second",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "repeat": true,
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "from second"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "moved",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "first",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "second",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "held",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "first",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "second",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "unread",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "first",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "second",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "add_room_hook",
+      "room_id": "moved",
+      "hook": {
+        "name": "router",
+        "trigger": "before_broadcast",
+        "priority": -100,
+        "router": {
+          "default_agent_id": "first"
+        }
+      }
+    },
+    {
+      "call": "update_room_metadata",
+      "room_id": "moved",
+      "metadata": {
+        "_conversation_state": {
+          "active_agent_id": "second"
+        }
+      },
+      "expect": {
+        "result": {
+          "metadata": {
+            "_conversation_state": {
+              "$absent": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "moved",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "add_room_hook",
+      "room_id": "held",
+      "hook": {
+        "name": "router",
+        "trigger": "before_broadcast",
+        "priority": -100,
+        "router": {
+          "default_agent_id": "first"
+        }
+      }
+    },
+    {
+      "call": "update_room_metadata",
+      "room_id": "held",
+      "metadata": {
+        "_conversation_state": {
+          "human_hold": true
+        }
+      },
+      "expect": {
+        "result": {
+          "metadata": {
+            "_conversation_state": {
+              "$absent": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "held",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "add_room_hook",
+      "room_id": "unread",
+      "hook": {
+        "name": "router",
+        "trigger": "before_broadcast",
+        "priority": -100,
+        "router": {
+          "default_agent_id": "first"
+        }
+      }
+    },
+    {
+      "call": "update_room_metadata",
+      "room_id": "unread",
+      "metadata": {
+        "_conversation_state": {
+          "handoff_count": "many"
+        }
+      },
+      "expect": {
+        "result": {
+          "metadata": {
+            "_conversation_state": {
+              "$absent": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "unread",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "moved": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "from first"
+          }
+        }
+      ],
+      "held": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "from first"
+          }
+        }
+      ],
+      "unread": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "from first"
+          }
+        }
+      ]
+    }
+  }
+}

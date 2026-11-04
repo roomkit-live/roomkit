@@ -29,7 +29,7 @@
     "rooms": [
       {
         "id": "r1",
-        "metadata": {
+        "store_metadata": {
           "_conversation_state": {
             "phase": "handling"
           }
