@@ -66,12 +66,16 @@ FENCED_TAGS = (
     "context",
     "task",
     "vision",
+    "conversation",
+    "task_context",
+    "previous_tasks",
 )
 """The tags of the blocks a cut can reach, which :func:`named_blocks` and
 :func:`open_frame` know: a tool's result, a worker's output, a knowledge
 passage, a memory's summary of the conversation, content a realtime provider
 adds to its prompt, the goal or task an orchestration strategy copies into
-another model's prompt, and what a vision provider saw. A prompt's own blocks,
+another model's prompt, what a vision provider saw, and what a worker's
+description hands it. A prompt's own blocks,
 which no cut reaches (``agent``, ``instructions``, a speech model's
 ``transcript``, the content of a skill an MCP server serves, ``skill``, what an
 MCP server publishes on using its tools, ``server_instructions``), are fenced
@@ -156,9 +160,15 @@ def fence(tag: str, text: str) -> str:
     runtime's text after the block as data. Read in linear time; any tag name
     works, one outside ``[a-z0-9_]`` matched as written.
     """
+    return f"<{tag}>\n{without_tags(tag, text)}\n</{tag}>"
+
+
+def without_tags(tag: str, text: str) -> str:
+    """*text* with every closing and opening tag of *tag* neutralised, as
+    :func:`fence` says. For a text about to be written as JSON inside a block,
+    which reads it before JSON hides a line break or a slash as an escape."""
     body = _closing_tag(tag).sub(_unnamed, text)
-    body = _loose_opening_tag(tag).sub(_unnamed, body)
-    return f"<{tag}>\n{body}\n</{tag}>"
+    return _loose_opening_tag(tag).sub(_unnamed, body)
 
 
 def _unnamed(match: re.Match[str]) -> str:
@@ -260,6 +270,24 @@ def json_text_line(text: str) -> str:
     the marks that reorder text dropped, as inside :func:`quoted` (RFC §6.4).
     A ``”`` left as typed read as the string's end (RMK-635)."""
     return json_line(text.translate(_QUOTE_LOOKALIKES))
+
+
+def json_block_line(tag: str, value: Any) -> str:
+    """*value*, a JSON value, on one line for a block of *tag*: each of its
+    strings, an object's keys included, read as :func:`json_text_line` reads a
+    text and for the block's tags, before JSON hides a line break or a slash as
+    an escape (RFC §6.4)."""
+    return json_line(_block_strings(tag, value))
+
+
+def _block_strings(tag: str, value: Any) -> Any:
+    if isinstance(value, str):
+        return without_tags(tag, value.translate(_QUOTE_LOOKALIKES))
+    if isinstance(value, list):
+        return [_block_strings(tag, item) for item in value]
+    if isinstance(value, dict):
+        return {_block_strings(tag, key): _block_strings(tag, item) for key, item in value.items()}
+    return value
 
 
 def quoted(text: Any, limit: int) -> str:

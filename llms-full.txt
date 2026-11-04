@@ -6113,6 +6113,24 @@ told instead, when it says more; `conversation=N` hands the worker the room's
 last N messages the notified channel may read, quoted as data;
 `hand_back="post"` publishes the result as the notified agent's message,
 with no turn of its model, instead of relaying it (`"relay"`, the default).
+`context=` is host metadata, the child room's `task_context`: no model reads it,
+so a requester's email stays away from the vendor; on a `delegate_task` call below,
+a model wrote it, so a hook reading it reads a model's text.
+
+An agent delegates with the `delegate_task` tool
+(`setup_delegation(agent, DelegateHandler(kit, ...), tool=build_delegate_tool(targets))`).
+What its model passes as `context` does reach the worker, as JSON quoted as data
+and bounded at 4,000 characters, and so do the agent's own last three completed
+tasks of the room with `DelegateHandler(cache=)`; `task` stays as written. A tool
+built with `build_delegate_tool(targets)` refuses a call naming another worker.
+`max_conversation=N` (0 by default: no such argument) gives the tool a
+`conversation` argument, held to N whatever the call asks, that hands over the
+room's last messages both the calling agent and the notified channel may read.
+An intelligence channel shared into the child room stops the previous tasks and
+the conversation, not `context`.
+`DelegateHandler(cache=CompletedTaskCache())` answers a repeat, the same agent's
+call of the same task with the same `context`, from what its completed task
+returned; a call handing the conversation over always runs.
 
 The child room belongs to the parent room's organization: a tool in it reads
 the tenant from `current_tool_room().organization_id`, as in the parent, and

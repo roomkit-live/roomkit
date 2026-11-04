@@ -132,6 +132,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A host can let `delegate_task` hand the conversation over** (RFC §23.4, RMK-1363).
+  `DelegateHandler(max_conversation=N)`, 0 by default, gives the tool a `conversation` argument
+  held to N, the messages both the calling agent and the notified channel may read; none when
+  an intelligence channel is shared into the child room, which stops the previous tasks too. A
+  call asking for it always runs.
+
 - **Each generation of a turn tells what it used, and a cut turn keeps it**
   (RMK-1333). The loop yields a `UsageMarker` (from `roomkit.models`) after each
   generation, in its order among the text and the rows, which a streaming
@@ -355,6 +361,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `headers={"Authorization": "Bearer ..."}`, not in the URL.
 
 ### Fixed
+
+- **`delegate_task`'s `context` reaches the worker** (RFC §23.4, RMK-1363). The tool told the
+  model it passes context to the agent, and the guide that `previous_tasks` tells it what was
+  done; the worker's model read `task` alone. Both now reach it quoted as data and bounded,
+  through `brief`, with `task` as written; `kit.delegate(context=)` stays host metadata no
+  model reads. An agent hands over its own previous tasks only. A `context` that is no object
+  no longer fails the call or its task, and `CompletedTaskCache.get` and `put` take `context=`:
+  a repeat answered from the cache is the same agent's, with the same task and the same
+  `context`. A channel that may not read is handed no conversation by `kit.delegate` either.
+
+- **The tool's targets hold the model** (RFC §23.4, RMK-1363). `build_delegate_tool` said it
+  restricts the AI to the listed agents; a call naming another ran. It is now answered with an
+  error and starts nothing, on `setup_delegation` and `setup_realtime_delegation`.
+
+- **A closing tag no longer hides in JSON** (RFC §6.4, RMK-1363). A worker's `<conversation>`
+  read its messages for the block's tags once JSON had written a line break or a slash as an
+  escape; it reads them first now. U+2028 and U+2029 between a tag's letters are neutralised in
+  every block.
 
 - **A turn that wrote no message records on its last row** (RMK-1344). The turn's
   record rides its last message, else its last row, the call's end, so that a resume

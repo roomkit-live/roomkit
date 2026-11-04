@@ -10,13 +10,15 @@ import asyncio
 import contextlib
 import json
 import logging
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Mapping
 from typing import TYPE_CHECKING, Any
 
-from roomkit.channels._tool_registry import orchestration_tool
+from roomkit.channels._tool_registry import ToolEntry, orchestration_tool
 from roomkit.channels.declared import id_of, owner_tools_of
-from roomkit.orchestration._call_room import in_call_room
+from roomkit.models.enums import ChannelCategory
+from roomkit.orchestration._call_room import RoomToolServe, in_call_room
 from roomkit.providers.ai.base import AITool
+from roomkit.tasks.brief import context_block, previous_tasks_block, task_brief
 from roomkit.tasks.cache import CompletedTaskCache
 from roomkit.tasks.models import DelegatedTask, TaskStatus
 
@@ -33,6 +35,9 @@ logger = logging.getLogger("roomkit.tasks")
 # -- Tool definition ----------------------------------------------------------
 
 DELEGATE_TOOL_NAME = "delegate_task"
+
+CONVERSATION_ARGUMENT = "conversation"
+"""The argument a handler that allows it adds to the tool."""
 
 DELEGATE_TOOL = AITool(
     name=DELEGATE_TOOL_NAME,
@@ -55,7 +60,10 @@ DELEGATE_TOOL = AITool(
             },
             "context": {
                 "type": "object",
-                "description": ("Optional context to pass to the agent (e.g. email, repo URL)"),
+                "description": (
+                    "Optional context to pass to the agent (e.g. a branch, a repo URL, what a "
+                    "tool returned): it reads it with the task, as data"
+                ),
             },
             "share_channels": {
                 "type": "array",
@@ -79,7 +87,9 @@ def build_delegate_tool(targets: list[tuple[str, str | None]]) -> AITool:
 
     Returns:
         An :class:`AITool` whose ``agent`` parameter has an ``enum``
-        restricting the AI to only the listed agent IDs.
+        restricting the AI to only the listed agent IDs: the tool
+        :func:`setup_delegation` and :func:`setup_realtime_delegation` serve from
+        it refuses a call naming another.
     """
     if not targets:
         return DELEGATE_TOOL
@@ -116,14 +126,67 @@ def build_delegate_tool(targets: list[tuple[str, str | None]]) -> AITool:
     )
 
 
+def _served_tool(tool: AITool, max_conversation: int) -> AITool:
+    """*tool* as a handler allowing *max_conversation* messages serves it: with
+    a ``conversation`` argument up to that bound, without one when it is 0,
+    whatever *tool* declares."""
+    declared = tool.parameters.get("properties", {})
+    if max_conversation == 0 and CONVERSATION_ARGUMENT not in declared:
+        return tool
+    properties = {name: spec for name, spec in declared.items() if name != CONVERSATION_ARGUMENT}
+    if max_conversation > 0:
+        properties[CONVERSATION_ARGUMENT] = {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": max_conversation,
+            "description": (
+                "How many of the room's last messages to hand to the agent, quoted as "
+                f"data: at most {max_conversation}. Leave it out to hand over none."
+            ),
+        }
+    parameters = {**tool.parameters, "properties": properties}
+    if "required" in parameters:
+        parameters["required"] = [
+            name for name in parameters["required"] if name != CONVERSATION_ARGUMENT
+        ]
+    return tool.model_copy(update={"parameters": parameters})
+
+
 # -- DelegateHandler ----------------------------------------------------------
+
+
+def _passed_context(passed: Any) -> dict[str, Any]:
+    """What a call passed as ``context``, as the object a task's metadata and
+    its brief read: a model may send a string where the tool says object, kept
+    under ``context``. Null, an empty string and an empty list are no context; 0
+    and false are values."""
+    if isinstance(passed, Mapping):
+        return dict(passed)
+    return {} if passed is None or passed in ("", []) else {"context": passed}
+
+
+def _asked_conversation(asked: Any, maximum: int) -> int:
+    """How many messages a call hands over: what it asks, an integer as JSON
+    Schema reads one (``1.0`` is, ``"1"``, ``1.5`` and ``true`` are not), within
+    *maximum* and never below 0. Anything else asks for none."""
+    if isinstance(asked, bool) or not isinstance(asked, int | float):
+        return 0
+    if isinstance(asked, float) and not asked.is_integer():
+        return 0
+    return max(0, min(int(asked), maximum))
 
 
 class DelegateHandler:
     """Processes ``delegate_task`` tool calls by calling ``kit.delegate()``.
 
-    Supports optional dedup via :class:`CompletedTaskCache` and
-    per-room concurrency control via asyncio locks.
+    Supports optional dedup via :class:`CompletedTaskCache`, a repeat being the
+    same agent's call of the same task with the same ``context`` and no
+    ``conversation``, and per-room concurrency control via asyncio locks.
+
+    What the call passes as ``context``, and the calling agent's previous tasks
+    when a cache holds any and no intelligence channel is shared, reach the worker
+    quoted as data, in its brief; its ``task`` stays as written, for the parent
+    room and the cache key (RFC §23.4).
 
     Args:
         kit: The RoomKit instance.
@@ -132,6 +195,17 @@ class DelegateHandler:
         delivery_strategy: How to deliver results back proactively.
         cache: Optional completed-task cache for dedup.
         serialize_per_room: If True, only one delegation per room at a time.
+        max_conversation: How many of the room's last messages a call may hand
+            to its worker, those both the calling agent and the notified channel
+            may read, quoted as data; none when an intelligence channel is
+            shared into the child room, which reads them too. The tool gains a
+            ``conversation`` argument when it is above 0, and a call is held to
+            it whatever it asks. 0, the default: none, and no such argument: the
+            worker may be another vendor's, and the model chooses it, so the
+            host opens this.
+
+    Raises:
+        ValueError: A *max_conversation* that is no count: negative or no integer.
     """
 
     def __init__(
@@ -143,7 +217,10 @@ class DelegateHandler:
         delivery_strategy: DeliveryStrategy | None = None,
         cache: CompletedTaskCache | None = None,
         serialize_per_room: bool = False,
+        max_conversation: int = 0,
     ) -> None:
+        if type(max_conversation) is not int or max_conversation < 0:
+            raise ValueError("max_conversation must be an integer, 0 or more")
         self._kit = kit
         self._notify = notify
         self._default_share_channels = default_share_channels or []
@@ -152,6 +229,7 @@ class DelegateHandler:
             kit._delivery_strategy = delivery_strategy
         self._cache = cache
         self._serialize_per_room = serialize_per_room
+        self._max_conversation = max_conversation
         # A room's lock, and how many delegations hold it or wait for it: the
         # last one out drops it, so a room no longer delegating keeps nothing.
         self._room_locks: dict[str, asyncio.Lock] = {}
@@ -180,10 +258,15 @@ class DelegateHandler:
         """Process a delegate_task tool call."""
         agent_id = arguments.get("agent", "")
         task_text = arguments.get("task", "")
+        passed = _passed_context(arguments.get("context"))
+        count = _asked_conversation(arguments.get("conversation"), self._max_conversation)
 
-        # Gap 13: Check cache for recently completed matching task
-        if self._cache is not None:
-            cached = self._cache.get(room_id, agent_id, task_text)
+        # Gap 13: Check cache for recently completed matching task. A call that
+        # hands the room's last messages over reads them as they stand now.
+        if self._cache is not None and count == 0:
+            cached = self._cache._answer_for(
+                room_id, agent_id, task_text, passed, calling_agent_id
+            )
             if cached is not None:
                 logger.info(
                     "Returning cached result for task '%s' -> agent '%s'",
@@ -192,28 +275,27 @@ class DelegateHandler:
                 )
                 return {**cached, "from_cache": True}
 
-        context = arguments.get("context") or {}
         share_channels = arguments.get("share_channels") or self._default_share_channels
-
-        # Gap 15: Inject previous task context from cache
-        if self._cache is not None:
-            recent = self._cache.recent_context(room_id, limit=3)
-            if recent:
-                context = {
-                    **context,
-                    "previous_tasks": recent,
-                }
 
         # Gap 14: Serialize delegations per room
         if self._serialize_per_room:
             async with self._room_turn(room_id):
                 return await self._do_delegate(
-                    room_id, calling_agent_id, agent_id, task_text, context, share_channels
+                    room_id, calling_agent_id, agent_id, task_text, passed, count, share_channels
                 )
 
         return await self._do_delegate(
-            room_id, calling_agent_id, agent_id, task_text, context, share_channels
+            room_id, calling_agent_id, agent_id, task_text, passed, count, share_channels
         )
+
+    async def _shares_an_agent(self, room_id: str, share_channels: list[str]) -> bool:
+        """Whether one of *share_channels* is bound in the room as an intelligence
+        channel: one it does not bind is not shared (RFC §23.3 step 3)."""
+        for channel_id in share_channels:
+            binding = await self._kit._store.get_binding(room_id, channel_id)
+            if binding is not None and binding.category == ChannelCategory.INTELLIGENCE:
+                return True
+        return False
 
     async def _do_delegate(
         self,
@@ -221,16 +303,40 @@ class DelegateHandler:
         calling_agent_id: str,
         agent_id: str,
         task_text: str,
-        context: dict[str, Any],
+        passed: dict[str, Any],
+        count: int,
         share_channels: list[str],
     ) -> dict[str, Any]:
+        notified = self._notify or calling_agent_id
+        recent: list[str] = []
+        conversation: str | None = None
+        # An intelligence channel shared into the child room reads the worker's
+        # description: nothing the framework rebuilds goes there, as it may hold
+        # what that channel may not read (RFC §7.5 rule 8). What this call passed
+        # stays: the model wrote it, as it wrote the task that channel reads too.
+        if (count or self._cache is not None) and not await self._shares_an_agent(
+            room_id, share_channels
+        ):
+            # Gap 15: Inject previous task context from cache: the agent's own,
+            # which it may read, not another's, which may hold what it may not.
+            if self._cache is not None:
+                recent = self._cache._recent_of(room_id, calling_agent_id, limit=3)
+            # What both the agent that chose to hand it over and the channel its
+            # result goes back to may read.
+            if count:
+                conversation = await self._kit._room_conversation(
+                    room_id, list(dict.fromkeys((calling_agent_id, notified))), count
+                )
         task = await self._kit.delegate(
             room_id=room_id,
             agent_id=agent_id,
             task=task_text,
-            context=context,
+            context={**passed, "previous_tasks": recent} if recent else passed,
             share_channels=share_channels,
-            notify=self._notify or calling_agent_id,
+            notify=notified,
+            brief=task_brief(
+                task_text, context_block(passed), previous_tasks_block(recent), conversation
+            ),
         )
 
         result = {
@@ -243,7 +349,9 @@ class DelegateHandler:
         # Store in cache when task completes (fire-and-forget)
         if self._cache is not None:
             t = asyncio.create_task(
-                self._remember_when_completed(self._cache, task, room_id, task_text, result)
+                self._remember_when_completed(
+                    self._cache, task, result, task_text, passed, count, calling_agent_id
+                )
             )
             self._background_tasks.add(t)
             t.add_done_callback(self._background_tasks.discard)
@@ -254,24 +362,67 @@ class DelegateHandler:
     async def _remember_when_completed(
         cache: CompletedTaskCache,
         task: DelegatedTask,
-        room_id: str,
-        task_text: str,
         receipt: dict[str, Any],
+        task_text: str,
+        passed: dict[str, Any],
+        count: int,
+        caller: str,
     ) -> None:
         """Cache what the task returned once it completes, so a repeat of its
         call gets the result, as ``task_status`` gives it, not the receipt of
         its start. Only a completed task answers a repeat: a failed or
-        cancelled one is run again, as a strategy's dispatch is."""
+        cancelled one is run again, as a strategy's dispatch is. One handed the
+        room's last messages (*count*) answers none: what it returned holds for
+        the room as it stood."""
         try:
             ended = await task.wait(timeout=600.0)
         except Exception:
             return  # timeout or error — don't cache
-        if ended.status == TaskStatus.COMPLETED:
-            answer = {**receipt, "status": str(ended.status), "result": ended.output or ""}
-            cache.put(room_id, receipt["agent_id"], task_text, answer)
+        if ended.status != TaskStatus.COMPLETED:
+            return
+        answer = {**receipt, "status": str(ended.status), "result": ended.output or ""}
+        cache._keep(
+            task.parent_room_id,
+            receipt["agent_id"],
+            task_text,
+            answer,
+            passed,
+            caller,
+            answers=not count,
+        )
 
 
 # -- Wiring -------------------------------------------------------------------
+
+
+def _served_entry(handler: DelegateHandler, calling: str, tool: AITool | None) -> ToolEntry:
+    """The registry entry that serves *tool*, the generic one when none, for the
+    agent *calling* through *handler*."""
+    served = _served_tool(tool or DELEGATE_TOOL, handler._max_conversation)
+    return orchestration_tool(
+        served,
+        in_call_room(DELEGATE_TOOL_NAME, _served_delegation(handler, calling, served)),
+        waits=True,
+    )
+
+
+def _served_delegation(handler: DelegateHandler, calling: str, tool: AITool) -> RoomToolServe:
+    """What serves a call of *tool*: refused when it names a worker outside the
+    list the tool declares, since a list a model can ignore holds nothing (RFC
+    §23.4); a tool with no list takes any."""
+    listed = tool.parameters.get("properties", {}).get("agent", {}).get("enum")
+
+    async def delegate(room_id: str, name: str, arguments: dict[str, Any]) -> str:
+        if listed is not None and arguments.get("agent") not in listed:
+            return json.dumps({"error": f"This tool delegates only to: {', '.join(listed)}"})
+        result = await handler.handle(
+            room_id=room_id,
+            calling_agent_id=calling,
+            arguments=arguments,
+        )
+        return json.dumps(result)
+
+    return delegate
 
 
 def setup_delegation(
@@ -303,18 +454,7 @@ def setup_delegation(
         msg = f"setup_delegation() already called for channel '{calling}'"
         raise RuntimeError(msg)
 
-    async def delegate(room_id: str, name: str, arguments: dict[str, Any]) -> str:
-        result = await handler.handle(
-            room_id=room_id,
-            calling_agent_id=calling,
-            arguments=arguments,
-        )
-        return json.dumps(result)
-
-    entry = orchestration_tool(
-        tool or DELEGATE_TOOL, in_call_room(DELEGATE_TOOL_NAME, delegate), waits=True
-    )
-    registry.register(entry, owner=handler)
+    registry.register(_served_entry(handler, calling, tool), owner=handler)
 
 
 def setup_realtime_delegation(
@@ -341,15 +481,4 @@ def setup_realtime_delegation(
         msg = f"setup_realtime_delegation() already called for channel '{channel.channel_id}'"
         raise RuntimeError(msg)
 
-    async def delegate(room_id: str, name: str, arguments: dict[str, Any]) -> str:
-        result = await handler.handle(
-            room_id=room_id,
-            calling_agent_id=channel.channel_id,
-            arguments=arguments,
-        )
-        return json.dumps(result)
-
-    entry = orchestration_tool(
-        tool or DELEGATE_TOOL, in_call_room(DELEGATE_TOOL_NAME, delegate), waits=True
-    )
-    channel._registry.register(entry, owner=handler)
+    channel._registry.register(_served_entry(handler, channel.channel_id, tool), owner=handler)

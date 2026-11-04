@@ -51,6 +51,8 @@ class _Orchestrator:
 
     It sets its tools up on *kit*, which serves them to the channel's turns."""
 
+    _max_conversation = 0
+
     def __init__(self, kit: RoomKit) -> None:
         self._kit = kit
 

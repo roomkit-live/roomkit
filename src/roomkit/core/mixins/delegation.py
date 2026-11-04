@@ -363,7 +363,10 @@ class DelegationMixin(HelpersMixin):
             wait: If ``True``, run the agent inline and return a
                 pre-completed :class:`DelegatedTask`.  If ``False``
                 (default), submit as a background task.
-            context: Optional context dict passed to the agent.
+            context: Host metadata, kept as the child room's ``task_context``
+                for hooks, tools and the host: no model reads it, so a host's
+                data does not reach a vendor through it. What the agent should
+                read goes in *task* or *brief*.
             share_channels: Channel IDs from the parent to share.
             notify: Channel the result is handed to when a background task
                 completes (RFC §23.3): an agent receives it, bounded, as an
@@ -421,7 +424,7 @@ class DelegationMixin(HelpersMixin):
         notify_channel = notify or agent_id
         await self._check_hand_back(room_id, hand_back, notify_channel, wait=wait)
         description = worker_description(
-            task, brief, await self._room_conversation(room_id, notify_channel, conversation)
+            task, brief, await self._room_conversation(room_id, [notify_channel], conversation)
         )
 
         child_room_id = f"{room_id}::task-{uuid4().hex[:12]}"
@@ -509,9 +512,9 @@ class DelegationMixin(HelpersMixin):
                 f"intelligence channel attached to room {room_id!r}"
             )
 
-    async def _room_conversation(self, room_id: str, reader: str, count: int) -> str | None:
-        """The parent room's last *count* messages *reader* may read, set
-        apart as data for the worker (RFC §23.3 step 4)."""
+    async def _room_conversation(self, room_id: str, readers: list[str], count: int) -> str | None:
+        """The parent room's last *count* messages each of *readers* may read,
+        set apart as data for the worker (RFC §23.3 step 4)."""
         if count < 0:
             raise ValueError("conversation must be 0 or more")
         if count == 0:
@@ -519,7 +522,7 @@ class DelegationMixin(HelpersMixin):
         context = await self._build_context(
             room_id, recent_limit=max(4 * count, 50), reads_history=True
         )
-        return conversation_block(context, reader, count)
+        return conversation_block(context, readers, count)
 
     async def _end_cut(
         self,

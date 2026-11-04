@@ -5278,12 +5278,12 @@
   "roomkit.tasks.CompletedTaskCache": {
     "__init__": ["def", "ttl_seconds=300.0"],
     "clear": ["def"],
-    "get": ["def", "room_id", "agent_id", "task"],
-    "put": ["def", "room_id", "agent_id", "task", "result"],
+    "get": ["def", "room_id", "agent_id", "task", "*", "context=None"],
+    "put": ["def", "room_id", "agent_id", "task", "result", "*", "context=None"],
     "recent_context": ["def", "room_id", "limit=5"]
   },
   "roomkit.tasks.DelegateHandler": {
-    "__init__": ["def", "kit", "*", "notify=None", "default_share_channels=None", "delivery_strategy=None", "cache=None", "serialize_per_room=False"],
+    "__init__": ["def", "kit", "*", "notify=None", "default_share_channels=None", "delivery_strategy=None", "cache=None", "serialize_per_room=False", "max_conversation=0"],
     "handle": ["async def", "room_id", "calling_agent_id", "arguments"]
   },
   "roomkit.tasks.DelegatedTask": {
@@ -5599,7 +5599,7 @@
     "__call__": ["def", "tag", "text"]
   },
   "roomkit.tools.named_blocks": {
-    "__call__": ["def", "text", "tags=('tool_result', 'worker_output', 'knowledge', 'conversation_summary', 'context', 'task', 'vision')"]
+    "__call__": ["def", "text", "tags=('tool_result', 'worker_output', 'knowledge', 'conversation_summary', 'context', 'task', 'vision', 'conversation', 'task_context', 'previous_tasks')"]
   },
   "roomkit.tools.tool_turn_context": {
     "__call__": ["def", "*", "room_id=None", "room=None", "actor_id=None", "tools=None", "chain_depth=0", "call=None", "requester=None"]

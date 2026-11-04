@@ -151,7 +151,7 @@ class TestTextReaders:
             recent_events=[_event(_COMPOSITE), _event(_PHOTO), _event(_VOICE)],
         )
 
-        block = conversation_block(context, "worker", 5)
+        block = conversation_block(context, ["worker"], 5)
 
         assert block is not None
         assert "compare with mine\\n[Media: lamp.png]" in block  # a JSON string

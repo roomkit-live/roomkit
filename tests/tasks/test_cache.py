@@ -4,11 +4,17 @@ from __future__ import annotations
 
 import asyncio
 import time
+from types import MappingProxyType
 from unittest.mock import AsyncMock, MagicMock
 
+from roomkit import RoomKit
+from roomkit.channels.ai import AIChannel
+from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.tasks.cache import CompletedTaskCache
 from roomkit.tasks.delegate import DelegateHandler
 from roomkit.tasks.models import DelegatedTask
+from tests.conference.test_conference_realtime import until
+from tests.test_framework import SimpleChannel
 
 
 class TestCompletedTaskCache:
@@ -39,6 +45,62 @@ class TestCompletedTaskCache:
         cache = CompletedTaskCache()
         cache.put("room-1", "agent-a", "task", {"r1": True})
         assert cache.get("room-2", "agent-a", "task") is None
+
+    def test_the_context_is_part_of_the_key(self) -> None:
+        cache = CompletedTaskCache()
+        cache.put(
+            "room-1", "agent-a", "task", {"n": 1}, context=MappingProxyType({"x": 1, "y": 2})
+        )
+
+        assert cache.get("room-1", "agent-a", "task") is None
+        assert cache.get("room-1", "agent-a", "task", context={"x": 2, "y": 2}) is None
+        assert cache.get("room-1", "agent-a", "task", context={"y": 2, "x": 1}) == {"n": 1}
+
+    def test_a_context_never_reads_as_part_of_the_task(self) -> None:
+        cache = CompletedTaskCache()
+        cache.put("room-1", "agent-a", "a", {"n": 1}, context={"x": 1})
+
+        assert cache.get("room-1", "agent-a", 'a\n{"x": 1}') is None
+
+    def test_the_host_reads_what_an_agent_s_call_kept(self) -> None:
+        cache = CompletedTaskCache()
+        cache._keep("room-1", "agent-a", "task", {"n": 1}, None, "boss", answers=True)
+
+        assert cache.get("room-1", "agent-a", "task") == {"n": 1}
+        assert cache._answer_for("room-1", "agent-a", "task", None, "boss") == {"n": 1}
+        assert cache._answer_for("room-1", "agent-a", "task", None, "other") is None
+
+    def test_a_task_the_host_wrote_answers_any_agent(self) -> None:
+        cache = CompletedTaskCache()
+        cache.put("room-1", "agent-a", "task", {"n": 1})
+
+        assert cache._answer_for("room-1", "agent-a", "task", None, "boss") == {"n": 1}
+        assert cache._recent_of("room-1", "boss", limit=3) == ["task"]
+
+    def test_a_kept_task_that_answers_no_repeat_is_read_by_no_get(self) -> None:
+        cache = CompletedTaskCache()
+        cache._keep("room-1", "agent-a", "task", {}, None, "boss", answers=False)
+
+        assert cache.get("room-1", "agent-a", "task") is None
+        assert cache._answer_for("room-1", "agent-a", "task", None, "boss") is None
+        assert cache.recent_context("room-1") == ["task"]
+
+    def test_the_latest_of_what_is_kept_answers(self) -> None:
+        cache = CompletedTaskCache()
+        cache._keep("room-1", "agent-a", "task", {"n": "first"}, None, "boss", answers=True)
+        cache._keep("room-1", "agent-a", "task", {"n": "second"}, None, "other", answers=True)
+        cache.put("room-1", "agent-a", "task", {"n": "the host's"})
+
+        assert cache.get("room-1", "agent-a", "task") == {"n": "the host's"}
+        assert cache._answer_for("room-1", "agent-a", "task", None, "boss") == {"n": "the host's"}
+
+    def test_recent_context_lists_a_task_once(self) -> None:
+        cache = CompletedTaskCache()
+        cache.put("room-1", "agent-a", "Other.", {})
+        cache.put("room-1", "agent-a", "Fix.", {}, context={"x": 1})
+        cache.put("room-1", "agent-a", " fix. ", {}, context={"x": 2})
+
+        assert cache.recent_context("room-1", limit=2) == [" fix. ", "Other."]
 
     def test_recent_context(self) -> None:
         cache = CompletedTaskCache()
@@ -117,32 +179,30 @@ class TestDelegateHandlerWithCache:
         assert "from_cache" not in result
         kit.delegate.assert_called_once()
 
-    async def test_injects_previous_task_context(self) -> None:
-        """Should inject previous task summaries into context."""
-        kit = MagicMock()
-        task_handle = DelegatedTask(
-            id="t1",
-            child_room_id="child-1",
-            parent_room_id="room-1",
-            agent_id="exec-agent",
-            task="do more work",
-        )
-        task_handle.wait = AsyncMock()
-        kit.delegate = AsyncMock(return_value=task_handle)
+    async def test_the_worker_s_model_reads_the_previous_tasks(self) -> None:
+        """What a cached task asked reaches the worker's model, quoted, and the
+        task's own text stays as written."""
+        worker = MockAIProvider(responses=["Done."])
+        kit = RoomKit()
+        kit.register_channel(SimpleChannel("sms"))
+        kit.register_channel(AIChannel("worker", provider=worker))
+        await kit.create_room(room_id="room-1")
+        await kit.attach_channel("room-1", "sms")
 
         cache = CompletedTaskCache()
         cache.put("room-1", "other-agent", "previous task", {"done": True})
-
         handler = DelegateHandler(kit, cache=cache)
         await handler.handle(
             room_id="room-1",
             calling_agent_id="voice-agent",
-            arguments={"agent": "exec-agent", "task": "do more work"},
+            arguments={"agent": "worker", "task": "do more work"},
         )
+        await until(lambda: bool(worker.calls))
+        await kit.close()
 
-        # Check that previous_tasks was injected into context
-        _, kwargs = kit.delegate.call_args
-        assert "previous_tasks" in kwargs["context"]
+        read = worker.calls[0].messages[-1].content
+        assert read.startswith("do more work\n\n")
+        assert '<previous_tasks>\n"previous task"\n</previous_tasks>' in read
 
 
 class TestDelegateHandlerSerialization:

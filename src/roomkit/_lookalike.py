@@ -48,7 +48,7 @@ _COMBINING = r"\u0300-\u0344\u0346-\u036f\u20d0-\u20ff\ufe20-\ufe2f"
 """The combining marks a model reads past (underlined, struck letters), U+0345
 aside (:data:`_IOTA`)."""
 
-JOINT = rf"(?:[{INVISIBLE}\t\n\x0b\x0c\r{_COMBINING}]|{_IOTA})"
+JOINT = rf"(?:[{INVISIBLE}\t\n\x0b\x0c\r\u2028\u2029{_COMBINING}]|{_IOTA})"
 """One character that may sit between a tag's letters for a model still to
 read the name: an invisible, control or line-break character, a combining
 mark."""
