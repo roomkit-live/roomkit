@@ -110,6 +110,8 @@ def tool_round_record(payload: ToolRoundEvent) -> dict[str, Any]:
                 "name": call.name,
                 "arguments": call.arguments,
                 "metadata": call.metadata,
+                "partial": call.partial,
+                "garbled": call.garbled,
             }
             for call in payload.calls
         ],
