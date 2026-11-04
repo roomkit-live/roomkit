@@ -113,8 +113,9 @@ class DefaultInboundRoomRouter(InboundRoomRouter):
         own = known_as(participant_id, identity, channel_id)
         # Step 1 (RFC §10.4): the sender's own room. Tried first because it
         # identifies the conversation, where a binding of the channel to some
-        # room only identifies the pipe.
-        if participant_id:
+        # room only identifies the pipe. The framework's name is no one's, so
+        # nothing it names is a sender's conversation.
+        if participant_id and recordable_sender(participant_id):
             identity_id = identity.id if identity is not None else None
             room_id = await self._senders_room(
                 channel_id, participant_id, identity_id, organization_id
@@ -330,9 +331,9 @@ async def still_the_messages(
     recipient being no sender's, RFC §5.7); a binding naming no one that the
     room no longer opens to the sender by step 3's conditions, unless the
     sender is a participant reached through the channel; a message with no
-    address is held to those conditions too. The framework's own sender and
-    a message with no address are no one's correspondent, and are recorded
-    on no binding.
+    address is held to those conditions too, and is recorded on no binding.
+    A message under the framework's own name is not routed at all: its
+    caller refuses it first (RFC §10.1 step 2).
     """
     if room.status in _REFUSING:
         return False
@@ -360,7 +361,7 @@ async def still_the_messages(
         return True
     if correspondent is not None:
         return named
-    if sender == SYSTEM_SENDER_ID or members:
+    if members:
         return True
     # A message with no address is held to step 3's conditions as any sender
     # is (RFC §10.4): someone heard or reached on the channel since the
@@ -376,9 +377,10 @@ def known_as(sender: str | None, identity: Identity | None, channel_id: str) -> 
     Identity resolution names a participant and stamps an event with the
     identity's id, not the address (RFC §11), so the identity the store
     resolves the address to, within the caller's organization (§17.2), is
-    the sender's own too.
+    the sender's own too. A message with no address and the framework's own
+    name are known by nothing: no record is theirs (:func:`names_no_sender`).
     """
-    if not sender:
+    if not sender or not recordable_sender(sender):
         return frozenset()
     names = {sender, own_record_id(channel_id, sender)}
     if identity is not None:
@@ -393,6 +395,17 @@ def recordable_sender(sender: str | None) -> bool:
     writes through ``deliver()`` names no correspondent.
     """
     return bool(sender) and sender != SYSTEM_SENDER_ID
+
+
+def names_no_sender(sender: str | None) -> str | None:
+    """What a binding step 2 makes for a routed message names when *sender*
+    cannot be recorded, a message with no address (RFC §5.7, §10.4): the
+    framework's own name, which no sender is, as :func:`known_as` and the
+    refusal of a message routed under it make sure. Unnamed, the binding would
+    pass step 3 for the next sender, who would read what the message left;
+    ``None`` for a sender step 2 records itself.
+    """
+    return None if recordable_sender(sender) else SYSTEM_SENDER_ID
 
 
 def binding_names_no_one(binding: ChannelBinding) -> bool:

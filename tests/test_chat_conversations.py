@@ -17,6 +17,7 @@ import pytest
 from roomkit import HookTrigger, InboundMessage, RoomKit, TextContent
 from roomkit.channels import TelegramChannel, WhatsAppPersonalChannel
 from roomkit.channels.ai import AIChannel
+from roomkit.models.delivery import SYSTEM_SENDER_ID
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.providers.telegram.mock import MockTelegramProvider
 from roomkit.providers.telegram.webhook import parse_telegram_webhook
@@ -174,9 +175,9 @@ async def test_whatsapp_personal_answers_a_private_chat_by_number_and_a_group_in
 )
 async def test_a_chat_message_without_its_chat_has_no_address(carried: dict[str, Any]) -> None:
     """RFC §5.7: on a channel whose replies go to a chat only, a message that
-    does not carry its chat records no one; the room opened for it names
-    neither correspondent nor recipient, and does not take the author's
-    private chat; its author stays the sender. A chat is read as a
+    does not carry its chat records no one; the room opened for it names no
+    recipient and, as its correspondent, the name no sender is, and does not
+    take the author's private chat; its author stays the sender. A chat is read as a
     recipient is, a string that is not blank or a number: any other value
     under the chat key is no chat."""
     bot = _Bot()
@@ -198,6 +199,6 @@ async def test_a_chat_message_without_its_chat_has_no_address(carried: dict[str,
     assert room != alice_private
     binding = await bot.kit.store.get_binding(room, "tg")
     assert binding is not None
-    assert (binding.participant_id, binding.metadata) == (None, {})
+    assert (binding.participant_id, binding.metadata) == (SYSTEM_SENDER_ID, {})
     assert len(bot.telegram.sent) == sent
     await bot.kit.close()

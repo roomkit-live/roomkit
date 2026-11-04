@@ -17,6 +17,7 @@ from roomkit.core.exceptions import (
 from roomkit.core.mixins.helpers import HelpersMixin
 from roomkit.models._visibility import check_channel_id, parse_given_visibility
 from roomkit.models.channel import ChannelBinding, ChannelDeclaration
+from roomkit.models.delivery import SYSTEM_SENDER_ID
 from roomkit.models.enums import (
     Access,
     ChannelCategory,
@@ -64,7 +65,9 @@ def _named_correspondent(binding: ChannelBinding, channel: Channel) -> ChannelBi
     written as the channel writes an inbound sender (E.164 on a phone
     channel). A binding that names no one but delivers to an address is that
     person's conversation, so it names them: the router then finds the room
-    for them and admits no one else.
+    for them and admits no one else. The framework's own name holds no one's
+    place (:func:`~roomkit.core.inbound_router.names_no_sender`): a recipient
+    replaces it, and with none the binding keeps it.
     """
     update: dict[str, Any] = {}
     recipient = channel.recipient_address(binding)
@@ -72,10 +75,11 @@ def _named_correspondent(binding: ChannelBinding, channel: Channel) -> ChannelBi
         written = channel.recipient_metadata(recipient)
         if any(binding.metadata.get(key) != value for key, value in written.items()):
             update["metadata"] = {**binding.metadata, **written}
-    if binding.participant_id is not None:
-        named = channel.normalize_address(binding.participant_id)
-    else:
+    held = binding.participant_id
+    if held is None or (held == SYSTEM_SENDER_ID and recipient is not None):
         named = None if binding.group else recipient
+    else:
+        named = channel.normalize_address(held)
     if named != binding.participant_id:
         update["participant_id"] = named
     return binding.model_copy(update=update) if update else binding

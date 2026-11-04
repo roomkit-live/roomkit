@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **BREAKING: a message routed under the name `system` is refused** (HITL e80070ae,
+  6200e78d, RMK-1339). Under the room lock the name alone spared a message step 3's
+  conditions: on a channel whose senders choose their id (`parse_http_webhook`, the
+  WebSocket and SSE sources), a custom router's answer put it in another correspondent's
+  conversation. `process_inbound` now returns `blocked=True, reason="reserved_sender"`
+  with nothing written, no room opened and no router asked. What the framework writes
+  names its room and is not routed; a host writing under that name passes `room_id`.
+
+- **A room a routed message with no address opens admits no other sender** (HITL
+  8ea30e4a, RMK-1339). Unnamed, it passed step 3: the next sender was stored there and
+  their agent read what the message left. The binding step 2 makes for such a message
+  now names `system`, which no sender is, until the integrator gives it a recipient. Two
+  such messages no longer share a room; one naming its room is unchanged.
+
 - **A discussion's stored key is the framework's** (RFC §19.7.5 rule 16, HITL 9247da98,
   RMK-1337). `create_room(metadata=)`, `update_room_metadata`, a hook's body, a channel's
   `metadata_updates` and a turn's `TurnHost` drop `_discussion` and `_speak_queue` with a

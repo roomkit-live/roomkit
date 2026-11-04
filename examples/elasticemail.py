@@ -76,7 +76,8 @@ async def main() -> None:
             channel_id="ws-system",
             sender_id="system",
             content=TextContent(body="This email was sent via Elastic Email!"),
-        )
+        ),
+        room_id="demo-room",
     )
     # process_inbound waits for the delivery set: the email channel's outcome
     # is in delivery_results (a provider failure is logged, not raised).
