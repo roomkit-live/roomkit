@@ -602,17 +602,38 @@ class TestIdentityDetails:
         self, store
     ) -> None:
         """An address it keeps, under its own organization: a row of another scope
-        for the same address, one left unscoped by an upgrade, stops resolving."""
+        for the same address goes, not only stops resolving."""
         identity = Identity(id="i1", organization_id="acme", channel_addresses={"sms": ["+1555"]})
         await store.create_identity(identity)
+        rows = "SELECT organization_id FROM identity_addresses WHERE identity_id = 'i1'"
         async with store._pool.acquire() as conn:
             await conn.execute(
                 "INSERT INTO identity_addresses (channel_type, address, identity_id,"
                 " organization_id) VALUES ('sms', '+1555', 'i1', '')"
             )
         await store.create_identity(identity)
-        assert await store.resolve_identity("sms", "+1555") is None
+        async with store._pool.acquire() as conn:
+            scopes = [row["organization_id"] for row in await conn.fetch(rows)]
+        assert scopes == ["acme"]
         assert await store.resolve_identity("sms", "+1555", organization_id="acme") == identity
+
+    @pytest.mark.parametrize(
+        ("held_in", "stored"), [("", "acme"), ("globex", "acme"), ("acme", None)]
+    )
+    async def test_a_row_of_another_scope_than_its_identity_resolves_for_nobody(
+        self, store, held_in: str, stored: str | None
+    ) -> None:
+        """RFC §17.2: an identity is read in its own organization only, whatever a
+        row left by an upgrade or written directly says."""
+        await store.create_identity(Identity(id="i1", organization_id=stored))
+        async with store._pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO identity_addresses (channel_type, address, identity_id,"
+                " organization_id) VALUES ('sms', '+1555', 'i1', $1)",
+                held_in,
+            )
+        for scope in (None, "acme", "globex"):
+            assert await store.resolve_identity("sms", "+1555", organization_id=scope) is None
 
     @pytest.mark.parametrize("keeping", [False, True])
     async def test_two_replacements_swapping_addresses_are_refused_without_a_deadlock(
@@ -1086,6 +1107,39 @@ async def test_init_adds_what_an_identity_holds_to_a_table_without_it(store) -> 
     await store.init()
     await store.init()
     assert await store.get_identity("i1") == Identity(id="i1", display_name="Alice")
+
+
+async def test_init_moves_an_unscoped_address_to_its_identity_s_organization(store) -> None:
+    """HITL 0f96a597, RFC §17.2: a row the upgrade left unscoped moves to the
+    organization of its identity, once, so that its sender stays identified there;
+    one whose organization holds the address already yields to that row. An identity
+    of no organization keeps its unscoped row, and a row of another organization is
+    left alone, which no read serves."""
+    alice = Identity(id="alice", organization_id="acme")
+    bob = Identity(id="bob", organization_id="acme", channel_addresses={"sms": ["+2"]})
+    carol = Identity(id="carol", channel_addresses={"sms": ["+3"]})
+    for identity in (alice, bob, carol):
+        await store.create_identity(identity)
+    rows = "SELECT address, identity_id, organization_id FROM identity_addresses ORDER BY 1, 3"
+    async with store._pool.acquire() as conn:
+        await conn.executemany(
+            "INSERT INTO identity_addresses (channel_type, address, identity_id,"
+            " organization_id) VALUES ('sms', $1, $2, $3)",
+            [("+1", "alice", ""), ("+2", "alice", ""), ("+4", "alice", "globex")],
+        )
+        await conn.execute("DELETE FROM schema_version WHERE version >= 5")
+    await store.init()
+    await store.init()
+    async with store._pool.acquire() as conn:
+        stored = [tuple(row) for row in await conn.fetch(rows)]
+    assert stored == [
+        ("+1", "alice", "acme"),
+        ("+2", "bob", "acme"),
+        ("+3", "carol", ""),
+        ("+4", "alice", "globex"),
+    ]
+    assert await store.resolve_identity("sms", "+1", organization_id="acme") == alice
+    assert await store.resolve_identity("sms", "+1") is None
 
 
 async def test_binding_policy_migration_preserves_old_rows(store) -> None:

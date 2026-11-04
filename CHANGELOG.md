@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **An identity resolves in its own organization only** (HITL 0f96a597, RMK-1336).
+  `PostgresStore` and `SQLiteStore` read an address row without comparing its
+  organization with its identity's, so a row the move to per-organization
+  addresses left unscoped served an identity of an organization to a caller naming
+  none, and not to its own. `resolve_identity` now compares them, and such a row
+  moves to its identity's organization, once, at the first `init()` or open (schema
+  version row 5 on Postgres, file version 14 on SQLite), yielding to a row that
+  organization already holds for the address.
+
 - **`create_identity` never crosses an organization** (HITL b5e932a6, RMK-1277).
   On the memory and SQLite stores, an id another organization holds was
   overwritten and moved to the caller's organization, and a replaced identity kept

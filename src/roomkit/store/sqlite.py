@@ -65,7 +65,7 @@ from roomkit.store.base import (
     without_address,
 )
 
-_SCHEMA_VERSION = 13
+_SCHEMA_VERSION = 14
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS rooms(
@@ -672,6 +672,47 @@ def _migrate_v12_to_v13(conn: sqlite3.Connection) -> None:
         raise
 
 
+def _migrate_v13_to_v14(conn: sqlite3.Connection) -> None:
+    """An address version 3's migration left unscoped (``''``) for an identity of
+    an organization moves to that organization: a read serves an identity in its
+    own organization only (RFC §17.2), and its sender stays identified there. One
+    whose organization holds the address already yields to that row, whose identity
+    keeps it. A row of another organization is left: no API writes one, and no read
+    serves it."""
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        if int(conn.execute("PRAGMA user_version").fetchone()[0]) >= 14:
+            conn.execute("COMMIT")
+            return
+        conn.execute(
+            """DELETE FROM identity_addresses
+               WHERE organization_id = ''
+                 AND EXISTS (
+                     SELECT 1 FROM identities i JOIN identity_addresses held
+                       ON held.channel_type = identity_addresses.channel_type
+                      AND held.address = identity_addresses.address
+                      AND held.organization_id = json_extract(i.data, '$.organization_id')
+                     WHERE i.id = identity_addresses.identity_id
+                       AND COALESCE(json_extract(i.data, '$.organization_id'), '') <> '')"""
+        )
+        conn.execute(
+            """UPDATE identity_addresses
+               SET organization_id = (
+                   SELECT json_extract(i.data, '$.organization_id') FROM identities i
+                   WHERE i.id = identity_addresses.identity_id)
+               WHERE organization_id = ''
+                 AND COALESCE((
+                     SELECT json_extract(i.data, '$.organization_id') FROM identities i
+                     WHERE i.id = identity_addresses.identity_id), '') <> ''"""
+        )
+        conn.execute("PRAGMA user_version=14")
+        conn.execute("COMMIT")
+    except BaseException:
+        if conn.in_transaction:
+            conn.execute("ROLLBACK")
+        raise
+
+
 _MIGRATIONS = {
     1: _migrate_v1_to_v2,
     2: _migrate_v2_to_v3,
@@ -685,6 +726,7 @@ _MIGRATIONS = {
     10: _migrate_v10_to_v11,
     11: _migrate_v11_to_v12,
     12: _migrate_v12_to_v13,
+    13: _migrate_v13_to_v14,
 }
 """Each step takes a file from its version to the next."""
 
@@ -2175,7 +2217,12 @@ class SQLiteStore(ConversationStore):
             )
             .fetchone()
         )
-        return self._x_get_identity(row[0]) if row is not None else None
+        identity = self._x_get_identity(row[0]) if row is not None else None
+        # In its own organization only (RFC §17.2), whatever a row left by a file's
+        # migration or written directly says.
+        if identity is None or (identity.organization_id or "") != organization_id:
+            return None
+        return identity
 
     async def link_address(
         self,

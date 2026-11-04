@@ -714,23 +714,87 @@ class TestRoutingPlans:
         assert plans and scans == [], plans
 
 
+def _insert_address(path: Path, *rows: tuple[str, str, str]) -> None:
+    """Writes address rows directly, as an older file holds them."""
+    conn = sqlite3.connect(path)
+    conn.executemany(
+        "INSERT INTO identity_addresses (channel_type, address, identity_id, organization_id)"
+        " VALUES ('sms', ?, ?, ?)",
+        rows,
+    )
+    conn.commit()
+    conn.close()
+
+
+def _address_rows(path: Path) -> list[tuple[str, str, str]]:
+    conn = sqlite3.connect(path)
+    rows = conn.execute(
+        "SELECT address, identity_id, organization_id FROM identity_addresses ORDER BY 1, 3"
+    ).fetchall()
+    conn.close()
+    return rows
+
+
 async def test_a_replacement_removes_a_row_of_another_scope_for_a_kept_address(
     tmp_path: Path,
 ) -> None:
     """An address it keeps, under its own organization: a row of another scope
-    for the same address, one a file's migration left unscoped, stops resolving."""
+    for the same address goes, not only stops resolving."""
     path = tmp_path / "scoped.db"
     store = SQLiteStore(path)
     identity = Identity(id="i1", organization_id="acme", channel_addresses={"sms": ["+1555"]})
     await store.create_identity(identity)
-    conn = sqlite3.connect(path)
-    conn.execute(
-        "INSERT INTO identity_addresses (channel_type, address, identity_id, organization_id)"
-        " VALUES ('sms', '+1555', 'i1', '')"
-    )
-    conn.commit()
-    conn.close()
+    _insert_address(path, ("+1555", "i1", ""))
     await store.create_identity(identity)
-    assert await store.resolve_identity("sms", "+1555") is None
+    assert _address_rows(path) == [("+1555", "i1", "acme")]
     assert await store.resolve_identity("sms", "+1555", organization_id="acme") == identity
     await store.close()
+
+
+@pytest.mark.parametrize(("held_in", "stored"), [("", "acme"), ("globex", "acme"), ("acme", None)])
+async def test_a_row_of_another_scope_than_its_identity_resolves_for_nobody(
+    tmp_path: Path, held_in: str, stored: str | None
+) -> None:
+    """RFC §17.2: an identity is read in its own organization only, whatever a
+    row a file's migration left or a direct write says."""
+    path = tmp_path / "scoped.db"
+    store = SQLiteStore(path)
+    await store.create_identity(Identity(id="i1", organization_id=stored))
+    _insert_address(path, ("+1555", "i1", held_in))
+    for scope in (None, "acme", "globex"):
+        assert await store.resolve_identity("sms", "+1555", organization_id=scope) is None
+    await store.close()
+
+
+async def test_opening_moves_an_unscoped_address_to_its_identity_s_organization(
+    tmp_path: Path,
+) -> None:
+    """HITL 0f96a597, RFC §17.2: a row version 3's migration left unscoped moves to
+    the organization of its identity, once; one whose organization holds the address
+    already yields to that row. An identity of no organization keeps its unscoped
+    row, and a row of another organization is left alone, which no read serves."""
+    path = tmp_path / "older.db"
+    store = SQLiteStore(path)
+    alice = Identity(id="alice", organization_id="acme")
+    bob = Identity(id="bob", organization_id="acme", channel_addresses={"sms": ["+2"]})
+    carol = Identity(id="carol", channel_addresses={"sms": ["+3"]})
+    for identity in (alice, bob, carol):
+        await store.create_identity(identity)
+    await store.close()
+    _insert_address(path, ("+1", "alice", ""), ("+2", "alice", ""), ("+4", "alice", "globex"))
+    conn = sqlite3.connect(path)
+    conn.execute("PRAGMA user_version=13")
+    conn.commit()
+    conn.close()
+
+    reopened = SQLiteStore(path)
+    assert await reopened.resolve_identity("sms", "+1", organization_id="acme") == alice
+    assert await reopened.resolve_identity("sms", "+1") is None
+    await reopened.close()
+
+    assert _address_rows(path) == [
+        ("+1", "alice", "acme"),
+        ("+2", "bob", "acme"),
+        ("+3", "carol", ""),
+        ("+4", "alice", "globex"),
+    ]

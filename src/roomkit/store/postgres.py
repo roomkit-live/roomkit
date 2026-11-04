@@ -1947,7 +1947,10 @@ class PostgresStore(ConversationStore):
                 "SELECT i.* FROM identity_addresses ia"
                 " JOIN identities i ON i.id = ia.identity_id"
                 " WHERE ia.channel_type = $1 AND ia.address = $2"
-                " AND ia.organization_id = $3",
+                " AND ia.organization_id = $3"
+                # An identity is read in its own organization only (RFC §17.2),
+                # whatever a row left by an upgrade or written directly says.
+                " AND COALESCE(i.organization_id, '') = ia.organization_id",
                 channel_type,
                 address,
                 organization_id or "",
