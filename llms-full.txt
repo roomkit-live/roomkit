@@ -3075,10 +3075,10 @@ the last generation used, `null` when it failed), `ai_usage_complete` (whether
 every generation reported its input and output counters), and `ai_model` and
 `ai_provider` (what the last generation ran on). That message is the final
 answer, or, for a turn that ended without one (a cancellation between rounds, an
-interruption), the last round's text. A turn that wrote no message at all (a first
-turn cut while its call runs) holds them on its last row, the call's end. A turn
-cut once it began records the same
-from what its generations told, its end `cancelled`: a generation in flight is
+interruption), the last round's text. A turn that wrote no message at all (a
+first turn cut while its call runs) holds them on its last row, the call's end. A
+turn cut once it began records the same from what its generations told, its end
+`cancelled`: a generation in flight is
 not counted, and `ai_usage_complete` is then false. A stream cut before anything
 told what it used (in its first generation, or an ACP agent's) records only its
 end. A streamed turn
