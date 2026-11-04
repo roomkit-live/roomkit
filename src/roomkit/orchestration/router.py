@@ -105,6 +105,15 @@ class ConversationRouter:
         self._default_agent_id = default_agent_id
         self._supervisor_id = supervisor_id
 
+    def _routes_phase_to(self, phase: str, agent_id: str) -> bool:
+        """Whether a rule of this router asks *agent_id* in *phase*."""
+        return any(
+            rule.agent_id == agent_id
+            and rule.conditions.phases is not None
+            and phase in rule.conditions.phases
+            for rule in self._rules
+        )
+
     def select_agent(
         self,
         event: RoomEvent,

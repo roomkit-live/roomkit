@@ -115,6 +115,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ConversationPipeline.install` reads every agent before it installs anything,
   as `ConversationRouter.install` does: one that takes no owner tools refuses
   the install and leaves no hook or tool behind (RMK-1233).
+- A handoff's target is an agent of the room, a human or a known one: a
+  transport the room binds is "not found", where it became the active agent and
+  no agent answered. Under allowed transitions, a target the phase map knows is
+  led only to a phase it holds: `{target: "c", next_phase: "b"}` no longer skips
+  a stage of a pipeline, and answers `Agent c does not hold phase 'b'` (RMK-1233).
 - **Two senders with no name on one channel read as two speakers** (RFC
   §6.4, RMK-1221). An event the application sent from a channel with no
   participant and a message a nameless sender sent through it both read

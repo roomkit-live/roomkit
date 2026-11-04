@@ -26,7 +26,14 @@ from roomkit.memory._wrapper import _MemoryWrapper
 from roomkit.memory.base import MemoryProvider, MemoryResult
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.context import RoomContext
-from roomkit.models.enums import ChannelType, EventStatus, EventType, HookTrigger, Visibility
+from roomkit.models.enums import (
+    ChannelCategory,
+    ChannelType,
+    EventStatus,
+    EventType,
+    HookTrigger,
+    Visibility,
+)
 from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.models.room import Room
 from roomkit.orchestration._call_room import in_call_room
@@ -308,7 +315,11 @@ class HandoffHandler:
             bindings = await self._kit.store.list_bindings(room_id)
             target_binding = None
             for b in bindings:
-                if b.channel_id == request.target_agent_id:
+                # A target is an agent of the room: a transport it binds answers nothing.
+                if (
+                    b.channel_id == request.target_agent_id
+                    and b.category == ChannelCategory.INTELLIGENCE
+                ):
                     target_binding = b
                     break
 
@@ -349,6 +360,19 @@ class HandoffHandler:
                             accepted=False,
                             reason=(
                                 f"Transition from '{state.phase}' to '{new_phase}' is not allowed"
+                            ),
+                        )
+                    elif not self._holds_phase(request.target_agent_id, new_phase):
+                        logger.warning(
+                            "Handoff rejected: agent %s does not hold phase %s",
+                            request.target_agent_id,
+                            new_phase,
+                        )
+                        rejected_result = HandoffResult(
+                            accepted=False,
+                            reason=(
+                                f"Agent {request.target_agent_id} does not hold phase "
+                                f"'{new_phase}'"
                             ),
                         )
 
@@ -641,6 +665,14 @@ class HandoffHandler:
             if agent is not None:
                 return getattr(agent, "language", None)
         return None
+
+    def _holds_phase(self, target: str, phase: str) -> bool:
+        """Whether a handoff under allowed transitions may lead *target* to
+        *phase*: one the phase map does not know may (a human, a host's own
+        target); one it knows holds its own phase and those the router's rules
+        give it (RFC §19.6)."""
+        own = self._phase_map.get(target)
+        return not own or own == phase or self._router._routes_phase_to(phase, target)
 
     def _resolve_alias(self, target: str) -> str:
         return self._aliases.get(target, target)
