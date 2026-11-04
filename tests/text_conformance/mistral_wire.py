@@ -162,7 +162,7 @@ class MistralWire(ChatDriver):
             "signature (RMK-385)"
         ),
     }
-    reasoning = "inline"
+    reasoning = "dropped"
     refused_names = ("files:read",)
     accepted_names = ("lookup", "files.read")
 

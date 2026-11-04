@@ -24,6 +24,7 @@ from tests.text_conformance.driver import (
     IMAGE_RESULTS,
     REDACTED_REASONING,
     SCHEMA_AS_GIVEN,
+    THINK_TAGS,
     Driver,
 )
 from tests.text_conformance.scenario import LOOKUP, PNG, generation, tool_context
@@ -108,6 +109,12 @@ _SIGNED = {"thought_signature": base64.b64encode(b"S0").decode()}
 _CALL = AIToolCallPart(id="c1", name="lookup", arguments={"q": "a"}, metadata=_SIGNED)
 
 
+def _sent_no_reasoning_if_dropped(driver: Driver) -> None:
+    """On a wire that replays none, the reasoning is nowhere in the request."""
+    if driver.reasoning == "dropped":
+        assert "why" not in str(driver.requests[-1])
+
+
 async def _replay(driver: Driver, *history: AIMessage) -> list[Any]:
     messages = [AIMessage(role="user", content="go"), *history]
     await generation(driver, Script(text="ok"), "stream", tool_context(LOOKUP, messages=messages))
@@ -158,15 +165,15 @@ class TestReplay:
             _results(AIToolResultPart(tool_call_id="c1", name="lookup", result="found")),
         )
 
-        reasoning = [i for i in items if i[0] in ("thinking", "redacted", "inline", "field")]
+        reasoning = [i for i in items if i[0] in ("thinking", "redacted", "field")]
         expected = {
             "blocks": [("thinking", "why", "S0")],
             "call_signature": [],
-            "inline": [("inline", "why")],
             "field": [("field", "why")],
             "dropped": [],
         }[driver.reasoning]
         assert reasoning == expected
+        _sent_no_reasoning_if_dropped(driver)
 
     async def test_another_vendors_round_goes_back_as_the_wire_takes_it(
         self, driver: Driver
@@ -201,28 +208,11 @@ class TestReplay:
 
         assert ("redacted", "RRR") in items
 
-    @pytest.mark.parametrize(
-        "block",
-        [AIThinkingPart(thinking="", signature="S0"), AIThinkingPart(thinking="", redacted="RRR")],
-        ids=["signature-only", "redacted"],
-    )
-    async def test_a_reasoning_block_without_text_goes_back_inline_as_nothing(
-        self, driver: Driver, block: AIThinkingPart
-    ) -> None:
-        """A block with no text is not replayed as an empty ``<think>`` in an
-        answer without calls, as it is not in a round with calls (RMK-484)."""
-        follow_up = AIMessage(role="user", content="and then?")
-        items = await _replay(driver, _round(block, AITextPart(text="ok")), follow_up)
 
-        assert ("inline", "") not in items
-        assert ("text", "ok") in items
-
-
-_REASONING_KINDS = ("thinking", "redacted", "inline", "field", "signature")
+_REASONING_KINDS = ("thinking", "redacted", "field", "signature")
 # What a received round's reasoning ("why", signed "S0") goes back as.
 _GOES_BACK_AS: dict[str, list[tuple[str, ...]]] = {
     "blocks": [("thinking", "why", "S0")],
-    "inline": [("inline", "why")],
     "field": [("field", "why")],
     "dropped": [],
 }
@@ -259,3 +249,28 @@ class TestRoundTrip:
             assert [i[2] for i in reasoning] == ["S0", "S0"]
         else:
             assert reasoning == _GOES_BACK_AS[driver.reasoning]
+        _sent_no_reasoning_if_dropped(driver)
+
+    async def test_a_think_tag_read_from_an_answer_goes_back_as_the_wire_needs(
+        self, driver: Driver
+    ) -> None:
+        """A model's ``<think>`` is read out of its text, and the next request
+        carries it only in a field its wire reads (RFC §6.4, RMK-1369)."""
+        driver.require(THINK_TAGS)
+        script = Script(
+            text="<think>why</think>Looking.",
+            calls=(Call("lookup", '{"q": "a"}', id="c1", index=0),),
+            finish="tool",
+        )
+        response = await driver.provider(script).generate(tool_context(LOOKUP))
+        kept = round_parts(thinking_parts_of(response), response.content, response.tool_calls)
+
+        items = await _replay(
+            driver,
+            AIMessage(role="assistant", content=kept),
+            _results(AIToolResultPart(tool_call_id="c1", name="lookup", result="found")),
+        )
+
+        assert ("text", "Looking.") in items
+        assert [i for i in items if i[0] in _REASONING_KINDS] == _GOES_BACK_AS[driver.reasoning]
+        _sent_no_reasoning_if_dropped(driver)

@@ -108,9 +108,9 @@ class OpenRouterAIProvider(OpenAIAIProvider):
 
         A turn with tools carries it as any other does (RFC §6.7). The
         reasoning of one tool round does not reach the next (RFC §6.4), neither
-        as text nor as ``reasoning_details``. Claude takes the next round
-        without its thinking block, and an OpenAI model takes an effort
-        alongside tools, measured on 2026-09-30.
+        as text nor as ``reasoning_details``. Claude took the next round
+        without its thinking block, and an OpenAI model an effort alongside
+        tools, measured on 2026-09-30 with the reasoning still sent as text.
         """
         if context.temperature is not None and self._config.supports_custom_temperature:
             kwargs["temperature"] = context.temperature

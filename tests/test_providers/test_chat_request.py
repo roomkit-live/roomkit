@@ -104,6 +104,19 @@ def test_a_plain_answer_sends_no_reasoning() -> None:
     assert rendered["content"] == [{"type": "text", "text": "Done."}]
 
 
+def test_a_message_s_text_and_images_keep_their_order() -> None:
+    message = AIMessage(
+        role="user",
+        content=[AITextPart(text="mine"), AIImagePart(url=_IMAGE), AITextPart(text="yours")],
+    )
+    [rendered] = _render(OPENAI_CHAT, message)
+    assert rendered["content"] == [
+        {"type": "text", "text": "mine"},
+        {"type": "image_url", "image_url": {"url": _IMAGE}},
+        {"type": "text", "text": "yours"},
+    ]
+
+
 def test_an_answer_of_reasoning_alone_is_an_empty_text() -> None:
     [rendered] = _render(OPENAI_CHAT, AIMessage(role="assistant", content=[_THOUGHT]))
     assert rendered == {"role": "assistant", "content": ""}

@@ -4,7 +4,6 @@ cut into stream pieces, and how a request's tools and turns are read back."""
 from __future__ import annotations
 
 import json
-import re
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -22,7 +21,6 @@ FINISH = {
     "filtered": "content_filter",
     "none": None,
 }
-_THINK = re.compile(r"^<think>(.*?)</think>", re.DOTALL)
 
 
 def wire_arguments(call: Call) -> Any:
@@ -47,8 +45,7 @@ async def iterate(items: list[Any]) -> AsyncIterator[Any]:
 
 
 def assistant_items(message: dict[str, Any], field: str | None = None) -> list[Item]:
-    """An assistant message: its reasoning (in *field*, or inline as a leading
-    ``<think>`` block), what it said, and its calls."""
+    """An assistant message: its reasoning in *field*, what it said, and its calls."""
     items: list[Item] = []
     if field is not None and message.get(field):
         items.append(("field", message[field]))
@@ -56,12 +53,7 @@ def assistant_items(message: dict[str, Any], field: str | None = None) -> list[I
     if isinstance(content, list):
         content = "".join(part.get("text", "") for part in content)
     if content:
-        match = _THINK.match(content)
-        if match:
-            items.append(("inline", match.group(1)))
-            content = content[match.end() :]
-        if content:
-            items.append(("text", content))
+        items.append(("text", content))
     for call in message.get("tool_calls") or []:
         function = call["function"]
         items.append(("call", call["id"], json.loads(function["arguments"])))

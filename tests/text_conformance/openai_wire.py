@@ -65,10 +65,7 @@ _CANNOT = {
 # thinking_blocks): what they cannot do here is the provider's choice.
 _OPENROUTER_CANNOT = {
     MALFORMED_CALL: _CANNOT[MALFORMED_CALL],
-    SIGNED_REASONING: (
-        "the provider replays a round's reasoning as <think> text, not as "
-        "reasoning_details, which every upstream answers (measured 2026-09-30)"
-    ),
+    SIGNED_REASONING: "the provider sends no round's reasoning back, reasoning_details included",
     REDACTED_REASONING: "the provider reads no reasoning_details, encrypted ones included",
 }
 _LITELLM_CANNOT = {
@@ -264,7 +261,7 @@ class OpenAIWire(ChatDriver):
         *,
         label: str,
         vendor: _Vendor | None = None,
-        reasoning: ReasoningConvention = "inline",
+        reasoning: ReasoningConvention = "dropped",
         cannot: Mapping[str, str] = _CANNOT,
         refused_names: tuple[str, ...] = (),
         accepted_names: tuple[str, ...] = ("lookup", "files.read"),

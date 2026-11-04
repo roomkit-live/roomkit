@@ -70,7 +70,6 @@ class Script:
 # What a request replayed of a round, in a driver's normalized words:
 #   ("thinking", text, signature) — a signed reasoning block
 #   ("redacted", data)            — a redacted reasoning block
-#   ("inline", text)              — reasoning sent inline in the text (<think>)
 #   ("field", text)               — reasoning sent in a dedicated field
 #   ("text", text)                — what the assistant said
 #   ("call", ref, arguments)      — a call; ref is its id, or its name where the

@@ -61,10 +61,9 @@ USAGE_ALONE = "usage_alone"
 SERVER_ID = "server_id"
 """A call carries the id its server gave it."""
 
-ReasoningConvention = Literal["blocks", "call_signature", "inline", "field", "dropped"]
+ReasoningConvention = Literal["blocks", "call_signature", "field", "dropped"]
 """How a wire replays earlier reasoning: as signed blocks, as one signature on
-each call of the round (Gemini), inline in the text, in a field of its own,
-or not at all."""
+each call of the round (Gemini), in a field of its own, or not at all (RFC §6.4)."""
 
 
 class Driver(ABC):
@@ -79,7 +78,7 @@ class Driver(ABC):
     covers: tuple[type[AIProvider], ...] = ()
     """The provider classes this driver stands for."""
     cannot: Mapping[str, str] = {}
-    reasoning: ReasoningConvention = "inline"
+    reasoning: ReasoningConvention = "dropped"
     """How the wire replays a model's earlier reasoning."""
     error_flag: bool = False
     """The wire flags a failed tool result."""

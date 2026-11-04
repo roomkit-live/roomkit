@@ -174,19 +174,13 @@ def _flat(parts: list[Any], provider: str) -> str | list[dict[str, Any]]:
     ]
 
 
-def _thinking_field(message: AIMessage, dialect: ChatDialect) -> str | None:
-    """The field *message*'s reasoning rides: the dialect's, for the
-    assistant's own messages."""
-    return dialect.thinking_field if message.role == "assistant" else None
-
-
 def _with_thinking_field(
     rendered: dict[str, Any], message: AIMessage, dialect: ChatDialect, *, required: bool = False
 ) -> dict[str, Any]:
-    """*rendered*, its reasoning in the dialect's field when it has one; a
-    *required* field goes even empty."""
-    field = _thinking_field(message, dialect)
-    if field is not None:
+    """*rendered*, an assistant's reasoning in the dialect's field when it has
+    one; a *required* field goes even empty."""
+    field = dialect.thinking_field
+    if field is not None and message.role == "assistant":
         thinking = _thinking(list(message.content))
         if thinking or required:
             rendered[field] = thinking

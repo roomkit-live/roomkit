@@ -1096,8 +1096,8 @@ A model's reasoning reaches the hooks, `AIThinkingPart` and
 `publish_thinking_text`, and no Chat Completions request: a generic server would
 read it as text the model said, and its prompt cache would not survive it.
 DeepSeek (`reasoning_content`) and Cerebras (`reasoning`) read it in a field of
-their own, which their providers send, and Anthropic and Gemini their signed
-blocks and signatures.
+their own, which their providers send, as does Ollama's native API (`thinking`),
+and Anthropic and Gemini their signed blocks and signatures.
 
 Reasoning competes with the answer for the same `max_tokens`. A round that
 spends its whole budget thinking returns empty `content` with a truncation
