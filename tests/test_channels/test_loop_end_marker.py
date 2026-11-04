@@ -16,6 +16,7 @@ import asyncio
 import pytest
 
 from roomkit.channels.ai import AIChannel
+from roomkit.core.mixins._streaming_segments import _ended_record
 from roomkit.models.streaming import LoopEndMarker
 from roomkit.providers.ai.base import AIContext, AIMessage, AIResponse, AIToolCall, ServedCall
 from roomkit.providers.ai.mock import MockAIProvider
@@ -216,3 +217,31 @@ async def test_exactly_one_marker_and_it_comes_last(responses: list[AIResponse])
 
     assert len(_markers(deltas)) == 1
     assert isinstance(deltas[-1], LoopEndMarker)
+
+
+@pytest.mark.parametrize(
+    ("marker", "record"),
+    [
+        # A channel that says nothing of its generations writes the two keys.
+        (
+            LoopEndMarker(reason="completed", usage={"input_tokens": 1}),
+            {"ai_usage": {"input_tokens": 1}, "loop_end_reason": "completed"},
+        ),
+        # Its last generation failed: none, written, never left out.
+        (
+            LoopEndMarker(reason="error", usage_complete=False, model="m", provider="p"),
+            {
+                "ai_usage": {},
+                "loop_end_reason": "error",
+                "ai_last_usage": None,
+                "ai_usage_complete": False,
+                "ai_model": "m",
+                "ai_provider": "p",
+            },
+        ),
+    ],
+)
+def test_the_record_holds_what_its_marker_says(
+    marker: LoopEndMarker, record: dict[str, object]
+) -> None:
+    assert _ended_record(marker) == record

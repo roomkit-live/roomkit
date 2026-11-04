@@ -993,8 +993,10 @@ marker too, with `rounds=0`, a provider that streams text alone included.
 
 The loop records the reason on the turn's reply: its last MESSAGE event
 carries `loop_end_reason` with the same values, next to `ai_usage` (which sums
-every generation round of the turn, not just the last). That is the final
-answer, or, for a turn that ended without one (a cancellation between
+every generation round of the turn, not just the last), `ai_last_usage` (what
+the last generation used, `null` when it failed), `ai_usage_complete` (whether
+every generation reported its input and output counters), and `ai_model` and
+`ai_provider` (what the last generation ran on). That is the final answer, or, for a turn that ended without one (a cancellation between
 rounds, an interruption), the last round's text. A streamed turn
 learns its end after that message was written: its stored row is updated once
 the turn's deliveries are done (`ON_EVENT_UPDATED` fires), so read it from the
