@@ -6,7 +6,7 @@
     "§10.1.1",
     "§24.4"
   ],
-  "notes": "Python: channels/_ai_tools.py _record_activation records it; RFC §24.4. roomkit-rs does not record a standalone activation (RMK-1356, the rest of that question): it reads it from the stored rows at the room's first ordinary turn, so a standalone turn must leave the room unread. Same outcome on both in this case alone.",
+  "notes": "HITL 30895156 option 1, RMK-1356. Python: channels/_ai_tools.py _record_activation; a standalone turn reads the room's stored rows first, as any turn of a channel given a registry (_hydrate_room_memories), and what it activates is recorded.",
   "setup": {
     "channels": [
       {

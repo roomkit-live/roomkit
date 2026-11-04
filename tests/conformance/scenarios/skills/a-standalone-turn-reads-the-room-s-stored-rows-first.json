@@ -1,0 +1,297 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skills/a-standalone-turn-reads-the-room-s-stored-rows-first",
+  "title": "A turn standing alone in a room the agent serves anew reads its stored activations first: none reaches its prompt, and the next ordinary turn carries them with what it activated",
+  "rules": [
+    "§10.1.1",
+    "§10.6.3",
+    "§24.4"
+  ],
+  "notes": "HITL 30895156 option 1, RMK-1356. Python: channels/_ai_context.py _hydrate_room_memories runs before _add_skills on any turn, and channels/_ai_tools.py _record_activation adds to what it read. Read after it, the turn's own activation would mark the room read and the stored one would be lost.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "skills": [
+          {
+            "name": "x",
+            "description": "The x procedure",
+            "instructions": "Rules for x."
+          },
+          {
+            "name": "y",
+            "description": "The y procedure",
+            "instructions": "Rules for y."
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "x"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "first"
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "y"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "alone"
+            },
+            {
+              "text": "next"
+            }
+          ]
+        },
+        "skills_in_prompt": false
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "room-1",
+      "channel_id": "agent"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "agent",
+      "category": "intelligence"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Summarize."
+        },
+        "event_type": "instruction",
+        "addressed_to": [
+          "agent"
+        ],
+        "standalone": true
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Next"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "system_prompt": null,
+          "tool_results": [],
+          "tools": {
+            "activate_skill": 0,
+            "find_tools": {
+              "$absent": true
+            },
+            "list_tools": {
+              "$absent": true
+            },
+            "read_skill_reference": 1
+          },
+          "messages": [
+            {
+              "role": "user",
+              "text": "Hello"
+            }
+          ]
+        },
+        {
+          "system_prompt": null,
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "name": "activate_skill",
+              "content": "{\"name\": \"x\", \"description\": \"The x procedure\", \"instructions\": \"Rules for x.\"}",
+              "is_error": false
+            }
+          ],
+          "tools": {
+            "activate_skill": 0,
+            "find_tools": {
+              "$absent": true
+            },
+            "list_tools": {
+              "$absent": true
+            },
+            "read_skill_reference": 1
+          },
+          "messages": [
+            {
+              "role": "user",
+              "text": "Hello"
+            },
+            {
+              "role": "assistant",
+              "text": ""
+            },
+            {
+              "role": "tool",
+              "text": ""
+            }
+          ]
+        },
+        {
+          "system_prompt": null,
+          "tool_results": [],
+          "tools": {
+            "activate_skill": 0,
+            "find_tools": {
+              "$absent": true
+            },
+            "list_tools": {
+              "$absent": true
+            },
+            "read_skill_reference": 1
+          },
+          "messages": [
+            {
+              "role": "user",
+              "text": "[Instruction from the application: nobody in this conversation said it. Act on it now, in your own words, without quoting it.]\nSummarize."
+            }
+          ]
+        },
+        {
+          "system_prompt": null,
+          "tool_results": [
+            {
+              "tool_call_id": "c2",
+              "name": "activate_skill",
+              "content": "{\"name\": \"y\", \"description\": \"The y procedure\", \"instructions\": \"Rules for y.\"}",
+              "is_error": false
+            }
+          ],
+          "tools": {
+            "activate_skill": 0,
+            "find_tools": {
+              "$absent": true
+            },
+            "list_tools": {
+              "$absent": true
+            },
+            "read_skill_reference": 1
+          },
+          "messages": [
+            {
+              "role": "user",
+              "text": "[Instruction from the application: nobody in this conversation said it. Act on it now, in your own words, without quoting it.]\nSummarize."
+            },
+            {
+              "role": "assistant",
+              "text": ""
+            },
+            {
+              "role": "tool",
+              "text": ""
+            }
+          ]
+        },
+        {
+          "system_prompt": "\n\n# Active skill instructions (binding rules)\n\n## Skill: x\nRules for x.\n\n## Skill: y\nRules for y.",
+          "tool_results": [],
+          "tools": {
+            "activate_skill": 0,
+            "find_tools": {
+              "$absent": true
+            },
+            "list_tools": {
+              "$absent": true
+            },
+            "read_skill_reference": 1
+          },
+          "messages": [
+            {
+              "role": "user",
+              "text": "Hello"
+            },
+            {
+              "role": "assistant",
+              "text": "first"
+            },
+            {
+              "role": "assistant",
+              "text": "alone"
+            },
+            {
+              "role": "user",
+              "text": "Next"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

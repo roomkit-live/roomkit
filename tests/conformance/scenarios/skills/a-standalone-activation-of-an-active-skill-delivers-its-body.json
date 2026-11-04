@@ -1,0 +1,137 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skills/a-standalone-activation-of-an-active-skill-delivers-its-body",
+  "title": "A turn standing alone carries no active skill in its prompt, so its activation of a skill active in the room delivers the body, never an acknowledgement without rules",
+  "rules": [
+    "§10.1.1",
+    "§24.4"
+  ],
+  "notes": "HITL 30895156 option 1, RMK-1356. RFC §24.4: the model is never left holding an acknowledgement without rules. Python: channels/_ai_tools.py _handle_activate_skill.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "skills": [
+          {
+            "name": "shared",
+            "description": "The shared procedure",
+            "instructions": "Rules for shared."
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "shared"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "shared"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "alone"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Summarize."
+        },
+        "event_type": "instruction",
+        "addressed_to": [
+          "agent"
+        ],
+        "standalone": true
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {
+          "system_prompt": {
+            "$lacks": "Rules for shared."
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c2",
+              "content": {
+                "$contains": "Rules for shared."
+              },
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
