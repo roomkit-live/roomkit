@@ -827,17 +827,19 @@ async def test_the_rewrite_takes_only_a_list_for_a_declaration(tmp_path: Path) -
     conn.executemany(
         "INSERT INTO identity_addresses (channel_type, address, identity_id, organization_id)"
         " VALUES (?, ?, 'alice', '')",
-        [("sms", "+1"), ("mms", "+2")],
+        [("sms", "a@b.c"), ("mms", "+2")],
     )
+    # Text SQLite cannot read as JSON: json_each on it would raise, and stop the file
+    # from opening.
     conn.execute(
         "UPDATE identities SET data = json_set(data, '$.channel_addresses',"
-        ' json(\'{"sms": "+1", "mms": {"k": "+2"}}\')) WHERE id = \'alice\''
+        ' json(\'{"sms": "a@b.c", "mms": {"k": "+2"}}\')) WHERE id = \'alice\''
     )
     conn.execute("PRAGMA user_version=13")
     conn.commit()
     conn.close()
     reopened = SQLiteStore(path)
-    assert await reopened.resolve_identity("sms", "+1", organization_id="acme") is None
+    assert await reopened.resolve_identity("sms", "a@b.c", organization_id="acme") is None
     await reopened.close()
     assert _address_rows(path) == []
 
