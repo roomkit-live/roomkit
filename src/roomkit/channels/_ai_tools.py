@@ -1116,7 +1116,10 @@ class AIToolsMixin(_AIChannelContract):
         # blocks the call, or a failure, must open no gate (_settle_served_call).
         already_active = self._skill_activation.is_active(loop_ctx.room_id, skill_name)
         self._defer_activation(loop_ctx, skill_name)
-        if skill is None or not already_active:
+        # A standalone turn's prompt carries no active skill (RFC §10.1.1): its
+        # model holds no such rules, and an acknowledgement would leave it
+        # without them (RFC §24.4).
+        if skill is None or not already_active or loop_ctx.standalone:
             return result_str
         # Already active: _build_context put these very instructions in front of
         # the model before the turn started, so the body just built above would

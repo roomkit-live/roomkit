@@ -293,6 +293,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A standalone turn's activation of a skill active in the room delivers the body** (RFC §24.4, RMK-1356). Its prompt carries no active skill, so the acknowledgement left the model holding no rules.
 - **A hook's injected event stays in its message's trace** (RMK-1301).
   Its `framework.broadcast` was a root span, a trace apart from the call's: it is
   now a child of the call's span, as any other event's.
