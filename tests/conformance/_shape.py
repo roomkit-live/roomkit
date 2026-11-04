@@ -161,10 +161,12 @@ MODEL_ROUND = {
     "refuses",
     "failure_after_calls",
     "failure_after_done",
+    "stream",
+    "whole_response",
 }
 REFUSES = {"status", "message", "context_overflow", "provider", "retryable"}
 RETRY_POLICY = {"max_retries", "base_delay_ms", "max_delay_ms", "exponential_base"}
-MODEL_CALL = {"id", "name", "arguments", "cut"}
+MODEL_CALL = {"id", "name", "arguments", "cut", "metadata"}
 TOOL = {
     "name",
     "description",

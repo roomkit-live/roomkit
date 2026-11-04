@@ -14,7 +14,7 @@ import dataclasses
 import shutil
 import tempfile
 import weakref
-from collections.abc import AsyncIterator, Callable, Mapping
+from collections.abc import AsyncIterator, Callable, Iterator, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -29,6 +29,7 @@ from roomkit.providers.ai import (
     AIProvider,
     AIResponse,
     AITextPart,
+    AIThinkingPart,
     AITool,
     AIToolCall,
     ModelInfo,
@@ -41,6 +42,7 @@ from roomkit.providers.ai.base import (
     StreamTextDelta,
     StreamThinkingDelta,
     response_stream_events,
+    stream_call_of,
 )
 from roomkit.skills.registry import SkillRegistry
 from roomkit.tasks import CancelTaskTool, TaskStatusTool
@@ -144,6 +146,15 @@ class ScriptedModel(AIProvider):
         cross as one (RFC §10.6.4)."""
         round_ = self._next_round(context)
         await self._hold(round_)
+        if "whole_response" in round_:
+            for event in response_stream_events(_response(round_, self._labelled)):
+                yield event
+            return
+        if "stream" in round_:
+            for event in _stream_events(round_, self._labelled):
+                yield event
+                await asyncio.sleep(0)
+            return
         for piece in round_.get("thinking", []):
             yield StreamThinkingDelta(thinking=piece)
             await asyncio.sleep(0)
@@ -216,24 +227,50 @@ def _deltas(round_: Mapping[str, Any]) -> list[str]:
     return [text] if text else []
 
 
+def _tool_call(call: Mapping[str, Any], labelled: Callable[[Any], Any] | None) -> AIToolCall:
+    written = labelled or (lambda arguments: arguments)
+    return AIToolCall(
+        id=call["id"],
+        name=call["name"],
+        arguments=written(dict(call.get("arguments", {}))),
+        metadata=dict(call.get("metadata", {})),
+        partial=bool(call.get("cut", False)),
+    )
+
+
 def _response(
     round_: Mapping[str, Any], labelled: Callable[[Any], Any] | None = None
 ) -> AIResponse:
-    written = labelled or (lambda arguments: arguments)
-    calls = [
-        AIToolCall(
-            id=call["id"],
-            name=call["name"],
-            arguments=written(dict(call.get("arguments", {}))),
-            partial=bool(call.get("cut", False)),
-        )
-        for call in round_.get("calls", [])
-    ]
+    calls = [_tool_call(call, labelled) for call in round_.get("calls", [])]
+    whole = round_.get("whole_response", {})
+    parts = whole.get("thinking_parts")
     return AIResponse(
         content="".join(_deltas(round_)),
+        thinking=whole.get("thinking"),
+        thinking_signature=whole.get("thinking_signature"),
+        thinking_parts=None if parts is None else [AIThinkingPart(**part) for part in parts],
         finish_reason=round_.get("finish_reason", "tool_calls" if calls else "stop"),
         usage=dict(round_.get("usage", {})),
         tool_calls=calls,
+    )
+
+
+def _stream_events(
+    round_: Mapping[str, Any], labelled: Callable[[Any], Any] | None
+) -> Iterator[StreamEvent]:
+    """A round's ``stream``, in its order, then its end."""
+    called = False
+    for event in round_["stream"]:
+        if "call" in event:
+            called = True
+            yield stream_call_of(_tool_call(event["call"], labelled))
+        elif "text" in event:
+            yield StreamTextDelta(text=event["text"])
+        else:
+            yield StreamThinkingDelta(**event)
+    yield StreamDone(
+        finish_reason=round_.get("finish_reason", "tool_calls" if called else "stop"),
+        usage=dict(round_.get("usage", {})),
     )
 
 
@@ -246,9 +283,29 @@ def messages(context: AIContext) -> list[dict[str, Any]]:
             "role": message.role,
             "text": _text_of(message.content),
             "parts": _parts_of(message.content),
+            "round": _round_of(message.content),
         }
         for message in context.messages
     ]
+
+
+def _round_of(content: Any) -> list[dict[str, Any]] | None:
+    """A message's reasoning, text and call parts in order, None for a text
+    content."""
+    if isinstance(content, str):
+        return None
+    read: list[dict[str, Any]] = []
+    for part in content:
+        kind = getattr(part, "type", None)
+        if kind == "thinking":
+            read.append(
+                {"thinking": part.thinking, "signature": part.signature, "redacted": part.redacted}
+            )
+        elif kind == "text":
+            read.append({"text": part.text})
+        elif kind == "tool_call":
+            read.append({"call": part.id, "metadata": part.metadata})
+    return read
 
 
 def _parts_of(content: Any) -> list[dict[str, Any]] | None:
