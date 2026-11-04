@@ -2228,7 +2228,8 @@ class SQLiteStore(ConversationStore):
     def _x_get_identity(self, identity_id: str) -> Identity | None:
         row = (
             self._db()
-            .execute("SELECT data FROM identities WHERE id = ?", (identity_id,))
+            # As bytes: SQLite's own refusal of text that is no UTF-8 quotes the record.
+            .execute("SELECT CAST(data AS BLOB) FROM identities WHERE id = ?", (identity_id,))
             .fetchone()
         )
         return Identity.model_validate_json(row[0]) if row is not None else None

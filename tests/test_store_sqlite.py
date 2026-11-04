@@ -876,20 +876,18 @@ async def test_a_row_no_read_serves_leaves_its_address_free(
         '{"email": "a@globex.example"}',
         '{"id": "i1", "channel_addresses": "x"}',
         '["a@globex.example"]',
+        b'\xff{"id": "i1", "email": "a@globex.example"}',
     ],
 )
 async def test_a_holder_the_model_cannot_read_keeps_its_address(
-    tmp_path: Path, record: str
+    tmp_path: Path, record: str | bytes
 ) -> None:
     """RFC §5.6: the refusal stands, and quotes no part of the holder's record, which
     may be another organization's: a record with no id, of the wrong type, or no object."""
     path = tmp_path / "older.db"
     store = SQLiteStore(path)
     await store.create_identity(Identity(id="i1", organization_id="globex"))
-    conn = sqlite3.connect(path)
-    conn.execute("UPDATE identities SET data = ? WHERE id = 'i1'", (record,))
-    conn.commit()
-    conn.close()
+    _spoil_the_record(path, record)
     _insert_address(path, ("+1555", "i1", "acme"))
     with pytest.raises(AddressLinkedError) as refused:
         await store.create_identity(
@@ -901,33 +899,41 @@ async def test_a_holder_the_model_cannot_read_keeps_its_address(
     assert _address_rows(path) == [("+1555", "i1", "acme")]
 
 
-@pytest.mark.parametrize(
-    "record",
-    [
-        '{"email": "a@globex.example"}',
-        '{"id": "i1", "channel_addresses": "x"}',
-        '["a@globex.example"]',
-    ],
-)
+_UNREADABLE_RECORDS = [
+    '{"email": "a@globex.example"}',
+    '{"id": "i1", "email": "a@globex.example", "channel_addresses": "x"}',
+    '["a@globex.example"]',
+    "not json, a@globex.example",
+    b'\xff{"id": "i1", "email": "a@globex.example"}',
+]
+
+
+def _spoil_the_record(path: Path, record: str | bytes) -> None:
+    """Writes *record* over the identity i1's, as text whatever it holds."""
+    conn = sqlite3.connect(path)
+    conn.execute("UPDATE identities SET data = CAST(? AS TEXT) WHERE id = 'i1'", (record,))
+    conn.commit()
+    conn.close()
+
+
+@pytest.mark.parametrize("record", _UNREADABLE_RECORDS)
 async def test_a_record_the_model_cannot_read_serves_no_read(
-    tmp_path: Path, record: str, caplog: pytest.LogCaptureFixture
+    tmp_path: Path, record: str | bytes, caplog: pytest.LogCaptureFixture
 ) -> None:
     """HITL 4ee4d298: it resolves to nobody, for any organization, and neither the caller
     nor the log reads the record, which may be another organization's."""
     path = tmp_path / "older.db"
     store = SQLiteStore(path)
     await store.create_identity(Identity(id="i1", organization_id="globex"))
-    conn = sqlite3.connect(path)
-    conn.execute("UPDATE identities SET data = ? WHERE id = 'i1'", (record,))
-    conn.commit()
-    conn.close()
+    _spoil_the_record(path, record)
     _insert_address(path, ("+1555", "i1", "acme"))
-    with caplog.at_level("WARNING", logger="roomkit.store.sqlite"):
+    with caplog.at_level(logging.WARNING, logger="roomkit.store.sqlite"):
         resolved = await store.resolve_identity("sms", "+1555", organization_id="acme")
     await store.close()
     assert resolved is None
     assert "i1" in caplog.text
     assert "globex" not in caplog.text
+    assert "+1555" not in caplog.text
 
 
 async def test_an_unlink_removes_the_identity_s_rows_in_every_scope(tmp_path: Path) -> None:
