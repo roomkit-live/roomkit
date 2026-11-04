@@ -1,0 +1,114 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-record/a-generation-that-failed-leaves-no-last-usage",
+  "title": "A turn a failed generation ended does not read the generation before it as its last usage: its record names none, and reads incomplete",
+  "rules": [
+    "§6.4 The turn's record"
+  ],
+  "notes": "Python: channels/_ai_streaming.py _StreamTurnState.end, core/mixins/_streaming_segments.py end_turn (RMK-1056). roomkit-rs: tests/turn/main.rs failed_generation_does_not_reuse_previous_request_usage (RMK-1029).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up.",
+            "returns": "found"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "text": "Checking.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 100,
+                "output_tokens": 10
+              }
+            },
+            {
+              "text": "",
+              "fails": "provider unavailable"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0
+        },
+        {
+          "index": 1,
+          "content": {
+            "body": "Checking."
+          },
+          "metadata": {
+            "loop_end_reason": "error",
+            "ai_usage": {
+              "input_tokens": 100,
+              "output_tokens": 10
+            },
+            "ai_last_usage": null,
+            "ai_usage_complete": false,
+            "ai_model": "scripted",
+            "ai_provider": "scripted"
+          }
+        },
+        {
+          "index": 2
+        },
+        {
+          "index": 3
+        }
+      ]
+    }
+  }
+}

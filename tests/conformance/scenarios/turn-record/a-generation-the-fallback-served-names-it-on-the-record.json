@@ -1,0 +1,113 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-record/a-generation-the-fallback-served-names-it-on-the-record",
+  "title": "A generation the fallback provider served names that provider and its model on the turn's record, the provider the channel was given no longer being the one the turn ran on",
+  "rules": [
+    "§6.4 The turn's record"
+  ],
+  "notes": "Python: channels/_ai_streaming.py _StreamTurnState.end, core/mixins/_streaming_segments.py end_turn (RMK-1056). roomkit-rs: tool_loop/mod.rs end_of, by_fallback (RMK-1029).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "retry_policy": {
+          "max_retries": 0,
+          "base_delay_ms": 1
+        },
+        "model": {
+          "name": "opus",
+          "provider": "anthropic",
+          "rounds": [
+            {
+              "refuses": {
+                "status": 503,
+                "message": "the primary is overloaded",
+                "retryable": true
+              }
+            }
+          ]
+        },
+        "fallback_model": {
+          "name": "gpt",
+          "provider": "openai",
+          "rounds": [
+            {
+              "text": "Hello.",
+              "usage": {
+                "input_tokens": 5,
+                "output_tokens": 2
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0
+        },
+        {
+          "index": 1,
+          "content": {
+            "body": "Hello."
+          },
+          "metadata": {
+            "loop_end_reason": "completed",
+            "ai_usage": {
+              "input_tokens": 5,
+              "output_tokens": 2
+            },
+            "ai_last_usage": {
+              "input_tokens": 5,
+              "output_tokens": 2
+            },
+            "ai_usage_complete": true,
+            "ai_model": "gpt",
+            "ai_provider": "openai"
+          }
+        }
+      ]
+    }
+  }
+}
