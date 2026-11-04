@@ -1,0 +1,190 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-handoff-greeting-is-the-active-agent-s-line",
+  "title": "A handler's send_greeting has the room's active agent say the line the handler's greeting map gives it, stored and delivered as that agent's message and never as an inbound one, whatever the room's language",
+  "rules": [
+    "§19.1",
+    "§19.6"
+  ],
+  "notes": "Python: tests/orchestration/test_handoff.py TestSendGreeting::test_send_greeting_traditional_voice, test_send_greeting_traditional_voice_keeps_the_line_as_written, TestSendGreetingOnARealKit::test_the_greeting_is_the_agents_line_in_the_room. orchestration/handoff.py HandoffHandler.send_greeting. The agent's own greeting is not what it says: triage's differs from the map's.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "triage",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": []
+        },
+        "agent": {
+          "auto_greet": false,
+          "greeting": "Its own words"
+        }
+      },
+      {
+        "id": "sales",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": []
+        },
+        "agent": {
+          "auto_greet": false,
+          "role": "Sales"
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "triage",
+            "category": "intelligence",
+            "access": "write_only"
+          },
+          {
+            "channel_id": "sales",
+            "category": "intelligence",
+            "access": "write_only"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "triage",
+            "category": "intelligence",
+            "access": "write_only"
+          },
+          {
+            "channel_id": "sales",
+            "category": "intelligence",
+            "access": "write_only"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "handoff_handler",
+      "handler": "h",
+      "router": {
+        "default_agent_id": "triage"
+      },
+      "greeting_map": {
+        "triage": "Welcome!",
+        "sales": "Bienvenue !"
+      }
+    },
+    {
+      "call": "save_conversation_state",
+      "room_id": "r1",
+      "transitions": [
+        {
+          "to_phase": "intake",
+          "to_agent": "sales"
+        }
+      ]
+    },
+    {
+      "call": "handoff.set_language",
+      "handler": "h",
+      "room_id": "r1",
+      "language": "French"
+    },
+    {
+      "call": "save_conversation_state",
+      "room_id": "r2",
+      "transitions": [
+        {
+          "to_phase": "intake",
+          "to_agent": "triage"
+        }
+      ]
+    },
+    {
+      "call": "handoff.send_greeting",
+      "handler": "h",
+      "room_id": "r1",
+      "channel_id": "sms"
+    },
+    {
+      "call": "handoff.send_greeting",
+      "handler": "h",
+      "room_id": "r2",
+      "channel_id": "sms"
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "index": 0,
+          "type": "message",
+          "source": {
+            "channel_id": "sales",
+            "channel_type": "ai",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "Bienvenue !"
+          },
+          "metadata": {
+            "auto_greeting": true
+          },
+          "status": "delivered"
+        }
+      ],
+      "r2": [
+        {
+          "index": 0,
+          "type": "message",
+          "source": {
+            "channel_id": "triage",
+            "channel_type": "ai",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "Welcome!"
+          },
+          "metadata": {
+            "auto_greeting": true
+          },
+          "status": "delivered"
+        }
+      ]
+    },
+    "deliveries": {
+      "r1": {
+        "sms": [
+          {
+            "id": "r1#0"
+          }
+        ]
+      },
+      "r2": {
+        "sms": [
+          {
+            "id": "r2#0"
+          }
+        ]
+      }
+    }
+  }
+}

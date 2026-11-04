@@ -1,0 +1,72 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-handoff-greeting-in-a-missing-room-is-not-found",
+  "title": "A handler's send_greeting reads the room first, so a room missing is not found, where the kit's own send_greeting does nothing",
+  "rules": [
+    "§19.1",
+    "§19.6"
+  ],
+  "notes": "Python: orchestration/handoff.py HandoffHandler.send_greeting: room = await self._kit.get_room(room_id).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sales",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": []
+        },
+        "agent": {
+          "auto_greet": false,
+          "role": "Sales"
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "sales",
+            "category": "intelligence",
+            "access": "write_only"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "handoff_handler",
+      "handler": "h",
+      "router": {
+        "default_agent_id": "sales"
+      },
+      "greeting_map": {
+        "sales": "Hello"
+      }
+    },
+    {
+      "call": "handoff.send_greeting",
+      "handler": "h",
+      "room_id": "missing",
+      "channel_id": "sms",
+      "expect": {
+        "error": "room_not_found"
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": []
+    }
+  }
+}

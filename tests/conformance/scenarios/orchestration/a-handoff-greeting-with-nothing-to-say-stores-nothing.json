@@ -1,0 +1,183 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-handoff-greeting-with-nothing-to-say-stores-nothing",
+  "title": "A handler's send_greeting says nothing with no active agent, with no line in its greeting map for the active agent, whatever that agent's own greeting, with an empty line, and with no channel named by the call or the handler",
+  "rules": [
+    "§19.1",
+    "§19.6"
+  ],
+  "notes": "Python: tests/orchestration/test_handoff.py TestSendGreeting::test_send_greeting_no_greeting_configured, test_send_greeting_no_active_agent. orchestration/handoff.py HandoffHandler.send_greeting, its three early returns. In no-agent the room binds an agent with a line, the router's default, which no fallback may take; in empty-line and no-line the agent has words of its own, which the map's silence holds back.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "triage",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": []
+        },
+        "agent": {
+          "auto_greet": false,
+          "greeting": "Its own words"
+        }
+      },
+      {
+        "id": "quiet",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": []
+        },
+        "agent": {
+          "auto_greet": false,
+          "greeting": "Its own words too"
+        }
+      },
+      {
+        "id": "sales",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": []
+        },
+        "agent": {
+          "auto_greet": false,
+          "role": "Sales"
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "no-agent",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "sales",
+            "category": "intelligence",
+            "access": "write_only"
+          }
+        ]
+      },
+      {
+        "id": "no-line",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "triage",
+            "category": "intelligence",
+            "access": "write_only"
+          }
+        ]
+      },
+      {
+        "id": "empty-line",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "quiet",
+            "category": "intelligence",
+            "access": "write_only"
+          }
+        ]
+      },
+      {
+        "id": "no-channel",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "sales",
+            "category": "intelligence",
+            "access": "write_only"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "handoff_handler",
+      "handler": "h",
+      "router": {
+        "default_agent_id": "sales"
+      },
+      "greeting_map": {
+        "quiet": "",
+        "sales": "Hello"
+      }
+    },
+    {
+      "call": "save_conversation_state",
+      "room_id": "no-line",
+      "transitions": [
+        {
+          "to_phase": "intake",
+          "to_agent": "triage"
+        }
+      ]
+    },
+    {
+      "call": "save_conversation_state",
+      "room_id": "empty-line",
+      "transitions": [
+        {
+          "to_phase": "intake",
+          "to_agent": "quiet"
+        }
+      ]
+    },
+    {
+      "call": "save_conversation_state",
+      "room_id": "no-channel",
+      "transitions": [
+        {
+          "to_phase": "intake",
+          "to_agent": "sales"
+        }
+      ]
+    },
+    {
+      "call": "handoff.send_greeting",
+      "handler": "h",
+      "room_id": "no-agent",
+      "channel_id": "sms"
+    },
+    {
+      "call": "handoff.send_greeting",
+      "handler": "h",
+      "room_id": "no-line",
+      "channel_id": "sms"
+    },
+    {
+      "call": "handoff.send_greeting",
+      "handler": "h",
+      "room_id": "empty-line",
+      "channel_id": "sms"
+    },
+    {
+      "call": "handoff.send_greeting",
+      "handler": "h",
+      "room_id": "no-channel"
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "no-agent": [],
+      "no-line": [],
+      "empty-line": [],
+      "no-channel": []
+    }
+  }
+}

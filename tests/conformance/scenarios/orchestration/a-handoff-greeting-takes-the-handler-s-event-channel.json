@@ -1,0 +1,155 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-handoff-greeting-takes-the-handler-s-event-channel",
+  "title": "A handler's send_greeting with no channel takes the handler's event channel; a channel the kit does not hold is no refusal, since the channel is read only for a realtime session, and the greeting reaches the whole room",
+  "rules": [
+    "§19.1",
+    "§19.6"
+  ],
+  "notes": "Python: orchestration/handoff.py HandoffHandler.send_greeting: channel_id or self._event_channel_id, then self._kit.channels.get(ch_id).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sales",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": []
+        },
+        "agent": {
+          "auto_greet": false,
+          "role": "Sales"
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "sales",
+            "category": "intelligence",
+            "access": "write_only"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "sales",
+            "category": "intelligence",
+            "access": "write_only"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "handoff_handler",
+      "handler": "with-channel",
+      "router": {
+        "default_agent_id": "sales"
+      },
+      "greeting_map": {
+        "sales": "Hello"
+      },
+      "event_channel_id": "sms"
+    },
+    {
+      "call": "handoff_handler",
+      "handler": "without",
+      "router": {
+        "default_agent_id": "sales"
+      },
+      "greeting_map": {
+        "sales": "Hi"
+      }
+    },
+    {
+      "call": "save_conversation_state",
+      "room_id": "r1",
+      "transitions": [
+        {
+          "to_phase": "intake",
+          "to_agent": "sales"
+        }
+      ]
+    },
+    {
+      "call": "save_conversation_state",
+      "room_id": "r2",
+      "transitions": [
+        {
+          "to_phase": "intake",
+          "to_agent": "sales"
+        }
+      ]
+    },
+    {
+      "call": "handoff.send_greeting",
+      "handler": "with-channel",
+      "room_id": "r1"
+    },
+    {
+      "call": "handoff.send_greeting",
+      "handler": "without",
+      "room_id": "r2",
+      "channel_id": "nowhere"
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "index": 0,
+          "type": "message",
+          "source": {
+            "channel_id": "sales",
+            "channel_type": "ai",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "Hello"
+          },
+          "metadata": {
+            "auto_greeting": true
+          },
+          "status": "delivered"
+        }
+      ],
+      "r2": [
+        {
+          "index": 0,
+          "type": "message",
+          "source": {
+            "channel_id": "sales",
+            "channel_type": "ai",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "Hi"
+          },
+          "metadata": {
+            "auto_greeting": true
+          },
+          "status": "delivered"
+        }
+      ]
+    }
+  }
+}
