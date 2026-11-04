@@ -166,6 +166,13 @@ class LoopEndMarker:
     such limit; a marker the channel did not build may leave them all unset.
     They ride the marker only: ``ON_AI_RESPONSE`` reports the reason and
     ``round_count``, not the limits.
+
+    ``last_usage`` is what the turn's last generation used, ``None`` when it
+    failed; ``usage_complete`` says whether every generation reported its
+    input and output counters, ``None`` when the channel does not say; ``model``
+    and ``provider`` name what the turn's last generation ran on, a fallback
+    provider when it served it. They ride the turn's record too, as
+    ``ai_last_usage``, ``ai_usage_complete``, ``ai_model`` and ``ai_provider``.
     """
 
     reason: LoopEndReason
@@ -175,6 +182,10 @@ class LoopEndMarker:
     timeout_seconds: float | None = None
     budget_tokens: int | None = None
     budget_usd: float | None = None
+    last_usage: dict[str, Any] | None = None
+    usage_complete: bool | None = None
+    model: str | None = None
+    provider: str | None = None
 
 
 #: Union of all marker types that may appear in a streaming response.

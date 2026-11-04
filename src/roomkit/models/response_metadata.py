@@ -145,7 +145,17 @@ def turn_summary(*records: Mapping[str, Any]) -> dict[str, Any] | None:
     return None
 
 
-_TURN_RECORD_KEYS = frozenset({TURNS_KEY, "loop_end_reason", "ai_usage"})
+_TURN_RECORD_KEYS = frozenset(
+    {
+        TURNS_KEY,
+        "loop_end_reason",
+        "ai_usage",
+        "ai_last_usage",
+        "ai_usage_complete",
+        "ai_model",
+        "ai_provider",
+    }
+)
 """What a turn's own record carries, which the caller reads under ``turns``
 only (RFC §6.4)."""
 
@@ -154,7 +164,9 @@ def merge_channel_record(into: MutableMapping[str, Any], record: Mapping[str, An
     """Merge a replying channel's record into the caller's: every key as the
     channel, its hooks and tools wrote it, but how its turn ended (``turns``,
     ``loop_end_reason``, ``ai_usage``), which RoomKit keeps under ``turns``
-    itself (RFC §6.4)."""
+    itself, and what the turn's own record says of its generations
+    (``ai_last_usage``, ``ai_usage_complete``, ``ai_model``, ``ai_provider``),
+    which rides its last message only (RFC §6.4)."""
     into.update({key: value for key, value in record.items() if key not in _TURN_RECORD_KEYS})
 
 

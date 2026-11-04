@@ -3203,7 +3203,7 @@
     "__init__": ["def", "*", "type='location'", "latitude", "longitude", "label=None", "address=None"]
   },
   "roomkit.models.LoopEndMarker": {
-    "__init__": ["def", "reason", "rounds=0", "usage=<factory>", "max_rounds=None", "timeout_seconds=None", "budget_tokens=None", "budget_usd=None"]
+    "__init__": ["def", "reason", "rounds=0", "usage=<factory>", "max_rounds=None", "timeout_seconds=None", "budget_tokens=None", "budget_usd=None", "last_usage=None", "usage_complete=None", "model=None", "provider=None"]
   },
   "roomkit.models.MediaContent": {
     "__init__": ["def", "*", "type='media'", "url", "mime_type", "filename=None", "size_bytes=None", "caption=None"]

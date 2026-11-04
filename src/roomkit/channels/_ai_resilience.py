@@ -84,7 +84,11 @@ class AIResilienceMixin(_AIChannelContract):
     _tool_call_intents_required: bool
 
     async def _generate_stream_with_retry(
-        self, context: AIContext, *, received: Callable[[], None] | None = None
+        self,
+        context: AIContext,
+        *,
+        received: Callable[[], None] | None = None,
+        on_fallback: Callable[[], None] | None = None,
     ) -> AsyncIterator[StreamEvent | _StreamRetryBoundary]:
         """Stream with compaction, retry and optional fallback.
 
@@ -167,6 +171,8 @@ class AIResilienceMixin(_AIChannelContract):
 
         # Fallback — only reachable when nothing was emitted.
         if self._fallback_provider and last_error:
+            if on_fallback is not None:
+                on_fallback()
             fallback = self._fallback_stream(context, last_error, received)
             async with aclosing(fallback) as events:
                 async for event in events:

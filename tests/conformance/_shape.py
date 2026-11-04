@@ -143,7 +143,7 @@ AGENT = {
     "greeting",
     "auto_greet",
 }
-MODEL = {"rounds", "vision", "pricing", "context_window"}
+MODEL = {"rounds", "vision", "pricing", "context_window", "name", "provider"}
 MODEL_ROUND = {
     "text",
     "deltas",

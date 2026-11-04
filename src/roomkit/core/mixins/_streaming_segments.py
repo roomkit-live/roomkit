@@ -103,6 +103,21 @@ class TurnScope:
         )
 
 
+def _ended_record(marker: LoopEndMarker) -> dict[str, Any]:
+    """The record of a turn whose loop reached its end, as its *marker* tells
+    it (RFC §6.4): how it ended and what it used, then what a channel that
+    says so said of its generations."""
+    record: dict[str, Any] = {"ai_usage": dict(marker.usage), "loop_end_reason": marker.reason}
+    if marker.usage_complete is not None:
+        record["ai_last_usage"] = marker.last_usage
+        record["ai_usage_complete"] = marker.usage_complete
+    if marker.model is not None:
+        record["ai_model"] = marker.model
+    if marker.provider is not None:
+        record["ai_provider"] = marker.provider
+    return record
+
+
 class SegmentWriter:
     """The one writer of a streamed turn's timeline rows.
 
@@ -201,7 +216,7 @@ class SegmentWriter:
         the stream too, where a reader of the turn finds how it ended when it
         wrote no message at all.
         """
-        self._turn_record = {"ai_usage": dict(marker.usage), "loop_end_reason": marker.reason}
+        self._turn_record = _ended_record(marker)
         self._record_owed = True
         self._sr.turn_record = self._turn_record
 

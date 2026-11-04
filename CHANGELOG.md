@@ -54,6 +54,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A turn's record keeps its last generation, its model and its provider**
+  (RMK-1056). Beside `ai_usage` and `loop_end_reason`, the turn's last message
+  carries `ai_last_usage`, `ai_usage_complete`, `ai_model` and `ai_provider`,
+  as roomkit-rs writes them, from four new fields of `LoopEndMarker`.
+
 - **`AIChannelTurnConfig.skills` gives a turn its own skill registry**
   (RMK-1282). A channel serves an agent in every room and is built once, so
   its registry could not hold the skills that belong to the person a turn is

@@ -55,10 +55,19 @@ class _StreamRoundState:
     # a response schema holds included: its answer began, so it took the
     # request (RFC §6.4).
     received: bool = False
+    # What the generation used, as its done event reports it; empty when it
+    # reported nothing, or was cut before it.
+    usage: dict[str, Any] = field(default_factory=dict)
+    # Whether the fallback provider served it.
+    by_fallback: bool = False
 
     def note_received(self) -> None:
         """The provider handed an event."""
         self.received = True
+
+    def note_fallback(self) -> None:
+        """The fallback provider took the generation over."""
+        self.by_fallback = True
 
     @property
     def text(self) -> str:
@@ -268,6 +277,7 @@ class _StreamRound:
                     state.finish_reason = event.finish_reason
                     state.refusal = event.metadata.get("refusal")
                     if event.usage:
+                        state.usage = event.usage
                         self.record_usage(event.usage)
 
             finished = list(self._dedup.finish())

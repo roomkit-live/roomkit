@@ -87,7 +87,15 @@ class _StreamTurnState:
     # The limits the turn runs under, as its end marker states them.
     max_rounds: int
     timeout_seconds: float | None
+    # What the turn's last generation ran on: the channel's provider until
+    # its fallback serves one.
+    model: str
+    provider: str
     usage: dict[str, int] = field(default_factory=dict)
+    # What the turn's last generation used, ``None`` once one failed, and
+    # whether every generation reported its counters (RFC §6.4).
+    last_usage: dict[str, Any] | None = field(default_factory=dict)
+    usage_complete: bool = True
     segments: list[list[str]] = field(default_factory=list)
     tool_calls_count: int = 0
     tool_rounds_count: int = 0
@@ -106,6 +114,18 @@ class _StreamTurnState:
         self.tool_calls_count += len(calls)
         self.tool_rounds_count += 1
 
+    def count_generation(self, state: _StreamRoundState, served_by: AIProvider) -> None:
+        """Take what a generation that returned leaves the turn's record."""
+        self.last_usage = dict(state.usage)
+        self.usage_complete = self.usage_complete and reports_counters(state.usage)
+        self.model = served_by.model_name
+        self.provider = served_by.name
+
+    def generation_failed(self) -> None:
+        """A generation failed: the turn's last one reported nothing."""
+        self.last_usage = None
+        self.usage_complete = False
+
     def end(self, reason: LoopEndReason) -> LoopEndMarker:
         """End the loop on *reason*: the marker the consumer reads it from,
         with the tool rounds that ran and the limits the turn ran under. The
@@ -121,7 +141,19 @@ class _StreamTurnState:
             timeout_seconds=self.timeout_seconds,
             budget_tokens=budget.tokens if budget is not None else None,
             budget_usd=budget.usd if budget is not None else None,
+            last_usage=None if self.last_usage is None else dict(self.last_usage),
+            usage_complete=self.usage_complete,
+            model=self.model,
+            provider=self.provider,
         )
+
+
+def reports_counters(usage: dict[str, Any]) -> bool:
+    """Whether a generation's *usage* holds its input and output counters."""
+    return all(
+        type(used := usage.get(counter)) is int and used >= 0
+        for counter in ("input_tokens", "output_tokens")
+    )
 
 
 def _turn_span_attributes(turn: _StreamTurnState) -> dict[str, Any]:
@@ -198,6 +230,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
     """
 
     _provider: AIProvider
+    _fallback_provider: AIProvider | None
     _max_tool_rounds: int
     _tool_loop_timeout_seconds: float | None
     _tool_loop_warn_after: int
@@ -379,6 +412,8 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
             max_rounds=self._max_tool_rounds,
             # Unset or zero: no deadline.
             timeout_seconds=self._tool_loop_timeout_seconds or None,
+            model=self._provider.model_name,
+            provider=self._provider.name,
         )
 
     @asynccontextmanager
@@ -591,12 +626,17 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         try:
             async with aclosing(
                 round_.stream(
-                    self._generate_stream_with_retry(context, received=round_.state.note_received)
+                    self._generate_stream_with_retry(
+                        context,
+                        received=round_.state.note_received,
+                        on_fallback=round_.state.note_fallback,
+                    )
                 )
             ) as deltas:
                 async for delta in deltas:
                     yield delta
         except Exception as exc:
+            turn.generation_failed()
             # A provider fails whatever it raises (RMK-1199); only its own
             # error can say it refused the content, before it handed anything.
             first = index == 0 and not round_.state.received
@@ -609,6 +649,13 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
             raise
         if round_.state.thinking:
             turn.thinking.append(round_.state.thinking)
+        turn.count_generation(round_.state, self._served_by(round_.state))
+
+    def _served_by(self, state: _StreamRoundState) -> AIProvider:
+        """The provider that served a generation."""
+        if state.by_fallback and self._fallback_provider is not None:
+            return self._fallback_provider
+        return self._provider
 
     def _forget_sent_images(self, turn: _StreamTurnState, context: AIContext) -> None:
         """Send no more the images a request whose content the provider refused

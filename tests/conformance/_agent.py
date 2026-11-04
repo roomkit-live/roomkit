@@ -85,8 +85,12 @@ class ScriptedModel(AIProvider):
         labelled: Callable[[Any], Any] | None = None,
         pricing: Mapping[str, Any] | None = None,
         context_window: int | None = None,
+        name: str = "scripted",
+        provider: str = "scripted",
     ) -> None:
         self._context_window = context_window
+        self._name = name
+        self._provider = provider
         self._rounds = list(rounds)
         self._gates = gates
         self._vision = vision
@@ -95,8 +99,12 @@ class ScriptedModel(AIProvider):
         self.requests: list[dict[str, Any]] = []
 
     @property
+    def name(self) -> str:
+        return self._provider
+
+    @property
     def model_name(self) -> str:
-        return "scripted"
+        return self._name
 
     @property
     def supports_vision(self) -> bool:
@@ -357,6 +365,8 @@ def scripted_agent(
         labelled=labelled,
         pricing=spec["model"].get("pricing"),
         context_window=spec["model"].get("context_window"),
+        name=spec["model"].get("name", "scripted"),
+        provider=spec["model"].get("provider", "scripted"),
     )
     models = {spec["id"]: model}
     tools = spec.get("tools", [])
@@ -400,6 +410,8 @@ def scripted_agent(
             vision=bool(spec["fallback_model"].get("vision", False)),
             labelled=labelled,
             pricing=spec["fallback_model"].get("pricing"),
+            name=spec["fallback_model"].get("name", "scripted"),
+            provider=spec["fallback_model"].get("provider", "scripted"),
         )
         models[f"{spec['id']}/fallback"] = fallback
         kwargs["fallback_provider"] = fallback

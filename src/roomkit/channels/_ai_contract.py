@@ -127,7 +127,11 @@ class _AIChannelContract:
     ) -> tuple[AIContext, bool]: ...
 
     def _generate_stream_with_retry(
-        self, context: AIContext, *, received: Callable[[], None] | None = None
+        self,
+        context: AIContext,
+        *,
+        received: Callable[[], None] | None = None,
+        on_fallback: Callable[[], None] | None = None,
     ) -> AsyncIterator[StreamEvent | _StreamRetryBoundary]: ...
 
     def _record_declared_tools(
