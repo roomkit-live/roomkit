@@ -1635,9 +1635,9 @@ async def test_an_add_to_a_missing_room_stays_the_foreign_key_s_refusal(
 
 @pytest.mark.stress
 async def test_the_writers_of_one_room_at_once_never_deadlock() -> None:
-    """40 commits, 40 automatic adds and 40 adds at their own index, on one room, each
-    on its connection: none is killed for a deadlock (RMK-1365). The own indexes stay
-    far apart, so that a reserved index never meets one."""
+    """40 commits, 40 automatic adds and 40 adds at their own index, on one room, over
+    40 connections: none is killed for a deadlock (RMK-1365). The own indexes stay far
+    apart, so that a reserved index never meets one."""
     import asyncpg
 
     from roomkit.store.postgres import PostgresStore
@@ -1668,6 +1668,42 @@ async def test_the_writers_of_one_room_at_once_never_deadlock() -> None:
     deadlocks = [o for o in outcomes if isinstance(o, asyncpg.DeadlockDetectedError)]
     assert not deadlocks, f"{len(deadlocks)} of {len(outcomes)} calls killed"
     assert not [o for o in outcomes if isinstance(o, BaseException)]
+
+
+@pytest.mark.stress
+@pytest.mark.parametrize("waiting", ["commit_event", "update_room_if"])
+async def test_a_stream_of_adds_starves_nothing_on_its_room(waiting: str) -> None:
+    """Four sessions adding to one room without a pause: what takes the room's row
+    ``FOR UPDATE`` still gets its turn. An add holds the room while it queues on the
+    sequence, and a lock an add's next one can share would never leave the row free."""
+    from roomkit.store.postgres import PostgresStore
+
+    store = PostgresStore(dsn=POSTGRES_DSN)
+    await store.init(min_size=1, max_size=8)
+    room_id = f"r-{uuid4().hex}"
+    room = await store.create_room(Room(id=room_id))
+    stop = asyncio.Event()
+
+    async def adding() -> None:
+        while not stop.is_set():
+            await store.add_event_auto_index(room_id, _make_event(room_id=room_id))
+
+    adders = [asyncio.create_task(adding()) for _ in range(4)]
+    try:
+        await asyncio.sleep(0.05)
+        if waiting == "commit_event":
+            await asyncio.wait_for(store.commit_event(room_id, _make_event(room_id=room_id)), 2)
+        else:
+            await asyncio.wait_for(
+                store.update_room_if(
+                    room, status=room.status, paused_at=room.paused_at, last_activity_at=None
+                ),
+                2,
+            )
+    finally:
+        stop.set()
+        await asyncio.gather(*adders)
+        await store.close()
 
 
 @pytest.mark.parametrize("write", ["commit_event", "add_event", "add_event_auto_index"])

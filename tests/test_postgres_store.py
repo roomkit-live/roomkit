@@ -683,9 +683,9 @@ class TestPostgresStore:
         event = _make_event()
         result = await store.add_event(event)
         assert result.id == event.id
-        assert "event_sequences" in mock_conn.execute.await_args_list[0].args[0]
-        call_args = mock_conn.execute.call_args
-        assert "INSERT INTO events" in call_args[0][0]
+        written = [call.args[0] for call in mock_conn.execute.await_args_list]
+        assert any("event_sequences" in statement for statement in written)
+        assert "INSERT INTO events" in written[-1]
 
     async def test_get_event_found(self) -> None:
         store, mock_conn = _make_store_with_pool()
@@ -923,8 +923,6 @@ class TestPostgresStore:
         result = await store.add_event_auto_index("room-1", event)
         assert result.index == 3
         assert "event_sequences" in mock_conn.fetchrow.call_args.args[0]
-        # execute should have been called for the INSERT
-        mock_conn.execute.assert_awaited_once()
         call_args = mock_conn.execute.call_args
         assert "INSERT INTO events" in call_args[0][0]
 

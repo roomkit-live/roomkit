@@ -314,7 +314,7 @@ async def _hold_room_first(conn: Any, room_id: str) -> None:
     The event's foreign key would otherwise take it after, and a commit holding the
     room would wait on the sequence this write holds, while this write waits on the
     room: the server kills one of them. A missing room stays the foreign key's
-    refusal, a few statements later.
+    refusal, in the next statement.
     """
     await conn.execute("SELECT 1 FROM rooms WHERE id = $1 FOR KEY SHARE", room_id)
 
