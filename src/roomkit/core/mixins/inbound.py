@@ -234,6 +234,11 @@ class InboundMixin(HelpersMixin):
         room is not found, and nothing is drawn (RFC §17.2). A message sent
         within a turn is at least as deep as the turn's response (RFC §8.3).
 
+        A message with no *room_id* under the framework's own name, ``system``,
+        is refused ``reserved_sender`` with nothing read or written (RFC §10.1
+        step 2): the framework names the room it writes to, and a host writing
+        under that name passes *room_id*.
+
         Raises:
             ChannelNotRegisteredError: the message's channel is not registered
                 (a message refused past its room's work budget first excepted).
