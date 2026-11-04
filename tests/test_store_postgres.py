@@ -635,6 +635,96 @@ class TestIdentityDetails:
         for scope in (None, "acme", "globex"):
             assert await store.resolve_identity("sms", "+1555", organization_id=scope) is None
 
+    @pytest.mark.parametrize(
+        ("held_in", "stored"), [("", "acme"), ("globex", "acme"), ("acme", None)]
+    )
+    @pytest.mark.parametrize("taking", ["create_identity", "link_address"])
+    async def test_a_row_no_read_serves_leaves_its_address_free(
+        self, store, held_in: str, stored: str | None, taking: str
+    ) -> None:
+        """RFC §5.6: an address is refused for what another identity of the organization
+        holds. A row an older release left, whose identity is of another organization,
+        resolves for nobody: the organization's own identity takes the address."""
+        await store.create_identity(Identity(id="i1", organization_id=stored))
+        async with store._pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO identity_addresses (channel_type, address, identity_id,"
+                " organization_id) VALUES ('sms', '+1555', 'i1', $1)",
+                held_in,
+            )
+        scope = held_in or None
+        if taking == "create_identity":
+            await store.create_identity(
+                Identity(id="dana", organization_id=scope, channel_addresses={"sms": ["+1555"]})
+            )
+        else:
+            await store.create_identity(Identity(id="dana", organization_id=scope))
+            await store.link_address("dana", "sms", "+1555", organization_id=scope)
+        resolved = await store.resolve_identity("sms", "+1555", organization_id=scope)
+        assert resolved is not None and resolved.id == "dana"
+
+    async def test_a_creation_waiting_on_a_new_identity_s_address_is_refused(self, store) -> None:
+        """RFC §5.6: the holder's organization is read once the first commits. Its
+        identity is new to the waiting statement's snapshot, and is no row to take."""
+        import asyncpg
+
+        creator = await asyncpg.connect(POSTGRES_DSN)
+        try:
+            async with creator.transaction():
+                await creator.execute(
+                    "INSERT INTO identities (id, organization_id) VALUES ('i1', 'acme')"
+                )
+                await creator.execute(
+                    "INSERT INTO identity_addresses (channel_type, address, identity_id,"
+                    " organization_id) VALUES ('sms', '+1555', 'i1', 'acme')"
+                )
+                racing = asyncio.create_task(
+                    store.create_identity(
+                        Identity(
+                            id="i2", organization_id="acme", channel_addresses={"sms": ["+1555"]}
+                        )
+                    )
+                )
+                await _until_blocked_by(creator)
+            with pytest.raises(AddressLinkedError):
+                await asyncio.wait_for(racing, 2)
+        finally:
+            await creator.close()
+        resolved = await store.resolve_identity("sms", "+1555", organization_id="acme")
+        assert resolved is not None and resolved.id == "i1"
+
+    async def test_two_identities_taking_a_row_no_read_serves_leave_one_winner(
+        self, store
+    ) -> None:
+        """RFC §5.6: the first holds the address from then on, and the second is refused."""
+        await store.create_identity(Identity(id="i1", organization_id="globex"))
+        for number in range(8):
+            address = f"+1{number}"
+            async with store._pool.acquire() as conn:
+                await conn.execute(
+                    "INSERT INTO identity_addresses (channel_type, address, identity_id,"
+                    " organization_id) VALUES ('sms', $1, 'i1', 'acme')",
+                    address,
+                )
+            taken = await asyncio.gather(
+                *(
+                    store.create_identity(
+                        Identity(
+                            id=f"{name}{number}",
+                            organization_id="acme",
+                            channel_addresses={"sms": [address]},
+                        )
+                    )
+                    for name in ("a", "b")
+                ),
+                return_exceptions=True,
+            )
+            won = [outcome for outcome in taken if isinstance(outcome, Identity)]
+            assert len(won) == 1, taken
+            assert isinstance(next(o for o in taken if o not in won), AddressLinkedError)
+            resolved = await store.resolve_identity("sms", address, organization_id="acme")
+            assert resolved is not None and resolved.id == won[0].id
+
     @pytest.mark.parametrize("keeping", [False, True])
     async def test_two_replacements_swapping_addresses_are_refused_without_a_deadlock(
         self, store, keeping: bool

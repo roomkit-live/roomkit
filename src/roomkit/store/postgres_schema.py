@@ -717,8 +717,8 @@ END $$;
 -- §17.2), and its sender stays identified there. One whose organization holds the
 -- address already yields to that row, whose identity keeps it. One the identity no
 -- longer declares, a link since revoked, is not restored: it goes, and the address
--- is free. A row of another organization is left: no API writes one, and no read
--- serves it. Version 5 records the rewrite as done.
+-- is free. A row of another organization is left: no read serves it, and
+-- a write of that organization takes it over. Version 5 records the rewrite as done.
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM schema_version WHERE version >= 5) THEN

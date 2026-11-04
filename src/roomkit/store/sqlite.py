@@ -679,7 +679,8 @@ def _migrate_v13_to_v14(conn: sqlite3.Connection) -> None:
     sender stays identified there. One whose organization holds the address already
     yields to that row, whose identity keeps it. One the identity no longer declares,
     a link since revoked, is not restored: it goes, and the address is free. A row of
-    another organization is left: no API writes one, and no read serves it."""
+    another organization is left: no read serves it, and a write of that organization
+    takes it over."""
     try:
         conn.execute("BEGIN IMMEDIATE")
         if int(conn.execute("PRAGMA user_version").fetchone()[0]) >= 14:
@@ -2141,7 +2142,7 @@ class SQLiteStore(ConversationStore):
                 link_target(held, identity.id, identity.organization_id)
             for channel_type, addresses in identity.channel_addresses.items():
                 for address in addresses:
-                    self._x_refuse_held_address(conn, channel_type, address, scope, identity.id)
+                    self._x_refuse_held_address(channel_type, address, scope, identity.id)
             conn.execute(
                 "INSERT OR REPLACE INTO identities(id, data) VALUES(?, ?)",
                 (identity.id, identity.model_dump_json()),
@@ -2186,21 +2187,19 @@ class SQLiteStore(ConversationStore):
                     (channel_type, address, organization_id),
                 )
 
-    @staticmethod
     def _x_refuse_held_address(
-        conn: sqlite3.Connection,
+        self,
         channel_type: str,
         address: str,
         organization_id: str,
         identity_id: str,
     ) -> None:
-        """Refuse an address another identity of the organization holds (RFC §5.6)."""
-        row = conn.execute(
-            "SELECT identity_id FROM identity_addresses WHERE channel_type = ?"
-            " AND address = ? AND organization_id = ?",
-            (channel_type, address, organization_id),
-        ).fetchone()
-        if row is not None and row[0] != identity_id:
+        """Refuse an address another identity of the organization holds (RFC §5.6).
+
+        What a read serves is what holds it: a row whose holder is of another
+        organization, which only an older release wrote, holds nothing."""
+        holder = self._x_resolve_identity(channel_type, address, organization_id)
+        if holder is not None and holder.id != identity_id:
             raise address_linked(channel_type)
 
     async def get_identity(self, identity_id: str) -> Identity | None:
@@ -2257,7 +2256,7 @@ class SQLiteStore(ConversationStore):
         conn = self._db()
         with _write_transaction(conn):
             identity = link_target(self._x_get_identity(identity_id), identity_id, organization_id)
-            self._x_refuse_held_address(conn, channel_type, address, organization_id, identity_id)
+            self._x_refuse_held_address(channel_type, address, organization_id, identity_id)
             current = identity.channel_addresses.get(channel_type, [])
             if address not in current:
                 addresses = {**identity.channel_addresses, channel_type: [*current, address]}

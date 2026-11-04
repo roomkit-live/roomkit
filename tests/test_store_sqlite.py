@@ -844,6 +844,32 @@ async def test_the_rewrite_takes_only_a_list_for_a_declaration(tmp_path: Path) -
     assert _address_rows(path) == []
 
 
+@pytest.mark.parametrize(("held_in", "stored"), [("", "acme"), ("globex", "acme"), ("acme", None)])
+@pytest.mark.parametrize("taking", ["create_identity", "link_address"])
+async def test_a_row_no_read_serves_leaves_its_address_free(
+    tmp_path: Path, held_in: str, stored: str | None, taking: str
+) -> None:
+    """RFC §5.6: an address is refused for what another identity of the organization
+    holds. A row an older release left, whose identity is of another organization,
+    resolves for nobody: the organization's own identity takes the address."""
+    path = tmp_path / "older.db"
+    store = SQLiteStore(path)
+    await store.create_identity(Identity(id="i1", organization_id=stored))
+    _insert_address(path, ("+1555", "i1", held_in))
+    scope = held_in or None
+    if taking == "create_identity":
+        await store.create_identity(
+            Identity(id="dana", organization_id=scope, channel_addresses={"sms": ["+1555"]})
+        )
+    else:
+        await store.create_identity(Identity(id="dana", organization_id=scope))
+        await store.link_address("dana", "sms", "+1555", organization_id=scope)
+    resolved = await store.resolve_identity("sms", "+1555", organization_id=scope)
+    await store.close()
+    assert resolved is not None and resolved.id == "dana"
+    assert _address_rows(path) == [("+1555", "dana", held_in)]
+
+
 async def test_an_unlink_removes_the_identity_s_rows_in_every_scope(tmp_path: Path) -> None:
     """RFC §5.6: a link revoked is revoked, a row a file's migration left in another
     scope with it, so that no later rewrite can restore it."""

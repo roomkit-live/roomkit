@@ -26,6 +26,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`аlice` with a Cyrillic `а`, beside the agent `alice`) or like `all` is addressed by no
   name: an agent writing it no longer waits for that person, believing it asked the agents.
 
+- **An address held by a row no read serves is free** (HITL 2bd8fc23, RMK-1376).
+  `PostgresStore` and `SQLiteStore` refused an address for any row filed under it,
+  including one whose identity is of another organization, which an older release
+  could write (`link_address` before 0.108.0; `SQLiteStore.create_identity` over
+  another organization's id up to 0.111.0). No read served it, so the organization
+  could neither resolve the address nor take it, and the refusal told it the address
+  existed. `create_identity` and `link_address` now take such a row over; an address
+  an identity of the organization holds stays refused. Nothing moves at startup.
+
 - **A span's error no longer quotes its text** (RFC §15.7, RMK-1301).
   `PostgresStore`'s `store.*` spans and `TelemetryProvider.span()`'s block wrote
   `str(exc)` into `error_message`, which a driver's error can fill with a row's

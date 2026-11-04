@@ -378,6 +378,12 @@ async def _file_address(
     One statement, so two concurrent links of one address cannot both win:
     the second waits on the first's row and reads its holder back. The
     no-op update on a conflict is what makes ``RETURNING`` give that holder.
+
+    A row whose holder is of another organization holds nothing: no read serves
+    it, and only an older release wrote one. The organization's identity takes it.
+    The holder's organization is read by a statement of its own, which sees an
+    identity that committed while the first waited on its row: a subquery of the
+    first would miss it, and the second link would win too.
     """
     holder = await conn.fetchval(
         "INSERT INTO identity_addresses (channel_type, address, identity_id, organization_id)"
@@ -390,8 +396,21 @@ async def _file_address(
         identity_id,
         organization_id,
     )
-    if holder != identity_id:
+    if holder == identity_id:
+        return
+    held_in = await conn.fetchval(
+        "SELECT COALESCE(organization_id, '') FROM identities WHERE id = $1", holder
+    )
+    if held_in == organization_id:
         raise address_linked(channel_type)
+    await conn.execute(
+        "UPDATE identity_addresses SET identity_id = $4"
+        " WHERE channel_type = $1 AND address = $2 AND organization_id = $3",
+        channel_type,
+        address,
+        organization_id,
+        identity_id,
+    )
 
 
 class PostgresSchemaError(RuntimeError):
