@@ -3,8 +3,8 @@ that speaks the format (RFC §6.7).
 
 OpenAI and its derivatives, Mistral and PolarGrid send the same messages but
 for a few vendor choices, which each provider states as a :class:`ChatDialect`:
-where a model's earlier reasoning goes, whether a tool message names its tool,
-whether text is sent flat. Everything else is rendered once, here.
+the field a vendor reads a model's earlier reasoning from, whether a tool message
+names its tool, whether text is sent flat. Everything else is rendered once, here.
 """
 
 from __future__ import annotations
@@ -29,11 +29,10 @@ class ChatDialect:
     """What one provider renders differently from OpenAI's own endpoint."""
 
     thinking_field: str | None = None
-    """The assistant message field a model's earlier reasoning rides
-    (Cerebras ``reasoning``); ``None`` sends it inline, as a ``<think>`` block."""
-    drops_thinking: bool = False
-    """Send no earlier reasoning at all: a model that regenerates its own each
-    turn echoes any it is fed back (Qwen behind PolarGrid)."""
+    """The assistant message field a vendor reads a model's earlier reasoning
+    from (Cerebras ``reasoning``, DeepSeek ``reasoning_content``). ``None`` sends
+    no earlier reasoning (RFC §6.4): any other server would read it as text the
+    model said, and its prompt cache would not survive it."""
     names_tool_results: bool = False
     """Each tool message names its tool (Mistral, PolarGrid)."""
     flattens_text: bool = False
@@ -46,7 +45,7 @@ class ChatDialect:
     call ids itself a moment ago."""
 
     def __post_init__(self) -> None:
-        if self.round_thinking_required and (self.thinking_field is None or self.drops_thinking):
+        if self.round_thinking_required and self.thinking_field is None:
             raise ValueError("round_thinking_required needs a thinking_field to send")
 
 
@@ -71,18 +70,6 @@ def chat_messages(
     for message in messages:
         result.extend(_rendered(message, dialect, provider))
     return result
-
-
-def round_text(parts: list[Any]) -> str:
-    """The content of an assistant round that called tools: its reasoning as
-    a leading ``<think>`` block, then what it said.
-
-    Both are kept, whatever their order: a round that said something besides
-    its calls keeps its reasoning too, which is how the next round reads it.
-    """
-    thinking = _thinking(parts)
-    text = "".join(p.text for p in parts if isinstance(p, AITextPart))
-    return f"<think>{thinking}</think>{text}" if thinking else text
 
 
 def _rendered(message: AIMessage, dialect: ChatDialect, provider: str) -> list[dict[str, Any]]:
@@ -110,8 +97,6 @@ def _call_round(
     content: str | list[dict[str, Any]]
     if dialect.flattens_text:
         content = _flat(parts, provider)
-    elif _inline_thinking(message, dialect):
-        content = round_text(parts)
     else:
         content = "".join(p.text for p in parts if isinstance(p, AITextPart))
     rendered: dict[str, Any] = {
@@ -159,26 +144,20 @@ def _tool_messages(
 
 
 def _plain(message: AIMessage, dialect: ChatDialect, provider: str) -> list[dict[str, Any]]:
-    """A message without tool parts: its text and images, its reasoning where
-    the dialect sends it."""
+    """A message without tool parts: its text and images, its reasoning in the
+    dialect's field when it has one."""
     parts = list(message.content)
     if dialect.flattens_text:
         flat = _flat(parts, provider)
         return [{"role": message.role, "content": flat}] if flat else []
-    inline = _inline_thinking(message, dialect)
     blocks: list[dict[str, Any]] = []
     for part in parts:
         if isinstance(part, AITextPart):
             blocks.append({"type": "text", "text": part.text})
         elif isinstance(part, AIImagePart):
             blocks.append(_image(part, provider))
-        elif isinstance(part, AIThinkingPart) and inline and part.thinking:
-            # A block with no text (redacted, a signature alone) goes as
-            # nothing, as in a round with calls (``round_text``).
-            blocks.append({"type": "text", "text": f"<think>{part.thinking}</think>"})
-    # A message whose only part is reasoning moved to a field keeps an empty
-    # string for content.
-    content = blocks if blocks or _thinking_field(message, dialect) is None else ""
+    # A message whose only part is reasoning keeps an empty string for content.
+    content = blocks if blocks or not parts else ""
     rendered = {"role": message.role, "content": content}
     return [_with_thinking_field(rendered, message, dialect)]
 
@@ -198,14 +177,7 @@ def _flat(parts: list[Any], provider: str) -> str | list[dict[str, Any]]:
 def _thinking_field(message: AIMessage, dialect: ChatDialect) -> str | None:
     """The field *message*'s reasoning rides: the dialect's, for the
     assistant's own messages."""
-    if dialect.drops_thinking or message.role != "assistant":
-        return None
-    return dialect.thinking_field
-
-
-def _inline_thinking(message: AIMessage, dialect: ChatDialect) -> bool:
-    """Whether *message*'s reasoning is sent inline, as ``<think>`` blocks."""
-    return not dialect.drops_thinking and _thinking_field(message, dialect) is None
+    return dialect.thinking_field if message.role == "assistant" else None
 
 
 def _with_thinking_field(

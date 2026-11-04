@@ -516,9 +516,8 @@ class TestOllamaMessageBuilding:
     async def test_thinking_part_round_trip(self) -> None:
         """Prior assistant thinking should travel back to the model.
 
-        Ollama supports a top-level ``thinking`` field on assistant
-        messages, so we don't need to wrap it as <think> tags the way
-        the OpenAI-compat shim does.
+        Ollama's own API reads a top-level ``thinking`` field on assistant
+        messages.
         """
         provider, mod = _provider()
         mod.AsyncClient.return_value.chat.return_value = _response_obj(content="ok")

@@ -194,6 +194,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **BREAKING: a model's reasoning no longer goes back on Chat Completions** (RFC §6.4,
+  RMK-1369). `ChatDialect()` sent it as a `<think>` block in the content, which a generic
+  server reads as text the model said: on a real Qwen, each step of a turn lost its prompt
+  cache, 140,000 tokens processed in 115 s where 47,500 take 41 s. OpenAI's Chat Completions,
+  Azure, LiteLLM, Meta, Mistral, OpenRouter, Qwen, vLLM, llama.cpp and xAI now send a round's
+  text and calls alone. `ChatDialect.drops_thinking` is gone with it: drop the argument. A
+  vendor reading reasoning in a field of its own keeps it through
+  `ChatDialect(thinking_field=...)`, as DeepSeek and Cerebras do. An answer of reasoning alone
+  goes back as an empty text. A `<think>` in a model's output is still read out of its text,
+  and the reasoning still reaches `AIThinkingPart`, the hooks and `publish_thinking_text`.
+
 - **BREAKING: a handoff to a human holds the room for them** (RMK-1233).
   `ConversationState.human_hold`, false by default: while true the router asks
   no agent, whichever rule or default would, and no supervisor, and the message

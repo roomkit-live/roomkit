@@ -1092,6 +1092,13 @@ direct answer, and that trade differs between an agent's tool loop — where the
 model mostly shapes results it already has — and a chat turn where the
 reasoning is the value.
 
+A model's reasoning reaches the hooks, `AIThinkingPart` and
+`publish_thinking_text`, and no Chat Completions request: a generic server would
+read it as text the model said, and its prompt cache would not survive it.
+DeepSeek (`reasoning_content`) and Cerebras (`reasoning`) read it in a field of
+their own, which their providers send, Anthropic and Gemini their signed blocks
+and signatures, and OpenAI's Responses its reasoning items.
+
 Reasoning competes with the answer for the same `max_tokens`. A round that
 spends its whole budget thinking returns empty `content` with a truncation
 finish reason; RoomKit recognises that across every provider's spelling

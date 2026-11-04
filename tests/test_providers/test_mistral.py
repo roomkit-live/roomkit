@@ -509,8 +509,8 @@ class TestMistralAIProvider:
             assert text[0].text == "answer"
 
     @pytest.mark.asyncio
-    async def test_thinking_part_round_trip(self) -> None:
-        """AIThinkingPart in history is re-wrapped as <think> tags."""
+    async def test_a_thinking_part_is_not_sent_back(self) -> None:
+        """AIThinkingPart in history reaches no request (RFC §6.4)."""
         with patch.dict("sys.modules", _mistral_modules()):
             from roomkit.providers.mistral.ai import MistralAIProvider
 
@@ -532,11 +532,10 @@ class TestMistralAIProvider:
             result = await provider.generate(ctx)
             assert result.content == "ok"
 
-            # Verify the messages sent include the thinking as <think> tags
             call_kwargs = provider._client.chat.stream_async.call_args
             messages = call_kwargs.kwargs["messages"]
-            assistant_msg = messages[0]
-            assert "<think>I should search</think>" in (assistant_msg["content"] or "")
+            assert messages[0]["content"] is None
+            assert [c["id"] for c in messages[0]["tool_calls"]] == ["call_1"]
 
     @pytest.mark.asyncio
     async def test_structured_stream_api_error(self) -> None:

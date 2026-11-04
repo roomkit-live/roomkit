@@ -3434,7 +3434,7 @@
     "__init__": ["def"]
   },
   "roomkit.providers.ai.ChatDialect": {
-    "__init__": ["def", "thinking_field=None", "drops_thinking=False", "names_tool_results=False", "flattens_text=False", "round_thinking_required=False"]
+    "__init__": ["def", "thinking_field=None", "names_tool_results=False", "flattens_text=False", "round_thinking_required=False"]
   },
   "roomkit.providers.ai.CutArguments": {},
   "roomkit.providers.ai.MockAIProvider": {

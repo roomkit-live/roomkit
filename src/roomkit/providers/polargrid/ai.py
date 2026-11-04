@@ -89,11 +89,9 @@ from roomkit.providers.utils import _aclose_stream, http_timeout
 logger = logging.getLogger("roomkit.providers.polargrid")
 
 
-POLARGRID_CHAT = ChatDialect(drops_thinking=True, names_tool_results=True, flattens_text=True)
+POLARGRID_CHAT = ChatDialect(names_tool_results=True, flattens_text=True)
 """PolarGrid's rendering: text sent flat (blocks only for an image), no empty
-message, each tool message naming its tool, and no earlier reasoning: Qwen
-regenerates its own each turn and echoes any wrapper it is fed back (Qwen's
-multi-turn guidance is to strip ``<think>`` from history)."""
+message, each tool message naming its tool."""
 
 
 def _content_filtered(done: StreamDone) -> str | None:

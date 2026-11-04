@@ -767,8 +767,8 @@ class TestOpenAIAIProvider:
             assert text == ["answer"]
 
     @pytest.mark.asyncio
-    async def test_thinking_part_round_trip(self) -> None:
-        """AIThinkingPart in history is re-wrapped as <think> tags."""
+    async def test_a_thinking_part_is_not_sent_back(self) -> None:
+        """AIThinkingPart in history reaches no request (RFC §6.4)."""
         with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
             from roomkit.providers.openai.ai import OpenAIAIProvider
 
@@ -795,8 +795,8 @@ class TestOpenAIAIProvider:
             call_kwargs = provider._client.chat.completions.create.call_args[1]
             assistant_msg = call_kwargs["messages"][1]
             assert assistant_msg["role"] == "assistant"
-            # Thinking is prepended as <think> tags to the content
-            assert "<think>I need to add 2 and 2</think>" in assistant_msg["content"]
+            assert assistant_msg["content"] is None
+            assert [c["id"] for c in assistant_msg["tool_calls"]] == ["tc1"]
 
     @pytest.mark.asyncio
     async def test_structured_stream_with_tool_calls(self) -> None:
