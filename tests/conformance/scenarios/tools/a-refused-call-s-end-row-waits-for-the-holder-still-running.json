@@ -6,7 +6,7 @@
     "§6.4",
     "§12.4"
   ],
-  "notes": "Python: channels/_ai_tools.py _run_announced_calls answers in call order. Pairing a round's results first in, first out rests on this order.",
+  "notes": "Python: channels/_ai_streaming.py _run_announced_calls answers in call order. Pairing a round's results first in, first out rests on this order.",
   "setup": {
     "channels": [
       {
