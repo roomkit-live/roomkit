@@ -533,11 +533,12 @@ class TurnDriver:
                         queued.extend(room.queue_turn_names(state, agent, event, context))
         except Exception:
             logger.exception("The end of %s's turn in room %s was not read", agent, room.room_id)
+            return []
         return queued
 
     async def _abandon_orphan(self, turn: _Turn) -> None:
-        """A turn handed to the lane that the driver will not run: abandoned,
-        its mark retired, its end read."""
+        """A turn given that the driver will not run: abandoned if it entered
+        the lane, its mark retired, its end read."""
         await _abandon(turn, "discussion_stopped", drain=self._drain)
         retire_mark(turn.mark)
         self._turn = None

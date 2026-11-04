@@ -881,6 +881,40 @@ async def test_a_stop_during_the_write_ends_the_turn_it_gave() -> None:
     assert a.calls == []
 
 
+async def test_the_end_of_a_turn_not_stored_tells_no_one_queued() -> None:
+    a, b = _provider("@b your turn"), _provider("b")
+    kit = RoomKit()
+    await _room(kit, {"a": a, "b": b})
+    told = _follow(kit)
+    store = kit.store
+    patch = store.patch_room_metadata
+    refused: list[bool] = []
+
+    async def flaky(room_id: str, metadata: dict[str, Any], **kwargs: Any) -> Any:
+        queue = metadata.get("_speak_queue") or {}
+        ended = queue.get("turns_given") == 1 and queue.get("speaking") is None
+        if ended and not refused:
+            refused.append(True)
+            raise RuntimeError("store down")
+        return await patch(room_id, metadata, **kwargs)
+
+    store.patch_room_metadata = flaky  # type: ignore[method-assign]
+    await _say(kit, "@a hello")
+    async with asyncio.timeout(5):
+        while (SpeakQueueChange.TURN_ENDED, ("a",)) not in told:
+            await asyncio.sleep(0.001)
+    await asyncio.sleep(0.01)  # room for a queue told, and a turn given, after the end
+
+    assert refused
+    assert told == [
+        (SpeakQueueChange.QUEUED, ("a",)),
+        (SpeakQueueChange.TURN_GIVEN, ("a",)),
+        (SpeakQueueChange.TURN_ENDED, ("a",)),
+    ]
+    assert b.calls == []
+    await kit.close()
+
+
 @pytest.mark.parametrize("failure", [RuntimeError, asyncio.CancelledError])
 async def test_an_edit_cut_in_its_block_announces_nothing(failure: type[BaseException]) -> None:
     kit = RoomKit()
