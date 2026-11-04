@@ -1901,11 +1901,13 @@ class PostgresStore(ConversationStore):
             )
             if status == "INSERT 0 0":
                 raise IdentityNotFoundError(f"Identity {identity.id} not found")
-            declared = [
+            # In one order whoever files them, so that two replacements taking
+            # each other's addresses never wait on each other's rows.
+            declared = sorted(
                 (ch_type, addr)
                 for ch_type, addresses in identity.channel_addresses.items()
                 for addr in addresses
-            ]
+            )
             for ch_type, addr in declared:
                 # The identity's own organization: an address declared on
                 # the identity belongs to the tenant that owns it.
@@ -1915,8 +1917,7 @@ class PostgresStore(ConversationStore):
             # What it no longer holds stops resolving to it, a row of another
             # scope for an address it keeps among them (RFC §17.2). After the filing,
             # so that a replacement refused for an address it takes from another
-            # has locked nothing that other is removing: two that swap addresses
-            # read the refusal, not a deadlock.
+            # has locked nothing that other is removing.
             await conn.execute(
                 "DELETE FROM identity_addresses WHERE identity_id = $1"
                 " AND (organization_id <> $4 OR NOT EXISTS ("

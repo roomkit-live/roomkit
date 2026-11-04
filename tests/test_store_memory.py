@@ -778,3 +778,16 @@ class TestEventOwnership:
         second = (await store.get_conversation("r1", limit=10))[0]
         assert first.id == second.id
         assert first.content.body == second.content.body  # type: ignore[union-attr]
+
+
+async def test_a_replacement_never_removes_an_address_another_identity_holds() -> None:
+    """The stored identity is the object the caller handed in: one it mutated
+    since may name an address another holds, which stays theirs."""
+    store = InMemoryStore()
+    alice = Identity(id="alice", channel_addresses={"sms": ["+1"]})
+    bob = Identity(id="bob", channel_addresses={"sms": ["+2"]})
+    await store.create_identity(alice)
+    await store.create_identity(bob)
+    alice.channel_addresses["sms"].append("+2")
+    await store.create_identity(Identity(id="alice", channel_addresses={"sms": ["+1"]}))
+    assert await store.resolve_identity("sms", "+2") == bob

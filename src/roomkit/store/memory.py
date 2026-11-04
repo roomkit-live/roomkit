@@ -896,7 +896,8 @@ class InMemoryStore(ConversationStore):
         # What it no longer holds stops resolving to it.
         for ch_type, addresses in held.channel_addresses.items() if held is not None else ():
             for addr in addresses:
-                self._address_index.pop((ch_type, addr, scope), None)
+                if self._address_index.get((ch_type, addr, scope)) == identity.id:
+                    del self._address_index[(ch_type, addr, scope)]
         self._identities[identity.id] = identity
         for key in keys:
             self._address_index[key] = identity.id

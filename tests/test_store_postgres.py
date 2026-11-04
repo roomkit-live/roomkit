@@ -614,19 +614,23 @@ class TestIdentityDetails:
         assert await store.resolve_identity("sms", "+1555") is None
         assert await store.resolve_identity("sms", "+1555", organization_id="acme") == identity
 
+    @pytest.mark.parametrize("keeping", [False, True])
     async def test_two_replacements_swapping_addresses_are_refused_without_a_deadlock(
-        self, store
+        self, store, keeping: bool
     ) -> None:
-        """Each new address filed before the old ones go: neither waits on what
-        the other removes, and each reads the refusal, not a deadlock."""
+        """Each new address filed before the old ones go, in one order whoever
+        files them: neither waits on what the other holds, and each reads the
+        refusal, not a deadlock, whether or not it keeps its own."""
         for number in range(8):
             one, two = f"i{number}a", f"i{number}b"
             first, second = f"+1{number}", f"+2{number}"
             await store.create_identity(Identity(id=one, channel_addresses={"sms": [first]}))
             await store.create_identity(Identity(id=two, channel_addresses={"sms": [second]}))
+            taken_by_one = [first, second] if keeping else [second]
+            taken_by_two = [second, first] if keeping else [first]
             swapped = await asyncio.gather(
-                store.create_identity(Identity(id=one, channel_addresses={"sms": [second]})),
-                store.create_identity(Identity(id=two, channel_addresses={"sms": [first]})),
+                store.create_identity(Identity(id=one, channel_addresses={"sms": taken_by_one})),
+                store.create_identity(Identity(id=two, channel_addresses={"sms": taken_by_two})),
                 return_exceptions=True,
             )
             assert all(isinstance(outcome, AddressLinkedError) for outcome in swapped), swapped
