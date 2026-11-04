@@ -29,6 +29,7 @@ from roomkit.models.participant import Participant
 from roomkit.models.pending_input import PendingInputEvent
 from roomkit.models.task import Observation, Task
 from roomkit.models.tool_call import AIGenerationEvent, ToolCallEvent, ToolRoundEvent
+from roomkit.tools import current_response_metadata
 from tests.conformance._agent import patched_tool_call
 from tests.conformance._ai_hooks import patched_generation, patched_tool_round
 from tests.conformance._routing import router_hook
@@ -450,9 +451,22 @@ def hook_handler(spec: Mapping[str, Any], harness: Harness) -> HookHandler:
             await perform(harness, reaction, scope)
         finally:
             HOOKED.reset(hooked)
+        _write_record(reaction, payload)
         return hook_result(reaction.get("result"), payload, room_id)
 
     return handler
+
+
+def _write_record(reaction: Mapping[str, Any], payload: Any) -> None:
+    """Writes a hook's ``writes_record`` on the turn's record: its context's on
+    a generation, else the one the hook runs under, when there is one."""
+    record = (
+        payload.ai_context.response_metadata
+        if isinstance(payload, AIGenerationEvent)
+        else current_response_metadata()
+    )
+    if record is not None:
+        record.update(reaction.get("writes_record", {}))
 
 
 def hook_result(spec: Mapping[str, Any] | None, payload: Any, room_id: str) -> HookResult:

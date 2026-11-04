@@ -39,6 +39,7 @@ from roomkit.providers.ai.base import (
     response_stream_events,
 )
 from roomkit.tasks import CancelTaskTool, TaskStatusTool
+from roomkit.tools import current_response_metadata
 from roomkit.tools.human_input import HumanInputToolHandler
 from roomkit.tools.policy import ToolPolicy
 from tests.conformance._memory import scripted_memory
@@ -297,6 +298,13 @@ def _error_of_kind(kind: str) -> type[Exception]:
     return _KINDS[kind]
 
 
+def _write_record(spec: Mapping[str, Any]) -> None:
+    """Writes a tool's ``writes_record`` on the turn's record, when it answers one."""
+    record = current_response_metadata()
+    if record is not None:
+        record.update(spec.get("writes_record", {}))
+
+
 def _tool_handler(tools: list[Mapping[str, Any]], gates: Gates) -> Any:
     by_name = {tool["name"]: tool for tool in tools}
 
@@ -308,6 +316,7 @@ def _tool_handler(tools: list[Mapping[str, Any]], gates: Gates) -> Any:
             raise UnservedToolCallError(f"{name} is not this handler's")
         if (gate := tool.get("gate")) is not None:
             await gates.hold(gate)
+        _write_record(tool)
         if "returns" in tool:
             return str(tool["returns"])
         if "returns_json" in tool:

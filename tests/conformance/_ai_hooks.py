@@ -13,6 +13,7 @@ import dataclasses
 from collections.abc import Mapping
 from typing import Any
 
+from roomkit.models.response_metadata import ResponseMetadata
 from roomkit.models.tool_call import AIGenerationEvent, AIResponseEvent, ToolRoundEvent
 from roomkit.providers.ai import AIMessage, AITool
 from tests.conformance._agent import messages, result_content
@@ -24,6 +25,7 @@ _GENERATION_PATCH = frozenset(
         "reasoning_effort",
         "thinking_budget",
         "enable_thinking",
+        "response_metadata",
         "tools",
         "define",
     }
@@ -52,7 +54,7 @@ def generation_record(payload: AIGenerationEvent) -> dict[str, Any]:
 def patched_generation(payload: AIGenerationEvent, patch: Mapping[str, Any]) -> AIGenerationEvent:
     """A replacement event (``HookResult.modify``): its context's
     ``system_prompt``, ``messages`` (each ``{role, text}``), ``reasoning_effort``,
-    ``thinking_budget`` and ``enable_thinking`` are the patch's,
+    ``thinking_budget``, ``enable_thinking`` and ``response_metadata`` are the patch's,
     its ``tools`` those of the context the patch names, in their order, and
     each tool ``define`` gives in place of the tool of its name, or after
     them."""
@@ -69,6 +71,8 @@ def patched_generation(payload: AIGenerationEvent, patch: Mapping[str, Any]) -> 
     for setting in ("reasoning_effort", "thinking_budget", "enable_thinking"):
         if setting in patch:
             update[setting] = patch[setting]
+    if "response_metadata" in patch:
+        update["response_metadata"] = ResponseMetadata(patch["response_metadata"])
     if "tools" in patch:
         kept = set(patch["tools"])
         update["tools"] = [tool for tool in context.tools or [] if tool.name in kept]

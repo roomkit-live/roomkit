@@ -172,6 +172,7 @@ TOOL = {
     "gate",
     "declared",
     "returns_json",
+    "writes_record",
     "returns_parts",
 }
 RAISES = {"kind", "message"}
@@ -197,6 +198,7 @@ MEMORY = {
     "notes",
     "speakers",
     "budget_aware",
+    "writes_record",
     "compacting",
     "summarizing",
     "summarizer",
@@ -244,6 +246,7 @@ REACTION = {
     "output",
     "result",
     "stop_after",
+    "writes_record",
     "parsed",
     "refuse",
     "after_turn",

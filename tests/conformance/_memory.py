@@ -24,6 +24,7 @@ from roomkit.memory import (
 from roomkit.models.context import RoomContext
 from roomkit.models.event import RoomEvent
 from roomkit.providers.ai.base import AIMessage, AIProvider
+from roomkit.tools import current_response_metadata
 
 
 class ScriptedMemory(MemoryProvider):
@@ -38,6 +39,7 @@ class ScriptedMemory(MemoryProvider):
         ]
         self._notes = list(spec.get("notes", []))
         self._speakers = list(spec.get("speakers", []))
+        self._writes_record = dict(spec.get("writes_record", {}))
 
     @property
     def recent_events_window(self) -> int:
@@ -51,6 +53,9 @@ class ScriptedMemory(MemoryProvider):
         *,
         channel_id: str | None = None,
     ) -> MemoryResult:
+        record = current_response_metadata()
+        if record is not None:
+            record.update(self._writes_record)
         window = await self._window.retrieve(
             room_id, current_event, context, channel_id=channel_id
         )
