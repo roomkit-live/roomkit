@@ -1,0 +1,189 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/the-guard-s-words-escape-the-name-the-model-wrote",
+  "title": "The guard's words are JSON whatever name the model wrote: a quote escaped, a letter past ASCII as Python's json.dumps writes it",
+  "rules": [
+    "§6.4",
+    "§9.3"
+  ],
+  "notes": "Python: channels/_ai_tools.py _repeated_call_guard, _reject_call, _channel_tool_handler; the name comes from the model, inside json.dumps.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "echo",
+            "description": "Echo a value back.",
+            "returns": "ok",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ]
+            }
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "t1",
+                  "name": "na\"me",
+                  "arguments": {
+                    "value": "x"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t2",
+                  "name": "na\"me",
+                  "arguments": {
+                    "value": "x"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t3",
+                  "name": "na\"me",
+                  "arguments": {
+                    "value": "x"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t4",
+                  "name": "boîte",
+                  "arguments": {
+                    "value": "x"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t5",
+                  "name": "boîte",
+                  "arguments": {
+                    "value": "x"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t6",
+                  "name": "boîte",
+                  "arguments": {
+                    "value": "x"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "t1"
+            },
+            {
+              "tool_call_id": "t2"
+            },
+            {
+              "tool_call_id": "t3",
+              "content": "{\"error\": \"You already called 'na\\\"me' with these EXACT arguments 2 time(s) this turn \\u2014 repeating it cannot yield anything new.\", \"hint\": \"STOP repeating this call. Use the results you already have, try genuinely different arguments, or answer the user now with what you know.\"}",
+              "is_error": true
+            },
+            {
+              "tool_call_id": "t4"
+            },
+            {
+              "tool_call_id": "t5"
+            },
+            {
+              "tool_call_id": "t6",
+              "content": "{\"error\": \"You already called 'bo\\u00eete' with these EXACT arguments 2 time(s) this turn \\u2014 repeating it cannot yield anything new.\", \"hint\": \"STOP repeating this call. Use the results you already have, try genuinely different arguments, or answer the user now with what you know.\"}",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

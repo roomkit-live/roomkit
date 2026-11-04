@@ -1,0 +1,136 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-result-of-parts-read-as-text-is-noted",
+  "title": "A model that does not see reads a result of parts as its text, which is noted as any text",
+  "rules": [
+    "§6.4",
+    "§9.3"
+  ],
+  "notes": "Python: channels/_ai_tools.py _model_part, _repeated_result_note; _shape_for_model before the note, the text compared.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "boards",
+            "description": "Search boards.",
+            "returns_parts": [
+              {
+                "text": "nothing"
+              }
+            ]
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "t1",
+                  "name": "boards",
+                  "arguments": {
+                    "search": "term-1"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t2",
+                  "name": "boards",
+                  "arguments": {
+                    "search": "term-2"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t3",
+                  "name": "boards",
+                  "arguments": {
+                    "search": "term-3"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "t1",
+              "content": "nothing"
+            },
+            {
+              "tool_call_id": "t2",
+              "content": "nothing"
+            },
+            {
+              "tool_call_id": "t3",
+              "content": "nothing\n\n[identical result: 'boards' has now returned exactly this 3 times this turn, for different arguments. Varying the arguments is not finding anything new — this answer is settled. Use it and move on, or answer with what you have.]"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

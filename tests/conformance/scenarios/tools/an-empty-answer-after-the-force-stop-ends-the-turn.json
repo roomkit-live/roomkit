@@ -1,0 +1,311 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/an-empty-answer-after-the-force-stop-ends-the-turn",
+  "title": "An empty generation after a force stop is not tried again: the turn ends force_stopped",
+  "rules": [
+    "§6.4",
+    "§9.3"
+  ],
+  "notes": "Python: channels/_ai_tools.py _repeated_call_guard, _reject_call, _channel_tool_handler; tests/test_invalid_tool_repeat_guard.py test_force_stop_allows_only_one_final_generation (empty).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "echo",
+            "description": "Echo a value back.",
+            "returns": "ok",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ]
+            }
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "t1",
+                  "name": "echo",
+                  "arguments": {
+                    "value": "x"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t2",
+                  "name": "echo",
+                  "arguments": {
+                    "value": "x"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t3",
+                  "name": "echo",
+                  "arguments": {
+                    "value": "x"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t4",
+                  "name": "echo",
+                  "arguments": {
+                    "value": "x"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t5",
+                  "name": "echo",
+                  "arguments": {
+                    "value": "x"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t6",
+                  "name": "echo",
+                  "arguments": {
+                    "value": "x"
+                  }
+                }
+              ]
+            },
+            {
+              "text": ""
+            },
+            {
+              "text": "This extra generation must never be requested."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "observed",
+        "trigger": "on_tool_call",
+        "execution": "async"
+      },
+      {
+        "name": "response",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "response": [
+        {
+          "trigger": "on_ai_response",
+          "response": {
+            "loop_end_reason": "force_stopped",
+            "tool_calls_count": 6,
+            "round_count": 6
+          }
+        }
+      ],
+      "observed": [
+        {
+          "tool_call": {
+            "tool_call_id": "t1",
+            "result": "ok"
+          }
+        },
+        {
+          "tool_call": {
+            "tool_call_id": "t2",
+            "result": "ok"
+          }
+        },
+        {
+          "tool_call": {
+            "tool_call_id": "t3",
+            "result": "{\"error\": \"You already called 'echo' with these EXACT arguments 2 time(s) this turn \\u2014 repeating it cannot yield anything new.\", \"hint\": \"STOP repeating this call. Use the results you already have, try genuinely different arguments, or answer the user now with what you know.\"}"
+          }
+        },
+        {
+          "tool_call": {
+            "tool_call_id": "t4",
+            "result": "{\"error\": \"You already called 'echo' with these EXACT arguments 3 time(s) this turn \\u2014 repeating it cannot yield anything new.\", \"hint\": \"STOP repeating this call. Use the results you already have, try genuinely different arguments, or answer the user now with what you know.\"}"
+          }
+        },
+        {
+          "tool_call": {
+            "tool_call_id": "t5",
+            "result": "{\"error\": \"You already called 'echo' with these EXACT arguments 4 time(s) this turn \\u2014 repeating it cannot yield anything new.\", \"hint\": \"STOP repeating this call. Use the results you already have, try genuinely different arguments, or answer the user now with what you know.\"}"
+          }
+        },
+        {
+          "tool_call": {
+            "tool_call_id": "t6",
+            "result": "{\"error\": \"You already called 'echo' with these EXACT arguments 5 time(s) this turn \\u2014 repeating it cannot yield anything new.\", \"hint\": \"STOP repeating this call. Use the results you already have, try genuinely different arguments, or answer the user now with what you know.\"}"
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {
+          "tools": {
+            "echo": 0
+          },
+          "tool_results": [
+            {
+              "tool_call_id": "t1",
+              "content": "ok",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "t2",
+              "content": "ok",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "t3",
+              "content": "{\"error\": \"You already called 'echo' with these EXACT arguments 2 time(s) this turn \\u2014 repeating it cannot yield anything new.\", \"hint\": \"STOP repeating this call. Use the results you already have, try genuinely different arguments, or answer the user now with what you know.\"}",
+              "is_error": true
+            },
+            {
+              "tool_call_id": "t4",
+              "content": "{\"error\": \"You already called 'echo' with these EXACT arguments 3 time(s) this turn \\u2014 repeating it cannot yield anything new.\", \"hint\": \"STOP repeating this call. Use the results you already have, try genuinely different arguments, or answer the user now with what you know.\"}",
+              "is_error": true
+            },
+            {
+              "tool_call_id": "t5",
+              "content": "{\"error\": \"You already called 'echo' with these EXACT arguments 4 time(s) this turn \\u2014 repeating it cannot yield anything new.\", \"hint\": \"STOP repeating this call. Use the results you already have, try genuinely different arguments, or answer the user now with what you know.\"}",
+              "is_error": true
+            },
+            {
+              "tool_call_id": "t6",
+              "content": "{\"error\": \"You already called 'echo' with these EXACT arguments 5 time(s) this turn \\u2014 repeating it cannot yield anything new.\", \"hint\": \"STOP repeating this call. Use the results you already have, try genuinely different arguments, or answer the user now with what you know.\"}",
+              "is_error": true
+            }
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "text": "go"
+            },
+            {
+              "role": "assistant"
+            },
+            {
+              "role": "tool"
+            },
+            {
+              "role": "assistant"
+            },
+            {
+              "role": "tool"
+            },
+            {
+              "role": "assistant"
+            },
+            {
+              "role": "tool"
+            },
+            {
+              "role": "assistant"
+            },
+            {
+              "role": "tool"
+            },
+            {
+              "role": "assistant"
+            },
+            {
+              "role": "tool"
+            },
+            {
+              "role": "assistant"
+            },
+            {
+              "role": "tool"
+            },
+            {
+              "role": "user",
+              "text": "You have repeated the same tool call with identical arguments several times; it cannot produce anything new and further tool calls are disabled. Stop now and reply to the user in plain text with a summary of what you found and what remains, using the results already above. A rejected tool call did not execute. Report its failure and the correction needed; never claim an action succeeded without a successful tool result."
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,200 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/the-third-identical-call-is-refused",
+  "title": "A call repeated with identical arguments in a turn runs twice: the third is refused before it runs, its hooks told, the model told to stop",
+  "rules": [
+    "§6.4",
+    "§9.3"
+  ],
+  "notes": "Python: channels/_ai_tools.py _repeated_call_guard, _reject_call, _channel_tool_handler; tests/test_tool_repeat_guard.py test_third_identical_call_is_refused.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "echo",
+            "description": "Echo a value back.",
+            "returns": "ok",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ]
+            }
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "t1",
+                  "name": "echo",
+                  "arguments": {
+                    "value": "same"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t2",
+                  "name": "echo",
+                  "arguments": {
+                    "value": "same"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t3",
+                  "name": "echo",
+                  "arguments": {
+                    "value": "same"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "asked",
+        "trigger": "before_tool_use"
+      },
+      {
+        "name": "observed",
+        "trigger": "on_tool_call",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "t1",
+              "content": "ok",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "t2",
+              "content": "ok",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "t3",
+              "content": "{\"error\": \"You already called 'echo' with these EXACT arguments 2 time(s) this turn \\u2014 repeating it cannot yield anything new.\", \"hint\": \"STOP repeating this call. Use the results you already have, try genuinely different arguments, or answer the user now with what you know.\"}",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    },
+    "hooks": {
+      "asked": [
+        {
+          "tool_call": {
+            "tool_call_id": "t1"
+          }
+        },
+        {
+          "tool_call": {
+            "tool_call_id": "t2"
+          }
+        },
+        {
+          "tool_call": {
+            "tool_call_id": "t3"
+          }
+        }
+      ],
+      "observed": [
+        {
+          "tool_call": {
+            "tool_call_id": "t1",
+            "result": "ok",
+            "refused": false
+          }
+        },
+        {
+          "tool_call": {
+            "tool_call_id": "t2",
+            "result": "ok",
+            "refused": false
+          }
+        },
+        {
+          "tool_call": {
+            "tool_call_id": "t3",
+            "result": "{\"error\": \"You already called 'echo' with these EXACT arguments 2 time(s) this turn \\u2014 repeating it cannot yield anything new.\", \"hint\": \"STOP repeating this call. Use the results you already have, try genuinely different arguments, or answer the user now with what you know.\"}",
+            "is_error": true,
+            "refused": true
+          }
+        }
+      ]
+    }
+  }
+}

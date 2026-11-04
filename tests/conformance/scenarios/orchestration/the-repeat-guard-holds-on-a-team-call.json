@@ -1,0 +1,195 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/the-repeat-guard-holds-on-a-team-call",
+  "title": "The third identical delegate_workers of a turn is refused as any other tool's: orchestration's tools are served through the agent's dispatch",
+  "rules": [
+    "§6.4",
+    "§9.3"
+  ],
+  "notes": "Python: channels/_ai_tools.py _channel_tool_handler; tests/orchestration/test_room_installs.py test_the_repeat_guard_holds_on_an_orchestration_tool.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "delegate_workers",
+                  "arguments": {
+                    "task": "Acme"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "delegate_workers",
+                  "arguments": {
+                    "task": "Acme"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c3",
+                  "name": "delegate_workers",
+                  "arguments": {
+                    "task": "Acme"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Acme, reviewed."
+            }
+          ]
+        }
+      },
+      {
+        "id": "analyst",
+        "type": "ai",
+        "agent": {
+          "role": "Analyst"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Numbers."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "analyst"
+          ],
+          "strategy": "parallel"
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Look into Acme."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "status.recent",
+      "agent_id": "analyst",
+      "expect": {
+        "result": [
+          {
+            "agent_id": "analyst",
+            "action": "task",
+            "status": "pending",
+            "detail": "Acme",
+            "metadata": {
+              "room_id": "r1",
+              "strategy": "parallel",
+              "task_run": true,
+              "task_id": {
+                "$absent": true
+              }
+            }
+          },
+          {
+            "agent_id": "analyst",
+            "action": "task",
+            "status": "completed",
+            "detail": "Numbers.",
+            "metadata": {
+              "room_id": "r1",
+              "strategy": "parallel",
+              "task_run": true,
+              "task_id": {
+                "$present": true
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "sup": [
+        {},
+        {},
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c2",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c3",
+              "content": "{\"error\": \"You already called 'delegate_workers' with these EXACT arguments 2 time(s) this turn \\u2014 repeating it cannot yield anything new.\", \"hint\": \"STOP repeating this call. Use the results you already have, try genuinely different arguments, or answer the user now with what you know.\"}",
+              "is_error": true
+            }
+          ]
+        }
+      ],
+      "analyst": [
+        {}
+      ]
+    }
+  }
+}

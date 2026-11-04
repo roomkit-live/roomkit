@@ -1,0 +1,135 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-failure-repeated-is-noted-too",
+  "title": "A tool that fails with the same words a third time has them noted: the note reads what the model reads of any answer",
+  "rules": [
+    "§6.4",
+    "§9.3"
+  ],
+  "notes": "Python: channels/_ai_tools.py _model_part, _repeated_result_note; the note applies to whatever the call's handler answered.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "boards",
+            "description": "Search boards.",
+            "fails": "board offline"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "t1",
+                  "name": "boards",
+                  "arguments": {
+                    "search": "term-1"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t2",
+                  "name": "boards",
+                  "arguments": {
+                    "search": "term-2"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t3",
+                  "name": "boards",
+                  "arguments": {
+                    "search": "term-3"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "t1",
+              "content": "board offline",
+              "is_error": true
+            },
+            {
+              "tool_call_id": "t2",
+              "content": "board offline",
+              "is_error": true
+            },
+            {
+              "tool_call_id": "t3",
+              "content": "board offline\n\n[identical result: 'boards' has now returned exactly this 3 times this turn, for different arguments. Varying the arguments is not finding anything new — this answer is settled. Use it and move on, or answer with what you have.]",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

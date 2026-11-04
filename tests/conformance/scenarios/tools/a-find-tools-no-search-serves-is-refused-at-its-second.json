@@ -1,0 +1,198 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-find-tools-no-search-serves-is-refused-at-its-second",
+  "title": "Tool Search on but hiding nothing: a model inventing find_tools is refused at its second identical call, and force-stopped at its fifth",
+  "rules": [
+    "§6.4",
+    "§9.3"
+  ],
+  "notes": "Python: channels/_ai_tools.py _repeated_call_guard, _reject_call, _channel_tool_handler; channels/_ai_tools.py _register_channel_tools registers the discovery tools unless tool_search is False, their traits pure whether the search is active or not.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "echo",
+            "description": "Echo a value back.",
+            "returns": "ok",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ]
+            }
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "t1",
+                  "name": "find_tools",
+                  "arguments": {
+                    "query": "x"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t2",
+                  "name": "find_tools",
+                  "arguments": {
+                    "query": "x"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t3",
+                  "name": "find_tools",
+                  "arguments": {
+                    "query": "x"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t4",
+                  "name": "find_tools",
+                  "arguments": {
+                    "query": "x"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t5",
+                  "name": "find_tools",
+                  "arguments": {
+                    "query": "x"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "response",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {},
+        {},
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "t1",
+              "content": "{\"error\": \"Tool 'find_tools' is not declared.\"}",
+              "is_error": true
+            },
+            {
+              "tool_call_id": "t2",
+              "content": "{\"error\": \"You already called 'find_tools' with these EXACT arguments 1 time(s) this turn \\u2014 repeating it cannot yield anything new.\", \"hint\": \"STOP repeating this call. Use the results you already have, try genuinely different arguments, or answer the user now with what you know.\"}",
+              "is_error": true
+            },
+            {
+              "tool_call_id": "t3",
+              "content": "{\"error\": \"You already called 'find_tools' with these EXACT arguments 2 time(s) this turn \\u2014 repeating it cannot yield anything new.\", \"hint\": \"STOP repeating this call. Use the results you already have, try genuinely different arguments, or answer the user now with what you know.\"}",
+              "is_error": true
+            },
+            {
+              "tool_call_id": "t4",
+              "content": "{\"error\": \"You already called 'find_tools' with these EXACT arguments 3 time(s) this turn \\u2014 repeating it cannot yield anything new.\", \"hint\": \"STOP repeating this call. Use the results you already have, try genuinely different arguments, or answer the user now with what you know.\"}",
+              "is_error": true
+            },
+            {
+              "tool_call_id": "t5",
+              "content": "{\"error\": \"You already called 'find_tools' with these EXACT arguments 4 time(s) this turn \\u2014 repeating it cannot yield anything new.\", \"hint\": \"STOP repeating this call. Use the results you already have, try genuinely different arguments, or answer the user now with what you know.\"}",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    },
+    "hooks": {
+      "response": [
+        {
+          "trigger": "on_ai_response",
+          "response": {
+            "loop_end_reason": "force_stopped",
+            "round_count": 5
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,192 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/attempts-that-repair-to-one-call-share-the-budget",
+  "title": "Arguments that repair to the same call are that call: the guard counts what would run",
+  "rules": [
+    "§6.4",
+    "§9.3"
+  ],
+  "notes": "Python: channels/_ai_tools.py _repeated_call_guard, _reject_call, _channel_tool_handler; tests/test_invalid_tool_repeat_guard.py test_folded_equivalent_attempts_share_the_execution_budget.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "boards",
+            "description": "Board operations.",
+            "returns": "{}",
+            "parameters": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "action"
+              ],
+              "properties": {
+                "action": {
+                  "type": "string"
+                },
+                "params": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "t1",
+                  "name": "boards",
+                  "arguments": {
+                    "action": "list_columns",
+                    "board_id": "board-1"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t2",
+                  "name": "boards",
+                  "arguments": {
+                    "action": "list_columns",
+                    "params": {
+                      "board_id": "board-1"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t3",
+                  "name": "boards",
+                  "arguments": {
+                    "action": "list_columns",
+                    "board_id": "board-1",
+                    "params": {}
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "observed",
+        "trigger": "on_tool_call",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "t1",
+              "content": "{}",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "t2",
+              "content": "{}",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "t3",
+              "content": "{\"error\": \"You already called 'boards' with these EXACT arguments 2 time(s) this turn \\u2014 repeating it cannot yield anything new.\", \"hint\": \"STOP repeating this call. Use the results you already have, try genuinely different arguments, or answer the user now with what you know.\"}",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    },
+    "hooks": {
+      "observed": [
+        {
+          "tool_call": {
+            "arguments": {
+              "action": "list_columns",
+              "params": {
+                "board_id": "board-1"
+              }
+            }
+          }
+        },
+        {
+          "tool_call": {
+            "arguments": {
+              "action": "list_columns",
+              "params": {
+                "board_id": "board-1"
+              }
+            }
+          }
+        },
+        {
+          "tool_call": {
+            "refused": true
+          }
+        }
+      ]
+    }
+  }
+}

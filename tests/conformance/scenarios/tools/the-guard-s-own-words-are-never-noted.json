@@ -1,0 +1,225 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/the-guard-s-own-words-are-never-noted",
+  "title": "The guard's words repeat by construction, and are not noted as a repeated result: they already say what is wrong",
+  "rules": [
+    "§6.4",
+    "§9.3"
+  ],
+  "notes": "Python: channels/_ai_tools.py _repeated_call_guard, _repeated_result_note; _ADVISORY_MARKER; tests/test_repeated_result_note.py test_the_advisory_error_is_not_itself_annotated.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "boards",
+            "description": "Search boards.",
+            "returns": "ok"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "t1",
+                  "name": "boards",
+                  "arguments": {
+                    "search": "a"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t2",
+                  "name": "boards",
+                  "arguments": {
+                    "search": "a"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t3",
+                  "name": "boards",
+                  "arguments": {
+                    "search": "a"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t4",
+                  "name": "boards",
+                  "arguments": {
+                    "search": "b"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t5",
+                  "name": "boards",
+                  "arguments": {
+                    "search": "b"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t6",
+                  "name": "boards",
+                  "arguments": {
+                    "search": "b"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t7",
+                  "name": "boards",
+                  "arguments": {
+                    "search": "c"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t8",
+                  "name": "boards",
+                  "arguments": {
+                    "search": "c"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t9",
+                  "name": "boards",
+                  "arguments": {
+                    "search": "c"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "t1"
+            },
+            {
+              "tool_call_id": "t2"
+            },
+            {
+              "tool_call_id": "t3",
+              "content": "{\"error\": \"You already called 'boards' with these EXACT arguments 2 time(s) this turn \\u2014 repeating it cannot yield anything new.\", \"hint\": \"STOP repeating this call. Use the results you already have, try genuinely different arguments, or answer the user now with what you know.\"}",
+              "is_error": true
+            },
+            {
+              "tool_call_id": "t4"
+            },
+            {
+              "tool_call_id": "t5"
+            },
+            {
+              "tool_call_id": "t6",
+              "content": "{\"error\": \"You already called 'boards' with these EXACT arguments 2 time(s) this turn \\u2014 repeating it cannot yield anything new.\", \"hint\": \"STOP repeating this call. Use the results you already have, try genuinely different arguments, or answer the user now with what you know.\"}",
+              "is_error": true
+            },
+            {
+              "tool_call_id": "t7"
+            },
+            {
+              "tool_call_id": "t8"
+            },
+            {
+              "tool_call_id": "t9",
+              "content": "{\"error\": \"You already called 'boards' with these EXACT arguments 2 time(s) this turn \\u2014 repeating it cannot yield anything new.\", \"hint\": \"STOP repeating this call. Use the results you already have, try genuinely different arguments, or answer the user now with what you know.\"}",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

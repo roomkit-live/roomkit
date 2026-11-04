@@ -1,0 +1,381 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/refused-attempts-share-the-budget-and-reset-next-turn",
+  "title": "A call its gate refuses counts as an attempt on the model's arguments: the third reads the guard's words, the sixth force-stops; the next turn starts anew",
+  "rules": [
+    "§6.4",
+    "§9.3"
+  ],
+  "notes": "Python: channels/_ai_tools.py _repeated_call_guard, _reject_call, _channel_tool_handler; tests/test_invalid_tool_repeat_guard.py test_invalid_calls_stop_before_budget_and_reset_next_turn.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "echo",
+            "description": "Echo a value back.",
+            "returns": "ok",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ]
+            }
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "t1",
+                  "name": "echo",
+                  "arguments": {
+                    "wrong": "value"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t2",
+                  "name": "echo",
+                  "arguments": {
+                    "wrong": "value"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t3",
+                  "name": "echo",
+                  "arguments": {
+                    "wrong": "value"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t4",
+                  "name": "echo",
+                  "arguments": {
+                    "wrong": "value"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t5",
+                  "name": "echo",
+                  "arguments": {
+                    "wrong": "value"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t6",
+                  "name": "echo",
+                  "arguments": {
+                    "wrong": "value"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "The tool failed."
+            },
+            {
+              "calls": [
+                {
+                  "id": "t1",
+                  "name": "echo",
+                  "arguments": {
+                    "wrong": "value"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t2",
+                  "name": "echo",
+                  "arguments": {
+                    "wrong": "value"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t3",
+                  "name": "echo",
+                  "arguments": {
+                    "wrong": "value"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t4",
+                  "name": "echo",
+                  "arguments": {
+                    "wrong": "value"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t5",
+                  "name": "echo",
+                  "arguments": {
+                    "wrong": "value"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t6",
+                  "name": "echo",
+                  "arguments": {
+                    "wrong": "value"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "The tool failed."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "observed",
+        "trigger": "on_tool_call",
+        "execution": "async"
+      },
+      {
+        "name": "response",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "one"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "two"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "observed": [
+        {
+          "tool_call": {
+            "tool_call_id": "t1",
+            "refused": true,
+            "result": {
+              "$contains": "Invalid arguments"
+            }
+          }
+        },
+        {
+          "tool_call": {
+            "tool_call_id": "t2",
+            "refused": true,
+            "result": {
+              "$contains": "Invalid arguments"
+            }
+          }
+        },
+        {
+          "tool_call": {
+            "tool_call_id": "t3",
+            "refused": true,
+            "result": {
+              "$contains": "EXACT arguments"
+            }
+          }
+        },
+        {
+          "tool_call": {
+            "tool_call_id": "t4",
+            "refused": true,
+            "result": {
+              "$contains": "EXACT arguments"
+            }
+          }
+        },
+        {
+          "tool_call": {
+            "tool_call_id": "t5",
+            "refused": true,
+            "result": {
+              "$contains": "EXACT arguments"
+            }
+          }
+        },
+        {
+          "tool_call": {
+            "tool_call_id": "t6",
+            "refused": true,
+            "result": {
+              "$contains": "EXACT arguments"
+            }
+          }
+        },
+        {
+          "tool_call": {
+            "tool_call_id": "t1",
+            "refused": true,
+            "result": {
+              "$contains": "Invalid arguments"
+            }
+          }
+        },
+        {
+          "tool_call": {
+            "tool_call_id": "t2",
+            "refused": true,
+            "result": {
+              "$contains": "Invalid arguments"
+            }
+          }
+        },
+        {
+          "tool_call": {
+            "tool_call_id": "t3",
+            "refused": true,
+            "result": {
+              "$contains": "EXACT arguments"
+            }
+          }
+        },
+        {
+          "tool_call": {
+            "tool_call_id": "t4",
+            "refused": true,
+            "result": {
+              "$contains": "EXACT arguments"
+            }
+          }
+        },
+        {
+          "tool_call": {
+            "tool_call_id": "t5",
+            "refused": true,
+            "result": {
+              "$contains": "EXACT arguments"
+            }
+          }
+        },
+        {
+          "tool_call": {
+            "tool_call_id": "t6",
+            "refused": true,
+            "result": {
+              "$contains": "EXACT arguments"
+            }
+          }
+        }
+      ],
+      "response": [
+        {
+          "trigger": "on_ai_response",
+          "response": {
+            "loop_end_reason": "force_stopped"
+          }
+        },
+        {
+          "trigger": "on_ai_response",
+          "response": {
+            "loop_end_reason": "force_stopped"
+          }
+        }
+      ]
+    }
+  }
+}

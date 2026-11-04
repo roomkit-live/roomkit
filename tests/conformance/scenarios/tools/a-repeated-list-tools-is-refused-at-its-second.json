@@ -1,0 +1,262 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-repeated-list-tools-is-refused-at-its-second",
+  "title": "list_tools reads a catalogue that holds within the turn: its second identical call is refused",
+  "rules": [
+    "§6.4",
+    "§9.3"
+  ],
+  "notes": "Python: channels/_ai_tools.py _repeated_call_guard, _reject_call, _channel_tool_handler; channels/_tool_registry.py pure=True.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "t1",
+                  "name": "list_tools",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t2",
+                  "name": "list_tools",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        },
+        "tool_search": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "tools": [
+                {
+                  "name": "widget_0",
+                  "description": "Operate widget 0.",
+                  "parameters": {}
+                },
+                {
+                  "name": "widget_1",
+                  "description": "Operate widget 1.",
+                  "parameters": {}
+                },
+                {
+                  "name": "widget_2",
+                  "description": "Operate widget 2.",
+                  "parameters": {}
+                },
+                {
+                  "name": "widget_3",
+                  "description": "Operate widget 3.",
+                  "parameters": {}
+                },
+                {
+                  "name": "widget_4",
+                  "description": "Operate widget 4.",
+                  "parameters": {}
+                },
+                {
+                  "name": "widget_5",
+                  "description": "Operate widget 5.",
+                  "parameters": {}
+                },
+                {
+                  "name": "widget_6",
+                  "description": "Operate widget 6.",
+                  "parameters": {}
+                },
+                {
+                  "name": "widget_7",
+                  "description": "Operate widget 7.",
+                  "parameters": {}
+                },
+                {
+                  "name": "widget_8",
+                  "description": "Operate widget 8.",
+                  "parameters": {}
+                },
+                {
+                  "name": "widget_9",
+                  "description": "Operate widget 9.",
+                  "parameters": {}
+                },
+                {
+                  "name": "widget_10",
+                  "description": "Operate widget 10.",
+                  "parameters": {}
+                },
+                {
+                  "name": "widget_11",
+                  "description": "Operate widget 11.",
+                  "parameters": {}
+                },
+                {
+                  "name": "widget_12",
+                  "description": "Operate widget 12.",
+                  "parameters": {}
+                },
+                {
+                  "name": "widget_13",
+                  "description": "Operate widget 13.",
+                  "parameters": {}
+                },
+                {
+                  "name": "widget_14",
+                  "description": "Operate widget 14.",
+                  "parameters": {}
+                },
+                {
+                  "name": "widget_15",
+                  "description": "Operate widget 15.",
+                  "parameters": {}
+                },
+                {
+                  "name": "widget_16",
+                  "description": "Operate widget 16.",
+                  "parameters": {}
+                },
+                {
+                  "name": "widget_17",
+                  "description": "Operate widget 17.",
+                  "parameters": {}
+                },
+                {
+                  "name": "widget_18",
+                  "description": "Operate widget 18.",
+                  "parameters": {}
+                },
+                {
+                  "name": "widget_19",
+                  "description": "Operate widget 19.",
+                  "parameters": {}
+                },
+                {
+                  "name": "widget_20",
+                  "description": "Operate widget 20.",
+                  "parameters": {}
+                },
+                {
+                  "name": "widget_21",
+                  "description": "Operate widget 21.",
+                  "parameters": {}
+                },
+                {
+                  "name": "widget_22",
+                  "description": "Operate widget 22.",
+                  "parameters": {}
+                },
+                {
+                  "name": "widget_23",
+                  "description": "Operate widget 23.",
+                  "parameters": {}
+                },
+                {
+                  "name": "widget_24",
+                  "description": "Operate widget 24.",
+                  "parameters": {}
+                },
+                {
+                  "name": "widget_25",
+                  "description": "Operate widget 25.",
+                  "parameters": {}
+                },
+                {
+                  "name": "widget_26",
+                  "description": "Operate widget 26.",
+                  "parameters": {}
+                },
+                {
+                  "name": "widget_27",
+                  "description": "Operate widget 27.",
+                  "parameters": {}
+                },
+                {
+                  "name": "widget_28",
+                  "description": "Operate widget 28.",
+                  "parameters": {}
+                },
+                {
+                  "name": "widget_29",
+                  "description": "Operate widget 29.",
+                  "parameters": {}
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "t1",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "t2",
+              "content": "{\"error\": \"You already called 'list_tools' with these EXACT arguments 1 time(s) this turn \\u2014 repeating it cannot yield anything new.\", \"hint\": \"STOP repeating this call. Use the results you already have, try genuinely different arguments, or answer the user now with what you know.\"}",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,177 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-gate-s-refusal-counts-the-model-s-own-arguments",
+  "title": "A call its gate refuses is counted on the arguments the model wrote, before their repair: three forms of one call are three attempts",
+  "rules": [
+    "§6.4",
+    "§9.3"
+  ],
+  "notes": "Python: channels/_ai_tools.py _repeated_call_guard, _reject_call, _channel_tool_handler; _reject_call counts tc.arguments, the repaired ones only past the gate.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "boards",
+            "description": "Board operations.",
+            "returns": "{}",
+            "parameters": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "action"
+              ],
+              "properties": {
+                "action": {
+                  "type": "string"
+                },
+                "params": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "t1",
+                  "name": "boards",
+                  "arguments": {
+                    "action": "list_columns",
+                    "board_id": "board-1"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t2",
+                  "name": "boards",
+                  "arguments": {
+                    "action": "list_columns",
+                    "params": {
+                      "board_id": "board-1"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t3",
+                  "name": "boards",
+                  "arguments": {
+                    "action": "list_columns",
+                    "board_id": "board-1",
+                    "params": {}
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "denies",
+        "trigger": "before_tool_use",
+        "reactions": [
+          {
+            "repeat": true,
+            "result": {
+              "action": "block",
+              "reason": "not today"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "t1",
+              "content": {
+                "$contains": "not today"
+              },
+              "is_error": true
+            },
+            {
+              "tool_call_id": "t2",
+              "content": {
+                "$contains": "not today"
+              },
+              "is_error": true
+            },
+            {
+              "tool_call_id": "t3",
+              "content": {
+                "$contains": "not today"
+              },
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

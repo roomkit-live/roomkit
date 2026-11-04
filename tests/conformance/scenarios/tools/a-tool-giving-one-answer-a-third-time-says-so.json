@@ -1,0 +1,264 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-tool-giving-one-answer-a-third-time-says-so",
+  "title": "A tool that returns one answer a third time, for different arguments, has it noted for the model and on its row, and not for its observers",
+  "rules": [
+    "§6.4",
+    "§9.3"
+  ],
+  "notes": "Python: channels/_ai_tools.py _model_part, _repeated_result_note; tests/test_repeated_result_note.py test_the_note_reaches_the_model_where_the_argument_guard_is_silent, test_the_note_counts_what_it_saw.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "boards",
+            "description": "Search boards.",
+            "returns": "{\"cards\": [], \"total\": 0}"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "t1",
+                  "name": "boards",
+                  "arguments": {
+                    "search": "term-1"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t2",
+                  "name": "boards",
+                  "arguments": {
+                    "search": "term-2"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t3",
+                  "name": "boards",
+                  "arguments": {
+                    "search": "term-3"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t4",
+                  "name": "boards",
+                  "arguments": {
+                    "search": "term-4"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "observed",
+        "trigger": "on_tool_call",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {},
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "t1",
+              "content": "{\"cards\": [], \"total\": 0}",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "t2",
+              "content": "{\"cards\": [], \"total\": 0}",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "t3",
+              "content": "{\"cards\": [], \"total\": 0}\n\n[identical result: 'boards' has now returned exactly this 3 times this turn, for different arguments. Varying the arguments is not finding anything new — this answer is settled. Use it and move on, or answer with what you have.]",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "t4",
+              "content": "{\"cards\": [], \"total\": 0}\n\n[identical result: 'boards' has now returned exactly this 4 times this turn, for different arguments. Varying the arguments is not finding anything new — this answer is settled. Use it and move on, or answer with what you have.]",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    },
+    "hooks": {
+      "observed": [
+        {
+          "tool_call": {
+            "result": "{\"cards\": [], \"total\": 0}"
+          }
+        },
+        {
+          "tool_call": {
+            "result": "{\"cards\": [], \"total\": 0}"
+          }
+        },
+        {
+          "tool_call": {
+            "result": "{\"cards\": [], \"total\": 0}"
+          }
+        },
+        {
+          "tool_call": {
+            "result": "{\"cards\": [], \"total\": 0}"
+          }
+        }
+      ]
+    },
+    "streamed": {
+      "room-1": {
+        "ws": [
+          {
+            "row": {
+              "content": {
+                "tool_name": "boards",
+                "status": "pending"
+              }
+            }
+          },
+          {
+            "row": {
+              "content": {
+                "tool_name": "boards",
+                "result": "{\"cards\": [], \"total\": 0}"
+              }
+            }
+          },
+          {
+            "row": {
+              "content": {
+                "tool_name": "boards",
+                "status": "pending"
+              }
+            }
+          },
+          {
+            "row": {
+              "content": {
+                "tool_name": "boards",
+                "result": "{\"cards\": [], \"total\": 0}"
+              }
+            }
+          },
+          {
+            "row": {
+              "content": {
+                "tool_name": "boards",
+                "status": "pending"
+              }
+            }
+          },
+          {
+            "row": {
+              "content": {
+                "tool_name": "boards",
+                "result": "{\"cards\": [], \"total\": 0}\n\n[identical result: 'boards' has now returned exactly this 3 times this turn, for different arguments. Varying the arguments is not finding anything new — this answer is settled. Use it and move on, or answer with what you have.]"
+              }
+            }
+          },
+          {
+            "row": {
+              "content": {
+                "tool_name": "boards",
+                "status": "pending"
+              }
+            }
+          },
+          {
+            "row": {
+              "content": {
+                "tool_name": "boards",
+                "result": "{\"cards\": [], \"total\": 0}\n\n[identical result: 'boards' has now returned exactly this 4 times this turn, for different arguments. Varying the arguments is not finding anything new — this answer is settled. Use it and move on, or answer with what you have.]"
+              }
+            }
+          },
+          {
+            "text": "done"
+          },
+          {
+            "row": {
+              "content": {
+                "body": "done"
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}
