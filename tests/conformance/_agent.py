@@ -314,9 +314,9 @@ def _tool_handler(tools: list[Mapping[str, Any]], gates: Gates) -> Any:
             # A name the scripted tools do not define: the kit's tools the
             # agent is given serve it (README, "Scripted agents").
             raise UnservedToolCallError(f"{name} is not this handler's")
+        _write_record(tool)
         if (gate := tool.get("gate")) is not None:
             await gates.hold(gate)
-        _write_record(tool)
         if "returns" in tool:
             return str(tool["returns"])
         if "returns_json" in tool:

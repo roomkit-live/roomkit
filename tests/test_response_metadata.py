@@ -9,6 +9,7 @@ stored row and the broadcast both carry it without post-hoc rewrites.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import pytest
@@ -380,6 +381,45 @@ class TestLiveRecord:
         answer = (await _ai_message_events(kit))[-1]
         assert answer.metadata["cited"] == 3
         assert "turns" not in answer.metadata
+        await kit.close()
+
+    async def test_a_cut_turn_gives_its_caller_what_its_tool_wrote(self) -> None:
+        """A turn cut from outside tells its caller how it ended and what it
+        wrote, as a turn that failed does (RFC §6.7, HITL 84991349)."""
+        running = asyncio.Event()
+
+        async def hangs(name: str, args: dict[str, Any]) -> str:
+            record = current_response_metadata()
+            assert record is not None
+            record["cited"] = args["page"]
+            running.set()
+            await asyncio.Event().wait()
+            return "never"
+
+        kit = RoomKit()
+        ai = AIChannel(
+            "ai1",
+            provider=MockAIProvider(ai_responses=list(_TOOL_ROUNDS), streaming=True),
+            tool_handler=hangs,
+        )
+        kit.register_channel(ai)
+        kit.register_channel(SMSChannel("sms1", provider=MockSMSProvider()))
+        await kit.create_room(room_id="r1")
+        await kit.attach_channel(
+            "r1", "ai1", category=ChannelCategory.INTELLIGENCE, metadata=_TOOLS_BINDING_META
+        )
+        await kit.attach_channel("r1", "sms1")
+
+        result = await kit.process_inbound(
+            InboundMessage(channel_id="sms1", sender_id="user1", content=TextContent(body="read")),
+            defer_delivery=True,
+        )
+        assert result.delivery is not None
+        await asyncio.wait_for(running.wait(), 5)
+        cut = await result.delivery.cancel(reason="stopped")
+
+        assert cut.response_metadata["cited"] == 3
+        assert cut.response_metadata["turns"]["ai1"]["loop_end_reason"] == "cancelled"
         await kit.close()
 
     async def test_memory_provider_write_lands_on_the_reply(self, advance) -> None:

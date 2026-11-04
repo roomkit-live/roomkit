@@ -220,6 +220,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A turn cut from outside gives its caller what it wrote** (RFC §6.7, HITL
+  84991349). `handle.cancel()` or the kit's close left `turns` alone in the
+  result; what a tool had written on the record now reaches it, as for a turn
+  that failed.
+
 - **A value a turn writes under `turns` stays off its messages** (RFC §6.7). A
   tool's `record["turns"] = 3` landed on the stored `MESSAGE`; `turns` is the
   framework's key, and the caller's copy was already right.

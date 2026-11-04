@@ -658,11 +658,12 @@ def _record_cancelled_read(
     cascade: DeliveryCascade, record: ResponseMetadata, sr: StreamingResponse
 ) -> None:
     """Tell a caller whose read was cancelled from outside how its turns
-    ended, as a stopped read does (RFC §6.4): the streams it read before, then
-    the one the cancel cut. Nothing is returned past the cancel, so the
-    cascade carries them to the caller's result."""
+    ended and what they wrote, as a stopped read does (RFC §6.4, §6.7): the
+    streams it read before, then the one the cancel cut. Nothing is returned
+    past the cancel, so the cascade carries them to the caller's result."""
     merge_caller_record(cascade.response_metadata, record)
     if not sr.chained:
+        merge_channel_record(cascade.response_metadata, sr.response_metadata or {})
         _add_turn(cascade.response_metadata, sr)
 
 
