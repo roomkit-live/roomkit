@@ -6,9 +6,9 @@ separate:
 * ``SCHEMA`` — **additive, idempotent** schema setup (``CREATE TABLE IF NOT
   EXISTS``, index touch-ups, bounded repairs for newly added columns, and
   one-time rewrites a rule change needs, each recorded in ``schema_version``
-  so it runs once). Safe to run on every connect; never drops a table or
-  discards user data. This is the only schema batch ``PostgresStore.init()``
-  executes.
+  so it runs once). Safe to run on every connect; never drops a table. Its one
+  deletion of rows is that of address rows a rewrite finds stale (version 5), once.
+  This is the only schema batch ``PostgresStore.init()`` executes.
 * ``V1_TO_V2_DROP`` — the **destructive** v1→v2 migration. It drops every
   table (data loss) and is *never* run automatically. It is applied only by
   the explicit, opt-in ``PostgresStore.migrate()`` after the caller confirms
@@ -722,6 +722,11 @@ END $$;
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM schema_version WHERE version >= 5) THEN
+        -- Whoever holds these identities first: an older process's unlink in flight
+        -- has written the declaration read below.
+        PERFORM 1 FROM identities i JOIN identity_addresses ia ON i.id = ia.identity_id
+            WHERE ia.organization_id = '' AND COALESCE(i.organization_id, '') <> ''
+            FOR SHARE OF i;
         DELETE FROM identity_addresses ia USING identities i, identity_addresses held
             WHERE i.id = ia.identity_id
               AND ia.organization_id = ''
@@ -734,6 +739,7 @@ BEGIN
             WHERE i.id = ia.identity_id
               AND ia.organization_id = ''
               AND COALESCE(i.organization_id, '') <> ''
+              AND jsonb_typeof(i.channel_addresses -> ia.channel_type) = 'array'
               AND i.channel_addresses -> ia.channel_type ? ia.address;
         DELETE FROM identity_addresses ia USING identities i
             WHERE i.id = ia.identity_id

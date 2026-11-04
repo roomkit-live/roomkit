@@ -18,7 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   version row 5 on Postgres, file version 14 on SQLite), yielding to a row that
   organization already holds for the address. One the identity no longer declares, a
   link since revoked, is removed, not restored; `unlink_address` removes the
-  identity's rows for the address in every scope.
+  identity's rows for the address in every scope. A file at version 14 is refused by
+  roomkit 0.111.0 and earlier.
 
 - **`create_identity` never crosses an organization** (HITL b5e932a6, RMK-1277).
   On the memory and SQLite stores, an id another organization holds was

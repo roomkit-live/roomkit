@@ -780,14 +780,17 @@ class TestEventOwnership:
         assert first.content.body == second.content.body  # type: ignore[union-attr]
 
 
-async def test_a_replacement_never_removes_an_address_another_identity_holds() -> None:
-    """The stored identity is the object the caller handed in: one it mutated
-    since may name an address another holds, which stays theirs."""
+async def test_a_stored_identity_is_not_the_object_given() -> None:
+    """RFC §14.4: a write copies in. An object the caller mutates afterwards changes
+    neither what the store resolves nor what a replacement removes."""
     store = InMemoryStore()
     alice = Identity(id="alice", channel_addresses={"sms": ["+1"]})
     bob = Identity(id="bob", channel_addresses={"sms": ["+2"]})
     await store.create_identity(alice)
     await store.create_identity(bob)
     alice.channel_addresses["sms"].append("+2")
+    alice.organization_id = "acme"
+    stored = await store.resolve_identity("sms", "+1")
+    assert stored is not None and stored.organization_id is None
     await store.create_identity(Identity(id="alice", channel_addresses={"sms": ["+1"]}))
     assert await store.resolve_identity("sms", "+2") == bob

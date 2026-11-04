@@ -631,8 +631,10 @@ class PostgresStore(ConversationStore):
 
         Runs only additive, idempotent schema maintenance: DDL such as
         ``CREATE TABLE IF NOT EXISTS`` plus bounded repairs for columns added
-        by newer versions. It never drops a table or discards user data, so
-        calling ``init()`` after a library upgrade cannot destroy data.
+        by newer versions. It never drops a table, so calling ``init()`` after a
+        library upgrade destroys no data but, once, address rows no read serves: one
+        whose organization holds the address, or whose identity no longer declares
+        it (RFC §17.2).
 
         Serialized across processes by the same advisory lock :meth:`migrate`
         takes, acquired as the first statement of the one transaction that

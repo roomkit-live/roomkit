@@ -1174,6 +1174,55 @@ async def test_init_moves_an_unscoped_address_to_its_identity_s_organization(sto
     assert await store.resolve_identity("sms", "+5") == dana
 
 
+async def test_the_rewrite_takes_only_a_list_for_a_declaration(store) -> None:
+    """A declaration no API writes (a text, a map) declares nothing: the row goes,
+    as on SQLite, and the rewrite does not fail."""
+    await store.create_identity(Identity(id="alice", organization_id="acme"))
+    async with store._pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE identities SET channel_addresses ="
+            ' \'{"sms": "+1", "mms": {"+2": true}}\' WHERE id = \'alice\''
+        )
+        await conn.executemany(
+            "INSERT INTO identity_addresses (channel_type, address, identity_id,"
+            " organization_id) VALUES ($1, $2, 'alice', '')",
+            [("sms", "+1"), ("mms", "+2")],
+        )
+        await conn.execute("DELETE FROM schema_version WHERE version >= 5")
+    await store.init()
+    async with store._pool.acquire() as conn:
+        assert await conn.fetchval("SELECT count(*) FROM identity_addresses") == 0
+
+
+async def test_the_rewrite_waits_for_an_unlink_in_flight(store) -> None:
+    """An older process's unlink, uncommitted, has removed the address from the
+    declaration the rewrite reads: the rewrite waits, and restores nothing."""
+    import asyncpg
+
+    await store.create_identity(Identity(id="alice", organization_id="acme"))
+    async with store._pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE identities SET channel_addresses = '{\"sms\": [\"+1\"]}' WHERE id = 'alice'"
+        )
+        await conn.execute(
+            "INSERT INTO identity_addresses (channel_type, address, identity_id,"
+            " organization_id) VALUES ('sms', '+1', 'alice', '')"
+        )
+        await conn.execute("DELETE FROM schema_version WHERE version >= 5")
+    unlinker = await asyncpg.connect(POSTGRES_DSN)
+    try:
+        async with unlinker.transaction():
+            await unlinker.execute(
+                "UPDATE identities SET channel_addresses = '{}' WHERE id = 'alice'"
+            )
+            rewrite = asyncio.create_task(store.init())
+            await _until_blocked_by(unlinker)
+        await asyncio.wait_for(rewrite, 2)
+    finally:
+        await unlinker.close()
+    assert await store.resolve_identity("sms", "+1", organization_id="acme") is None
+
+
 async def test_binding_policy_migration_preserves_old_rows(store) -> None:
     from roomkit.models.channel import RateLimit, RetryPolicy
 

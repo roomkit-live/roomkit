@@ -816,6 +816,32 @@ async def test_opening_moves_an_unscoped_address_to_its_identity_s_organization(
     await reopened.close()
 
 
+async def test_the_rewrite_takes_only_a_list_for_a_declaration(tmp_path: Path) -> None:
+    """A declaration no API writes (a text, a map) declares nothing: the row goes,
+    as on Postgres, and the file still opens."""
+    path = tmp_path / "older.db"
+    store = SQLiteStore(path)
+    await store.create_identity(Identity(id="alice", organization_id="acme"))
+    await store.close()
+    conn = sqlite3.connect(path)
+    conn.executemany(
+        "INSERT INTO identity_addresses (channel_type, address, identity_id, organization_id)"
+        " VALUES (?, ?, 'alice', '')",
+        [("sms", "+1"), ("mms", "+2")],
+    )
+    conn.execute(
+        "UPDATE identities SET data = json_set(data, '$.channel_addresses',"
+        ' json(\'{"sms": "+1", "mms": {"k": "+2"}}\')) WHERE id = \'alice\''
+    )
+    conn.execute("PRAGMA user_version=13")
+    conn.commit()
+    conn.close()
+    reopened = SQLiteStore(path)
+    assert await reopened.resolve_identity("sms", "+1", organization_id="acme") is None
+    await reopened.close()
+    assert _address_rows(path) == []
+
+
 async def test_an_unlink_removes_the_identity_s_rows_in_every_scope(tmp_path: Path) -> None:
     """RFC §5.6: a link revoked is revoked, a row a file's migration left in another
     scope with it, so that no later rewrite can restore it."""

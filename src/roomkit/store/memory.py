@@ -896,9 +896,10 @@ class InMemoryStore(ConversationStore):
         # What it no longer holds stops resolving to it.
         for ch_type, addresses in held.channel_addresses.items() if held is not None else ():
             for addr in addresses:
-                if self._address_index.get((ch_type, addr, scope)) == identity.id:
-                    del self._address_index[(ch_type, addr, scope)]
-        self._identities[identity.id] = identity
+                self._address_index.pop((ch_type, addr, scope), None)
+        # A write copies in (RFC §14.4): what the caller does to its object later
+        # changes nothing here.
+        self._identities[identity.id] = identity.model_copy(deep=True)
         for key in keys:
             self._address_index[key] = identity.id
         return identity
