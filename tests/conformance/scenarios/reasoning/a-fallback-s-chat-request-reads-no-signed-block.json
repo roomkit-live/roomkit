@@ -1,0 +1,177 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reasoning/a-fallback-s-chat-request-reads-no-signed-block",
+  "title": "A round whose blocks another vendor signed reaches a Chat Completions fallback without them, as they stay in the request's parts",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: channels/_ai_streaming.py hands the fallback the same context; chat_request renders it (RFC §6.4, What a provider hands the loop of its reasoning).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "get_weather",
+            "description": "The weather.",
+            "returns": "sunny"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "stream": [
+                {
+                  "thinking": "SIGNED.",
+                  "block": 0
+                },
+                {
+                  "thinking": "",
+                  "block": 0,
+                  "signature": "S1"
+                },
+                {
+                  "text": "Let me look."
+                },
+                {
+                  "call": {
+                    "id": "c1",
+                    "name": "get_weather"
+                  }
+                }
+              ]
+            },
+            {
+              "refuses": {
+                "status": 529,
+                "message": "overloaded",
+                "retryable": true
+              }
+            }
+          ]
+        },
+        "retry_policy": {
+          "max_retries": 0
+        },
+        "fallback_model": {
+          "chat_dialect": "openai",
+          "rounds": [
+            {
+              "text": "Sunny."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "dev",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent/fallback": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "go"
+            },
+            {
+              "role": "assistant",
+              "round": [
+                {
+                  "thinking": "SIGNED.",
+                  "signature": "S1"
+                },
+                {
+                  "text": "Let me look."
+                },
+                {
+                  "call": {
+                    "$present": true
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool"
+            }
+          ],
+          "chat_messages": [
+            {
+              "role": "user",
+              "content": "go"
+            },
+            {
+              "role": "assistant",
+              "content": "Let me look.",
+              "tool_calls": [
+                {
+                  "type": "function",
+                  "function": {
+                    "name": "get_weather",
+                    "arguments": "{}"
+                  }
+                }
+              ],
+              "reasoning_content": {
+                "$absent": true
+              },
+              "reasoning": {
+                "$absent": true
+              },
+              "reasoning_details": {
+                "$absent": true
+              }
+            },
+            {
+              "role": "tool",
+              "content": "sunny"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

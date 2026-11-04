@@ -1,0 +1,329 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reasoning/a-round-s-reasoning-reaches-no-chat-request",
+  "title": "A round's reasoning reaches no Chat Completions request, in no form, and still reaches the room's reader and the request's parts",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: providers/ai/chat_request.py chat_messages over OPENAI_CHAT; tests/test_providers/test_chat_request.py. Measured on a real Qwen (RMK-1369): a <think> sent back empties the server's cache at every step of a turn.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "get_weather",
+            "description": "The weather.",
+            "returns": "sunny"
+          }
+        ],
+        "model": {
+          "chat_dialect": "openai",
+          "rounds": [
+            {
+              "stream": [
+                {
+                  "thinking": "FIRST."
+                },
+                {
+                  "text": "Let me look."
+                },
+                {
+                  "thinking": "SECOND."
+                },
+                {
+                  "call": {
+                    "id": "c1",
+                    "name": "get_weather"
+                  }
+                }
+              ]
+            },
+            {
+              "stream": [
+                {
+                  "thinking": "THIRD."
+                },
+                {
+                  "call": {
+                    "id": "c2",
+                    "name": "get_weather"
+                  }
+                }
+              ]
+            },
+            {
+              "thinking": [
+                "FOURTH."
+              ],
+              "text": "Sunny."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "dev",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "chat_messages": [
+            {
+              "role": "user",
+              "content": "go"
+            }
+          ]
+        },
+        {
+          "chat_messages": [
+            {
+              "role": "user",
+              "content": "go"
+            },
+            {
+              "role": "assistant",
+              "content": "Let me look.",
+              "tool_calls": [
+                {
+                  "type": "function",
+                  "function": {
+                    "name": "get_weather",
+                    "arguments": "{}"
+                  }
+                }
+              ],
+              "reasoning_content": {
+                "$absent": true
+              },
+              "reasoning": {
+                "$absent": true
+              },
+              "reasoning_details": {
+                "$absent": true
+              }
+            },
+            {
+              "role": "tool",
+              "content": "sunny"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "go"
+            },
+            {
+              "role": "assistant",
+              "round": [
+                {
+                  "thinking": "FIRST.SECOND."
+                },
+                {
+                  "text": "Let me look."
+                },
+                {
+                  "call": {
+                    "$present": true
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool"
+            },
+            {
+              "role": "assistant",
+              "round": [
+                {
+                  "thinking": "THIRD."
+                },
+                {
+                  "call": {
+                    "$present": true
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool"
+            }
+          ],
+          "chat_messages": [
+            {
+              "role": "user",
+              "content": "go"
+            },
+            {
+              "role": "assistant",
+              "content": "Let me look.",
+              "tool_calls": [
+                {
+                  "type": "function",
+                  "function": {
+                    "name": "get_weather",
+                    "arguments": "{}"
+                  }
+                }
+              ],
+              "reasoning_content": {
+                "$absent": true
+              },
+              "reasoning": {
+                "$absent": true
+              },
+              "reasoning_details": {
+                "$absent": true
+              }
+            },
+            {
+              "role": "tool",
+              "content": "sunny"
+            },
+            {
+              "role": "assistant",
+              "content": null,
+              "tool_calls": [
+                {
+                  "type": "function",
+                  "function": {
+                    "name": "get_weather",
+                    "arguments": "{}"
+                  }
+                }
+              ],
+              "reasoning_content": {
+                "$absent": true
+              },
+              "reasoning": {
+                "$absent": true
+              },
+              "reasoning_details": {
+                "$absent": true
+              }
+            },
+            {
+              "role": "tool",
+              "content": "sunny"
+            }
+          ]
+        }
+      ]
+    },
+    "streamed": {
+      "room-1": {
+        "ws": [
+          {
+            "thinking": "FIRST."
+          },
+          {
+            "text": "Let me look."
+          },
+          {
+            "thinking": "SECOND."
+          },
+          {
+            "row": {
+              "content": {
+                "body": "Let me look."
+              }
+            }
+          },
+          {
+            "row": {
+              "content": {
+                "tool_name": "get_weather",
+                "status": "pending"
+              }
+            }
+          },
+          {
+            "row": {
+              "content": {
+                "tool_name": "get_weather",
+                "result": "sunny"
+              }
+            }
+          },
+          {
+            "thinking": "THIRD."
+          },
+          {
+            "row": {
+              "content": {
+                "tool_name": "get_weather",
+                "status": "pending"
+              }
+            }
+          },
+          {
+            "row": {
+              "content": {
+                "tool_name": "get_weather",
+                "result": "sunny"
+              }
+            }
+          },
+          {
+            "thinking": "FOURTH."
+          },
+          {
+            "text": "Sunny."
+          },
+          {
+            "row": {
+              "content": {
+                "body": "Sunny."
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

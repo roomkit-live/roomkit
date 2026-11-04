@@ -1,7 +1,7 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "reasoning/a-steered-answer-keeps-its-reasoning",
-  "title": "An answer a steered message asks the model after goes back with its reasoning",
+  "title": "An answer a steered message asks the model after keeps its reasoning in the request's parts",
   "rules": [
     "§6.4",
     "§21.3"

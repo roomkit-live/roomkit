@@ -1,0 +1,133 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reasoning/an-answer-of-reasoning-alone-goes-back-empty-on-chat",
+  "title": "An answer that only reasoned goes back on Chat Completions as an empty text, the way a reasoning field's dialect sends it",
+  "rules": [
+    "§6.4",
+    "§21.3"
+  ],
+  "notes": "Python: chat_request._plain, the message's only part being reasoning (tests/test_providers/test_chat_request.py).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "steer_room_turns": true,
+        "model": {
+          "chat_dialect": "openai",
+          "rounds": [
+            {
+              "gate": "answer",
+              "thinking": [
+                "Weighing."
+              ]
+            },
+            {
+              "text": "a.py"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "dev",
+        "content": {
+          "type": "text",
+          "body": "List the files."
+        }
+      },
+      "background": true,
+      "as": "first"
+    },
+    {
+      "wait_for": "answer"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "dev",
+        "content": {
+          "type": "text",
+          "body": "Only the .py files."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "open": "answer"
+    },
+    {
+      "await": "first",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "chat_messages": [
+            {
+              "role": "user",
+              "content": "List the files."
+            },
+            {
+              "role": "assistant",
+              "content": "",
+              "reasoning_content": {
+                "$absent": true
+              },
+              "reasoning": {
+                "$absent": true
+              },
+              "reasoning_details": {
+                "$absent": true
+              }
+            },
+            {
+              "role": "user",
+              "content": "Only the .py files."
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

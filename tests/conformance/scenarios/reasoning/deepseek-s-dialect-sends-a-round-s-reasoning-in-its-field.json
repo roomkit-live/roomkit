@@ -1,0 +1,153 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reasoning/deepseek-s-dialect-sends-a-round-s-reasoning-in-its-field",
+  "title": "DeepSeek's dialect carries a round's reasoning in reasoning_content, empty for a round that did not reason, and nothing of it in the text",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: providers/deepseek/ai.py DEEPSEEK_CHAT; tests/test_providers/test_deepseek.py. In thinking mode DeepSeek refuses a round of the turn in progress without the field (measured 2026-10-02). roomkit-rs has no DeepSeek provider yet (RMK-1361).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "get_weather",
+            "description": "The weather.",
+            "returns": "sunny"
+          }
+        ],
+        "model": {
+          "chat_dialect": "deepseek",
+          "rounds": [
+            {
+              "stream": [
+                {
+                  "thinking": "WHY."
+                },
+                {
+                  "text": "Let me look."
+                },
+                {
+                  "call": {
+                    "id": "c1",
+                    "name": "get_weather"
+                  }
+                }
+              ]
+            },
+            {
+              "stream": [
+                {
+                  "call": {
+                    "id": "c2",
+                    "name": "get_weather"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Sunny."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "dev",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {
+          "chat_messages": [
+            {
+              "role": "user",
+              "content": "go"
+            },
+            {
+              "role": "assistant",
+              "content": "Let me look.",
+              "reasoning_content": "WHY.",
+              "tool_calls": [
+                {
+                  "type": "function",
+                  "function": {
+                    "name": "get_weather",
+                    "arguments": "{}"
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool",
+              "content": "sunny"
+            },
+            {
+              "role": "assistant",
+              "content": null,
+              "reasoning_content": "",
+              "tool_calls": [
+                {
+                  "type": "function",
+                  "function": {
+                    "name": "get_weather",
+                    "arguments": "{}"
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool",
+              "content": "sunny"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
