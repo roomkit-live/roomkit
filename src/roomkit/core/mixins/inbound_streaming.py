@@ -231,7 +231,7 @@ class InboundStreamingMixin(HelpersMixin):
         # Every segment's delivery set, awaited once now that the stream is
         # done — the run's completion is what the caller's turn waits on.
         await cascade.wait()
-        await writer.record_on_last_message()
+        await writer.write_owed_record()
 
         if not writer.persisted and stream_error is None:
             return None

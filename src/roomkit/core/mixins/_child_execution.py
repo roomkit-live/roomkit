@@ -133,6 +133,7 @@ async def persist_tool_calls(
         response_visibility=scope.response_visibility,
         correlation_id=correlation_id,
         parent_event_id=scope.parent_event_id,
+        hands_on_record=True,
     )
     try:
         answer = await _drain_turn(writer, sr)
@@ -171,7 +172,8 @@ async def _persist_child_stream(
     The rows are the ones a room's streamed turn leaves, by the same writer
     (RFC §23.3): text segments split at tool-call boundaries, each call's
     TOOL_CALL_{START,END} with its structured copy, and the turn's record
-    (``loop_end_reason``, ``ai_usage``) on its last message (RFC §6.4). Only
+    (``loop_end_reason``, ``ai_usage``) on its last message, else its last
+    row (RFC §6.4). Only
     the commit differs, through :class:`_TraceSink`. A delegation cancelled or
     failed mid-turn closes its open calls and keeps its text (RFC §12.2 step
     13s), then propagates. Returns the last segment's text, the responder's
@@ -230,7 +232,7 @@ async def _drain_turn(writer: SegmentWriter, sr: Any) -> str:
         # Nothing else reads this response: closing it here ends a cut-short
         # generation (RFC §12.2 step 13s).
         await _aclose_stream(sr.stream)
-    await writer.record_on_last_message()
+    await writer.write_owed_record()
     if failure is not None:
         raise failure
     return _last_text(writer.persisted) or ""

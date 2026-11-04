@@ -215,6 +215,7 @@ class SegmentWriter:
         streamed_to: set[str] | None = None,
         response_events: list[RoomEvent] | None = None,
         silent: Any = None,
+        hands_on_record: bool = False,
     ) -> None:
         self._kit = kit
         self._sr = sr
@@ -237,6 +238,9 @@ class SegmentWriter:
         # ``LoopEndMarker`` is read; ``_record_owed`` while no row carries it.
         self._turn_record: dict[str, Any] | None = None
         self._record_owed = False
+        # A turn whose text is kept out of the room hands its record on: it
+        # rides none of its rows (RFC §19.7.3).
+        self._hands_on_record = hands_on_record
         self._accumulated: list[str] = []
         self._writing: set[asyncio.Task[RoomEvent | None]] = set()
         # A discussion's silence token (RFC §19.7.5): the start of each text
@@ -277,9 +281,9 @@ class SegmentWriter:
 
         The marker comes last, so the next flush is the turn's final text and
         carries it; a turn with no final text has it written on the message it
-        already wrote, by :meth:`record_on_last_message` (RFC §6.4). It rides
-        the stream too, where a reader of the turn finds how it ended when it
-        wrote no message at all.
+        already wrote, or on its last row when it wrote none, by
+        :meth:`write_owed_record` (RFC §6.4). It rides the stream too, where a
+        reader of the turn finds how it ended.
         """
         self._turn_record = _ended_record(marker)
         self._record_owed = True
@@ -302,18 +306,21 @@ class SegmentWriter:
         self._record_owed = True
         self._sr.turn_record = self._turn_record
 
-    async def record_on_last_message(self) -> None:
-        """Write a record no final text carried on the last MESSAGE already stored.
+    async def write_owed_record(self) -> None:
+        """Write a record no final text carried on the last MESSAGE already
+        stored, or on the turn's last row when it wrote no message.
 
         Run once the turn's deliveries are done, so no delivery record is
         written to the same row meanwhile. Only the row's metadata changes,
         through ``update_event``, so ON_EVENT_UPDATED sees it; it is not
         delivered again. Best effort: the turn's outcome stands without it.
         """
-        if not self._record_owed or self._turn_record is None:
+        if not self._record_owed or self._turn_record is None or self._hands_on_record:
             return
         self._record_owed = False
         last = next((e for e in reversed(self.persisted) if e.type == EventType.MESSAGE), None)
+        if last is None and self.persisted:
+            last = self.persisted[-1]
         if last is None:
             return
         try:
@@ -327,10 +334,10 @@ class SegmentWriter:
             if ended_by_close(self._kit, exc):
                 # The kit's close refused it: the row keeps the end its
                 # commit carried (RFC §12.10.4).
-                logger.debug("The turn's end on message %s not rewritten: the kit closed", last.id)
+                logger.debug("The turn's end on row %s not rewritten: the kit closed", last.id)
                 return
             logger.warning(
-                "Could not record the turn's end on message %s (room %s)",
+                "Could not record the turn's end on row %s (room %s)",
                 last.id,
                 self._room_id,
                 exc_info=True,
@@ -480,9 +487,9 @@ class SegmentWriter:
         self.end_stopped()
         await self.flush_text(cancelled=True)
         # Text already written at a call's boundary carries no record of its
-        # own: the turn's end goes on the last message now, as a stopped
-        # read's does, since no later step of a cancelled read writes it.
-        await self.record_on_last_message()
+        # own: the turn's end goes on the last message now, or its last row, as
+        # a stopped read's does, since no later step of a cancelled read writes it.
+        await self.write_owed_record()
 
     async def end_failed(self, reader: ResponseReader) -> None:
         """Write what a failed turn leaves: open calls closed as ``turn failed``, text kept."""
@@ -513,7 +520,7 @@ class SegmentWriter:
         body = "".join(self._accumulated)
         self._accumulated.clear()
         # A blank segment says nothing: no row, so no empty SMS. A record it
-        # would have carried goes to the turn's last message.
+        # would have carried goes to the turn's last message, else its last row.
         if not body.strip():
             return None
         metadata = dict(self._sr.response_metadata or {})
