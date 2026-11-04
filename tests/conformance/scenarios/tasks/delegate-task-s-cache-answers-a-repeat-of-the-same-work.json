@@ -1,0 +1,488 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/delegate-task-s-cache-answers-a-repeat-of-the-same-work",
+  "title": "A handler's cache answers an agent's call with what its own completed task returned when the task and what was passed are the same, whatever the task's case and the order of the context's keys; another context is other work, and another agent's repeat runs, its result possibly holding what the first passed or may read; a call handing the room's last messages over always runs, and its result answers no later call though the room's previous tasks list it; a task that failed is run again",
+  "rules": [
+    "§23.4"
+  ],
+  "notes": "Python: tests/tasks/test_delegate_cache_outcome.py::test_a_task_that_did_not_complete_is_run_again, test_a_completed_task_answers_a_repeat_from_the_cache; tests/tasks/test_cache.py::TestDelegateHandlerWithCache; tasks/cache.py, tasks/delegate.py DelegateHandler (decided in HITL dc39a85d: the key is the task and its context). An entry the host writes with put answers any agent: tests/tasks/test_cache.py. The answer is the receipt with the task's result, as task_status gives it.",
+  "setup": {
+    "channels": [
+      {
+        "id": "phone",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "source_channel_id": "system",
+              "text": "Breaks."
+            },
+            "fail": "worker failed"
+          },
+          {
+            "when": {
+              "source_channel_id": "system",
+              "type": "message"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Done."
+                }
+              }
+            ],
+            "repeat": true
+          }
+        ]
+      },
+      {
+        "id": "assistant",
+        "type": "ai",
+        "category": "intelligence"
+      },
+      {
+        "id": "other",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "phone"
+          },
+          {
+            "channel_id": "assistant"
+          },
+          {
+            "channel_id": "other"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "phone",
+      "content": {
+        "type": "text",
+        "body": "earlier"
+      },
+      "addressed_to": []
+    },
+    {
+      "call": "delegate_handler",
+      "handler": "tool",
+      "cache": true,
+      "max_conversation": 2
+    },
+    {
+      "call": "delegate.handle",
+      "handler": "tool",
+      "room_id": "room-1",
+      "calling_agent_id": "assistant",
+      "arguments": {
+        "agent": "worker",
+        "task": "Fix.",
+        "context": {
+          "branch": "a",
+          "repo": {
+            "name": "r",
+            "at": [
+              {
+                "x": 1,
+                "y": 2
+              }
+            ]
+          }
+        }
+      },
+      "expect": {
+        "result": {
+          "status": "delegated",
+          "agent_id": "worker",
+          "from_cache": {
+            "$absent": true
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "delegate.handle",
+      "handler": "tool",
+      "room_id": "room-1",
+      "calling_agent_id": "assistant",
+      "arguments": {
+        "agent": "worker",
+        "task": " fix. ",
+        "context": {
+          "repo": {
+            "at": [
+              {
+                "y": 2,
+                "x": 1
+              }
+            ],
+            "name": "r"
+          },
+          "branch": "a"
+        }
+      },
+      "expect": {
+        "result": {
+          "status": "completed",
+          "from_cache": true,
+          "agent_id": "worker",
+          "child_room_id": "$r1",
+          "result": "Done."
+        }
+      }
+    },
+    {
+      "call": "delegate.handle",
+      "handler": "tool",
+      "room_id": "room-1",
+      "calling_agent_id": "assistant",
+      "arguments": {
+        "agent": "worker",
+        "task": "Fix.",
+        "context": {
+          "branch": "other",
+          "repo": {
+            "name": "r",
+            "at": [
+              {
+                "x": 1,
+                "y": 2
+              }
+            ]
+          }
+        }
+      },
+      "expect": {
+        "result": {
+          "status": "delegated",
+          "agent_id": "worker",
+          "from_cache": {
+            "$absent": true
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "delegate.handle",
+      "handler": "tool",
+      "room_id": "room-1",
+      "calling_agent_id": "assistant",
+      "arguments": {
+        "agent": "worker",
+        "task": "Fix."
+      },
+      "expect": {
+        "result": {
+          "status": "delegated",
+          "agent_id": "worker",
+          "from_cache": {
+            "$absent": true
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "delegate.handle",
+      "handler": "tool",
+      "room_id": "room-1",
+      "calling_agent_id": "assistant",
+      "arguments": {
+        "agent": "worker",
+        "task": "Fix.",
+        "conversation": 0
+      },
+      "expect": {
+        "result": {
+          "status": "completed",
+          "from_cache": true,
+          "agent_id": "worker",
+          "child_room_id": "$r3",
+          "result": "Done."
+        }
+      }
+    },
+    {
+      "call": "delegate.handle",
+      "handler": "tool",
+      "room_id": "room-1",
+      "calling_agent_id": "assistant",
+      "arguments": {
+        "agent": "worker",
+        "task": "Fix.",
+        "conversation": 2
+      },
+      "expect": {
+        "result": {
+          "status": "delegated",
+          "agent_id": "worker",
+          "from_cache": {
+            "$absent": true
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "delegate.handle",
+      "handler": "tool",
+      "room_id": "room-1",
+      "calling_agent_id": "assistant",
+      "arguments": {
+        "agent": "worker",
+        "task": "Sum up.",
+        "conversation": 2
+      },
+      "expect": {
+        "result": {
+          "status": "delegated",
+          "agent_id": "worker",
+          "from_cache": {
+            "$absent": true
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "delegate.handle",
+      "handler": "tool",
+      "room_id": "room-1",
+      "calling_agent_id": "assistant",
+      "arguments": {
+        "agent": "worker",
+        "task": "Sum up.",
+        "conversation": 2
+      },
+      "expect": {
+        "result": {
+          "status": "delegated",
+          "agent_id": "worker",
+          "from_cache": {
+            "$absent": true
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "delegate.handle",
+      "handler": "tool",
+      "room_id": "room-1",
+      "calling_agent_id": "assistant",
+      "arguments": {
+        "agent": "worker",
+        "task": "Sum up."
+      },
+      "expect": {
+        "result": {
+          "status": "delegated",
+          "agent_id": "worker",
+          "from_cache": {
+            "$absent": true
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "delegate.handle",
+      "handler": "tool",
+      "room_id": "room-1",
+      "calling_agent_id": "assistant",
+      "arguments": {
+        "agent": "worker",
+        "task": "Sum up."
+      },
+      "expect": {
+        "result": {
+          "status": "completed",
+          "from_cache": true,
+          "agent_id": "worker",
+          "child_room_id": "$r7",
+          "result": "Done."
+        }
+      }
+    },
+    {
+      "call": "delegate_handler",
+      "handler": "fresh",
+      "cache": true
+    },
+    {
+      "call": "delegate.handle",
+      "handler": "fresh",
+      "room_id": "room-1",
+      "calling_agent_id": "assistant",
+      "arguments": {
+        "agent": "worker",
+        "task": "Breaks."
+      },
+      "expect": {
+        "result": {
+          "status": "delegated",
+          "agent_id": "worker",
+          "from_cache": {
+            "$absent": true
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "delegate.handle",
+      "handler": "fresh",
+      "room_id": "room-1",
+      "calling_agent_id": "assistant",
+      "arguments": {
+        "agent": "worker",
+        "task": "Breaks."
+      },
+      "expect": {
+        "result": {
+          "status": "delegated",
+          "agent_id": "worker",
+          "from_cache": {
+            "$absent": true
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "delegate.handle",
+      "handler": "tool",
+      "room_id": "room-1",
+      "calling_agent_id": "other",
+      "arguments": {
+        "agent": "worker",
+        "task": "Fix."
+      },
+      "expect": {
+        "result": {
+          "status": "delegated",
+          "agent_id": "worker",
+          "from_cache": {
+            "$absent": true
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "delegate.handle",
+      "handler": "tool",
+      "room_id": "room-1",
+      "calling_agent_id": "other",
+      "arguments": {
+        "agent": "worker",
+        "task": "Fix."
+      },
+      "expect": {
+        "result": {
+          "status": "completed",
+          "from_cache": true,
+          "agent_id": "worker",
+          "child_room_id": "$r10",
+          "result": "Done."
+        }
+      }
+    },
+    {
+      "call": "delegate.handle",
+      "handler": "tool",
+      "room_id": "room-1",
+      "calling_agent_id": "assistant",
+      "arguments": {
+        "agent": "worker",
+        "task": "Fix."
+      },
+      "expect": {
+        "result": {
+          "status": "completed",
+          "from_cache": true,
+          "agent_id": "worker",
+          "child_room_id": "$r3",
+          "result": "Done."
+        }
+      }
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "$r8": {
+        "metadata": {
+          "task_input": "Breaks.",
+          "task_status": "failed"
+        }
+      },
+      "$r9": {
+        "metadata": {
+          "task_input": "Breaks.",
+          "task_status": "completed"
+        }
+      },
+      "$r10": {
+        "metadata": {
+          "task_input": "Fix.",
+          "task_status": "completed"
+        }
+      },
+      "$r11": null
+    },
+    "turns": {
+      "$r7": {
+        "worker": [
+          {
+            "content": {
+              "type": "text",
+              "body": {
+                "$contains": "<previous_tasks>\n\"Sum up.\""
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

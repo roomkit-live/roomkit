@@ -1,0 +1,272 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/delegate-task-holds-its-model-to-the-tool-s-targets",
+  "title": "A tool built from a list of targets declares them and holds the model to them: a call naming another worker is answered with an error and starts nothing, one naming a target delegates; the host's own call on the handler is not held; setting the tool up twice, or on a channel the kit does not hold, is refused",
+  "rules": [
+    "§23.4"
+  ],
+  "notes": "Python: tests/tasks/test_delegate.py::TestDelegateTool::test_build_delegate_tool_with_targets, TestSetupDelegation::test_double_setup_raises, tests/tasks/test_delegate_reach.py::test_the_tool_s_targets_hold_for_the_model; tasks/delegate.py _served_delegation (decided in HITL 6924ac97).",
+  "setup": {
+    "channels": [
+      {
+        "id": "phone",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "source_channel_id": "system",
+              "type": "message"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Done."
+                }
+              }
+            ],
+            "repeat": true
+          }
+        ]
+      },
+      {
+        "id": "other",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "source_channel_id": "system",
+              "type": "message"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Done too."
+                }
+              }
+            ],
+            "repeat": true
+          }
+        ]
+      },
+      {
+        "id": "assistant",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "delegate_task",
+                  "arguments": {
+                    "agent": "other",
+                    "task": "Not for you."
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "delegate_task",
+                  "arguments": {
+                    "agent": "worker",
+                    "task": "Fix the test."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "On it."
+            },
+            {
+              "text": "Fixed."
+            },
+            {
+              "text": "Also done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "phone"
+          },
+          {
+            "channel_id": "assistant"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "answers",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate_handler",
+      "handler": "tool"
+    },
+    {
+      "call": "setup_delegation",
+      "agent_id": "nobody",
+      "handler": "tool",
+      "expect": {
+        "error": "channel_not_registered"
+      }
+    },
+    {
+      "call": "setup_delegation",
+      "agent_id": "assistant",
+      "handler": "tool",
+      "targets": [
+        [
+          "worker",
+          "Fixes tests"
+        ],
+        [
+          "helper",
+          null
+        ]
+      ]
+    },
+    {
+      "call": "setup_delegation",
+      "agent_id": "assistant",
+      "handler": "tool",
+      "expect": {
+        "error": "already_set_up"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "phone",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "The test fails."
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "delegate.handle",
+      "handler": "tool",
+      "room_id": "room-1",
+      "calling_agent_id": "assistant",
+      "arguments": {
+        "agent": "other",
+        "task": "The host's own."
+      },
+      "expect": {
+        "result": {
+          "status": "delegated",
+          "agent_id": "other",
+          "from_cache": {
+            "$absent": true
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "assistant": [
+        "$any",
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "{\"error\": \"This tool delegates only to: worker, helper\"}"
+            }
+          ]
+        },
+        {
+          "tool_results": [
+            "$any",
+            {
+              "tool_call_id": "c2",
+              "content": {
+                "$contains": "\"status\": \"delegated\""
+              }
+            }
+          ]
+        },
+        "$any",
+        "$any"
+      ]
+    },
+    "hooks": {
+      "answers": [
+        {
+          "response": {
+            "declared_tools": {
+              "delegate_task": {
+                "description": "Delegate a task to a background agent.\nAvailable agents:\n  - worker: Fixes tests\n  - helper",
+                "parameters": {
+                  "properties": {
+                    "agent": {
+                      "enum": [
+                        "worker",
+                        "helper"
+                      ]
+                    },
+                    "conversation": {
+                      "$absent": true
+                    }
+                  },
+                  "required": [
+                    "agent",
+                    "task"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "$any",
+        "$any"
+      ]
+    },
+    "rooms": {
+      "$r1": {
+        "metadata": {
+          "task_input": "Fix the test.",
+          "task_agent_id": "worker"
+        }
+      },
+      "$r2": {
+        "metadata": {
+          "task_input": "The host's own.",
+          "task_agent_id": "other"
+        }
+      },
+      "$r3": null
+    }
+  }
+}
