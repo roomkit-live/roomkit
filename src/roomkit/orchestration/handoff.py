@@ -340,6 +340,9 @@ class HandoffHandler:
                 )
 
             if rejected_result is None:
+                rejected_result = _refused_while_held(room, request.target_agent_id)
+
+            if rejected_result is None:
                 # Determine new phase
                 new_phase = (
                     arguments.get("next_phase")
@@ -815,6 +818,16 @@ def setup_handoff(
         msg = f"setup_handoff() already called for channel '{channel_id}'"
         raise RuntimeError(msg)
     registry.register(handoff_entry(channel, handler, tool), room_id=room_id, owner=handler)
+
+
+def _refused_while_held(room: Room, target: str) -> HandoffResult | None:
+    """The refusal of a handoff to an agent while *room* is held for a human:
+    only the host's transition to an agent takes the hold off, with no model's
+    tool on its way (RFC §19.6). A further handoff to a human is taken."""
+    if target == "human" or not get_conversation_state(room).human_hold:
+        return None
+    logger.warning("Handoff rejected: room %s is held for a human", room.id)
+    return HandoffResult(accepted=False, reason=f"Room {room.id} is held for a human")
 
 
 def refuse_handoffs(

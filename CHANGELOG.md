@@ -110,9 +110,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ConversationState.human_hold`, false by default: while true the router asks
   no agent, whichever rule or default would, and the message still reaches the
   room's transports; an address still asks the agent it names and a supervisor
-  stays informed. A transition to an agent takes the hold off: an accepted
-  handoff, or `save_conversation_state`. A host that counted on an agent taking
-  the conversation back must now hand it back.
+  stays informed. A handoff to an agent is refused during the hold, by the tool
+  and by `handler.handle`; only the host's transition to an agent takes it off,
+  through `save_conversation_state`. A host that counted on an agent taking the
+  conversation back must now hand it back.
 - A `ConversationPipeline`'s or a router's install refused for an agent whose
   handoff is set up already, named twice, or whose tools hold the handoff's name
   leaves no hook and no tool behind; the error is the same (RMK-1233).
