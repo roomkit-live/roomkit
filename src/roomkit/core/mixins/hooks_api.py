@@ -17,7 +17,7 @@ from roomkit.core.hooks import (
 from roomkit.core.inbound_router import binding_admits, routed_recipient
 from roomkit.core.mixins.helpers import HelpersMixin
 from roomkit.models.context import RoomContext
-from roomkit.models.delivery import DeliveryStatus
+from roomkit.models.delivery import SYSTEM_SENDER_ID, DeliveryStatus
 from roomkit.models.enums import (
     ChannelType,
     EventDirection,
@@ -372,6 +372,9 @@ class HooksApiMixin(HelpersMixin):
             if channel is not None and status.recipient
             else status.recipient
         )
+        if recipient == SYSTEM_SENDER_ID:
+            # No one's name (RFC §10.4): a binding naming it delivers to no one.
+            return None
         if recipient:
             room_id = await self._store.find_room_id_by_binding(
                 channel_id,

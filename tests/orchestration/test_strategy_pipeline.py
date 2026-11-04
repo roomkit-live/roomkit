@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from roomkit import RoomKit
+from roomkit.channels import WebSocketChannel
 from roomkit.channels.agent import Agent
 from roomkit.channels.voice import VoiceChannel
 from roomkit.models.channel import ChannelBinding
@@ -265,6 +266,25 @@ async def test_a_handoff_greeting_the_room_refuses_is_logged(
         for r in caplog.records
         if r.levelname == "WARNING"
     )
+
+
+async def test_a_handoff_cue_reaches_its_agent_under_the_framework_s_name() -> None:
+    """The cue names its room, so the refusal of a message routed under the
+    framework's name (RFC §10.1 step 2) leaves it: the new agent is asked, and
+    answers in that room."""
+    kit = RoomKit()
+    kit.register_channel(WebSocketChannel("ws"))
+    kit.register_channel(Agent("b", provider=MockAIProvider(responses=["x"])))
+    await kit.create_room(room_id="r1")
+    await kit.attach_channel("r1", "ws")
+    await kit.attach_channel("r1", "b")
+    greeting = HandoffGreeting(kit, "ws", "Introduce yourself.", None)
+
+    await greeting._greet("r1", "b")
+    await kit.close()
+
+    answers = [e for e in await kit.store.list_events("r1") if e.source.channel_id == "b"]
+    assert [e.content.body for e in answers] == ["x"]
 
 
 def _handoff(room_id: str) -> RoomEvent:

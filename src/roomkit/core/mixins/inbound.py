@@ -1172,7 +1172,7 @@ class InboundMixin(HelpersMixin):
             if created is not None:
                 created = await self._room_timers.apply_due(created)
             if created is not None and created.status not in _REFUSING_STATUSES:
-                await self._attach_unbound(
+                binding = await self._attach_unbound(
                     created,
                     message.channel_id,
                     participant_id=named,
@@ -1180,7 +1180,20 @@ class InboundMixin(HelpersMixin):
                     # chat the message came from.
                     metadata=channel.reply_metadata(message) if recorded and channel else {},
                 )
+                if named == SYSTEM_SENDER_ID and binding is not None:
+                    await self._close_hooks_binding(binding)
         return room.id
+
+    async def _close_hooks_binding(self, binding: ChannelBinding) -> None:
+        """Write the name no sender is on *binding*, the room's binding of a
+        routed message with no address (RFC §5.7, §10.4), if it names no one:
+        one an ON_ROOM_CREATED hook made is kept, and left unnamed it would
+        pass step 3 for the next sender. Under the room lock its caller holds."""
+        if not binding_names_no_one(binding):
+            return
+        closed = binding.model_copy(update={"participant_id": SYSTEM_SENDER_ID})
+        await self._store.update_binding(closed)
+        self._notify_binding_updated(closed.room_id, closed.channel_id, closed)
 
     async def _route_and_claim(
         self,

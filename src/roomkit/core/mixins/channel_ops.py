@@ -67,7 +67,8 @@ def _named_correspondent(binding: ChannelBinding, channel: Channel) -> ChannelBi
     person's conversation, so it names them: the router then finds the room
     for them and admits no one else. The framework's own name holds no one's
     place (:func:`~roomkit.core.inbound_router.names_no_sender`): a recipient
-    replaces it, and with none the binding keeps it.
+    replaces it, and with none the binding keeps it as it is, a channel's form
+    never making it a sender's.
     """
     update: dict[str, Any] = {}
     recipient = channel.recipient_address(binding)
@@ -79,7 +80,7 @@ def _named_correspondent(binding: ChannelBinding, channel: Channel) -> ChannelBi
     if held is None or (held == SYSTEM_SENDER_ID and recipient is not None):
         named = None if binding.group else recipient
     else:
-        named = channel.normalize_address(held)
+        named = held if held == SYSTEM_SENDER_ID else channel.normalize_address(held)
     if named != binding.participant_id:
         update["participant_id"] = named
     return binding.model_copy(update=update) if update else binding

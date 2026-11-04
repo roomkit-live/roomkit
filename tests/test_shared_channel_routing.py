@@ -924,6 +924,9 @@ class TestAPausedConversation:
 class _ByTicket(InboundRoomRouter):
     """A host's router: the room the message's ticket names, as the docs' example does."""
 
+    def __init__(self) -> None:
+        self.asked: list[str | None] = []
+
     async def route(
         self,
         channel_id: str,
@@ -932,6 +935,7 @@ class _ByTicket(InboundRoomRouter):
         channel_data: dict[str, Any] | None = None,
         **kw: Any,
     ) -> str | None:
+        self.asked.append(participant_id)
         return (channel_data or {}).get("ticket")
 
 
@@ -943,7 +947,8 @@ class TestTheFrameworksOwnSender:
         what it writes (RFC §10.1 step 2, §10.4): the name opens nothing,
         whatever a router would answer, and leaves nothing for the next
         sender's agent to read. Any other name is routed, and kept out."""
-        kit = RoomKit(store=store, inbound_router=_ByTicket())
+        router = _ByTicket()
+        kit = RoomKit(store=store, inbound_router=router)
         kit.register_channel(HTTPChannel("web"))
         await kit.create_room(room_id="carols")
         await kit.attach_channel("carols", "web")
@@ -963,6 +968,7 @@ class TestTheFrameworksOwnSender:
         assert refused.blocked is True
         assert refused.reason == "reserved_sender"
         assert refused.event is None
+        assert router.asked == []
         assert len(await store.find_rooms()) == rooms_before
         stored = await store.list_events("carols")
         assert [e.content.body for e in stored if e.source.channel_id == "web"] == ["hi"]

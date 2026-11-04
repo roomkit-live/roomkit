@@ -116,9 +116,8 @@ class DefaultInboundRoomRouter(InboundRoomRouter):
         # room only identifies the pipe. The framework's name is no one's, so
         # nothing it names is a sender's conversation.
         if participant_id and recordable_sender(participant_id):
-            identity_id = identity.id if identity is not None else None
             room_id = await self._senders_room(
-                channel_id, participant_id, identity_id, organization_id
+                channel_id, participant_id, _identity_name(identity), organization_id
             )
             if room_id is not None:
                 return room_id
@@ -383,9 +382,15 @@ def known_as(sender: str | None, identity: Identity | None, channel_id: str) -> 
     if not sender or not recordable_sender(sender):
         return frozenset()
     names = {sender, own_record_id(channel_id, sender)}
-    if identity is not None:
-        names.add(identity.id)
+    if (name := _identity_name(identity)) is not None:
+        names.add(name)
     return frozenset(names)
+
+
+def _identity_name(identity: Identity | None) -> str | None:
+    """The id *identity* names its sender by; none for an identity under the
+    framework's own name, which is no sender's (RFC §10.4)."""
+    return identity.id if identity is not None and identity.id != SYSTEM_SENDER_ID else None
 
 
 def recordable_sender(sender: str | None) -> bool:
