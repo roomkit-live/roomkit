@@ -1,0 +1,60 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/the-one-room-delivering-by-its-key-on-a-channel-reading-no-recipient-is-not-the-status",
+  "title": "The one active room bound to the channel, holding another number under the declared key of a channel whose recipient_address answers none, is not given the status",
+  "rules": [
+    "§10.4 A delivery status follows its message",
+    "§5.7"
+  ],
+  "notes": "The binding's recipient is its correspondent, read under the key when the channel's method answers none.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "free"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "status",
+        "trigger": "on_delivery_status",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "free",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "metadata": {
+          "phone_number": "+15550000001"
+        }
+      }
+    },
+    {
+      "call": "process_delivery_status",
+      "status": {
+        "provider": "mock",
+        "message_id": "m",
+        "status": "sent",
+        "channel_id": "sms",
+        "recipient": "+15550000002"
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "status": []
+    }
+  }
+}

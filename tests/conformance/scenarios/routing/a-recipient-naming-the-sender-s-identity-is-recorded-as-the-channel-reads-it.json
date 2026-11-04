@@ -1,0 +1,95 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-recipient-naming-the-sender-s-identity-is-recorded-as-the-channel-reads-it",
+  "title": "A binding whose recipient, as the channel reads it, is the sender's identity is theirs: the record names that recipient and writes no address beside it",
+  "rules": [
+    "§5.7",
+    "§10.1 step 2",
+    "§10.4"
+  ],
+  "notes": "reached_at holds Bob's identity. Bob's address is linked to it, so the one room bound to the channel admits him, and the correspondent is the recipient as the channel reads it. The binding then names the identity, not the conversation's address, so no reply metadata is written.",
+  "setup": {
+    "identities": [
+      {
+        "id": "identity-of-bob",
+        "channel_addresses": {
+          "sms": [
+            "+15550000002"
+          ]
+        }
+      }
+    ],
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {
+          "recipient_at": "reached_at"
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-1",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "metadata": {
+          "reached_at": "identity-of-bob"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "Hello, Bob here"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "room-1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "room-1": {
+        "sms": {
+          "participant_id": "identity-of-bob",
+          "metadata": {
+            "reached_at": "identity-of-bob",
+            "phone_number": {
+              "$absent": true
+            }
+          }
+        }
+      }
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "Hello, Bob here"
+          }
+        }
+      ]
+    }
+  }
+}

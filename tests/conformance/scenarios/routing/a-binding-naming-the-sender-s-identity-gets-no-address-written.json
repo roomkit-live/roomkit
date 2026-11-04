@@ -1,0 +1,90 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-binding-naming-the-sender-s-identity-gets-no-address-written",
+  "title": "The record writes no recipient on a binding naming the sender's identity: it names a conversation other than their address's",
+  "rules": [
+    "§5.7",
+    "§10.1 step 2"
+  ],
+  "notes": "A binding the host named by the identity holds no value under the key. Bob is found at step 1 and goes on in the room; the record's write of a recipient is for a binding naming the sender by their address.",
+  "setup": {
+    "identities": [
+      {
+        "id": "identity-of-bob",
+        "channel_addresses": {
+          "sms": [
+            "+15550000002"
+          ]
+        }
+      }
+    ],
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {}
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-1",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "metadata": {},
+        "participant_id": "identity-of-bob"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "Hello, Bob here"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "room-1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "room-1": {
+        "sms": {
+          "participant_id": "identity-of-bob",
+          "metadata": {
+            "phone_number": {
+              "$absent": true
+            }
+          }
+        }
+      }
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "Hello, Bob here"
+          }
+        }
+      ]
+    }
+  }
+}

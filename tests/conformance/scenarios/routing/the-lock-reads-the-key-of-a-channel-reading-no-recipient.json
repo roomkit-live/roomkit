@@ -1,0 +1,115 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/the-lock-reads-the-key-of-a-channel-reading-no-recipient",
+  "title": "Under the lock, a routed room whose binding holds someone else under the declared key is no longer the sender's, on a channel whose recipient_address answers none",
+  "rules": [
+    "§5.7",
+    "§10.1 step 2",
+    "§10.4"
+  ],
+  "notes": "A router answers room-1 for every message. Alice is routed once more, then given a room of her own, nothing written on the binding; Bob, whose number is under the key, stays and is recorded.",
+  "setup": {
+    "kit": {
+      "router": {
+        "room_id": "room-1"
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-1",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "metadata": {
+          "phone_number": "+15550000002"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "Hello, Alice here"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "Hello, Bob here"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "room-1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "room-1": {
+        "sms": {
+          "participant_id": "+15550000002",
+          "metadata": {
+            "phone_number": "+15550000002"
+          }
+        }
+      },
+      "$r1": {
+        "sms": {
+          "participant_id": "+15550000001"
+        }
+      }
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "Hello, Bob here"
+          }
+        }
+      ],
+      "$r1": [
+        {
+          "content": {
+            "body": "Hello, Alice here"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,78 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-recipient-given-to-a-room-opened-with-no-address-replaces-the-name-on-a-channel-reading-no-recipient",
+  "title": "A recipient the integrator gives under the declared key names a room a message with no address opened, on a channel whose recipient_address answers none",
+  "rules": [
+    "§5.7",
+    "§10.1 step 2",
+    "§10.4"
+  ],
+  "notes": "RFC 10.4: a recipient the integrator gives replaces the name. Compare routing/a-room-opened-with-no-address-is-named-by-the-integrator, on a channel that reads it. Found by the review of RMK-1129.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "",
+        "content": {
+          "type": "text",
+          "body": "first"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    },
+    {
+      "call": "update_binding_metadata",
+      "room_id": "$r1",
+      "channel_id": "sms",
+      "metadata": {
+        "phone_number": "+15550000002"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "bob: hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "$r1": {
+        "sms": {
+          "participant_id": "+15550000002"
+        }
+      }
+    }
+  }
+}

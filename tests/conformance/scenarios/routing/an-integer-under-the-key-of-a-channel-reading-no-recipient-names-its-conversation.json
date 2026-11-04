@@ -1,0 +1,109 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/an-integer-under-the-key-of-a-channel-reading-no-recipient-names-its-conversation",
+  "title": "An integer under the declared key names its conversation in its written form, on a channel whose recipient_address answers none",
+  "rules": [
+    "§5.7",
+    "§10.4"
+  ],
+  "notes": "A chat id written as an integer: the stranger is kept out, the sender written as its digits is found, and the record leaves the integer as it is.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "chat"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-1",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "metadata": {
+          "chat": 12345
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "777",
+        "content": {
+          "type": "text",
+          "body": "a stranger"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "12345",
+        "content": {
+          "type": "text",
+          "body": "the chat"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "room-1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "room-1": {
+        "sms": {
+          "participant_id": "12345",
+          "metadata": {
+            "chat": 12345
+          }
+        }
+      },
+      "$r1": {
+        "sms": {
+          "participant_id": "777"
+        }
+      }
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "the chat"
+          }
+        }
+      ],
+      "$r1": [
+        {
+          "content": {
+            "body": "a stranger"
+          }
+        }
+      ]
+    }
+  }
+}

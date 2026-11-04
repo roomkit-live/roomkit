@@ -1,0 +1,93 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/the-lock-reads-a-binding-s-recipient-by-the-channel-s-own-method",
+  "title": "Under the lock, a routed room whose binding delivers to someone else by the channel's recipient_address is no longer the sender's",
+  "rules": [
+    "§5.7",
+    "§10.1 step 2",
+    "§10.4"
+  ],
+  "notes": "A router answers room-1 for every message. The binding names no participant and the channel's recipient_address reads Bob: roomkit's still_the_messages takes him as the correspondent, so Alice is routed once more, then given a room of her own, and nothing is written on the binding.",
+  "setup": {
+    "kit": {
+      "router": {
+        "room_id": "room-1"
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {
+          "recipient_at": "reached_at"
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-1",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "metadata": {
+          "reached_at": "+15550000002"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "Hello, Alice here"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "room-1": {
+        "sms": {
+          "participant_id": null,
+          "metadata": {
+            "reached_at": "+15550000002"
+          }
+        }
+      },
+      "$r1": {
+        "sms": {
+          "participant_id": "+15550000001"
+        }
+      }
+    },
+    "timeline": {
+      "room-1": [],
+      "$r1": [
+        {
+          "content": {
+            "body": "Hello, Alice here"
+          }
+        }
+      ]
+    }
+  }
+}

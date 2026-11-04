@@ -1,0 +1,83 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-value-under-the-key-in-another-form-finds-its-room-on-a-channel-reading-no-recipient",
+  "title": "A recipient attached under the declared key, in another form than the channel's, finds its room at step 1 on a channel whose recipient_address answers none",
+  "rules": [
+    "§5.7",
+    "§10.1 step 2",
+    "§10.4"
+  ],
+  "notes": "The channel's normalize_address writes 555-0002 as Bob's number and its recipient_address answers none (it reads a key nothing writes). Two rooms are bound, so step 3 cannot save it: the attach named him. Found by the review of RMK-1129.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {
+          "normalizes": {
+            "555-0002": "+15550000002"
+          },
+          "recipient_at": "nowhere"
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms",
+            "metadata": {
+              "phone_number": "555-0002"
+            }
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms",
+            "metadata": {
+              "phone_number": "+15550000003"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "555-0002",
+        "content": {
+          "type": "text",
+          "body": "bob: hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "room-1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "bob: hi"
+          }
+        }
+      ]
+    }
+  }
+}

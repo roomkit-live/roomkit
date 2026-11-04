@@ -1,0 +1,77 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/the-record-names-the-sender-on-an-attach-whatever-the-channel-wrote",
+  "title": "A value the channel writes under the declared key from its on_room_attached, on the attach made for a routed sender, is never recorded as the correspondent",
+  "rules": [
+    "§5.7",
+    "§10.1 step 2"
+  ],
+  "notes": "A router answers room-1, which does not bind the channel; on_room_attached writes true under the key. The binding names the sender, the value kept. Found by the review of RMK-1129: Python's record wrote the unreadable value's object.",
+  "setup": {
+    "kit": {
+      "router": {
+        "room_id": "room-1"
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "on_room_attached": [
+          {
+            "do": [
+              {
+                "call": "update_binding_metadata",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "metadata": {
+                  "phone_number": true
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "alice: hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "room-1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "room-1": {
+        "sms": {
+          "participant_id": "+15550000001",
+          "metadata": {
+            "phone_number": true
+          }
+        }
+      }
+    }
+  }
+}

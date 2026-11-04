@@ -1,0 +1,80 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-group-binding-s-value-under-the-key-names-no-one",
+  "title": "Routing does not read a group binding's recipient, on a channel whose recipient_address answers none",
+  "rules": [
+    "§5.7",
+    "§10.4"
+  ],
+  "notes": "The fallback on the declared key names no one on a binding declared group: Alice is taken in, and nothing is recorded.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-1",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "metadata": {
+          "phone_number": "+15550000002"
+        },
+        "group": true
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "Hello, Alice here"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "room-1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "room-1": {
+        "sms": {
+          "participant_id": null,
+          "group": true,
+          "metadata": {
+            "phone_number": "+15550000002"
+          }
+        }
+      }
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "Hello, Alice here"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,90 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/the-channel-s-recipient-wins-over-its-declared-key",
+  "title": "The channel's recipient_address answers a binding's recipient when it names one, whatever its declared key holds",
+  "rules": [
+    "§5.7",
+    "§10.1 step 2",
+    "§10.4"
+  ],
+  "notes": "reached_at holds Bob, the declared key Carol. Step 1 reads the declared key and finds Carol the room; under the lock the channel's answer names Bob, so she is routed once more, then given a room of her own, the binding as it was.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {
+          "recipient_at": "reached_at"
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-1",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "metadata": {
+          "reached_at": "+15550000002",
+          "phone_number": "+15550000003"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000003",
+        "content": {
+          "type": "text",
+          "body": "Hello, Carol here"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "room-1": {
+        "sms": {
+          "participant_id": null,
+          "metadata": {
+            "reached_at": "+15550000002",
+            "phone_number": "+15550000003"
+          }
+        }
+      },
+      "$r1": {
+        "sms": {
+          "participant_id": "+15550000003"
+        }
+      }
+    },
+    "timeline": {
+      "room-1": [],
+      "$r1": [
+        {
+          "content": {
+            "body": "Hello, Carol here"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/the-channel-s-answer-naming-the-sender-admits-her-whatever-the-key-holds",
+  "title": "The channel's recipient_address naming the sender admits her at step 3, a recipient under the declared key notwithstanding",
+  "rules": [
+    "§5.7",
+    "§10.1 step 2",
+    "§10.4"
+  ],
+  "notes": "phone_number holds Bob, reached_at Alice. Only the router's own read of the channel admits her: step 1 reads the key. Found by the review of RMK-1129.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {
+          "recipient_at": "reached_at"
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-1",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "metadata": {
+          "phone_number": "+15550000002",
+          "reached_at": "+15550000001"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "alice: hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "room-1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "room-1": {
+        "sms": {
+          "participant_id": "+15550000001",
+          "metadata": {
+            "phone_number": "+15550000002",
+            "reached_at": "+15550000001"
+          }
+        }
+      }
+    }
+  }
+}

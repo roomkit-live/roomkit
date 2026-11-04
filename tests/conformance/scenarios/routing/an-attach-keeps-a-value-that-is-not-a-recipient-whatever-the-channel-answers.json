@@ -1,0 +1,74 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/an-attach-keeps-a-value-that-is-not-a-recipient-whatever-the-channel-answers",
+  "title": "An attach does not write the channel's answer over a value under the key that is not a recipient",
+  "rules": [
+    "§5.7",
+    "§10.1 step 2",
+    "§10.4"
+  ],
+  "notes": "The attach carries phone_number true and reached_at Alice. RFC 5.7: a value under the key that is not a recipient is read first, whatever the channel answers. Found by the review of RMK-1129.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {
+          "recipient_at": "reached_at"
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms",
+            "metadata": {
+              "phone_number": true,
+              "reached_at": "+15550000001"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "alice: hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "room-1": {
+        "sms": {
+          "participant_id": null,
+          "metadata": {
+            "phone_number": true
+          }
+        }
+      }
+    },
+    "timeline": {
+      "room-1": []
+    }
+  }
+}

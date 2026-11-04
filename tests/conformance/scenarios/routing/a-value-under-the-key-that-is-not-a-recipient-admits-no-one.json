@@ -1,0 +1,78 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-value-under-the-key-that-is-not-a-recipient-admits-no-one",
+  "title": "A value under the declared key that is not a recipient admits no one, whatever the channel's recipient_address answers",
+  "rules": [
+    "§5.7",
+    "§10.1 step 2",
+    "§10.4"
+  ],
+  "notes": "roomkit's routed_recipient reads the declared key first: an unreadable value is someone else's address, and the channel's method is not asked. The channel's recipient_address reads none there, the sender still gets a room of her own, the binding as it was. Translates tests/test_shared_channel_routing.py::test_a_room_whose_recipient_is_unreadable_admits_no_one.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-1",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "metadata": {
+          "phone_number": true
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "Hello, Alice here"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "room-1": {
+        "sms": {
+          "participant_id": null,
+          "metadata": {
+            "phone_number": true
+          }
+        }
+      },
+      "$r1": {
+        "sms": {
+          "participant_id": "+15550000001"
+        }
+      }
+    },
+    "timeline": {
+      "room-1": []
+    }
+  }
+}

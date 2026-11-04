@@ -1,0 +1,79 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-status-for-the-key-s-value-reaches-no-room-past-the-newest",
+  "title": "A status for the value under the declared key, the newest room holding it reading another recipient, reaches no older room",
+  "rules": [
+    "§10.4 A delivery status follows its message",
+    "§5.7"
+  ],
+  "notes": "Two rooms hold Bob under the key; the newest's channel reads Carol, the older's Bob. Only the newest the store finds is read: the status is lost, and reaches no wrong room. Found by the light review of RMK-1129.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {
+          "recipient_at": "reached_at"
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1"
+      },
+      {
+        "id": "room-2"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "status",
+        "trigger": "on_delivery_status",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-1",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "metadata": {
+          "phone_number": "+15550000002",
+          "reached_at": "+15550000002"
+        }
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-2",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "metadata": {
+          "phone_number": "+15550000002",
+          "reached_at": "+15550000003"
+        }
+      }
+    },
+    {
+      "call": "process_delivery_status",
+      "status": {
+        "provider": "mock",
+        "message_id": "m",
+        "status": "sent",
+        "channel_id": "sms",
+        "recipient": "+15550000002"
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "status": []
+    }
+  }
+}

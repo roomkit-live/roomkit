@@ -1,0 +1,88 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/the-lock-names-the-recipient-the-channel-reads",
+  "title": "A routed sender the channel's recipient_address names is the binding's conversation, recorded as its correspondent",
+  "rules": [
+    "§5.7",
+    "§10.1 step 2",
+    "§10.4"
+  ],
+  "notes": "Bob writes; the router answers the room whose binding delivers to him by the channel's recipient_address, under a key the declaration does not name. The room is his conversation: the record names him, and his reply metadata goes under the declared key.",
+  "setup": {
+    "kit": {
+      "router": {
+        "room_id": "room-1"
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {
+          "recipient_at": "reached_at"
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-1",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "metadata": {
+          "reached_at": "+15550000002"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "Hello, Bob here"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "room-1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "room-1": {
+        "sms": {
+          "participant_id": "+15550000002",
+          "metadata": {
+            "reached_at": "+15550000002",
+            "phone_number": "+15550000002"
+          }
+        }
+      }
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "Hello, Bob here"
+          }
+        }
+      ]
+    }
+  }
+}

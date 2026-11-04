@@ -1,0 +1,76 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/an-integer-under-the-key-in-another-form-is-read-in-the-channel-s-form",
+  "title": "An integer under the declared key is read in the channel's form at step 3, its value kept",
+  "rules": [
+    "§5.7",
+    "§10.1 step 2",
+    "§10.4"
+  ],
+  "notes": "Bob, whose number the channel writes from those digits, is admitted at step 3 and recorded. Found by the review of RMK-1129.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {
+          "normalizes": {
+            "15550000002": "+15550000002"
+          },
+          "recipient_at": "nowhere"
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-1",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "metadata": {
+          "phone_number": 15550000002
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "bob: hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "room-1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "room-1": {
+        "sms": {
+          "participant_id": "+15550000002",
+          "metadata": {
+            "phone_number": 15550000002
+          }
+        }
+      }
+    }
+  }
+}

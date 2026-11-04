@@ -1,0 +1,81 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/the-one-room-the-channel-s-own-method-delivers-to-is-its-recipient-s-status",
+  "title": "A status for someone other than the recipient the channel's recipient_address reads is not the one room's; one for that recipient is",
+  "rules": [
+    "§10.4 A delivery status follows its message",
+    "§5.7"
+  ],
+  "notes": "The recipient is under a key the declaration does not name, so the status is read by the one room's rule, not by step 1's.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {
+          "recipient_at": "reached_at"
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "free"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "status",
+        "trigger": "on_delivery_status",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "free",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "metadata": {
+          "reached_at": "+15550000001"
+        }
+      }
+    },
+    {
+      "call": "process_delivery_status",
+      "status": {
+        "provider": "mock",
+        "message_id": "m",
+        "status": "sent",
+        "channel_id": "sms",
+        "recipient": "+15550000002"
+      }
+    },
+    {
+      "call": "process_delivery_status",
+      "status": {
+        "provider": "mock",
+        "message_id": "m",
+        "status": "sent",
+        "channel_id": "sms",
+        "recipient": "+15550000001"
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "status": [
+        {
+          "trigger": "on_delivery_status",
+          "room_id": "free",
+          "delivery_status": {
+            "recipient": "+15550000001"
+          }
+        }
+      ]
+    }
+  }
+}
