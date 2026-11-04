@@ -229,3 +229,42 @@ def test_a_deleted_row_rebuilds_nothing_of_what_it_held(deleted: str, held: str)
     remembered = remembered_calls(rows)
 
     assert held not in str(remembered)
+
+
+def _row(kind: EventType, tool_id: str, name: str, **fields: Any) -> RoomEvent:
+    return RoomEvent(
+        room_id="r1",
+        type=kind,
+        source=EventSource(channel_id="ai1", channel_type=ChannelType.AI),
+        content=ToolCallContent(tool_name=name, tool_id=tool_id, **fields),
+        status=EventStatus.DELIVERED,
+        correlation_id="turn-1",
+    )
+
+
+def test_two_calls_under_one_id_rebuild_each_with_its_own_arguments() -> None:
+    rows = [
+        _row(EventType.TOOL_CALL_START, "c1", "lookup", arguments={"q": "first"}),
+        _row(EventType.TOOL_CALL_START, "c1", "other", arguments={"q": "second"}),
+        _row(EventType.TOOL_CALL_END, "c1", "lookup", result="fine", outcome="served"),
+        _row(EventType.TOOL_CALL_END, "c1", "other", result="refused", outcome="refused"),
+    ]
+
+    assert [(c["name"], c["arguments"]) for c in remembered_calls(rows)] == [
+        ("lookup", {"q": "first"})
+    ]
+
+
+def test_a_withheld_end_leaves_its_call_out_of_a_later_call_s_rebuild() -> None:
+    left = _row(EventType.TOOL_CALL_START, "c1", "lookup", arguments={"q": "left"})
+    ended = _row(EventType.TOOL_CALL_END, "c1", "lookup", result="gone", outcome="served")
+    rows = [
+        left,
+        ended.model_copy(update={"metadata": {"deleted": True}}),
+        _row(EventType.TOOL_CALL_START, "c1", "lookup", arguments={"q": "new"}),
+        _row(EventType.TOOL_CALL_END, "c1", "lookup", result="its own", outcome="served"),
+    ]
+
+    assert [(c["arguments"], c["result"]) for c in remembered_calls(rows)] == [
+        ({"q": "new"}, "its own")
+    ]

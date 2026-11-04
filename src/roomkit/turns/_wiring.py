@@ -20,11 +20,13 @@ from roomkit.channels.ai import AIChannel
 from roomkit.core._changes import withheld
 from roomkit.core.hooks import SyncPipelineResult
 from roomkit.models.enums import ChannelCategory, EventType, HookTrigger
+from roomkit.models.event import ToolCallContent
 from roomkit.models.pending_input import PendingInputEvent
 from roomkit.models.plan_event import PlanUpdatedEvent
 from roomkit.models.thinking_event import ThinkingEvent
 from roomkit.models.tool_call import AIGenerationEvent, AIResponseEvent
 from roomkit.speaking.base import SpeakDecision, SpeakDecisionEvent
+from roomkit.tools._open_calls import OpenCalls
 from roomkit.tools._outcome import kept_in_tool_memory
 from roomkit.turns._outlet import TurnRealtime, emit_framework_event
 from roomkit.turns._tool_hooks import ToolHooks
@@ -90,29 +92,33 @@ def remembered_calls(events: list[RoomEvent]) -> list[dict[str, Any]]:
     # start of the same call in the same turn (its response's correlation
     # id): a provider may reuse an id from one turn to the next, and two turns
     # of a room may run at once.
-    requested: dict[tuple[str | None, str], dict[str, Any]] = {}
+    requested: OpenCalls[dict[str, Any]] = OpenCalls()
     calls: list[dict[str, Any]] = []
     # A deleted row is withheld, as from any history (RFC §7.5 rule 8, §10.3).
     for ev in withheld(events):
         content = ev.content
-        call = (ev.correlation_id, getattr(content, "tool_id", ""))
-        if ev.type == EventType.TOOL_CALL_START:
-            requested[call] = getattr(content, "arguments", {}) or {}
+        turn = ev.correlation_id
+        if not isinstance(content, ToolCallContent):
+            requested.round_over(turn)
             continue
-        name = getattr(content, "tool_name", "")
+        if ev.type == EventType.TOOL_CALL_START:
+            requested.hold(turn, content.tool_id, content.arguments or {})
+            continue
+        requested.round_over(turn)
+        name = content.tool_name
         if ev.type != EventType.TOOL_CALL_END or not name:
             continue
-        arguments = requested.pop(call, {})
+        arguments = requested.take(turn, content.tool_id) or {}
         # The live memory's rule, read off the outcome the row states: a
         # refusal or a call nothing served is not kept.
-        if not kept_in_tool_memory(getattr(content, "outcome", None)):
+        if not kept_in_tool_memory(content.outcome):
             continue
         calls.append(
             {
                 "name": name,
                 "arguments": arguments,
-                "result": getattr(content, "result", "") or "",
-                "outcome": getattr(content, "outcome", None),
+                "result": content.result or "",
+                "outcome": content.outcome,
             }
         )
     return calls
