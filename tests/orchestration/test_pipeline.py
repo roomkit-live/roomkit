@@ -930,6 +930,32 @@ async def _serve(rtv: Any, session: Any, name: str, arguments: dict[str, Any]) -
     return await rtv._call_tool_handler(call, None)
 
 
+async def test_a_realtime_pipeline_keeps_to_its_chain() -> None:
+    """A realtime pipeline's agents are all known, and the map names them: a
+    known target it names is led to its own phase alone (RFC §19.6)."""
+    kit = RoomKit()
+    kit.register_channel(_make_rtv())
+    agents = [_mock_agent(f"agent-{name}") for name in "abc"]
+    pipeline = ConversationPipeline(
+        stages=[
+            PipelineStage(phase="a", agent_id="agent-a", next="b"),
+            PipelineStage(phase="b", agent_id="agent-b", next="c"),
+            PipelineStage(phase="c", agent_id="agent-c"),
+        ]
+    )
+    _, handler = pipeline.install(kit, agents, voice_channel_id="rtv")
+    room = await kit.create_room(room_id="r")
+    state = ConversationState(phase="a", active_agent_id="agent-a")
+    await kit.store.update_room(set_conversation_state(room, state))
+
+    arguments = {"target": "agent-c", "reason": "r", "summary": "s", "next_phase": "b"}
+    skipped = await handler.handle("r", "agent-a", arguments)
+    await kit.close()
+
+    assert skipped.accepted is False
+    assert skipped.reason == "Agent agent-c does not hold phase 'b'"
+
+
 class TestRealtimeInstall:
     def test_install_detects_realtime_channel(self):
         """install() detects RealtimeVoiceChannel and uses _wire_realtime."""
