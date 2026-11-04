@@ -862,7 +862,11 @@ class LaneExecutionMixin(HelpersMixin):
         cascade.add_streams(result.streaming_responses, chained=not plan.answers_caller)
 
         await self._commit_blocked_events(
-            room_id, result, plan.response_visibility, plan.context.bindings
+            room_id,
+            result,
+            plan.response_visibility,
+            plan.context.bindings,
+            max_chain_depth=plan.max_chain_depth,
         )
 
         if plan.fire_after_broadcast:
@@ -1049,6 +1053,8 @@ class LaneExecutionMixin(HelpersMixin):
         result: BroadcastResult,
         response_visibility: str | None = None,
         bindings: Iterable[ChannelBinding] = (),
+        *,
+        max_chain_depth: int | None = None,
     ) -> None:
         """Commit the records a delivery set blocked (RFC §8.1, §8.3, §14.3).
 
@@ -1056,11 +1062,15 @@ class LaneExecutionMixin(HelpersMixin):
         limit and a muted source's response (§7.5 rule 2) both land here,
         whichever path broadcast the trigger, each within the answer scope
         its trigger asked for, as a response is. A room that refuses writes
-        takes neither, each refusal announced (§5.1).
+        takes neither, each refusal announced (§5.1). ``max_chain_depth`` is
+        the limit the delivery set answered to when not the kit's (a
+        discussion's turn, §19.7.5 rule 11).
         """
         for blocked in result.blocked_events:
             await self._commit_blocked_response(
-                room_id, scoped(blocked, response_visibility, bindings)
+                room_id,
+                scoped(blocked, response_visibility, bindings),
+                max_chain_depth=max_chain_depth,
             )
 
     async def _refuses_record(self, room_id: str, record: RoomEvent) -> bool:

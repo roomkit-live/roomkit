@@ -138,6 +138,36 @@ async def test_a_turn_asks_its_one_agent_against_the_discussions_depth_limit() -
     await kit.close()
 
 
+async def test_a_turn_stopped_past_its_own_limit_is_announced_with_that_limit() -> None:
+    """Its framework event says the limit that stopped it, as its observation
+    does: the discussion's, not the kit's (RFC §19.7.5 rule 11)."""
+    kit = RoomKit(max_chain_depth=3)
+    await _room(kit, a=_provider(), b=_provider())
+    kit._discussions["r1"] = _Held()
+    announced: list[int] = []
+
+    @kit.on("chain_depth_exceeded")
+    async def on_exceeded(event: Any) -> None:
+        announced.append(event.data["max_chain_depth"])
+
+    stored = (await _say(kit, "@a hello", addressed_to=["a"])).event
+    deep = stored.model_copy(update={"chain_depth": 9})
+    mark = issue_mark([])
+    async with kit._lock_manager.locked("r1"):
+        context = await kit._build_context("r1")
+        cascade = await kit._plan_discussion_turn(
+            "r1", deep, "a", context, mark=mark, max_depth=10
+        )
+    assert cascade is not None
+    await kit._finish_cascade(cascade, "r1")
+    retire_mark(mark)
+
+    seen = await kit.store.list_observations("r1")
+    assert [o.metadata["max_chain_depth"] for o in seen] == [10]
+    assert announced == [10]
+    await kit.close()
+
+
 async def test_a_turn_reads_the_answered_event_at_its_place_with_the_notes() -> None:
     a = _provider("my answer")
     kit = RoomKit()
