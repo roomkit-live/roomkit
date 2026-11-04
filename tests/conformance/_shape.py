@@ -338,6 +338,7 @@ CALLS: dict[str, set[str]] = {
     "mute": {"room_id", "channel_id"},
     "unmute": {"room_id", "channel_id"},
     "set_access": {"room_id", "channel_id", "access"},
+    "update_binding_metadata": {"room_id", "channel_id", "metadata"},
     "set_visibility": {"room_id", "channel_id", "visibility"},
     "close_room": {"room_id"},
     "send_greeting": {"room_id", "channel_id", "agent_id", "greeting"},

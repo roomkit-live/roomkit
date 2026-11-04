@@ -336,6 +336,12 @@ async def _set_visibility(kit: RoomKit, harness: Harness, spec: Mapping[str, Any
     )
 
 
+async def _update_binding_metadata(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
+    return await kit.update_binding_metadata(
+        spec["room_id"], spec["channel_id"], spec["metadata"], **_org(spec)
+    )
+
+
 async def _close_room(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
     return await kit.close_room(spec["room_id"], **_org(spec))
 
@@ -480,6 +486,7 @@ CALLS: dict[str, Call] = {
     "unmute": _unmute,
     "set_access": _set_access,
     "set_visibility": _set_visibility,
+    "update_binding_metadata": _update_binding_metadata,
     "close_room": _close_room,
     "send_greeting": _send_greeting,
     "archive_room": _archive_room,
