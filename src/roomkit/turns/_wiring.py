@@ -15,6 +15,7 @@ import dataclasses
 import logging
 from typing import TYPE_CHECKING, Any
 
+from roomkit.channels._skill_constants import TOOL_ACTIVATE_SKILL
 from roomkit.channels.acp import ACPChannel
 from roomkit.channels.ai import AIChannel
 from roomkit.core._changes import withheld
@@ -113,17 +114,18 @@ def remembered_calls(events: list[RoomEvent]) -> list[dict[str, Any]]:
         # refusal or a call nothing served is not kept.
         if not kept_in_tool_memory(content.outcome):
             continue
-        calls.append(
-            {
-                "name": name,
-                "arguments": arguments,
-                # What ran, a rewrite's included: the rules a skill's activation
-                # put before the model are this call's, whatever it asked.
-                "ran_with": content.arguments,
-                "result": content.result or "",
-                "outcome": content.outcome,
-            }
-        )
+        call: dict[str, Any] = {
+            "name": name,
+            "arguments": arguments,
+            "result": content.result or "",
+            "outcome": content.outcome,
+        }
+        # What ran, a rewrite's included: the rules an activation put before
+        # the model are this call's, whatever it asked. No other call's are
+        # kept: a deleted start's arguments stay out of the memory.
+        if name == TOOL_ACTIVATE_SKILL:
+            call["ran_with"] = content.arguments
+        calls.append(call)
     return calls
 
 

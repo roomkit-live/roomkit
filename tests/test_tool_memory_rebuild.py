@@ -285,19 +285,20 @@ def test_a_later_round_s_call_under_an_id_takes_its_own_end_in_the_rebuild() -> 
     ]
 
 
-def test_a_rebuilt_call_keeps_what_the_model_wrote_and_what_ran() -> None:
+def test_a_rebuilt_activation_keeps_what_the_model_wrote_and_what_ran() -> None:
+    name = "activate_skill"
     rows = [
-        _row(EventType.TOOL_CALL_START, "c1", "lookup", arguments={"q": "<TOKEN>"}),
+        _row(EventType.TOOL_CALL_START, "c1", name, arguments={"name": "alpha"}),
         _row(
             EventType.TOOL_CALL_END,
             "c1",
-            "lookup",
-            arguments={"q": "real"},
-            result="its own",
+            name,
+            arguments={"name": "beta"},
+            result="{}",
             outcome="served",
         ),
     ]
 
     [call] = remembered_calls(rows)
 
-    assert (call["arguments"], call["ran_with"]) == ({"q": "<TOKEN>"}, {"q": "real"})
+    assert (call["arguments"], call["ran_with"]) == ({"name": "alpha"}, {"name": "beta"})
