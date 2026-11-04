@@ -12,8 +12,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
-from roomkit import DefaultInboundRoomRouter, Identity, RoomKit
+from roomkit import DefaultInboundRoomRouter, RoomKit
 from roomkit.models.enums import ChannelType
+from roomkit.models.identity import Identity
 from roomkit.orchestration.router import ConversationRouter, RoutingConditions, RoutingRule
 from roomkit.orchestration.state import (
     ConversationState,
