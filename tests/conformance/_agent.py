@@ -413,6 +413,8 @@ def scripted_agent(
         kwargs["config_provider"] = _config_provider(spec["config_provider"], gates)
     if "skills" in spec:
         kwargs["skills"] = _skill_registry(spec["skills"])
+    if "skills_in_prompt" in spec:
+        kwargs["skills_in_prompt"] = spec["skills_in_prompt"]
     if "turn_budget_usd" in spec:
         kwargs["turn_budget_usd"] = spec["turn_budget_usd"]
     if "retry_policy" in spec:

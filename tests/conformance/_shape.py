@@ -107,6 +107,7 @@ CHANNEL = {
     "max_tokens",
     "config_provider",
     "skills",
+    "skills_in_prompt",
     "thinking_budget",
     "enable_thinking",
     "thinking_coalesce_ms",
