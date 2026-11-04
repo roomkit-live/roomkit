@@ -351,6 +351,23 @@ class TestTheLoopReplaysTheRound:
             "call:c2",
         ]
 
+    async def test_two_calls_under_one_id_each_go_back(self) -> None:
+        content = await _replayed_round(
+            [
+                _delta(0, "Weather first."),
+                _delta(0, signature="S0"),
+                StreamToolCall(id="c1", name="get_weather", arguments={"first": True}),
+                StreamToolCall(id="c1", name="get_time", arguments={"second": True}),
+                StreamDone(finish_reason="tool_use"),
+            ]
+        )
+
+        calls = [p for p in content if isinstance(p, AIToolCallPart)]
+        assert [(c.id, c.name, c.arguments) for c in calls] == [
+            ("c1", "get_weather", {"first": True}),
+            ("c1", "get_time", {"second": True}),
+        ]
+
     async def test_a_block_cut_before_its_signature_is_not_replayed(self) -> None:
         content = await _replayed_round(
             [

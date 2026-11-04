@@ -100,7 +100,7 @@ class RoundTranscript:
         """
         if not self.thinking.keyed:
             return round_parts(self.thinking.parts(), self.text, calls)
-        pending = {call.id: call for call in calls}
+        pending = list(calls)
         parts: list[AssistantPart] = []
         for entry in self._entries:
             if isinstance(entry, _Thinking):
@@ -109,8 +109,18 @@ class RoundTranscript:
             elif isinstance(entry, _Text):
                 if text := "".join(self._segments[entry.segment]):
                     parts.append(AITextPart(text=text))
-            elif entry.id in pending:
-                parts.append(call_part(pending.pop(entry.id)))
+            elif (call := _taken(pending, entry.id)) is not None:
+                parts.append(call_part(call))
         if pending:
-            raise RuntimeError(f"replaying calls the round never made: {sorted(pending)}")
+            ids = sorted(call.id for call in pending)
+            raise RuntimeError(f"replaying calls the round never made: {ids}")
         return parts
+
+
+def _taken(pending: list[RoundCall], call_id: str) -> RoundCall | None:
+    """The first of *pending* under *call_id*, out of the list: two calls under
+    one id each keep their own place (RFC §6.4)."""
+    for position, call in enumerate(pending):
+        if call.id == call_id:
+            return pending.pop(position)
+    return None

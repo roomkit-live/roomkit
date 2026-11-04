@@ -275,6 +275,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A round whose reasoning came in blocks replays two calls made under one id each
+  with its own arguments, where the second overwrote the first (RMK-1316).
 - **`PostgresStore` keeps what the other stores keep** (HITL f01854e2,
   RMK-1277). It had no column for a participant's `candidates`, nor for an
   identity's `phone`, `external_id` and `external_ids`, and lost them silently;
