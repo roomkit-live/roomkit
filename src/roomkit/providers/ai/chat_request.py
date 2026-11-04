@@ -51,6 +51,8 @@ class ChatDialect:
     def __post_init__(self) -> None:
         if self.round_thinking_required and self.thinking_field is None:
             raise ValueError("round_thinking_required needs a thinking_field to send")
+        if self.round_thinking_placeholder and not self.round_thinking_required:
+            raise ValueError("round_thinking_placeholder needs round_thinking_required")
 
 
 OPENAI_CHAT = ChatDialect()

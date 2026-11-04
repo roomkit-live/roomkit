@@ -146,13 +146,16 @@ async def test_a_host_selects_the_dialect_by_the_class_on_a_server_of_its_own(
     vendor: str, empty: str
 ) -> None:
     """The end-to-end proof: a room, an AI channel, the class chosen, a generic
-    server's URL. The server is reached, and a round's reasoning goes back in
-    the field for as long as the turn lasts, then no more."""
+    server's URL. A round's reasoning goes back in the field for as long as the
+    turn lasts, then no more, and no cap is sent unless one is set: reasoning
+    counts toward it, and these models answer empty past a small one."""
     requests = await _two_turns(
         lambda handler: _provider(vendor, handler=handler, base_url=_SERVER)
     )
 
     assert len(requests) == 4
+    assert "max_tokens" not in requests[0]
+    assert "max_completion_tokens" not in requests[0]
     in_progress = requests[2]["messages"]
     assert _reasoning(in_progress) == [("Let me look.", "WHY."), (None, empty)]
     later = requests[3]["messages"]
@@ -195,15 +198,6 @@ async def test_the_vendor_s_own_endpoint_is_the_default(vendor: str) -> None:
 
     assert seen[0].url.host == _VENDORS[vendor][3]
     assert seen[0].url.path == "/v1/chat/completions"
-
-
-@pytest.mark.parametrize("vendor", _BOTH)
-def test_no_cap_is_sent_unless_one_is_set(vendor: str) -> None:
-    """Reasoning counts toward the cap: the default of a client that does not
-    reason would answer empty on a model that always does."""
-    provider = _provider(vendor)
-
-    assert provider._token_limit_kwarg(provider._config.max_tokens) == {}
 
 
 @pytest.mark.parametrize("vendor", _BOTH)

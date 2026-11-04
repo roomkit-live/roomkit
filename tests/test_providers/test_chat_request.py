@@ -155,6 +155,11 @@ def test_a_required_field_goes_on_a_round_with_no_reasoning(
     assert {key: round_[key] for key in field} == field
 
 
+def test_a_placeholder_needs_a_required_field() -> None:
+    with pytest.raises(ValueError, match="round_thinking_required"):
+        ChatDialect(thinking_field="reasoning_content", round_thinking_placeholder=" ")
+
+
 def test_a_round_with_no_reasoning_sends_no_field_where_it_is_not_required() -> None:
     [round_] = _render(MINIMAX_CHAT, _round())
     assert "reasoning_content" not in round_
