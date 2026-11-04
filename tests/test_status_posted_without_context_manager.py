@@ -10,6 +10,7 @@ and no room hook ever heard of them.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import pytest
@@ -18,13 +19,12 @@ from roomkit import (
     HookExecution,
     HookTrigger,
     InboundMessage,
-    InMemoryStore,
     KitClosedError,
     RoomKit,
     TextContent,
 )
 from roomkit.channels.agent import Agent
-from roomkit.models.enums import ChannelCategory
+from roomkit.models.enums import ChannelCategory, RoomStatus
 from roomkit.models.event import EventSource, RoomEvent
 from roomkit.models.room import Room
 from roomkit.orchestration import InMemoryStatusBackend, StatusBus
@@ -117,15 +117,16 @@ def _message() -> InboundMessage:
     return InboundMessage(channel_id="sms", sender_id="u1", content=TextContent(body="hi"))
 
 
+@pytest.mark.parametrize("deferred", [False, True], ids=["awaited", "deferred"])
 @pytest.mark.parametrize("answered", [False, True], ids=["past-the-grace", "within-the-grace"])
 async def test_a_message_waiting_for_the_subscription_is_cut_by_the_close(
-    answered: bool, close_grace: float
+    answered: bool, deferred: bool, close_grace: float
 ) -> None:
     # Within the close's grace or past it, the call the wait held before its
-    # room's lock is cut: nothing of it is stored.
+    # room's lock is cut: nothing of it is stored, no handle for a deferred one.
     backend = _LateBackend()
     kit = _late_kit(backend)
-    call = asyncio.ensure_future(kit.process_inbound(_message()))
+    call = asyncio.ensure_future(kit.process_inbound(_message(), defer_delivery=deferred))
     await backend.asked.wait()
 
     closing = asyncio.ensure_future(kit.close())
@@ -135,58 +136,106 @@ async def test_a_message_waiting_for_the_subscription_is_cut_by_the_close(
     result = await call
     await closing
 
-    assert (result.blocked, result.reason, result.cancellation_reason, result.event) == (
-        True,
-        "kit_closed",
-        "kit_closed",
-        None,
-    )
+    assert (
+        result.blocked,
+        result.reason,
+        result.cancellation_reason,
+        result.event,
+        result.delivery,
+    ) == (True, "kit_closed", "kit_closed", None, None)
 
 
-async def test_a_call_waiting_for_the_subscription_has_the_close_s_grace(
-    close_grace: float,
+async def _seeded(kit: RoomKit) -> None:
+    """A room ``r`` the store holds, with two events ``e0`` and ``e1``: no call
+    asked for the subscription yet."""
+    await kit.store.create_room(Room(id="r"))
+    source = EventSource(channel_id="sms", channel_type="sms")
+    for index in range(2):
+        await kit.store.add_event(
+            RoomEvent(
+                id=f"e{index}",
+                room_id="r",
+                index=index,
+                source=source,
+                content=TextContent(body="hi"),
+            )
+        )
+
+
+_CHANGES: dict[str, Callable[[RoomKit], Awaitable[Any]]] = {
+    "create_room": lambda kit: kit.create_room(room_id="new"),
+    "pause_room": lambda kit: kit.pause_room("r"),
+    "close_room": lambda kit: kit.close_room("r"),
+    "attach_channel": lambda kit: kit.attach_channel("r", "sms"),
+    "update_event": lambda kit: kit.update_event("r", "e0", content=TextContent(body="new")),
+    "delete_event": lambda kit: kit.delete_event("r", "e0"),
+}
+
+
+@pytest.mark.parametrize("change", _CHANGES)
+async def test_a_call_waiting_for_the_subscription_goes_on_within_the_close_s_grace(
+    change: str, close_grace: float
 ) -> None:
-    # Answered within the grace, the call goes on; past it, it is cut.
     backend = _LateBackend()
     kit = _late_kit(backend)
-    call = asyncio.ensure_future(kit.create_room(room_id="within"))
-    await backend.asked.wait()
+    await _seeded(kit)
+
+    async def noted(event: RoomEvent, context: object) -> None:
+        return None
+
+    kit.hook(HookTrigger.ON_EVENT_UPDATED, HookExecution.ASYNC)(noted)
+    kit.hook(HookTrigger.ON_EVENT_DELETED, HookExecution.ASYNC, name="deleted")(noted)
+    call = asyncio.ensure_future(_CHANGES[change](kit))
+    await asyncio.wait_for(backend.asked.wait(), 1)
+
     closing = asyncio.ensure_future(kit.close())
     await asyncio.sleep(0)
     backend.answer.set()
-    assert (await call).id == "within"
+    await asyncio.wait_for(call, 1)
     await closing
 
+    store, room = kit.store, await kit.store.get_room("r")
+    written = {
+        "create_room": await store.get_room("new") is not None,
+        "pause_room": room.status == RoomStatus.PAUSED,
+        "close_room": room.status == RoomStatus.CLOSED,
+        "attach_channel": await store.get_binding("r", "sms") is not None,
+        "update_event": change == "update_event"
+        and (await store.get_event("e0")).content.body == "new",
+        "delete_event": await store.get_event("e0") is None,
+    }
+    assert written[change]
+
+
+async def test_a_call_waiting_for_the_subscription_is_cut_past_the_close_s_grace(
+    close_grace: float,
+) -> None:
     backend = _LateBackend()
     kit = _late_kit(backend)
     call = asyncio.ensure_future(kit.create_room(room_id="past"))
     await backend.asked.wait()
+
     await kit.close()
+
     with pytest.raises(KitClosedError):
         await call
 
 
 async def test_a_change_of_an_event_subscribes_only_for_a_hook_that_reads_its_context() -> None:
-    store = InMemoryStore()
-    await store.create_room(Room(id="r"))
-    source = EventSource(channel_id="sms", channel_type="sms")
-    for event_id in ("e1", "e2"):
-        await store.add_event(
-            RoomEvent(id=event_id, room_id="r", source=source, content=TextContent(body="hi"))
-        )
     backend = _LateBackend()
-    kit = _late_kit(backend, store=store)
+    kit = _late_kit(backend)
+    await _seeded(kit)
 
-    await kit.update_event("r", "e1", content=TextContent(body="changed"))
-    await kit.delete_event("r", "e2")
+    await asyncio.wait_for(kit.update_event("r", "e0", content=TextContent(body="changed")), 1)
+    await asyncio.wait_for(kit.delete_event("r", "e1"), 1)
     assert not backend.asked.is_set()
 
-    @kit.hook(HookTrigger.ON_EVENT_UPDATED, HookExecution.ASYNC)
-    async def on_update(event: RoomEvent, context: object) -> None:
+    async def noted(event: RoomEvent, context: object) -> None:
         return None
 
-    call = asyncio.ensure_future(kit.update_event("r", "e1", content=TextContent(body="again")))
+    kit.hook(HookTrigger.ON_EVENT_DELETED, HookExecution.ASYNC)(noted)
+    call = asyncio.ensure_future(kit.delete_event("r", "e0"))
     await asyncio.wait_for(backend.asked.wait(), 1)
     backend.answer.set()
-    await call
+    assert await asyncio.wait_for(call, 1) == ["e0"]
     await kit.close()
