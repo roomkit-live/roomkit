@@ -12,11 +12,12 @@ no agent at broadcast and queues by the stored configuration.
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 from roomkit.channels._discussion_turn import DISCUSSION_TURN
 from roomkit.channels.declared import register_strategy_agents
+from roomkit.core._room_metadata import SPEAK_QUEUE
 from roomkit.core.lanes import DeliveryCascade, anchor_index
 from roomkit.core.mixins.helpers import HelpersMixin
 from roomkit.models.enums import ChannelCategory, ChannelType, HookTrigger
@@ -118,6 +119,16 @@ class DiscussionMixin(HelpersMixin):
         holds (RFC §19.7.5 rule 19); whether it was queued."""
         discussion = self._discussions.get(room_id)
         return discussion is not None and await discussion.queue_post(event)
+
+    async def _stored_discussion_over(self, room_id: str) -> bool:
+        """Whether the discussion *room_id* stores is over (rule 15), read now:
+        what this process last read of it may be nothing yet, or outdated by
+        another process's turn."""
+        room = await self._store.get_room(room_id)
+        if room is None or DiscussionConfig.stored(room.metadata) is None:
+            return False
+        queue = room.metadata.get(SPEAK_QUEUE)
+        return isinstance(queue, Mapping) and queue.get("over") is True
 
     def _holds_discussion(self, room_id: str | None) -> bool:
         """Whether *room_id* (any room, for None) holds a discussion."""

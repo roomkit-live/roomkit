@@ -314,6 +314,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Its `framework.broadcast` was a root span, a trace apart from the call's: it is
   now a child of the call's span, as any other event's.
 
+- A discussion keeps to RFC §19.7.5 where it strayed (HITL 0d726397, RMK-1338): a turn stopped
+  past its own `max_depth` announces that limit in `chain_depth_exceeded`, not the kit's; a round
+  of tool calls right after the event a turn answers is replayed, not lost; an instruction to a
+  discussion stored over is blocked `discussion_over` from the room's first call in a process.
 - A round whose reasoning came in blocks replays two calls made under one id each
   with its own arguments, where the second overwrote the first (RMK-1316).
 - **`PostgresStore` keeps what the other stores keep** (HITL f01854e2,

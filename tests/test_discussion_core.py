@@ -17,8 +17,10 @@ from roomkit.core.framework import RoomKit
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import ChannelCategory, ChannelType, EventStatus, EventType
 from roomkit.models.event import EventSource, RoomEvent, TextContent, ToolCallContent
+from roomkit.models.room import Room
 from roomkit.providers.ai.base import AIResponse
 from roomkit.providers.ai.mock import MockAIProvider
+from roomkit.store.memory import InMemoryStore
 from tests.test_framework import SimpleChannel
 
 
@@ -347,3 +349,35 @@ async def test_a_mark_of_any_other_shape_breaks_no_turn() -> None:
         assert result.error is None
     assert len(a.calls) == 4
     await kit.close()
+
+
+async def test_an_instruction_to_a_stored_discussion_over_is_blocked_at_the_rooms_first_call() -> (
+    None
+):
+    """The room's first call in this process reads the stored queue, not what
+    this process last read of it: nothing to give the instruction a turn (rule
+    15)."""
+    store = InMemoryStore()
+    stored = {"_discussion": {"agents": ["a"], "max_depth": 5}, "_speak_queue": {"over": True}}
+    await store.create_room(Room(id="r1", metadata=stored))
+    other = RoomKit(store=store)
+    kit = RoomKit(store=store)
+    for process in (other, kit):
+        process.register_channel(SimpleChannel("ops"))
+        process.register_channel(AIChannel("a", provider=_provider("a answers")))
+    await other.attach_channel("r1", "ops")
+    await other.attach_channel("r1", "a", category=ChannelCategory.INTELLIGENCE)
+
+    result = await kit.process_inbound(
+        InboundMessage(
+            channel_id="ops",
+            sender_id="oncall",
+            content=TextContent(body="Introduce yourself"),
+            addressed_to=["a"],
+            event_type=EventType.INSTRUCTION,
+        )
+    )
+
+    assert (result.blocked, result.reason) == (True, "discussion_over")
+    await kit.close()
+    await other.close()

@@ -284,6 +284,7 @@ class InboundLockedMixin(HelpersMixin):
     _max_chain_depth: int
     _process_timeout: float
     _discussions: dict[str, Any]  # rooms a discussion holds (RFC §19.7.5)
+    _stored_discussion_over: Any  # DiscussionMixin
 
     # Cross-mixin methods — attribute annotations avoid MRO shadowing
     _commit_to_lane: Any  # see LaneExecutionMixin
@@ -542,8 +543,7 @@ class InboundLockedMixin(HelpersMixin):
             if event.idempotency_key:
                 return InboundResult(blocked=True, reason="instruction_not_idempotent")
             # RFC §19.7.5 rule 15 — a discussion that is over gives no turn.
-            discussion = self._discussions.get(room_id)
-            if discussion is not None and discussion.state.over:
+            if await self._stored_discussion_over(room_id):
                 return InboundResult(blocked=True, reason="discussion_over")
             # Intelligence channels only, whatever the caller asked: no
             # transport delivers it, no voice channel speaks it.
