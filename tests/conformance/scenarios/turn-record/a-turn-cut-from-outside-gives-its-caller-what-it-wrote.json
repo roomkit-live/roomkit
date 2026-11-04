@@ -1,0 +1,122 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-record/a-turn-cut-from-outside-gives-its-caller-what-it-wrote",
+  "title": "A turn cut from outside tells its caller how it ended and what its tool wrote, as a turn that failed does",
+  "rules": [
+    "§6.7",
+    "§10.1"
+  ],
+  "notes": "Python: core/mixins/inbound_streaming.py _record_cancelled_read; tests/test_response_metadata.py::TestLiveRecord::test_a_cut_turn_gives_its_caller_what_its_tool_wrote; HITL 84991349.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "read_page",
+            "description": "Read a page.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "integer"
+                }
+              }
+            },
+            "writes_record": {
+              "cited": [
+                3
+              ]
+            },
+            "gate": "held",
+            "returns": "page text"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "read_page",
+                  "arguments": {
+                    "page": 3
+                  }
+                }
+              ]
+            },
+            {
+              "text": "never"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Read page 3"
+        }
+      },
+      "defer_delivery": true,
+      "as": "a"
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "call": "delivery.cancel",
+      "of": "a",
+      "reason": "stopped",
+      "expect": {
+        "result": {
+          "cancellation_reason": "stopped",
+          "response_metadata": {
+            "cited": [
+              3
+            ],
+            "turns": {
+              "agent": {
+                "loop_end_reason": "cancelled"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "open": "held"
+    },
+    {
+      "idle": true
+    }
+  ]
+}
