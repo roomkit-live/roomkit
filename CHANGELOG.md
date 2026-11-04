@@ -106,6 +106,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- A `ConversationPipeline`'s or a router's install refused for an agent whose
+  handoff is set up already, named twice, or whose tools hold the handoff's name
+  leaves no hook and no tool behind; the error is the same (RMK-1233).
 - **BREAKING: `Pipeline` no longer takes `routing=`** (RMK-1233). It kept the
   keyword hints and nothing read them, though its docstring said they reached
   the agents' prompts. `Pipeline(agents=[a, b])` works as before; a call still

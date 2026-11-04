@@ -410,7 +410,7 @@ class HandoffHandler:
                             "handoff_summary": request.summary,
                             "handoff_from": calling_agent_id,
                             "handoff_reason": request.reason,
-                        }
+                        },
                     }
                 )
 
@@ -814,6 +814,29 @@ def setup_handoff(
         msg = f"setup_handoff() already called for channel '{channel_id}'"
         raise RuntimeError(msg)
     registry.register(handoff_entry(channel, handler, tool), room_id=room_id, owner=handler)
+
+
+def refuse_handoffs(
+    kit: RoomKit, agents: Sequence[Channel | str], handler: HandoffHandler
+) -> None:
+    """Refuse, before an install sets anything up, what :func:`setup_handoff`
+    would refuse on any of *agents*: an agent that takes no owner tools, one
+    set up already or named twice, one whose tools hold the handoff's name. A
+    refused install leaves no hook and no tool behind (RFC §19.5).
+
+    Raises:
+        RuntimeError: The handoff is already set up, or the agent named twice.
+        ToolNameCollisionError: The handoff's name is taken.
+        ChannelNotRegisteredError: An id names no channel of the kit.
+    """
+    seen: set[str] = set()
+    for agent in agents:
+        registry = owner_tools_of(kit, agent)
+        channel_id = id_of(agent)
+        if channel_id in seen or registry.lookup(HANDOFF_TOOL_NAME, None) is not None:
+            raise RuntimeError(f"setup_handoff() already called for channel '{channel_id}'")
+        seen.add(channel_id)
+        registry.check(handoff_entry(agent, handler, None))
 
 
 def set_up_handoffs(

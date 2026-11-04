@@ -13,14 +13,13 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
-from roomkit.channels.declared import owner_tools_of
 from roomkit.core.hooks import mark_router_hook
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import ChannelCategory, ChannelType, HookExecution, HookTrigger
 from roomkit.models.event import RoomEvent
 from roomkit.models.hook import HookResult
 from roomkit.orchestration._agents import held
-from roomkit.orchestration.handoff import HandoffHandler, setup_handoff
+from roomkit.orchestration.handoff import HandoffHandler, refuse_handoffs, setup_handoff
 from roomkit.orchestration.state import ConversationState, get_conversation_state
 
 if TYPE_CHECKING:
@@ -287,23 +286,24 @@ class ConversationRouter:
         Raises:
             ChannelNotRegisteredError: An id names no channel of the kit;
                 nothing is installed.
+            RuntimeError: An agent's handoff is set up already; nothing is
+                installed.
         """
         # Every agent read before anything is installed: all of them, or none.
         held_agents = [held(kit, agent) for agent in agents]
-        for agent in held_agents:
-            owner_tools_of(kit, agent)
-        kit.hook(
-            HookTrigger.BEFORE_BROADCAST,
-            execution=HookExecution.SYNC,
-            priority=hook_priority,
-        )(self.as_hook())
-
         handler = HandoffHandler(
             kit=kit,
             router=self,
             agent_aliases=agent_aliases,
             phase_map=phase_map,
         )
+        refuse_handoffs(kit, held_agents, handler)
+        kit.hook(
+            HookTrigger.BEFORE_BROADCAST,
+            execution=HookExecution.SYNC,
+            priority=hook_priority,
+        )(self.as_hook())
+
         for agent in held_agents:
             setup_handoff(agent, handler)
 

@@ -119,6 +119,8 @@ class ChannelNotBoundError(Exception):
 
 def error_of(error: Exception) -> dict[str, Any]:
     """The suite's name of *error*, with its reason when it has one."""
+    if isinstance(error, RuntimeError) and "setup_handoff() already called" in str(error):
+        return {"name": "already_set_up"}
     if isinstance(error, ChannelNotBoundError):
         return {"name": "channel_not_bound"}
     if isinstance(error, RefusedArgumentError):

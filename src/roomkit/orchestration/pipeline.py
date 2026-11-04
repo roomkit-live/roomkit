@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel, Field
 
 from roomkit.channels.agent import Agent
-from roomkit.channels.declared import owner_tools_of
 from roomkit.channels.realtime_voice import RealtimeVoiceChannel
 from roomkit.channels.voice import VoiceChannel
 from roomkit.models.enums import HookExecution, HookTrigger
@@ -25,6 +24,7 @@ from roomkit.orchestration._realtime_pipeline import (
 from roomkit.orchestration.handoff import (
     HandoffHandler,
     build_handoff_tool,
+    refuse_handoffs,
     require_live_agents,
     setup_handoff,
 )
@@ -181,19 +181,8 @@ class ConversationPipeline:
             # Refused before anything is installed.
             require_live_agents(held_agents)
             refuse_agents_with_unserved(live, voice_channel_id)  # ty: ignore[invalid-argument-type]
-        else:
-            # Every agent read before anything is installed, as the router's install.
-            for agent in held_agents:
-                owner_tools_of(kit, agent)
 
         router = self.to_router()
-
-        kit.hook(
-            HookTrigger.BEFORE_BROADCAST,
-            execution=HookExecution.SYNC,
-            priority=hook_priority,
-        )(router.as_hook())
-
         handler = HandoffHandler(
             kit=kit,
             router=router,
@@ -203,6 +192,15 @@ class ConversationPipeline:
             known_agents=({a.channel_id for a in held_agents} if is_realtime else None),
             event_channel_id=(voice_channel_id if is_realtime else None),
         )
+        if not is_realtime:
+            # Every agent read before anything is installed, as the router's install.
+            refuse_handoffs(kit, held_agents, handler)
+
+        kit.hook(
+            HookTrigger.BEFORE_BROADCAST,
+            execution=HookExecution.SYNC,
+            priority=hook_priority,
+        )(router.as_hook())
 
         # Populate agent metadata from Agent fields
         handler.greeting_map = {

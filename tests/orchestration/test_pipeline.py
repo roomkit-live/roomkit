@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from roomkit import ChannelDeclaration, RoomKit
+from roomkit import ChannelDeclaration, RoomKit, ToolNameCollisionError
 from roomkit.channels._realtime_tool_calls import RealtimeToolCall
 from roomkit.channels.agent import Agent
 from roomkit.channels.realtime_voice import RealtimeVoiceChannel, _current_voice_session
@@ -32,6 +32,7 @@ from roomkit.orchestration.pipeline import (
 )
 from roomkit.orchestration.router import ConversationRouter
 from roomkit.orchestration.state import ConversationState, set_conversation_state
+from roomkit.providers.ai.base import AITool
 from roomkit.turns._registry_tools import OwnerToolStore
 from roomkit.voice.base import VoiceSession
 from tests.conftest import make_event
@@ -928,6 +929,27 @@ async def _serve(rtv: Any, session: Any, name: str, arguments: dict[str, Any]) -
     """Serve one call the way the channel serves a provider's, in the session's room."""
     call = RealtimeToolCall(session, "c1", name, arguments, room_id=session.room_id)
     return await rtv._call_tool_handler(call, None)
+
+
+@pytest.mark.parametrize("via", ["pipeline", "router"])
+async def test_an_install_refused_by_an_agent_s_tool_sets_nothing_up(via: str) -> None:
+    """One whose own tools hold the handoff's name, or one named twice, refuses
+    the install before its hook and before any tool (RFC §19.5)."""
+    kit = RoomKit()
+    kit.register_channel(_mock_agent("agent-a"))
+    tool = AITool(name="handoff_conversation", description="host", parameters={})
+    kit.register_channel(_mock_agent("clash", tools=[tool]))
+    pipeline = ConversationPipeline(stages=[PipelineStage(phase="a", agent_id="agent-a")])
+    router = ConversationRouter(default_agent_id="agent-a")
+    install = pipeline.install if via == "pipeline" else router.install
+
+    with pytest.raises(ToolNameCollisionError, match="handoff_conversation"):
+        install(kit, ["agent-a", "clash"])
+    with pytest.raises(RuntimeError, match="already called"):
+        install(kit, ["agent-a", "agent-a"])
+
+    install(kit, ["agent-a"])
+    await kit.close()
 
 
 async def test_a_realtime_pipeline_keeps_to_its_chain() -> None:
