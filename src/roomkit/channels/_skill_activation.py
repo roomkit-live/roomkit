@@ -16,7 +16,8 @@ session (``_realtime_skills``); this is its text-channel counterpart.
 
 The invariant that makes the ACK safe is structural: **an ACK is returned only
 because the body is in the prompt, and the body is in the prompt for exactly the
-skills recorded here.** Losing this store (process restart, channel object
+skills recorded here**, but on a standalone turn, whose prompt carries none and
+which always delivers the body (RFC §24.4). Losing this store (process restart, channel object
 replaced) loses the prompt block too, so the next activation returns the body
 again — the mechanism degrades to the old behaviour, it never leaves the model
 holding an ACK with no rules.
