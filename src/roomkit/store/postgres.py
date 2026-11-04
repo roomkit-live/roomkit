@@ -308,6 +308,17 @@ async def _write_room_row(conn: Any, room: Room) -> Room:
     )
 
 
+async def _hold_room_first(conn: Any, room_id: str) -> None:
+    """Take the room's row before its sequence, the order of a commit.
+
+    The event's foreign key would otherwise take it after, and a commit holding the
+    room would wait on the sequence this write holds, while this write waits on the
+    room: the server kills one of them. A missing room stays the foreign key's
+    refusal, a few statements later.
+    """
+    await conn.execute("SELECT 1 FROM rooms WHERE id = $1 FOR KEY SHARE", room_id)
+
+
 async def _reserve_event_index(conn: Any, room_id: str) -> int:
     """Atomically reserve and return a room's next monotonic event index."""
     row = await conn.fetchrow(
@@ -1274,6 +1285,7 @@ class PostgresStore(ConversationStore):
                 self._acquire() as conn,
                 conn.transaction(),
             ):
+                await _hold_room_first(conn, event.room_id)
                 await _observe_event_index(conn, event.room_id, event.index)
                 await _insert_event(conn, event)
         return event
@@ -1582,6 +1594,7 @@ class PostgresStore(ConversationStore):
                 self._acquire() as conn,
                 conn.transaction(),
             ):
+                await _hold_room_first(conn, room_id)
                 next_idx = await _reserve_event_index(conn, room_id)
                 indexed = event.model_copy(update={"index": next_idx})
                 await _insert_event(conn, indexed)

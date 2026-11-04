@@ -12,6 +12,7 @@ import asyncio
 import os
 from collections.abc import Callable
 from typing import Any
+from uuid import uuid4
 
 import pytest
 
@@ -1583,6 +1584,90 @@ async def _until_blocked_by(holder: Any) -> None:
     async with asyncio.timeout_at(deadline):
         while not await holder.fetchval(blocked, holder.get_server_pid()):
             await asyncio.sleep(0.005)
+
+
+@pytest.mark.parametrize("adding", ["add_event", "add_event_auto_index"])
+async def test_an_add_waiting_on_a_commit_holds_nothing_the_commit_needs(
+    store, adding: str
+) -> None:
+    """A commit holds the room, then its sequence. An add takes them in that order
+    too, so that it waits on the room with the sequence free: in the other order,
+    each waits on what the other holds, and the server kills one (RMK-1365)."""
+    import asyncpg
+
+    await store.create_room(Room(id="r1"))
+    await store.add_event_auto_index("r1", _make_event(room_id="r1"))
+    committer = await asyncpg.connect(POSTGRES_DSN)
+    try:
+        async with committer.transaction():
+            await committer.execute("SELECT 1 FROM rooms WHERE id = 'r1' FOR UPDATE")
+            if adding == "add_event":
+                added = store.add_event(_make_event(room_id="r1", index=7))
+            else:
+                added = store.add_event_auto_index("r1", _make_event(room_id="r1"))
+            add = asyncio.create_task(added)
+            await _until_blocked_by(committer)
+            await committer.execute(
+                "UPDATE event_sequences SET next_index = next_index + 1 WHERE room_id = 'r1'"
+            )
+        await asyncio.wait_for(add, 2)
+    finally:
+        await committer.close()
+
+
+@pytest.mark.parametrize("adding", ["add_event", "add_event_auto_index"])
+async def test_an_add_to_a_missing_room_stays_the_foreign_key_s_refusal(
+    store, adding: str
+) -> None:
+    """Holding the room first finds no row and refuses nothing itself: the refusal is
+    still the write's, and stores nothing."""
+    import asyncpg
+
+    if adding == "add_event":
+        added = store.add_event(_make_event(room_id="gone", index=7))
+    else:
+        added = store.add_event_auto_index("gone", _make_event(room_id="gone"))
+    with pytest.raises(asyncpg.ForeignKeyViolationError):
+        await added
+    async with store._pool.acquire() as conn:
+        assert await conn.fetchval("SELECT count(*) FROM event_sequences") == 0
+
+
+@pytest.mark.stress
+async def test_the_writers_of_one_room_at_once_never_deadlock() -> None:
+    """40 commits, 40 automatic adds and 40 adds at their own index, on one room, each
+    on its connection: none is killed for a deadlock (RMK-1365). The own indexes stay
+    far apart, so that a reserved index never meets one."""
+    import asyncpg
+
+    from roomkit.store.postgres import PostgresStore
+
+    store = PostgresStore(dsn=POSTGRES_DSN)
+    await store.init(min_size=1, max_size=40)
+    room_id = f"r-{uuid4().hex}"
+    await store.create_room(Room(id=room_id))
+    outcomes: list[Any] = []
+    try:
+        for writes in range(8):
+            outcomes += await asyncio.gather(
+                *(store.commit_event(room_id, _make_event(room_id=room_id)) for _ in range(40)),
+                *(
+                    store.add_event_auto_index(room_id, _make_event(room_id=room_id))
+                    for _ in range(40)
+                ),
+                *(
+                    store.add_event(
+                        _make_event(room_id=room_id, index=(writes * 40 + own + 1) * 1_000_000)
+                    )
+                    for own in range(40)
+                ),
+                return_exceptions=True,
+            )
+    finally:
+        await store.close()
+    deadlocks = [o for o in outcomes if isinstance(o, asyncpg.DeadlockDetectedError)]
+    assert not deadlocks, f"{len(deadlocks)} of {len(outcomes)} calls killed"
+    assert not [o for o in outcomes if isinstance(o, BaseException)]
 
 
 @pytest.mark.parametrize("write", ["commit_event", "add_event", "add_event_auto_index"])
