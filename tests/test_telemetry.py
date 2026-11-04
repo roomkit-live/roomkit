@@ -22,7 +22,7 @@ from roomkit.models.enums import (
     HookTrigger,
 )
 from roomkit.models.event import EventSource, RoomEvent, TextContent
-from roomkit.models.hook import HookResult
+from roomkit.models.hook import HookResult, InjectedEvent
 from roomkit.providers.ai.base import AIContext, AIProvider, AIResponse, AITool, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.telemetry import (
@@ -1383,6 +1383,38 @@ class TestTelemetryPhase4:
         root_spans = [s for s in inbound_spans if s.name == "framework.inbound"]
         assert len(root_spans) == 1
         assert broadcast_spans[0].parent_id == root_spans[0].id
+
+    async def test_an_injected_event_s_broadcast_parents_to_inbound(self) -> None:
+        """A hook's injected event stays in its message's trace (RFC §15.7)."""
+        mock = MockTelemetryProvider()
+        kit = RoomKit(telemetry=mock)
+        kit.register_channel(SimpleChannel("ch1"))
+        kit.register_channel(SimpleChannel("ch2"))
+        room = await kit.create_room()
+        await kit.attach_channel(room.id, "ch1")
+        await kit.attach_channel(room.id, "ch2")
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST)
+        async def inject(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            if event.content.body != "hello":  # type: ignore[union-attr]
+                return HookResult.allow()
+            noted = RoomEvent(
+                room_id=room.id,
+                source=EventSource(channel_id="ch1", channel_type=ChannelType.SMS),
+                content=TextContent(body="noted"),
+            )
+            return HookResult.allow(
+                injected=[InjectedEvent(event=noted, target_channel_ids=["ch2"])]
+            )
+
+        msg = InboundMessage(channel_id="ch1", sender_id="u", content=TextContent(body="hello"))
+        await kit.process_inbound(msg, room_id=room.id)
+        await kit.close()
+
+        (inbound,) = [s for s in mock.spans if s.name == "framework.inbound"]
+        broadcasts = mock.get_spans(SpanKind.BROADCAST)
+        assert len(broadcasts) == 2
+        assert {s.parent_id for s in broadcasts} == {inbound.id}
 
     async def test_lane_side_spans_parent_to_inbound(self) -> None:
         """The reentry pass and AFTER_BROADCAST run in the lane executor, on

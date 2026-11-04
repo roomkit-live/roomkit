@@ -55,6 +55,7 @@ from roomkit.models.enums import (
     Visibility,
 )
 from roomkit.models.event import RoomEvent, with_pipeline_id
+from roomkit.telemetry.context import get_current_span, get_current_telemetry_ctx
 
 if TYPE_CHECKING:
     from roomkit.core.locks import RoomLockManager
@@ -392,4 +393,8 @@ def _injected_plan(
         targets=targets,
         injected=True,
         mutation_hook=mutation_hook,
+        # The caller's span, carried across the lane boundary: an injected
+        # event's broadcast stays in its call's trace, as any other's.
+        parent_span_id=get_current_span(),
+        parent_span_ctx=get_current_telemetry_ctx(),
     )

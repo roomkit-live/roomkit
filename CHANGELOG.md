@@ -293,6 +293,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A hook's injected event stays in its message's trace** (RFC §15.7, RMK-1301).
+  Its `framework.broadcast` was a root span, a trace apart from the call's: it is
+  now a child of the call's span, as any other event's.
+
 - A round whose reasoning came in blocks replays two calls made under one id each
   with its own arguments, where the second overwrote the first (RMK-1316).
 - **`PostgresStore` keeps what the other stores keep** (HITL f01854e2,
