@@ -46,7 +46,6 @@ _NOT_SHOWN = "the rest is not shown here: call the tool again for it"
 
 @dataclass
 class _Call:
-    round: int
     index: int
     tool_id: str
     name: str
@@ -174,34 +173,63 @@ def _position(merged: list[tuple[int | None, AIMessage]], index: int) -> int:
     return at
 
 
+class _Waiting:
+    """The calls waiting for their end rows, first in, first out per turn and id.
+
+    A round of a turn is over at that turn's first row that is no start,
+    whatever another turn wrote among its starts. A call an earlier round left
+    without its end stays so: the next end row under its id is a later call's.
+    """
+
+    def __init__(self) -> None:
+        self._calls: dict[tuple[str | None, str], deque[tuple[int, _Call]]] = {}
+        self._rounds: dict[str | None, int] = {}
+
+    def hold(self, turn: str | None, call: _Call) -> None:
+        """*call* waits behind its round's calls under its id."""
+        number = self._rounds.get(turn, 0)
+        calls = self._calls.setdefault((turn, call.tool_id), deque())
+        if calls and calls[-1][0] != number:
+            calls.clear()
+        calls.append((number, call))
+
+    def round_over(self, turn: str | None) -> None:
+        """A row of *turn* that is no start was read: its round is over."""
+        self._rounds[turn] = self._rounds.get(turn, 0) + 1
+
+    def take(self, turn: str | None, tool_id: str) -> _Call | None:
+        """The call an end row of *turn* under *tool_id* closes, if any."""
+        calls = self._calls.get((turn, tool_id))
+        return calls.popleft()[1] if calls else None
+
+
 def _rounds(rows: list[RoomEvent]) -> list[list[_Call]]:
     """The calls *rows* hold, round by round: a round is a run of start rows of
     one turn, each call completed by the end row of the same turn and id, the
     first of a round's calls under an id by the first such row (RFC §6.4)."""
     rounds: list[list[_Call]] = []
-    started: dict[tuple[str | None, str], deque[_Call]] = {}
+    waiting = _Waiting()
     last_start: str | None = None
     opened = False
     for row in rows:
         content = row.content
+        turn = row.correlation_id
         if not isinstance(content, ToolCallContent):
             opened = False
+            waiting.round_over(turn)
             continue
-        key = (row.correlation_id, content.tool_id)
         if row.type == EventType.TOOL_CALL_START:
-            if not opened or row.correlation_id != last_start:
+            if not opened or turn != last_start:
                 rounds.append([])
-            call = _started(len(rounds), row.index, content)
+            call = _started(row.index, content)
             rounds[-1].append(call)
-            _hold(started.setdefault(key, deque()), call)
-            last_start, opened = row.correlation_id, True
+            waiting.hold(turn, call)
+            last_start, opened = turn, True
             continue
         opened = False
-        waiting = started.get(key)
-        if not waiting:
-            continue
-        call = waiting.popleft()
-        if row.type != EventType.TOOL_CALL_END:
+        waiting.round_over(turn)
+        call = waiting.take(turn, content.tool_id)
+        if call is None or row.type != EventType.TOOL_CALL_END:
             continue
         call.ended = True
         call.result = _result_text(content.result)
@@ -211,24 +239,9 @@ def _rounds(rows: list[RoomEvent]) -> list[list[_Call]]:
     return rounds
 
 
-def _hold(waiting: deque[_Call], call: _Call) -> None:
-    """*call* waits for its end row behind its round's calls under its id. One
-    an earlier round left without its end stays so: the row to come is not its."""
-    if waiting and waiting[-1].round != call.round:
-        waiting.clear()
-    waiting.append(call)
-
-
-def _started(round_number: int, index: int, start: ToolCallContent) -> _Call:
-    """The call a start row at timeline *index* opens in round *round_number*."""
-    return _Call(
-        round_number,
-        index,
-        start.tool_id,
-        start.tool_name,
-        dict(start.arguments),
-        start.intent,
-    )
+def _started(index: int, start: ToolCallContent) -> _Call:
+    """The call a start row at timeline *index* opens."""
+    return _Call(index, start.tool_id, start.tool_name, dict(start.arguments), start.intent)
 
 
 def _kept(call: _Call, replayed: Callable[[str], bool]) -> bool:

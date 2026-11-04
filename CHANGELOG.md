@@ -318,7 +318,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   round under one id were paired to their end rows by the latest start, so a later
   turn read the refused call with the served call's result, and the served call
   gone. A round's results now pair to its calls first in, first out per id.
-
 - **A standalone turn's activation of a skill active in the room delivers the body** (RFC §24.4, RMK-1356). Its prompt carries no active skill, so the acknowledgement left the model holding no rules.
 - **A hook's injected event stays in its message's trace** (RMK-1301).
   Its `framework.broadcast` was a root span, a trace apart from the call's: it is

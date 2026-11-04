@@ -314,6 +314,12 @@ def test_a_round_s_results_pair_to_its_calls_first_in_first_out() -> None:
     assert _results(rounds) == ["a", "b"]
 
 
+def _withheld_end(index: int, tool_id: str) -> RoomEvent:
+    """An end row as a deleted one reads: its content withheld (``withheld``)."""
+    row = _row(EventType.TOOL_CALL_END, index, tool_id)
+    return row.model_copy(update={"content": TextContent(body="")})
+
+
 def test_a_later_round_s_result_is_not_for_a_call_left_without_its_end() -> None:
     rows = [
         _row(EventType.TOOL_CALL_START, 1, "c1", arguments={"q": "left"}),
@@ -329,6 +335,39 @@ def test_a_later_round_s_result_is_not_for_a_call_left_without_its_end() -> None
         {"q": "new"},
     ]
     assert _results(rounds) == ["other", "its own"]
+
+
+def test_a_withheld_end_row_leaves_its_call_without_a_later_call_s_result() -> None:
+    rows = [
+        _row(EventType.TOOL_CALL_START, 1, "c1", arguments={"q": "left"}),
+        _withheld_end(2, "c1"),
+        _row(EventType.TOOL_CALL_START, 3, "c1", arguments={"q": "new"}),
+        _row(EventType.TOOL_CALL_END, 4, "c1", result="its own"),
+    ]
+
+    rounds = _rounds(rows)
+
+    assert [p.arguments for r in rounds for p in r.calls.content] == [{"q": "new"}]  # type: ignore[union-attr]
+    assert _results(rounds) == ["its own"]
+
+
+def test_another_turn_among_a_round_s_starts_leaves_its_results_paired() -> None:
+    rows = [
+        _row(EventType.TOOL_CALL_START, 1, "c1", arguments={"q": "first"}),
+        _row(EventType.TOOL_CALL_START, 2, "c9", turn="t2", arguments={"q": "theirs"}),
+        _row(EventType.TOOL_CALL_START, 3, "c1", arguments={"q": "second"}),
+        _row(EventType.TOOL_CALL_END, 4, "c9", turn="t2", result="zed"),
+        _row(EventType.TOOL_CALL_END, 5, "c1", result="fine"),
+        _row(EventType.TOOL_CALL_END, 6, "c1", result="refused", outcome="refused"),
+    ]
+
+    rounds = _rounds(rows)
+
+    assert [p.arguments for r in rounds for p in r.calls.content] == [  # type: ignore[union-attr]
+        {"q": "first"},
+        {"q": "theirs"},
+    ]
+    assert _results(rounds) == ["fine", "zed"]
 
 
 def test_the_last_calls_are_replayed_the_most_recent_whole() -> None:
