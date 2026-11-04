@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from roomkit import RoomKit
+from roomkit import AddressLinkedError, RoomKit
 from roomkit.core.exceptions import IdempotencyKeyTakenError
 from roomkit.core.mixins.verification import HELD_KEY
 from roomkit.models.channel import ChannelBinding
@@ -868,6 +868,29 @@ async def test_a_row_no_read_serves_leaves_its_address_free(
     await store.close()
     assert resolved is not None and resolved.id == "dana"
     assert _address_rows(path) == [("+1555", "dana", held_in)]
+
+
+async def test_a_holder_the_model_cannot_read_keeps_its_address(tmp_path: Path) -> None:
+    """RFC §5.6: the refusal stands, and quotes no part of the holder's record, which
+    may be another organization's."""
+    path = tmp_path / "older.db"
+    store = SQLiteStore(path)
+    await store.create_identity(Identity(id="i1", organization_id="globex"))
+    conn = sqlite3.connect(path)
+    conn.execute(
+        'UPDATE identities SET data = \'{"id": "i1", "email": "a@globex.example",'
+        ' "channel_addresses": "x"}\' WHERE id = \'i1\''
+    )
+    conn.commit()
+    conn.close()
+    _insert_address(path, ("+1555", "i1", "acme"))
+    with pytest.raises(AddressLinkedError) as refused:
+        await store.create_identity(
+            Identity(id="dana", organization_id="acme", channel_addresses={"sms": ["+1555"]})
+        )
+    await store.close()
+    assert "globex" not in str(refused.value)
+    assert _address_rows(path) == [("+1555", "i1", "acme")]
 
 
 async def test_an_unlink_removes_the_identity_s_rows_in_every_scope(tmp_path: Path) -> None:

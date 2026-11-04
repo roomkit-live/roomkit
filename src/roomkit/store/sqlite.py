@@ -35,6 +35,8 @@ from itertools import islice
 from pathlib import Path
 from typing import Any
 
+from pydantic import ValidationError
+
 from roomkit.core._changes import is_deleted
 from roomkit.core.exceptions import RoomNotFoundError, TaskNotFoundError
 from roomkit.models.channel import ChannelBinding
@@ -2196,10 +2198,25 @@ class SQLiteStore(ConversationStore):
     ) -> None:
         """Refuse an address another identity of the organization holds (RFC §5.6).
 
-        What a read serves is what holds it: a row whose holder is of another
-        organization, which only an older release wrote, holds nothing."""
-        holder = self._x_resolve_identity(channel_type, address, organization_id)
-        if holder is not None and holder.id != identity_id:
+        A row whose holder is of another organization holds nothing: no read serves
+        it, and only an older release wrote one. A holder the model cannot read still
+        holds it, and is not quoted: its record may be another organization's."""
+        row = (
+            self._db()
+            .execute(
+                "SELECT identity_id FROM identity_addresses WHERE channel_type = ?"
+                " AND address = ? AND organization_id = ?",
+                (channel_type, address, organization_id),
+            )
+            .fetchone()
+        )
+        if row is None or row[0] == identity_id:
+            return
+        try:
+            holder = self._x_get_identity(row[0])
+        except ValidationError:
+            raise address_linked(channel_type) from None
+        if holder is not None and (holder.organization_id or "") == organization_id:
             raise address_linked(channel_type)
 
     async def get_identity(self, identity_id: str) -> Identity | None:

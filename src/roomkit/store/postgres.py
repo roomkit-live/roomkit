@@ -375,15 +375,9 @@ async def _file_address(
     """File *address* under *identity_id*, refusing one another identity of
     the organization holds (RFC §5.6).
 
-    One statement, so two concurrent links of one address cannot both win:
-    the second waits on the first's row and reads its holder back. The
-    no-op update on a conflict is what makes ``RETURNING`` give that holder.
-
-    A row whose holder is of another organization holds nothing: no read serves
-    it, and only an older release wrote one. The organization's identity takes it.
-    The holder's organization is read by a statement of its own, which sees an
-    identity that committed while the first waited on its row: a subquery of the
-    first would miss it, and the second link would win too.
+    The first statement decides who waits, so two concurrent links of one address
+    cannot both win: the second waits on the first's row and reads its holder back.
+    The no-op update on a conflict is what makes ``RETURNING`` give that holder.
     """
     holder = await conn.fetchval(
         "INSERT INTO identity_addresses (channel_type, address, identity_id, organization_id)"
@@ -396,8 +390,27 @@ async def _file_address(
         identity_id,
         organization_id,
     )
-    if holder == identity_id:
-        return
+    if holder != identity_id:
+        await _take_a_row_no_read_serves(
+            conn, channel_type, address, identity_id, organization_id, holder
+        )
+
+
+async def _take_a_row_no_read_serves(
+    conn: Any,
+    channel_type: str,
+    address: str,
+    identity_id: str,
+    organization_id: str,
+    holder: str,
+) -> None:
+    """Take the row *holder* holds, locked by the filing, if no read serves it: its
+    holder is of another organization, which only an older release wrote. Else refuse.
+
+    The holder's organization is read by a statement of its own, which sees an
+    identity that committed while the filing waited on its row: a subquery of the
+    filing would miss it, and the second link would win too.
+    """
     held_in = await conn.fetchval(
         "SELECT COALESCE(organization_id, '') FROM identities WHERE id = $1", holder
     )
@@ -1923,7 +1936,9 @@ class PostgresStore(ConversationStore):
             if status == "INSERT 0 0":
                 raise IdentityNotFoundError(f"Identity {identity.id} not found")
             # In one order whoever files them, so that two replacements taking
-            # each other's addresses never wait on each other's rows.
+            # each other's addresses never wait on each other's rows. A row no read
+            # serves is the exception: taken over, it stays locked while the removal
+            # below waits, and two writers on such rows can still deadlock (RMK-1394).
             declared = sorted(
                 (ch_type, addr)
                 for ch_type, addresses in identity.channel_addresses.items()
