@@ -1,0 +1,114 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-delegated-turn-that-wrote-no-message-records-on-its-last-row",
+  "title": "A delegated turn that wrote no message holds its record on the last row of its child room's trace, as a room's turn does",
+  "rules": [
+    "§23.3 step 5",
+    "§6.4 The turn's record"
+  ],
+  "notes": "Python: core/mixins/_child_execution.py _persist_child_stream, by the same writer as a room's turn, write_owed_record (RMK-1344, HITL 5f58e3e3).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up.",
+            "returns": "found"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 1000,
+                "output_tokens": 10
+              }
+            },
+            {
+              "deltas": [
+                "\n\n"
+              ]
+            },
+            {
+              "deltas": [
+                "\n"
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "parent",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "worker",
+      "task": "Look it up.",
+      "wait": true,
+      "expect": {
+        "result": {
+          "status": "failed"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "$r1": [
+        {
+          "type": "message",
+          "content": {
+            "body": "Look it up."
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "metadata": {
+            "loop_end_reason": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "metadata": {
+            "loop_end_reason": "empty_response",
+            "ai_usage": {
+              "input_tokens": 1000,
+              "output_tokens": 10
+            }
+          }
+        }
+      ]
+    }
+  }
+}

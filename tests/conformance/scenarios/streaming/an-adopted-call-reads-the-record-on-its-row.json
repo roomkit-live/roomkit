@@ -1,0 +1,152 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/an-adopted-call-reads-the-record-on-its-row",
+  "title": "A call a hook's reaction makes, adopted, reads the turn's record on the row it is handed, as the call's own does",
+  "rules": [
+    "§6.4 The turn's record"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "read_page",
+            "description": "Read a page.",
+            "returns": "page text"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "text": "Looking.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "read_page"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 1
+              }
+            },
+            {
+              "deltas": [
+                "\n\n"
+              ]
+            },
+            {
+              "deltas": [
+                "\n"
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "adopts",
+        "trigger": "before_broadcast",
+        "priority": 0,
+        "reactions": [
+          {
+            "when": {
+              "text": "outer"
+            },
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "ws",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "inner"
+                  }
+                },
+                "defer_delivery": true,
+                "as": "inner"
+              }
+            ],
+            "result": {
+              "action": "block",
+              "reason": "kept out"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "outer"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "response_events": []
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "delivery.wait",
+      "of": "inner",
+      "expect": {
+        "result": {
+          "response_events": [
+            {
+              "type": "message",
+              "content": {
+                "body": "Looking."
+              },
+              "metadata": {
+                "loop_end_reason": "empty_response"
+              }
+            },
+            {
+              "type": "tool_call_start"
+            },
+            {
+              "type": "tool_call_end"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "notes": "Python: core/mixins/_streaming_segments.py write_owed_record replaces the row in the rows of the call the stream belongs to (RMK-1344's review)."
+}

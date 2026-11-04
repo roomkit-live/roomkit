@@ -1,13 +1,13 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "streaming/a-cut-turn-that-wrote-no-message-tells-its-caller-what-it-used",
-  "title": "A turn cut while a call runs, having written no text at all, has no message to hold its record: its caller still reads its end and what it used",
+  "title": "A turn cut while a call runs, having written no text at all, holds its record on its last row, the call's end, and its caller reads its end and what it used",
   "rules": [
     "§6.1",
     "§6.4 The turn's record",
     "§12.2 step 13s"
   ],
-  "notes": "Python: channels/_ai_streaming.py _stream_generation (a UsageMarker after each generation), core/mixins/_streaming_segments.py read and end_stopped (RMK-1333). record_on_last_message finds no MESSAGE. Where the record lands in the store: see the card RMK-1333.",
+  "notes": "Python: channels/_ai_streaming.py _stream_generation (a UsageMarker after each generation), core/mixins/_streaming_segments.py read, end_stopped and write_owed_record, which finds no MESSAGE and writes on the turn's last row (RMK-1333, RMK-1344, HITL 5f58e3e3).",
   "setup": {
     "channels": [
       {
@@ -60,6 +60,13 @@
           }
         ]
       }
+    ],
+    "hooks": [
+      {
+        "name": "updated",
+        "trigger": "on_event_updated",
+        "execution": "async"
+      }
     ]
   },
   "steps": [
@@ -104,7 +111,27 @@
                 }
               }
             }
-          }
+          },
+          "response_events": [
+            {
+              "type": "tool_call_start",
+              "metadata": {
+                "loop_end_reason": {
+                  "$absent": true
+                }
+              }
+            },
+            {
+              "type": "tool_call_end",
+              "metadata": {
+                "loop_end_reason": "cancelled",
+                "ai_usage": {
+                  "input_tokens": 1000,
+                  "output_tokens": 10
+                }
+              }
+            }
+          ]
         }
       }
     },
@@ -128,11 +155,45 @@
         },
         {
           "index": 1,
-          "type": "tool_call_start"
+          "type": "tool_call_start",
+          "metadata": {
+            "loop_end_reason": {
+              "$absent": true
+            },
+            "ai_usage": {
+              "$absent": true
+            }
+          }
         },
         {
           "index": 2,
-          "type": "tool_call_end"
+          "type": "tool_call_end",
+          "metadata": {
+            "loop_end_reason": "cancelled",
+            "ai_usage": {
+              "input_tokens": 1000,
+              "output_tokens": 10
+            },
+            "ai_last_usage": {
+              "input_tokens": 1000,
+              "output_tokens": 10
+            },
+            "ai_usage_complete": true,
+            "ai_model": "opus",
+            "ai_provider": "anthropic"
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "updated": [
+        {
+          "event": {
+            "type": "tool_call_end",
+            "metadata": {
+              "loop_end_reason": "cancelled"
+            }
+          }
         }
       ]
     }

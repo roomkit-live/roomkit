@@ -1,0 +1,110 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-delegated-turn-cut-while-its-call-runs-records-on-its-last-row",
+  "title": "A delegated turn cut while its call runs, having written no message, holds its record on the last row of its child room's trace",
+  "rules": [
+    "§23.3 step 5",
+    "§6.4 The turn's record"
+  ],
+  "notes": "Python: core/mixins/_child_execution.py _persist_child_stream, by the same writer as a room's turn, write_owed_record (RMK-1344, HITL 5f58e3e3).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "tools": [
+          {
+            "name": "wait",
+            "description": "Wait.",
+            "gate": "waits",
+            "hangs": true
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "wait"
+                }
+              ],
+              "usage": {
+                "input_tokens": 1000,
+                "output_tokens": 10
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "parent",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "worker",
+      "task": "Look it up.",
+      "as": "running"
+    },
+    {
+      "wait_for": "waits"
+    },
+    {
+      "call": "cancel_task",
+      "task_id": "$running",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "$r1": [
+        {
+          "type": "message",
+          "content": {
+            "body": "Look it up."
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "metadata": {
+            "loop_end_reason": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "metadata": {
+            "loop_end_reason": "cancelled",
+            "ai_usage": {
+              "input_tokens": 1000,
+              "output_tokens": 10
+            }
+          }
+        }
+      ]
+    }
+  }
+}

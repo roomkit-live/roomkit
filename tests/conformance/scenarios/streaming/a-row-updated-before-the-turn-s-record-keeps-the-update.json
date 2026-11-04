@@ -1,0 +1,162 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-row-updated-before-the-turn-s-record-keeps-the-update",
+  "title": "A message updated between its commit and the turn's record keeps the update: the record is written on the row as the store holds it, and the caller reads that row",
+  "rules": [
+    "§6.4 The turn's record"
+  ],
+  "notes": "Python: core/mixins/_streaming_segments.py write_owed_record reads the row back ({**stored.metadata, **record}) and replaces it in the turn's rows (RMK-1344's review).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "wait",
+            "description": "Wait.",
+            "gate": "waits",
+            "returns": "done"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "text": "Looking.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "wait"
+                }
+              ],
+              "usage": {
+                "input_tokens": 1000,
+                "output_tokens": 10
+              }
+            },
+            {
+              "deltas": [
+                "\n\n"
+              ]
+            },
+            {
+              "deltas": [
+                "\n"
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "background": true,
+      "as": "a"
+    },
+    {
+      "wait_for": "waits"
+    },
+    {
+      "call": "update_event",
+      "room_id": "room-1",
+      "event_id": "room-1#1",
+      "metadata": {
+        "label": "kept"
+      }
+    },
+    {
+      "open": "waits"
+    },
+    {
+      "await": "a",
+      "expect": {
+        "result": {
+          "response_events": [
+            {
+              "type": "message",
+              "metadata": {
+                "label": "kept",
+                "loop_end_reason": "empty_response"
+              }
+            },
+            {
+              "type": "tool_call_start"
+            },
+            {
+              "type": "tool_call_end"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "hi"
+          }
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "content": {
+            "body": "Looking."
+          },
+          "metadata": {
+            "label": "kept",
+            "loop_end_reason": "empty_response",
+            "ai_usage": {
+              "input_tokens": 1000,
+              "output_tokens": 10
+            }
+          }
+        },
+        {
+          "index": 2,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 3,
+          "type": "tool_call_end"
+        }
+      ]
+    }
+  }
+}

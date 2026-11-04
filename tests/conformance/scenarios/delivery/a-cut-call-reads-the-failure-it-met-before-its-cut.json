@@ -1,0 +1,137 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-cut-call-reads-the-failure-it-met-before-its-cut",
+  "title": "A turn of a call's cascade fails, a delivery still holds its run, and the call is cut: its caller reads that failure as the cut ends the call",
+  "rules": [
+    "§10.1 Explicit delivery cancellation"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "deliver": [
+          {
+            "when": {
+              "source_channel_id": "answering"
+            },
+            "gate": "sms-held"
+          }
+        ]
+      },
+      {
+        "id": "failing",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "hi"
+            },
+            "fail": "boom"
+          }
+        ]
+      },
+      {
+        "id": "answering",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "hi"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "later",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "answer"
+            },
+            "gate": "later-runs"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "failing"
+          },
+          {
+            "channel_id": "answering"
+          },
+          {
+            "channel_id": "later"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        },
+        "delivery_key": "k"
+      },
+      "background": true,
+      "as": "a"
+    },
+    {
+      "wait_for": "later-runs"
+    },
+    {
+      "wait_for": "sms-held"
+    },
+    {
+      "call": "cancel_delivery",
+      "key": "k",
+      "reason": "stopped",
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "await": "a",
+      "expect": {
+        "result": {
+          "error": "boom",
+          "cancellation_reason": "stopped"
+        }
+      }
+    },
+    {
+      "open": "sms-held"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "notes": "Python: core/lanes.py DeliveryCascade: the call reads its cascade's first error at its cancelled end (RMK-1343's review)."
+}

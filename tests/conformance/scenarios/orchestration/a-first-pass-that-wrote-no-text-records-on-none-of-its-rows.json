@@ -1,0 +1,177 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-first-pass-that-wrote-no-text-records-on-none-of-its-rows",
+  "title": "An auto-delegating Supervisor's first pass that wrote no text at all holds no record on its rows: the record is handed on, and its fallback carries it",
+  "rules": [
+    "§19.7.3",
+    "§6.4 The turn's record"
+  ],
+  "notes": "Python: core/mixins/_child_execution.py persist_tool_calls (_ToolRowsOnly), orchestration/strategies/supervisor/delegate.py _pass1_answer. A first pass's record is no row's: a turn that keeps its text out of the room hands it on (RMK-1344).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 1000,
+                "output_tokens": 10
+              }
+            },
+            {
+              "deltas": [
+                "\n\n"
+              ]
+            },
+            {
+              "deltas": [
+                "\n"
+              ]
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "look up",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found"
+          }
+        ]
+      },
+      {
+        "id": "analyst",
+        "type": "ai",
+        "agent": {
+          "role": "Analyst"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Numbers."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "analyst"
+          ],
+          "strategy": "parallel",
+          "auto_delegate": true
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Look into Acme."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null,
+          "response_metadata": {
+            "turns": {
+              "sup": {
+                "loop_end_reason": "empty_response"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "sms"
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "metadata": {
+            "loop_end_reason": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "metadata": {
+            "loop_end_reason": {
+              "$absent": true
+            },
+            "ai_usage": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "type": "message",
+          "content": {
+            "body": "The delegated work could not be completed."
+          },
+          "metadata": {
+            "loop_end_reason": "empty_response",
+            "ai_usage": {
+              "input_tokens": 1000,
+              "output_tokens": 10
+            }
+          }
+        }
+      ]
+    }
+  }
+}
