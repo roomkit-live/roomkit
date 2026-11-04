@@ -175,7 +175,8 @@ class LoopEndMarker:
     ``ON_AI_RESPONSE`` counts them (``round_count``): a round the loop tried
     again without a call is none. ``usage`` is what the turn's generations
     used, summed over every round: with the reason, it is the turn's record,
-    which the stream's consumer writes on the turn's last message (RFC §6.4).
+    which the stream's consumer writes on the turn's last message, else its
+    last row (RFC §6.4).
 
     ``max_rounds``, ``timeout_seconds``, ``budget_tokens`` and ``budget_usd``
     are the limits the turn ran under, so a consumer names the one a

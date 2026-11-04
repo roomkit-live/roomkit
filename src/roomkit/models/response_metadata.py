@@ -166,7 +166,7 @@ def merge_channel_record(into: MutableMapping[str, Any], record: Mapping[str, An
     ``loop_end_reason``, ``ai_usage``), which RoomKit keeps under ``turns``
     itself, and what the turn's own record says of its generations
     (``ai_last_usage``, ``ai_usage_complete``, ``ai_model``, ``ai_provider``),
-    which rides its last message only (RFC §6.4)."""
+    which rides its last message, else its last row, only (RFC §6.4)."""
     into.update({key: value for key, value in record.items() if key not in _TURN_RECORD_KEYS})
 
 
