@@ -1,0 +1,143 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-cut-in-a-round-tried-again-reads-incomplete",
+  "title": "A round tried again after one that said nothing is a generation of its own: cut in flight, it is not counted, and the record reads incomplete",
+  "rules": [
+    "§6.4 The turn's record",
+    "§12.2 step 13s"
+  ],
+  "notes": "Python: core/mixins/_streaming_segments.py _GenerationsRead, a segment break starts the next (RMK-1333).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up.",
+            "returns": "found"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "text": "One.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 100,
+                "output_tokens": 1
+              }
+            },
+            {
+              "usage": {
+                "input_tokens": 200,
+                "output_tokens": 2
+              }
+            },
+            {
+              "gate": "third",
+              "text": "Three.",
+              "usage": {
+                "input_tokens": 300,
+                "output_tokens": 3
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        },
+        "delivery_key": "k"
+      },
+      "background": true,
+      "as": "a"
+    },
+    {
+      "wait_for": "third"
+    },
+    {
+      "call": "cancel_delivery",
+      "key": "k",
+      "reason": "stopped",
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "await": "a"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0
+        },
+        {
+          "index": 1,
+          "content": {
+            "body": "One."
+          },
+          "metadata": {
+            "loop_end_reason": "cancelled",
+            "ai_usage": {
+              "input_tokens": 300,
+              "output_tokens": 3
+            },
+            "ai_last_usage": {
+              "input_tokens": 200,
+              "output_tokens": 2
+            },
+            "ai_usage_complete": false
+          }
+        },
+        {
+          "index": 2
+        },
+        {
+          "index": 3
+        }
+      ]
+    }
+  }
+}

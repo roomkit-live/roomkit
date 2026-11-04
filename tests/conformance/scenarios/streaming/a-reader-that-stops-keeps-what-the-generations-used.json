@@ -7,7 +7,7 @@
     "§6.4 The turn's record",
     "§12.2 step 13s"
   ],
-  "notes": "Python: channels/_ai_streaming.py _stream_generation (a UsageMarker after each generation), core/mixins/_streaming_segments.py read and end_stopped (RMK-1333). core/mixins/inbound_streaming.py _stop_reading; end_stopped.",
+  "notes": "Python: channels/_ai_streaming.py _stream_generation (a UsageMarker after each generation), core/mixins/_streaming_segments.py read and end_stopped (RMK-1333). core/mixins/inbound_streaming.py _stop_unread_stream; end_stopped.",
   "setup": {
     "channels": [
       {

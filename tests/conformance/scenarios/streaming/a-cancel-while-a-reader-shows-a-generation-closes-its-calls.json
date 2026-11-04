@@ -1,0 +1,133 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-cancel-while-a-reader-shows-a-generation-closes-its-calls",
+  "title": "A Cancel while a reader still shows a generation that asked a call stops the call the loop announced ahead of it: its start and its end are stored, failed, and it never runs",
+  "rules": [
+    "§6.4 The turn's record",
+    "§10.6.4"
+  ],
+  "notes": "Python: turns/_codec.py, the usage item is read ahead as a delta (RMK-1333 review): channels/_ai_streaming.py _announce runs ahead of the reader; RFC §9.3.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true,
+        "deliver_stream": [
+          {
+            "hold_after": "Checking.",
+            "hold_gate": "shown"
+          }
+        ]
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up.",
+            "returns": "found"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "text": "Checking.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 5,
+                "output_tokens": 2
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "background": true,
+      "as": "a"
+    },
+    {
+      "wait_for": "shown"
+    },
+    {
+      "call": "steer",
+      "channel_id": "agent",
+      "room_id": "room-1",
+      "directive": {
+        "type": "cancel"
+      }
+    },
+    {
+      "open": "shown"
+    },
+    {
+      "await": "a"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0
+        },
+        {
+          "index": 1,
+          "content": {
+            "body": "Checking."
+          },
+          "metadata": {
+            "loop_end_reason": "cancelled"
+          }
+        },
+        {
+          "index": 2,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 3,
+          "type": "tool_call_end",
+          "content": {
+            "status": "failed"
+          }
+        }
+      ]
+    }
+  }
+}

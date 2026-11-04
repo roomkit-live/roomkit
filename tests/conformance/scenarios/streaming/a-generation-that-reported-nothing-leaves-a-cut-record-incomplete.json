@@ -94,7 +94,10 @@
           "response_metadata": {
             "turns": {
               "agent": {
-                "loop_end_reason": "cancelled"
+                "loop_end_reason": "cancelled",
+                "ai_usage": {
+                  "$absent": true
+                }
               }
             }
           }
@@ -128,7 +131,10 @@
             },
             "ai_usage_complete": false,
             "ai_model": "opus",
-            "ai_provider": "anthropic"
+            "ai_provider": "anthropic",
+            "ai_usage": {
+              "$absent": true
+            }
           }
         },
         {

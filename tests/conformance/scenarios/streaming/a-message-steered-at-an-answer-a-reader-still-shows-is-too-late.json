@@ -1,13 +1,12 @@
 {
   "$schema": "../../scenario.schema.json",
-  "id": "streaming/a-cut-in-the-first-generation-reads-incomplete-with-nothing-used",
-  "title": "A turn cut in its first generation, its text kept, has nothing to tell of what it used: its record names its end, no last usage and no model, and reads incomplete",
+  "id": "streaming/a-message-steered-at-an-answer-a-reader-still-shows-is-too-late",
+  "title": "A message steered at an answer its reader is still showing reaches no loop: the loop read past what the generation told, its steering closed, as it reads past a text delta",
   "rules": [
-    "§6.1",
     "§6.4 The turn's record",
-    "§12.2 step 13s"
+    "§10.6.4"
   ],
-  "notes": "Python: channels/_ai_streaming.py _stream_generation (a UsageMarker after each generation), core/mixins/_streaming_segments.py read and end_stopped (RMK-1333). The text it was handed is kept, cancelled (§12.2 step 13s).",
+  "notes": "Python: turns/_codec.py, the usage item is read ahead as a delta (RMK-1333 review): channels/_ai_streaming.py _steered_after_answer runs ahead of the reader.",
   "setup": {
     "channels": [
       {
@@ -17,7 +16,8 @@
         "streams": true,
         "deliver_stream": [
           {
-            "stop_after": "Hel"
+            "hold_after": "Done.",
+            "hold_gate": "shown"
           }
         ]
       },
@@ -25,17 +25,12 @@
         "id": "agent",
         "type": "ai",
         "model": {
-          "name": "opus",
-          "provider": "anthropic",
           "rounds": [
             {
-              "deltas": [
-                "Hel",
-                "lo."
-              ],
+              "text": "Done.",
               "usage": {
-                "input_tokens": 1000,
-                "output_tokens": 10
+                "input_tokens": 5,
+                "output_tokens": 2
               }
             }
           ]
@@ -68,7 +63,30 @@
           "type": "text",
           "body": "Go."
         }
+      },
+      "background": true,
+      "as": "a"
+    },
+    {
+      "wait_for": "shown"
+    },
+    {
+      "call": "steer",
+      "channel_id": "agent",
+      "room_id": "room-1",
+      "directive": {
+        "type": "inject_message",
+        "content": "More."
+      },
+      "expect": {
+        "result": 0
       }
+    },
+    {
+      "open": "shown"
+    },
+    {
+      "await": "a"
     },
     {
       "idle": true
@@ -83,21 +101,10 @@
         {
           "index": 1,
           "content": {
-            "body": "Hel"
+            "body": "Done."
           },
           "metadata": {
-            "loop_end_reason": "cancelled",
-            "ai_usage": {
-              "$absent": true
-            },
-            "ai_last_usage": null,
-            "ai_usage_complete": false,
-            "ai_model": {
-              "$absent": true
-            },
-            "ai_provider": {
-              "$absent": true
-            }
+            "loop_end_reason": "completed"
           }
         }
       ]

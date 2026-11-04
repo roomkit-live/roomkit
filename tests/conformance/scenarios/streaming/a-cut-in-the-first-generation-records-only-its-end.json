@@ -1,0 +1,110 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-cut-in-the-first-generation-records-only-its-end",
+  "title": "A turn cut in its first generation, its text kept, has told nothing of what it used: its record names only its end, as a stream that never tells",
+  "rules": [
+    "§6.1",
+    "§6.4 The turn's record",
+    "§12.2 step 13s"
+  ],
+  "notes": "Python: channels/_ai_streaming.py _stream_generation (a UsageMarker after each generation), core/mixins/_streaming_segments.py read and end_stopped (RMK-1333). The text it was handed is kept, cancelled (§12.2 step 13s).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true,
+        "deliver_stream": [
+          {
+            "stop_after": "Hel"
+          }
+        ]
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "name": "opus",
+          "provider": "anthropic",
+          "rounds": [
+            {
+              "deltas": [
+                "Hel",
+                "lo."
+              ],
+              "usage": {
+                "input_tokens": 1000,
+                "output_tokens": 10
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0
+        },
+        {
+          "index": 1,
+          "content": {
+            "body": "Hel"
+          },
+          "metadata": {
+            "loop_end_reason": "cancelled",
+            "ai_usage": {
+              "$absent": true
+            },
+            "ai_last_usage": {
+              "$absent": true
+            },
+            "ai_usage_complete": {
+              "$absent": true
+            },
+            "ai_model": {
+              "$absent": true
+            },
+            "ai_provider": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

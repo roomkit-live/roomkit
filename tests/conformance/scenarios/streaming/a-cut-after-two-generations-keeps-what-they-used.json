@@ -7,7 +7,7 @@
     "§6.4 The turn's record",
     "§12.2 step 13s"
   ],
-  "notes": "Python: channels/_ai_streaming.py _stream_generation (a UsageMarker after each generation), core/mixins/_streaming_segments.py read and end_stopped (RMK-1333). tests/test_stopped_stream_turn_end.py. The real bases: 8 cut turns of 8 stored no usage (RMK-1333).",
+  "notes": "Python: channels/_ai_streaming.py _stream_generation (a UsageMarker after each generation), core/mixins/_streaming_segments.py read and end_stopped (RMK-1333). tests/tasks/test_stopped_stream_turn_end.py. The real bases: 8 cut turns of 8 stored no usage (RMK-1333).",
   "setup": {
     "channels": [
       {
