@@ -1,0 +1,149 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "greeting/no-room-to-greet",
+  "title": "send_greeting into a room missing or closed does nothing and raises nothing; organization_id reads the room first, and a room it does not reach is not found",
+  "rules": [
+    "§5.1",
+    "§17.2",
+    "§19.1"
+  ],
+  "notes": "A status gate on a greeting only logs: no room_refused_event. A room of the organization is greeted, and a room read with no organization whatever its organization.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": []
+        },
+        "agent": {
+          "greeting": "Welcome!",
+          "auto_greet": false
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "theirs",
+        "organization_id": "org-a",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "closed",
+        "status": "closed",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_greeting",
+      "room_id": "missing"
+    },
+    {
+      "call": "send_greeting",
+      "room_id": "missing",
+      "agent_id": "agent"
+    },
+    {
+      "call": "send_greeting",
+      "room_id": "closed"
+    },
+    {
+      "call": "send_greeting",
+      "room_id": "missing",
+      "organization_id": "org-a",
+      "expect": {
+        "error": "room_not_found"
+      }
+    },
+    {
+      "call": "send_greeting",
+      "room_id": "theirs",
+      "organization_id": "org-b",
+      "expect": {
+        "error": "room_not_found"
+      }
+    },
+    {
+      "call": "send_greeting",
+      "room_id": "theirs",
+      "organization_id": "org-a"
+    },
+    {
+      "call": "send_greeting",
+      "room_id": "theirs"
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "theirs": [
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "agent",
+            "channel_type": "ai",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "Welcome!"
+          },
+          "metadata": {
+            "auto_greeting": true
+          },
+          "status": "delivered",
+          "index": 0
+        },
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "agent",
+            "channel_type": "ai",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "Welcome!"
+          },
+          "metadata": {
+            "auto_greeting": true
+          },
+          "status": "delivered",
+          "index": 1
+        }
+      ],
+      "closed": []
+    },
+    "framework_events": {
+      "closed": []
+    },
+    "deliveries": {
+      "closed": {
+        "sms": []
+      }
+    }
+  }
+}

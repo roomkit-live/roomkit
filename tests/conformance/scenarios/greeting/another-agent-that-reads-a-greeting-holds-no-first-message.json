@@ -1,0 +1,170 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "greeting/another-agent-that-reads-a-greeting-holds-no-first-message",
+  "title": "A greeting read by another agent of the room holds no first message: the message is processed within process_timeout, each answered",
+  "rules": [
+    "§10.1 step 2",
+    "§19.1"
+  ],
+  "notes": "The greeting's delivery to helper runs inside the session's start, which the message awaits. Waiting there on a gate the greeting itself holds would refuse the message process_timeout. A greeting and what answers it remain inside the bound: a slow enough answer would still expire the message. agent is write-only: it answers nothing.",
+  "setup": {
+    "kit": {
+      "process_timeout_ms": 2000
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": []
+        },
+        "agent": {
+          "greeting": "Welcome!"
+        }
+      },
+      {
+        "id": "helper",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "Hello from the helper"
+              ]
+            },
+            {
+              "deltas": [
+                "Hi to you"
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "attach_agents",
+        "trigger": "on_room_created",
+        "execution": "async",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "attach_channel",
+                "room_id": "$room",
+                "channel_id": "agent",
+                "category": "intelligence",
+                "access": "write_only"
+              },
+              {
+                "call": "attach_channel",
+                "room_id": "$room",
+                "channel_id": "helper",
+                "category": "intelligence"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "$r1": [
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "agent",
+            "channel_type": "ai",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "Welcome!"
+          },
+          "metadata": {
+            "auto_greeting": true
+          },
+          "status": "delivered",
+          "index": 0
+        },
+        {
+          "index": 1,
+          "source": {
+            "channel_id": "helper"
+          },
+          "content": {
+            "body": "Hello from the helper"
+          }
+        },
+        {
+          "index": 2,
+          "source": {
+            "channel_id": "sms"
+          },
+          "content": {
+            "body": "Hi"
+          }
+        },
+        {
+          "index": 3,
+          "source": {
+            "channel_id": "helper"
+          },
+          "content": {
+            "body": "Hi to you"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "$r1": {
+        "sms": [
+          {
+            "content": {
+              "body": "Welcome!"
+            }
+          },
+          {
+            "content": {
+              "body": "Hello from the helper"
+            }
+          },
+          {
+            "content": {
+              "body": "Hi to you"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

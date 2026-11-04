@@ -1,0 +1,183 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "greeting/a-hook-s-body-greeting-on-every-answer-stops-at-the-depth-limit",
+  "title": "An ASYNC hook's body that greets on every answer of another agent stops at the chain's depth limit: the greeting runs at the depth of the body",
+  "rules": [
+    "§8.3",
+    "§19.1"
+  ],
+  "notes": "A greeting is a write of the room's work like any other: at the depth of the work it is made in, one past the hook's event, and on its budget. The top-level call stands at depth 0. The agent that answers is not asked past the limit, so nothing answers the last greeting and the hook stops.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": []
+        },
+        "agent": {
+          "greeting": "Welcome!",
+          "auto_greet": false
+        }
+      },
+      {
+        "id": "other",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "repeat": true,
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Noted"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "access": "write_only"
+          },
+          {
+            "channel_id": "other",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "greeter",
+        "trigger": "after_broadcast",
+        "execution": "async",
+        "reactions": [
+          {
+            "when": {
+              "source_channel_id": "other"
+            },
+            "repeat": true,
+            "do": [
+              {
+                "call": "send_greeting",
+                "room_id": "$room"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_greeting",
+      "room_id": "room-1"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "agent",
+            "channel_type": "ai",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "Welcome!"
+          },
+          "metadata": {
+            "auto_greeting": true
+          },
+          "status": "delivered",
+          "chain_depth": 0
+        },
+        {
+          "source": {
+            "channel_id": "other"
+          },
+          "content": {
+            "body": "Noted"
+          },
+          "status": "delivered",
+          "chain_depth": 1
+        },
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "agent",
+            "channel_type": "ai",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "Welcome!"
+          },
+          "metadata": {
+            "auto_greeting": true
+          },
+          "status": "delivered",
+          "chain_depth": 2
+        },
+        {
+          "source": {
+            "channel_id": "other"
+          },
+          "content": {
+            "body": "Noted"
+          },
+          "status": "delivered",
+          "chain_depth": 3
+        },
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "agent",
+            "channel_type": "ai",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "Welcome!"
+          },
+          "metadata": {
+            "auto_greeting": true
+          },
+          "status": "delivered",
+          "chain_depth": 4
+        },
+        {
+          "source": {
+            "channel_id": "other"
+          },
+          "status": "blocked",
+          "blocked_by": "event_chain_depth_limit",
+          "chain_depth": 5
+        }
+      ]
+    }
+  }
+}

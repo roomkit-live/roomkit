@@ -1,0 +1,71 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "greeting/a-greeting-meets-the-room-s-due-timers",
+  "title": "A greeting into a room whose timers are due applies them: the room pauses and closes, the greeting is not stored and nothing refuses it",
+  "rules": [
+    "§5.1",
+    "§19.1"
+  ],
+  "notes": "The status gate reads the room its due timers left: no room_refused_event, and the call does not fail. The agent is named, unbound: a due room binds nothing new.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": []
+        },
+        "agent": {
+          "greeting": "Welcome!",
+          "auto_greet": false
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "create_room",
+      "room": {
+        "id": "room-1",
+        "timers": {
+          "inactive_after_seconds": 0,
+          "closed_after_seconds": 0
+        }
+      }
+    },
+    {
+      "call": "send_greeting",
+      "room_id": "room-1",
+      "agent_id": "agent"
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": []
+    },
+    "rooms": {
+      "room-1": {
+        "status": "closed"
+      }
+    },
+    "framework_events": {
+      "room-1": [
+        "room_created",
+        {
+          "event": "room_paused",
+          "reason": "timer"
+        },
+        {
+          "event": "room_closed",
+          "reason": "timer"
+        }
+      ]
+    }
+  }
+}

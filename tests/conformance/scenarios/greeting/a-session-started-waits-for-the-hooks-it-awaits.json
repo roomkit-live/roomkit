@@ -1,0 +1,67 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "greeting/a-session-started-waits-for-the-hooks-it-awaits",
+  "title": "session_started is emitted once the ON_SESSION_STARTED hooks a message waits for are over, one past its own timeout included",
+  "rules": [
+    "§10.1 step 2",
+    "§9.3"
+  ],
+  "notes": "_held never passes its gate: its timeout ends it. A session's start that did not wait would emit session_started first, or the message's event_processed.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "_held",
+        "trigger": "on_session_started",
+        "execution": "async",
+        "timeout_ms": 50,
+        "reactions": [
+          {
+            "gate": "never"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hi"
+        }
+      },
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "open": "never"
+    }
+  ],
+  "expect": {
+    "framework_events": {
+      "room-1": [
+        "room_created",
+        "room_channel_attached",
+        {
+          "event": "hook_timeout"
+        },
+        "session_started",
+        "event_processed"
+      ]
+    }
+  }
+}

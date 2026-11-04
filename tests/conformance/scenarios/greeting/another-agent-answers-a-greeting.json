@@ -1,0 +1,118 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "greeting/another-agent-answers-a-greeting",
+  "title": "Another agent of the room answers a greeting, and its answer re-enters as any response; the greeting's agent does not answer itself",
+  "rules": [
+    "§10.1 step 14",
+    "§19.1"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": []
+        },
+        "agent": {
+          "greeting": "Welcome!",
+          "auto_greet": false
+        }
+      },
+      {
+        "id": "helper",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "Hello from the helper"
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "access": "write_only"
+          },
+          {
+            "channel_id": "helper",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_greeting",
+      "room_id": "room-1"
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "agent",
+            "channel_type": "ai",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "Welcome!"
+          },
+          "metadata": {
+            "auto_greeting": true
+          },
+          "status": "delivered",
+          "index": 0
+        },
+        {
+          "index": 1,
+          "source": {
+            "channel_id": "helper"
+          },
+          "content": {
+            "body": "Hello from the helper"
+          },
+          "chain_depth": 1
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [
+          {
+            "content": {
+              "body": "Welcome!"
+            }
+          },
+          {
+            "content": {
+              "body": "Hello from the helper"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

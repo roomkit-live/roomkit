@@ -1,0 +1,81 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "greeting/a-session-hook-past-process-timeout-expires-its-message",
+  "title": "process_timeout bounds the ON_SESSION_STARTED hooks a message waits for: past it the message is refused, the hook cut, and the session's other hooks never fire",
+  "rules": [
+    "§10.1 step 2",
+    "§13.6"
+  ],
+  "notes": "The room is created and the channel attached by then: both stand. _held is held at a gate well within its own timeout. session_started is not emitted.",
+  "setup": {
+    "kit": {
+      "process_timeout_ms": 100
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "_held",
+        "trigger": "on_session_started",
+        "execution": "async",
+        "timeout_ms": 3000,
+        "reactions": [
+          {
+            "gate": "never"
+          }
+        ]
+      },
+      {
+        "name": "user",
+        "trigger": "on_session_started",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hi"
+        }
+      },
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "process_timeout",
+          "event": null
+        }
+      }
+    },
+    {
+      "open": "never"
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": []
+    },
+    "framework_events": {
+      "room-1": [
+        "room_created",
+        "room_channel_attached",
+        {
+          "event": "process_timeout"
+        }
+      ]
+    },
+    "hooks": {
+      "user": []
+    }
+  }
+}

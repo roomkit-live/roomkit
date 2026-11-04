@@ -1,0 +1,156 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "greeting/two-agents-greet-before-the-message",
+  "title": "Two agents with a greeting both greet the room a first message creates, both greetings stored and delivered before the message",
+  "rules": [
+    "§10.1 step 2",
+    "§19.1"
+  ],
+  "notes": "Both are write-only, so neither reads the other's greeting nor the message. Their hooks run concurrently: the greetings come in either order.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "one",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": []
+        },
+        "agent": {
+          "greeting": "From one"
+        }
+      },
+      {
+        "id": "two",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": []
+        },
+        "agent": {
+          "greeting": "From two"
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "attach_agents",
+        "trigger": "on_room_created",
+        "execution": "async",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "attach_channel",
+                "room_id": "$room",
+                "channel_id": "one",
+                "category": "intelligence",
+                "access": "write_only"
+              },
+              {
+                "call": "attach_channel",
+                "room_id": "$room",
+                "channel_id": "two",
+                "category": "intelligence",
+                "access": "write_only"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "$r1": {
+        "$unordered": [
+          {
+            "type": "message",
+            "source": {
+              "channel_id": "one",
+              "channel_type": "ai",
+              "direction": "outbound"
+            },
+            "content": {
+              "type": "text",
+              "body": "From one"
+            },
+            "metadata": {
+              "auto_greeting": true
+            },
+            "status": "delivered"
+          },
+          {
+            "type": "message",
+            "source": {
+              "channel_id": "two",
+              "channel_type": "ai",
+              "direction": "outbound"
+            },
+            "content": {
+              "type": "text",
+              "body": "From two"
+            },
+            "metadata": {
+              "auto_greeting": true
+            },
+            "status": "delivered"
+          },
+          {
+            "index": 2,
+            "source": {
+              "channel_id": "sms"
+            },
+            "content": {
+              "body": "Hi"
+            }
+          }
+        ]
+      }
+    },
+    "deliveries": {
+      "$r1": {
+        "sms": {
+          "$unordered": [
+            {
+              "content": {
+                "body": "From one"
+              }
+            },
+            {
+              "content": {
+                "body": "From two"
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,632 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "greeting/a-stream-answering-a-greeting-is-chained",
+  "title": "A stream that answers a greeting is a chained stream: past the reentry budget it is closed unread, its BLOCKED record in place of the answer",
+  "rules": [
+    "§8.3",
+    "§19.1"
+  ],
+  "notes": "A greeting is no caller's own event: unlike a message's, the turn that answers it draws a pass as its stream is read. At max_chain_depth 3 the budget is 30 passes, and bot's 30 notes for sms spend them: helper's model is never asked.",
+  "setup": {
+    "kit": {
+      "max_chain_depth": 3
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "bot",
+        "type": "webhook",
+        "category": "transport",
+        "on_event": [
+          {
+            "when": {
+              "source_channel_id": "agent"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Note 1"
+                },
+                "visibility": "sms"
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Note 2"
+                },
+                "visibility": "sms"
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Note 3"
+                },
+                "visibility": "sms"
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Note 4"
+                },
+                "visibility": "sms"
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Note 5"
+                },
+                "visibility": "sms"
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Note 6"
+                },
+                "visibility": "sms"
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Note 7"
+                },
+                "visibility": "sms"
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Note 8"
+                },
+                "visibility": "sms"
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Note 9"
+                },
+                "visibility": "sms"
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Note 10"
+                },
+                "visibility": "sms"
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Note 11"
+                },
+                "visibility": "sms"
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Note 12"
+                },
+                "visibility": "sms"
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Note 13"
+                },
+                "visibility": "sms"
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Note 14"
+                },
+                "visibility": "sms"
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Note 15"
+                },
+                "visibility": "sms"
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Note 16"
+                },
+                "visibility": "sms"
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Note 17"
+                },
+                "visibility": "sms"
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Note 18"
+                },
+                "visibility": "sms"
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Note 19"
+                },
+                "visibility": "sms"
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Note 20"
+                },
+                "visibility": "sms"
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Note 21"
+                },
+                "visibility": "sms"
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Note 22"
+                },
+                "visibility": "sms"
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Note 23"
+                },
+                "visibility": "sms"
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Note 24"
+                },
+                "visibility": "sms"
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Note 25"
+                },
+                "visibility": "sms"
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Note 26"
+                },
+                "visibility": "sms"
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Note 27"
+                },
+                "visibility": "sms"
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Note 28"
+                },
+                "visibility": "sms"
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Note 29"
+                },
+                "visibility": "sms"
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Note 30"
+                },
+                "visibility": "sms"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": []
+        },
+        "agent": {
+          "greeting": "Welcome!",
+          "auto_greet": false
+        }
+      },
+      {
+        "id": "helper",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "text": "Hello from the helper"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "bot"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "access": "write_only"
+          },
+          {
+            "channel_id": "helper",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_greeting",
+      "room_id": "room-1"
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "agent",
+            "channel_type": "ai",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "Welcome!"
+          },
+          "metadata": {
+            "auto_greeting": true
+          },
+          "status": "delivered",
+          "index": 0
+        },
+        {
+          "index": 1,
+          "source": {
+            "channel_id": "bot"
+          },
+          "content": {
+            "body": "Note 1"
+          },
+          "status": "delivered"
+        },
+        {
+          "index": 2,
+          "source": {
+            "channel_id": "bot"
+          },
+          "content": {
+            "body": "Note 2"
+          },
+          "status": "delivered"
+        },
+        {
+          "index": 3,
+          "source": {
+            "channel_id": "bot"
+          },
+          "content": {
+            "body": "Note 3"
+          },
+          "status": "delivered"
+        },
+        {
+          "index": 4,
+          "source": {
+            "channel_id": "bot"
+          },
+          "content": {
+            "body": "Note 4"
+          },
+          "status": "delivered"
+        },
+        {
+          "index": 5,
+          "source": {
+            "channel_id": "bot"
+          },
+          "content": {
+            "body": "Note 5"
+          },
+          "status": "delivered"
+        },
+        {
+          "index": 6,
+          "source": {
+            "channel_id": "bot"
+          },
+          "content": {
+            "body": "Note 6"
+          },
+          "status": "delivered"
+        },
+        {
+          "index": 7,
+          "source": {
+            "channel_id": "bot"
+          },
+          "content": {
+            "body": "Note 7"
+          },
+          "status": "delivered"
+        },
+        {
+          "index": 8,
+          "source": {
+            "channel_id": "bot"
+          },
+          "content": {
+            "body": "Note 8"
+          },
+          "status": "delivered"
+        },
+        {
+          "index": 9,
+          "source": {
+            "channel_id": "bot"
+          },
+          "content": {
+            "body": "Note 9"
+          },
+          "status": "delivered"
+        },
+        {
+          "index": 10,
+          "source": {
+            "channel_id": "bot"
+          },
+          "content": {
+            "body": "Note 10"
+          },
+          "status": "delivered"
+        },
+        {
+          "index": 11,
+          "source": {
+            "channel_id": "bot"
+          },
+          "content": {
+            "body": "Note 11"
+          },
+          "status": "delivered"
+        },
+        {
+          "index": 12,
+          "source": {
+            "channel_id": "bot"
+          },
+          "content": {
+            "body": "Note 12"
+          },
+          "status": "delivered"
+        },
+        {
+          "index": 13,
+          "source": {
+            "channel_id": "bot"
+          },
+          "content": {
+            "body": "Note 13"
+          },
+          "status": "delivered"
+        },
+        {
+          "index": 14,
+          "source": {
+            "channel_id": "bot"
+          },
+          "content": {
+            "body": "Note 14"
+          },
+          "status": "delivered"
+        },
+        {
+          "index": 15,
+          "source": {
+            "channel_id": "bot"
+          },
+          "content": {
+            "body": "Note 15"
+          },
+          "status": "delivered"
+        },
+        {
+          "index": 16,
+          "source": {
+            "channel_id": "bot"
+          },
+          "content": {
+            "body": "Note 16"
+          },
+          "status": "delivered"
+        },
+        {
+          "index": 17,
+          "source": {
+            "channel_id": "bot"
+          },
+          "content": {
+            "body": "Note 17"
+          },
+          "status": "delivered"
+        },
+        {
+          "index": 18,
+          "source": {
+            "channel_id": "bot"
+          },
+          "content": {
+            "body": "Note 18"
+          },
+          "status": "delivered"
+        },
+        {
+          "index": 19,
+          "source": {
+            "channel_id": "bot"
+          },
+          "content": {
+            "body": "Note 19"
+          },
+          "status": "delivered"
+        },
+        {
+          "index": 20,
+          "source": {
+            "channel_id": "bot"
+          },
+          "content": {
+            "body": "Note 20"
+          },
+          "status": "delivered"
+        },
+        {
+          "index": 21,
+          "source": {
+            "channel_id": "bot"
+          },
+          "content": {
+            "body": "Note 21"
+          },
+          "status": "delivered"
+        },
+        {
+          "index": 22,
+          "source": {
+            "channel_id": "bot"
+          },
+          "content": {
+            "body": "Note 22"
+          },
+          "status": "delivered"
+        },
+        {
+          "index": 23,
+          "source": {
+            "channel_id": "bot"
+          },
+          "content": {
+            "body": "Note 23"
+          },
+          "status": "delivered"
+        },
+        {
+          "index": 24,
+          "source": {
+            "channel_id": "bot"
+          },
+          "content": {
+            "body": "Note 24"
+          },
+          "status": "delivered"
+        },
+        {
+          "index": 25,
+          "source": {
+            "channel_id": "bot"
+          },
+          "content": {
+            "body": "Note 25"
+          },
+          "status": "delivered"
+        },
+        {
+          "index": 26,
+          "source": {
+            "channel_id": "bot"
+          },
+          "content": {
+            "body": "Note 26"
+          },
+          "status": "delivered"
+        },
+        {
+          "index": 27,
+          "source": {
+            "channel_id": "bot"
+          },
+          "content": {
+            "body": "Note 27"
+          },
+          "status": "delivered"
+        },
+        {
+          "index": 28,
+          "source": {
+            "channel_id": "bot"
+          },
+          "content": {
+            "body": "Note 28"
+          },
+          "status": "delivered"
+        },
+        {
+          "index": 29,
+          "source": {
+            "channel_id": "bot"
+          },
+          "content": {
+            "body": "Note 29"
+          },
+          "status": "delivered"
+        },
+        {
+          "index": 30,
+          "source": {
+            "channel_id": "bot"
+          },
+          "content": {
+            "body": "Note 30"
+          },
+          "status": "delivered"
+        },
+        {
+          "index": 31,
+          "source": {
+            "channel_id": "helper"
+          },
+          "status": "blocked",
+          "blocked_by": "reentry_loop_cap"
+        }
+      ]
+    },
+    "models": {
+      "helper": []
+    }
+  }
+}

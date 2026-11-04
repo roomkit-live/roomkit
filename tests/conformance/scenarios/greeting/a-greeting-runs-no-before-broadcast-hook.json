@@ -1,0 +1,133 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "greeting/a-greeting-runs-no-before-broadcast-hook",
+  "title": "A greeting crosses no BEFORE_BROADCAST hook, neither one that decides nor one that observes; AFTER_BROADCAST observes it",
+  "rules": [
+    "§7.5 rule 2",
+    "§19.1"
+  ],
+  "notes": "A greeting is committed by a path of its own: nothing can block or change it. Its delivery is an event's delivery, so AFTER_BROADCAST fires. The message after it crosses all three.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "How can I help?"
+              ]
+            }
+          ]
+        },
+        "agent": {
+          "greeting": "Welcome!",
+          "auto_greet": false
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "deciding",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "Welcome!"
+            },
+            "result": {
+              "action": "block",
+              "reason": "never"
+            }
+          }
+        ]
+      },
+      {
+        "name": "observing",
+        "trigger": "before_broadcast",
+        "execution": "async"
+      },
+      {
+        "name": "after",
+        "trigger": "after_broadcast",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_greeting",
+      "room_id": "room-1"
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "agent",
+            "channel_type": "ai",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "Welcome!"
+          },
+          "metadata": {
+            "auto_greeting": true
+          },
+          "status": "delivered",
+          "index": 0
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [
+          {
+            "content": {
+              "body": "Welcome!"
+            }
+          }
+        ]
+      }
+    },
+    "hooks": {
+      "deciding": [],
+      "observing": [],
+      "after": [
+        {
+          "trigger": "after_broadcast",
+          "room_id": "room-1",
+          "event": {
+            "content": {
+              "body": "Welcome!"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

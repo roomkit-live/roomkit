@@ -1,0 +1,128 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "greeting/a-greeting-read-past-process-timeout-expires-its-message",
+  "title": "A greeting's delivery is inside the first message's process_timeout: an agent that reads it past the bound has the message refused, the greeting kept",
+  "rules": [
+    "§10.1 step 2",
+    "§13.6",
+    "§19.1"
+  ],
+  "notes": "No gate holds the message, but its session's start awaits the greeting, and the greeting its delivery. helper holds its turn at a gate until the call has been refused: the greeting, committed by then, stands and is delivered, and the message is not stored.",
+  "setup": {
+    "kit": {
+      "process_timeout_ms": 100
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": []
+        },
+        "agent": {
+          "greeting": "Welcome!"
+        }
+      },
+      {
+        "id": "helper",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "gate": "slow"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "attach_agents",
+        "trigger": "on_room_created",
+        "execution": "async",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "attach_channel",
+                "room_id": "$room",
+                "channel_id": "agent",
+                "category": "intelligence",
+                "access": "write_only"
+              },
+              {
+                "call": "attach_channel",
+                "room_id": "$room",
+                "channel_id": "helper",
+                "category": "intelligence"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hi"
+        }
+      },
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "process_timeout",
+          "event": null
+        }
+      }
+    },
+    {
+      "open": "slow"
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "agent",
+            "channel_type": "ai",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "Welcome!"
+          },
+          "metadata": {
+            "auto_greeting": true
+          },
+          "status": "delivered",
+          "index": 0
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [
+          {
+            "content": {
+              "body": "Welcome!"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

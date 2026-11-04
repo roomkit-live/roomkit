@@ -1,0 +1,150 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "greeting/an-agent-greets-a-room-once",
+  "title": "An agent greets a room once: a session started again in it says nothing, but for a room its agent was not bound to the last time",
+  "rules": [
+    "§10.1 step 2",
+    "§19.1"
+  ],
+  "notes": "The store forgets the room, and the next message creates it and starts a session again. The first start finds the agent unbound and greets no one, which leaves the room to greet; the second greets; the third does not.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "One"
+              ]
+            },
+            {
+              "deltas": [
+                "Two"
+              ]
+            }
+          ]
+        },
+        "agent": {
+          "greeting": "Welcome!"
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "attach_agent",
+        "trigger": "on_room_created",
+        "execution": "async",
+        "reactions": [
+          {},
+          {
+            "do": [
+              {
+                "call": "attach_channel",
+                "room_id": "$room",
+                "channel_id": "agent"
+              }
+            ],
+            "repeat": true
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "First"
+        }
+      }
+    },
+    {
+      "call": "store.delete_room",
+      "room_id": "room-1"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Second"
+        }
+      }
+    },
+    {
+      "call": "store.delete_room",
+      "room_id": "room-1"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Third"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "source": {
+            "channel_id": "sms"
+          },
+          "content": {
+            "body": "Third"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "agent"
+          },
+          "content": {
+            "body": "Two"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [
+          {
+            "content": {
+              "body": "Welcome!"
+            }
+          },
+          {
+            "content": {
+              "body": "One"
+            }
+          },
+          {
+            "content": {
+              "body": "Two"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

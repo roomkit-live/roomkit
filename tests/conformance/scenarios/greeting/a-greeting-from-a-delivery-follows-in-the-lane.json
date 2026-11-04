@@ -1,0 +1,132 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "greeting/a-greeting-from-a-delivery-follows-in-the-lane",
+  "title": "send_greeting from a channel's delivery does not wait for itself: its greeting is delivered after the set that made it",
+  "rules": [
+    "§10.1 step 18",
+    "§19.1"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "deliver": [
+          {
+            "when": {
+              "text": "Hi"
+            },
+            "do": [
+              {
+                "call": "send_greeting",
+                "room_id": "$room"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "email",
+        "type": "email",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": []
+        },
+        "agent": {
+          "greeting": "Welcome!",
+          "auto_greet": false
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "email"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "access": "write_only"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "email",
+      "content": {
+        "type": "text",
+        "body": "Hi"
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "source": {
+            "channel_id": "email"
+          },
+          "content": {
+            "body": "Hi"
+          }
+        },
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "agent",
+            "channel_type": "ai",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "Welcome!"
+          },
+          "metadata": {
+            "auto_greeting": true
+          },
+          "status": "delivered",
+          "index": 1
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [
+          {
+            "content": {
+              "body": "Hi"
+            }
+          },
+          {
+            "content": {
+              "body": "Welcome!"
+            }
+          }
+        ],
+        "email": [
+          {
+            "content": {
+              "body": "Welcome!"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

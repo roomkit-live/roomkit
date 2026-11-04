@@ -1,0 +1,288 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "greeting/send-greeting-finds-the-agent-it-names-or-the-first-bound",
+  "title": "send_greeting greets as the agent agent_id or channel_id names, agent_id first, else as the first agent bound with an identity",
+  "rules": [
+    "§19.1"
+  ],
+  "notes": "plain is an intelligence channel with no identity and sms a transport: neither greets, the first bound agent with an identity does. The greeting is literal, whatever the agent's language. An agent with no greeting greets only with the text given. Every agent is write-only, so nothing answers.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "plain",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": []
+        }
+      },
+      {
+        "id": "first",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": []
+        },
+        "agent": {
+          "greeting": "From first",
+          "language": "French",
+          "auto_greet": false
+        }
+      },
+      {
+        "id": "second",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": []
+        },
+        "agent": {
+          "greeting": "From second",
+          "auto_greet": false
+        }
+      },
+      {
+        "id": "silent",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": []
+        },
+        "agent": {
+          "role": "Helper",
+          "auto_greet": false
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "plain",
+            "category": "intelligence",
+            "access": "write_only"
+          },
+          {
+            "channel_id": "first",
+            "category": "intelligence",
+            "access": "write_only"
+          },
+          {
+            "channel_id": "second",
+            "category": "intelligence",
+            "access": "write_only"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "silent",
+            "category": "intelligence",
+            "access": "write_only"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_greeting",
+      "room_id": "room-1"
+    },
+    {
+      "call": "send_greeting",
+      "room_id": "room-1",
+      "agent_id": "second"
+    },
+    {
+      "call": "send_greeting",
+      "room_id": "room-1",
+      "channel_id": "second"
+    },
+    {
+      "call": "send_greeting",
+      "room_id": "room-1",
+      "agent_id": "first",
+      "channel_id": "second"
+    },
+    {
+      "call": "send_greeting",
+      "room_id": "room-1",
+      "channel_id": "sms"
+    },
+    {
+      "call": "send_greeting",
+      "room_id": "room-1",
+      "agent_id": "plain"
+    },
+    {
+      "call": "send_greeting",
+      "room_id": "room-1",
+      "agent_id": "nobody"
+    },
+    {
+      "call": "send_greeting",
+      "room_id": "room-2"
+    },
+    {
+      "call": "send_greeting",
+      "room_id": "room-2",
+      "agent_id": "silent"
+    },
+    {
+      "call": "send_greeting",
+      "room_id": "room-2",
+      "greeting": "Spoken"
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "first",
+            "channel_type": "ai",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "From first"
+          },
+          "metadata": {
+            "auto_greeting": true
+          },
+          "status": "delivered"
+        },
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "second",
+            "channel_type": "ai",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "From second"
+          },
+          "metadata": {
+            "auto_greeting": true
+          },
+          "status": "delivered"
+        },
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "second",
+            "channel_type": "ai",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "From second"
+          },
+          "metadata": {
+            "auto_greeting": true
+          },
+          "status": "delivered"
+        },
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "first",
+            "channel_type": "ai",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "From first"
+          },
+          "metadata": {
+            "auto_greeting": true
+          },
+          "status": "delivered"
+        },
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "first",
+            "channel_type": "ai",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "From first"
+          },
+          "metadata": {
+            "auto_greeting": true
+          },
+          "status": "delivered"
+        },
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "first",
+            "channel_type": "ai",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "From first"
+          },
+          "metadata": {
+            "auto_greeting": true
+          },
+          "status": "delivered"
+        },
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "first",
+            "channel_type": "ai",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "From first"
+          },
+          "metadata": {
+            "auto_greeting": true
+          },
+          "status": "delivered"
+        }
+      ],
+      "room-2": [
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "silent",
+            "channel_type": "ai",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "Spoken"
+          },
+          "metadata": {
+            "auto_greeting": true
+          },
+          "status": "delivered"
+        }
+      ]
+    }
+  }
+}
