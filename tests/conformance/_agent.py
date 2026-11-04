@@ -132,8 +132,9 @@ class ScriptedModel(AIProvider):
 
     async def generate_structured_stream(self, context: AIContext) -> AsyncIterator[StreamEvent]:
         """The round's text as its deltas, then its calls and its end; a round
-        that ``fails`` raises once its deltas are written, or once its calls
-        are with ``failure_after_calls``. The model waits between two deltas,
+        that ``fails`` raises once its deltas are written, once its calls are
+        with ``failure_after_calls``, or once its end is with
+        ``failure_after_done``. The model waits between two deltas,
         so each reaches the reader apart: deltas yielded without waiting may
         cross as one (RFC §10.6.4)."""
         round_ = self._next_round(context)
@@ -153,6 +154,10 @@ class ScriptedModel(AIProvider):
                 if not isinstance(event, StreamDone):
                     yield event
             events = [event for event in events if isinstance(event, StreamDone)]
+        if round_.get("failure_after_done"):
+            for event in events:
+                yield event
+            events = []
         if (message := round_.get("fails")) is not None:
             raise ModelFailedError(message)
         _refuse(round_)
@@ -378,6 +383,8 @@ def scripted_agent(
         )
     if "max_tool_rounds" in spec:
         kwargs["max_tool_rounds"] = spec["max_tool_rounds"]
+    if "max_empty_retries" in spec:
+        kwargs["max_empty_retries"] = spec["max_empty_retries"]
     if "max_context_events" in spec:
         kwargs["max_context_events"] = spec["max_context_events"]
     if "tool_timeout_ms" in spec:

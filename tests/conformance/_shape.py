@@ -95,6 +95,7 @@ CHANNEL = {
     "tools",
     "tool_policy",
     "max_tool_rounds",
+    "max_empty_retries",
     "max_context_events",
     "tool_timeout_ms",
     "tool_timeouts_ms",
@@ -157,6 +158,7 @@ MODEL_ROUND = {
     "gate",
     "refuses",
     "failure_after_calls",
+    "failure_after_done",
 }
 REFUSES = {"status", "message", "context_overflow", "provider", "retryable"}
 RETRY_POLICY = {"max_retries", "base_delay_ms", "max_delay_ms", "exponential_base"}
