@@ -1,0 +1,73 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-room-with-a-voice-channel-is-refused",
+  "title": "An install in a room binding a voice channel is refused",
+  "rules": [
+    "§19.7.5 rule 1"
+  ],
+  "notes": "Python: test_strategy_discussion.py test_a_room_with_a_voice_channel_is_refused.",
+  "setup": {
+    "channels": [
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        }
+      },
+      {
+        "id": "phone",
+        "type": "voice",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "phone"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": null
+      }
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "r1": {
+        "metadata": {
+          "_discussion": {
+            "$absent": true
+          }
+        }
+      }
+    }
+  }
+}

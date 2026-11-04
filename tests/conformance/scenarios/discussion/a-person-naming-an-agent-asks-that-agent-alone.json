@@ -1,0 +1,137 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-person-naming-an-agent-asks-that-agent-alone",
+  "title": "A person's @a is that agent's turn alone, and its answer is delivered",
+  "rules": [
+    "§19.7.5 rule 8",
+    "§19.7.5 rule 9"
+  ],
+  "notes": "Python: tests/orchestration/test_strategy_discussion.py test_a_person_naming_an_agent_asks_that_agent_alone.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "a answers"
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a",
+            "b"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@a what is the error rate?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "@a what is the error rate?"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "body": "a answers"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "r1": {
+        "ops": [
+          {
+            "source": {
+              "channel_id": "a"
+            },
+            "content": {
+              "body": "a answers"
+            }
+          }
+        ]
+      }
+    },
+    "models": {
+      "a": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$contains": "@a what is the error rate?"
+              }
+            }
+          ]
+        }
+      ],
+      "b": []
+    }
+  }
+}

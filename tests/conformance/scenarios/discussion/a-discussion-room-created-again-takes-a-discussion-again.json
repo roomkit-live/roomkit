@@ -1,0 +1,131 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-discussion-room-created-again-takes-a-discussion-again",
+  "title": "A room the store deleted and the kit creates again takes a discussion again: the record of the old one is taken back",
+  "rules": [
+    "§19.7",
+    "§19.7.5 rule 1"
+  ],
+  "notes": "Python: tests/orchestration/test_strategy_install.py test_a_discussion_room_created_again_takes_a_discussion_again.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        }
+      },
+      {
+        "id": "c",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "c here"
+            }
+          ]
+        }
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a"
+          ]
+        }
+      },
+      {
+        "id": "e",
+        "discussion": {
+          "agents": [
+            "c"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "create_room",
+      "room": {
+        "id": "r1"
+      },
+      "orchestration": "d"
+    },
+    {
+      "call": "store.delete_room",
+      "room_id": "r1",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "create_room",
+      "room": {
+        "id": "r1"
+      },
+      "orchestration": "e"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "r1",
+      "channel_id": "ops"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@c hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "@c hello"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "c"
+          },
+          "content": {
+            "body": "c here"
+          }
+        }
+      ]
+    },
+    "bindings": {
+      "r1": {
+        "a": null
+      }
+    }
+  }
+}

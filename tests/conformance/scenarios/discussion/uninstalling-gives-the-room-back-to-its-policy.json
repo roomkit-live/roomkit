@@ -1,0 +1,145 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/uninstalling-gives-the-room-back-to-its-policy",
+  "title": "An uninstall forgets the configuration and the room answers by its policy again",
+  "rules": [
+    "§19.7.5 rule 1"
+  ],
+  "notes": "Python: test_strategy_discussion.py test_uninstalling_gives_the_room_back_to_its_policy, tests/orchestration/test_strategy_install.py test_a_room_moves_from_a_swarm_to_a_discussion_and_back.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "repeat": true,
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "a answers"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "queue": []
+        }
+      }
+    },
+    {
+      "call": "uninstall_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "hello"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "body": "a answers"
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "r1": {
+        "metadata": {
+          "_discussion": {
+            "$absent": true
+          },
+          "_speak_queue": {
+            "$absent": true
+          }
+        }
+      }
+    }
+  }
+}

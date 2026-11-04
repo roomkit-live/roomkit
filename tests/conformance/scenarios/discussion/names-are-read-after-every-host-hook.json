@@ -1,0 +1,129 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/names-are-read-after-every-host-hook",
+  "title": "Names are read in the text the event commits with, after every host's hook: a hook's redaction asks nobody",
+  "rules": [
+    "§19.7.5 rule 4"
+  ],
+  "notes": "Python: test_discussion_edges.py test_names_are_read_after_every_host_hook.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "b here"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a",
+            "b"
+          ],
+          "addressed_only": true
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "add_room_hook",
+      "room_id": "r1",
+      "hook": {
+        "name": "redact",
+        "trigger": "before_broadcast",
+        "priority": 1000000,
+        "reactions": [
+          {
+            "repeat": true,
+            "when": {
+              "text": "@b secret"
+            },
+            "result": {
+              "action": "modify",
+              "event": {
+                "content": {
+                  "type": "text",
+                  "body": "[redacted] secret"
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@b secret"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "[redacted] secret"
+          }
+        }
+      ]
+    },
+    "models": {
+      "b": []
+    }
+  }
+}

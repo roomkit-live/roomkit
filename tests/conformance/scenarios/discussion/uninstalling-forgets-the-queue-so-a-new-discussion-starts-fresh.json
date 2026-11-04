@@ -1,0 +1,118 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/uninstalling-forgets-the-queue-so-a-new-discussion-starts-fresh",
+  "title": "An uninstall forgets what the queue held, so a discussion installed next starts fresh, not over",
+  "rules": [
+    "§19.7.5 rule 1"
+  ],
+  "notes": "Python: test_discussion_edges.py test_uninstalling_forgets_the_discussion_so_a_new_one_starts_fresh. Its listen_only part comes with lot 8d.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "a here"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a"
+          ],
+          "max_turns": 1
+        }
+      },
+      {
+        "id": "e",
+        "discussion": {
+          "agents": [
+            "a"
+          ],
+          "max_turns": 5
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@a go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "over": true
+        }
+      }
+    },
+    {
+      "call": "uninstall_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "e"
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "over": false,
+          "queue": []
+        }
+      }
+    }
+  ]
+}

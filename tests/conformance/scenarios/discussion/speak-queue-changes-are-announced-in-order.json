@@ -1,0 +1,216 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/speak-queue-changes-are-announced-in-order",
+  "title": "ON_SPEAK_QUEUE tells each change in the order it happened: queued, turn given, turn ended, then the agent named",
+  "rules": [
+    "§19.7.5 rule 17"
+  ],
+  "notes": "Python: test_strategy_discussion.py test_speak_queue_changes_are_announced_in_order.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "@b over to you"
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a",
+            "b"
+          ]
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "follow",
+        "trigger": "on_speak_queue",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@a start"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "follow": [
+        {
+          "trigger": "on_speak_queue",
+          "room_id": "r1",
+          "speak_queue": {
+            "room_id": "r1",
+            "change": "queued",
+            "channel_ids": [
+              "a"
+            ],
+            "event_id": {
+              "$present": true
+            },
+            "queue": {
+              "speaking": null,
+              "queue": [
+                "a"
+              ]
+            }
+          }
+        },
+        {
+          "trigger": "on_speak_queue",
+          "room_id": "r1",
+          "speak_queue": {
+            "room_id": "r1",
+            "change": "turn_given",
+            "channel_ids": [
+              "a"
+            ],
+            "event_id": {
+              "$present": true
+            },
+            "queue": {
+              "speaking": "a",
+              "queue": []
+            }
+          }
+        },
+        {
+          "trigger": "on_speak_queue",
+          "room_id": "r1",
+          "speak_queue": {
+            "room_id": "r1",
+            "change": "turn_ended",
+            "channel_ids": [
+              "a"
+            ],
+            "event_id": {
+              "$absent": true
+            },
+            "queue": {
+              "speaking": null,
+              "queue": [
+                "b"
+              ]
+            }
+          }
+        },
+        {
+          "trigger": "on_speak_queue",
+          "room_id": "r1",
+          "speak_queue": {
+            "room_id": "r1",
+            "change": "queued",
+            "channel_ids": [
+              "b"
+            ],
+            "event_id": {
+              "$absent": true
+            },
+            "queue": {
+              "speaking": null,
+              "queue": [
+                "b"
+              ]
+            }
+          }
+        },
+        {
+          "trigger": "on_speak_queue",
+          "room_id": "r1",
+          "speak_queue": {
+            "room_id": "r1",
+            "change": "turn_given",
+            "channel_ids": [
+              "b"
+            ],
+            "event_id": {
+              "$present": true
+            },
+            "queue": {
+              "speaking": "b",
+              "queue": []
+            }
+          }
+        },
+        {
+          "trigger": "on_speak_queue",
+          "room_id": "r1",
+          "speak_queue": {
+            "room_id": "r1",
+            "change": "turn_ended",
+            "channel_ids": [
+              "b"
+            ],
+            "event_id": {
+              "$absent": true
+            },
+            "queue": {
+              "speaking": null,
+              "queue": []
+            }
+          }
+        }
+      ]
+    }
+  }
+}

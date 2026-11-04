@@ -1,0 +1,61 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-room-with-a-router-is-refused",
+  "title": "An install in a room whose hooks hold a conversation router is refused",
+  "rules": [
+    "§19.7.5 rule 1"
+  ],
+  "notes": "Python: core/mixins/discussion.py _discussion_refusal, has_router_hook; tests/orchestration/test_discussion_refusals.py.",
+  "setup": {
+    "channels": [
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1"
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a"
+          ]
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "router",
+        "trigger": "before_broadcast",
+        "router": {
+          "default_agent_id": "a"
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": null
+      }
+    }
+  ]
+}

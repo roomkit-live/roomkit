@@ -1,0 +1,66 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-router-cannot-be-installed-in-a-room-a-discussion-holds",
+  "title": "A room's router added once a discussion holds the room is refused",
+  "rules": [
+    "§19.7.5 rule 1"
+  ],
+  "notes": "Python: tests/orchestration/test_discussion_refusals.py test_installing_a_router_is_refused_in_the_room_and_globally, its room half; hooks.py _check_router_placement.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "add_room_hook",
+      "room_id": "r1",
+      "hook": {
+        "name": "router",
+        "trigger": "before_broadcast",
+        "router": {
+          "default_agent_id": "a"
+        }
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    }
+  ]
+}

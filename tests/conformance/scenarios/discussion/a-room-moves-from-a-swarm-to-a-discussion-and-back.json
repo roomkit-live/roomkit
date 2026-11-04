@@ -1,0 +1,132 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-room-moves-from-a-swarm-to-a-discussion-and-back",
+  "title": "A room holds one strategy at a time: an uninstalled Swarm leaves it to a Discussion, whose uninstall leaves it to a Swarm again",
+  "rules": [
+    "§19.7",
+    "§19.7.5 rule 1"
+  ],
+  "notes": "Python: tests/orchestration/test_strategy_install.py test_a_room_moves_from_a_swarm_to_a_discussion_and_back.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        },
+        "agent": {
+          "role": "One"
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        },
+        "agent": {
+          "role": "Two"
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "s",
+        "swarm": {
+          "agents": [
+            "a",
+            "b"
+          ],
+          "entry": "a"
+        }
+      },
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a",
+            "b"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "s"
+    },
+    {
+      "call": "uninstall_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "queue": [],
+          "over": false
+        }
+      }
+    },
+    {
+      "call": "uninstall_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "s"
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "r1": {
+        "metadata": {
+          "_discussion": {
+            "$absent": true
+          },
+          "_speak_queue": {
+            "$absent": true
+          }
+        }
+      }
+    }
+  }
+}

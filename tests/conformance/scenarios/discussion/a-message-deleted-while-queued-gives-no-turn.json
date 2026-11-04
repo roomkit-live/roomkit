@@ -1,0 +1,136 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-message-deleted-while-queued-gives-no-turn",
+  "title": "A message deleted while a turn waits to answer it gives no turn, and no agent reads it",
+  "rules": [
+    "§19.7.5 rule 9"
+  ],
+  "notes": "Python: test_discussion_edges.py test_a_message_deleted_while_queued_gives_no_turn.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "gate": "held",
+              "text": "a here"
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "b here"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a",
+            "b"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@a go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@b the code is 4417"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "queue": [
+            "b"
+          ],
+          "speaking": "a"
+        }
+      }
+    },
+    {
+      "call": "delete_event",
+      "room_id": "r1",
+      "event_id": "r1#1"
+    },
+    {
+      "open": "held"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "b": []
+    }
+  }
+}

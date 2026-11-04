@@ -1,0 +1,141 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/an-unaddressed-message-asks-everyone-one-at-a-time",
+  "title": "A message naming nobody asks every agent, one at a time: the second reads the person's message at its place, then the first's answer, then the turn's notes",
+  "rules": [
+    "§19.7.5 rule 6",
+    "§19.7.5 rule 8",
+    "§19.7.5 rule 14"
+  ],
+  "notes": "Python: test_strategy_discussion.py test_an_unaddressed_message_asks_everyone_one_at_a_time.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "a: the database is down"
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "b: agreed"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a",
+            "b"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "what happened tonight?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "what happened tonight?"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "body": "a: the database is down"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "b"
+          },
+          "content": {
+            "body": "b: agreed"
+          }
+        }
+      ]
+    },
+    "models": {
+      "b": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$contains": "what happened tonight?"
+              }
+            },
+            {
+              "role": "user",
+              "text": {
+                "$contains": "[Discussion: the room and how it works]"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,132 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-silent-agent-says-nothing-to-the-room",
+  "title": "An agent answering the silent token leaves a blocked record, and no transport gets it",
+  "rules": [
+    "§19.7.5 rule 13"
+  ],
+  "notes": "Python: test_strategy_discussion.py test_a_silent_agent_says_nothing_to_the_room.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "a: found it"
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "(silent)"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a",
+            "b"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "anyone?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "anyone?"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "body": "a: found it"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "b"
+          },
+          "status": "blocked",
+          "blocked_by": "discussion_silent"
+        }
+      ]
+    },
+    "deliveries": {
+      "r1": {
+        "ops": [
+          {
+            "source": {
+              "channel_id": "a"
+            },
+            "content": {
+              "body": "a: found it"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

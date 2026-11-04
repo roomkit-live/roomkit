@@ -1,0 +1,216 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/the-depth-limit-stops-a-turn-once-and-a-person-resumes-it",
+  "title": "The discussion's own max_depth stops a turn once, one blocked record with the limit it reached, the agent left queued; a person's message resumes the room",
+  "rules": [
+    "§19.7.5 rule 10",
+    "§19.7.5 rule 11"
+  ],
+  "notes": "Python: test_strategy_discussion.py test_the_depth_limit_stops_a_turn_once_and_a_person_resumes_it. The kit's max_chain_depth is 5, max_depth 3, whose announcement holds 3 (HITL 0d726397).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "@b your turn"
+            },
+            {
+              "text": "@b again"
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "@a your turn"
+            },
+            {
+              "text": "@a again"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a",
+            "b"
+          ],
+          "max_depth": 3
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@a start"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "queue": [
+            "a"
+          ],
+          "waiting": true,
+          "over": false,
+          "speaking": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@a carry on"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "@a start"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "body": "@b your turn"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "b"
+          },
+          "content": {
+            "body": "@a your turn"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "status": "blocked",
+          "blocked_by": "event_chain_depth_limit"
+        },
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "@a carry on"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "body": "@b again"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "b"
+          },
+          "content": {
+            "body": "@a again"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "status": "blocked",
+          "blocked_by": "event_chain_depth_limit"
+        }
+      ]
+    },
+    "observations": {
+      "r1": [
+        {
+          "metadata": {
+            "max_chain_depth": 3,
+            "chain_depth": 3
+          }
+        },
+        {
+          "metadata": {
+            "max_chain_depth": 3,
+            "chain_depth": 3
+          }
+        }
+      ]
+    }
+  }
+}

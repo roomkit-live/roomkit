@@ -1,0 +1,198 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-custom-handle-queues-its-agent-and-its-id-names-nobody",
+  "title": "An agent named @ops by a handle is queued by it; its channel id names nobody, and the transcript's and the notes' labels read the handle",
+  "rules": [
+    "§19.7.5 rule 4"
+  ],
+  "notes": "Python: tests/orchestration/test_discussion_handles.py test_an_agent_naming_another_by_its_handle_queues_it, test_notes_and_the_transcript_present_agents_by_their_handles.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "@b is the deploy done?"
+            },
+            {
+              "text": "@ops is the deploy done?"
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a",
+            "b"
+          ],
+          "handles": {
+            "b": "ops"
+          }
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@a please ask"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@a once more"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "@a please ask"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "body": "@b is the deploy done?"
+          },
+          "addressed_to": {
+            "$absent": true
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "@a once more"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "body": "@ops is the deploy done?"
+          },
+          "addressed_to": [
+            "b"
+          ]
+        },
+        {
+          "source": {
+            "channel_id": "b"
+          },
+          "content": {
+            "body": "done"
+          }
+        }
+      ]
+    },
+    "models": {
+      "a": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$contains": "@ops"
+              }
+            }
+          ]
+        },
+        "$any"
+      ],
+      "b": [
+        {
+          "messages": [
+            "$any",
+            "$any",
+            "$any",
+            {
+              "role": "user",
+              "text": {
+                "$contains": "@ops"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
