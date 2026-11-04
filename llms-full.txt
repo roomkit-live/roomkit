@@ -3186,9 +3186,14 @@ reasoning is the value.
 A model's reasoning reaches the hooks, `AIThinkingPart` and
 `publish_thinking_text`, and no Chat Completions request: a generic server would
 read it as text the model said, and its prompt cache would not survive it.
-DeepSeek (`reasoning_content`) and Cerebras (`reasoning`) read it in a field of
-their own, which their providers send, as does Ollama's native API (`thinking`),
-and Anthropic and Gemini their signed blocks and signatures.
+DeepSeek, MiniMax and Kimi (`reasoning_content`) and Cerebras (`reasoning`) read
+it in a field of their own, which their providers send, as does Ollama's native
+API (`thinking`), and Anthropic and Gemini their signed blocks and signatures.
+The class is the choice, on the vendor's API or behind a `base_url`: a model
+served by a vLLM or a llama.cpp gets its reasoning back with
+`MiniMaxAIProvider(MiniMaxConfig(api_key="unused", base_url="http://gpu:8000/v1", model="MiniMaxAI/MiniMax-M3"))`,
+and none with `OpenAIAIProvider`. A later turn's request holds no reasoning, on
+any of them: it lives within its turn.
 
 Reasoning competes with the answer for the same `max_tokens`. A round that
 spends its whole budget thinking returns empty `content` with a truncation

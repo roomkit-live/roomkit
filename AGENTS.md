@@ -102,6 +102,8 @@ src/roomkit/
 │   ├── litellm/             # LiteLLMAIProvider, LiteLLMConfig (self-hosted gateway)
 │   ├── xai/                 # XAIAIProvider, XAIConfig (Grok) + XAIRealtimeProvider (voice)
 │   ├── deepseek/            # DeepSeekAIProvider, DeepSeekConfig (nested thinking object)
+│   ├── minimax/             # MiniMaxAIProvider, MiniMaxConfig (reasoning_content on a round)
+│   ├── kimi/                # KimiAIProvider, KimiConfig (reasoning_content on a round, required)
 │   ├── qwen/                # QwenAIProvider, QwenConfig (Alibaba Model Studio)
 
 │   ├── sms/                 # SMSProvider ABC, MockSMSProvider, phone utils

@@ -106,7 +106,7 @@ class OpenAIConfig(BaseModel):
     is left out. A model the catalogue tags follows its tag whatever this says.
     Read by the OpenAI and LiteLLM providers; the configs of the derivatives
     that know their vendor's rule (Meta, Cerebras, xAI, OpenRouter, DeepSeek,
-    Qwen) refuse it."""
+    MiniMax, Kimi, Qwen) refuse it."""
 
     @field_validator("supports_reasoning_effort_with_tools")
     @classmethod
