@@ -38,6 +38,7 @@ from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.models.room import Room
 from roomkit.orchestration._call_room import in_call_room
 from roomkit.orchestration.state import (
+    ConversationState,
     get_conversation_state,
     set_conversation_state,
 )
@@ -375,7 +376,7 @@ class HandoffHandler:
                                 f"'{new_phase}'"
                             ),
                         )
-                    elif not self._holds_phase(calling_agent_id, state.phase):
+                    elif not self._caller_holds_room(calling_agent_id, state):
                         logger.warning(
                             "Handoff rejected: caller %s does not hold phase %s",
                             calling_agent_id,
@@ -675,6 +676,16 @@ class HandoffHandler:
             if agent is not None:
                 return getattr(agent, "language", None)
         return None
+
+    def _caller_holds_room(self, caller: str, state: ConversationState) -> bool:
+        """Whether, under allowed transitions, *caller* may hand the room on
+        (RFC §19.6): it holds the room's phase; or the map does not name it,
+        and it is the room's active agent, or its default one while none is."""
+        if self._holds_phase(caller, state.phase):
+            return True
+        if caller in self._phase_map:
+            return False
+        return caller == (state.active_agent_id or self._router._default_agent_id)
 
     def _holds_phase(self, agent_id: str, phase: str) -> bool:
         """Whether, under allowed transitions, *agent_id* holds *phase*: as a
