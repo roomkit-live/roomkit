@@ -29,6 +29,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   67dc3147): a Telegram channel post is its chat's. A custom router is told `None` for
   a message with no address, where it was told the raw id (HITL 710a6c27).
 
+- **`SQLiteStore.resolve_identity` quotes no unreadable record** (HITL 4ee4d298). An
+  address row whose identity's record the model cannot read, which no API writes, raised
+  a `ValidationError` quoting that record, maybe another organization's, to a caller
+  of any organization. It now resolves to nobody, with a warning naming the id alone.
+
 - **A discussion's stored key is the framework's** (RFC §19.7.5 rule 16, HITL 9247da98,
   RMK-1337). `create_room(metadata=)`, `update_room_metadata`, a hook's body, a channel's
   `metadata_updates` and a turn's `TurnHost` drop `_discussion` and `_speak_queue` with a

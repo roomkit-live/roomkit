@@ -901,6 +901,35 @@ async def test_a_holder_the_model_cannot_read_keeps_its_address(
     assert _address_rows(path) == [("+1555", "i1", "acme")]
 
 
+@pytest.mark.parametrize(
+    "record",
+    [
+        '{"email": "a@globex.example"}',
+        '{"id": "i1", "channel_addresses": "x"}',
+        '["a@globex.example"]',
+    ],
+)
+async def test_a_record_the_model_cannot_read_serves_no_read(
+    tmp_path: Path, record: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    """HITL 4ee4d298: it resolves to nobody, for any organization, and neither the caller
+    nor the log reads the record, which may be another organization's."""
+    path = tmp_path / "older.db"
+    store = SQLiteStore(path)
+    await store.create_identity(Identity(id="i1", organization_id="globex"))
+    conn = sqlite3.connect(path)
+    conn.execute("UPDATE identities SET data = ? WHERE id = 'i1'", (record,))
+    conn.commit()
+    conn.close()
+    _insert_address(path, ("+1555", "i1", "acme"))
+    with caplog.at_level("WARNING", logger="roomkit.store.sqlite"):
+        resolved = await store.resolve_identity("sms", "+1555", organization_id="acme")
+    await store.close()
+    assert resolved is None
+    assert "i1" in caplog.text
+    assert "globex" not in caplog.text
+
+
 async def test_an_unlink_removes_the_identity_s_rows_in_every_scope(tmp_path: Path) -> None:
     """RFC §5.6: a link revoked is revoked, a row a file's migration left in another
     scope with it, so that no later rewrite can restore it."""

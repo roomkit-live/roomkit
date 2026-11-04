@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 import sqlite3
 from collections.abc import Generator
@@ -66,6 +67,8 @@ from roomkit.store.base import (
     target_gone,
     without_address,
 )
+
+logger = logging.getLogger("roomkit.store.sqlite")
 
 _SCHEMA_VERSION = 14
 
@@ -2249,7 +2252,15 @@ class SQLiteStore(ConversationStore):
             )
             .fetchone()
         )
-        identity = self._x_get_identity(row[0]) if row is not None else None
+        if row is None:
+            return None
+        try:
+            identity = self._x_get_identity(row[0])
+        except ValidationError:
+            # It serves no read, and the model's error is not passed on: it quotes the
+            # record, which may be another organization's (HITL 4ee4d298).
+            logger.warning("Identity %s has a record the model cannot read", row[0])
+            return None
         # In its own organization only (RFC §17.2), whatever a row left by a file's
         # migration or written directly says.
         if identity is None or (identity.organization_id or "") != organization_id:
