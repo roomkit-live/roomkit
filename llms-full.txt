@@ -4988,7 +4988,9 @@ automatic reconnect are unavailable. `full_duplex` is false because Prism
 exposes turn boundaries and native tools. The microphone/speaker example
 `examples/realtime_voice_local_rime.py` enables WebRTC AEC by default; install
 `roomkit[rime,local-audio,webrtc-aec]`. The backend resamples its playback
-reference from 24 to 16 kHz. Without AEC it mutes capture during playback;
+reference from 24 to 16 kHz. Add the `console` extra and set `CONSOLE=1` to
+enable the voice dashboard; it closes with the session. Without AEC the
+example mutes capture during playback;
 `MUTE_MIC=0` overrides this for headphones (`AEC=0` disables cancellation).
 
 ## Audio Transports
