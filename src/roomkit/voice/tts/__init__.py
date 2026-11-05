@@ -54,6 +54,7 @@ if TYPE_CHECKING:
     from roomkit.voice.tts.pocket import PocketTTSConfig, PocketTTSProvider
     from roomkit.voice.tts.qwen3 import Qwen3TTSConfig, Qwen3TTSProvider
     from roomkit.voice.tts.qwen3 import VoiceCloneConfig as Qwen3VoiceCloneConfig
+    from roomkit.voice.tts.rime import RimeTTSConfig, RimeTTSError, RimeTTSProvider
     from roomkit.voice.tts.sherpa_onnx import SherpaOnnxTTSConfig, SherpaOnnxTTSProvider
     from roomkit.voice.tts.voxtral import VoxtralTTSConfig, VoxtralTTSError, VoxtralTTSProvider
     from roomkit.voice.tts.vui import VUI_TAGS, VuiTTSConfig, VuiTTSProvider, VuiVoice
@@ -91,6 +92,9 @@ else:
             "Qwen3TTSConfig": "roomkit.voice.tts.qwen3",
             "Qwen3TTSProvider": "roomkit.voice.tts.qwen3",
             "Qwen3VoiceCloneConfig": "roomkit.voice.tts.qwen3:VoiceCloneConfig",
+            "RimeTTSConfig": "roomkit.voice.tts.rime",
+            "RimeTTSError": "roomkit.voice.tts.rime",
+            "RimeTTSProvider": "roomkit.voice.tts.rime",
             "SherpaOnnxTTSConfig": "roomkit.voice.tts.sherpa_onnx",
             "SherpaOnnxTTSProvider": "roomkit.voice.tts.sherpa_onnx",
             "VUI_TAGS": "roomkit.voice.tts.vui",
@@ -135,6 +139,9 @@ __all__ = [
     "Qwen3TTSConfig",
     "Qwen3TTSProvider",
     "Qwen3VoiceCloneConfig",
+    "RimeTTSConfig",
+    "RimeTTSError",
+    "RimeTTSProvider",
     "SherpaOnnxTTSConfig",
     "SherpaOnnxTTSProvider",
     "StripBrackets",

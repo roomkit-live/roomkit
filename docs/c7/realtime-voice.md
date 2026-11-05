@@ -36,6 +36,7 @@ await kit.attach_channel("voice-room", "realtime-voice", category=ChannelCategor
 | xAI Grok | `XAIRealtimeProvider` | — | Grok speech-to-speech |
 | Deepgram Voice Agent | `DeepgramAgentProvider` | `roomkit[realtime-deepgram]` | Nova listen + LLM think + Aura speak, each chosen separately |
 | Mock | `MockRealtimeProvider` | built-in | Testing |
+| Rime Prism | `RimeRealtimeProvider` | `roomkit[rime]` | English speech-to-speech, native turn detection and function tools |
 
 ```python
 # OpenAI Realtime
@@ -58,6 +59,34 @@ from roomkit.providers.xai import XAIRealtimeConfig, XAIRealtimeProvider
 
 provider = XAIRealtimeProvider(XAIRealtimeConfig(api_key="..."))
 ```
+
+### Rime Prism
+
+```python
+from roomkit.voice.realtime import RimeRealtimeConfig, RimeRealtimeProvider
+
+provider = RimeRealtimeProvider(RimeRealtimeConfig(api_key="...", voice_id="astra"))
+realtime = RealtimeVoiceChannel(
+    "voice", provider=provider, transport=transport,
+    input_sample_rate=16000, output_sample_rate=24000, server_vad=True,
+    system_prompt="Keep spoken replies brief.",
+)
+```
+
+Prism takes continuous mono PCM16 at 16 kHz and returns 24 kHz audio. The
+adapter fills gaps with silence; leave the mic active during playback for
+barge-in, using headphones or AEC. Voices: astra, aurora, brando, wawona.
+Tool continuation waits for the parent's completion and every result's
+acknowledgement. Late user transcripts are supported. Text injection reports
+`sent` only after acknowledgement, or `unknown` if acceptance is uncertain.
+
+`reconfigure()` updates voice, instructions, tools and `interrupt_response`
+without reconnecting. `provider_config` also accepts `eagerness`,
+`end_of_turn_timeout_ms` and `truncation`; eagerness and end-of-turn timeout
+are fixed at setup. Temperature, client endpointing, preserved context and
+automatic reconnect are unavailable. `full_duplex` is false because Prism
+exposes turn boundaries and native tools. See
+`examples/realtime_voice_local_rime.py` for a local microphone example.
 
 ## Audio Transports
 

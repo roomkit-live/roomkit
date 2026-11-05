@@ -67,6 +67,12 @@ reaches its recordings. Left unset, the read is unscoped.
 | Qwen3 ASR | `Qwen3ASRProvider` | `Qwen3ASRConfig` | `roomkit[qwen-asr]` |
 | Voxtral 3 (Mistral, file + realtime) | `VoxtralSTTProvider` | `VoxtralSTTConfig` | `roomkit[mistral-voice]` |
 | Mock | `MockSTTProvider` | — | built-in |
+| Rime | `RimeSTTProvider` | `RimeSTTConfig` | `roomkit[rime]` |
+
+Rime STT accepts English or Spanish explicitly. It yields revised partials
+and one final when the audio iterator ends. Configure a pipeline VAD, or
+`batch_mode=True` with explicit `flush_stt()`; it has no native endpointing,
+language detection or diarization. Streams last at most 120 seconds.
 
 Use lazy loaders to avoid import-time dependency checks:
 
@@ -138,6 +144,13 @@ async def pin_language(event, ctx):
 | Phonon (Gradium, local CPU) | `PhononTTSProvider` | `PhononTTSConfig` | `roomkit[phonon]` |
 | Voxtral 3 (Mistral) | `VoxtralTTSProvider` | `VoxtralTTSConfig` | `roomkit[mistral-voice]` |
 | Mock | `MockTTSProvider` | — | built-in |
+| Rime Coda / Mist v3 | `RimeTTSProvider` | `RimeTTSConfig` | `roomkit[rime]` |
+
+Rime TTS streams mono PCM16 at 8/16/24/48 kHz and supports streamed text input.
+`synthesize()` returns a WAV data URL. Each synthesis owns its connection, so
+cancelling one leaves other calls active. Use `list_voices(language="fr")` to
+query voices for the configured model; select a matching voice and language.
+The standalone `examples/voice_rime.py` combines synthesis and transcription.
 
 ```python
 from roomkit.voice.tts import ElevenLabsConfig, ElevenLabsTTSProvider

@@ -144,6 +144,8 @@ fish-audio = ["websockets>=14.2", "httpx>=0.27", "msgpack>=1.0"]
 # No Mistral SDK: its realtime client cannot send turn detection (3.0.0), so
 # both providers speak the wire protocol.
 mistral-voice = ["websockets>=14.2", "httpx>=0.27"]
+# Rime Coda/Mist v3 TTS, STT and Prism speech-to-speech, using the wire APIs.
+rime = ["websockets>=14.2", "httpx>=0.27"]
 opentelemetry = ["opentelemetry-api>=1.20", "opentelemetry-sdk>=1.20"]
 pyroscope = ["pyroscope-io>=1.0"]
 smart-turn = ["numpy>=1.26", "onnxruntime>=1.20", "transformers>=5.5"]
@@ -204,6 +206,7 @@ providers = [
     "roomkit[discord]",
     "roomkit[gradium]",
     "roomkit[fish-audio]",
+    "roomkit[rime]",
 ]
 docs = [
     "mkdocs>=1.6",

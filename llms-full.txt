@@ -4157,6 +4157,12 @@ reaches its recordings. Left unset, the read is unscoped.
 | Qwen3 ASR | `Qwen3ASRProvider` | `Qwen3ASRConfig` | `roomkit[qwen-asr]` |
 | Voxtral 3 (Mistral, file + realtime) | `VoxtralSTTProvider` | `VoxtralSTTConfig` | `roomkit[mistral-voice]` |
 | Mock | `MockSTTProvider` | — | built-in |
+| Rime | `RimeSTTProvider` | `RimeSTTConfig` | `roomkit[rime]` |
+
+Rime STT accepts English or Spanish explicitly. It yields revised partials
+and one final when the audio iterator ends. Configure a pipeline VAD, or
+`batch_mode=True` with explicit `flush_stt()`; it has no native endpointing,
+language detection or diarization. Streams last at most 120 seconds.
 
 Use lazy loaders to avoid import-time dependency checks:
 
@@ -4228,6 +4234,13 @@ async def pin_language(event, ctx):
 | Phonon (Gradium, local CPU) | `PhononTTSProvider` | `PhononTTSConfig` | `roomkit[phonon]` |
 | Voxtral 3 (Mistral) | `VoxtralTTSProvider` | `VoxtralTTSConfig` | `roomkit[mistral-voice]` |
 | Mock | `MockTTSProvider` | — | built-in |
+| Rime Coda / Mist v3 | `RimeTTSProvider` | `RimeTTSConfig` | `roomkit[rime]` |
+
+Rime TTS streams mono PCM16 at 8/16/24/48 kHz and supports streamed text input.
+`synthesize()` returns a WAV data URL. Each synthesis owns its connection, so
+cancelling one leaves other calls active. Use `list_voices(language="fr")` to
+query voices for the configured model; select a matching voice and language.
+The standalone `examples/voice_rime.py` combines synthesis and transcription.
 
 ```python
 from roomkit.voice.tts import ElevenLabsConfig, ElevenLabsTTSProvider
@@ -4922,6 +4935,7 @@ await kit.attach_channel("voice-room", "realtime-voice", category=ChannelCategor
 | xAI Grok | `XAIRealtimeProvider` | — | Grok speech-to-speech |
 | Deepgram Voice Agent | `DeepgramAgentProvider` | `roomkit[realtime-deepgram]` | Nova listen + LLM think + Aura speak, each chosen separately |
 | Mock | `MockRealtimeProvider` | built-in | Testing |
+| Rime Prism | `RimeRealtimeProvider` | `roomkit[rime]` | English speech-to-speech, native turn detection and function tools |
 
 ```python
 # OpenAI Realtime
@@ -4944,6 +4958,34 @@ from roomkit.providers.xai import XAIRealtimeConfig, XAIRealtimeProvider
 
 provider = XAIRealtimeProvider(XAIRealtimeConfig(api_key="..."))
 ```
+
+### Rime Prism
+
+```python
+from roomkit.voice.realtime import RimeRealtimeConfig, RimeRealtimeProvider
+
+provider = RimeRealtimeProvider(RimeRealtimeConfig(api_key="...", voice_id="astra"))
+realtime = RealtimeVoiceChannel(
+    "voice", provider=provider, transport=transport,
+    input_sample_rate=16000, output_sample_rate=24000, server_vad=True,
+    system_prompt="Keep spoken replies brief.",
+)
+```
+
+Prism takes continuous mono PCM16 at 16 kHz and returns 24 kHz audio. The
+adapter fills gaps with silence; leave the mic active during playback for
+barge-in, using headphones or AEC. Voices: astra, aurora, brando, wawona.
+Tool continuation waits for the parent's completion and every result's
+acknowledgement. Late user transcripts are supported. Text injection reports
+`sent` only after acknowledgement, or `unknown` if acceptance is uncertain.
+
+`reconfigure()` updates voice, instructions, tools and `interrupt_response`
+without reconnecting. `provider_config` also accepts `eagerness`,
+`end_of_turn_timeout_ms` and `truncation`; eagerness and end-of-turn timeout
+are fixed at setup. Temperature, client endpointing, preserved context and
+automatic reconnect are unavailable. `full_duplex` is false because Prism
+exposes turn boundaries and native tools. See
+`examples/realtime_voice_local_rime.py` for a local microphone example.
 
 ## Audio Transports
 

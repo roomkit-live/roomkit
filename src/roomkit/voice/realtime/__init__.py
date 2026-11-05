@@ -43,6 +43,7 @@ if TYPE_CHECKING:
         FastRTCRealtimeTransport,
         mount_fastrtc_realtime,
     )
+    from roomkit.voice.realtime.rime import RimeRealtimeConfig, RimeRealtimeProvider
     from roomkit.voice.realtime.sip_transport import SIPRealtimeTransport
     from roomkit.voice.realtime.ws_transport import WebSocketRealtimeTransport
 else:
@@ -51,6 +52,8 @@ else:
         {
             "FastRTCRealtimeTransport": "roomkit.voice.realtime.fastrtc_transport",
             "SIPRealtimeTransport": "roomkit.voice.realtime.sip_transport",
+            "RimeRealtimeConfig": "roomkit.voice.realtime.rime",
+            "RimeRealtimeProvider": "roomkit.voice.realtime.rime",
             "WebSocketRealtimeTransport": "roomkit.voice.realtime.ws_transport",
             "mount_fastrtc_realtime": "roomkit.voice.realtime.fastrtc_transport",
         },
@@ -63,6 +66,8 @@ __all__ = [
     "RealtimeAVBridge",
     "RealtimeVideoCallback",
     "RealtimeVoiceProvider",
+    "RimeRealtimeConfig",
+    "RimeRealtimeProvider",
     "VoiceInfo",
     # Reasoning delegation (RFC §12.4.1)
     "AgentReasoningBackend",

@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from roomkit.voice.stt.meta_protocol import MetaSTTError
     from roomkit.voice.stt.mock import MockSTTProvider
     from roomkit.voice.stt.qwen3 import Qwen3ASRConfig, Qwen3ASRProvider
+    from roomkit.voice.stt.rime import RimeSTTConfig, RimeSTTError, RimeSTTProvider
     from roomkit.voice.stt.sherpa_onnx import SherpaOnnxSTTConfig, SherpaOnnxSTTProvider
     from roomkit.voice.stt.voxtral import (
         VoxtralSTTConfig,
@@ -59,6 +60,9 @@ else:
             "MockSTTProvider": "roomkit.voice.stt.mock",
             "Qwen3ASRConfig": "roomkit.voice.stt.qwen3",
             "Qwen3ASRProvider": "roomkit.voice.stt.qwen3",
+            "RimeSTTConfig": "roomkit.voice.stt.rime",
+            "RimeSTTError": "roomkit.voice.stt.rime",
+            "RimeSTTProvider": "roomkit.voice.stt.rime",
             "SherpaOnnxSTTConfig": "roomkit.voice.stt.sherpa_onnx",
             "SherpaOnnxSTTProvider": "roomkit.voice.stt.sherpa_onnx",
             "VoxtralSTTConfig": "roomkit.voice.stt.voxtral",
@@ -89,6 +93,9 @@ __all__ = [
     "MockSTTProvider",
     "Qwen3ASRConfig",
     "Qwen3ASRProvider",
+    "RimeSTTConfig",
+    "RimeSTTError",
+    "RimeSTTProvider",
     "STTProvider",
     "SherpaOnnxSTTConfig",
     "SherpaOnnxSTTProvider",
