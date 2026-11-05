@@ -46,7 +46,6 @@ async def main() -> None:
         ),
         input_sample_rate=16000,
         output_sample_rate=24000,
-        server_vad=True,
         system_prompt=os.environ.get("SYSTEM_PROMPT", "Keep your spoken replies brief."),
     )
     kit.register_channel(channel)

@@ -4967,11 +4967,12 @@ from roomkit.voice.realtime import RimeRealtimeConfig, RimeRealtimeProvider
 provider = RimeRealtimeProvider(RimeRealtimeConfig(api_key="...", voice_id="astra"))
 realtime = RealtimeVoiceChannel(
     "voice", provider=provider, transport=transport,
-    input_sample_rate=16000, output_sample_rate=24000, server_vad=True,
+    input_sample_rate=16000, output_sample_rate=24000,
     system_prompt="Keep spoken replies brief.",
 )
 ```
 
+Leave the channel's pipeline VAD unset: it then uses Prism's turn detection.
 Prism takes continuous mono PCM16 at 16 kHz and returns 24 kHz audio. The
 adapter fills gaps with silence; leave the mic active during playback for
 barge-in, using headphones or AEC. Voices: astra, aurora, brando, wawona.

@@ -60,7 +60,8 @@ class RimeRealtimeConfig:
 class RimeRealtimeProvider(RealtimeVoiceProvider):
     """English Prism conversations with transcripts, function tools and barge-in.
 
-    Use ``server_vad=True``, 16 kHz input and 24 kHz output on the channel.
+    Use 16 kHz input and 24 kHz output on the channel, without a pipeline VAD.
+    The channel then selects ``server_vad=True`` when connecting the provider.
     ``provider_config`` accepts ``interrupt_response``, ``eagerness``,
     ``end_of_turn_timeout_ms`` and ``truncation``. Reconfiguration retains
     the live conversation; changing the two fixed turn settings is refused.
