@@ -1,10 +1,13 @@
-"""Talk to Rime Prism using a local microphone and headphones (English).
+"""Talk to Rime Prism using a local microphone and speakers (English).
 
-Install: pip install 'roomkit[rime,local-audio]'
+Install: pip install 'roomkit[rime,local-audio,webrtc-aec]'
 Run: RIME_API_KEY=... uv run python examples/realtime_voice_local_rime.py
 
 Optional: RIME_VOICE=astra|aurora|brando|wawona, SYSTEM_PROMPT='...'.
-Use headphones: the microphone stays open during playback for barge-in.
+WebRTC AEC removes speaker echo so the microphone stays open for barge-in.
+AEC=webrtc (default), speex or 0; AEC_DELAY_MS sets a measured echo delay.
+Without AEC, playback mutes the microphone. MUTE_MIC=0|1 overrides this;
+with headphones, AEC=0 MUTE_MIC=0 keeps capture open without cancellation.
 Prism owns turn detection; input is 16 kHz and output is 24 kHz mono PCM16.
 Press Ctrl+C to stop.
 """
@@ -18,7 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from shared import require_env, run_until_stopped, setup_logging
+from shared import build_aec, env_bool, require_env, run_until_stopped, setup_logging
 
 from roomkit import RealtimeVoiceChannel, RoomKit
 from roomkit.voice.backends import LocalAudioBackend
@@ -29,6 +32,9 @@ logger = setup_logging("realtime_voice_local_rime")
 
 async def main() -> None:
     key = require_env("RIME_API_KEY")["RIME_API_KEY"]
+    # The backend converts the 24 kHz playback reference to the 16 kHz
+    # capture rate, and applies AEC on the audio thread.
+    aec = build_aec(16000, 20, default="webrtc")
     kit = RoomKit()
     channel = RealtimeVoiceChannel(
         "voice",
@@ -42,7 +48,8 @@ async def main() -> None:
             input_sample_rate=16000,
             output_sample_rate=24000,
             block_duration_ms=20,
-            mute_mic_during_playback=False,
+            aec=aec,
+            mute_mic_during_playback=env_bool("MUTE_MIC", default=aec is None),
         ),
         input_sample_rate=16000,
         output_sample_rate=24000,

@@ -13,18 +13,42 @@ from websockets.asyncio.server import ServerConnection
 from roomkit import RoomKit
 from roomkit.voice import VoiceSession, VoiceSessionState
 from roomkit.voice.backends import LocalAudioBackend
+from roomkit.voice.pipeline import MockAECProvider
 from roomkit.voice.realtime import MockRealtimeTransport, RimeRealtimeConfig
 from tests.voice.rime_wire import prism_handshake, receive, server
 
 
+@pytest.mark.parametrize(
+    ("aec_mode", "mute_mic", "expected_muted"),
+    [(None, None, False), ("0", None, True), ("webrtc", "1", True), ("0", "0", False)],
+)
 async def test_microphone_example_starts_and_closes_a_prism_session(
     monkeypatch: pytest.MonkeyPatch,
+    aec_mode: str | None,
+    mute_mic: str | None,
+    expected_muted: bool,
 ) -> None:
     monkeypatch.syspath_prepend(str(Path(__file__).parents[2] / "examples"))
     from examples import realtime_voice_local_rime as example
 
     monkeypatch.setenv("RIME_API_KEY", "test-key")
     monkeypatch.setenv("RIME_VOICE", "astra")
+    if aec_mode is None:
+        monkeypatch.delenv("AEC", raising=False)
+    else:
+        monkeypatch.setenv("AEC", aec_mode)
+    monkeypatch.delenv("AEC_DELAY_MS", raising=False)
+    if mute_mic is None:
+        monkeypatch.delenv("MUTE_MIC", raising=False)
+    else:
+        monkeypatch.setenv("MUTE_MIC", mute_mic)
+    canceller = MockAECProvider()
+
+    def webrtc_aec(*, sample_rate: int, **kwargs: Any) -> MockAECProvider:
+        assert sample_rate == 16000
+        return canceller
+
+    monkeypatch.setattr("roomkit.voice.pipeline.aec.WebRTCAECProvider", webrtc_aec)
     captured = asyncio.Event()
     sessions: list[VoiceSession] = []
 
@@ -38,6 +62,8 @@ async def test_microphone_example_starts_and_closes_a_prism_session(
     def audio_backend(**kwargs: Any) -> Transport:
         # Substitute the device, retaining the real constructor's contract.
         inspect.signature(LocalAudioBackend).bind(**kwargs)
+        assert kwargs["aec"] is (None if aec_mode == "0" else canceller)
+        assert kwargs["mute_mic_during_playback"] is expected_muted
         return transport
 
     async def stop(kit: RoomKit) -> None:

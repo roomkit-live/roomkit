@@ -4985,8 +4985,11 @@ without reconnecting. `provider_config` also accepts `eagerness`,
 `end_of_turn_timeout_ms` and `truncation`; eagerness and end-of-turn timeout
 are fixed at setup. Temperature, client endpointing, preserved context and
 automatic reconnect are unavailable. `full_duplex` is false because Prism
-exposes turn boundaries and native tools. See
-`examples/realtime_voice_local_rime.py` for a local microphone example.
+exposes turn boundaries and native tools. The microphone/speaker example
+`examples/realtime_voice_local_rime.py` enables WebRTC AEC by default; install
+`roomkit[rime,local-audio,webrtc-aec]`. The backend resamples its playback
+reference from 24 to 16 kHz. Without AEC it mutes capture during playback;
+`MUTE_MIC=0` overrides this for headphones (`AEC=0` disables cancellation).
 
 ## Audio Transports
 
