@@ -704,7 +704,12 @@ class ConversationStore(ABC):
 
     @abstractmethod
     async def add_event(self, event: RoomEvent) -> RoomEvent:
-        """Store a new event."""
+        """Store a new event.
+
+        On a room a kit serves, an index this takes past the room's next is a hole of
+        the delivery cursor that no lane runs: the room's next delivery waits
+        ``delivery_gap_timeout`` before it skips it (RFC §13.5, HITL ab765c3d).
+        """
         ...
 
     @abstractmethod
@@ -918,6 +923,10 @@ class ConversationStore(ABC):
 
     async def add_event_auto_index(self, room_id: str, event: RoomEvent) -> RoomEvent:
         """Atomically assign the next index and store the event.
+
+        On a room a kit serves, the index taken is a hole of the delivery cursor that
+        no lane runs: the room's next delivery waits ``delivery_gap_timeout`` before
+        it skips it (RFC §13.5, HITL ab765c3d).
 
         The default implementation reads the count and writes in two steps.
         Backends should override this with an atomic implementation (e.g.

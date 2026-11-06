@@ -364,9 +364,10 @@ async def _write_sequence(conn: Any, statement: str, room_id: str, first: int) -
     key's, by a second statement that holds the room it finds instead: then the next pass
     takes the sequence. Left open: a room committed after that statement's snapshot, which
     its foreign key reads, as the room's id is created again under the write, with no
-    sequence yet: that sequence is taken before the room, and against a commit holding
-    the new room the server kills one of them, an add, a commit whose own hold found no
-    room, or a deletion (RMK-1394, HITL d49b8b14). Another pass needs another session's
+    sequence yet: that sequence is taken before the room, and among the writes on the
+    new room the server kills one: this one, a commit holding the room, or a deletion
+    waiting on it (RMK-1394, kept so in HITL d49b8b14). A commit whose own hold found no
+    room writes its sequence through this too. Another pass needs another session's
     deletion, creation and write in between.
     """
     while True:
