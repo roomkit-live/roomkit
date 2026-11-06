@@ -257,6 +257,23 @@ async def test_a_password_file_others_can_read_is_not_read(
         await _connects(f"{dsn}{parts['query']}")
 
 
+async def test_a_short_password_file_line_before_a_match_fails_init(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """HITL 8142aaf2: asyncpg cuts each line of the file into five fields and raises on
+    one with fewer, met before the line that matches: ``init`` fails, a ``ValueError``."""
+    parts = _connection_parts()
+    _without_pg_variables(monkeypatch, tmp_path / "home")
+    passfile = tmp_path / "home" / ".pgpass"
+    passfile.write_text(f"short:line\n*:*:*:*:{parts['password']}\n")
+    passfile.chmod(0o600)
+    dsn = (
+        f"postgresql://{quote(parts['user'])}@{parts['host']}:{parts['port']}/{parts['database']}"
+    )
+    with pytest.raises(ValueError):
+        await _connects(f"{dsn}{parts['query']}")
+
+
 async def test_an_empty_pgpassword_is_a_password(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
