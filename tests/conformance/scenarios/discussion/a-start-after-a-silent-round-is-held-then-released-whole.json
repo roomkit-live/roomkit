@@ -1,0 +1,184 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-start-after-a-silent-round-is-held-then-released-whole",
+  "title": "A silent segment ended by a tool call is never handed, and the start of the next segment, which could have been the token, is released in one piece",
+  "rules": [
+    "§19.7.5 rule 13",
+    "§6.4"
+  ],
+  "notes": "Python: core/mixins/_streaming_segments.py _end_held at a call's start, then _release_text (lot 8d review, finding 2).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Looks a fact up.",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "returns": "found"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "(",
+                "Si",
+                "lent)"
+              ],
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "deltas": [
+                "(",
+                "si",
+                ") is ",
+                "silicon"
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@a go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "streamed": {
+      "r1": {
+        "ops": [
+          {
+            "row": {
+              "source": {
+                "channel_id": "a"
+              },
+              "type": "tool_call_start"
+            }
+          },
+          {
+            "row": {
+              "source": {
+                "channel_id": "a"
+              },
+              "type": "tool_call_end"
+            }
+          },
+          {
+            "text": "(si) is "
+          },
+          {
+            "text": "silicon"
+          },
+          {
+            "row": {
+              "source": {
+                "channel_id": "a"
+              },
+              "type": "message",
+              "content": {
+                "body": "(si) is silicon"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "type": "message",
+          "content": {
+            "body": "(Silent)"
+          },
+          "status": "blocked",
+          "blocked_by": "discussion_silent"
+        },
+        {
+          "type": "tool_call_start"
+        },
+        {
+          "type": "tool_call_end"
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "type": "message",
+          "content": {
+            "body": "(si) is silicon"
+          }
+        }
+      ]
+    }
+  }
+}

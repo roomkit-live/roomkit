@@ -1,0 +1,161 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-streamed-silence-never-reaches-a-live-transport",
+  "title": "An agent's silence streamed piece by piece never reaches the streaming transport; a start that could have become the token is held back, then released whole",
+  "rules": [
+    "§19.7.5 rule 13"
+  ],
+  "notes": "Python: test_strategy_discussion.py test_a_streamed_silence_never_reaches_a_live_transport; core/mixins/_streaming_segments.py _release_text, _end_held.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "(",
+                "S",
+                "i",
+                "l",
+                "e",
+                "n",
+                "t",
+                ")",
+                "."
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "(",
+                "s",
+                "i",
+                ")",
+                " is the chemical symbol"
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a",
+            "b"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "anyone?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "anyone?"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "body": "(Silent)."
+          },
+          "status": "blocked",
+          "blocked_by": "discussion_silent"
+        },
+        {
+          "source": {
+            "channel_id": "b"
+          },
+          "content": {
+            "body": "(si) is the chemical symbol"
+          },
+          "status": "delivered"
+        }
+      ]
+    },
+    "streamed": {
+      "r1": {
+        "ops": [
+          {
+            "text": "(si)"
+          },
+          {
+            "text": " is the chemical symbol"
+          },
+          {
+            "row": {
+              "source": {
+                "channel_id": "b"
+              },
+              "content": {
+                "body": "(si) is the chemical symbol"
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

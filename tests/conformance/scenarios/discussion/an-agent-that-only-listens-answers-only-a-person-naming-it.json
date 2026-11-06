@@ -1,0 +1,184 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/an-agent-that-only-listens-answers-only-a-person-naming-it",
+  "title": "An agent that only listens keeps its place: another agent naming it gives it no turn, a person naming it gives it one, and talk_again ends the state",
+  "rules": [
+    "§19.7.5 rule 12"
+  ],
+  "notes": "Python: test_strategy_discussion.py test_an_agent_that_only_listens_answers_only_a_person_naming_it.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "@b please look"
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "b looked"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a",
+            "b"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "listen_only",
+      "room_id": "r1",
+      "channel_ids": [
+        "b"
+      ]
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@a go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "speaking": null,
+          "listening": [
+            "b"
+          ],
+          "waiting": true
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@b your view?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "talk_again",
+      "room_id": "r1",
+      "channel_ids": [
+        "b"
+      ]
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "listening": []
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "@a go"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "body": "@b please look"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "@b your view?"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "b"
+          },
+          "content": {
+            "body": "b looked"
+          }
+        }
+      ]
+    }
+  }
+}

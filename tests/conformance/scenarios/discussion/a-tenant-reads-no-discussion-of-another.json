@@ -1,11 +1,12 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "discussion/a-tenant-reads-no-discussion-of-another",
-  "title": "The host's calls keep to a tenant: another organization reads no queue, and an attach reads the room as not found, whatever it holds",
+  "title": "The host's calls keep to a tenant: another organization reads no queue, makes no agent listen or talk again, and an attach reads the room as not found, whatever it holds; a room holding no discussion refuses them too",
   "rules": [
+    "§19.7.5 rule 12",
     "§19.7.5 rule 17"
   ],
-  "notes": "Python: test_discussion_edges.py test_the_host_calls_are_scoped_to_a_tenant; channel_ops.py attach_channel reads the room first.",
+  "notes": "Python: test_discussion_edges.py test_the_host_calls_are_scoped_to_a_tenant; core/mixins/discussion.py _discussion; channel_ops.py attach_channel reads the room first.",
   "setup": {
     "channels": [
       {
@@ -35,6 +36,10 @@
             "channel_id": "ops"
           }
         ]
+      },
+      {
+        "id": "r2",
+        "organization_id": "acme"
       }
     ],
     "strategies": [
@@ -55,6 +60,9 @@
       "strategy": "d"
     },
     {
+      "idle": true
+    },
+    {
       "call": "speak_queue",
       "room_id": "r1",
       "organization_id": "acme",
@@ -70,6 +78,71 @@
       "organization_id": "other",
       "expect": {
         "result": null
+      }
+    },
+    {
+      "call": "listen_only",
+      "room_id": "r1",
+      "channel_ids": [
+        "a"
+      ],
+      "organization_id": "other",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "talk_again",
+      "room_id": "r1",
+      "channel_ids": [
+        "a"
+      ],
+      "organization_id": "other",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "listen_only",
+      "room_id": "r2",
+      "channel_ids": [
+        "a"
+      ],
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "talk_again",
+      "room_id": "r2",
+      "channel_ids": [
+        "a"
+      ],
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "listen_only",
+      "room_id": "r1",
+      "channel_ids": [
+        "a",
+        "nobody"
+      ],
+      "organization_id": "acme",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "listening": [
+            "a"
+          ]
+        }
       }
     },
     {

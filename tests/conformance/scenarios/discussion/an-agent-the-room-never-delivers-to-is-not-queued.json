@@ -1,12 +1,13 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "discussion/an-agent-the-room-never-delivers-to-is-not-queued",
-  "title": "An agent bound write-only is neither handed a message nor queued by its name",
+  "title": "An agent bound write-only is neither handed a message nor queued by its name, nor is its memory handed the message",
   "rules": [
+    "§19.7.5 rule 3",
     "§19.7.5 rule 8",
     "§7.5"
   ],
-  "notes": "Python: test_discussion_edges.py test_an_agent_the_room_never_delivers_to_learns_nothing_and_is_not_queued, its queue half: the memory comes with lot 8d.",
+  "notes": "Python: test_discussion_edges.py test_an_agent_the_room_never_delivers_to_learns_nothing_and_is_not_queued.",
   "setup": {
     "channels": [
       {
@@ -35,7 +36,8 @@
               "text": "b here"
             }
           ]
-        }
+        },
+        "memory": {}
       }
     ],
     "rooms": [
@@ -141,6 +143,11 @@
     },
     "models": {
       "b": []
+    },
+    "ingested": {
+      "r1": {
+        "b": []
+      }
     }
   }
 }

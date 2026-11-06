@@ -1,0 +1,157 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/an-instruction-a-process-gone-held-is-dropped-at-the-install",
+  "title": "An install reads the queue a previous install left: an instruction's turn whose text no process holds is dropped and told dropped, the rest of the queue kept",
+  "rules": [
+    "§19.7.5 rule 16"
+  ],
+  "notes": "Python: orchestration/strategies/discussion/_room.py load: an instruction that names no process kept its text in one gone.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a",
+            "b"
+          ]
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "follow",
+        "trigger": "on_speak_queue",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "r1",
+        "metadata": {
+          "_speak_queue": {
+            "entries": [
+              {
+                "agent": "a",
+                "asks": [
+                  {
+                    "event_id": "i-gone",
+                    "depth": 0,
+                    "asker": ""
+                  }
+                ],
+                "front": true,
+                "seq": 1,
+                "instruction": "i-gone",
+                "holder": null
+              },
+              {
+                "agent": "b",
+                "asks": [
+                  {
+                    "event_id": "m-old",
+                    "depth": 0,
+                    "asker": "ops",
+                    "person": true
+                  }
+                ],
+                "asked_by": [
+                  [
+                    "ops",
+                    true
+                  ]
+                ],
+                "front": true,
+                "seq": 2
+              }
+            ],
+            "listening": [
+              "b"
+            ],
+            "seq": 2
+          }
+        }
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "r1",
+      "channel_id": "ops"
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "queue": [
+            "b"
+          ],
+          "listening": [
+            "b"
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "follow": [
+        {
+          "trigger": "on_speak_queue",
+          "room_id": "r1",
+          "speak_queue": {
+            "change": "instruction_dropped",
+            "channel_ids": [
+              "a"
+            ],
+            "event_id": {
+              "$present": true
+            },
+            "queue": {
+              "queue": [
+                "b"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "models": {
+      "a": [],
+      "b": []
+    }
+  }
+}

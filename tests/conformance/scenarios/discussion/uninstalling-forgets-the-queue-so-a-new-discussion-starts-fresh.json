@@ -1,11 +1,12 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "discussion/uninstalling-forgets-the-queue-so-a-new-discussion-starts-fresh",
-  "title": "An uninstall forgets what the queue held, so a discussion installed next starts fresh, not over",
+  "title": "An uninstall forgets what the queue held, who only listens among it, so a discussion installed next starts fresh, not over",
   "rules": [
-    "§19.7.5 rule 1"
+    "§19.7.5 rule 1",
+    "§19.7.5 rule 12"
   ],
-  "notes": "Python: test_discussion_edges.py test_uninstalling_forgets_the_discussion_so_a_new_one_starts_fresh. Its listen_only part comes with lot 8d.",
+  "notes": "Python: test_discussion_edges.py test_uninstalling_forgets_the_discussion_so_a_new_one_starts_fresh.",
   "setup": {
     "channels": [
       {
@@ -63,6 +64,13 @@
       "strategy": "d"
     },
     {
+      "call": "listen_only",
+      "room_id": "r1",
+      "channel_ids": [
+        "a"
+      ]
+    },
+    {
       "call": "process_inbound",
       "room_id": "r1",
       "message": {
@@ -110,7 +118,8 @@
       "expect": {
         "result": {
           "over": false,
-          "queue": []
+          "queue": [],
+          "listening": []
         }
       }
     }
