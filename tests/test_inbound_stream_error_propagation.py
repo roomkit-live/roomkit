@@ -462,6 +462,23 @@ async def test_a_delegated_turn_failure_is_one_line_at_its_level(caplog) -> None
     assert "status=503" in records[0].getMessage()
 
 
+async def test_a_background_task_failure_is_one_line_at_its_level(caplog) -> None:
+    """A delegated task run in the background logs its turn's failure once,
+    by its status, as the inline one does."""
+    exc = ProviderError("upstream down", provider="mock", status_code=503)
+    kit = RoomKit()
+    kit.register_channel(AIChannel("w1", provider=_GenerateRaisingProvider(exc)))
+    await kit.create_room(room_id="r1")
+    with caplog.at_level(logging.DEBUG):
+        task = await kit.delegate(room_id="r1", agent_id="w1", task="go")
+        await task.wait()
+    await kit.close()
+
+    records = _roomkit_records(caplog, logging.WARNING)
+    assert [r.levelno for r in records] == [logging.ERROR]
+    assert records[0].getMessage().startswith(f"Task {task.id} failed (provider=mock, status=503)")
+
+
 # ── regenerate_response surfaces the same error ───────────────────────────
 
 
