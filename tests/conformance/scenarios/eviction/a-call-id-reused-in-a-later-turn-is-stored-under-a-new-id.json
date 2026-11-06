@@ -1,0 +1,241 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "eviction/a-call-id-reused-in-a-later-turn-is-stored-under-a-new-id",
+  "title": "A call id a later turn reuses stores its result under a numbered id, the first one still read back as it was stored",
+  "rules": [
+    "§21.5"
+  ],
+  "notes": "Python: tests/test_tool_eviction_room_scope.py::test_a_call_id_reused_in_a_later_turn_overwrites_nothing.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "a1"
+            },
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "inventory",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "r1",
+                  "name": "read_stored_result",
+                  "arguments": {
+                    "result_id": "evicted_c1",
+                    "offset": 0,
+                    "limit": 1
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "r2",
+                  "name": "read_stored_result",
+                  "arguments": {
+                    "result_id": "evicted_c1_2",
+                    "offset": 0,
+                    "limit": 1
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "The lookup tool",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "row 001\nrow 002\nrow 003\nrow 004\nrow 005\nrow 006\nrow 007\nrow 008\nrow 009\nrow 010\nrow 011\nrow 012\nrow 013\nrow 014\nrow 015\nrow 016\nrow 017\nrow 018\nrow 019\nrow 020\nrow 021\nrow 022\nrow 023\nrow 024\nrow 025\nrow 026\nrow 027\nrow 028\nrow 029\nrow 030\nrow 031\nrow 032\nrow 033\nrow 034\nrow 035\nrow 036\nrow 037\nrow 038\nrow 039\nrow 040\nrow 041\nrow 042\nrow 043\nrow 044\nrow 045\nrow 046\nrow 047\nrow 048\nrow 049\nrow 050\nrow 051\nrow 052\nrow 053\nrow 054\nrow 055\nrow 056\nrow 057\nrow 058\nrow 059\nrow 060\nrow 061\nrow 062\nrow 063\nrow 064\nrow 065\nrow 066\nrow 067\nrow 068\nrow 069\nrow 070\nrow 071\nrow 072\nrow 073\nrow 074\nrow 075\nrow 076\nrow 077\nrow 078\nrow 079\nrow 080\nrow 081\nrow 082\nrow 083\nrow 084\nrow 085\nrow 086\nrow 087\nrow 088\nrow 089\nrow 090\nrow 091\nrow 092\nrow 093\nrow 094\nrow 095\nrow 096\nrow 097\nrow 098\nrow 099\nrow 100\nrow 101\nrow 102\nrow 103\nrow 104\nrow 105\nrow 106\nrow 107\nrow 108\nrow 109\nrow 110\nrow 111\nrow 112\nrow 113\nrow 114\nrow 115\nrow 116\nrow 117\nrow 118\nrow 119\nrow 120\nrow 121\nrow 122\nrow 123\nrow 124\nrow 125\nrow 126\nrow 127\nrow 128\nrow 129\nrow 130\nrow 131\nrow 132\nrow 133\nrow 134\nrow 135\nrow 136\nrow 137\nrow 138\nrow 139\nrow 140\nrow 141\nrow 142\nrow 143\nrow 144\nrow 145\nrow 146\nrow 147\nrow 148\nrow 149\nrow 150\nrow 151\nrow 152\nrow 153\nrow 154\nrow 155\nrow 156\nrow 157\nrow 158\nrow 159\nrow 160"
+          },
+          {
+            "name": "inventory",
+            "description": "The inventory tool",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "item 001\nitem 002\nitem 003\nitem 004\nitem 005\nitem 006\nitem 007\nitem 008\nitem 009\nitem 010\nitem 011\nitem 012\nitem 013\nitem 014\nitem 015\nitem 016\nitem 017\nitem 018\nitem 019\nitem 020\nitem 021\nitem 022\nitem 023\nitem 024\nitem 025\nitem 026\nitem 027\nitem 028\nitem 029\nitem 030\nitem 031\nitem 032\nitem 033\nitem 034\nitem 035\nitem 036\nitem 037\nitem 038\nitem 039\nitem 040\nitem 041\nitem 042\nitem 043\nitem 044\nitem 045\nitem 046\nitem 047\nitem 048\nitem 049\nitem 050\nitem 051\nitem 052\nitem 053\nitem 054\nitem 055\nitem 056\nitem 057\nitem 058\nitem 059\nitem 060\nitem 061\nitem 062\nitem 063\nitem 064\nitem 065\nitem 066\nitem 067\nitem 068\nitem 069\nitem 070\nitem 071\nitem 072\nitem 073\nitem 074\nitem 075\nitem 076\nitem 077\nitem 078\nitem 079\nitem 080\nitem 081\nitem 082\nitem 083\nitem 084\nitem 085\nitem 086\nitem 087\nitem 088\nitem 089\nitem 090\nitem 091\nitem 092\nitem 093\nitem 094\nitem 095\nitem 096\nitem 097\nitem 098\nitem 099\nitem 100\nitem 101\nitem 102\nitem 103\nitem 104\nitem 105\nitem 106\nitem 107\nitem 108\nitem 109\nitem 110\nitem 111\nitem 112\nitem 113\nitem 114\nitem 115\nitem 116\nitem 117\nitem 118\nitem 119\nitem 120\nitem 121\nitem 122\nitem 123\nitem 124\nitem 125\nitem 126\nitem 127\nitem 128\nitem 129\nitem 130\nitem 131\nitem 132\nitem 133\nitem 134\nitem 135\nitem 136\nitem 137\nitem 138\nitem 139\nitem 140\nitem 141\nitem 142\nitem 143\nitem 144\nitem 145\nitem 146\nitem 147\nitem 148\nitem 149\nitem 150\nitem 151\nitem 152\nitem 153\nitem 154\nitem 155\nitem 156\nitem 157\nitem 158\nitem 159\nitem 160"
+          }
+        ],
+        "evict_threshold_tokens": 300
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "q1"
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "q2"
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "content": "Result too large (320 tokens). Full output saved as 'evicted_c1'. Use read_stored_result to read it with pagination.\n\nPreview:\nrow 001\nrow 002\nrow 003\nrow 004\nrow 005\n\n[... 150 lines omitted ...]\n\nrow 156\nrow 157\nrow 158\nrow 159\nrow 160"
+            }
+          ]
+        },
+        {},
+        {},
+        {},
+        {}
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message"
+        },
+        {
+          "index": 1,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 2,
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "c1",
+            "result": "Result too large (320 tokens). Full output saved as 'evicted_c1'. Use read_stored_result to read it with pagination.\n\nPreview:\nrow 001\nrow 002\nrow 003\nrow 004\nrow 005\n\n[... 150 lines omitted ...]\n\nrow 156\nrow 157\nrow 158\nrow 159\nrow 160"
+          }
+        },
+        {
+          "index": 3,
+          "type": "message"
+        },
+        {
+          "index": 4,
+          "type": "message"
+        },
+        {
+          "index": 5,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 6,
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "c1",
+            "result": {
+              "$contains": "Full output saved as 'evicted_c1_2'"
+            }
+          }
+        },
+        {
+          "index": 7,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 8,
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "r1",
+            "outcome": "served",
+            "result": {
+              "$contains": "\"content\": \"row 001\""
+            }
+          }
+        },
+        {
+          "index": 9,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 10,
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "r2",
+            "outcome": "served",
+            "result": {
+              "$contains": "\"content\": \"item 001\""
+            }
+          }
+        },
+        {
+          "index": 11,
+          "type": "message"
+        }
+      ]
+    }
+  }
+}

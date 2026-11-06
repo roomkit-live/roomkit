@@ -1,0 +1,135 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "eviction/a-stored-result-of-parts-read-as-text-is-never-noted-as-a-repeat",
+  "title": "For a model that takes no image, a result of parts reads as its text, an image a mark; past the threshold that text is stored, and its placeholder, its id its own per call, is what tells one answer from another: the same parts given a third time get no note",
+  "rules": [
+    "§21.5",
+    "§6.4"
+  ],
+  "notes": "Python: channels/_ai_tools.py _model_part hashes outcome.answer when it is a text, else the model's copy; a result of parts is no text, so the stored copy's placeholder is hashed (tests/test_repeated_result_note.py::test_an_evicted_answer_is_still_recognised for a text).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "shot",
+                  "arguments": {
+                    "q": "1"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "shot",
+                  "arguments": {
+                    "q": "2"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c3",
+                  "name": "shot",
+                  "arguments": {
+                    "q": "3"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "shot",
+            "description": "The shot tool",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns_parts": [
+              {
+                "text": "row 001\nrow 002\nrow 003\nrow 004\nrow 005\nrow 006\nrow 007\nrow 008\nrow 009\nrow 010\nrow 011\nrow 012\nrow 013\nrow 014\nrow 015\nrow 016\nrow 017\nrow 018\nrow 019\nrow 020\nrow 021\nrow 022\nrow 023\nrow 024\nrow 025\nrow 026\nrow 027\nrow 028\nrow 029\nrow 030\nrow 031\nrow 032\nrow 033\nrow 034\nrow 035\nrow 036\nrow 037\nrow 038\nrow 039\nrow 040\nrow 041\nrow 042\nrow 043\nrow 044\nrow 045\nrow 046\nrow 047\nrow 048\nrow 049\nrow 050\nrow 051\nrow 052\nrow 053\nrow 054\nrow 055\nrow 056\nrow 057\nrow 058\nrow 059\nrow 060\nrow 061\nrow 062\nrow 063\nrow 064\nrow 065\nrow 066\nrow 067\nrow 068\nrow 069\nrow 070\nrow 071\nrow 072\nrow 073\nrow 074\nrow 075\nrow 076\nrow 077\nrow 078\nrow 079\nrow 080\nrow 081\nrow 082\nrow 083\nrow 084\nrow 085\nrow 086\nrow 087\nrow 088\nrow 089\nrow 090\nrow 091\nrow 092\nrow 093\nrow 094\nrow 095\nrow 096\nrow 097\nrow 098\nrow 099\nrow 100\nrow 101\nrow 102\nrow 103\nrow 104\nrow 105\nrow 106\nrow 107\nrow 108\nrow 109\nrow 110\nrow 111\nrow 112\nrow 113\nrow 114\nrow 115\nrow 116\nrow 117\nrow 118\nrow 119\nrow 120\nrow 121\nrow 122\nrow 123\nrow 124\nrow 125\nrow 126\nrow 127\nrow 128\nrow 129\nrow 130\nrow 131\nrow 132\nrow 133\nrow 134\nrow 135\nrow 136\nrow 137\nrow 138\nrow 139\nrow 140\nrow 141\nrow 142\nrow 143\nrow 144\nrow 145\nrow 146\nrow 147\nrow 148\nrow 149\nrow 150\nrow 151\nrow 152\nrow 153\nrow 154\nrow 155\nrow 156\nrow 157\nrow 158\nrow 159\nrow 160"
+              },
+              {
+                "image": "https://example.com/a.png",
+                "mime_type": "image/png"
+              }
+            ]
+          }
+        ],
+        "evict_threshold_tokens": 300
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "q1"
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {},
+        {
+          "tool_results": [
+            {},
+            {},
+            {
+              "tool_call_id": "c3",
+              "content": "Result too large (322 tokens). Full output saved as 'evicted_c3'. Use read_stored_result to read it with pagination.\n\nPreview:\nrow 001\nrow 002\nrow 003\nrow 004\nrow 005\n\n[... 151 lines omitted ...]\n\nrow 157\nrow 158\nrow 159\nrow 160\n[image]"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

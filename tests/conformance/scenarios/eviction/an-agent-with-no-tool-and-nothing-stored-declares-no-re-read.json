@@ -1,0 +1,72 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "eviction/an-agent-with-no-tool-and-nothing-stored-declares-no-re-read",
+  "title": "An agent that declares no tool, in a room that stores no result, declares no read_stored_result either",
+  "rules": [
+    "§21.5"
+  ],
+  "notes": "Python: tests/test_channels/test_ai_tool_loop.py::TestEvictionToolAvailableMidLoop::test_no_injection_when_nothing_was_evicted (ToolEviction.with_reread_tool).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Hello."
+            }
+          ]
+        },
+        "evict_threshold_tokens": 300
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "q1"
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "read_stored_result": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

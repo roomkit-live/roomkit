@@ -1,0 +1,137 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "eviction/reading-a-result-the-room-does-not-store-is-a-refusal",
+  "title": "read_stored_result on an id the room does not store is refused, its words naming the ids the room holds; the policy does not govern it: an allow-list that leaves it out still declares it and lets it run",
+  "rules": [
+    "§21.5",
+    "§21.1"
+  ],
+  "notes": "Python: tests/test_tool_outcome_residuals.py::test_reading_a_stored_result_that_is_not_there_is_a_refusal; tests/test_tool_policy_exemptions.py::test_read_stored_result_stays_reachable_under_a_whitelist; tests/test_policy_served_exemption.py::test_the_channel_s_own_exempt_tool_still_escapes_the_policy.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "r1",
+                  "name": "read_stored_result",
+                  "arguments": {
+                    "result_id": "x"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "The lookup tool",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "short"
+          }
+        ],
+        "evict_threshold_tokens": 300,
+        "tool_policy": {
+          "allow": [
+            "lookup"
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "q1"
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "lookup": 0,
+            "read_stored_result": 1
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "r1",
+              "name": "read_stored_result",
+              "content": "{\"error\": \"Result 'x' not found\", \"available\": []}",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message"
+        },
+        {
+          "index": 1,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 2,
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "r1",
+            "outcome": "refused"
+          }
+        },
+        {
+          "index": 3,
+          "type": "message"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,114 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "eviction/a-call-under-an-id-its-round-holds-is-refused-unstored",
+  "title": "A call under an id an earlier call of its round holds is refused before any gate, its words reaching the model whole whatever the threshold: only an outcome past the gate is stored",
+  "rules": [
+    "§21.5",
+    "§12.4"
+  ],
+  "notes": "Python: channels/_ai_tools.py _refuse_id_in_flight returns its refusal unbounded, where _reject_call bounds a gate's (RFC §12.4, §21.5). A threshold of one token stores the first call's result.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {
+                    "q": "a"
+                  }
+                },
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {
+                    "q": "b"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "The lookup tool",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "shipped"
+          }
+        ],
+        "evict_threshold_tokens": 1
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "q1"
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "Result too large (2 tokens). Full output saved as 'evicted_c1'. Use read_stored_result to read it with pagination.\n\nPreview:\n",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c1",
+              "content": "{\"error\": \"Tool call 'c1' has not had its result yet\"}",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

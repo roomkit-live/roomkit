@@ -1,0 +1,136 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "eviction/a-skill-s-instructions-are-never-stored",
+  "title": "An activated skill's instructions reach the model whole however long, never as a preview; a long reference file the skill bundles is stored as any other result",
+  "rules": [
+    "§21.5",
+    "§24.4"
+  ],
+  "notes": "Python: tests/test_skills_integration.py::test_large_skill_body_is_returned_whole, test_large_reference_is_still_evicted (kept_whole).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "s1",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "long"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "s2",
+                  "name": "read_skill_reference",
+                  "arguments": {
+                    "skill_name": "long",
+                    "filename": "notes.md"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "The lookup tool",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "short"
+          }
+        ],
+        "evict_threshold_tokens": 300,
+        "skills": [
+          {
+            "name": "long",
+            "description": "A long procedure",
+            "instructions": "Rule 001: follow it.\nRule 002: follow it.\nRule 003: follow it.\nRule 004: follow it.\nRule 005: follow it.\nRule 006: follow it.\nRule 007: follow it.\nRule 008: follow it.\nRule 009: follow it.\nRule 010: follow it.\nRule 011: follow it.\nRule 012: follow it.\nRule 013: follow it.\nRule 014: follow it.\nRule 015: follow it.\nRule 016: follow it.\nRule 017: follow it.\nRule 018: follow it.\nRule 019: follow it.\nRule 020: follow it.\nRule 021: follow it.\nRule 022: follow it.\nRule 023: follow it.\nRule 024: follow it.\nRule 025: follow it.\nRule 026: follow it.\nRule 027: follow it.\nRule 028: follow it.\nRule 029: follow it.\nRule 030: follow it.\nRule 031: follow it.\nRule 032: follow it.\nRule 033: follow it.\nRule 034: follow it.\nRule 035: follow it.\nRule 036: follow it.\nRule 037: follow it.\nRule 038: follow it.\nRule 039: follow it.\nRule 040: follow it.\nRule 041: follow it.\nRule 042: follow it.\nRule 043: follow it.\nRule 044: follow it.\nRule 045: follow it.\nRule 046: follow it.\nRule 047: follow it.\nRule 048: follow it.\nRule 049: follow it.\nRule 050: follow it.\nRule 051: follow it.\nRule 052: follow it.\nRule 053: follow it.\nRule 054: follow it.\nRule 055: follow it.\nRule 056: follow it.\nRule 057: follow it.\nRule 058: follow it.\nRule 059: follow it.\nRule 060: follow it.\nRule 061: follow it.\nRule 062: follow it.\nRule 063: follow it.\nRule 064: follow it.\nRule 065: follow it.\nRule 066: follow it.\nRule 067: follow it.\nRule 068: follow it.\nRule 069: follow it.\nRule 070: follow it.\nRule 071: follow it.\nRule 072: follow it.\nRule 073: follow it.\nRule 074: follow it.\nRule 075: follow it.\nRule 076: follow it.\nRule 077: follow it.\nRule 078: follow it.\nRule 079: follow it.\nRule 080: follow it.",
+            "references": {
+              "notes.md": "note 001\nnote 002\nnote 003\nnote 004\nnote 005\nnote 006\nnote 007\nnote 008\nnote 009\nnote 010\nnote 011\nnote 012\nnote 013\nnote 014\nnote 015\nnote 016\nnote 017\nnote 018\nnote 019\nnote 020\nnote 021\nnote 022\nnote 023\nnote 024\nnote 025\nnote 026\nnote 027\nnote 028\nnote 029\nnote 030\nnote 031\nnote 032\nnote 033\nnote 034\nnote 035\nnote 036\nnote 037\nnote 038\nnote 039\nnote 040\nnote 041\nnote 042\nnote 043\nnote 044\nnote 045\nnote 046\nnote 047\nnote 048\nnote 049\nnote 050\nnote 051\nnote 052\nnote 053\nnote 054\nnote 055\nnote 056\nnote 057\nnote 058\nnote 059\nnote 060\nnote 061\nnote 062\nnote 063\nnote 064\nnote 065\nnote 066\nnote 067\nnote 068\nnote 069\nnote 070\nnote 071\nnote 072\nnote 073\nnote 074\nnote 075\nnote 076\nnote 077\nnote 078\nnote 079\nnote 080\nnote 081\nnote 082\nnote 083\nnote 084\nnote 085\nnote 086\nnote 087\nnote 088\nnote 089\nnote 090\nnote 091\nnote 092\nnote 093\nnote 094\nnote 095\nnote 096\nnote 097\nnote 098\nnote 099\nnote 100\nnote 101\nnote 102\nnote 103\nnote 104\nnote 105\nnote 106\nnote 107\nnote 108\nnote 109\nnote 110\nnote 111\nnote 112\nnote 113\nnote 114\nnote 115\nnote 116\nnote 117\nnote 118\nnote 119\nnote 120\nnote 121\nnote 122\nnote 123\nnote 124\nnote 125\nnote 126\nnote 127\nnote 128\nnote 129\nnote 130\nnote 131\nnote 132\nnote 133\nnote 134\nnote 135\nnote 136\nnote 137\nnote 138\nnote 139\nnote 140\nnote 141\nnote 142\nnote 143\nnote 144\nnote 145\nnote 146\nnote 147\nnote 148\nnote 149\nnote 150\nnote 151\nnote 152\nnote 153\nnote 154\nnote 155\nnote 156\nnote 157\nnote 158\nnote 159\nnote 160"
+            }
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "q1"
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "s1",
+              "content": {
+                "$contains": "Rule 080: follow it."
+              }
+            }
+          ]
+        },
+        {
+          "tool_results": [
+            {},
+            {
+              "tool_call_id": "s2",
+              "content": {
+                "$contains": "Full output saved as 'evicted_s2'"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

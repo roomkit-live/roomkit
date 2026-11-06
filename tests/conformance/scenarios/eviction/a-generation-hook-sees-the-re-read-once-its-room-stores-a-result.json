@@ -1,0 +1,256 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "eviction/a-generation-hook-sees-the-re-read-once-its-room-stores-a-result",
+  "title": "The generation hook is shown read_stored_result only once the room stores a result, while every round declares it from the first: a hook that keeps only the tools it saw leaves it declared; one that takes it out once shown withdraws it for the turn: it is no longer declared, and a call to it is refused",
+  "rules": [
+    "§21.5",
+    "§6.4"
+  ],
+  "notes": "Python: tests/test_hook_tool_restrictions.py::test_a_withdrawn_eviction_re_read_is_neither_declared_nor_served; tests/test_toolset_edges.py::test_after_tool_round_sees_the_toolset_before_ai_generation_sees; tests/test_tool_declaration_stability.py::test_a_whitelisting_hook_keeps_the_re_read_it_never_saw.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "a1"
+            },
+            {
+              "calls": [
+                {
+                  "id": "r1",
+                  "name": "read_stored_result",
+                  "arguments": {
+                    "result_id": "evicted_c1"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "The lookup tool",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "row 001\nrow 002\nrow 003\nrow 004\nrow 005\nrow 006\nrow 007\nrow 008\nrow 009\nrow 010\nrow 011\nrow 012\nrow 013\nrow 014\nrow 015\nrow 016\nrow 017\nrow 018\nrow 019\nrow 020\nrow 021\nrow 022\nrow 023\nrow 024\nrow 025\nrow 026\nrow 027\nrow 028\nrow 029\nrow 030\nrow 031\nrow 032\nrow 033\nrow 034\nrow 035\nrow 036\nrow 037\nrow 038\nrow 039\nrow 040\nrow 041\nrow 042\nrow 043\nrow 044\nrow 045\nrow 046\nrow 047\nrow 048\nrow 049\nrow 050\nrow 051\nrow 052\nrow 053\nrow 054\nrow 055\nrow 056\nrow 057\nrow 058\nrow 059\nrow 060\nrow 061\nrow 062\nrow 063\nrow 064\nrow 065\nrow 066\nrow 067\nrow 068\nrow 069\nrow 070\nrow 071\nrow 072\nrow 073\nrow 074\nrow 075\nrow 076\nrow 077\nrow 078\nrow 079\nrow 080\nrow 081\nrow 082\nrow 083\nrow 084\nrow 085\nrow 086\nrow 087\nrow 088\nrow 089\nrow 090\nrow 091\nrow 092\nrow 093\nrow 094\nrow 095\nrow 096\nrow 097\nrow 098\nrow 099\nrow 100\nrow 101\nrow 102\nrow 103\nrow 104\nrow 105\nrow 106\nrow 107\nrow 108\nrow 109\nrow 110\nrow 111\nrow 112\nrow 113\nrow 114\nrow 115\nrow 116\nrow 117\nrow 118\nrow 119\nrow 120\nrow 121\nrow 122\nrow 123\nrow 124\nrow 125\nrow 126\nrow 127\nrow 128\nrow 129\nrow 130\nrow 131\nrow 132\nrow 133\nrow 134\nrow 135\nrow 136\nrow 137\nrow 138\nrow 139\nrow 140\nrow 141\nrow 142\nrow 143\nrow 144\nrow 145\nrow 146\nrow 147\nrow 148\nrow 149\nrow 150\nrow 151\nrow 152\nrow 153\nrow 154\nrow 155\nrow 156\nrow 157\nrow 158\nrow 159\nrow 160"
+          }
+        ],
+        "evict_threshold_tokens": 300
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "generation",
+        "trigger": "before_ai_generation",
+        "reactions": [
+          {
+            "result": {
+              "action": "modify",
+              "event": {
+                "tools": [
+                  "lookup"
+                ]
+              }
+            }
+          },
+          {
+            "result": {
+              "action": "modify",
+              "event": {
+                "tools": [
+                  "lookup"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "round",
+        "trigger": "after_tool_round",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "q1"
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "q2"
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "lookup": 0,
+            "read_stored_result": 1
+          }
+        },
+        {
+          "tools": {
+            "lookup": 0,
+            "read_stored_result": 1
+          }
+        },
+        {
+          "tools": {
+            "lookup": 0,
+            "read_stored_result": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "lookup": 0,
+            "read_stored_result": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message"
+        },
+        {
+          "index": 1,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 2,
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "c1"
+          }
+        },
+        {
+          "index": 3,
+          "type": "message"
+        },
+        {
+          "index": 4,
+          "type": "message"
+        },
+        {
+          "index": 5,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 6,
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "r1",
+            "outcome": "refused"
+          }
+        },
+        {
+          "index": 7,
+          "type": "message"
+        }
+      ]
+    },
+    "hooks": {
+      "generation": [
+        {
+          "generation": {
+            "tools": [
+              "lookup"
+            ]
+          }
+        },
+        {
+          "generation": {
+            "tools": [
+              "lookup",
+              "read_stored_result"
+            ]
+          }
+        }
+      ],
+      "round": [
+        {
+          "tool_round": {
+            "tools": [
+              "lookup"
+            ]
+          }
+        },
+        {
+          "tool_round": {
+            "tools": [
+              "lookup"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}
