@@ -490,19 +490,32 @@
           "response": {
             "declared_tools": {
               "delegate_task": {
+                "description": "Delegate a task to a background agent. The agent works in its own room and you can continue the current conversation. Use when: a task needs a specialist, the user wants something done in the background, or you need to run work in parallel.",
                 "parameters": {
+                  "type": "object",
+                  "required": [
+                    "agent",
+                    "task"
+                  ],
                   "properties": {
                     "agent": {
-                      "$present": true
+                      "type": "string",
+                      "description": "Target agent ID for the delegated task"
                     },
                     "task": {
-                      "$present": true
+                      "type": "string",
+                      "description": "Clear description of what the agent should do"
                     },
                     "context": {
-                      "$present": true
+                      "type": "object",
+                      "description": "Optional context to pass to the agent (e.g. a branch, a repo URL, what a tool returned): it reads it with the task, as data"
                     },
                     "share_channels": {
-                      "$present": true
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Channel IDs from the current room to share with the background agent"
                     },
                     "conversation": {
                       "$absent": true

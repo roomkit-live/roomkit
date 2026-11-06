@@ -1,7 +1,7 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "tasks/delegate-task-s-cache-answers-a-repeat-of-the-same-work",
-  "title": "A handler's cache answers an agent's call with what its own completed task returned when the task and what was passed are the same, whatever the task's case and the order of the context's keys; another context is other work, and another agent's repeat runs, its result possibly holding what the first passed or may read; a call handing the room's last messages over always runs, and its result answers no later call though the room's previous tasks list it; a task that failed is run again",
+  "title": "A handler's cache answers an agent's call with what its own completed task returned when the task and what was passed are the same, whatever the task's case and the order of the context's keys; another context is other work, and another agent's repeat runs, its result possibly holding what the first passed or may read; a call handing the room's last messages over always runs, and its result answers no later call though the room's previous tasks list it; a task that failed or was cancelled is run again",
   "rules": [
     "§23.4"
   ],
@@ -24,6 +24,13 @@
               "text": "Breaks."
             },
             "fail": "worker failed"
+          },
+          {
+            "when": {
+              "source_channel_id": "system",
+              "text": "Held."
+            },
+            "gate": "held"
           },
           {
             "when": {
@@ -388,6 +395,66 @@
       "idle": true
     },
     {
+      "call": "delegate_handler",
+      "handler": "third",
+      "cache": true
+    },
+    {
+      "call": "delegate.handle",
+      "handler": "third",
+      "room_id": "room-1",
+      "calling_agent_id": "assistant",
+      "arguments": {
+        "agent": "worker",
+        "task": "Held."
+      },
+      "expect": {
+        "result": {
+          "status": "delegated",
+          "agent_id": "worker",
+          "from_cache": {
+            "$absent": true
+          }
+        }
+      },
+      "as": "held"
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "call": "cancel_task",
+      "task_id": "$held",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "delegate.handle",
+      "handler": "third",
+      "room_id": "room-1",
+      "calling_agent_id": "assistant",
+      "arguments": {
+        "agent": "worker",
+        "task": "Held."
+      },
+      "expect": {
+        "result": {
+          "status": "delegated",
+          "agent_id": "worker",
+          "from_cache": {
+            "$absent": true
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
       "call": "delegate.handle",
       "handler": "tool",
       "room_id": "room-1",
@@ -423,7 +490,7 @@
           "status": "completed",
           "from_cache": true,
           "agent_id": "worker",
-          "child_room_id": "$r10",
+          "child_room_id": "$r12",
           "result": "Done."
         }
       }
@@ -464,11 +531,23 @@
       },
       "$r10": {
         "metadata": {
+          "task_input": "Held.",
+          "task_status": "cancelled"
+        }
+      },
+      "$r11": {
+        "metadata": {
+          "task_input": "Held.",
+          "task_status": "completed"
+        }
+      },
+      "$r12": {
+        "metadata": {
           "task_input": "Fix.",
           "task_status": "completed"
         }
       },
-      "$r11": null
+      "$r13": null
     },
     "turns": {
       "$r7": {

@@ -5,7 +5,7 @@
   "rules": [
     "§6.4"
   ],
-  "notes": "Python: providers/kimi/ai.py KIMI_CHAT; tests/test_providers/test_minimax_kimi.py. Kimi answers 400 to a tool round without the field (\"thinking is enabled but reasoning_content is missing in assistant tool call message\", its error reference), and a later turn's rounds hold no reasoning (§6.4). An empty field reads as missing: LiteLLM's Moonshot transformation sends a single space, \"the minimum value the API accepts\". Not checked on Kimi's wire.",
+  "notes": "Python: providers/kimi/ai.py KIMI_CHAT; tests/test_providers/test_minimax_kimi.py. Kimi requires the field in a tool loop, and Kimi Code's error reference names the 400 a tool round without it gets (\"thinking is enabled but reasoning_content is missing in assistant tool call message\"), and a later turn's rounds hold no reasoning (§6.4). An empty field reads as missing: LiteLLM's Moonshot transformation sends a single space, \"the minimum value the API accepts\". Not checked on Kimi's wire.",
   "setup": {
     "channels": [
       {
