@@ -23,7 +23,9 @@ import pytest
 
 from roomkit import (
     ConferenceRealtimeConfig,
+    FrameworkEvent,
     MockConferenceBackend,
+    ProcessTimeoutError,
     ReentrantCallError,
     ReentryLoopCapError,
     RoomKit,
@@ -257,6 +259,86 @@ class TestACallFromATaskALockedHookStarted:
         await asyncio.gather(*started, return_exceptions=True)
         outcome = (result.blocked, _order(await _messages(kit)), started[0].cancelled())
         assert outcome == (False, ["2:sms"], True)
+        await kit.close()
+
+
+class TestAnAdoptedCallBeforeItsCommit:
+    """§9.5.1, §13.6: what ends a call the room's work adopted before its
+    commit."""
+
+    async def test_a_lock_request_held_back_past_the_deadline_is_given_up_on(self) -> None:
+        """A task an off-lock hook starts and never awaits acts for the hook
+        while the hook runs: its call is adopted beside the check, and takes
+        the room lock for its own commit. The event's lock request waits
+        behind it, and its locked hook outlasts the process_timeout: the
+        event is refused, and the adopted call, not committed by then, is
+        refused at its own deadline, reported too, nothing of either
+        stored."""
+        kit = await _room(RoomKit(process_timeout=0.1), SimpleChannel("ws"))
+        started: list[asyncio.Task[RoomEvent]] = []
+        timeouts: list[FrameworkEvent] = []
+
+        @kit.on("process_timeout")
+        async def on_timeout(event: FrameworkEvent) -> None:
+            timeouts.append(event)
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST, name="slow")
+        async def slow(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            if _body(event) == "Heads up":
+                await asyncio.sleep(0.3)
+            return HookResult.allow()
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST, name="notifier", needs_lock=False)
+        async def notifier(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            if event.source.channel_id == "sms":
+                heads_up = kit.send_event("r1", "ws", TextContent(body="Heads up"))
+                started.append(asyncio.create_task(heads_up))  # never awaited
+                await asyncio.sleep(0.02)
+            return HookResult.allow()
+
+        result = await kit.process_inbound(_message("hello"))
+        sent = await asyncio.gather(*started, return_exceptions=True)
+        outcome = (
+            result.reason,
+            [type(error) for error in sent],
+            await _messages(kit),
+            len(timeouts),
+        )
+        assert outcome == ("process_timeout", [ProcessTimeoutError], [], 2)
+        await kit.close()
+
+    async def test_a_hook_that_times_out_while_its_entry_works_is_heard_after_it(self) -> None:
+        """A locked hook awaits the call it makes, nested under the lock,
+        and times out while the call's own locked hook still runs: the
+        hook's body is cancelled, and the call it awaits with it, nothing of
+        it stored; the event the hook decided on commits, the hook failing
+        open."""
+        kit = await _room(RoomKit(), SimpleChannel("ws"))
+        timed_out: list[FrameworkEvent] = []
+
+        @kit.on("hook_timeout")
+        async def on_timeout(event: FrameworkEvent) -> None:
+            timed_out.append(event)
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST, name="slow")
+        async def slow(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            if _body(event) == "Heads up":
+                await asyncio.sleep(0.2)
+            return HookResult.allow()
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST, name="notifier", timeout=0.05)
+        async def notifier(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            if event.source.channel_id == "sms":
+                await kit.send_event("r1", "ws", TextContent(body="Heads up"))
+            return HookResult.allow()
+
+        result = await kit.process_inbound(_message("hello"))
+        outcome = (
+            result.event.index if result.event else None,
+            [_body(event) for event in await _messages(kit)],
+            [event.data.get("hook_name") for event in timed_out],
+        )
+        assert outcome == (2, ["hello"], ["notifier"])
         await kit.close()
 
 
