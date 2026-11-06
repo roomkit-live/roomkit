@@ -60,7 +60,8 @@ class MiniMaxAIProvider(OpenAIAIProvider):
 
     @classmethod
     def available_models(cls) -> list[ModelInfo]:
-        """Offline metadata; use ``list_models()`` for account availability."""
+        """Offline metadata. ``list_models()`` asks the endpoint's ``/models``,
+        which MiniMax's API documents none of."""
         return list(MODELS)
 
     @property

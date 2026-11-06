@@ -213,7 +213,11 @@ async def test_the_vendor_s_own_endpoint_is_the_default(vendor: str) -> None:
 
     assert (request.url.host, request.url.path) == (_VENDORS[vendor][3], "/v1/chat/completions")
     assert _body(request, "max_tokens", "max_completion_tokens") == {"max_completion_tokens": 2000}
-    assert _provider(vendor).name == vendor
+    provider = _provider(vendor)
+    try:
+        assert provider.name == vendor
+    finally:
+        await provider.close()
 
 
 @pytest.mark.parametrize("vendor", _BOTH)

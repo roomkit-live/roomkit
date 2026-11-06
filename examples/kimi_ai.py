@@ -1,8 +1,8 @@
 """Kimi with a tool: a round's reasoning goes back to the model, on Kimi's API or
 on a server of your own.
 
-Kimi answers 400 to a tool round without its ``reasoning_content``, and says the
-model needs it to follow its own reasoning. RoomKit sends none to a generic Chat
+Kimi requires a tool round's ``reasoning_content`` back, so that the model follows
+its own reasoning. RoomKit sends none to a generic Chat
 Completions server, so the class is the choice: :class:`KimiAIProvider` sends it,
 for as long as a turn lasts.
 
