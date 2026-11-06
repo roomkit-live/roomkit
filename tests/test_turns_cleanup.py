@@ -24,6 +24,7 @@ from roomkit.core.event_router import StreamingResponse
 from roomkit.core.exceptions import TurnLinkError
 from roomkit.core.lanes import DeliveryCascade, ExecEntry, RoomDeliveryLane
 from roomkit.core.task_utils import cancel_reason
+from roomkit.models.channel import ChannelOutput
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import ChannelCategory, ChannelType
 from roomkit.models.event import TextContent
@@ -35,7 +36,7 @@ from roomkit.turns.owner import registry_turn_client
 from roomkit.turns.redis import RedisTurnBackend
 from roomkit.turns.wire import Cancel, Close
 from tests.redis_keys import delete_keys, key_prefix
-from tests.test_framework import SimpleChannel
+from tests.test_framework import AILikeChannel, SimpleChannel
 from tests.test_turns_backend import ScriptedChannel, _binding, _context, _event, _run
 
 QUICK = TurnTimeouts(cancel=0.05)
@@ -513,3 +514,174 @@ async def test_a_shared_delegated_turn_whose_commit_fails_closes_the_turns_it_st
     assert task.result is not None
     assert await _turns_ended()
     await kit.close()
+
+
+# -- A cut's unread streams: who waits for their close (RFC §10.1) -----------
+
+
+async def _ending(channel: ScriptedChannel) -> AsyncIterator[Any]:
+    yield "Hi"
+
+
+class _Agent(ScriptedChannel):
+    """An agent whose stream ends; it answers no agent's answer."""
+
+    def __init__(self, channel_id: str) -> None:
+        super().__init__(_ending)
+        self.channel_id = channel_id
+
+    async def on_event(self, event: Any, binding: Any, context: Any) -> Any:
+        if event.source.channel_type == ChannelType.AI:
+            return ChannelOutput.empty()
+        return await super().on_event(event, binding, context)
+
+
+class _FlushingTarget(SimpleChannel):
+    """A streaming target that reads its stream to its end, then works on
+    past it."""
+
+    def __init__(self, channel_id: str) -> None:
+        super().__init__(channel_id)
+        self.past_the_end = asyncio.Event()
+
+    @property
+    def supports_streaming_delivery(self) -> bool:
+        return True
+
+    async def deliver_stream(
+        self, stream: AsyncIterator[Any], event: Any, binding: Any, context: Any
+    ) -> Any:
+        async for _ in stream:
+            pass
+        self.past_the_end.set()
+        await asyncio.sleep(0.1)
+        return ChannelOutput.empty()
+
+
+async def _two_answers() -> tuple[RoomKit, _FlushingTarget]:
+    """A room whose two agents answer with a stream that ends, one of them
+    read by a target that flushes past its end, the other not read yet."""
+    kit = RoomKit()
+    target = _FlushingTarget("ws")
+    kit.register_channel(SimpleChannel("tx"))
+    kit.register_channel(target)
+    await kit.create_room(room_id="r")
+    await kit.attach_channel("r", "tx")
+    await kit.attach_channel("r", "ws")
+    for channel_id in ("agent", "agent2"):
+        kit.register_channel(_Agent(channel_id))
+        await kit.attach_channel("r", channel_id, category=ChannelCategory.INTELLIGENCE)
+    return kit, target
+
+
+def _keyed() -> InboundMessage:
+    return InboundMessage(
+        channel_id="tx", sender_id="u", content=TextContent(body="Go."), delivery_key="k"
+    )
+
+
+async def _cut_by_its_key(kit: RoomKit, call: asyncio.Task[Any], stuck: bool) -> None:
+    """Cut *call* by its key, then close *kit*: stuck, the call has not
+    returned a while after the cut, and the close ends it; else it returns,
+    cancelled."""
+    assert await kit.cancel_delivery("k") == 1
+    done, _ = await asyncio.wait({call}, timeout=0.05 if stuck else 2.0)
+    await kit.close()
+    if stuck:
+        assert not done
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(call, timeout=2.0)
+    else:
+        assert call.result().cancellation_reason == "caller_cancelled"
+
+
+@pytest.mark.usefixtures("close_grace", "cut_unwind")
+@pytest.mark.parametrize("stuck", [True, False], ids=["executor stuck", "its executor ends it"])
+async def test_an_awaited_call_cut_waits_for_the_end_of_a_stream_it_never_read(
+    stuck: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An awaited call reads its streams in a task whose ``finally`` closes
+    every stream of its cascade, each waiting for its end: cut by its key
+    while its target flushes past one stream, the other never read, it
+    waits for that close (RFC §10.1)."""
+    if stuck:
+        _deaf_to_its_end(monkeypatch)
+    kit, target = await _two_answers()
+    call = asyncio.create_task(kit.process_inbound(_keyed()))
+    await asyncio.wait_for(target.past_the_end.wait(), 2.0)
+
+    await _cut_by_its_key(kit, call, stuck)
+
+
+class _HoldingAnswers(SimpleChannel):
+    """A transport whose delivery of the answering agent's answer never ends."""
+
+    def __init__(self, channel_id: str) -> None:
+        super().__init__(channel_id)
+        self.holding = asyncio.Event()
+
+    async def deliver(self, event: Any, binding: Any, context: Any) -> Any:
+        if event.source.channel_id == "answering":
+            self.holding.set()
+            await asyncio.Event().wait()
+        return await super().deliver(event, binding, context)
+
+
+@pytest.mark.usefixtures("close_grace", "cut_unwind")
+@pytest.mark.parametrize("stuck", [True, False], ids=["executor stuck", "its executor ends it"])
+async def test_an_awaited_call_cut_while_an_answer_s_set_runs_waits_for_its_unread_stream(
+    stuck: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Cut before its streams are read, an agent's answer still delivered and
+    a streaming agent's stream handed to its cascade: the awaited call joins
+    the cleanup, which closes that stream and waits for its end (RFC §10.1)."""
+    if stuck:
+        _deaf_to_its_end(monkeypatch)
+    kit = RoomKit()
+    holding = _HoldingAnswers("tx")
+    kit.register_channel(holding)
+    kit.register_channel(ScriptedChannel(_unending))
+    kit.register_channel(AILikeChannel("answering", "Done."))
+    await kit.create_room(room_id="r")
+    await kit.attach_channel("r", "tx")
+    await kit.attach_channel("r", "agent", category=ChannelCategory.INTELLIGENCE)
+    await kit.attach_channel("r", "answering", category=ChannelCategory.INTELLIGENCE)
+    call = asyncio.create_task(kit.process_inbound(_keyed()))
+    await asyncio.wait_for(holding.holding.wait(), 2.0)
+
+    await _cut_by_its_key(kit, call, stuck)
+
+
+@pytest.mark.usefixtures("close_grace", "cut_unwind")
+async def test_a_handle_whose_unread_stream_is_closing_is_not_done(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Past a cancel that timed out, its cleanup still closing a stream the
+    call never read: the handle is not done, a second cancel times out at
+    its own timeout, and wait() waits on (RFC §10.1, §10.6.8)."""
+    _deaf_to_its_end(monkeypatch)
+    kit, target = await _two_answers()
+    result = await kit.process_inbound(
+        InboundMessage(channel_id="tx", sender_id="u", content=TextContent(body="Go.")),
+        defer_delivery=True,
+    )
+    handle = result.delivery
+    assert handle is not None
+    await asyncio.wait_for(target.past_the_end.wait(), 2.0)
+    with pytest.raises(TimeoutError):
+        await handle.cancel(timeout=0.05)
+    loop = asyncio.get_running_loop()
+
+    done = handle.done
+    start = loop.time()
+    with pytest.raises(TimeoutError):
+        await handle.cancel(timeout=0.05)
+    second = loop.time() - start
+    waited = asyncio.ensure_future(handle.wait())
+    finished, _ = await asyncio.wait({waited}, timeout=0.05)
+    waited.cancel()
+    await kit.close()
+
+    assert not done
+    assert 0.04 < second < 0.5
+    assert not finished
