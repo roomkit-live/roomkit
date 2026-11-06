@@ -1061,6 +1061,11 @@ class TestThinkTagParser:
         assert result == [("text", "hello world")]
         assert parser.flush() == []
 
+    def test_complete_tag_single_chunk(self) -> None:
+        parser = ThinkTagParser()
+        result = parser.feed("<think>reasoning</think>answer")
+        assert result == [("thinking", "reasoning"), ("text", "answer")]
+
     def test_empty_think_block(self) -> None:
         parser = ThinkTagParser()
         result = parser.feed("<think></think>answer")
@@ -1111,6 +1116,12 @@ class TestThinkTagParser:
                 id="a-bom-before-the-block",
             ),
             pytest.param(
+                ["\N{NO-BREAK SPACE}<think>a</think>answer"],
+                None,
+                "\N{NO-BREAK SPACE}<think>a</think>answer",
+                id="another-space-before-the-block",
+            ),
+            pytest.param(
                 ["<thi", "nk>a</th", "ink>answer"], "a", "answer", id="a-tag-split-at-the-start"
             ),
             pytest.param(
@@ -1157,8 +1168,8 @@ class TestThinkTagParser:
         parser = ThinkTagParser()
 
         assert parser.feed("<") == []
-        assert parser.feed("b>bold") == [("text", "<b>bold")]
-        assert parser.feed(" <") == [("text", " <")]
+        assert parser.feed("b") == [("text", "<b")]
+        assert parser.feed(">bold <") == [("text", ">bold <")]
 
 
 class TestExtractThinkTags:
