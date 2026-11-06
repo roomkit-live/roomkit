@@ -590,6 +590,10 @@ def scripted_agent(
             name=spec["fallback_model"].get("name", "scripted"),
             provider=spec["fallback_model"].get("provider", "scripted"),
             chat_dialect=spec["fallback_model"].get("chat_dialect"),
+            response_schema=bool(spec["fallback_model"].get("response_schema", False)),
+            response_schema_with_tools=bool(
+                spec["fallback_model"].get("response_schema_with_tools", False)
+            ),
         )
         models[f"{spec['id']}/fallback"] = fallback
         kwargs["fallback_provider"] = fallback
