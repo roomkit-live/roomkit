@@ -1,0 +1,237 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-record/a-turn-that-wrote-no-message-names-its-end-to-the-caller",
+  "title": "An agent whose turn its round cap cut before it wrote any message names its end and its usage to the caller, beside another agent's own end",
+  "rules": [
+    "§6.4",
+    "§10.1 step 18"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "cut",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "look up",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found"
+          }
+        ],
+        "max_tool_rounds": 1,
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c0",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c3",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c4",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c5",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "done",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "look up",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found"
+          }
+        ],
+        "max_tool_rounds": 1,
+        "model": {
+          "rounds": [
+            {
+              "text": "Here you go.",
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "cut",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "cut",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "done",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "errors",
+        "trigger": "on_error",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "response_metadata": {
+            "turns": {
+              "cut": {
+                "loop_end_reason": "max_rounds",
+                "ai_usage": {
+                  "$present": true
+                }
+              }
+            }
+          },
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "response_metadata": {
+            "turns": {
+              "cut": {
+                "loop_end_reason": "max_rounds"
+              },
+              "done": {
+                "loop_end_reason": "completed"
+              }
+            }
+          },
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "notes": "Python: tests/test_inbound_turns_record.py::test_a_turn_that_wrote_no_message_names_its_end_to_the_caller (room-1) and test_two_agents_each_keep_their_own_end (room-2). Each agent's loop allows one round of calls. In room-2, cut also answers done's reply: six generations in all, each round one call.",
+  "expect": {
+    "hooks": {
+      "errors": []
+    }
+  }
+}

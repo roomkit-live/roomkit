@@ -1,0 +1,135 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-headless-turn-that-answers-has-no-error",
+  "title": "A turn that answers, in a room with no streaming target, returns no error to the caller and fires no ON_ERROR, streamed or read whole",
+  "rules": [
+    "§10.1 step 18",
+    "§9.2"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms1",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "streamed",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "all good"
+            }
+          ]
+        }
+      },
+      {
+        "id": "whole",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "all good",
+              "whole_response": {}
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms1"
+          },
+          {
+            "channel_id": "streamed",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms1"
+          },
+          {
+            "channel_id": "whole",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "errors",
+        "trigger": "on_error",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms1",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null,
+          "response_events": [
+            {
+              "content": {
+                "body": "all good"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "sms1",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null,
+          "response_events": [
+            {
+              "content": {
+                "body": "all good"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "errors": []
+    }
+  },
+  "notes": "Python: tests/test_inbound_stream_error_propagation.py::test_successful_turn_has_no_error."
+}

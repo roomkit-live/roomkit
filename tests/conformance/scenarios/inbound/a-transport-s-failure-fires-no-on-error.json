@@ -1,0 +1,105 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-transport-s-failure-fires-no-on-error",
+  "title": "A transport whose on_event() raises is a delivery failure, never ON_ERROR; the agent beside it answers",
+  "rules": [
+    "§9.2",
+    "§10.2 step 3e"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms1",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sms2",
+        "type": "sms",
+        "category": "transport",
+        "on_event": [
+          {
+            "fail": "websocket send failed",
+            "repeat": true
+          }
+        ]
+      },
+      {
+        "id": "ai1",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "hi"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms1"
+          },
+          {
+            "channel_id": "sms2"
+          },
+          {
+            "channel_id": "ai1",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "errors",
+        "trigger": "on_error",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms1",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null,
+          "response_events": [
+            {
+              "content": {
+                "body": "hi"
+              }
+            }
+          ],
+          "delivery_results": {
+            "sms2": {
+              "status": "failed"
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "errors": []
+    }
+  },
+  "notes": "Python: tests/test_inbound_error_surfacing.py::test_transport_channel_error_does_not_fire_on_error. The transport's failure is a delivery problem (delivery_failed), not an agent's error card."
+}

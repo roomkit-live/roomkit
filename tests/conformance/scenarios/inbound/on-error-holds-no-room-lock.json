@@ -1,0 +1,154 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/on-error-holds-no-room-lock",
+  "title": "ON_ERROR runs once the room's lock is released: while its hook is held, the room takes and answers the next message",
+  "rules": [
+    "§9.2",
+    "§10.1 step 16",
+    "§13.5"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms1",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ai1",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "fails": "boom"
+            },
+            {
+              "text": "back"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms1"
+          },
+          {
+            "channel_id": "ai1",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "errors",
+        "trigger": "on_error",
+        "execution": "async",
+        "reactions": [
+          {
+            "gate": "reported"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms1",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "error": {
+            "$contains": "boom"
+          }
+        }
+      }
+    },
+    {
+      "wait_for": "reported"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms1",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "again"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null,
+          "response_events": [
+            {
+              "content": {
+                "body": "back"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "open": "reported"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "go"
+          }
+        },
+        {
+          "content": {
+            "body": "again"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ai1"
+          },
+          "content": {
+            "body": "back"
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "errors": [
+        {
+          "trigger": "on_error",
+          "room_id": "room-1",
+          "event": {
+            "metadata": {
+              "error": {
+                "$contains": "boom"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "notes": "Python: tests/test_inbound_error_surfacing.py::test_on_error_runs_after_room_lock_released. A slow error hook must not hold the lock and stall the room's next message."
+}

@@ -1,0 +1,269 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-record/an-answer-to-an-answer-is-not-the-agent-s-reply-to-the-caller",
+  "title": "An agent that answers the caller's message, then another agent's answer where its loop is cut, names to the caller the end of its reply to the caller's message",
+  "rules": [
+    "§6.4",
+    "§10.1 step 18",
+    "§8.3"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "look up",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found"
+          }
+        ],
+        "max_tool_rounds": 1,
+        "model": {
+          "rounds": [
+            {
+              "text": "A says hi.",
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            },
+            {
+              "text": "A says hi.",
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            },
+            {
+              "text": "A says hi.",
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            },
+            {
+              "text": "A says hi.",
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            },
+            {
+              "text": "A says hi.",
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "look up",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found"
+          }
+        ],
+        "max_tool_rounds": 1,
+        "model": {
+          "rounds": [
+            {
+              "text": "B ok.",
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c0",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c3",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c4",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c5",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c6",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c7",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c8",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c9",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "b",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "response_metadata": {
+            "turns": {
+              "a": {
+                "loop_end_reason": "completed"
+              },
+              "b": {
+                "loop_end_reason": "completed"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "notes": "Python: tests/test_inbound_turns_record.py::test_an_answer_to_an_answer_is_not_the_channel_s_reply. b answers the user, then a's answer, where its loop is cut: the caller reads b's own reply, not its answer to a."
+}

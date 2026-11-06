@@ -1,0 +1,658 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-record/a-value-a-tool-writes-under-turns-leaves-each-agent-s-end",
+  "title": "A number, a list or a mapping a tool writes under turns, the framework's key, is not carried: the caller's turns names each agent's end and nothing else",
+  "rules": [
+    "§6.4",
+    "§6.7",
+    "§10.1 step 18"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a1",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "look up",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found"
+          }
+        ],
+        "max_tool_rounds": 1,
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c0",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c3",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c4",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "b1",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "look up",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found",
+            "writes_record": {
+              "turns": 3
+            }
+          }
+        ],
+        "max_tool_rounds": 1,
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c0",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c3",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c4",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "a2",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "look up",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found"
+          }
+        ],
+        "max_tool_rounds": 1,
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c0",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c3",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c4",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "b2",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "look up",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found",
+            "writes_record": {
+              "turns": [
+                "x"
+              ]
+            }
+          }
+        ],
+        "max_tool_rounds": 1,
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c0",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c3",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c4",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "a3",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "look up",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found"
+          }
+        ],
+        "max_tool_rounds": 1,
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c0",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c3",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c4",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "b3",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "look up",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found",
+            "writes_record": {
+              "turns": {
+                "host": "mine"
+              }
+            }
+          }
+        ],
+        "max_tool_rounds": 1,
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c0",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c3",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c4",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 2
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a1",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "b1",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a2",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "b2",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-3",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a3",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "b3",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "error": null,
+          "response_metadata": {
+            "turns": {
+              "a1": {
+                "loop_end_reason": "max_rounds"
+              },
+              "b1": {
+                "loop_end_reason": "max_rounds"
+              },
+              "host": {
+                "$absent": true
+              },
+              "0": {
+                "$absent": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "error": null,
+          "response_metadata": {
+            "turns": {
+              "a2": {
+                "loop_end_reason": "max_rounds"
+              },
+              "b2": {
+                "loop_end_reason": "max_rounds"
+              },
+              "host": {
+                "$absent": true
+              },
+              "0": {
+                "$absent": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-3",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "error": null,
+          "response_metadata": {
+            "turns": {
+              "a3": {
+                "loop_end_reason": "max_rounds"
+              },
+              "b3": {
+                "loop_end_reason": "max_rounds"
+              },
+              "host": {
+                "$absent": true
+              },
+              "0": {
+                "$absent": true
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "notes": "Python: tests/test_inbound_turns_record.py::test_a_host_value_under_turns_is_not_carried[3, ['x'], {'host': 'mine'}]: b's tool writes the value on the turn's record through current_response_metadata(). Python asserts the key set {a, b}; a scenario names what it asserts, so the host's keys are asserted absent."
+}

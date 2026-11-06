@@ -1,0 +1,165 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-headless-turn-s-provider-error-reaches-the-caller-and-on-error",
+  "title": "A turn whose provider fails, in a room with no streaming target, returns the error to the caller and fires ON_ERROR once, named ProviderError; a failure of another kind reaches the caller too",
+  "rules": [
+    "§10.1 step 18",
+    "§9.2",
+    "§12.2 step 13s"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms1",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "streamed",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "refuses": {
+                "status": 503,
+                "message": "connection error"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": "other",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "fails": "unexpected boom"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms1"
+          },
+          {
+            "channel_id": "streamed",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms1"
+          },
+          {
+            "channel_id": "other",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "errors",
+        "trigger": "on_error",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms1",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "connection error"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "sms1",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "unexpected boom"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "errors": [
+        {
+          "trigger": "on_error",
+          "room_id": "room-1",
+          "event": {
+            "source": {
+              "channel_id": "streamed",
+              "channel_type": "ai"
+            },
+            "metadata": {
+              "error_type": "ProviderError",
+              "error": {
+                "$contains": "connection error"
+              },
+              "error_category": "streaming"
+            }
+          }
+        },
+        {
+          "trigger": "on_error",
+          "room_id": "room-2",
+          "event": {
+            "source": {
+              "channel_id": "other",
+              "channel_type": "ai"
+            },
+            "metadata": {
+              "error": {
+                "$contains": "unexpected boom"
+              },
+              "error_category": "streaming"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "notes": "Python: tests/test_inbound_stream_error_propagation.py::test_provider_error_propagates_and_still_fires_on_error (room-1) and test_non_provider_error_also_propagates (room-2). The only transport is the source: the stream is read with no target, and its failure is the caller's as it is ON_ERROR's. Python's non-streaming twins (test_non_streaming_provider_error_propagates_with_cause, test_non_streaming_provider_error_fires_on_error) fail in its provider's generate(), which a scripted round read whole does not reach: a runner ignores fails and refuses on a whole_response round. Not compared: the error's cause, which Python's test reads on its exception (a ConnectionError under the ProviderError)."
+}

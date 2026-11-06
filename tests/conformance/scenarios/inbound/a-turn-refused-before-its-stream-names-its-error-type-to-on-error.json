@@ -1,0 +1,102 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-turn-refused-before-its-stream-names-its-error-type-to-on-error",
+  "title": "A turn refused before its stream exists reaches ON_ERROR once, named by its error's type, not unknown",
+  "rules": [
+    "§9.2",
+    "§10.1 step 18"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "turn_budget_usd": 0.05
+            }
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "errors",
+        "trigger": "on_error",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "turn_budget_usd needs a model with a known price"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "errors": [
+        {
+          "trigger": "on_error",
+          "room_id": "room-1",
+          "event": {
+            "source": {
+              "channel_id": "agent",
+              "channel_type": "ai"
+            },
+            "metadata": {
+              "error_type": "ValueError",
+              "error": {
+                "$contains": "turn_budget_usd needs a model with a known price"
+              },
+              "error_category": "generation"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "notes": "Python: tests/test_inbound_error_surfacing.py::test_a_turn_refused_before_its_stream_names_the_error_type, there a memory that refuses the turn; here a cost budget on a model with no price, refused before any request (§6.4): the delivery set reports it named by its error's type, as the streaming path names it."
+}
