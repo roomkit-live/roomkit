@@ -18,7 +18,7 @@ from typing import Any
 
 import pytest
 
-from roomkit import RoomKit
+from roomkit import HookResult, HookTrigger, RoomKit
 from roomkit.core._room_turns import QueuedTurn, RoomTurns
 from roomkit.core.event_router import StreamingResponse
 from roomkit.core.exceptions import TurnLinkError
@@ -685,3 +685,42 @@ async def test_a_handle_whose_unread_stream_is_closing_is_not_done(
     assert not done
     assert 0.04 < second < 0.5
     assert not finished
+
+
+@pytest.mark.usefixtures("close_grace", "cut_unwind")
+@pytest.mark.parametrize("stuck", [True, False], ids=["executor stuck", "its executor ends it"])
+async def test_an_adopted_call_s_handle_waits_for_the_end_of_a_stream_it_never_read(
+    stuck: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A deferred call an off-lock hook's body makes is adopted beside the
+    event with a cascade of its own: cut by its handle while its target
+    flushes past one stream, the other never read, its cancel closes that
+    stream and waits for its end, as any deferred call's does (RFC §9.5.1,
+    §10.1). Its executor deaf to the close, the cancel times out."""
+    if stuck:
+        _deaf_to_its_end(monkeypatch)
+    kit, target = await _two_answers()
+    cancelled: list[str | None] = []
+
+    @kit.hook(HookTrigger.BEFORE_BROADCAST, needs_lock=False, name="adopts")
+    async def adopts(event: Any, ctx: Any) -> HookResult:
+        if event.content != TextContent(body="Go."):
+            return HookResult.allow()
+        side = await kit.process_inbound(
+            InboundMessage(channel_id="tx", sender_id="u", content=TextContent(body="side")),
+            room_id="r",
+            defer_delivery=True,
+        )
+        assert side.delivery is not None
+        await asyncio.wait_for(target.past_the_end.wait(), 2.0)
+        try:
+            cancelled.append((await side.delivery.cancel(timeout=0.05)).cancellation_reason)
+        except TimeoutError:
+            cancelled.append("timed out")
+        # Nothing more to deliver: the test is the side call's.
+        return HookResult.block("adopted")
+
+    await asyncio.wait_for(kit.process_inbound(_message(), room_id="r"), 5.0)
+    await kit.close()
+
+    assert cancelled == ["timed out" if stuck else "caller_cancelled"]
