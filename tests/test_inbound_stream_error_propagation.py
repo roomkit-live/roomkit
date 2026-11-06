@@ -307,6 +307,86 @@ async def test_a_send_event_caller_that_never_gets_the_failure_sees_it_logged(
     assert records[0].exc_info is None
 
 
+@pytest.mark.parametrize("streams", [True, False])
+async def test_a_deferred_call_sees_the_failure_logged_at_its_level(caplog, streams: bool) -> None:
+    """A call that defers its delivery returns at its commit: its stream is
+    read in the background, so with no streaming target the framework's line
+    is at the failure's own level, not the DEBUG kept for a caller that
+    waits for the error."""
+    exc = ProviderError("model gone", provider="mock", status_code=404)
+    kit = RoomKit()
+    kit.register_channel(SimpleChannel("sms1"))
+    kit.register_channel(AIChannel("ai1", provider=_raising_provider(streams, exc)))
+    await kit.create_room(room_id="r1")
+    await kit.attach_channel("r1", "sms1")
+    await kit.attach_channel("r1", "ai1", category=ChannelCategory.INTELLIGENCE)
+    with caplog.at_level(logging.DEBUG):
+        result = await kit.process_inbound(
+            InboundMessage(channel_id="sms1", sender_id="u1", content=TextContent(body="go")),
+            defer_delivery=True,
+        )
+        assert result.delivery is not None
+        await result.delivery.wait()
+    await kit.close()
+
+    records = _roomkit_records(caplog, logging.WARNING)
+    assert [r.levelno for r in records] == [logging.ERROR]
+    assert "stream consumption (no targets)" in records[0].getMessage()
+
+
+class _BreakingTransport(_StreamingTransport):
+    """A streaming transport that raises an error of its own when the
+    response it reads fails."""
+
+    async def deliver_stream(
+        self,
+        text_stream: AsyncIterator[object],
+        event: RoomEvent,
+        binding: ChannelBinding,
+        context: RoomContext,
+    ) -> ChannelOutput:
+        try:
+            async for _chunk in text_stream:
+                pass
+        except ProviderError as exc:
+            raise RuntimeError("the socket broke") from exc
+        return ChannelOutput.empty()
+
+
+async def test_a_streaming_channel_raising_its_own_error_is_one_line_more(caplog) -> None:
+    """A streaming channel that raises an error of its own on a failed
+    response has that error logged, an unexpected one, beside the turn's
+    line: the turn's failure stays the response's."""
+    exc = ProviderError("connection refused", provider="mock")
+    kit = RoomKit()
+    kit.register_channel(SimpleChannel("sms1"))
+    kit.register_channel(_BreakingTransport("ws1"))
+    kit.register_channel(AIChannel("ai1", provider=_StreamRaisingProvider(exc)))
+    await kit.create_room(room_id="r1")
+    await kit.attach_channel("r1", "sms1")
+    await kit.attach_channel("r1", "ws1")
+    await kit.attach_channel("r1", "ai1", category=ChannelCategory.INTELLIGENCE)
+    with caplog.at_level(logging.DEBUG):
+        result = await kit.process_inbound(
+            InboundMessage(channel_id="sms1", sender_id="u1", content=TextContent(body="go"))
+        )
+    await kit.close()
+
+    assert same_error(result.error, exc)
+    records = _roomkit_records(caplog, logging.WARNING)
+    assert [(r.levelno, r.getMessage()) for r in records] == [
+        (
+            logging.ERROR,
+            "streaming channel ws1 handling the failed response of ai1 in room r1 failed",
+        ),
+        (
+            logging.WARNING,
+            "streaming delivery of ai1 to ws1 for room r1 failed (provider=mock, status=None): "
+            "mock: connection refused",
+        ),
+    ]
+
+
 class _FailsAfterARound(MockAIProvider):
     """A model that calls a tool, then fails on the next round."""
 
