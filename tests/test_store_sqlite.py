@@ -936,6 +936,49 @@ async def test_a_record_the_model_cannot_read_serves_no_read(
     assert "+1555" not in caplog.text
 
 
+async def _read_by_id(store: SQLiteStore, door: str) -> object:
+    """Reach the identity i1's record by its id through *door*, for acme."""
+    if door == "get_identity":
+        return await store.get_identity("i1")
+    if door == "create_identity":
+        return await store.create_identity(Identity(id="i1", organization_id="acme"))
+    if door == "link_address":
+        return await store.link_address("i1", "sms", "+2", organization_id="acme")
+    if door == "unlink_address":
+        return await store.unlink_address("i1", "sms", "+2", organization_id="acme")
+    kit = RoomKit(store=store)
+    try:
+        await store.create_room(Room(id="r1", organization_id="acme"))
+        await store.add_participant(Participant(id="p1", room_id="r1", channel_id="sms"))
+        return await kit.resolve_participant("r1", "p1", "i1", organization_id="acme")
+    finally:
+        await kit.close()
+
+
+@pytest.mark.parametrize(
+    "door",
+    ["get_identity", "create_identity", "link_address", "unlink_address", "resolve_participant"],
+)
+@pytest.mark.parametrize("record", _UNREADABLE_RECORDS)
+async def test_a_read_by_id_of_a_record_the_model_cannot_read_quotes_none_of_it(
+    tmp_path: Path, record: str | bytes, door: str
+) -> None:
+    """HITL 47b7dfc6: the read fails with a fixed error, the id alone, whatever the
+    caller's organization: the record may be another organization's."""
+    path = tmp_path / "older.db"
+    store = SQLiteStore(path)
+    await store.create_identity(Identity(id="i1", organization_id="globex"))
+    _spoil_the_record(path, record)
+    try:
+        with pytest.raises(ValueError) as refused:
+            await _read_by_id(store, door)
+    finally:
+        await store.close()
+    assert str(refused.value) == "Identity i1 has a record the model cannot read"
+    assert refused.value.__cause__ is None
+    assert refused.value.__suppress_context__
+
+
 async def test_an_unlink_removes_the_identity_s_rows_in_every_scope(tmp_path: Path) -> None:
     """RFC §5.6: a link revoked is revoked, a row a file's migration left in another
     scope with it, so that no later rewrite can restore it."""
