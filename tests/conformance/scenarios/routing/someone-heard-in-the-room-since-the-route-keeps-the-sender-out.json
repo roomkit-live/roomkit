@@ -1,0 +1,150 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/someone-heard-in-the-room-since-the-route-keeps-the-sender-out",
+  "title": "A sender routed to a free room, which hears someone else before his message is recorded, is routed again and opens a room of his own; the free room names no one and his agent reads nothing of it",
+  "rules": [
+    "§10.1 step 2",
+    "§10.4"
+  ],
+  "notes": "Python: tests/test_shared_channel_routing.py::TestTheLockChecksTheRoomAgain::test_someone_heard_on_the_channel_since_the_route_keeps_the_sender_out (bob). The router's answer is held at a gate while Carol writes into the room by its id; under the lock the room is checked again. A scripted router answers the free room each time it is asked, where Python's default router answers no room the second time; either gives the message a new room.",
+  "setup": {
+    "kit": {
+      "router": {
+        "room_id": "free",
+        "gate": "routed"
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {}
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "text": "AI reply"
+            },
+            {
+              "text": "AI reply"
+            }
+          ]
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "agent-joins",
+        "trigger": "on_room_created",
+        "reactions": [
+          {
+            "repeat": true,
+            "do": [
+              {
+                "call": "attach_channel",
+                "room_id": "$room",
+                "channel_id": "ai",
+                "category": "intelligence"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "create_room",
+      "room": {
+        "id": "free"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "free",
+      "channel_id": "sms"
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "bob: hello"
+        }
+      },
+      "background": true,
+      "as": "bob"
+    },
+    {
+      "wait_for": "routed"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "free",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000003",
+        "content": {
+          "type": "text",
+          "body": "carol: hi"
+        }
+      }
+    },
+    {
+      "open": "routed"
+    },
+    {
+      "await": "bob",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "free": {
+        "sms": {
+          "participant_id": null
+        }
+      },
+      "$r1": {
+        "sms": {
+          "participant_id": "+15550000002"
+        }
+      }
+    },
+    "models": {
+      "ai": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "carol: hi"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "bob: hello"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

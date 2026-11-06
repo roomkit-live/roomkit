@@ -1,0 +1,88 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-member-is-found-past-a-newer-binding-of-another-number",
+  "title": "A sender who is a member of a room on one number is found there, past a newer room naming them on another number and a newer room free on theirs",
+  "rules": [
+    "§10.4"
+  ],
+  "notes": "Python: tests/test_shared_channel_routing.py::TestTwoNumbersOnOneKit::test_a_member_is_found_past_a_newer_binding_of_another_number. Step 1 reads the members as well as the bindings.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {}
+      },
+      {
+        "id": "sms-b",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {}
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "create_room",
+      "room": {
+        "id": "r1"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "r1",
+      "channel_id": "sms"
+    },
+    {
+      "call": "add_member",
+      "room_id": "r1",
+      "channel_id": "sms",
+      "participant_id": "+15550000001"
+    },
+    {
+      "call": "create_room",
+      "room": {
+        "id": "r2"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "r2",
+      "channel_id": "sms-b",
+      "participant_id": "+15550000001"
+    },
+    {
+      "call": "create_room",
+      "room": {
+        "id": "r3"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "r3",
+      "channel_id": "sms"
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "r1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

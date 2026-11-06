@@ -1,0 +1,107 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/the-default-router-places-no-sender-it-cannot-name-a-room-for",
+  "title": "The default router answers null for a channel no room binds and for a sender of a channel bound to two rooms who joined one through another channel, and the same room each time it is asked about one room",
+  "rules": [
+    "§10.4"
+  ],
+  "notes": "Python: tests/test_inbound_routing.py::TestDefaultInboundRoomRouter::test_returns_none_for_unknown_channel; tests/test_inbound_routing_ambiguity.py::TestAmbiguityIsRefused::test_no_binding_at_all_returns_none, TestParticipantRuleWins::test_a_room_joined_through_another_channel_is_not_the_senders, TestDeterminism::test_the_same_state_always_gives_the_same_answer. An id names its participant only on a channel they are reached through (§5.5): alice joined r2 through ws-alice, so on ws she is another sender, and ws is bound to two rooms.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ws-alice",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "chat",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "chat"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ws-alice"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "default_router.route",
+      "channel_id": "sms999",
+      "channel_type": "sms",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.add_participant",
+      "participant": {
+        "id": "alice",
+        "room_id": "r2",
+        "channel_id": "ws-alice"
+      }
+    },
+    {
+      "call": "default_router.route",
+      "channel_id": "ws",
+      "channel_type": "websocket",
+      "participant_id": "alice",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "default_router.route",
+      "channel_id": "chat",
+      "channel_type": "websocket",
+      "participant_id": "alice",
+      "expect": {
+        "result": "r1"
+      }
+    },
+    {
+      "call": "default_router.route",
+      "channel_id": "chat",
+      "channel_type": "websocket",
+      "participant_id": "alice",
+      "expect": {
+        "result": "r1"
+      }
+    },
+    {
+      "call": "default_router.route",
+      "channel_id": "chat",
+      "channel_type": "websocket",
+      "participant_id": "alice",
+      "expect": {
+        "result": "r1"
+      }
+    }
+  ],
+  "expect": {}
+}

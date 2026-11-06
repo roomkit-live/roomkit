@@ -1,0 +1,143 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/two-rooms-the-host-opened-each-take-their-own-correspondent",
+  "title": "Two rooms the host opened on one number, one per customer, each take their own customer's messages and answer them there",
+  "rules": [
+    "§10.4",
+    "§5.7"
+  ],
+  "notes": "Python: tests/test_transport_recipient.py::test_each_correspondent_reaches_the_room_prepared_for_them.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {}
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "text": "AI reply"
+            },
+            {
+              "text": "AI reply"
+            }
+          ]
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "agent-joins",
+        "trigger": "on_room_created",
+        "reactions": [
+          {
+            "repeat": true,
+            "do": [
+              {
+                "call": "attach_channel",
+                "room_id": "$room",
+                "channel_id": "ai",
+                "category": "intelligence"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "create_room",
+      "room": {
+        "id": "alice-room"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "alice-room",
+      "channel_id": "sms",
+      "metadata": {
+        "phone_number": "+15550000001"
+      }
+    },
+    {
+      "call": "create_room",
+      "room": {
+        "id": "bob-room"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "bob-room",
+      "channel_id": "sms",
+      "metadata": {
+        "phone_number": "+15550000002"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "bob-room"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "alice-room"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "deliveries": {
+      "alice-room": {
+        "sms": [
+          {
+            "content": {
+              "body": "AI reply"
+            }
+          }
+        ]
+      },
+      "bob-room": {
+        "sms": [
+          {
+            "content": {
+              "body": "AI reply"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

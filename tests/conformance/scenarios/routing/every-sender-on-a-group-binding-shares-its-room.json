@@ -1,0 +1,189 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/every-sender-on-a-group-binding-shares-its-room",
+  "title": "Every sender on a group binding shares its room, its value under the recipient key unread, and the binding names no one",
+  "rules": [
+    "§10.4",
+    "§5.7"
+  ],
+  "notes": "Python: tests/test_shared_channel_routing.py::TestAGroupChannel::test_every_sender_on_a_group_binding_shares_the_room (the key absent, and a float under it), tests/test_transport_recipient.py::test_a_group_binding_records_no_recipient. Its warnings are not compared. The binding is written through the store, the group flag being no attach argument here.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {}
+      },
+      {
+        "id": "sms-f",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {}
+      }
+    ],
+    "rooms": [
+      {
+        "id": "team"
+      },
+      {
+        "id": "team-f"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "team",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "group": true
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "team-f",
+        "channel_id": "sms-f",
+        "channel_type": "sms",
+        "group": true,
+        "metadata": {
+          "phone_number": 15550000001.0
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "team"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "team"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000003",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "team"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms-f",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "team-f"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms-f",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "team-f"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms-f",
+        "sender_id": "+15550000003",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "team-f"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "team": {
+        "sms": {
+          "participant_id": null,
+          "metadata": {
+            "phone_number": {
+              "$absent": true
+            }
+          }
+        }
+      },
+      "team-f": {
+        "sms-f": {
+          "participant_id": null,
+          "metadata": {
+            "phone_number": 15550000001.0
+          }
+        }
+      }
+    }
+  }
+}

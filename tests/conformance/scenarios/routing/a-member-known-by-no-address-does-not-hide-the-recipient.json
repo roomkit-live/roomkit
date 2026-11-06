@@ -1,0 +1,133 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-member-known-by-no-address-does-not-hide-the-recipient",
+  "title": "A room the host opened for a number, its member known by an id that is no address, is still that number's conversation: a stranger gets a room of his own and the number's owner lands in it",
+  "rules": [
+    "§10.4",
+    "§5.7",
+    "§10.1 step 2"
+  ],
+  "notes": "Python: tests/test_shared_channel_routing.py::TestAnIdentifiedCorrespondent::test_a_member_known_by_no_address_does_not_hide_the_recipient. The member's id says nothing of the number; the binding's recipient does.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {}
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "text": "AI reply"
+            },
+            {
+              "text": "AI reply"
+            }
+          ]
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "agent-joins",
+        "trigger": "on_room_created",
+        "reactions": [
+          {
+            "repeat": true,
+            "do": [
+              {
+                "call": "attach_channel",
+                "room_id": "$room",
+                "channel_id": "ai",
+                "category": "intelligence"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "create_room",
+      "room": {
+        "id": "alice-room"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "alice-room",
+      "channel_id": "sms",
+      "metadata": {
+        "phone_number": "+15550000001"
+      }
+    },
+    {
+      "call": "add_member",
+      "room_id": "alice-room",
+      "channel_id": "sms",
+      "participant_id": "user-42"
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "alice-room"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "alice-room": [
+        {
+          "content": {
+            "body": "hi"
+          },
+          "source": {
+            "participant_id": "+15550000001"
+          }
+        },
+        {
+          "content": {
+            "body": "AI reply"
+          }
+        }
+      ]
+    }
+  }
+}

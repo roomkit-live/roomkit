@@ -1,0 +1,63 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-message-of-the-framework-s-name-naming-its-room-enters-a-free-room",
+  "title": "A message under the framework's name that names its room is the host's: it enters a free room, refused nothing, and the room's binding still names no one",
+  "rules": [
+    "§10.1 step 2",
+    "§10.4"
+  ],
+  "notes": "Python: tests/test_shared_channel_routing.py::TestTheFrameworksOwnSender::test_a_message_naming_its_room_is_the_host_s_and_enters. It is not routed, so nothing of the refusal of a routed `system` applies.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {}
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "create_room",
+      "room": {
+        "id": "free"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "free",
+      "channel_id": "sms"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "free",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "system",
+        "content": {
+          "type": "text",
+          "body": "a reminder"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "free"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "free": {
+        "sms": {
+          "participant_id": null
+        }
+      }
+    }
+  }
+}

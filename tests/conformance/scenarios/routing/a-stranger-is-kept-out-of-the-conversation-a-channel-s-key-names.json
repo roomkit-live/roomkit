@@ -1,0 +1,138 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-stranger-is-kept-out-of-the-conversation-a-channel-s-key-names",
+  "title": "A room attached for a number on a channel whose recipient_address answers none names that number's owner; a stranger gets a room of his own, nothing of his reaches the owner, and the room's agent takes no turn on it",
+  "rules": [
+    "§5.7",
+    "§10.4"
+  ],
+  "notes": "Python: tests/test_shared_channel_routing.py::TestAChannelReadingNoRecipient::test_a_stranger_is_not_admitted_to_the_conversation_of_the_key_s_recipient. The channel declares phone_number and keeps the default recipient_address.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number"
+      },
+      {
+        "id": "desk",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "repeat": true,
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "create_room",
+      "room": {
+        "id": "bobs"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "bobs",
+      "channel_id": "sms",
+      "metadata": {
+        "phone_number": "+15550000002"
+      },
+      "expect": {
+        "result": {
+          "participant_id": "+15550000002"
+        }
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "bobs",
+      "channel_id": "desk"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "bobs",
+      "channel_id": "agent",
+      "category": "intelligence"
+    },
+    {
+      "call": "send_event",
+      "room_id": "bobs",
+      "channel_id": "desk",
+      "content": {
+        "type": "text",
+        "body": "Bob, your results are ready"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "alice: hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "bobs": {
+        "sms": {
+          "participant_id": "+15550000002"
+        }
+      }
+    },
+    "turns": {
+      "bobs": {
+        "agent": [
+          {
+            "content": {
+              "body": "Bob, your results are ready"
+            }
+          }
+        ]
+      }
+    },
+    "deliveries": {
+      "bobs": {
+        "sms": [
+          {
+            "content": {
+              "body": "Bob, your results are ready"
+            }
+          },
+          {
+            "content": {
+              "body": "answer"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

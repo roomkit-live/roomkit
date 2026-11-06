@@ -1,0 +1,157 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-room-prepared-for-a-chat-takes-no-one-else",
+  "title": "A room the host prepared for one chat keeps out another chat writing first, which gets a room of its own and is answered there; the chat's own message lands in it",
+  "rules": [
+    "§10.4",
+    "§5.7"
+  ],
+  "notes": "Python: tests/test_chat_conversations.py::test_a_room_prepared_for_a_chat_takes_no_one_else.",
+  "setup": {
+    "channels": [
+      {
+        "id": "tg",
+        "type": "telegram",
+        "category": "transport",
+        "recipient_key": "telegram_chat_id",
+        "addresses": {
+          "conversation_key": "chat_id"
+        }
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "text": "ok"
+            },
+            {
+              "text": "ok"
+            }
+          ]
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "agent-joins",
+        "trigger": "on_room_created",
+        "reactions": [
+          {
+            "repeat": true,
+            "do": [
+              {
+                "call": "attach_channel",
+                "room_id": "$room",
+                "channel_id": "ai",
+                "category": "intelligence"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "create_room",
+      "room": {
+        "id": "alice-chat"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "alice-chat",
+      "channel_id": "tg",
+      "metadata": {
+        "telegram_chat_id": "1001"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "tg",
+        "sender_id": "1002",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        },
+        "metadata": {
+          "chat_id": "1002"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "tg",
+        "sender_id": "1001",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        },
+        "metadata": {
+          "chat_id": "1001"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "alice-chat"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "alice-chat": {
+        "tg": {
+          "participant_id": "1001",
+          "metadata": {
+            "telegram_chat_id": "1001"
+          }
+        }
+      },
+      "$r1": {
+        "tg": {
+          "participant_id": "1002",
+          "metadata": {
+            "telegram_chat_id": "1002"
+          }
+        }
+      }
+    },
+    "deliveries": {
+      "alice-chat": {
+        "tg": [
+          {
+            "content": {
+              "body": "ok"
+            }
+          }
+        ]
+      },
+      "$r1": {
+        "tg": [
+          {
+            "content": {
+              "body": "ok"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

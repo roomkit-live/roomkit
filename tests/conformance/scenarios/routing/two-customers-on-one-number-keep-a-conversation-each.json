@@ -1,0 +1,238 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/two-customers-on-one-number-keep-a-conversation-each",
+  "title": "Two customers writing to one number each get a room of their own, come back to it, and the agent answering one reads nothing of the other",
+  "rules": [
+    "§10.4",
+    "§10.1 step 2",
+    "§7.5 rule 8"
+  ],
+  "notes": "Python: tests/test_shared_channel_routing.py::TestTwoCustomersOnOneNumber::test_each_customer_gets_their_own_room, test_the_agent_answering_bob_reads_nothing_of_alice. An agent joins every room the kit opens; each answer goes to its room's number.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {}
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "text": "AI reply"
+            },
+            {
+              "text": "AI reply"
+            },
+            {
+              "text": "AI reply"
+            },
+            {
+              "text": "AI reply"
+            }
+          ]
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "agent-joins",
+        "trigger": "on_room_created",
+        "reactions": [
+          {
+            "repeat": true,
+            "do": [
+              {
+                "call": "attach_channel",
+                "room_id": "$room",
+                "channel_id": "ai",
+                "category": "intelligence"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "alice: my account number is 1234"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "bob: hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "$r2"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "alice: thanks"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "bob: bye"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "$r2"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "$r1": {
+        "sms": {
+          "participant_id": "+15550000001",
+          "metadata": {
+            "phone_number": "+15550000001"
+          }
+        }
+      },
+      "$r2": {
+        "sms": {
+          "participant_id": "+15550000002",
+          "metadata": {
+            "phone_number": "+15550000002"
+          }
+        }
+      }
+    },
+    "models": {
+      "ai": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "alice: my account number is 1234"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "bob: hello"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "alice: my account number is 1234"
+            },
+            {
+              "role": "assistant",
+              "text": "AI reply"
+            },
+            {
+              "role": "user",
+              "text": "alice: thanks"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "bob: hello"
+            },
+            {
+              "role": "assistant",
+              "text": "AI reply"
+            },
+            {
+              "role": "user",
+              "text": "bob: bye"
+            }
+          ]
+        }
+      ]
+    },
+    "deliveries": {
+      "$r1": {
+        "sms": [
+          {
+            "content": {
+              "body": "AI reply"
+            }
+          },
+          {
+            "content": {
+              "body": "AI reply"
+            }
+          }
+        ]
+      },
+      "$r2": {
+        "sms": [
+          {
+            "content": {
+              "body": "AI reply"
+            }
+          },
+          {
+            "content": {
+              "body": "AI reply"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

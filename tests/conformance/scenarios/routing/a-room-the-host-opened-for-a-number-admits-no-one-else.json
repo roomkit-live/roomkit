@@ -1,0 +1,185 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-room-the-host-opened-for-a-number-admits-no-one-else",
+  "title": "A room the host opened for a number names its correspondent: a stranger writing first gets a room of his own, she lands in hers, and each is answered in their own",
+  "rules": [
+    "§10.4",
+    "§5.7",
+    "§10.1 step 2"
+  ],
+  "notes": "Python: tests/test_shared_channel_routing.py::TestARoomTheHostOpened::test_a_room_opened_for_a_number_admits_no_one_else; tests/test_transport_recipient.py::test_a_room_prepared_for_someone_else_does_not_take_a_stranger.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {}
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "text": "AI reply"
+            },
+            {
+              "text": "AI reply"
+            }
+          ]
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "agent-joins",
+        "trigger": "on_room_created",
+        "reactions": [
+          {
+            "repeat": true,
+            "do": [
+              {
+                "call": "attach_channel",
+                "room_id": "$room",
+                "channel_id": "ai",
+                "category": "intelligence"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "create_room",
+      "room": {
+        "id": "alice-room"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "alice-room",
+      "channel_id": "sms",
+      "metadata": {
+        "phone_number": "+15550000001"
+      },
+      "expect": {
+        "result": {
+          "participant_id": "+15550000001"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "alice-room"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "alice-room": {
+        "sms": {
+          "participant_id": "+15550000001",
+          "metadata": {
+            "phone_number": "+15550000001"
+          }
+        }
+      },
+      "$r1": {
+        "sms": {
+          "participant_id": "+15550000002",
+          "metadata": {
+            "phone_number": "+15550000002"
+          }
+        }
+      }
+    },
+    "timeline": {
+      "alice-room": [
+        {
+          "content": {
+            "body": "hi"
+          },
+          "source": {
+            "participant_id": "+15550000001"
+          }
+        },
+        {
+          "content": {
+            "body": "AI reply"
+          }
+        }
+      ],
+      "$r1": [
+        {
+          "content": {
+            "body": "hi"
+          },
+          "source": {
+            "participant_id": "+15550000002"
+          }
+        },
+        {
+          "content": {
+            "body": "AI reply"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "alice-room": {
+        "sms": [
+          {
+            "content": {
+              "body": "AI reply"
+            }
+          }
+        ]
+      },
+      "$r1": {
+        "sms": [
+          {
+            "content": {
+              "body": "AI reply"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

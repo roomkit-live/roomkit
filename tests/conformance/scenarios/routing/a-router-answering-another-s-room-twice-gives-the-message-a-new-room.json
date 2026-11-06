@@ -1,0 +1,78 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-router-answering-another-s-room-twice-gives-the-message-a-new-room",
+  "title": "A router answering a room whose binding names another correspondent, asked again, still answering it, gives the message a new room; nothing of the sender reaches the other's room",
+  "rules": [
+    "§10.1 step 2",
+    "§10.4"
+  ],
+  "notes": "Python: tests/test_shared_channel_routing.py::TestTheLockChecksTheRoomAgain::test_a_second_answer_that_is_not_the_messages_gives_it_a_new_room. How often the router and the identity store are asked, which Python counts, is not compared here.",
+  "setup": {
+    "kit": {
+      "router": {
+        "room_id": "alice-room"
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {}
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "create_room",
+      "room": {
+        "id": "alice-room"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "alice-room",
+      "channel_id": "sms",
+      "metadata": {
+        "phone_number": "+15550000001"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "bob: hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "alice-room": {
+        "sms": {
+          "participant_id": "+15550000001"
+        }
+      },
+      "$r1": {
+        "sms": {
+          "participant_id": "+15550000002"
+        }
+      }
+    },
+    "timeline": {
+      "alice-room": []
+    }
+  }
+}

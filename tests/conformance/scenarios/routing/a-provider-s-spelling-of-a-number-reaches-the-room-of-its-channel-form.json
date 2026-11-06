@@ -1,0 +1,183 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-provider-s-spelling-of-a-number-reaches-the-room-of-its-channel-form",
+  "title": "A sender spelled as the provider writes it is read in the channel's form: they reach the room the host opened for that number, recorded and answered under it",
+  "rules": [
+    "§10.4",
+    "§5.7"
+  ],
+  "notes": "Python: tests/test_transport_recipient.py::test_a_provider_spelling_reaches_the_e164_room. The channel's normalize_address writes each spelling as the number; the spellings an SMS or WhatsApp channel reads are each implementation's own tests.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ch",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {
+          "normalizes": {
+            "15550000001": "+15550000001",
+            "(555) 000-0001": "+15550000001",
+            "whatsapp:+15550000001": "+15550000001"
+          }
+        }
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "text": "Hello back"
+            },
+            {
+              "text": "Hello back"
+            },
+            {
+              "text": "Hello back"
+            }
+          ]
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "agent-joins",
+        "trigger": "on_room_created",
+        "reactions": [
+          {
+            "repeat": true,
+            "do": [
+              {
+                "call": "attach_channel",
+                "room_id": "$room",
+                "channel_id": "ai",
+                "category": "intelligence"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "create_room",
+      "room": {
+        "id": "alice-room"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "alice-room",
+      "channel_id": "ch",
+      "metadata": {
+        "phone_number": "+15550000001"
+      }
+    },
+    {
+      "call": "create_room",
+      "room": {
+        "id": "bob-room"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "bob-room",
+      "channel_id": "ch",
+      "metadata": {
+        "phone_number": "+15550000002"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "ch",
+        "sender_id": "15550000001",
+        "content": {
+          "type": "text",
+          "body": "Hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "alice-room",
+            "source": {
+              "participant_id": "+15550000001"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "ch",
+        "sender_id": "(555) 000-0001",
+        "content": {
+          "type": "text",
+          "body": "Hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "alice-room",
+            "source": {
+              "participant_id": "+15550000001"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "ch",
+        "sender_id": "whatsapp:+15550000001",
+        "content": {
+          "type": "text",
+          "body": "Hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "alice-room",
+            "source": {
+              "participant_id": "+15550000001"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "deliveries": {
+      "alice-room": {
+        "ch": [
+          {
+            "content": {
+              "body": "Hello back"
+            }
+          },
+          {
+            "content": {
+              "body": "Hello back"
+            }
+          },
+          {
+            "content": {
+              "body": "Hello back"
+            }
+          }
+        ]
+      },
+      "bob-room": {
+        "ch": []
+      }
+    }
+  }
+}

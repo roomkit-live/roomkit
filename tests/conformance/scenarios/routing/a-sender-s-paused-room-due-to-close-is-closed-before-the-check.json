@@ -1,0 +1,80 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-sender-s-paused-room-due-to-close-is-closed-before-the-check",
+  "title": "Under the lock a routed room's due timers apply first: a sender's paused room whose close fell due is closed then, and his message opens a new room rather than being refused room_closed",
+  "rules": [
+    "§10.1 step 2",
+    "§5.1"
+  ],
+  "notes": "Python: tests/test_shared_channel_routing.py::TestTheLockChecksTheRoomAgain::test_a_room_due_to_close_is_closed_before_the_check. The router answers Bob's room, paused five minutes ago with a close after one second.",
+  "setup": {
+    "kit": {
+      "router": {
+        "room_id": "bob-room"
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {}
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "bob-room",
+        "status": "paused",
+        "paused_at": "2026-01-01T00:00:00Z",
+        "timers": {
+          "closed_after_seconds": 1
+        }
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "bob-room",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "participant_id": "+15550000002",
+        "metadata": {
+          "phone_number": "+15550000002"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "bob-room": {
+        "status": "closed"
+      }
+    },
+    "timeline": {
+      "bob-room": []
+    }
+  }
+}

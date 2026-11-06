@@ -1,0 +1,137 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-member-added-since-the-route-keeps-the-sender-out",
+  "title": "A sender routed to a free room, given a member on the channel before his message is recorded, is routed again and opens a room of his own; the member then lands in the free room",
+  "rules": [
+    "§10.1 step 2",
+    "§10.4"
+  ],
+  "notes": "Python: tests/test_shared_channel_routing.py::TestTheLockChecksTheRoomAgain::test_a_member_added_on_the_channel_since_the_route_keeps_the_sender_out. Carol's landing there shows the binding did not name Bob. A scripted router answers the free room each time it is asked, where Python's default router answers no room the second time; either gives the message a new room. Here Carol lands in the free room through the lock, which admits a member; Python's default router finds her as a member at step 1, which routing/a-member-is-found-past-a-newer-binding-of-another-number covers.",
+  "setup": {
+    "kit": {
+      "router": {
+        "room_id": "free",
+        "gate": "routed"
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {}
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "text": "AI reply"
+            },
+            {
+              "text": "AI reply"
+            }
+          ]
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "agent-joins",
+        "trigger": "on_room_created",
+        "reactions": [
+          {
+            "repeat": true,
+            "do": [
+              {
+                "call": "attach_channel",
+                "room_id": "$room",
+                "channel_id": "ai",
+                "category": "intelligence"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "create_room",
+      "room": {
+        "id": "free"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "free",
+      "channel_id": "sms"
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "bob: hello"
+        }
+      },
+      "background": true,
+      "as": "bob"
+    },
+    {
+      "wait_for": "routed"
+    },
+    {
+      "call": "add_member",
+      "room_id": "free",
+      "channel_id": "sms",
+      "participant_id": "+15550000003"
+    },
+    {
+      "open": "routed"
+    },
+    {
+      "await": "bob",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000003",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "free"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "$r1": {
+        "sms": {
+          "participant_id": "+15550000002"
+        }
+      }
+    }
+  }
+}

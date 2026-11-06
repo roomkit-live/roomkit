@@ -1,0 +1,131 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-post-with-no-author-is-answered-in-its-chat",
+  "title": "Posts with no author in one chat share the chat's room, which answers them in that chat",
+  "rules": [
+    "§10.4",
+    "§5.7"
+  ],
+  "notes": "Python: tests/test_chat_conversations.py::test_a_post_with_no_author_is_its_chat_s, past its parse of a Telegram channel post, which Python's Telegram provider makes and roomkit-rs does not have: the post reaches the kit with an empty sender.",
+  "setup": {
+    "channels": [
+      {
+        "id": "tg",
+        "type": "telegram",
+        "category": "transport",
+        "recipient_key": "telegram_chat_id",
+        "addresses": {
+          "conversation_key": "chat_id"
+        }
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "text": "ok"
+            },
+            {
+              "text": "ok"
+            }
+          ]
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "agent-joins",
+        "trigger": "on_room_created",
+        "reactions": [
+          {
+            "repeat": true,
+            "do": [
+              {
+                "call": "attach_channel",
+                "room_id": "$room",
+                "channel_id": "ai",
+                "category": "intelligence"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "tg",
+        "sender_id": "",
+        "content": {
+          "type": "text",
+          "body": "a post"
+        },
+        "metadata": {
+          "chat_id": "5"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "tg",
+        "sender_id": "",
+        "content": {
+          "type": "text",
+          "body": "a post"
+        },
+        "metadata": {
+          "chat_id": "5"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "$r1": {
+        "tg": {
+          "participant_id": "5",
+          "metadata": {
+            "telegram_chat_id": "5"
+          }
+        }
+      }
+    },
+    "deliveries": {
+      "$r1": {
+        "tg": [
+          {
+            "content": {
+              "body": "ok"
+            }
+          },
+          {
+            "content": {
+              "body": "ok"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

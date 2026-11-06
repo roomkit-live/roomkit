@@ -1,0 +1,104 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-binding-naming-an-identity-is-answered-at-the-number-its-correspondent-writes-from",
+  "title": "A room the host bound to a customer's identity takes her message and answers her at the number she wrote from, which the record writes on the binding",
+  "rules": [
+    "§5.7",
+    "§10.1 step 2"
+  ],
+  "notes": "Python: tests/test_shared_channel_routing.py::TestABindingNamingAnIdentity::test_its_correspondent_is_answered_at_the_number_they_write_from (HITL b75a9c93).",
+  "setup": {
+    "identities": [
+      {
+        "id": "id-alice",
+        "channel_addresses": {
+          "sms": [
+            "+15550000001"
+          ]
+        }
+      }
+    ],
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {}
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "text": "AI reply"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "create_room",
+      "room": {
+        "id": "r"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "r",
+      "channel_id": "sms",
+      "participant_id": "id-alice"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "r",
+      "channel_id": "ai",
+      "category": "intelligence"
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "r"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "r": {
+        "sms": {
+          "participant_id": "id-alice",
+          "metadata": {
+            "phone_number": "+15550000001"
+          }
+        }
+      }
+    },
+    "deliveries": {
+      "r": {
+        "sms": [
+          {
+            "content": {
+              "body": "AI reply"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

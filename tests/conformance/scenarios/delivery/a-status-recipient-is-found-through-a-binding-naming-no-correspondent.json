@@ -1,0 +1,117 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-status-recipient-is-found-through-a-binding-naming-no-correspondent",
+  "title": "A delivery status reaches the room whose binding holds its recipient under the recipient key and names no correspondent, its recipient written in the channel's form",
+  "rules": [
+    "§10.4 A delivery status follows its message",
+    "§5.7"
+  ],
+  "notes": "Python: tests/test_shared_channel_routing.py::TestADeliveryStatus::test_its_recipient_is_found_as_step_one_finds_a_sender. The room `stored` is bound through the store, its binding holding the recipient and naming no correspondent; carol's room is opened by an attach, which names her.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {
+          "normalizes": {
+            "+1 (555) 000-0001": "+15550000001",
+            "+1 555 000 0003": "+15550000003"
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "stored"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "status",
+        "trigger": "on_delivery_status",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "create_room",
+      "room": {
+        "id": "room-carol"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-carol",
+      "channel_id": "sms",
+      "metadata": {
+        "phone_number": "+15550000003"
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "stored",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "metadata": {
+          "phone_number": "+15550000001"
+        }
+      }
+    },
+    {
+      "call": "process_delivery_status",
+      "status": {
+        "provider": "mock",
+        "message_id": "m-1",
+        "status": "delivered",
+        "channel_id": "sms",
+        "recipient": "+1 (555) 000-0001"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_delivery_status",
+      "status": {
+        "provider": "mock",
+        "message_id": "m-2",
+        "status": "delivered",
+        "channel_id": "sms",
+        "recipient": "+1 555 000 0003"
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "status": [
+        {
+          "trigger": "on_delivery_status",
+          "room_id": "stored",
+          "delivery_status": {
+            "message_id": "m-1",
+            "recipient": "+1 (555) 000-0001"
+          }
+        },
+        {
+          "trigger": "on_delivery_status",
+          "room_id": "room-carol",
+          "delivery_status": {
+            "message_id": "m-2",
+            "recipient": "+1 555 000 0003"
+          }
+        }
+      ]
+    },
+    "bindings": {
+      "stored": {
+        "sms": {
+          "participant_id": null
+        }
+      }
+    }
+  }
+}

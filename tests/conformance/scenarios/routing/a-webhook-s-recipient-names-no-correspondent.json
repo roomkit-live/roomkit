@@ -1,0 +1,93 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-webhook-s-recipient-names-no-correspondent",
+  "title": "A channel with no recipient key, attached with a URL under its metadata, names no correspondent, and its sender's message reaches the room it is bound to",
+  "rules": [
+    "§10.4",
+    "§5.7"
+  ],
+  "notes": "Python: tests/test_transport_recipient.py::test_a_webhook_recipient_names_no_correspondent. The CRM writes as crm-system; the room delivers to the CRM's URL, which names no one.",
+  "setup": {
+    "channels": [
+      {
+        "id": "crm",
+        "type": "webhook",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "text": "Hello back"
+            }
+          ]
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "agent-joins",
+        "trigger": "on_room_created",
+        "reactions": [
+          {
+            "repeat": true,
+            "do": [
+              {
+                "call": "attach_channel",
+                "room_id": "$room",
+                "channel_id": "ai",
+                "category": "intelligence"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "create_room",
+      "room": {
+        "id": "bridge"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "bridge",
+      "channel_id": "crm",
+      "metadata": {
+        "recipient_id": "https://crm.example.com/api/messages"
+      },
+      "expect": {
+        "result": {
+          "participant_id": null,
+          "metadata": {
+            "recipient_id": "https://crm.example.com/api/messages"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "crm",
+        "sender_id": "crm-system",
+        "content": {
+          "type": "text",
+          "body": "Subscription expires soon"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "bridge"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

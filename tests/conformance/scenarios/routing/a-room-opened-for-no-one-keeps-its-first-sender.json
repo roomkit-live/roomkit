@@ -1,0 +1,473 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-room-opened-for-no-one-keeps-its-first-sender",
+  "title": "A room the host opened naming no one under the recipient key, the key absent, null, empty or blank, is its first sender's: a second sender gets a room of his own, and the first is found again and answered twice",
+  "rules": [
+    "§10.4",
+    "§5.7",
+    "§10.1 step 2"
+  ],
+  "notes": "Python: tests/test_shared_channel_routing.py::TestARoomTheHostOpened::test_a_room_opened_for_no_one_keeps_its_first_sender, one channel per case. Once two rooms are bound to the number, the first sender is found by her binding.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms-nothing",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {}
+      },
+      {
+        "id": "sms-null",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {}
+      },
+      {
+        "id": "sms-empty",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {}
+      },
+      {
+        "id": "sms-blank",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {}
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "text": "AI reply"
+            },
+            {
+              "text": "AI reply"
+            },
+            {
+              "text": "AI reply"
+            },
+            {
+              "text": "AI reply"
+            },
+            {
+              "text": "AI reply"
+            },
+            {
+              "text": "AI reply"
+            },
+            {
+              "text": "AI reply"
+            },
+            {
+              "text": "AI reply"
+            },
+            {
+              "text": "AI reply"
+            },
+            {
+              "text": "AI reply"
+            },
+            {
+              "text": "AI reply"
+            },
+            {
+              "text": "AI reply"
+            }
+          ]
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "agent-joins",
+        "trigger": "on_room_created",
+        "reactions": [
+          {
+            "repeat": true,
+            "do": [
+              {
+                "call": "attach_channel",
+                "room_id": "$room",
+                "channel_id": "ai",
+                "category": "intelligence"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "create_room",
+      "room": {
+        "id": "free-nothing"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "free-nothing",
+      "channel_id": "sms-nothing",
+      "metadata": {}
+    },
+    {
+      "call": "create_room",
+      "room": {
+        "id": "free-null"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "free-null",
+      "channel_id": "sms-null",
+      "metadata": {
+        "phone_number": null
+      }
+    },
+    {
+      "call": "create_room",
+      "room": {
+        "id": "free-empty"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "free-empty",
+      "channel_id": "sms-empty",
+      "metadata": {
+        "phone_number": ""
+      }
+    },
+    {
+      "call": "create_room",
+      "room": {
+        "id": "free-blank"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "free-blank",
+      "channel_id": "sms-blank",
+      "metadata": {
+        "phone_number": "  "
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms-nothing",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "free-nothing"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms-nothing",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms-nothing",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "free-nothing"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms-null",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "free-null"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms-null",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "$r2"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms-null",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "free-null"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms-empty",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "free-empty"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms-empty",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "$r3"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms-empty",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "free-empty"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms-blank",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "free-blank"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms-blank",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "$r4"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms-blank",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "room_id": "free-blank"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "free-nothing": {
+        "sms-nothing": {
+          "participant_id": "+15550000001",
+          "metadata": {
+            "phone_number": "+15550000001"
+          }
+        }
+      },
+      "free-null": {
+        "sms-null": {
+          "participant_id": "+15550000001",
+          "metadata": {
+            "phone_number": "+15550000001"
+          }
+        }
+      },
+      "free-empty": {
+        "sms-empty": {
+          "participant_id": "+15550000001",
+          "metadata": {
+            "phone_number": "+15550000001"
+          }
+        }
+      },
+      "free-blank": {
+        "sms-blank": {
+          "participant_id": "+15550000001",
+          "metadata": {
+            "phone_number": "+15550000001"
+          }
+        }
+      }
+    },
+    "deliveries": {
+      "free-nothing": {
+        "sms-nothing": [
+          {
+            "content": {
+              "body": "AI reply"
+            }
+          },
+          {
+            "content": {
+              "body": "AI reply"
+            }
+          }
+        ]
+      },
+      "free-null": {
+        "sms-null": [
+          {
+            "content": {
+              "body": "AI reply"
+            }
+          },
+          {
+            "content": {
+              "body": "AI reply"
+            }
+          }
+        ]
+      },
+      "free-empty": {
+        "sms-empty": [
+          {
+            "content": {
+              "body": "AI reply"
+            }
+          },
+          {
+            "content": {
+              "body": "AI reply"
+            }
+          }
+        ]
+      },
+      "free-blank": {
+        "sms-blank": [
+          {
+            "content": {
+              "body": "AI reply"
+            }
+          },
+          {
+            "content": {
+              "body": "AI reply"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
