@@ -240,9 +240,10 @@ class ProviderError(Exception):
         before_request: Did the provider refuse before sending any request,
             for something other than the content the request carries? A
             response schema the model does not take, a model or tools its
-            endpoint does not serve, a tool the vendor cannot declare: nothing
-            reached the vendor, so the error says nothing of the turn's
-            images (RFC §6.4). An image the provider cannot send is not one.
+            endpoint does not serve, a tool name the vendor refuses or a tool
+            it cannot declare: nothing reached the vendor, so the error says
+            nothing of the turn's images (RFC §6.4). An image the provider
+            cannot send is not one.
     """
 
     def __init__(
