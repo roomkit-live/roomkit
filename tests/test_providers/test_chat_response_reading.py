@@ -17,7 +17,14 @@ import httpx
 import openai
 import pytest
 
-from roomkit.providers.ai.base import AIContext, AIMessage, AITool, StreamDone, StreamToolCall
+from roomkit.providers.ai.base import (
+    AIContext,
+    AIMessage,
+    AITool,
+    ProviderError,
+    StreamDone,
+    StreamToolCall,
+)
 from roomkit.providers.ai.openai_dialect import ToolCallSlots, message_tool_calls
 from roomkit.providers.azure.ai import AzureAIProvider
 from roomkit.providers.azure.config import AzureAIConfig
@@ -293,3 +300,138 @@ def test_a_router_or_a_deployment_decides_what_its_model_reads(provider: Any) ->
     """A ``vendor/model`` id or a deployment name is no OpenAI model name:
     images are passed through and the server answers (RMK-500)."""
     assert provider.supports_vision is True
+
+
+def _streamed(*fragments: dict[str, Any]) -> list[dict[str, Any]]:
+    """A stream whose chunks carry *fragments*, one call fragment each."""
+    chunks = [
+        _chunk([{"index": 0, "delta": {"tool_calls": [fragment]}, "finish_reason": None}])
+        for fragment in fragments
+    ]
+    return [*chunks, _chunk([{"index": 0, "delta": {}, "finish_reason": "tool_calls"}])]
+
+
+async def _streamed_calls(chunks: list[dict[str, Any]]) -> list[tuple[str, dict[str, Any]]]:
+    """The calls a stream of *chunks* hands the loop."""
+    provider = _provider(_completion([]), chunks)
+    context = AIContext(messages=[AIMessage(role="user", content="go")], tools=[LOOKUP])
+    events = [event async for event in provider.generate_structured_stream(context)]
+    return [(e.name, e.arguments) for e in events if isinstance(e, StreamToolCall)]
+
+
+WHOLE = {
+    "index": 0,
+    "id": "c1",
+    "type": "function",
+    "function": {"name": "lookup", "arguments": "{}"},
+}
+
+
+@pytest.mark.parametrize("call_id", [0, [], {}, False], ids=["zero", "list", "object", "false"])
+async def test_a_nameless_call_under_an_id_that_is_no_text_takes_no_name(call_id: Any) -> None:
+    """A fragment opening another call under an id that is no text, read as
+    false, is no second call to the held tool: its call keeps no name, for the
+    loop to refuse (RMK-1372)."""
+    second = {"index": 0, "id": call_id, "function": {"arguments": '{"q": 1}'}}
+
+    calls = await _streamed_calls(_streamed(WHOLE, second))
+
+    assert calls == [("lookup", {}), ("", {"q": 1})]
+
+
+@pytest.mark.parametrize(
+    "call_id", [7, True, [1], {"a": 1}], ids=["number", "true", "list", "object"]
+)
+async def test_an_id_that_is_no_text_on_a_call_already_named_is_ignored(call_id: Any) -> None:
+    """A call already composed under the id the stream minted keeps it: an id
+    that is no text, coming after, changes nothing and the read goes on
+    (RMK-1372)."""
+    first = {"index": 0, "type": "function", "function": {"name": "lookup", "arguments": '{"q"'}}
+    second = {"index": 0, "id": call_id, "function": {"arguments": ": 1}"}}
+
+    calls = await _streamed_calls(_streamed(first, second))
+
+    assert calls == [("lookup", {"q": 1})]
+
+
+@pytest.mark.parametrize("call_id", [7, True], ids=["number", "true"])
+async def test_an_id_that_is_no_text_on_an_entry_without_a_function_is_no_call(
+    call_id: Any,
+) -> None:
+    """An entry with no function is no call, whatever id it carries: the read
+    goes on (RMK-1372)."""
+    entry = {"index": 0, "id": call_id, "type": "custom"}
+    named = {
+        "index": 1,
+        "id": "c2",
+        "type": "function",
+        "function": {"name": "lookup", "arguments": "{}"},
+    }
+
+    calls = await _streamed_calls(_streamed(entry, named))
+
+    assert calls == [("lookup", {})]
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        {
+            "index": 0,
+            "id": 7,
+            "type": "function",
+            "function": {"name": "lookup", "arguments": "{}"},
+        },
+        {
+            "index": 0,
+            "id": True,
+            "type": "function",
+            "function": {"name": "lookup", "arguments": "{}"},
+        },
+        {
+            "index": 0,
+            "id": [1],
+            "type": "function",
+            "function": {"name": "lookup", "arguments": "{}"},
+        },
+        {"index": 0, "id": {"a": 1}, "type": "custom"},
+    ],
+    ids=["number", "true", "list", "object-without-function"],
+)
+async def test_an_id_that_is_no_text_on_a_new_call_fails_the_read(entry: dict[str, Any]) -> None:
+    """A call that would run under an id that is no text, or an id no set
+    can hold, fails the read rather than run (RMK-1372)."""
+    with pytest.raises(ProviderError):
+        await _streamed_calls(_streamed(entry))
+
+
+@pytest.mark.parametrize("mode", ["generate", "stream"])
+@pytest.mark.parametrize(
+    ("answered", "named"), [("m", "m"), ("", "gpt-4.1-mini")], ids=["answered", "unnamed"]
+)
+async def test_a_response_names_the_model_that_answered_else_the_one_asked(
+    mode: str, answered: str, named: str
+) -> None:
+    """Both modes name the model the server says answered, else the one the
+    config asked for (RMK-1434)."""
+    choice = {
+        "index": 0,
+        "finish_reason": "stop",
+        "message": {"role": "assistant", "content": "Hi"},
+    }
+    completion = {**_completion([choice]), "model": answered}
+    chunks = [
+        {
+            **_chunk([{"index": 0, "delta": {"content": "Hi"}, "finish_reason": "stop"}]),
+            "model": answered,
+        }
+    ]
+    provider = _provider(completion, chunks)
+    context = AIContext(messages=[AIMessage(role="user", content="go")])
+    if mode == "generate":
+        metadata = (await provider.generate(context)).metadata
+    else:
+        events = [event async for event in provider.generate_structured_stream(context)]
+        metadata = next(e for e in events if isinstance(e, StreamDone)).metadata
+
+    assert metadata == {"model": named}
