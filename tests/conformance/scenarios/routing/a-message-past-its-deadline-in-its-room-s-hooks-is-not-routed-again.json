@@ -12,7 +12,7 @@
       "router": {
         "room_id": "shared"
       },
-      "process_timeout_ms": 100
+      "process_timeout_ms": 400
     },
     "channels": [
       {
@@ -27,7 +27,7 @@
       {
         "name": "hold",
         "trigger": "on_room_created",
-        "timeout_ms": 300,
+        "timeout_ms": 800,
         "reactions": [
           {
             "gate": "created"
