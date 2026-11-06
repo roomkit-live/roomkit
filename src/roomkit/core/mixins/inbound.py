@@ -240,6 +240,12 @@ class InboundMixin(HelpersMixin):
         under that name passes *room_id*. A host naming the room sets
         ``sender_id`` itself, and never copies a client's.
 
+        A routed message whose room, created for it, names someone else once
+        its ``ON_ROOM_CREATED`` hooks are over (a concurrent sender recorded
+        there, or a hook's binding) is routed once more; when every room opened
+        for it does, it is refused ``room_taken``, nothing of it stored (RFC
+        §10.1 step 2).
+
         Raises:
             ChannelNotRegisteredError: the message's channel is not registered
                 (a message refused past its room's work budget first excepted).
@@ -544,6 +550,8 @@ class InboundMixin(HelpersMixin):
             return await self._refuse_on_timeout(exc.room_id, channel_id=message.channel_id)
         except _PastTheCapError:
             return _past_the_cap(None, message)
+        except _RoomTakenError:
+            return _room_taken(message)
 
         entry = self._entry_after_routing(room_id, room_just_created, opening, charged)
         if entry is None:
@@ -993,9 +1001,10 @@ class InboundMixin(HelpersMixin):
         the call's *deadline* (RFC §13.6). Returns the room id and whether
         the room was just created.
         """
-        routed = room_id is None
+        routed = None
         if room_id is None:
             sender = _conversation(message, channel)
+            routed = _Routed(channel, known_as(sender, identity, message.channel_id))
             room_id = await _by(
                 deadline,
                 self._inbound_router.route(
@@ -1010,12 +1019,12 @@ class InboundMixin(HelpersMixin):
             )
         if room_id is None:
             _charge_opening(opening)
-            return await self._open_room_for(message, None, organization_id, routed=True), True
+            return await self._open_room_for(message, None, organization_id, routed=routed), True
         created = await self._ensure_room_and_binding(
             message,
             room_id,
             organization_id,
-            attach=not routed,
+            routed=routed,
             deadline=deadline,
             opening=opening,
         )
@@ -1027,13 +1036,13 @@ class InboundMixin(HelpersMixin):
         room_id: str,
         organization_id: str | None,
         *,
-        attach: bool = True,
+        routed: _Routed | None,
         deadline: float,
         opening: _Opening | None = None,
     ) -> bool:
         """Create the named room, or attach the channel to it, when either is missing.
 
-        A routed room is not attached here (*attach* false): it is attached
+        A room that exists, *routed* there, is not attached here: it is attached
         under the lock that checks it is still the message's (``_claim_room``),
         so a room that is not gets no binding. The reads of a room that exists
         and the wait for its lock are bounded by the call's *deadline* (RFC
@@ -1044,6 +1053,7 @@ class InboundMixin(HelpersMixin):
         """
         # Ensure room exists; auto-create if needed (e.g. voice session
         # with a room_id from SIP headers that hasn't been created yet).
+        attach = routed is None
         room_present, binding_present = await _by(
             deadline,
             self._room_and_binding_present(message, room_id, organization_id, attach=attach),
@@ -1054,7 +1064,7 @@ class InboundMixin(HelpersMixin):
             # charged as one routing answered none (gap G-070).
             _charge_opening(opening)
             try:
-                await self._open_room_for(message, room_id, organization_id, routed=not attach)
+                await self._open_room_for(message, room_id, organization_id, routed=routed)
                 return True
             except RoomAlreadyExistsError:
                 # Another call created the room meanwhile, and the store
@@ -1130,24 +1140,29 @@ class InboundMixin(HelpersMixin):
         room_id: str | None,
         organization_id: str | None,
         *,
-        routed: bool,
+        routed: _Routed | None,
     ) -> str:
         """Create the room an inbound message opens, its binding naming the sender.
 
-        *room_id* is the one that does not exist yet, the caller's or, when
-        *routed*, the router's. The binding names the sender (RFC §10.1 step
+        *room_id* is the one that does not exist yet, the caller's, or the
+        router's when *routed*. The binding names the sender (RFC §10.1 step
         2), so the router finds them there on their next message and admits
         no one else through it (§10.4): on a shared number, the second
         correspondent gets a room of their own. Completed whatever becomes of
         the caller, as whatever the deadline (RFC §13.6): its creation, its
         ON_ROOM_CREATED hooks and its attach.
+
+        Raises:
+            _RoomTakenError: a routed message's room names someone else once
+                its hooks are over, nothing of the message written.
         """
         return await run_to_its_end(
             self._open_room(message, room_id, organization_id, routed=routed),
             held=self._decided_writes,
             name=f"roomkit-decided-write-{room_id or 'new-room'}",
-            # Another call created the room first: step 2 reads it again.
-            expected=(RoomAlreadyExistsError,),
+            # Another call created the room first: step 2 reads it again. Or
+            # another sender was recorded on it: step 2 routes the message again.
+            expected=(RoomAlreadyExistsError, _RoomTakenError),
         )
 
     async def _open_room(
@@ -1156,44 +1171,81 @@ class InboundMixin(HelpersMixin):
         room_id: str | None,
         organization_id: str | None,
         *,
-        routed: bool,
+        routed: _Routed | None,
     ) -> str:
         """:meth:`_open_room_for`'s creation, hooks and attach."""
         room = await self.create_room(room_id=room_id, organization_id=organization_id)
-        channel = self._channels.get(message.channel_id)
-        sender = _conversation(message, channel) if channel else message.sender_id
-        recorded = sender if recordable_sender(sender) else None
-        named = recorded or (names_no_sender(sender) if routed else None)
-        # Once its ON_ROOM_CREATED hooks have run, under the room lock: a
-        # binding of the channel one of them made is the room's (RFC §10.1
-        # step 2, §7.5 rule 7), and a room one of them closed gets none, as
-        # a room in hand whose status refuses events: step 6 refuses the
-        # message there.
+        # Once its ON_ROOM_CREATED hooks have run, under the room lock: a room
+        # one of them closed gets no binding, as a room in hand whose status
+        # refuses events: step 6 refuses the message there.
         async with self._lock_manager.locked(room.id):
             created = await self._store.get_room(room.id)
             if created is not None:
                 created = await self._room_timers.apply_due(created)
             if created is not None and created.status not in _REFUSING_STATUSES:
-                binding = await self._attach_unbound(
-                    created,
-                    message.channel_id,
-                    participant_id=named,
-                    # Where the room replies: the sender's address, or the
-                    # chat the message came from.
-                    metadata=channel.reply_metadata(message) if recorded and channel else {},
-                )
-                if named == SYSTEM_SENDER_ID and binding is not None:
-                    await self._close_hooks_binding(binding, channel)
+                await self._bind_created_room(created, message, routed)
         return room.id
 
-    async def _close_hooks_binding(self, binding: ChannelBinding, channel: Channel | None) -> None:
-        """Write the name no sender is on *binding*, the room's binding of a
-        routed message with no address (RFC §5.7, §10.4), if it names no one:
-        one an ON_ROOM_CREATED hook made is kept, and left unnamed it would
-        pass step 3 for the next sender. A binding holding a recipient names
-        them, or no sender, already. Under the room lock its caller holds."""
-        if not binding_names_no_one(binding) or routed_recipient(channel, binding) is not None:
+    async def _bind_created_room(
+        self, room: Room, message: InboundMessage, routed: _Routed | None
+    ) -> None:
+        """The channel's binding in *room*, just created for *message*, under
+        the room lock its caller holds (RFC §10.1 step 2, §7.5 rule 7).
+
+        A binding made by now, a creation hook's or a concurrent message's, is
+        kept. A room the caller named is the caller's choice, so that is all;
+        one *routed* is held to the check of any routed room
+        (:meth:`_claim_created`). With no binding, the channel is attached
+        naming the sender and addressing replies where the message came from
+        (their address, or the chat).
+        """
+        channel = routed.channel if routed else self._channels.get(message.channel_id)
+        if routed is not None:
+            binding = await self._store.get_binding(room.id, message.channel_id)
+            if binding is not None:
+                await self._claim_created(room, binding, message, routed)
+                return
+        sender = _conversation(message, channel) if channel else message.sender_id
+        recorded = sender if recordable_sender(sender) else None
+        await self._attach_unbound(
+            room,
+            message.channel_id,
+            participant_id=recorded or (names_no_sender(sender) if routed else None),
+            metadata=channel.reply_metadata(message) if recorded and channel else {},
+        )
+
+    async def _claim_created(
+        self, room: Room, binding: ChannelBinding, message: InboundMessage, routed: _Routed
+    ) -> None:
+        """*binding*, made while *room* was being created for the routed
+        *message*, read under the room lock its caller holds (RFC §10.1 step 2,
+        §10.4): a concurrent message may have been recorded on it, the room
+        being one the router can answer, or a hook may have given it someone
+        else.
+
+        A sender is held to the check of any routed room, and recorded. A
+        message with no address enters through a ``group`` binding, and takes
+        a binding that names no one and holds no recipient, which left unnamed
+        would pass step 3 for the next sender, by writing the name no sender
+        is.
+
+        Raises:
+            _RoomTakenError: the room is no longer the message's.
+        """
+        channel, channel_id = routed.channel, message.channel_id
+        sender = _conversation(message, channel)
+        recipient = routed_recipient(channel, binding)
+        if recordable_sender(sender):
+            if not await still_the_messages(
+                self._store, room, channel_id, binding, sender, routed.own, recipient
+            ):
+                raise _RoomTakenError
+            await self._record_sender(room.id, binding, message, channel, recipient)
             return
+        if binding.group:
+            return
+        if not binding_names_no_one(binding) or recipient is not None:
+            raise _RoomTakenError
         closed = binding.model_copy(update={"participant_id": SYSTEM_SENDER_ID})
         await self._store.update_binding(closed)
         self._notify_binding_updated(closed.room_id, closed.channel_id, closed)
@@ -1216,7 +1268,11 @@ class InboundMixin(HelpersMixin):
         second answer that is not the message's, like no answer, gives it a
         new room: a router is asked twice at most, and a routed message is
         never refused ``room_closed`` here. The identity read is bounded by
-        the call's *deadline* (RFC §13.6), as the router is.
+        the call's *deadline* (RFC §13.6), as the router is. A room created
+        for the message is held to the same check once its hooks are over.
+
+        Raises:
+            _RoomTakenError: the last new room names someone else too.
         """
         sender = _conversation(message, channel)
         identity = await _by(
@@ -1224,15 +1280,19 @@ class InboundMixin(HelpersMixin):
         )
         own = known_as(sender, identity, message.channel_id)
         for _ in range(_ROUTES):
-            room_id, created = await self._find_or_open_room(
-                message,
-                channel,
-                None,
-                organization_id,
-                identity,
-                deadline=deadline,
-                opening=opening,
-            )
+            try:
+                room_id, created = await self._find_or_open_room(
+                    message,
+                    channel,
+                    None,
+                    organization_id,
+                    identity,
+                    deadline=deadline,
+                    opening=opening,
+                )
+            except _RoomTakenError:
+                logger.debug("A room created for a routed message names someone else by now")
+                continue
             if not created:
                 # Its room known only now, a message its room's own work
                 # routes back into it cannot be adopted (RFC §9.5.1).
@@ -1241,7 +1301,8 @@ class InboundMixin(HelpersMixin):
                 return room_id, created
             logger.debug("Room %s is no longer the routed message's; routing it again", room_id)
         _charge_opening(opening)
-        return await self._open_room_for(message, None, organization_id, routed=True), True
+        routed = _Routed(channel, own)
+        return await self._open_room_for(message, None, organization_id, routed=routed), True
 
     async def _routing_identity(
         self, channel: Channel, sender: str, organization_id: str | None
@@ -1510,6 +1571,20 @@ class _PastTheCapError(Exception):
     written."""
 
 
+class _RoomTakenError(Exception):
+    """A room created for a routed message names someone else once its hooks
+    are over (RFC §10.1 step 2): nothing of the message written in it."""
+
+
+@dataclass(frozen=True, slots=True)
+class _Routed:
+    """What step 2 reads of a routed message under a room's lock (RFC §10.1
+    step 2): its *channel*, and the ids *own* its sender is known by."""
+
+    channel: Channel
+    own: frozenset[str]
+
+
 @dataclass(slots=True)
 class _Opening:
     """What a message of the room's delivery work is to that work when it
@@ -1592,6 +1667,19 @@ def _past_the_cap(room_id: str | None, message: InboundMessage) -> InboundResult
         extra={"room_id": room_id, "channel_id": message.channel_id},
     )
     return InboundResult(blocked=True, reason=REENTRY_LOOP_CAP)
+
+
+def _room_taken(message: InboundMessage) -> InboundResult:
+    """The refusal of a routed message when every room opened for it names
+    someone else (RFC §10.1 step 2): an ``ON_ROOM_CREATED`` hook giving every
+    new room one recipient, as a rule. It commits into no room of another
+    correspondent, so nothing of it is stored."""
+    logger.warning(
+        "Every room opened for a routed message on channel %s names someone else: refused",
+        message.channel_id,
+        extra={"channel_id": message.channel_id},
+    )
+    return InboundResult(blocked=True, reason="room_taken")
 
 
 def _at_least_as_deep(event: RoomEvent) -> RoomEvent:

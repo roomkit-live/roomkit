@@ -409,7 +409,11 @@ naming the room sets `sender_id` itself, and never copies a client's. A message 
 address, its sender empty or blank and no chat, enters a room only through a
 `group` binding: otherwise it opens a room of its own, no other sender admitted.
 A flow of anonymous messages into one room declares its binding `group` or passes
-`room_id`.
+`room_id`. A room created for a routed message is held to the same checks once its
+`ON_ROOM_CREATED` hooks are over: a sender recorded there meanwhile, or a hook's
+binding naming someone else, sends the message on to another room, and when every
+room opened for it names someone else it is refused `room_taken`, nothing stored. A
+hook's binding naming no one records the sender.
 
 A custom router's answer is the host's decision, as a `room_id` is. A room that
 binds the channel is still held to step 3's conditions under the lock, but one
