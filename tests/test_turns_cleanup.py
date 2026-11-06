@@ -29,9 +29,11 @@ from roomkit.models.enums import ChannelCategory, ChannelType
 from roomkit.models.event import TextContent
 from roomkit.models.response_metadata import ResponseMetadata
 from roomkit.turns import InMemoryTurnBackend, TurnClient, TurnExecutor, TurnTimeouts
+from roomkit.turns._executor_turn import ExecutorTurn
 from roomkit.turns.base import TurnBackend
 from roomkit.turns.owner import registry_turn_client
 from roomkit.turns.redis import RedisTurnBackend
+from roomkit.turns.wire import Cancel, Close
 from tests.redis_keys import delete_keys, key_prefix
 from tests.test_framework import SimpleChannel
 from tests.test_turns_backend import ScriptedChannel, _binding, _context, _event, _run
@@ -94,6 +96,41 @@ async def test_a_cancelled_cascade_reports_its_cleanup_incomplete_while_an_end_i
     with pytest.raises(TimeoutError, match="did not end"):
         await cascade.cancel_and_wait("caller_cancelled", timeout=2.0)
     let_go.set()
+    await client.close()
+
+
+@pytest.mark.parametrize("stuck", [True, False], ids=["executor stuck", "its executor ends it"])
+async def test_a_cancelled_cascade_waits_for_the_end_of_a_stream_it_never_read(
+    stuck: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A turn answered with a stream nobody read: the cancelled cascade closes
+    it and waits for its end, with no bound of its own (RFC §10.1, §10.6.8).
+    An executor that never reads the close, stuck in a blocking call, leaves
+    the cleanup incomplete at the waiter's timeout; one that ends the turn
+    lets it return."""
+
+    async def script(channel: ScriptedChannel) -> AsyncIterator[Any]:
+        yield "one"
+        await asyncio.Event().wait()
+
+    if stuck:
+        apply_control = ExecutorTurn._apply_control
+
+        async def deaf_to_its_end(turn: ExecutorTurn, message: Any) -> None:
+            if not isinstance(message, Close | Cancel):
+                await apply_control(turn, message)
+
+        monkeypatch.setattr(ExecutorTurn, "_apply_control", deaf_to_its_end)
+    client = _client(ScriptedChannel(script), QUICK)
+    stream = (await _run(client)).response_stream
+    cascade = DeliveryCascade("room", reentry_budget=10)
+    cascade.add_streams([_response(stream)])
+
+    if stuck:
+        with pytest.raises(TimeoutError, match="Delivery cleanup incomplete"):
+            await cascade.cancel_and_wait("caller_cancelled", timeout=0.05)
+    else:
+        await cascade.cancel_and_wait("caller_cancelled", timeout=2.0)
     await client.close()
 
 
