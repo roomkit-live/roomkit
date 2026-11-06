@@ -1,0 +1,161 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "locks/a-deferred-call-refused-at-its-deadline-beside-an-adopted-call-carries-its-lock-s-failed-release",
+  "title": "A deferred call refused process_timeout under a room lock whose release fails, beside the call its off-lock hook adopted, carries the failure, at its decision and on its handle",
+  "rules": [
+    "§13.5 A release that fails",
+    "§13.6",
+    "§9.5.1 Reentrance"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/inbound.py, _process_inbound_inner collects the call's failed releases (collecting_release_failures) and makes the first the result's error when none was met, a refusal at the deadline included. Found by the review of RMK-1432 (RMK-1443).",
+  "setup": {
+    "kit": {
+      "lock_manager": {
+        "release_error": "lease expired"
+      },
+      "process_timeout_ms": 200
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "A1",
+              "gate": "answer"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "adopts",
+        "trigger": "before_broadcast",
+        "needs_lock": false,
+        "timeout_ms": 5000,
+        "reactions": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "ws",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "side"
+                  }
+                },
+                "defer_delivery": true,
+                "as": "side"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "slow",
+        "trigger": "before_broadcast",
+        "timeout_ms": 5000,
+        "reactions": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "gate": "never"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "lock_releases": "fail"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "defer_delivery": true,
+      "as": "h",
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "process_timeout",
+          "event": null,
+          "error": {
+            "$contains": "lease expired"
+          }
+        }
+      }
+    },
+    {
+      "call": "delivery.wait",
+      "of": "h",
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "process_timeout",
+          "event": null,
+          "error": {
+            "$contains": "lease expired"
+          }
+        }
+      }
+    },
+    {
+      "open": "answer"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "side"
+          }
+        },
+        {
+          "content": {
+            "body": "A1"
+          }
+        }
+      ]
+    }
+  }
+}

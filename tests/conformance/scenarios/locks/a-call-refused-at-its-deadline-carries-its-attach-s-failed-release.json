@@ -1,0 +1,89 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "locks/a-call-refused-at-its-deadline-carries-its-attach-s-failed-release",
+  "title": "A call refused process_timeout in its off-lock check carries as its error the failed release of the lock step 2 took to attach its channel",
+  "rules": [
+    "§13.5 A release that fails",
+    "§13.6",
+    "§10.1"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/inbound.py, _process_inbound_inner collects every failed release of the call, step 2's attach among them, and makes the first the result's error when none was met. Found by the review of RMK-1443.",
+  "setup": {
+    "kit": {
+      "lock_manager": {
+        "release_error": "lease expired"
+      },
+      "process_timeout_ms": 200
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "scan",
+        "trigger": "before_broadcast",
+        "needs_lock": false,
+        "timeout_ms": 5000,
+        "reactions": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "gate": "never"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "lock_releases": "fail"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "process_timeout",
+          "event": null,
+          "error": {
+            "$contains": "lease expired"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": []
+    }
+  }
+}

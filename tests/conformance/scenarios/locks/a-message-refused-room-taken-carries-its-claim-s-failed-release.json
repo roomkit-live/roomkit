@@ -1,0 +1,95 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "locks/a-message-refused-room-taken-carries-its-claim-s-failed-release",
+  "title": "A routed message whose room is another sender's, then whose new room a hook takes, is refused room_taken and carries as its error the failed release of the lock its claim of the first room took",
+  "rules": [
+    "§13.5 A release that fails",
+    "§10.1 step 2",
+    "§10.4"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/inbound.py, _claim_room returns False on a normal exit of the lock, whose failed release is collected, and _process_inbound_inner makes the call's first failed release the error of a result that carries none, a refusal included. Found by the light review of RMK-1443.",
+  "setup": {
+    "kit": {
+      "lock_manager": {
+        "release_error": "lease expired"
+      },
+      "router": {
+        "room_id": "room-1"
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {}
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms",
+            "metadata": {
+              "phone_number": "+15550000002"
+            }
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "bind",
+        "trigger": "on_room_created",
+        "reactions": [
+          {
+            "repeat": true,
+            "do": [
+              {
+                "call": "attach_channel",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "metadata": {
+                  "phone_number": "+15550000002"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "lock_releases": "fail"
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "room_taken",
+          "event": null,
+          "error": {
+            "$contains": "lease expired"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": []
+    }
+  }
+}

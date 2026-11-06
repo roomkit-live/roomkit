@@ -1,0 +1,87 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "locks/a-call-refused-at-its-deadline-carries-its-lock-s-failed-release",
+  "title": "A call refused process_timeout under a room lock whose release fails carries the failure as its error",
+  "rules": [
+    "§13.5 A release that fails",
+    "§13.6"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/inbound.py, _process_inbound_inner collects the call's failed releases (collecting_release_failures) and makes the first the result's error when none was met, a refusal at the deadline included. Found by the review of RMK-1432 (RMK-1443).",
+  "setup": {
+    "kit": {
+      "lock_manager": {
+        "release_error": "lease expired"
+      },
+      "process_timeout_ms": 200
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "slow",
+        "trigger": "before_broadcast",
+        "timeout_ms": 5000,
+        "reactions": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "gate": "never"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "lock_releases": "fail"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "process_timeout",
+          "event": null,
+          "error": {
+            "$contains": "lease expired"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": []
+    },
+    "framework_events": {
+      "room-1": [
+        "process_timeout"
+      ]
+    }
+  }
+}

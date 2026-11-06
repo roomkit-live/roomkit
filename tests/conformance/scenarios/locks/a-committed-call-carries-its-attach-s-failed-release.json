@@ -1,0 +1,109 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "locks/a-committed-call-carries-its-attach-s-failed-release",
+  "title": "A message whose step 2 attached its channel under a lock whose release failed commits, and its result carries that failure as its error",
+  "rules": [
+    "§13.5 A release that fails",
+    "§10.1"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/inbound.py, _process_inbound_inner collects every failed release of the call, step 2's attach among them, and makes the first the result's error when none was met. Found by the review of RMK-1443.",
+  "setup": {
+    "kit": {
+      "lock_manager": {
+        "release_error": "lease expired"
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "scan",
+        "trigger": "before_broadcast",
+        "needs_lock": false,
+        "reactions": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "gate": "scan"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "lock_releases": "fail"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "background": true,
+      "as": "h"
+    },
+    {
+      "wait_for": "scan"
+    },
+    {
+      "lock_releases": "succeed"
+    },
+    {
+      "open": "scan"
+    },
+    {
+      "await": "h",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "content": {
+              "body": "hello"
+            }
+          },
+          "error": {
+            "$contains": "lease expired"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "hello"
+          }
+        }
+      ]
+    }
+  }
+}

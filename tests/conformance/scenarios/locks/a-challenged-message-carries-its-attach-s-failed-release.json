@@ -1,0 +1,85 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "locks/a-challenged-message-carries-its-attach-s-failed-release",
+  "title": "A message the identity resolver challenges, its step 2 having attached its channel under a lock whose release failed, is held and carries that failure as its error",
+  "rules": [
+    "§13.5 A release that fails",
+    "§11.3",
+    "§10.1"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/inbound.py, _process_inbound_inner makes the call's first failed release its result's error when it carries none, a refusal included. Found by the light review of RMK-1443.",
+  "setup": {
+    "kit": {
+      "lock_manager": {
+        "release_error": "lease expired"
+      },
+      "identity_resolver": {
+        "answers": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "repeat": true,
+            "result": {
+              "status": "challenge_sent",
+              "challenge_type": "sms_code",
+              "message": "code sent by sms"
+            }
+          }
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "lock_releases": "fail"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "code sent by sms",
+          "event": null,
+          "error": {
+            "$contains": "lease expired"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": []
+    }
+  }
+}

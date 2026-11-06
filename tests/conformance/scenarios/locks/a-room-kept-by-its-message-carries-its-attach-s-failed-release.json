@@ -1,0 +1,129 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "locks/a-room-kept-by-its-message-carries-its-attach-s-failed-release",
+  "title": "A message whose first new room a hook took commits in a room of its own and carries as its error the failed release of the lock that attached it there",
+  "rules": [
+    "§13.5 A release that fails",
+    "§10.1 step 2",
+    "§10.4"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/inbound.py, a room step 2 created that the message keeps is claimed on a normal exit of its lock, whose failed release is collected as the call's error; the release of the room a hook took is only logged (locks/a-room-taken-from-its-message-leaves-its-failed-release-out). Found by the light review of RMK-1443.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {}
+      }
+    ],
+    "kit": {
+      "lock_manager": {
+        "release_error": "lease expired"
+      }
+    },
+    "hooks": [
+      {
+        "name": "takes",
+        "trigger": "on_room_created",
+        "priority": 0,
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "attach_channel",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "metadata": {
+                  "phone_number": "+15550000002"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "holds",
+        "trigger": "on_room_created",
+        "priority": 1,
+        "reactions": [
+          {
+            "gate": "first"
+          }
+        ]
+      },
+      {
+        "name": "session",
+        "trigger": "on_session_started",
+        "execution": "async",
+        "reactions": [
+          {
+            "gate": "third"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "background": true,
+      "as": "h"
+    },
+    {
+      "wait_for": "first"
+    },
+    {
+      "lock_releases": "fail"
+    },
+    {
+      "open": "first"
+    },
+    {
+      "wait_for": "third"
+    },
+    {
+      "lock_releases": "succeed"
+    },
+    {
+      "open": "third"
+    },
+    {
+      "await": "h",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "content": {
+              "body": "hi"
+            }
+          },
+          "error": {
+            "$contains": "lease expired"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "$r1": [],
+      "$r2": [
+        {
+          "content": {
+            "body": "hi"
+          }
+        }
+      ]
+    }
+  }
+}
