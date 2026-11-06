@@ -1061,45 +1061,10 @@ class TestThinkTagParser:
         assert result == [("text", "hello world")]
         assert parser.flush() == []
 
-    def test_complete_tag_single_chunk(self) -> None:
-        parser = ThinkTagParser()
-        result = parser.feed("<think>reasoning</think>answer")
-        assert result == [("thinking", "reasoning"), ("text", "answer")]
-
-    def test_tag_split_across_chunks(self) -> None:
-        parser = ThinkTagParser()
-        r1 = parser.feed("<thi")
-        r2 = parser.feed("nk>reason")
-        r3 = parser.feed("</think>ans")
-        r4 = parser.flush()
-
-        thinking = "".join(s for k, s in r1 + r2 + r3 + r4 if k == "thinking")
-        text = "".join(s for k, s in r1 + r2 + r3 + r4 if k == "text")
-        assert thinking == "reason"
-        assert text == "ans"
-
-    def test_close_tag_split(self) -> None:
-        parser = ThinkTagParser()
-        r1 = parser.feed("<think>ok</th")
-        r2 = parser.feed("ink>done")
-        r3 = parser.flush()
-
-        thinking = "".join(s for k, s in r1 + r2 + r3 if k == "thinking")
-        text = "".join(s for k, s in r1 + r2 + r3 if k == "text")
-        assert thinking == "ok"
-        assert text == "done"
-
     def test_empty_think_block(self) -> None:
         parser = ThinkTagParser()
         result = parser.feed("<think></think>answer")
         assert result == [("text", "answer")]
-
-    def test_only_thinking_no_text(self) -> None:
-        parser = ThinkTagParser()
-        r1 = parser.feed("<think>just thinking")
-        r2 = parser.flush()
-        thinking = "".join(s for k, s in r1 + r2 if k == "thinking")
-        assert thinking == "just thinking"
 
     def test_multiple_small_chunks(self) -> None:
         parser = ThinkTagParser()
@@ -1125,10 +1090,19 @@ class TestThinkTagParser:
             pytest.param(["<think>weighing"], "weighing", "", id="an-open-block-alone"),
             pytest.param(["<think>a</think>answer"], "a", "answer", id="a-block-at-the-start"),
             pytest.param(
-                ["\n \n<think>a</think>answer"],
+                [" \t\r\n<think>a</think>answer"],
                 "a",
-                "\n \nanswer",
+                " \t\r\nanswer",
                 id="whitespace-before-the-block",
+            ),
+            pytest.param(
+                ["\n", "<th", "ink>a</think>b"], "a", "\nb", id="whitespace-then-a-split-tag"
+            ),
+            pytest.param(
+                ["<thinking>x</thinking>y"],
+                None,
+                "<thinking>x</thinking>y",
+                id="another-tag-at-the-start",
             ),
             pytest.param(
                 ["\N{ZERO WIDTH NO-BREAK SPACE}<think>a</think>answer"],
@@ -1177,6 +1151,14 @@ class TestThinkTagParser:
 
         assert (thinking or None, said) == (reasoning, answer)
         assert extract_think_tags("".join(chunks)) == (reasoning, answer)
+
+    def test_a_start_that_cannot_be_the_tag_streams_at_once(self) -> None:
+        """Only a start that may still become ``<think>`` waits (RMK-1327)."""
+        parser = ThinkTagParser()
+
+        assert parser.feed("<") == []
+        assert parser.feed("b>bold") == [("text", "<b>bold")]
+        assert parser.feed(" <") == [("text", " <")]
 
 
 class TestExtractThinkTags:
