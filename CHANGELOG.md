@@ -167,7 +167,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   d91b8137, RMK-1436): the provider refused before sending any request. An unsupported
   `ResponseSchemaError`, OpenAI's refusal of a model Chat Completions does not serve or of
   tools for one that takes none there, a tool name a vendor refuses (`ToolNameRule`) and a
-  tool Gemini cannot declare set it.
+  tool Gemini cannot declare set it. A turn's error record carries it among the error's
+  attributes.
 
 - **A host can let `delegate_task` hand the conversation over** (RFC §23.4, RMK-1363).
   `DelegateHandler(max_conversation=N)`, 0 by default, gives the tool a `conversation` argument

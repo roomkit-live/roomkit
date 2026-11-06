@@ -237,11 +237,12 @@ class ProviderError(Exception):
             wording decides as a fallback — an envelope may rewrap the
             provider's prose, and prose must never override an explicit
             answer.
-        before_request: Did the provider refuse before sending any request?
-            A response schema the model does not take, a model its endpoint
-            does not serve, a tool name the vendor refuses: nothing reached
-            the vendor, so the error says nothing of what the request carried
-            (RFC §6.4).
+        before_request: Did the provider refuse before sending any request,
+            for something other than the content the request carries? A
+            response schema the model does not take, a model or tools its
+            endpoint does not serve, a tool the vendor cannot declare: nothing
+            reached the vendor, so the error says nothing of the turn's
+            images (RFC §6.4). An image the provider cannot send is not one.
     """
 
     def __init__(

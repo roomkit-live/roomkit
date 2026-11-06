@@ -589,6 +589,16 @@ class TestRefusal:
 
         assert _images(context) == [_PNG]
 
+    async def test_a_refusal_raised_from_one_before_any_request_is_its_own(self) -> None:
+        """Only the error raised says it came before any request: a provider
+        that raises its own from such a refusal is read as itself."""
+        wrapped = ProviderError("an integrator's provider failed")
+        wrapped.__cause__ = _name_refusal(ToolNameRule("acme", r"[a-z]+"))
+
+        context = await _turns(_Scripted([wrapped, _OK]))
+
+        assert _images(context) == []
+
     async def test_a_later_round_failing_refuses_nothing(self) -> None:
         # Round 0 carried the image and was answered: the provider took it.
         call = AIResponse(
