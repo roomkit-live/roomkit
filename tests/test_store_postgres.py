@@ -9,9 +9,11 @@ These tests require a running PostgreSQL instance. Set POSTGRES_DSN to run them:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import socket
-from collections.abc import Callable
+import struct
+from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, quote, unquote, urlparse
@@ -280,23 +282,77 @@ async def test_a_host_list_goes_past_a_dead_host(
     assert await _connects(f"{dsn}{parts['database']}{query}") is False
 
 
-async def test_a_refusal_on_a_host_ends_the_list(
+@contextlib.asynccontextmanager
+async def _fake_server(behaviour: str) -> AsyncIterator[int]:
+    """The port of a local server that answers each connection as *behaviour* says:
+    ``refuses-tls`` answers ``N`` to the TLS request, ``resets`` resets the connection
+    once the client wrote to it."""
+
+    async def answer(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        if behaviour == "refuses-tls":
+            await reader.readexactly(8)
+            writer.write(b"N")
+            await writer.drain()
+            await reader.read()
+        else:
+            await reader.read(1)
+            writer.get_extra_info("socket").setsockopt(
+                socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0)
+            )
+        writer.close()
+
+    server = await asyncio.start_server(answer, "127.0.0.1", 0)
+    try:
+        yield server.sockets[0].getsockname()[1]
+    finally:
+        server.close()
+        await server.wait_closed()
+
+
+async def test_a_host_refusing_tls_is_passed_for_the_next(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """A host that refuses the TLS ``sslmode=require`` asks for is one asyncpg cannot
+    reach: it tries the next, here the server's socket, which asks no TLS."""
+    if POSTGRES_SOCKET_DIR is None:
+        pytest.skip("POSTGRES_SOCKET_DIR not set")
+    parts = _connection_parts()
+    _without_pg_variables(monkeypatch, tmp_path / "home")
+    async with _fake_server("refuses-tls") as fake:
+        dsn = (
+            f"postgresql://{quote(parts['user'])}@/{parts['database']}"
+            f"?host=127.0.0.1,{POSTGRES_SOCKET_DIR}&port={fake},{parts['port']}"
+            "&sslmode=require"
+        )
+        assert await _connects(dsn)
+
+
+@pytest.mark.parametrize("first", ["refuses", "resets"])
+async def test_a_refusal_on_a_host_ends_the_list(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, first: str
+) -> None:
     """asyncpg goes to the next host only when a host cannot be reached: a server that
-    refuses the connection ends the list, though the server's socket next in it would
-    let the store in with no password."""
+    refuses the connection, or a connection lost once open, ends the list, though the
+    server's socket next in it would let the store in with no password."""
     import asyncpg
 
     if POSTGRES_SOCKET_DIR is None:
         pytest.skip("POSTGRES_SOCKET_DIR not set")
     parts = _connection_parts()
     _without_pg_variables(monkeypatch, tmp_path / "home")
-    await _skip_unless_tcp_asks_a_password(parts)
-    monkeypatch.setenv("PGHOST", f"{parts['host']},{POSTGRES_SOCKET_DIR}")
-    monkeypatch.setenv("PGPORT", parts["port"])
-    with pytest.raises(asyncpg.InvalidPasswordError):
-        await _connects(f"postgresql://{quote(parts['user'])}@/{parts['database']}")
+    async with contextlib.AsyncExitStack() as stack:
+        if first == "refuses":
+            await _skip_unless_tcp_asks_a_password(parts)
+            host, port, error = parts["host"], parts["port"], asyncpg.InvalidPasswordError
+        else:
+            fake = await stack.enter_async_context(_fake_server("resets"))
+            host, port = "127.0.0.1", f"{fake},{parts['port']}"
+            error = asyncpg.ConnectionDoesNotExistError
+        monkeypatch.setenv("PGHOST", f"{host},{POSTGRES_SOCKET_DIR}")
+        monkeypatch.setenv("PGPORT", port)
+        dsn = f"postgresql://{quote(parts['user'])}@/{parts['database']}?sslmode=disable"
+        with pytest.raises(error):
+            await _connects(dsn)
 
 
 class TestRoomOperations:
