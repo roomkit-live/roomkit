@@ -1118,8 +1118,8 @@ class TestThinkTagParser:
         [
             pytest.param(
                 ["The parser reads the <think> tag at the start. Everything after is lost."],
-                " tag at the start. Everything after is lost.",
-                "The parser reads the ",
+                None,
+                "The parser reads the <think> tag at the start. Everything after is lost.",
                 id="a-tag-the-answer-writes",
             ),
             pytest.param(["<think>weighing"], "weighing", "", id="an-open-block-alone"),
@@ -1132,8 +1132,8 @@ class TestThinkTagParser:
             ),
             pytest.param(
                 ["\N{ZERO WIDTH NO-BREAK SPACE}<think>a</think>answer"],
-                "a",
-                "\N{ZERO WIDTH NO-BREAK SPACE}answer",
+                None,
+                "\N{ZERO WIDTH NO-BREAK SPACE}<think>a</think>answer",
                 id="a-bom-before-the-block",
             ),
             pytest.param(
@@ -1141,26 +1141,26 @@ class TestThinkTagParser:
             ),
             pytest.param(
                 ["The parser reads the <thi", "nk> tag."],
-                " tag.",
-                "The parser reads the ",
+                None,
+                "The parser reads the <think> tag.",
                 id="a-tag-split-in-the-answer",
             ),
             pytest.param(
                 ["<think>a</think>answer <think>b</think> more"],
-                "ab",
-                "answer  more",
+                "a",
+                "answer <think>b</think> more",
                 id="a-second-block-after-the-answer",
             ),
             pytest.param(
                 ["<think>a</think><think>b</think>answer"],
-                "ab",
-                "answer",
+                "a",
+                "<think>b</think>answer",
                 id="a-second-block-right-after-the-first",
             ),
             pytest.param(
                 ["<think>a</think>\n\n<think>b</think>answer"],
-                "ab",
-                "\n\nanswer",
+                "a",
+                "\n\n<think>b</think>answer",
                 id="a-second-block-after-whitespace",
             ),
         ],
@@ -1244,9 +1244,9 @@ async def _lookup(name: str, arguments: dict[str, Any]) -> str:
     return "sunny"
 
 
-async def _room_turn(server: _Server, said: str) -> list[str]:
-    """*said* in a room whose agent runs the OpenAI provider on *server*'s
-    wire: what the room stored of the agent's messages."""
+async def _room_turns(server: _Server, *said: str) -> list[str]:
+    """Each of *said* in turn in a room whose agent runs the OpenAI provider
+    on *server*'s wire: what the room stored of the agent's messages."""
     config = OpenAIConfig(api_key="k", model="m", base_url="http://wire.test/v1")
     provider = OpenAIAIProvider(config, transport=server.transport)
     kit = RoomKit()
@@ -1256,8 +1256,11 @@ async def _room_turn(server: _Server, said: str) -> list[str]:
         await kit.create_room(room_id="room")
         await kit.attach_channel("room", "user")
         await kit.attach_channel("room", "ai", category=ChannelCategory.INTELLIGENCE)
-        message = InboundMessage(channel_id="user", sender_id="u", content=TextContent(body=said))
-        await kit.process_inbound(message, room_id="room")
+        for text in said:
+            message = InboundMessage(
+                channel_id="user", sender_id="u", content=TextContent(body=text)
+            )
+            await kit.process_inbound(message, room_id="room")
         events = await kit.store.list_events("room")
     finally:
         await kit.close()
@@ -1284,12 +1287,29 @@ class TestThinkTagsInARoom:
             _completion_stream({"content": "<think>WHY-2</think>Sunny."}, finish="stop"),
         )
 
-        stored = await _room_turn(server, "weather?")
+        stored = await _room_turns(server, "weather?")
 
         assert stored == ["Sunny."]
         replayed = json.dumps(server.requests[1]["messages"])
         assert "WHY-1" not in replayed
         assert "<think>" not in replayed
+
+    async def test_a_think_tag_the_answer_writes_is_stored_and_sent_back(self) -> None:
+        """The card's answer: what follows the tag is neither lost to the
+        room nor to the next turn's request."""
+        # The tag split across two chunks, as a stream may cut it.
+        head, tail = "The parser reads the <thi", "nk> tag at the start. Everything after is lost."
+        said = head + tail
+        server = _Server(
+            _completion_stream({"content": head}, {"content": tail}, finish="stop"),
+            _completion_stream({"content": "Yes."}, finish="stop"),
+        )
+
+        stored = await _room_turns(server, "how does it read?", "really?")
+
+        assert stored == [said, "Yes."]
+        sent_back = [m for m in server.requests[1]["messages"] if m["role"] == "assistant"]
+        assert [m["content"] for m in sent_back] == [said]
 
 
 class TestOpenAIHeadersAndExtraBody:

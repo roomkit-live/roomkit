@@ -58,60 +58,80 @@ def merge_thinking(inline: str | None, field: str | None) -> str | None:
     return f"{inline}{field}" if inline else field
 
 
+_LEADING_SPACE = " \t\r\n"
+"""What may stand before the block that opens a generation: spaces, tabs and
+line breaks, which stay the answer's (RFC §6.7)."""
+
+
 class ThinkTagParser:
-    """Stateful parser for ``<think>...</think>`` tags in a text stream.
+    """Stateful parser for the ``<think>...</think>`` block that opens one
+    generation's text stream (RFC §6.7).
 
     vLLM / Ollama models (DeepSeek-R1, QwQ, etc.) emit reasoning inside
-    ``<think>`` tags before the answer text.  This parser classifies
-    incoming chunks into ``"thinking"`` and ``"text"`` segments, handling
-    tags that are split across chunk boundaries.
+    ``<think>`` tags before the answer text. Only a block that opens the
+    generation is reasoning, after nothing but spaces, tabs and line breaks:
+    once the text says anything else, or the block closes, the rest is the
+    answer, a ``<think>`` it writes included. This parser classifies incoming
+    chunks into ``"thinking"`` and ``"text"`` segments; a tag split across
+    chunks reads as it does whole, a start that may still become ``<think>``
+    and a suffix that may start ``</think>`` waiting for the next chunk.
     """
 
     _OPEN = "<think>"
     _CLOSE = "</think>"
 
     def __init__(self) -> None:
-        self._in_thinking = False
+        # "start" until the text opens a block or says anything else.
+        self._state: Literal["start", "thinking", "text"] = "start"
         self._buf = ""
 
     def feed(self, chunk: str) -> list[tuple[Literal["thinking", "text"], str]]:
         """Process *chunk* and return classified ``(kind, content)`` pairs."""
         self._buf += chunk
         results: list[tuple[Literal["thinking", "text"], str]] = []
-
-        while self._buf:
-            tag = self._CLOSE if self._in_thinking else self._OPEN
-            idx = self._buf.find(tag)
-
-            if idx >= 0:
-                before = self._buf[:idx]
-                if before:
-                    kind: Literal["thinking", "text"] = "thinking" if self._in_thinking else "text"
-                    results.append((kind, before))
-                self._buf = self._buf[idx + len(tag) :]
-                self._in_thinking = not self._in_thinking
-            else:
-                # Hold back a suffix that could be a partial tag start.
-                hold = self._partial_tag_len(self._buf, tag)
-                if hold:
-                    emit = self._buf[:-hold]
-                    if emit:
-                        kind = "thinking" if self._in_thinking else "text"
-                        results.append((kind, emit))
-                    self._buf = self._buf[-hold:]
-                    break
-                # No partial match — emit everything.
-                kind = "thinking" if self._in_thinking else "text"
-                results.append((kind, self._buf))
-                self._buf = ""
-
+        if self._state == "start":
+            self._read_start(results)
+        if self._state == "thinking":
+            self._read_block(results)
+        if self._state == "text" and self._buf:
+            results.append(("text", self._buf))
+            self._buf = ""
         return results
 
+    def _read_start(self, results: list[tuple[Literal["thinking", "text"], str]]) -> None:
+        """Settle whether the generation opens with a block: its leading
+        spaces are text, and a start that may still become the tag is held."""
+        body = self._buf.lstrip(_LEADING_SPACE)
+        if len(body) < len(self._buf):
+            results.append(("text", self._buf[: len(self._buf) - len(body)]))
+            self._buf = body
+        if self._buf.startswith(self._OPEN):
+            self._buf = self._buf[len(self._OPEN) :]
+            self._state = "thinking"
+        elif not self._OPEN.startswith(self._buf):
+            self._state = "text"
+
+    def _read_block(self, results: list[tuple[Literal["thinking", "text"], str]]) -> None:
+        """Hand on the block's reasoning up to its close, holding a suffix
+        that may start the close."""
+        idx = self._buf.find(self._CLOSE)
+        if idx >= 0:
+            if idx:
+                results.append(("thinking", self._buf[:idx]))
+            self._buf = self._buf[idx + len(self._CLOSE) :]
+            self._state = "text"
+            return
+        settled = len(self._buf) - self._partial_tag_len(self._buf, self._CLOSE)
+        if settled:
+            results.append(("thinking", self._buf[:settled]))
+        self._buf = self._buf[settled:]
+
     def flush(self) -> list[tuple[Literal["thinking", "text"], str]]:
-        """Emit any remaining buffered content."""
+        """Emit what is still held once the stream is over: a start that never
+        became the tag is text, the end of a block never closed is reasoning."""
         if not self._buf:
             return []
-        kind: Literal["thinking", "text"] = "thinking" if self._in_thinking else "text"
+        kind: Literal["thinking", "text"] = "thinking" if self._state == "thinking" else "text"
         result = [(kind, self._buf)]
         self._buf = ""
         return result
@@ -344,10 +364,11 @@ def message_tool_calls(message: Any, finish_reason: str | None) -> list[AIToolCa
 
 
 def extract_think_tags(text: str) -> tuple[str | None, str]:
-    """Split a whole response's *text* into its ``<think>`` reasoning and its
-    answer exactly as :class:`ThinkTagParser` splits a stream, so a response
-    reads the same streamed or not (RFC §6.4): a block the response stopped
-    before closing (the output cap) is reasoning too, never answer.
+    """Split a whole response's *text* into the ``<think>`` block that opens
+    it and its answer exactly as :class:`ThinkTagParser` splits a stream, so a
+    response reads the same streamed or not (RFC §6.4, §6.7): a block the
+    response stopped before closing (the output cap) is reasoning too, never
+    answer, and a tag the answer writes is answer.
 
     Returns:
         ``(thinking, text)`` — *thinking* is ``None`` when the response

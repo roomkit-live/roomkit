@@ -511,6 +511,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A `<think>` the answer writes stays in the answer** (RFC §6.7, HITL 9cf6483f,
+  241215eb, RMK-1327). On Chat Completions (OpenAI and the servers behind its provider,
+  Mistral's text answers, PolarGrid), a `<think>` anywhere in the text began reasoning:
+  `The parser reads the <think> tag. Everything after is lost.` was stored, delivered and
+  sent back as `The parser reads the `, the rest gone. Only a block that opens the
+  generation, after nothing but spaces, tabs and line breaks, is reasoning now, and one
+  per generation (each round of a tool loop is one): the rest of the text, a later
+  `<think>` included, is the answer.
+
 - **A refusal before any request refuses no author image** (RFC §6.4, HITL fb46b635,
   d91b8137, RMK-1436). A response schema the model does not take, a model OpenAI's Chat
   Completions does not serve, a tool name the vendor refuses: the turn failed before

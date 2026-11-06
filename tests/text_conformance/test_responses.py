@@ -372,6 +372,22 @@ class TestReasoningReceived:
         assert [p.thinking for p in answer.reasoning] == [" weighing it \n"]
         assert answer.text == "\n\nThe answer.  "
 
+    @pytest.mark.parametrize("reasoned", [False, True])
+    async def test_a_think_tag_the_answer_writes_is_answer(
+        self, driver: Driver, mode: str, reasoned: bool
+    ) -> None:
+        """A ``<think>`` the answer writes after its start is words the
+        model said, on every wire, streamed or not, the model having
+        reasoned first or not (RMK-1327)."""
+        said = "The parser reads the <think> tag at the start. Everything after is lost."
+        reasoning = (Reasoning("why", signature="S0"),) if reasoned else ()
+        script = Script(reasoning=reasoning, text=said)
+
+        answer = await generation(driver, script, mode, tool_context(LOOKUP))
+
+        assert [p.thinking for p in answer.reasoning] == (["why"] if reasoned else [])
+        assert answer.text == said
+
 
 def _usage_mode(driver: Driver, mode: str) -> None:
     if mode == "stream":
