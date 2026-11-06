@@ -435,3 +435,59 @@ async def test_a_response_names_the_model_that_answered_else_the_one_asked(
         metadata = next(e for e in events if isinstance(e, StreamDone)).metadata
 
     assert metadata == {"model": named}
+
+
+@pytest.mark.parametrize("body", [[], [[]]], ids=["empty-list", "nested-list"])
+async def test_a_body_that_is_no_object_is_no_completion(body: list[Any]) -> None:
+    """A JSON body that is no object holds no completion, even an empty one
+    (RMK-1434)."""
+    provider = _provider(body, [])  # ty: ignore[invalid-argument-type]
+    context = AIContext(messages=[AIMessage(role="user", content="go")])
+    with pytest.raises(ProviderError):
+        await provider.generate(context)
+
+
+NAMED = {"index": 1, "type": "function", "function": {"name": "lookup", "arguments": "{}"}}
+
+
+@pytest.mark.parametrize(
+    ("held", "named"),
+    [(1, True), (True, 1), (7, 7.0), (7, 7)],
+    ids=["1-true", "true-1", "7-7.0", "7-7"],
+)
+async def test_an_id_that_is_no_text_another_entry_holds_is_not_taken_again(
+    held: Any, named: Any
+) -> None:
+    """An id that is no text one entry holds, as Python compares it, is not
+    taken by another call, which runs under its own (RMK-1372)."""
+    entry = {"index": 0, "id": held, "type": "custom"}
+
+    calls = await _streamed_calls(_streamed(entry, {**NAMED, "id": named}))
+
+    assert calls == [("lookup", {})]
+
+
+@pytest.mark.parametrize("again", [None, 7], ids=["no-id", "same-id"])
+async def test_a_call_named_under_an_id_that_is_no_text_fails_where_it_is_named(
+    again: int | None,
+) -> None:
+    """The call fails as its name comes, under the id an earlier fragment of
+    its index gave: nothing after it reaches the reader (RMK-1372)."""
+    provider = _provider(
+        _completion([]),
+        [
+            _chunk(
+                [{"index": 0, "delta": {"tool_calls": [{"index": 0, "id": 7, "type": "custom"}]}}]
+            ),
+            _chunk([{"index": 0, "delta": {"tool_calls": [{**NAMED, "index": 0, "id": again}]}}]),
+            _chunk([{"index": 0, "delta": {"content": "after"}, "finish_reason": None}]),
+            _chunk([{"index": 0, "delta": {}, "finish_reason": "tool_calls"}]),
+        ],
+    )
+    context = AIContext(messages=[AIMessage(role="user", content="go")], tools=[LOOKUP])
+    seen: list[Any] = []
+    with pytest.raises(ProviderError):
+        async for event in provider.generate_structured_stream(context):
+            seen.append(event)
+
+    assert seen == []
