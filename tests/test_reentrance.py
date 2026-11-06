@@ -274,7 +274,8 @@ class TestAnAdoptedCallBeforeItsCommit:
         event is refused, and the adopted call, not committed by then, is
         refused at its own deadline, reported too, nothing of either
         stored."""
-        kit = await _room(RoomKit(process_timeout=0.1), SimpleChannel("ws"))
+        kit = await _room(RoomKit(process_timeout=0.03), SimpleChannel("ws"))
+        entered = asyncio.Event()
         started: list[asyncio.Task[RoomEvent]] = []
         timeouts: list[FrameworkEvent] = []
 
@@ -285,7 +286,8 @@ class TestAnAdoptedCallBeforeItsCommit:
         @kit.hook(HookTrigger.BEFORE_BROADCAST, name="slow")
         async def slow(event: RoomEvent, ctx: RoomContext) -> HookResult:
             if _body(event) == "Heads up":
-                await asyncio.sleep(0.3)
+                entered.set()
+                await asyncio.Event().wait()
             return HookResult.allow()
 
         @kit.hook(HookTrigger.BEFORE_BROADCAST, name="notifier", needs_lock=False)
@@ -293,7 +295,7 @@ class TestAnAdoptedCallBeforeItsCommit:
             if event.source.channel_id == "sms":
                 heads_up = kit.send_event("r1", "ws", TextContent(body="Heads up"))
                 started.append(asyncio.create_task(heads_up))  # never awaited
-                await asyncio.sleep(0.02)
+                await entered.wait()
             return HookResult.allow()
 
         result = await kit.process_inbound(_message("hello"))
@@ -305,6 +307,41 @@ class TestAnAdoptedCallBeforeItsCommit:
             len(timeouts),
         )
         assert outcome == ("process_timeout", [ProcessTimeoutError], [], 2)
+        await kit.close()
+
+    async def test_a_call_a_hook_s_task_makes_outlives_the_event_s_caller_gone(self) -> None:
+        """A task an off-lock hook starts and never awaits makes a call,
+        adopted beside the check; the event's caller stops waiting before
+        any deadline: the call's caller is the task, which waits on, and the
+        call commits once its locked hook lets it (§13.6 "A caller that
+        stops waiting")."""
+        kit = await _room(RoomKit(process_timeout=10), SimpleChannel("ws"))
+        entered, release = asyncio.Event(), asyncio.Event()
+        started: list[asyncio.Task[RoomEvent]] = []
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST, name="slow")
+        async def slow(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            if _body(event) == "Heads up":
+                entered.set()
+                await release.wait()
+            return HookResult.allow()
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST, name="notifier", needs_lock=False)
+        async def notifier(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            if event.source.channel_id == "sms":
+                heads_up = kit.send_event("r1", "ws", TextContent(body="Heads up"))
+                started.append(asyncio.create_task(heads_up))  # never awaited
+                await asyncio.Event().wait()
+            return HookResult.allow()
+
+        caller = asyncio.create_task(kit.process_inbound(_message("hello")))
+        await asyncio.wait_for(entered.wait(), timeout=5)
+        caller.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await caller
+        release.set()
+        sent = await asyncio.wait_for(started[0], timeout=5)
+        assert (sent.index, [_body(e) for e in await _messages(kit)]) == (2, ["Heads up"])
         await kit.close()
 
     async def test_a_hook_that_times_out_while_its_entry_works_is_heard_after_it(self) -> None:
@@ -323,10 +360,10 @@ class TestAnAdoptedCallBeforeItsCommit:
         @kit.hook(HookTrigger.BEFORE_BROADCAST, name="slow")
         async def slow(event: RoomEvent, ctx: RoomContext) -> HookResult:
             if _body(event) == "Heads up":
-                await asyncio.sleep(0.2)
+                await asyncio.Event().wait()
             return HookResult.allow()
 
-        @kit.hook(HookTrigger.BEFORE_BROADCAST, name="notifier", timeout=0.05)
+        @kit.hook(HookTrigger.BEFORE_BROADCAST, name="notifier", timeout=0.01)
         async def notifier(event: RoomEvent, ctx: RoomContext) -> HookResult:
             if event.source.channel_id == "sms":
                 await kit.send_event("r1", "ws", TextContent(body="Heads up"))
