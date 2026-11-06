@@ -34,6 +34,7 @@ from roomkit._lookalike import (
     reads_as,
     skeletons,
 )
+from roomkit._lookalike_data import SEQUENCES
 from roomkit._text import (
     FENCED_TAGS,
     fence,
@@ -45,6 +46,7 @@ from roomkit._text import (
     open_frame,
     person_name,
     quoted,
+    without_tags,
 )
 from roomkit.channels._acp_context import labelled_request, room_context_block, window_speakers
 from roomkit.channels._ai_speaking import _people
@@ -619,11 +621,11 @@ def test_nothing_between_a_name_s_letters_reads_as_one_of_them() -> None:
         assert not re.findall(char_class(key), in_a_tag, re.IGNORECASE), key
         if key != "_":
             assert not re.findall(char_class(key), separators, re.IGNORECASE), key
-    for run, glyphs in _sequences(phrase=False).items():
-        assert not re.findall(glyphs, in_a_tag + separators, re.IGNORECASE), run
         if key.isalnum():
             phrase_letter = char_class(key, phrase=True)
             assert not re.findall(phrase_letter, between_words, re.IGNORECASE), key
+    for run, glyphs in _sequences(phrase=False).items():
+        assert not re.findall(glyphs, in_a_tag + separators, re.IGNORECASE), run
 
 
 def test_a_turn_without_a_name_is_labelled_by_its_channel() -> None:
@@ -1307,6 +1309,50 @@ def test_a_closing_tag_with_its_separator_in_any_form_cannot_close_its_block(
     assert closing not in rendered
     assert rendered.count(f"</{tag}>") == 1
     assert rendered.endswith(f"</{tag}>")
+
+
+def _spellings_of(name: str) -> list[str]:
+    """Every way to spell *name* with one character for each run of its
+    letters Unicode reads as one (``ﬆ`` for ``st``), within a word or across
+    the separator, which a run across leaves out; the separator kept
+    otherwise."""
+    words = re.split("[-_]", name)
+    word, cuts = "".join(words), {len("".join(words[:n])) for n in range(1, len(words))}
+    separator = re.sub("[^-_]", "", name)[:1]
+    spelled: list[str] = []
+
+    def spell(at: int, text: str) -> None:
+        if at == len(word):
+            spelled.append(text)
+            return
+        gap = separator if at in cuts else ""
+        spell(at + 1, text + gap + word[at])
+        for size in (2, 3, 4):
+            glyphs = [g for g in SEQUENCES.get(word[at : at + size], "") if not _room(g)]
+            if at + size <= len(word) and glyphs:
+                spell(at + size, text + gap + min(glyphs))
+
+    spell(0, "")
+    return spelled
+
+
+def _room(char: str) -> bool:
+    return re.fullmatch(f"{JOINT}|{SPACE}", char, re.IGNORECASE) is not None
+
+
+@pytest.mark.parametrize(
+    "name",
+    [*SEPARATED_TAGS, "knowledge", "previous_tasks_summary", "conversation_summary_instructions"],
+)
+def test_every_spelling_of_a_name_is_read(name: str) -> None:
+    """A name's pattern holds every spelling of its letters, however many.
+    Capped at 64 spellings, ``conversation_summary_instructions``, an
+    integrator's name, left 144 of its 400 as written; with the runs across
+    a separator, capped at 128, ``previous_tasks_summary`` left 112 of 240
+    (RMK-1320)."""
+    missed = [s for s in _spellings_of(name) if f"</{s}>" in without_tags(name, f"x </{s}> y")]
+
+    assert missed == []
 
 
 SEPARATOR_LOOKALIKES = (

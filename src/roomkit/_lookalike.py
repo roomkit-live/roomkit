@@ -17,6 +17,7 @@ reads a letter: a run of such a character is then scanned once.
 from __future__ import annotations
 
 import functools
+import itertools
 import re
 import sys
 import unicodedata
@@ -182,11 +183,6 @@ _MAX_SPELLINGS = 64
 """Spellings of one word a pattern holds in full; a word with more takes its
 runs from the left, without overlap."""
 
-_MAX_NAME_SPELLINGS = 128
-"""Spellings of a tag's name a pattern holds in full: a run across a
-separator the name holds, left out (``ﬆ`` for ``s_t`` in ``previous_tasks``),
-adds spellings, which ``conversation_summary`` takes to 80."""
-
 
 def word_pattern(word: str, *, phrase: bool = False) -> str:
     """*word* as a model reads it, a regular expression to compile with
@@ -196,7 +192,10 @@ def word_pattern(word: str, *, phrase: bool = False) -> str:
     with such runs is held, up to :data:`_MAX_SPELLINGS`; each run's class
     shares no character with its first letter's, so the alternatives never
     read the same text twice. *phrase* when the word sits in a phrase."""
-    return _spelled_word(word, phrase, frozenset())
+    runs = _runs(word, phrase)
+    if _spellings(word, runs) > _MAX_SPELLINGS:
+        runs = _leftmost(word, runs)
+    return _spelled(word, 0, runs, phrase, frozenset())
 
 
 def name_pattern(name: str) -> str:
@@ -207,7 +206,14 @@ def name_pattern(name: str) -> str:
     (``</tool‐result>``, ``</tool result>``, ``</toolresult>`` for
     ``tool_result``), a run of letters read across it where none sits
     (``</previouﬆasks>``). A separator at the name's start or end is read as
-    written. One quantified class between two letters, as everywhere."""
+    written. One quantified class between two letters, as everywhere.
+
+    Every spelling is held: the name is cut where no run spans, and each
+    piece's spellings are written once, so that they add up rather than
+    multiply (``conversation_summary``'s 80 spellings are pieces of 2, 2, 2,
+    2 and 5 spellings, the others of one). A piece of more than
+    :data:`_MAX_SPELLINGS` takes its runs from the left.
+    """
     letters, breaks, pos = [], set(), 0
     for run in _NAME_BREAK.finditer(name):
         if run.start() == 0 or run.end() == len(name):
@@ -216,16 +222,31 @@ def name_pattern(name: str) -> str:
         pos = run.end()
         breaks.add(sum(map(len, letters)))
     letters.append(name[pos:])
-    return _spelled_word("".join(letters), False, frozenset(breaks), _MAX_NAME_SPELLINGS)
+    word = "".join(letters)
+    runs = _runs(word, False)
+    pattern = ""
+    for start, end in itertools.pairwise(_cuts(word, runs)):
+        if pattern:
+            pattern += _SEPARATED if start in breaks else _NAME_JOIN
+        pattern += _piece(word[start:end], start, runs, breaks)
+    return pattern
 
 
-def _spelled_word(
-    word: str, phrase: bool, breaks: frozenset[int], limit: int = _MAX_SPELLINGS
-) -> str:
-    runs = _runs(word, phrase)
-    if _spellings(word, runs) > limit:
-        runs = _leftmost(word, runs)
-    return _spelled(word, 0, runs, phrase, breaks)
+def _cuts(word: str, runs: dict[int, list[int]]) -> list[int]:
+    """The positions of *word* every spelling passes through: its start, its
+    end, and each position no run spans."""
+    spanned = {inside for at, sizes in runs.items() for inside in range(at + 1, at + max(sizes))}
+    return [at for at in range(len(word) + 1) if at not in spanned]
+
+
+def _piece(piece: str, start: int, runs: dict[int, list[int]], breaks: set[int]) -> str:
+    """The pattern of *piece*, which sits at *start* in a name of *runs* and
+    *breaks*."""
+    own = {at - start: sizes for at, sizes in runs.items() if start <= at < start + len(piece)}
+    if _spellings(piece, own) > _MAX_SPELLINGS:
+        own = _leftmost(piece, own)
+    inside = frozenset(at - start for at in breaks if start < at < start + len(piece))
+    return _spelled(piece, 0, own, False, inside)
 
 
 def _runs(word: str, phrase: bool) -> dict[int, list[int]]:

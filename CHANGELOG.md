@@ -14,12 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   separator only as written: an MCP server's instructions, a tool's result or a worker's
   output holding `</server‐instructions>` (U+2010), `</tool result>` or `</toolresult>`
   kept it as written, which a model can read as the block's end. Where a name holds a
-  separator between two letters, any run of dashes (Unicode's Dash_Punctuation but U+FE31,
-  the minus sign, and what reads as a dash or a minus, such as U+2043 or U+30FC),
-  underscores (the double low line among them) and spaces in any of their forms, or none,
-  is now read as it, for any tag `roomkit.tools.fence` is given; a character that reads as
-  several letters is read across a separator left out (`</previouﬆasks>`). An honest
-  mention of such a form gets the underscore too (`See </serverinstructions_>.`).
+  separator between two letters, any run of dashes (Unicode 16.0's Dash_Punctuation, U+FE31
+  aside, which reads as `l`; the minus sign; what reads as a dash or a minus, such as
+  U+2043 or U+30FC), underscores (the double low line among them) and spaces in any of
+  their forms, or none, is now read as it, for any tag `roomkit.tools.fence` is given; a
+  character that reads as several letters is read across a separator left out
+  (`</previouﬆasks>`). A name is read in every spelling of its letters, however many: past
+  64, the others were left as written (144 of the 400 of a name such as
+  `conversation_summary_instructions`). An honest mention of such a form gets the
+  underscore too (`See </serverinstructions_>.`).
 
 - `PostgresStore` quotes no identity row the model cannot read, as `SQLiteStore` (HITL 70fef50d, RMK-1431): `get_identity` raises `ValueError("Identity <id> has a record the model cannot read")`, where a JSONB column of another shape raised a `ValidationError`, or a `JSONDecodeError`, quoting it; `link_address` and `unlink_address` read the whole row and refuse such a one so, where they took it, some written back broken or failing with an `AttributeError`; `resolve_identity` returns `None` and logs a warning naming the id alone.
 - **BREAKING: a message never commits into a room whose binding, made while the room was
