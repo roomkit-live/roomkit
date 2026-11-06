@@ -372,6 +372,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A binding naming the sender by their identity gets their address as its recipient**
+  (HITL b75a9c93, RMK-1129). A room the host opened naming an identity and no recipient
+  took its correspondent's message and refused the answer `no_recipient`: the record
+  wrote an address only on a binding naming the sender by it. It now writes the address
+  the message came from, as roomkit-rs does; a recipient the binding holds is kept.
+
 - A discussion announces and runs a turn once its queue is stored (HITL 671c4655, RMK-1233): a
   store that refused the write told a hook one `TURN_GIVEN` per try, for a turn never given, and
   each try entered the room's lane.

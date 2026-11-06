@@ -752,6 +752,25 @@ class TestABindingNamingAnIdentity:
         assert calls == [ALICE]
         assert await shop.room_of(BOB) != "r"
 
+    async def test_its_correspondent_is_answered_at_the_number_they_write_from(
+        self, store: ConversationStore
+    ) -> None:
+        """RFC §5.7, §10.1 step 2: the record writes the sender's address as
+        the recipient of a binding naming them by their identity, which holds
+        none: the room answers them there (HITL b75a9c93)."""
+        shop = _Shop(store)
+        await store.create_identity(Identity(id="id-alice"))
+        await store.link_address("id-alice", "sms", ALICE)
+        await shop.kit.create_room(room_id="r")
+        await shop.kit.attach_channel("r", "sms", participant_id="id-alice")
+        await shop.kit.attach_channel("r", "ai")
+
+        assert await shop.room_of(ALICE) == "r"
+        binding = await store.get_binding("r", "sms")
+        assert binding is not None
+        assert (binding.participant_id, binding.metadata) == ("id-alice", {"phone_number": ALICE})
+        assert shop.sent_to(ALICE) == ["AI reply"]
+
     async def test_a_resolved_participant_keeps_their_room_in_one_routing(
         self, store: ConversationStore
     ) -> None:

@@ -1361,10 +1361,12 @@ class InboundMixin(HelpersMixin):
         sender (their identity, it may be), which the binding then names;
         ``None`` for a binding the record's section attached.
 
-        The binding that names the sender by their address also gets them as
-        its recipient where it holds no value (``channel.reply_metadata``):
-        the room then replies to the person it is the conversation of,
-        including a binding recorded before it carried a recipient. A
+        The binding, which names the sender by their address, their identity
+        or a participant they are, also gets their address as its recipient
+        where it holds no value (``channel.reply_metadata``): the room then
+        replies to the person it is the conversation of, including a binding
+        recorded before it carried a recipient, or that the host named by the
+        identity alone (HITL b75a9c93). A
         recipient already there, the host's above all, is never replaced, nor
         is a value that is not a recipient (RFC §5.7), whose deliveries stay
         refused ``no_recipient``. Pushed to the channel as every binding
@@ -1771,11 +1773,10 @@ def _conversation(message: InboundMessage, channel: Channel) -> str:
 
 
 def _lacks_recipient(binding: ChannelBinding, message: InboundMessage, channel: Channel) -> bool:
-    """Whether *binding* names *message*'s conversation but holds no value
-    where its reply address goes. A value that is not a recipient is one
-    held (RFC §5.7): the record does not write over it."""
-    if binding.participant_id != _conversation(message, channel):
-        return False
+    """Whether *binding*, which the record found naming *message*'s sender
+    (by their address, their identity or a participant they are), holds no
+    value where its reply address goes. A value that is not a recipient is
+    one held (RFC §5.7): the record does not write over it."""
     return any(
         read_recipient(binding.metadata, key) is None for key in channel.reply_metadata(message)
     )
