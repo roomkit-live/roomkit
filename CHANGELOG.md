@@ -397,7 +397,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   model reads. An agent hands over its own previous tasks only. A `context` that is no object
   no longer fails the call or its task, and `CompletedTaskCache.get` and `put` take `context=`:
   a repeat answered from the cache is the same agent's, with the same task and the same
-  `context`. A channel that may not read is handed no conversation by `kit.delegate` either.
+  `context`. A channel that may not read is handed no conversation by `kit.delegate` either. A
+  `task` that is no text, or a `share_channels` that is no list, is refused, and an `agent` that
+  is no text names no channel: they started a task that failed, or raised `AttributeError`.
 
 - **The tool's targets hold the model** (RFC §23.4, RMK-1363). `build_delegate_tool` said it
   restricts the AI to the listed agents; a call naming another ran. It is now answered with an

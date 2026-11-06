@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 from roomkit.channels._tool_registry import ToolEntry, orchestration_tool
 from roomkit.channels.declared import id_of, owner_tools_of
+from roomkit.core.exceptions import ChannelNotRegisteredError
 from roomkit.models.enums import ChannelCategory
 from roomkit.orchestration._call_room import RoomToolServe, in_call_room
 from roomkit.providers.ai.base import AITool
@@ -165,6 +166,20 @@ def _passed_context(passed: Any) -> dict[str, Any]:
     return {} if passed is None or passed in ("", []) else {"context": passed}
 
 
+def _named_channels(named: Any, default: list[str]) -> list[str]:
+    """The channels a call shares: *default* when it names none or an empty
+    list, else the texts of its list.
+
+    Raises:
+        ValueError: A value that is no list.
+    """
+    if named is None or named == []:
+        return default
+    if not isinstance(named, list):
+        raise ValueError("share_channels must be a list of channel ids")
+    return [channel for channel in named if isinstance(channel, str)]
+
+
 def _asked_conversation(asked: Any, maximum: int) -> int:
     """How many messages a call hands over: what it asks, an integer as JSON
     Schema reads one (``1.0`` is, ``"1"``, ``1.5`` and ``true`` are not), within
@@ -258,13 +273,22 @@ class DelegateHandler:
         """Process a delegate_task tool call.
 
         Raises:
-            ValueError: A ``task`` that is no text: nothing is made, and the
-                model reads it as its call's error.
+            ValueError: A ``task`` that is no text, or a ``share_channels``
+                that is no list: nothing is made, and the model reads it as
+                its call's error.
+            ChannelNotRegisteredError: An ``agent`` the kit does not hold, or
+                that is no text.
         """
         agent_id = arguments.get("agent", "")
         task_text = arguments.get("task", "")
         if not isinstance(task_text, str):
             raise ValueError("task must be a string")
+        if not isinstance(agent_id, str):
+            # Only a text names one of the kit's channels.
+            raise ChannelNotRegisteredError(f"Agent channel '{agent_id}' not registered")
+        share_channels = _named_channels(
+            arguments.get("share_channels"), self._default_share_channels
+        )
         passed = _passed_context(arguments.get("context"))
         count = _asked_conversation(arguments.get("conversation"), self._max_conversation)
 
@@ -281,8 +305,6 @@ class DelegateHandler:
                     agent_id,
                 )
                 return {**cached, "from_cache": True}
-
-        share_channels = arguments.get("share_channels") or self._default_share_channels
 
         # Gap 14: Serialize delegations per room
         if self._serialize_per_room:
@@ -416,8 +438,14 @@ def _served_entry(handler: DelegateHandler, calling: str, tool: AITool | None) -
 def _served_delegation(handler: DelegateHandler, calling: str, tool: AITool) -> RoomToolServe:
     """What serves a call of *tool*: refused when it names a worker outside the
     list the tool declares, since a list a model can ignore holds nothing (RFC
-    §23.4); a tool with no list takes any."""
+    §23.4); a tool with no list takes any.
+
+    Raises:
+        ValueError: A tool whose list of agents is no list.
+    """
     listed = tool.parameters.get("properties", {}).get("agent", {}).get("enum")
+    if listed is not None and not isinstance(listed, list):
+        raise ValueError("the delegate tool's agent enum must be a list")
 
     async def delegate(room_id: str, name: str, arguments: dict[str, Any]) -> str:
         if listed is not None and arguments.get("agent") not in listed:
@@ -455,13 +483,14 @@ def setup_delegation(
         RuntimeError: Delegation is already set up on the channel.
         ChannelNotRegisteredError: An id names no channel of the kit.
     """
-    registry = owner_tools_of(handler._kit, channel)
     calling = id_of(channel)
+    entry = _served_entry(handler, calling, tool)
+    registry = owner_tools_of(handler._kit, channel)
     if registry.lookup(DELEGATE_TOOL_NAME, None) is not None:
         msg = f"setup_delegation() already called for channel '{calling}'"
         raise RuntimeError(msg)
 
-    registry.register(_served_entry(handler, calling, tool), owner=handler)
+    registry.register(entry, owner=handler)
 
 
 def setup_realtime_delegation(
@@ -488,4 +517,5 @@ def setup_realtime_delegation(
         msg = f"setup_realtime_delegation() already called for channel '{channel.channel_id}'"
         raise RuntimeError(msg)
 
-    channel._registry.register(_served_entry(handler, channel.channel_id, tool), owner=handler)
+    entry = _served_entry(handler, channel.channel_id, tool)
+    channel._registry.register(entry, owner=handler)

@@ -169,6 +169,19 @@ class TestSetupDelegation:
         with pytest.raises(RuntimeError, match="already called"):
             setup_delegation(channel, handler)
 
+    def test_a_tool_whose_agents_are_no_list_is_refused(self):
+        written = AITool(
+            name="delegate_task",
+            description="Delegate.",
+            parameters={"type": "object", "properties": {"agent": {"enum": "worker"}}},
+        )
+        channel = AIChannel("ai-main", provider=MockAIProvider(responses=["hi"]))
+        kit = _mock_kit()
+
+        with pytest.raises(ValueError, match="enum"):
+            setup_delegation(channel, DelegateHandler(kit), tool=written)
+        assert owner_tool_definitions(kit, "ai-main") == []
+
     @pytest.mark.parametrize(
         ("maximum", "declared"), [(0, False), (3, True)], ids=["closed", "open"]
     )
