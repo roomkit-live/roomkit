@@ -19,10 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   U+2043 or U+30FC), underscores (the double low line among them) and spaces in any of
   their forms, or none, is now read as it, for any tag `roomkit.tools.fence` is given; a
   character that reads as several letters is read across a separator left out
-  (`</previouﬆasks>`). A name's spellings are counted by part, a part being what no
-  multi-letter look-alike spans, up to 64 each, where the whole name held 64 and left the
-  others as written (144 of the 400 of a name such as `conversation_summary_instructions`).
-  An honest mention of such a form gets the underscore too (`See </serverinstructions_>.`).
+  (`</previouﬆasks>`). A name is cut where no multi-letter look-alike spans, and each part
+  holds every spelling of its letters up to 64, past which it takes its runs from the left,
+  as the whole name did past 64, leaving 144 of the 400 spellings of a name such as
+  `conversation_summary_instructions` as written. An honest mention of such a form gets the
+  underscore too (`See </serverinstructions_>.`).
 
 - `PostgresStore` quotes no identity row the model cannot read, as `SQLiteStore` (HITL 70fef50d, RMK-1431): `get_identity` raises `ValueError("Identity <id> has a record the model cannot read")`, where a JSONB column of another shape raised a `ValidationError`, or a `JSONDecodeError`, quoting it; `link_address` and `unlink_address` read the whole row and refuse such a one so, where they took it, some written back broken or failing with an `AttributeError`; `resolve_identity` returns `None` and logs a warning naming the id alone.
 - **BREAKING: a message never commits into a room whose binding, made while the room was
