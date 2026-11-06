@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- `PostgresStore` quotes no identity row the model cannot read, as `SQLiteStore` (HITL 70fef50d, RMK-1431): `get_identity`, `link_address` and `unlink_address` raise `ValueError("Identity <id> has a record the model cannot read")`, where a JSONB column of another shape raised a `ValidationError` quoting it, or an `AttributeError`; `resolve_identity` returns `None` and logs a warning naming the id alone.
+- `PostgresStore` quotes no identity row the model cannot read, as `SQLiteStore` (HITL 70fef50d, RMK-1431): `get_identity` raises `ValueError("Identity <id> has a record the model cannot read")`, where a JSONB column of another shape raised a `ValidationError`, or a `JSONDecodeError`, quoting it; `link_address` and `unlink_address` read the whole row and refuse such a one so, where they took it, some written back broken or failing with an `AttributeError`; `resolve_identity` returns `None` and logs a warning naming the id alone.
 - **BREAKING: a message never commits into a room whose binding, made while the room was
   created for it, names someone else** (HITL 9a2e6d19, ef0ef858, RMK-1396). While Alice's
   first message waited in its room's `ON_ROOM_CREATED` hooks, Bob's could be recorded on

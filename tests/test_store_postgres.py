@@ -476,6 +476,26 @@ async def test_a_record_the_model_cannot_read_serves_no_read(
     assert "a@globex.example" not in caplog.text
 
 
+async def test_a_row_with_an_empty_id_serves_no_read(
+    store: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A row no API writes, its id empty, which the model refuses: it resolves to nobody,
+    and the log names its id as it is."""
+    async with store._pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO identities (id, organization_id, channel_addresses)"
+            " VALUES ('', 'globex', '{\"sms\": [\"+1555\"]}'::text::jsonb)"
+        )
+        await conn.execute(
+            "INSERT INTO identity_addresses (channel_type, address, identity_id, organization_id)"
+            " VALUES ('sms', '+1555', '', 'globex')"
+        )
+    with caplog.at_level(logging.WARNING, logger="roomkit.store.postgres"):
+        resolved = await store.resolve_identity("sms", "+1555", organization_id="globex")
+    assert resolved is None
+    assert "Identity  has a record the model cannot read" in caplog.text
+
+
 async def _read_by_id(store: Any, door: str) -> object:
     """Reach the identity i1's row by its id through *door*, for globex, its organization."""
     if door == "get_identity":
