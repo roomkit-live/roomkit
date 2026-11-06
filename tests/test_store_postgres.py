@@ -73,6 +73,32 @@ def _make_event(room_id: str = "r1", body: str = "hello", **kwargs):
     )
 
 
+async def test_a_store_with_no_dsn_reads_the_pg_variables(monkeypatch) -> None:
+    """HITL 78cd4240: with ``dsn=None`` the connection comes from the ``PG*`` environment
+    variables, ``PGPASSWORD`` included, as asyncpg reads them."""
+    from urllib.parse import parse_qs, unquote, urlparse
+
+    from roomkit.store.postgres import PostgresStore
+
+    assert POSTGRES_DSN is not None
+    url = urlparse(POSTGRES_DSN)
+    host = url.hostname or parse_qs(url.query).get("host", [""])[0]
+    for name, value in {
+        "PGHOST": host,
+        "PGPORT": str(url.port or 5432),
+        "PGUSER": unquote(url.username or ""),
+        "PGPASSWORD": unquote(url.password or ""),
+        "PGDATABASE": url.path.lstrip("/"),
+    }.items():
+        monkeypatch.setenv(name, value)
+    store = PostgresStore()
+    await store.init(min_size=1, max_size=1)
+    try:
+        assert await store.room_exists("nobody's") is False
+    finally:
+        await store.close()
+
+
 class TestRoomOperations:
     async def test_create_and_get(self, store) -> None:
         room = Room(id="r1")
