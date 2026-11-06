@@ -30,7 +30,7 @@ from roomkit.models.tool_call import (
     ToolCallEvent,
     ToolRoundEvent,
 )
-from roomkit.orchestration import HandoffHandler, SpeakQueueEvent
+from roomkit.orchestration import DispatchDecisionEvent, HandoffHandler, SpeakQueueEvent
 from roomkit.orchestration.base import Orchestration
 from roomkit.orchestration.status_bus import StatusEntry
 from roomkit.realtime import EphemeralEvent, EphemeralEventType, InMemoryRealtime
@@ -60,7 +60,12 @@ from tests.conformance._delivery import (
     start_backend,
     wait_for_lock,
 )
-from tests.conformance._discussion import DISCUSSION_CALLS, discussions_busy, speak_queue_record
+from tests.conformance._discussion import (
+    DISCUSSION_CALLS,
+    discussions_busy,
+    dispatch_decision_record,
+    speak_queue_record,
+)
 from tests.conformance._handoff import HANDOFF_CALLS
 from tests.conformance._identity import kit_options, register_identity_hook
 from tests.conformance._inputs import INPUT_CALLS, request_record
@@ -250,6 +255,11 @@ class Harness:
         per_room.setdefault(channel_id, []).append(item)
         self.observed.hook_order.append(f"{channel_id}.{call}")
 
+    def record_dispatch_turn(self, strategy_id: str, turn: dict[str, Any]) -> None:
+        """A turn the scripted dispatch policy of *strategy_id* was handed."""
+        if self._recording:
+            self.observed.dispatch_turns.setdefault(strategy_id, []).append(turn)
+
     def record_hook(self, name: str, trigger: str, room_id: str, payload: Any) -> None:
         if not self._recording:
             return
@@ -265,6 +275,8 @@ class Harness:
             call["observation"] = payload.model_dump(mode="json")
         if isinstance(payload, SpeakQueueEvent):
             call["speak_queue"] = speak_queue_record(payload)
+        if isinstance(payload, DispatchDecisionEvent):
+            call["dispatch_decision"] = dispatch_decision_record(payload)
         if isinstance(payload, PendingInputEvent):
             self.saw_request(payload.pending_id)
             call["request"] = request_record(payload)

@@ -308,6 +308,7 @@ EXPECT = {
     "contexts",
     "turns",
     "ingested",
+    "dispatch_turns",
     "observations",
     "tasks",
     "actions",

@@ -55,6 +55,7 @@ class Observed:
     room_callbacks: dict[str, dict[str, list[Any]]] = field(default_factory=dict)
     turns: dict[str, dict[str, list[Any]]] = field(default_factory=dict)
     ingested: dict[str, dict[str, list[Any]]] = field(default_factory=dict)
+    dispatch_turns: dict[str, list[Any]] = field(default_factory=dict)
     observations: dict[str, list[Any]] = field(default_factory=dict)
     tasks: dict[str, list[Any]] = field(default_factory=dict)
     steps: list[Any] = field(default_factory=list)
@@ -206,6 +207,7 @@ def _instants(observed: Observed) -> list[datetime]:
             observed.hooks,
             observed.turns,
             observed.ingested,
+            observed.dispatch_turns,
             observed.deliveries,
             observed.streamed,
             observed.room_callbacks,

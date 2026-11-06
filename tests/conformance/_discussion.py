@@ -15,7 +15,15 @@ from typing import TYPE_CHECKING, Any
 
 from roomkit import Agent, RoomKit
 from roomkit.channels.declared import id_of
-from roomkit.orchestration import Discussion, SpeakQueue, SpeakQueueEvent
+from roomkit.orchestration import (
+    Discussion,
+    DispatchDecision,
+    DispatchDecisionEvent,
+    DispatchTurn,
+    MockDispatchPolicy,
+    SpeakQueue,
+    SpeakQueueEvent,
+)
 
 if TYPE_CHECKING:
     from tests.conformance._calls import Call
@@ -31,12 +39,90 @@ def _agent(spec: str | Mapping[str, Any]) -> str | Agent:
     return Agent(spec["id"], name=spec.get("name"))
 
 
+class ScriptedDispatch(MockDispatchPolicy):
+    """A setup's scripted dispatch policy (README, "Setup"): the mock, held
+    at its gate, each turn it is handed recorded as *strategy_id*'s."""
+
+    def __init__(self, spec: Mapping[str, Any], harness: Harness, strategy_id: str | None) -> None:
+        super().__init__(
+            [_decision(decision) for decision in spec.get("decisions", [])],
+            delay=spec.get("delay_ms", 0) / 1000,
+            error=RuntimeError(spec["error"]) if "error" in spec else None,
+        )
+        self._harness, self._strategy_id, self._gate = harness, strategy_id, spec.get("gate")
+
+    async def decide(self, turn: DispatchTurn) -> DispatchDecision:
+        if self._strategy_id is not None:
+            self._harness.record_dispatch_turn(self._strategy_id, dispatch_turn_record(turn))
+        if self._gate is not None:
+            await self._harness.gates.hold(self._gate)
+        return await super().decide(turn)
+
+
+def _decision(spec: Any) -> DispatchDecision | list[str]:
+    if isinstance(spec, list):
+        return spec
+    return DispatchDecision(
+        tuple(spec.get("agents", ())), spec.get("reason", ""), dict(spec.get("judgments", {}))
+    )
+
+
+def _dispatch_options(
+    spec: Mapping[str, Any], harness: Harness, strategy_id: str | None
+) -> dict[str, Any]:
+    """The ``dispatch`` and ``dispatch_timeout`` a discussion *spec* gives."""
+    options: dict[str, Any] = {}
+    if "dispatch" in spec:
+        options["dispatch"] = ScriptedDispatch(spec["dispatch"], harness, strategy_id)
+    if "dispatch_timeout_ms" in spec:
+        options["dispatch_timeout"] = spec["dispatch_timeout_ms"] / 1000
+    return options
+
+
+def dispatch_turn_record(turn: DispatchTurn) -> dict[str, Any]:
+    """What a scripted dispatch policy was handed, as a scenario reads it."""
+    return {
+        "room_id": turn.room_id,
+        "event": turn.event.model_dump(mode="json"),
+        "recent": [event.model_dump(mode="json") for event in turn.recent],
+        "speakers": [[event_id, label] for event_id, label in turn.speakers.items()],
+        "candidates": [
+            {
+                "channel_id": c.channel_id,
+                "name": c.name,
+                "role": c.role,
+                "description": c.description,
+                "handle": c.handle,
+            }
+            for c in turn.candidates
+        ],
+        "asked": list(turn.asked),
+    }
+
+
+def dispatch_decision_record(payload: DispatchDecisionEvent) -> dict[str, Any]:
+    """What an ``ON_DISPATCH_DECISION`` hook is handed, as a scenario reads it."""
+    decision = payload.decision
+    return {
+        "room_id": payload.room_id,
+        "event": payload.event.model_dump(mode="json"),
+        "candidates": list(payload.candidates),
+        "decision": {
+            "agents": list(decision.agents),
+            "reason": decision.reason,
+            "judgments": dict(decision.judgments),
+        },
+        "duration_ms": payload.duration_ms,
+    }
+
+
 async def _discussion(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> dict[str, Any]:
     built = Discussion(
         [_agent(agent) for agent in spec["agents"]],
         addressed_only=spec.get("addressed_only", False),
         silent_token=spec.get("silent_token", "(silent)"),
         **{keyword: spec.get(keyword) for keyword in _DEFAULTED},
+        **_dispatch_options(spec, harness, None),
     )
     return {"agents": [id_of(agent) for agent in built.agents()], "handles": built.handles()}
 
@@ -93,6 +179,7 @@ def installed_discussion(
     options: dict[str, Any] = {keyword: spec.get(keyword) for keyword in _DEFAULTED}
     if spec.get("done"):
         options["done"] = lambda _room_id: harness.discussion_done.get(strategy_id, False)
+    options.update(_dispatch_options(spec, harness, strategy_id))
     return Discussion(
         list(spec["agents"]),
         addressed_only=spec.get("addressed_only", False),
@@ -132,6 +219,8 @@ DISCUSSION_MEMBERS = {
     "silent_token",
     "rules",
     "done",
+    "dispatch",
+    "dispatch_timeout_ms",
 }
 """The members a setup's strategy with a ``discussion`` may give."""
 
@@ -150,5 +239,7 @@ DISCUSSION_ARGUMENTS: dict[str, set[str]] = {
         "max_depth",
         "silent_token",
         "rules",
+        "dispatch",
+        "dispatch_timeout_ms",
     },
 }

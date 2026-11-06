@@ -106,6 +106,9 @@ class _Comparison:
         if "media_resolver" in self.expect:
             expected = self.expect["media_resolver"]
             self._check(expected, self.observed.media_resolver, "media_resolver")
+        for strategy_id, expected in self.expect.get("dispatch_turns", {}).items():
+            actual = self.observed.dispatch_turns.get(strategy_id, [])
+            self._check(expected, actual, f"dispatch_turns.{strategy_id}")
         for channel_id, expected in self.expect.get("models", {}).items():
             actual = self.observed.models.get(channel_id, [])
             self._check(expected, actual, f"models.{channel_id}")
