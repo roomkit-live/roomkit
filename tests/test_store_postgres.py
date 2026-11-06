@@ -12,6 +12,7 @@ import asyncio
 import os
 from collections.abc import Callable
 from typing import Any
+from urllib.parse import parse_qs, unquote, urlparse
 from uuid import uuid4
 
 import pytest
@@ -76,8 +77,6 @@ def _make_event(room_id: str = "r1", body: str = "hello", **kwargs):
 async def test_a_store_with_no_dsn_reads_the_pg_variables(monkeypatch) -> None:
     """HITL 78cd4240: with ``dsn=None`` the connection comes from the ``PG*`` environment
     variables, ``PGPASSWORD`` included, as asyncpg reads them."""
-    from urllib.parse import parse_qs, unquote, urlparse
-
     from roomkit.store.postgres import PostgresStore
 
     assert POSTGRES_DSN is not None
@@ -95,6 +94,8 @@ async def test_a_store_with_no_dsn_reads_the_pg_variables(monkeypatch) -> None:
     await store.init(min_size=1, max_size=1)
     try:
         assert await store.room_exists("nobody's") is False
+        async with store._pool.acquire() as conn:
+            assert await conn.fetchval("SELECT current_database()") == url.path.lstrip("/")
     finally:
         await store.close()
 

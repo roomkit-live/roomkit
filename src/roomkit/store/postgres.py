@@ -502,9 +502,10 @@ class PostgresStore(ConversationStore):
     data (metadata, content, capabilities).
 
     Args:
-        dsn: The connection string, given to asyncpg; ``None`` takes the whole
-            connection from the ``PG*`` environment variables, ``PGPASSWORD``
-            included, as asyncpg reads them (HITL 78cd4240).
+        dsn: The connection string, given to asyncpg; ``None`` takes the connection
+            from the ``PG*`` environment variables, ``PGPASSWORD`` included, and
+            what they leave out from asyncpg's defaults (a local socket,
+            ``~/.pgpass``, the user's name), as asyncpg reads them (HITL 78cd4240).
         pool: An asyncpg pool of the caller's, which stays theirs.
     """
 
