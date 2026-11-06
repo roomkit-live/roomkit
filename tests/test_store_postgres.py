@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import asyncio
 import os
+import socket
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 from uuid import uuid4
 
 import pytest
@@ -98,6 +100,203 @@ async def test_a_store_with_no_dsn_reads_the_pg_variables(monkeypatch) -> None:
             assert await conn.fetchval("SELECT current_database()") == url.path.lstrip("/")
     finally:
         await store.close()
+
+
+# asyncpg's defaults for what a connection string leaves out (HITL fa9dd934), each
+# test named as its Rust twin in roomkit-rs crates/roomkit-postgres/tests/defaults.rs.
+# A directory holding the server's Unix socket, whose connections ask no password
+# where TCP asks one: those tests skip themselves without it.
+POSTGRES_SOCKET_DIR = os.environ.get("POSTGRES_SOCKET_DIR")
+
+
+def _connection_parts() -> dict[str, str]:
+    """``POSTGRES_DSN``'s host, port, user, password, database and query."""
+    assert POSTGRES_DSN is not None
+    url = urlparse(POSTGRES_DSN)
+    return {
+        "host": url.hostname or parse_qs(url.query).get("host", [""])[0],
+        "port": str(url.port or 5432),
+        "user": unquote(url.username or ""),
+        "password": unquote(url.password or ""),
+        "database": url.path.lstrip("/"),
+        "query": f"?{url.query}" if url.query else "",
+    }
+
+
+def _without_pg_variables(monkeypatch: pytest.MonkeyPatch, home: Path) -> None:
+    """No ``PG*`` variable, and ``HOME`` a directory of the test's: no test reads the
+    real ``~/.pgpass``."""
+    for name in list(os.environ):
+        if name.startswith("PG"):
+            monkeypatch.delenv(name)
+    home.mkdir(exist_ok=True)
+    monkeypatch.setenv("HOME", str(home))
+
+
+async def _skip_unless_tcp_asks_a_password(parts: dict[str, str]) -> None:
+    """Skips the test on a server that lets a TCP connection in with no password: a
+    connection there would prove nothing of where a password came from."""
+    import asyncpg
+
+    try:
+        conn = await asyncpg.connect(
+            host=parts["host"],
+            port=int(parts["port"]),
+            user=parts["user"],
+            database=parts["database"],
+        )
+    except asyncpg.InvalidPasswordError:
+        return
+    await conn.close()
+    pytest.skip("the server asks no password over TCP")
+
+
+def _dead_port() -> int:
+    """A local TCP port nothing listens on."""
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+async def _connects(dsn: str | None) -> bool:
+    """Whether a store on *dsn* opens, and whether its connection is a Unix socket's."""
+    from roomkit.store.postgres import PostgresStore
+
+    store = PostgresStore(dsn)
+    await store.init(min_size=1, max_size=1)
+    try:
+        assert await store.room_exists("nobody's") is False
+        async with store._pool.acquire() as conn:
+            return await conn.fetchval("SELECT inet_client_addr()") is None
+    finally:
+        await store.close()
+
+
+@pytest.mark.parametrize("named", [False, True], ids=["no-host", "pghost"])
+async def test_a_store_with_no_host_tries_the_local_sockets(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, named: bool
+) -> None:
+    """With no host in the string nor ``PGHOST``, asyncpg tries the sockets of
+    ``/run/postgresql``, ``/var/run/postgresql``, ``/tmp`` and ``/private/tmp`` before
+    ``localhost``: the server's socket, linked into ``/tmp``, lets the store in with no
+    password. ``PGHOST`` naming the socket's directory does too."""
+    if POSTGRES_SOCKET_DIR is None:
+        pytest.skip("POSTGRES_SOCKET_DIR not set")
+    parts = _connection_parts()
+    socket_file = Path(POSTGRES_SOCKET_DIR) / f".s.PGSQL.{parts['port']}"
+    if not socket_file.exists():
+        pytest.skip(f"no socket {socket_file}")
+    _without_pg_variables(monkeypatch, tmp_path / "home")
+    await _skip_unless_tcp_asks_a_password(parts)
+    monkeypatch.setenv("PGPORT", parts["port"])
+    link = Path("/tmp") / socket_file.name
+    if named:
+        monkeypatch.setenv("PGHOST", POSTGRES_SOCKET_DIR)
+    elif link.exists() or link.is_symlink():
+        pytest.skip(f"{link} is not this test's")
+    else:
+        link.symlink_to(socket_file)
+    try:
+        assert await _connects(f"postgresql://{quote(parts['user'])}@/{parts['database']}")
+    finally:
+        if not named:
+            link.unlink()
+
+
+@pytest.mark.parametrize("where", ["home", "PGPASSFILE", "passfile"])
+async def test_a_store_with_no_password_reads_the_password_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, where: str
+) -> None:
+    """With no password in the string nor ``PGPASSWORD``, asyncpg takes it from the first
+    line of ``~/.pgpass`` that matches the host, port, database and user, ``*`` matching
+    any: or from the file ``PGPASSFILE`` or the string's ``passfile`` names."""
+    parts = _connection_parts()
+    _without_pg_variables(monkeypatch, tmp_path / "home")
+    await _skip_unless_tcp_asks_a_password(parts)
+    passfile = tmp_path / "home" / ".pgpass" if where == "home" else tmp_path / "passwords"
+    passfile.write_text(
+        "# a comment, then a blank line\n\n"
+        f"elsewhere:{parts['port']}:*:{parts['user']}:wrong\n"
+        f"{parts['host']}:{parts['port']}:*:{parts['user']}:{parts['password']}\n"
+    )
+    passfile.chmod(0o600)
+    query = parts["query"]
+    if where == "PGPASSFILE":
+        monkeypatch.setenv("PGPASSFILE", str(passfile))
+    elif where == "passfile":
+        query = f"{query}{'&' if query else '?'}passfile={quote(str(passfile))}"
+    dsn = (
+        f"postgresql://{quote(parts['user'])}@{parts['host']}:{parts['port']}/{parts['database']}"
+    )
+    assert await _connects(f"{dsn}{query}") is False
+
+
+async def test_a_password_file_others_can_read_is_not_read(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """asyncpg ignores a password file with any access for the group or others, as
+    libpq does, with a warning: the connection goes without a password, and the server
+    refuses it."""
+    import asyncpg
+
+    parts = _connection_parts()
+    _without_pg_variables(monkeypatch, tmp_path / "home")
+    await _skip_unless_tcp_asks_a_password(parts)
+    passfile = tmp_path / "home" / ".pgpass"
+    passfile.write_text(f"*:*:*:*:{parts['password']}\n")
+    passfile.chmod(0o640)
+    dsn = (
+        f"postgresql://{quote(parts['user'])}@{parts['host']}:{parts['port']}/{parts['database']}"
+    )
+    with (
+        pytest.warns(UserWarning, match="has group or world access"),
+        pytest.raises(asyncpg.InvalidPasswordError),
+    ):
+        await _connects(f"{dsn}{parts['query']}")
+
+
+@pytest.mark.parametrize("form", ["netloc", "query", "environment"])
+async def test_a_host_list_goes_past_a_dead_host(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, form: str
+) -> None:
+    """A host list, in the string or in ``PGHOST`` and ``PGPORT``, is tried in its
+    order: a host nothing listens on is passed for the next."""
+    parts = _connection_parts()
+    _without_pg_variables(monkeypatch, tmp_path / "home")
+    dead = _dead_port()
+    auth = f"{quote(parts['user'])}:{quote(parts['password'])}"
+    hosts = f"127.0.0.1,{parts['host']}"
+    ports = f"{dead},{parts['port']}"
+    query = parts["query"]
+    if form == "netloc":
+        dsn = f"postgresql://{auth}@127.0.0.1:{dead},{parts['host']}:{parts['port']}/"
+    elif form == "query":
+        query = f"{query}{'&' if query else '?'}host={hosts}&port={ports}"
+        dsn = f"postgresql://{auth}@/"
+    else:
+        monkeypatch.setenv("PGHOST", hosts)
+        monkeypatch.setenv("PGPORT", ports)
+        dsn = f"postgresql://{auth}@/"
+    assert await _connects(f"{dsn}{parts['database']}{query}") is False
+
+
+async def test_a_refusal_on_a_host_ends_the_list(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """asyncpg goes to the next host only when a host cannot be reached: a server that
+    refuses the connection ends the list, though the server's socket next in it would
+    let the store in with no password."""
+    import asyncpg
+
+    if POSTGRES_SOCKET_DIR is None:
+        pytest.skip("POSTGRES_SOCKET_DIR not set")
+    parts = _connection_parts()
+    _without_pg_variables(monkeypatch, tmp_path / "home")
+    await _skip_unless_tcp_asks_a_password(parts)
+    monkeypatch.setenv("PGHOST", f"{parts['host']},{POSTGRES_SOCKET_DIR}")
+    monkeypatch.setenv("PGPORT", parts["port"])
+    with pytest.raises(asyncpg.InvalidPasswordError):
+        await _connects(f"postgresql://{quote(parts['user'])}@/{parts['database']}")
 
 
 class TestRoomOperations:
