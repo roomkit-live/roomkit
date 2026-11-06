@@ -17,8 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   her agent reading his words and its answer going to his number. Once its hooks are over
   the room is held to the check of any routed room: Alice is routed once more and gets a
   room of her own. A hook's binding naming no one now records the sender; one naming
-  someone else sends the message on too, and when every room opened for a message does,
-  `process_inbound` returns `blocked=True, reason="room_taken"` with nothing stored. A room
+  someone else sends the message on too, and when no room opened for a message is still
+  its own, `process_inbound` returns `blocked=True, reason="room_taken"` with nothing
+  stored. A room
   left by the message that created it starts no session for it. A room the caller names
   is unchanged.
 

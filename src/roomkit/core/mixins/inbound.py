@@ -56,6 +56,7 @@ from roomkit.models.enums import (
     ChannelType,
     EventType,
     HookTrigger,
+    RoomStatus,
     Visibility,
 )
 from roomkit.models.event import refuse_too_deep, with_pipeline_id
@@ -242,9 +243,9 @@ class InboundMixin(HelpersMixin):
 
         A routed message whose room, created for it, names someone else once
         its ``ON_ROOM_CREATED`` hooks are over (a concurrent sender recorded
-        there, or a hook's binding) is routed once more; when every room opened
-        for it does, it is refused ``room_taken``, nothing of it stored (RFC
-        §10.1 step 2).
+        there, or a hook's binding) is routed once more; when no room opened
+        for it is still its own, it is refused ``room_taken``, nothing of it
+        stored (RFC §10.1 step 2).
 
         Raises:
             ChannelNotRegisteredError: the message's channel is not registered
@@ -1005,6 +1006,7 @@ class InboundMixin(HelpersMixin):
         if room_id is None:
             sender = _conversation(message, channel)
             routed = _Routed(channel, known_as(sender, identity, message.channel_id))
+            _still_within(deadline)
             room_id = await _by(
                 deadline,
                 self._inbound_router.route(
@@ -1153,7 +1155,7 @@ class InboundMixin(HelpersMixin):
         ON_ROOM_CREATED hooks and its attach.
 
         Raises:
-            _RoomTakenError: a routed message's room names someone else once
+            _RoomTakenError: a routed message's room is no longer its own once
                 its hooks are over, nothing of the message written.
         """
         return await run_to_its_end(
@@ -1224,10 +1226,10 @@ class InboundMixin(HelpersMixin):
         else.
 
         A sender is held to the check of any routed room, and recorded. A
-        message with no address enters through a ``group`` binding, and takes
-        a binding that names no one and holds no recipient, which left unnamed
-        would pass step 3 for the next sender, by writing the name no sender
-        is.
+        message with no address enters through a ``group`` binding, and, in a
+        room that is not PAUSED, takes a binding that names no one and holds no
+        recipient, which left unnamed would pass step 3 for the next sender, by
+        writing the name no sender is.
 
         Raises:
             _RoomTakenError: the room is no longer the message's.
@@ -1244,7 +1246,13 @@ class InboundMixin(HelpersMixin):
             return
         if binding.group:
             return
-        if not binding_names_no_one(binding) or recipient is not None:
+        if (
+            room.status == RoomStatus.PAUSED
+            or not binding_names_no_one(binding)
+            or recipient is not None
+        ):
+            # A PAUSED room is no one's to be admitted into, as for a routed
+            # room that exists (RFC §10.4 step 3).
             raise _RoomTakenError
         closed = binding.model_copy(update={"participant_id": SYSTEM_SENDER_ID})
         await self._store.update_binding(closed)
@@ -1272,7 +1280,7 @@ class InboundMixin(HelpersMixin):
         for the message is held to the same check once its hooks are over.
 
         Raises:
-            _RoomTakenError: the last new room names someone else too.
+            _RoomTakenError: the last new room is no longer the message's either.
         """
         sender = _conversation(message, channel)
         identity = await _by(
@@ -1572,8 +1580,8 @@ class _PastTheCapError(Exception):
 
 
 class _RoomTakenError(Exception):
-    """A room created for a routed message names someone else once its hooks
-    are over (RFC §10.1 step 2): nothing of the message written in it."""
+    """A room created for a routed message is no longer the message's once its
+    hooks are over (RFC §10.1 step 2): nothing of the message written in it."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -1624,6 +1632,17 @@ class _RoutingTimeoutError(Exception):
         self.room_id = room_id
 
 
+def _still_within(deadline: float) -> None:
+    """Raise :class:`_RoutingTimeoutError` when the call's *deadline* (RFC
+    §13.6) has passed, before routing asks the router: a message routed once
+    more after its room's creation hooks, which no deadline bounds, may come
+    back past it, and a wait already past its deadline only fails at its
+    first suspension, which a router or a store that does not suspend never
+    reaches."""
+    if asyncio.get_running_loop().time() >= deadline:
+        raise _RoutingTimeoutError(None)
+
+
 async def _by[T](deadline: float, work: Awaitable[T], *, room_id: str | None) -> T:
     """*work* bounded by *deadline*, the call's ``process_timeout`` (RFC
     §13.6): past it, :class:`_RoutingTimeoutError` naming *room_id*."""
@@ -1670,12 +1689,12 @@ def _past_the_cap(room_id: str | None, message: InboundMessage) -> InboundResult
 
 
 def _room_taken(message: InboundMessage) -> InboundResult:
-    """The refusal of a routed message when every room opened for it names
-    someone else (RFC §10.1 step 2): an ``ON_ROOM_CREATED`` hook giving every
-    new room one recipient, as a rule. It commits into no room of another
-    correspondent, so nothing of it is stored."""
+    """The refusal of a routed message when no room opened for it is still its
+    own once its hooks are over (RFC §10.1 step 2): an ``ON_ROOM_CREATED`` hook
+    giving every new room one recipient, as a rule. It commits into no room of
+    another correspondent, so nothing of it is stored."""
     logger.warning(
-        "Every room opened for a routed message on channel %s names someone else: refused",
+        "No room opened for a routed message on channel %s is still its own: refused",
         message.channel_id,
         extra={"channel_id": message.channel_id},
     )
