@@ -1,0 +1,134 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/an-after-broadcast-hook-reads-what-its-event-s-targets-gave-stored",
+  "title": "An event's AFTER_BROADCAST hook reads stored the task, the observation and the room metadata its delivery set's targets gave",
+  "rules": [
+    "§10.1 step 15",
+    "§10.1 step 16"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "web",
+        "type": "webhook",
+        "category": "transport",
+        "on_event": [
+          {
+            "output": {
+              "tasks": [
+                {
+                  "title": "Told"
+                }
+              ],
+              "observations": [
+                {
+                  "category": "told",
+                  "content": "on_event"
+                }
+              ],
+              "metadata_updates": {
+                "told": true
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "web"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "after",
+        "trigger": "after_broadcast",
+        "execution": "async",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "list_tasks",
+                "room_id": "$room",
+                "as": "tasks"
+              },
+              {
+                "call": "list_observations",
+                "room_id": "$room",
+                "as": "observations"
+              },
+              {
+                "call": "store.get_room",
+                "room_id": "$room",
+                "as": "room"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "actions": {
+      "tasks": [
+        {
+          "result": [
+            {
+              "title": "Told"
+            }
+          ]
+        }
+      ],
+      "observations": [
+        {
+          "result": [
+            {
+              "category": "told",
+              "content": "on_event"
+            }
+          ]
+        }
+      ],
+      "room": [
+        {
+          "result": {
+            "metadata": {
+              "told": true
+            }
+          }
+        }
+      ]
+    }
+  },
+  "notes": "Python: lane_execution.py _post_plan_effects writes the set's tasks, observations and room metadata updates (_persist_side_effects, _write_metadata_updates) before it starts the event's AFTER_BROADCAST hooks. RMK-1454."
+}

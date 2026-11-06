@@ -1,0 +1,211 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-streamed-row-s-after-broadcast-reads-its-hook-s-task-stored",
+  "title": "A streamed row's AFTER_BROADCAST hook reads stored the task its BEFORE_BROADCAST hook gave, with a streaming target or without",
+  "rules": [
+    "§12.2 step 13s",
+    "§10.1 step 15",
+    "§10.1 step 16"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms1",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws1",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "ai1",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "orig",
+                "inal"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": "ai2",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "orig",
+                "inal"
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms1"
+          },
+          {
+            "channel_id": "ai1",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms1"
+          },
+          {
+            "channel_id": "ws1"
+          },
+          {
+            "channel_id": "ai2",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "side_effects",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "source_channel_id": "ai1"
+            },
+            "result": {
+              "action": "allow",
+              "tasks": [
+                {
+                  "title": "Follow up"
+                }
+              ]
+            }
+          },
+          {
+            "when": {
+              "source_channel_id": "ai2"
+            },
+            "result": {
+              "action": "allow",
+              "tasks": [
+                {
+                  "title": "Follow up"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "after",
+        "trigger": "after_broadcast",
+        "execution": "async",
+        "reactions": [
+          {
+            "when": {
+              "source_channel_id": "ai1"
+            },
+            "do": [
+              {
+                "call": "list_tasks",
+                "room_id": "$room",
+                "as": "seen1"
+              }
+            ]
+          },
+          {
+            "when": {
+              "source_channel_id": "ai2"
+            },
+            "do": [
+              {
+                "call": "list_tasks",
+                "room_id": "$room",
+                "as": "seen2"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms1",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "sms1",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "tasks": {
+      "room-1": [
+        {
+          "title": "Follow up"
+        }
+      ],
+      "room-2": [
+        {
+          "title": "Follow up"
+        }
+      ]
+    },
+    "actions": {
+      "seen1": [
+        {
+          "result": [
+            {
+              "title": "Follow up"
+            }
+          ]
+        }
+      ],
+      "seen2": [
+        {
+          "result": [
+            {
+              "title": "Follow up"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "notes": "Python: tests/test_streaming_before_broadcast.py::test_streamed_hook_side_effects_survive_decision[allow] (after_tasks == [[task.id]]), room-1 without a streaming target, room-2 with one. RMK-1454."
+}

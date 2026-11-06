@@ -1,0 +1,173 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/an-after-broadcast-hook-reads-its-event-s-hook-task-stored",
+  "title": "An event's AFTER_BROADCAST hook reads stored the task its BEFORE_BROADCAST hook gave, a message's and a buffered answer's",
+  "rules": [
+    "§10.1 step 15",
+    "§10.1 step 16"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Answer"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "triage",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "room_id": "room-1"
+            },
+            "result": {
+              "action": "allow",
+              "tasks": [
+                {
+                  "title": "From the message"
+                }
+              ]
+            }
+          },
+          {
+            "when": {
+              "source_channel_id": "ai"
+            },
+            "result": {
+              "action": "allow",
+              "tasks": [
+                {
+                  "title": "From the answer"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "after",
+        "trigger": "after_broadcast",
+        "execution": "async",
+        "reactions": [
+          {
+            "when": {
+              "room_id": "room-1"
+            },
+            "do": [
+              {
+                "call": "list_tasks",
+                "room_id": "$room",
+                "as": "message"
+              }
+            ]
+          },
+          {
+            "when": {
+              "source_channel_id": "ai"
+            },
+            "do": [
+              {
+                "call": "list_tasks",
+                "room_id": "$room",
+                "as": "answer"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hi"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "actions": {
+      "message": [
+        {
+          "result": [
+            {
+              "title": "From the message"
+            }
+          ]
+        }
+      ],
+      "answer": [
+        {
+          "result": [
+            {
+              "title": "From the answer"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "notes": "Python: tests/test_streaming_before_broadcast.py::test_streamed_hook_side_effects_survive_decision asserts it for a streamed row (after_tasks == [[task.id]]); a message's and a buffered answer's take the same path (lane_execution.py _post_plan_effects: _persist_side_effects, then _after_broadcast). RMK-1454."
+}

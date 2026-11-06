@@ -1,0 +1,104 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/an-after-broadcast-hook-reads-its-set-s-chain-depth-observation-stored",
+  "title": "An event's AFTER_BROADCAST hook reads stored the observation its delivery set made of an agent it did not ask at the chain-depth limit",
+  "rules": [
+    "§10.1 step 15",
+    "§10.1 step 16",
+    "§8.3"
+  ],
+  "setup": {
+    "kit": {
+      "max_chain_depth": 1
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Answer"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "after",
+        "trigger": "after_broadcast",
+        "execution": "async",
+        "reactions": [
+          {
+            "when": {
+              "source_channel_id": "ws"
+            },
+            "do": [
+              {
+                "call": "list_observations",
+                "room_id": "$room",
+                "as": "observations"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "Hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "actions": {
+      "observations": [
+        {
+          "result": [
+            {
+              "category": "event_chain_depth_exceeded"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "notes": "Python: event_router._depth_limit_record adds chain_depth_exceeded to the set's observations, which _post_plan_effects writes before the event's AFTER_BROADCAST hooks. Found by the review of RMK-1454."
+}
