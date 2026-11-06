@@ -1,0 +1,105 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-process-that-never-read-the-room-claims-it-for-no-other-strategy",
+  "title": "A claim or an install reads the room first: a discussion another process stored is the room's in a process that never read it, and another strategy is refused, the organization named or not",
+  "rules": [
+    "§19.7.5 rule 16",
+    "§19.7"
+  ],
+  "notes": "Python: test_discussion_processes.py test_a_process_that_never_read_the_room_claims_it_for_no_other_strategy (scoped and unscoped); p3, which never read the room either, installs no other strategy (strategies.py install_strategy follows the room first).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ],
+        "organization_id": "org-a"
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a"
+          ]
+        }
+      },
+      {
+        "id": "other",
+        "agents": []
+      }
+    ],
+    "processes": [
+      {
+        "id": "p2"
+      },
+      {
+        "id": "p3"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d",
+      "organization_id": "org-a"
+    },
+    {
+      "call": "install_strategy",
+      "kit": "p3",
+      "room_id": "r1",
+      "strategy": "other",
+      "organization_id": "org-a",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "claim_room_strategy",
+      "room_id": "r1",
+      "strategy": "other",
+      "organization_id": "org-a",
+      "kit": "p2",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "claim_room_strategy",
+      "room_id": "r1",
+      "strategy": "other",
+      "kit": "p2",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r1",
+      "kit": "p2",
+      "expect": {
+        "result": null
+      }
+    }
+  ],
+  "expect": {}
+}

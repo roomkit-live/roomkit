@@ -1,0 +1,109 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-process-that-takes-a-discussion-over-detaches-what-the-first-install-attached",
+  "title": "A process taking over the discussion another process installed keeps the agents that install attached with it: its uninstall detaches them, the agent the host bound itself staying",
+  "rules": [
+    "§19.7.5 rule 16",
+    "§19.7"
+  ],
+  "notes": "Python: _room.py take_over keeps the stored configuration's attached agents but for those it lets go; test_discussion_processes.py test_a_process_that_only_follows_uninstalls_the_discussion_for_all's hosted room.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        }
+      },
+      {
+        "id": "c",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a",
+            "b",
+            "c"
+          ]
+        }
+      }
+    ],
+    "processes": [
+      {
+        "id": "p2"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "close"
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d",
+      "kit": "p2"
+    },
+    {
+      "call": "uninstall_strategy",
+      "room_id": "r1",
+      "kit": "p2",
+      "expect": {
+        "result": true
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "r1": {
+        "ops": {
+          "channel_id": "ops"
+        },
+        "a": {
+          "channel_id": "a"
+        },
+        "b": null,
+        "c": null
+      }
+    }
+  }
+}

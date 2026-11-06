@@ -1,0 +1,131 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-process-that-installed-none-or-whose-discussion-went-is-not-current",
+  "title": "room_strategy_is_current is false in a process that installed no discussion, and in one whose discussion another process uninstalled, which it leaves at once",
+  "rules": [
+    "§19.7.5 rule 16"
+  ],
+  "notes": "Python: test_discussion_processes.py test_a_process_that_installed_none_or_whose_discussion_went_is_not_current. The run's kit reads the uninstall before its driver looks again.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "a here"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a"
+          ]
+        }
+      }
+    ],
+    "processes": [
+      {
+        "id": "p2"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "kit": "p2",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "room_strategy_is_current",
+      "room_id": "r1",
+      "kind": "Discussion",
+      "kit": "p2",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "call": "room_strategy_is_current",
+      "room_id": "r1",
+      "kind": "Discussion",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "uninstall_strategy",
+      "room_id": "r1",
+      "kit": "p2",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "room_strategy_is_current",
+      "room_id": "r1",
+      "kind": "Discussion",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": null
+      }
+    }
+  ],
+  "expect": {}
+}

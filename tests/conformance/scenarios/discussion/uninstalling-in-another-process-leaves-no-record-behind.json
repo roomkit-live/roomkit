@@ -1,0 +1,101 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/uninstalling-in-another-process-leaves-no-record-behind",
+  "title": "A discussion another process uninstalled is left by a process that installed it once its driver reads the room: it holds no strategy nor queue there, and the room takes a discussion again",
+  "rules": [
+    "§19.7.5 rule 16"
+  ],
+  "notes": "Python: test_discussion_processes.py test_uninstalling_in_another_process_leaves_no_record_behind.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a"
+          ]
+        }
+      }
+    ],
+    "processes": [
+      {
+        "id": "p2"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d",
+      "kit": "p2"
+    },
+    {
+      "call": "uninstall_strategy",
+      "room_id": "r1",
+      "kit": "p2",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": "d"
+      }
+    }
+  ],
+  "expect": {}
+}

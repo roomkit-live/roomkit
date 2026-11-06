@@ -1,0 +1,85 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/asking-about-a-strategy-not-stored-with-the-room-is-refused",
+  "title": "room_strategy_is_current refuses a kind of strategy that is not stored with the room",
+  "rules": [
+    "§19.7.5 rule 16"
+  ],
+  "notes": "Python: test_discussion_processes.py test_asking_about_a_strategy_not_stored_with_the_room_is_refused, the four built-in strategies; an instance and a type that is no strategy have no form in a scenario.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "room_strategy_is_current",
+      "room_id": "r1",
+      "kind": "Pipeline",
+      "expect": {
+        "error": "kind_not_stored"
+      }
+    },
+    {
+      "call": "room_strategy_is_current",
+      "room_id": "r1",
+      "kind": "Swarm",
+      "expect": {
+        "error": "kind_not_stored"
+      }
+    },
+    {
+      "call": "room_strategy_is_current",
+      "room_id": "r1",
+      "kind": "Loop",
+      "expect": {
+        "error": "kind_not_stored"
+      }
+    },
+    {
+      "call": "room_strategy_is_current",
+      "room_id": "r1",
+      "kind": "Supervisor",
+      "expect": {
+        "error": "kind_not_stored"
+      }
+    }
+  ],
+  "expect": {}
+}

@@ -1,0 +1,140 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/the-lease-holder-decides-what-a-follower-routed",
+  "title": "A message a process that only follows leaves to the dispatch policy is decided by the process holding the lease, once: the agent it picks alone answers",
+  "rules": [
+    "§19.7.5 rule 16",
+    "§19.7.5 rule 18"
+  ],
+  "notes": "Python: test_discussion_dispatch.py test_the_lease_holder_decides_what_a_follower_routed.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "b: deploying"
+            }
+          ]
+        }
+      },
+      {
+        "id": "c",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a",
+            "b",
+            "c"
+          ],
+          "dispatch": {
+            "decisions": [
+              [
+                "b"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    "processes": [
+      {
+        "id": "p2"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "deploy?"
+        }
+      },
+      "kit": "p2",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "deploy?"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "b"
+          },
+          "content": {
+            "body": "b: deploying"
+          }
+        }
+      ]
+    },
+    "dispatch_turns": {
+      "d": [
+        {
+          "event": {
+            "content": {
+              "body": "deploy?"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

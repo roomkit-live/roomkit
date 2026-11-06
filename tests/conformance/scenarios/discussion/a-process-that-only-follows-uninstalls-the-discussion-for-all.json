@@ -1,0 +1,172 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-process-that-only-follows-uninstalls-the-discussion-for-all",
+  "title": "A process that only follows the discussion uninstalls it for every process: the stored discussion goes, the agents its install attached with it, and the room answers by its policy again",
+  "rules": [
+    "§19.7.5 rule 16",
+    "§19.7"
+  ],
+  "notes": "Python: test_discussion_processes.py test_a_process_that_only_follows_uninstalls_the_discussion_for_all. a is bound by the host before the install, which attaches b and c.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "a here"
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        }
+      },
+      {
+        "id": "c",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a",
+            "b",
+            "c"
+          ]
+        }
+      }
+    ],
+    "processes": [
+      {
+        "id": "p2"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "close"
+    },
+    {
+      "call": "uninstall_strategy",
+      "room_id": "r1",
+      "kit": "p2",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "kit": "p2",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r1",
+      "kit": "p2",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "uninstall_strategy",
+      "room_id": "r1",
+      "kit": "p2",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "anyone?"
+        }
+      },
+      "kit": "p2",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null,
+          "response_events": [
+            {
+              "source": {
+                "channel_id": "a"
+              },
+              "content": {
+                "body": "a here"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "r1": {
+        "metadata": {
+          "_discussion": {
+            "$absent": true
+          },
+          "_speak_queue": {
+            "$absent": true
+          }
+        }
+      }
+    },
+    "bindings": {
+      "r1": {
+        "ops": {
+          "channel_id": "ops"
+        },
+        "a": {
+          "channel_id": "a"
+        },
+        "b": null,
+        "c": null
+      }
+    }
+  }
+}

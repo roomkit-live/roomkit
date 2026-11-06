@@ -1,0 +1,137 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-quiet-follower-routes-host-calls-by-a-new-configuration",
+  "title": "A process that followed the discussion and went quiet routes a host call by the configuration the room stores now, another process's install having added an agent",
+  "rules": [
+    "§19.7.5 rule 16"
+  ],
+  "notes": "Python: test_discussion_processes.py test_a_quiet_follower_routes_host_calls_by_a_new_configuration, the install that adds c made by a third process: roomkit-rs refuses an install over the discussion its own process installed (RMK-1233).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "a here"
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        }
+      },
+      {
+        "id": "c",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "kept",
+        "discussion": {
+          "agents": [
+            "a",
+            "b"
+          ]
+        }
+      },
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a",
+            "b",
+            "c"
+          ]
+        }
+      }
+    ],
+    "processes": [
+      {
+        "id": "p2"
+      },
+      {
+        "id": "p3"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "kept"
+    },
+    {
+      "call": "process_inbound",
+      "kit": "p2",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@a hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d",
+      "kit": "p3"
+    },
+    {
+      "call": "listen_only",
+      "room_id": "r1",
+      "channel_ids": [
+        "c"
+      ],
+      "kit": "p2"
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "r1": {
+        "metadata": {
+          "_speak_queue": {
+            "listening": [
+              "c"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,81 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/the-same-configuration-installed-by-another-process-keeps-both-current",
+  "title": "Two processes that installed the same configuration both read their discussion current",
+  "rules": [
+    "§19.7.5 rule 16"
+  ],
+  "notes": "Python: test_discussion_processes.py test_the_same_configuration_installed_by_another_process_keeps_both_current.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a"
+          ]
+        }
+      }
+    ],
+    "processes": [
+      {
+        "id": "p2"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d",
+      "kit": "p2"
+    },
+    {
+      "call": "room_strategy_is_current",
+      "room_id": "r1",
+      "kind": "Discussion",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "room_strategy_is_current",
+      "room_id": "r1",
+      "kind": "Discussion",
+      "kit": "p2",
+      "expect": {
+        "result": true
+      }
+    }
+  ],
+  "expect": {}
+}
