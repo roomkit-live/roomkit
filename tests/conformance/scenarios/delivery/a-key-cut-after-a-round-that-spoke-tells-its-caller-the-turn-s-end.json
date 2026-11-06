@@ -1,0 +1,108 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-key-cut-after-a-round-that-spoke-tells-its-caller-the-turn-s-end",
+  "title": "Cancelling a key while an agent with no streaming target generates its second round, its first having said something, tells the caller its turn ended cancelled",
+  "rules": [
+    "§10.1 Explicit delivery cancellation",
+    "§6.4 The turn's record",
+    "§12.2 step 13s"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/inbound_streaming.py _read_stream and _record_cancelled_read (the cut read's record carried by the cascade to the caller), src/roomkit/models/response_metadata.py merge_caller_record. No Python test covers this case; the nearest is tests/test_response_metadata.py::TestLiveRecord::test_a_cut_turn_gives_its_caller_what_its_tool_wrote (RMK-1299).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Looking.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "gate": "second-round",
+              "text": "never"
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up.",
+            "returns": "found"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "task A"
+        },
+        "delivery_key": "a"
+      },
+      "background": true,
+      "as": "a"
+    },
+    {
+      "wait_for": "second-round"
+    },
+    {
+      "call": "cancel_delivery",
+      "key": "a",
+      "reason": "stopped",
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "await": "a",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "cancellation_reason": "stopped",
+          "response_metadata": {
+            "turns": {
+              "agent": {
+                "loop_end_reason": "cancelled"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ]
+}

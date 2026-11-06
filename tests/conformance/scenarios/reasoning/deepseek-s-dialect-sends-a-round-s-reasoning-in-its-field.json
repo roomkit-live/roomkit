@@ -5,7 +5,7 @@
   "rules": [
     "§6.4"
   ],
-  "notes": "Python: providers/deepseek/ai.py DEEPSEEK_CHAT; tests/test_providers/test_deepseek.py. In thinking mode DeepSeek refuses a round of the turn in progress without the field (measured 2026-10-02). roomkit-rs has no DeepSeek provider yet (RMK-1361).",
+  "notes": "Python: providers/deepseek/ai.py DEEPSEEK_CHAT; tests/test_providers/test_deepseek.py. In thinking mode DeepSeek refuses a round of the turn in progress without the field (measured 2026-10-02). roomkit-rs: roomkit_openai::deepseek (RMK-1361).",
   "setup": {
     "channels": [
       {
