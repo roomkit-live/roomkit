@@ -288,3 +288,46 @@ async def test_a_room_read_past_process_timeout_refuses_the_regeneration(
     assert [(e.room_id, e.data.get("operation")) for e in timeouts] == [("r", "regenerate")]
     assert slow.started == 2  # the first message's and "again"'s turns, none regenerated
     assert not after.blocked
+
+
+@pytest.mark.parametrize("read", ["room", "event"])
+async def test_a_held_release_read_past_process_timeout_runs_no_agent(
+    monkeypatch: pytest.MonkeyPatch, read: str
+) -> None:
+    """A held message's release reads the room and the event under the lock
+    within ``process_timeout`` too (``_rerun_agents_on``): past it no agent
+    runs, ``process_timeout`` names the regenerate operation, and the lock is
+    released (RFC §11.7.6, §13.6)."""
+    kit, _, slow = await _kit_with("ai", pause=0.0, process_timeout=CUT)
+    first = await kit.process_inbound(_message())
+    assert first.event is not None
+    timeouts: list[FrameworkEvent] = []
+
+    @kit.on("process_timeout")
+    async def on_timeout(event: FrameworkEvent) -> None:
+        timeouts.append(event)
+
+    reading = asyncio.Event()
+
+    async def never(*args: Any, **kwargs: Any) -> Any:
+        reading.set()
+        await asyncio.Event().wait()  # never answers; the bound cuts it
+
+    bounds = opened_with_cut(monkeypatch)
+    if read == "room":
+        monkeypatch.setattr(kit, "_build_context", never)
+    else:
+        monkeypatch.setattr(kit.store, "get_event", never)
+    async with asyncio.timeout(5.0):
+        rerun = asyncio.ensure_future(kit._rerun_agents_on("r", first.event.id))  # noqa: SLF001
+        await reading.wait()
+        expire(bounds)
+        result = await rerun
+    monkeypatch.undo()
+    after = await kit.process_inbound(_message("again"))
+    await kit.close()
+    assert result is not None
+    assert (result.blocked, result.reason) == (True, "process_timeout")
+    assert [(e.room_id, e.data.get("operation")) for e in timeouts] == [("r", "regenerate")]
+    assert slow.started == 2  # the first message's and "again"'s turns
+    assert not after.blocked
