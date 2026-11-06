@@ -1,0 +1,177 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-call-adopted-after-the-decision-ends-at-its-own-deadline",
+  "title": "A call the locked hook of an injected event's pass awaits, after its cascade's decision, held by a locked hook of its own, is refused at its own process_timeout, reported; the injected event then commits",
+  "rules": [
+    "§9.5.1 Reentrance",
+    "§9.4",
+    "§13.6"
+  ],
+  "notes": "Python: every call, adopted or not, has its own deadline from its start (src/roomkit/core/mixins/inbound.py, _process_named_inbound), and reports its own process_timeout (RMK-1472, HITL 35d1efa7).",
+  "setup": {
+    "kit": {
+      "process_timeout_ms": 200
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "injects",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "result": {
+              "action": "allow",
+              "injected_events": [
+                {
+                  "event": {
+                    "content": {
+                      "type": "text",
+                      "body": "note"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "nests",
+        "trigger": "before_broadcast",
+        "timeout_ms": 5000,
+        "reactions": [
+          {
+            "when": {
+              "text": "note"
+            },
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "ws",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "side"
+                  }
+                },
+                "expect": {
+                  "result": {
+                    "blocked": true,
+                    "reason": "process_timeout",
+                    "event": null
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "slow",
+        "trigger": "before_broadcast",
+        "timeout_ms": 5000,
+        "reactions": [
+          {
+            "when": {
+              "text": "side"
+            },
+            "gate": "sidegate"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "background": true,
+      "as": "h"
+    },
+    {
+      "await": "h",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "content": {
+              "body": "hello"
+            }
+          }
+        }
+      }
+    },
+    {
+      "wait_for": "sidegate"
+    },
+    {
+      "idle": true
+    },
+    {
+      "open": "sidegate"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "hello"
+          }
+        },
+        {
+          "content": {
+            "body": "note"
+          }
+        }
+      ]
+    },
+    "framework_events": {
+      "room-1": [
+        {
+          "event": "event_processed",
+          "event_id": "room-1#0"
+        },
+        {
+          "event": "process_timeout",
+          "timeout": 0.2,
+          "event_id": {
+            "$present": true
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,105 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "regenerate/a-read-only-agent-s-regenerated-answer-is-stored-blocked",
+  "title": "A regenerated answer meets its source's right to write: an agent bound read-only has it stored BLOCKED source_read_only, and the call's response events hold none",
+  "rules": [
+    "§13.6",
+    "§7.5 rule 2"
+  ],
+  "notes": "Python: tests/test_response_commit_gates.py::test_a_non_writable_agent_regenerated_answer_is_blocked (read-only).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "A1"
+            },
+            {
+              "text": "A2"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "access": "read_only"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "What is the weather?"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "regenerate_response",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "event": {
+            "id": "room-1#0"
+          },
+          "response_events": []
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "What is the weather?"
+          }
+        },
+        {
+          "content": {
+            "body": "A1"
+          },
+          "status": "blocked",
+          "blocked_by": "source_read_only"
+        },
+        {
+          "content": {
+            "body": "A2"
+          },
+          "status": "blocked",
+          "blocked_by": "source_read_only"
+        }
+      ]
+    }
+  }
+}

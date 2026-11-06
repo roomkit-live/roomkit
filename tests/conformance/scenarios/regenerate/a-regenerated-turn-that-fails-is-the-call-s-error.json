@@ -1,0 +1,114 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "regenerate/a-regenerated-turn-that-fails-is-the-call-s-error",
+  "title": "A regenerated turn whose model fails returns the failure on the call's error, fires ON_ERROR, and stores no answer",
+  "rules": [
+    "§13.6",
+    "§9.2"
+  ],
+  "notes": "Python: tests/test_inbound_stream_error_propagation.py::test_regenerate_surfaces_stream_error and test_regenerate_non_streaming_failure_fires_on_error.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "First answer"
+            },
+            {
+              "fails": "boom"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "errors",
+        "trigger": "on_error",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "What is the weather?"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "regenerate_response",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "event": {
+            "id": "room-1#0"
+          },
+          "blocked": false,
+          "error": {
+            "$contains": "boom"
+          },
+          "response_events": []
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "What is the weather?"
+          }
+        },
+        {
+          "content": {
+            "body": "First answer"
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "errors": [
+        {
+          "trigger": "on_error",
+          "room_id": "room-1"
+        }
+      ]
+    }
+  }
+}

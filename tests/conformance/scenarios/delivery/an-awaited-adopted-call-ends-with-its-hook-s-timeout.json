@@ -1,0 +1,136 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/an-awaited-adopted-call-ends-with-its-hook-s-timeout",
+  "title": "A call a locked hook awaits, nested under the lock and held by a locked hook of its own when the hook's own timeout passes, ends with the hook's body: nothing of it is stored, and the event the hook decided on commits, the hook failing open",
+  "rules": [
+    "§9.5.1 Reentrance",
+    "§9.3",
+    "§13.6"
+  ],
+  "notes": "Python: a call follows its caller. The hook's timeout cancels its body (src/roomkit/core/hooks.py), and the nested process_inbound it awaits with it, before that call's commit. Twin tests: roomkit tests/test_reentrance.py and roomkit-rs tests/reentrancy.rs, a_hook_that_times_out_while_its_entry_works_is_heard_after_it (RMK-1472, HITL 35d1efa7).",
+  "setup": {
+    "kit": {},
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "nests",
+        "trigger": "before_broadcast",
+        "timeout_ms": 50,
+        "reactions": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "ws",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "side"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "slow",
+        "trigger": "before_broadcast",
+        "timeout_ms": 5000,
+        "reactions": [
+          {
+            "when": {
+              "text": "side"
+            },
+            "gate": "sidegate"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "content": {
+              "body": "hello"
+            }
+          }
+        }
+      }
+    },
+    {
+      "open": "sidegate"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "hello"
+          }
+        }
+      ]
+    },
+    "framework_events": {
+      "room-1": [
+        {
+          "$unordered": [
+            {
+              "event": "hook_timeout",
+              "hook_name": "nests",
+              "trigger": "before_broadcast",
+              "timeout": 0.05
+            },
+            {
+              "event": "hook_error",
+              "hook": "nests",
+              "event_id": "room-1#0"
+            }
+          ]
+        },
+        {
+          "event": "event_processed",
+          "event_id": "room-1#0"
+        }
+      ]
+    }
+  }
+}

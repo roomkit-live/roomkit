@@ -1,0 +1,144 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "regenerate/a-regenerated-answer-meets-its-hooks",
+  "title": "A regenerated answer re-enters as a first answer does: its BEFORE_BROADCAST hooks see it, the tasks they return are kept, and it comes back in the call's response events",
+  "rules": [
+    "§13.6",
+    "§10.1 step 14"
+  ],
+  "notes": "Python: tests/test_response_commit_gates.py::test_a_regenerated_answer_meets_its_hooks.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "A1"
+            },
+            {
+              "text": "A2"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "seen",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "source_channel_id": "agent"
+            },
+            "repeat": true,
+            "result": {
+              "action": "allow",
+              "tasks": [
+                {
+                  "title": "Follow up"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "What is the weather?"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "regenerate_response",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "response_events": [
+            {
+              "content": {
+                "body": "A2"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "seen": [
+        {
+          "trigger": "before_broadcast",
+          "event": {
+            "content": {
+              "body": "What is the weather?"
+            }
+          }
+        },
+        {
+          "trigger": "before_broadcast",
+          "event": {
+            "content": {
+              "body": "A1"
+            }
+          }
+        },
+        {
+          "trigger": "before_broadcast",
+          "event": {
+            "content": {
+              "body": "A2"
+            }
+          }
+        }
+      ]
+    },
+    "tasks": {
+      "room-1": [
+        {
+          "title": "Follow up"
+        },
+        {
+          "title": "Follow up"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,142 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "regenerate/a-regeneration-is-scoped-to-its-caller-s-organization",
+  "title": "A regeneration and its target naming another organization than the room's raise room_not_found, nothing run; naming the room's own they run",
+  "rules": [
+    "§13.6",
+    "§17.2"
+  ],
+  "notes": "Python: tests/test_room_org_scoping.py TestScopedTurnsAndDeliveries::test_another_organizations_room_is_not_found_and_nothing_runs (the refusal writes and runs nothing) and test_the_rooms_own_organization_or_none_runs_each_verb.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "First answer"
+            },
+            {
+              "text": "Second answer"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "organization_id": "acme",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "What is the weather?"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "regenerate_target",
+      "room_id": "room-1",
+      "organization_id": "globex",
+      "expect": {
+        "error": "room_not_found"
+      }
+    },
+    {
+      "call": "regenerate_response",
+      "room_id": "room-1",
+      "organization_id": "globex",
+      "expect": {
+        "error": "room_not_found"
+      }
+    },
+    {
+      "call": "regenerate_target",
+      "room_id": "room-1",
+      "organization_id": "acme",
+      "expect": {
+        "result": {
+          "id": "room-1#0"
+        }
+      }
+    },
+    {
+      "call": "regenerate_response",
+      "room_id": "room-1",
+      "organization_id": "acme",
+      "expect": {
+        "result": {
+          "event": {
+            "id": "room-1#0"
+          },
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {}
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "What is the weather?"
+          }
+        },
+        {
+          "content": {
+            "body": "First answer"
+          }
+        },
+        {
+          "content": {
+            "body": "Second answer"
+          }
+        }
+      ]
+    },
+    "framework_events": {
+      "room-1": [
+        {
+          "event": "event_processed",
+          "event_id": "room-1#0"
+        }
+      ]
+    }
+  }
+}

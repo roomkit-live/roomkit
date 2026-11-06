@@ -1,0 +1,158 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "regenerate/a-regeneration-repeats-nothing-of-its-trigger-s-first-pass",
+  "title": "A regeneration hands its message to no transport again, runs none of its AFTER_BROADCAST hooks again and emits no second event_processed: only the new answer is delivered and observed",
+  "rules": [
+    "§13.6",
+    "§10.1 step 14"
+  ],
+  "notes": "Python: tests/test_regenerate_off_lock.py::test_a_regeneration_repeats_nothing_of_its_triggers_first_pass. The message comes in on sms, so ws, a transport it is delivered to, would show a second delivery.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "First answer"
+            },
+            {
+              "text": "Second answer"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "after",
+        "trigger": "after_broadcast",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "What is the weather?"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "regenerate_response",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "event": {
+            "id": "room-1#0"
+          },
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "body": "What is the weather?"
+            }
+          },
+          {
+            "content": {
+              "body": "First answer"
+            }
+          },
+          {
+            "content": {
+              "body": "Second answer"
+            }
+          }
+        ]
+      }
+    },
+    "hooks": {
+      "after": [
+        {
+          "trigger": "after_broadcast",
+          "event": {
+            "content": {
+              "body": "What is the weather?"
+            }
+          }
+        },
+        {
+          "trigger": "after_broadcast",
+          "event": {
+            "content": {
+              "body": "First answer"
+            }
+          }
+        },
+        {
+          "trigger": "after_broadcast",
+          "event": {
+            "content": {
+              "body": "Second answer"
+            }
+          }
+        }
+      ]
+    },
+    "framework_events": {
+      "room-1": [
+        {
+          "event": "delivery_succeeded",
+          "event_id": "room-1#0",
+          "channel_id": "ws"
+        },
+        {
+          "event": "event_processed",
+          "event_id": "room-1#0"
+        }
+      ]
+    }
+  }
+}

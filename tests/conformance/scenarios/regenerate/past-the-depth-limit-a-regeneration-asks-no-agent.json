@@ -1,0 +1,141 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "regenerate/past-the-depth-limit-a-regeneration-asks-no-agent",
+  "title": "With a chain-depth limit of 1, a regeneration asks the agent nothing: its answer is recorded BLOCKED at the limit, announced and observed, as on the inbound path",
+  "rules": [
+    "§13.6",
+    "§8.3"
+  ],
+  "notes": "Python: tests/test_integration/test_regenerate.py TestRegenerateBlocked::test_past_the_depth_limit_the_agent_is_not_asked. The first message's own chain_depth_exceeded and event_processed are matched in any order: Python emits chain_depth_exceeded first, roomkit-rs event_processed first (RMK-1480), a difference of the inbound path, not of the regeneration.",
+  "setup": {
+    "kit": {
+      "max_chain_depth": 1
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "never"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "regenerate_response",
+      "room_id": "room-1"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "hi"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "agent"
+          },
+          "status": "blocked",
+          "blocked_by": "event_chain_depth_limit"
+        },
+        {
+          "source": {
+            "channel_id": "agent"
+          },
+          "status": "blocked",
+          "blocked_by": "event_chain_depth_limit"
+        }
+      ]
+    },
+    "models": {
+      "agent": []
+    },
+    "framework_events": {
+      "room-1": [
+        {
+          "$unordered": [
+            {
+              "event": "chain_depth_exceeded",
+              "event_id": "room-1#1"
+            },
+            {
+              "event": "event_processed",
+              "event_id": "room-1#0"
+            }
+          ]
+        },
+        {
+          "event": "chain_depth_exceeded",
+          "event_id": "room-1#2"
+        }
+      ]
+    },
+    "observations": {
+      "room-1": [
+        {
+          "channel_id": "agent",
+          "category": "event_chain_depth_exceeded",
+          "metadata": {
+            "chain_depth": 1,
+            "max_chain_depth": 1,
+            "source_channel": "agent"
+          }
+        },
+        {
+          "channel_id": "agent",
+          "category": "event_chain_depth_exceeded",
+          "metadata": {
+            "chain_depth": 1,
+            "max_chain_depth": 1,
+            "source_channel": "agent"
+          }
+        }
+      ]
+    }
+  }
+}
