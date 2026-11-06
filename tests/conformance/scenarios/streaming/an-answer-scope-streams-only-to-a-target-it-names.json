@@ -1,0 +1,261 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/an-answer-scope-streams-only-to-a-target-it-names",
+  "title": "An answer scope naming streaming transports streams to the first it names, delivers the answer whole to the others it names, and nothing to the rest",
+  "rules": [
+    "§12.2 step 11s",
+    "§5.12",
+    "§7.3 An event's visibility"
+  ],
+  "notes": "Python: tests/test_response_visibility.py::TestResponseVisibilitySingleChannel::test_streaming_only_to_targeted_channel (room-1), TestResponseVisibilityCommaSeparated::test_comma_separated_streaming_targets (room-2), TestResponseVisibilityStoredEvent::test_stored_event_has_visibility (the stored answer takes the scope).",
+  "setup": {
+    "channels": [
+      {
+        "id": "src",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "ans",
+                "wer"
+              ]
+            },
+            {
+              "deltas": [
+                "ans",
+                "wer"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": "st1",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "st2",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "st3",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "ai",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "st1"
+          },
+          {
+            "channel_id": "st2"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "ai",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "st1"
+          },
+          {
+            "channel_id": "st2"
+          },
+          {
+            "channel_id": "st3"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "src",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hi"
+        },
+        "response_visibility": "st2"
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "src",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hi"
+        },
+        "response_visibility": "st1,st3"
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "Hi"
+          },
+          "response_visibility": "st2"
+        },
+        {
+          "id": "room-1#1",
+          "source": {
+            "channel_id": "ai"
+          },
+          "content": {
+            "body": "answer"
+          },
+          "visibility": "st2"
+        }
+      ],
+      "room-2": [
+        {
+          "content": {
+            "body": "Hi"
+          },
+          "response_visibility": "st1,st3"
+        },
+        {
+          "id": "room-2#1",
+          "source": {
+            "channel_id": "ai"
+          },
+          "content": {
+            "body": "answer"
+          },
+          "visibility": "st1,st3"
+        }
+      ]
+    },
+    "streamed": {
+      "room-1": {
+        "st1": [],
+        "st2": [
+          {
+            "text": "ans"
+          },
+          {
+            "text": "wer"
+          },
+          {
+            "row": {
+              "id": "room-1#1",
+              "content": {
+                "body": "answer"
+              }
+            }
+          }
+        ]
+      },
+      "room-2": {
+        "st1": [
+          {
+            "text": "ans"
+          },
+          {
+            "text": "wer"
+          },
+          {
+            "row": {
+              "id": "room-2#1",
+              "content": {
+                "body": "answer"
+              }
+            }
+          }
+        ],
+        "st2": [],
+        "st3": []
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "st1": [
+          {
+            "index": 0
+          }
+        ],
+        "st2": [
+          {
+            "index": 0
+          }
+        ]
+      },
+      "room-2": {
+        "st1": [
+          {
+            "index": 0
+          }
+        ],
+        "st2": [
+          {
+            "index": 0
+          }
+        ],
+        "st3": [
+          {
+            "index": 0
+          },
+          {
+            "id": "room-2#1",
+            "source": {
+              "channel_id": "ai"
+            },
+            "content": {
+              "body": "answer"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

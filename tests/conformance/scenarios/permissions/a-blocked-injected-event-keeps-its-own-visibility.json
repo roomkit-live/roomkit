@@ -1,0 +1,128 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "permissions/a-blocked-injected-event-keeps-its-own-visibility",
+  "title": "An event a hook injects under a scoped source's name, then blocked by a hook of its own pass, is stored with its own targets, not intersected with that binding",
+  "rules": [
+    "§7.3 An event's visibility",
+    "§9.4"
+  ],
+  "notes": "Python: tests/test_visibility_rules.py::TestARefusedRecordSeesNoMoreThanItsEvent::test_an_event_a_hook_injects_keeps_its_own. The notice names sms as its source, whose binding is scoped `sms`: intersected, it would read `none`; an injected event is no channel's, and keeps its targets `ws`.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms",
+            "visibility": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "notify",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "result": {
+              "action": "allow",
+              "injected_events": [
+                {
+                  "event": {
+                    "source": {
+                      "channel_id": "sms",
+                      "channel_type": "sms"
+                    },
+                    "content": {
+                      "type": "text",
+                      "body": "notice"
+                    }
+                  },
+                  "target_channel_ids": [
+                    "ws"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "when": {
+              "text": "notice"
+            },
+            "result": {
+              "action": "block",
+              "reason": "held"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "hello"
+          },
+          "status": "delivered",
+          "visibility": "sms"
+        },
+        {
+          "source": {
+            "channel_id": "sms"
+          },
+          "content": {
+            "body": "notice"
+          },
+          "status": "blocked",
+          "blocked_by": "notify",
+          "visibility": "ws"
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": []
+      }
+    }
+  }
+}

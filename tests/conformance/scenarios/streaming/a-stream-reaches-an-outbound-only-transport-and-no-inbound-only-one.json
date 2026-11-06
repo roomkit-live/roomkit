@@ -1,0 +1,133 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-stream-reaches-an-outbound-only-transport-and-no-inbound-only-one",
+  "title": "A streamed answer goes to a streaming transport bound OUTBOUND, never to one bound INBOUND",
+  "rules": [
+    "§12.2 step 11s",
+    "§10.2 step 3d",
+    "§4.2"
+  ],
+  "notes": "Python: tests/test_visibility_rules.py::TestALiveStream::test_reaches_no_inbound_only_transport and test_reaches_an_outbound_only_transport. The inbound-only transport is bound first and sorts first, so it would be the stream's target were direction not read.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "kiosk",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true,
+        "direction": "inbound"
+      },
+      {
+        "id": "push",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true,
+        "direction": "outbound"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "ans",
+                "wer"
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "kiosk"
+          },
+          {
+            "channel_id": "push"
+          },
+          {
+            "channel_id": "ai",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "streamed": {
+      "room-1": {
+        "kiosk": [],
+        "push": [
+          {
+            "text": "ans"
+          },
+          {
+            "text": "wer"
+          },
+          {
+            "row": {
+              "id": "room-1#1",
+              "content": {
+                "body": "answer"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "kiosk": [],
+        "push": [
+          {
+            "index": 0
+          }
+        ],
+        "sms": [
+          {
+            "id": "room-1#1",
+            "source": {
+              "channel_id": "ai"
+            },
+            "content": {
+              "body": "answer"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

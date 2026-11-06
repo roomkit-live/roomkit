@@ -1,0 +1,129 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/the-stream-goes-to-the-first-streaming-transport-bound",
+  "title": "Of two streaming transports, the one bound first is the stream's target, whatever their ids",
+  "rules": [
+    "§12.2 step 11s",
+    "§6.1"
+  ],
+  "notes": "Python: the target is the first of the room's bindings, in the order they were bound, that the answer reaches and that streams (`_find_streaming_targets`). Here `st2` is bound before `st1`.",
+  "setup": {
+    "channels": [
+      {
+        "id": "src",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "ans",
+                "wer"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": "st1",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "st2",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "ai",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "st2"
+          },
+          {
+            "channel_id": "st1"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "src",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "streamed": {
+      "room-1": {
+        "st2": [
+          {
+            "text": "ans"
+          },
+          {
+            "text": "wer"
+          },
+          {
+            "row": {
+              "id": "room-1#1",
+              "content": {
+                "body": "answer"
+              }
+            }
+          }
+        ],
+        "st1": []
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "st2": [
+          {
+            "index": 0
+          }
+        ],
+        "st1": [
+          {
+            "index": 0
+          },
+          {
+            "id": "room-1#1",
+            "content": {
+              "body": "answer"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

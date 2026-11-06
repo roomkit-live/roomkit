@@ -1,0 +1,87 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "permissions/an-answer-scope-internal-a-channel-gives-reads-as-none",
+  "title": "A channel giving its answer the answer scope `internal` has it stored as `none`",
+  "rules": [
+    "§7.3 Who writes `internal`",
+    "§8.5"
+  ],
+  "notes": "Python: tests/test_visibility_rules.py::TestOnlyTheFrameworkWritesInternal::test_an_answer_scope_its_channel_gives_reads_as_none (its warning is not compared).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "AI reply"
+                },
+                "response_visibility": "internal"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ai",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "hello"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ai"
+          },
+          "content": {
+            "body": "AI reply"
+          },
+          "status": "delivered",
+          "visibility": "all",
+          "response_visibility": "none"
+        }
+      ]
+    }
+  }
+}

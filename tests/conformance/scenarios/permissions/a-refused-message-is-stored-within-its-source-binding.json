@@ -1,0 +1,172 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "permissions/a-refused-message-is-stored-within-its-source-binding",
+  "title": "A message refused by a hook or by its read-only source is stored BLOCKED with its visibility intersected with its source binding's, through process_inbound and send_event",
+  "rules": [
+    "§7.3 An event's visibility",
+    "§7.5 rule 2"
+  ],
+  "notes": "Python: tests/test_visibility_rules.py::TestARefusedRecordSeesNoMoreThanItsEvent::test_a_refused_message, its four cases: room-1 a hook's block, room-2 a read-only source. The source binding is scoped `ws`: the record takes `ws`, what the event would have been delivered with, not the message's own `all`.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms",
+            "visibility": "ws"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms",
+            "visibility": "ws",
+            "access": "read_only"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "gate",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "room_id": "room-1"
+            },
+            "repeat": true,
+            "result": {
+              "action": "block",
+              "reason": "held"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true
+        }
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "content": {
+        "type": "text",
+        "body": "sent"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "source_read_only"
+        }
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-2",
+      "channel_id": "sms",
+      "content": {
+        "type": "text",
+        "body": "sent"
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "hello"
+          },
+          "status": "blocked",
+          "blocked_by": "gate",
+          "visibility": "ws"
+        },
+        {
+          "content": {
+            "body": "sent"
+          },
+          "status": "blocked",
+          "blocked_by": "gate",
+          "visibility": "ws"
+        }
+      ],
+      "room-2": [
+        {
+          "content": {
+            "body": "hello"
+          },
+          "status": "blocked",
+          "blocked_by": "source_read_only",
+          "visibility": "ws"
+        },
+        {
+          "content": {
+            "body": "sent"
+          },
+          "status": "blocked",
+          "blocked_by": "source_read_only",
+          "visibility": "ws"
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": []
+      },
+      "room-2": {
+        "ws": []
+      }
+    }
+  }
+}

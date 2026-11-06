@@ -1,0 +1,144 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-stream-reaches-no-transport-its-agent-s-binding-excludes",
+  "title": "An agent bound to one transport streams to that one only: a streaming transport its binding excludes is streamed nothing",
+  "rules": [
+    "§12.2 step 11s",
+    "§7.3 An event's visibility"
+  ],
+  "notes": "Python: tests/test_visibility_rules.py::TestALiveStream::test_reaches_no_transport_the_agent_s_binding_excludes. The excluded transport is bound first and sorts first, so it would be the stream's target were the binding not read.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "customer",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "staff",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "ans",
+                "wer"
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "customer"
+          },
+          {
+            "channel_id": "staff"
+          },
+          {
+            "channel_id": "ai",
+            "category": "intelligence",
+            "visibility": "staff"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "hello"
+          }
+        },
+        {
+          "index": 1,
+          "source": {
+            "channel_id": "ai"
+          },
+          "content": {
+            "body": "answer"
+          },
+          "visibility": "staff"
+        }
+      ]
+    },
+    "streamed": {
+      "room-1": {
+        "customer": [],
+        "staff": [
+          {
+            "text": "ans"
+          },
+          {
+            "text": "wer"
+          },
+          {
+            "row": {
+              "id": "room-1#1",
+              "content": {
+                "body": "answer"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "customer": [
+          {
+            "index": 0
+          }
+        ],
+        "staff": [
+          {
+            "index": 0
+          }
+        ]
+      }
+    }
+  }
+}

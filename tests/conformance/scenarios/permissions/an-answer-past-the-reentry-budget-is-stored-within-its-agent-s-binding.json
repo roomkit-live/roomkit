@@ -1,0 +1,440 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "permissions/an-answer-past-the-reentry-budget-is-stored-within-its-agent-s-binding",
+  "title": "An answer stored BLOCKED past the reentry budget keeps the visibility its agent's binding gives it",
+  "rules": [
+    "§7.3 An event's visibility",
+    "§8.3"
+  ],
+  "notes": "Python: tests/test_visibility_rules.py::TestARefusedRecordSeesNoMoreThanItsEvent::test_an_answer_stored_past_the_reentry_budget. A budget of 20 (`max_chain_depth` 2): the agent's 21st answer is stored BLOCKED, with its binding's `ws`, as the 20 before it are delivered with.",
+  "setup": {
+    "kit": {
+      "max_chain_depth": 2
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "A0"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "A1"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "A2"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "A3"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "A4"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "A5"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "A6"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "A7"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "A8"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "A9"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "A10"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "A11"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "A12"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "A13"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "A14"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "A15"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "A16"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "A17"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "A18"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "A19"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "A20"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai",
+            "category": "intelligence",
+            "visibility": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "hello"
+          },
+          "status": "delivered"
+        },
+        {
+          "index": 1,
+          "source": {
+            "channel_id": "ai"
+          },
+          "content": {
+            "body": "A0"
+          },
+          "status": "delivered",
+          "visibility": "ws"
+        },
+        {
+          "index": 2,
+          "source": {
+            "channel_id": "ai"
+          },
+          "content": {
+            "body": "A1"
+          },
+          "status": "delivered",
+          "visibility": "ws"
+        },
+        {
+          "index": 3,
+          "source": {
+            "channel_id": "ai"
+          },
+          "content": {
+            "body": "A2"
+          },
+          "status": "delivered",
+          "visibility": "ws"
+        },
+        {
+          "index": 4,
+          "source": {
+            "channel_id": "ai"
+          },
+          "content": {
+            "body": "A3"
+          },
+          "status": "delivered",
+          "visibility": "ws"
+        },
+        {
+          "index": 5,
+          "source": {
+            "channel_id": "ai"
+          },
+          "content": {
+            "body": "A4"
+          },
+          "status": "delivered",
+          "visibility": "ws"
+        },
+        {
+          "index": 6,
+          "source": {
+            "channel_id": "ai"
+          },
+          "content": {
+            "body": "A5"
+          },
+          "status": "delivered",
+          "visibility": "ws"
+        },
+        {
+          "index": 7,
+          "source": {
+            "channel_id": "ai"
+          },
+          "content": {
+            "body": "A6"
+          },
+          "status": "delivered",
+          "visibility": "ws"
+        },
+        {
+          "index": 8,
+          "source": {
+            "channel_id": "ai"
+          },
+          "content": {
+            "body": "A7"
+          },
+          "status": "delivered",
+          "visibility": "ws"
+        },
+        {
+          "index": 9,
+          "source": {
+            "channel_id": "ai"
+          },
+          "content": {
+            "body": "A8"
+          },
+          "status": "delivered",
+          "visibility": "ws"
+        },
+        {
+          "index": 10,
+          "source": {
+            "channel_id": "ai"
+          },
+          "content": {
+            "body": "A9"
+          },
+          "status": "delivered",
+          "visibility": "ws"
+        },
+        {
+          "index": 11,
+          "source": {
+            "channel_id": "ai"
+          },
+          "content": {
+            "body": "A10"
+          },
+          "status": "delivered",
+          "visibility": "ws"
+        },
+        {
+          "index": 12,
+          "source": {
+            "channel_id": "ai"
+          },
+          "content": {
+            "body": "A11"
+          },
+          "status": "delivered",
+          "visibility": "ws"
+        },
+        {
+          "index": 13,
+          "source": {
+            "channel_id": "ai"
+          },
+          "content": {
+            "body": "A12"
+          },
+          "status": "delivered",
+          "visibility": "ws"
+        },
+        {
+          "index": 14,
+          "source": {
+            "channel_id": "ai"
+          },
+          "content": {
+            "body": "A13"
+          },
+          "status": "delivered",
+          "visibility": "ws"
+        },
+        {
+          "index": 15,
+          "source": {
+            "channel_id": "ai"
+          },
+          "content": {
+            "body": "A14"
+          },
+          "status": "delivered",
+          "visibility": "ws"
+        },
+        {
+          "index": 16,
+          "source": {
+            "channel_id": "ai"
+          },
+          "content": {
+            "body": "A15"
+          },
+          "status": "delivered",
+          "visibility": "ws"
+        },
+        {
+          "index": 17,
+          "source": {
+            "channel_id": "ai"
+          },
+          "content": {
+            "body": "A16"
+          },
+          "status": "delivered",
+          "visibility": "ws"
+        },
+        {
+          "index": 18,
+          "source": {
+            "channel_id": "ai"
+          },
+          "content": {
+            "body": "A17"
+          },
+          "status": "delivered",
+          "visibility": "ws"
+        },
+        {
+          "index": 19,
+          "source": {
+            "channel_id": "ai"
+          },
+          "content": {
+            "body": "A18"
+          },
+          "status": "delivered",
+          "visibility": "ws"
+        },
+        {
+          "index": 20,
+          "source": {
+            "channel_id": "ai"
+          },
+          "content": {
+            "body": "A19"
+          },
+          "status": "delivered",
+          "visibility": "ws"
+        },
+        {
+          "index": 21,
+          "source": {
+            "channel_id": "ai"
+          },
+          "content": {
+            "body": "A20"
+          },
+          "status": "blocked",
+          "visibility": "ws"
+        }
+      ]
+    }
+  }
+}

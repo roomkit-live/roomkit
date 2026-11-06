@@ -1,0 +1,128 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/an-answer-scope-of-none-streams-to-no-target",
+  "title": "An answer scope of `none` streams the answer to no transport and delivers it to none",
+  "rules": [
+    "§12.2 step 11s",
+    "§5.12"
+  ],
+  "notes": "Python: tests/test_response_visibility.py::TestResponseVisibilityNone::test_none_skips_all_streaming.",
+  "setup": {
+    "channels": [
+      {
+        "id": "src",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "ans",
+                "wer"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": "st1",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "st2",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "ai",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "st1"
+          },
+          {
+            "channel_id": "st2"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "src",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hi"
+        },
+        "response_visibility": "none"
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "Hi"
+          }
+        },
+        {
+          "id": "room-1#1",
+          "source": {
+            "channel_id": "ai"
+          },
+          "content": {
+            "body": "answer"
+          },
+          "visibility": "none"
+        }
+      ]
+    },
+    "streamed": {
+      "room-1": {
+        "st1": [],
+        "st2": []
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "st1": [
+          {
+            "index": 0
+          }
+        ],
+        "st2": [
+          {
+            "index": 0
+          }
+        ]
+      }
+    }
+  }
+}

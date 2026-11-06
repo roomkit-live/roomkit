@@ -1,0 +1,133 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-stream-row-under-an-internal-answer-scope-is-stored-for-no-channel",
+  "title": "A hook scoping a message's answers `internal` has its streamed answer stored `none` and streamed to no one",
+  "rules": [
+    "§7.3 Who writes `internal`",
+    "§9.4",
+    "§12.2 step 11s"
+  ],
+  "notes": "Python: tests/test_visibility_rules.py::TestOnlyTheFrameworkWritesInternal::test_a_stream_row_carrying_it_is_stored_for_no_channel. A hook's modify writing `internal` as a response visibility reads as `none`.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "ans",
+                "wer"
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "scope-answers",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "source_channel_id": "sms"
+            },
+            "result": {
+              "action": "modify",
+              "event": {
+                "response_visibility": "internal"
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "hello"
+          },
+          "response_visibility": "none"
+        },
+        {
+          "source": {
+            "channel_id": "ai"
+          },
+          "content": {
+            "body": "answer"
+          },
+          "visibility": "none"
+        }
+      ]
+    },
+    "streamed": {
+      "room-1": {
+        "ws": []
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "index": 0
+          }
+        ],
+        "sms": []
+      }
+    }
+  }
+}

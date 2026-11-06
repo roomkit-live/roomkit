@@ -1,0 +1,58 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "injection/a-sent-event-keeps-its-answer-scope",
+  "title": "A direct injection given a response_visibility returns and stores the event with it",
+  "rules": [
+    "§10.5",
+    "§5.12"
+  ],
+  "notes": "Python: tests/test_response_visibility.py::TestResponseVisibilityOnSendEvent::test_send_event_stamps_response_visibility.",
+  "setup": {
+    "channels": [
+      {
+        "id": "src",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "src",
+      "content": {
+        "type": "text",
+        "body": "Hi"
+      },
+      "response_visibility": "ws1",
+      "expect": {
+        "result": {
+          "response_visibility": "ws1"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "Hi"
+          },
+          "response_visibility": "ws1"
+        }
+      ]
+    }
+  }
+}

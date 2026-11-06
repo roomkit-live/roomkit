@@ -1,0 +1,212 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "permissions/an-empty-answer-scope-a-hook-writes-sends-the-answers-nowhere",
+  "title": "A hook writing an empty answer scope on a message sends its answers nowhere, buffered or streamed: each is stored `none`, streamed and delivered to no one",
+  "rules": [
+    "§7.3 Grammar",
+    "§9.4",
+    "§5.12"
+  ],
+  "notes": "Python: tests/test_visibility_rules.py::TestAnEmptyAnswerScope::test_a_hook_writing_an_empty_scope_sends_the_answers_nowhere, buffered (room-1) and streamed (room-2). An empty value that reaches an event other than through a door reads as `none`: it restricts rather than opens.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "live",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "bot",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "AI reply"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "ans",
+                "wer"
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "bot",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "live"
+          },
+          {
+            "channel_id": "ai",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "empty-scope",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "source_channel_id": "sms"
+            },
+            "repeat": true,
+            "result": {
+              "action": "modify",
+              "event": {
+                "response_visibility": ""
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "hello"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "bot"
+          },
+          "content": {
+            "body": "AI reply"
+          },
+          "visibility": "none"
+        }
+      ],
+      "room-2": [
+        {
+          "content": {
+            "body": "hello"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ai"
+          },
+          "content": {
+            "body": "answer"
+          },
+          "visibility": "none"
+        }
+      ]
+    },
+    "streamed": {
+      "room-2": {
+        "live": []
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "index": 0
+          }
+        ],
+        "sms": []
+      },
+      "room-2": {
+        "live": [
+          {
+            "index": 0
+          }
+        ],
+        "sms": []
+      }
+    }
+  }
+}
