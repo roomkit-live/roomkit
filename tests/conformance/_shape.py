@@ -12,6 +12,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from tests.conformance._acp import AGENT as ACP_AGENT
+from tests.conformance._acp import INITIALIZE as ACP_INITIALIZE
+from tests.conformance._acp import PROMPT as ACP_PROMPT
 from tests.conformance._delegate_tool import DELEGATE_TOOL_ARGUMENTS
 from tests.conformance._discussion import (
     DISCUSSION_ARGUMENTS,
@@ -97,6 +100,7 @@ CHANNEL = {
     "on_room_attached",
     "on_room_detached",
     "model",
+    "acp",
     "tools",
     "tool_policy",
     "max_tool_rounds",
@@ -318,6 +322,7 @@ EXPECT = {
     "actions",
     "lifecycle",
     "models",
+    "acp_wire",
     "thinking_events",
     "text_events",
     "streamed",
@@ -506,6 +511,15 @@ def _members(value: Any, known: set[str], path: str, found: list[str]) -> None:
     found.extend(f"{path}: {member}" for member in value if member not in known)
 
 
+def _acp(spec: Mapping[str, Any], path: str, found: list[str]) -> None:
+    _members(spec, {"cwd", "agent"}, path, found)
+    agent = spec.get("agent", {})
+    _members(agent, ACP_AGENT, f"{path}.agent", found)
+    _members(agent.get("initialize", {}), ACP_INITIALIZE, f"{path}.agent.initialize", found)
+    for index, prompt in enumerate(agent.get("prompts", [])):
+        _members(prompt, ACP_PROMPT, f"{path}.agent.prompts[{index}]", found)
+
+
 def _channel(channel: Mapping[str, Any], path: str, found: list[str]) -> None:
     _members(channel, CHANNEL, path, found)
     for kind in (
@@ -520,6 +534,8 @@ def _channel(channel: Mapping[str, Any], path: str, found: list[str]) -> None:
             _reaction(reaction, f"{path}.{kind}[{index}]", found)
     if "model" in channel:
         _model(channel["model"], f"{path}.model", found)
+    if "acp" in channel:
+        _acp(channel["acp"], f"{path}.acp", found)
     if "fallback_model" in channel:
         _model(channel["fallback_model"], f"{path}.fallback_model", found)
     if "retry_policy" in channel:

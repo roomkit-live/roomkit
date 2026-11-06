@@ -36,6 +36,7 @@ from roomkit.orchestration.status_bus import StatusEntry
 from roomkit.realtime import EphemeralEvent, EphemeralEventType, InMemoryRealtime
 from roomkit.store.base import ConversationStore
 from roomkit.tasks import DelegatedTask, DelegateHandler
+from tests.conformance._acp import ScriptedACPAgent
 from tests.conformance._agent import ScriptedModel, tool_call_record
 from tests.conformance._ai_hooks import generation_record, response_record, tool_round_record
 from tests.conformance._audits import Auditors
@@ -176,6 +177,7 @@ class Harness:
         self._step_outcomes: list[dict[str, Any]] = []
         self._problems: list[str] = []
         self.models: dict[str, ScriptedModel] = {}
+        self.acp_agents: dict[str, ScriptedACPAgent] = {}
         self.auditors = Auditors()
         self.handoff_handlers: dict[str, HandoffHandler] = {}
         self.delegate_handlers: dict[str, DelegateHandler] = {}
@@ -680,6 +682,9 @@ class Harness:
         self.observed.steps = self._step_outcomes
         self.observed.models = {
             channel_id: list(model.requests) for channel_id, model in self.models.items()
+        }
+        self.observed.acp_wire = {
+            channel_id: list(agent.received) for channel_id, agent in self.acp_agents.items()
         }
         tools, sessions, problems = self.auditors.observe()
         self.observed.tool_audit, self.observed.session_audit = tools, sessions

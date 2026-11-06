@@ -61,6 +61,7 @@ class Observed:
     steps: list[Any] = field(default_factory=list)
     actions: dict[str, list[Any]] = field(default_factory=dict)
     models: dict[str, list[Any]] = field(default_factory=dict)
+    acp_wire: dict[str, list[Any]] = field(default_factory=dict)
     participants: dict[str, list[Any]] = field(default_factory=dict)
     resolver: list[dict[str, Any]] = field(default_factory=list)
     media_resolver: list[dict[str, Any]] = field(default_factory=list)

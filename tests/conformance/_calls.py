@@ -45,6 +45,7 @@ from roomkit.models.room import Room, RoomTimers
 from roomkit.models.steering import SteeringDirective
 from roomkit.providers.sms import WebhookMeta
 from roomkit.tasks import DelegatedTask
+from tests.conformance._acp import scripted_acp_channel
 from tests.conformance._agent import scripted_agent
 from tests.conformance._script import (
     ScriptedChannel,
@@ -370,6 +371,11 @@ async def _register_channel(kit: RoomKit, harness: Harness, spec: Mapping[str, A
 def register_channel(kit: RoomKit, harness: Harness, channel: Mapping[str, Any]) -> None:
     if channel["type"] == ChannelType.HOST:
         kit.register_channel(HostChannel(channel["id"]))
+        return
+    if "acp" in channel:
+        acp_channel, acp_agent = read(lambda: scripted_acp_channel(channel, harness.gates))
+        harness.acp_agents[channel["id"]] = acp_agent
+        kit.register_channel(acp_channel)
         return
     if "model" in channel:
         agent, models = read(
