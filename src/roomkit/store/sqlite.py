@@ -2240,9 +2240,9 @@ class SQLiteStore(ConversationStore):
         try:
             return Identity.model_validate_json(row[0])
         except ValidationError:
-            raise ValueError(
-                f"Identity {identity_id} has a record the model cannot read"
-            ) from None
+            pass
+        # Raised outside the handler: the model's error is not even its context.
+        raise ValueError(f"Identity {identity_id} has a record the model cannot read")
 
     async def resolve_identity(
         self, channel_type: str, address: str, organization_id: str | None = None
@@ -2267,10 +2267,10 @@ class SQLiteStore(ConversationStore):
             return None
         try:
             identity = self._x_get_identity(row[0])
-        except ValueError as unreadable:
+        except ValueError:
             # It serves no read, and the record is quoted nowhere: it may be another
             # organization's (HITL 4ee4d298).
-            logger.warning("%s", unreadable)
+            logger.warning("Identity %s has a record the model cannot read", row[0])
             return None
         # In its own organization only (RFC §17.2), whatever a row left by a file's
         # migration or written directly says.

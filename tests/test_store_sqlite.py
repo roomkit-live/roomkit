@@ -902,6 +902,7 @@ async def test_a_holder_the_model_cannot_read_keeps_its_address(
 _UNREADABLE_RECORDS = [
     '{"email": "a@globex.example"}',
     '{"id": "i1", "email": "a@globex.example", "channel_addresses": "x"}',
+    '{"id": "i1", "channel_addresses": "a@globex.example"}',
     '["a@globex.example"]',
     "not json, a@globex.example",
     b'\xff{"id": "i1", "email": "a@globex.example"}',
@@ -976,7 +977,7 @@ async def test_a_read_by_id_of_a_record_the_model_cannot_read_quotes_none_of_it(
         await store.close()
     assert str(refused.value) == "Identity i1 has a record the model cannot read"
     assert refused.value.__cause__ is None
-    assert refused.value.__suppress_context__
+    assert refused.value.__context__ is None
 
 
 async def test_an_unlink_removes_the_identity_s_rows_in_every_scope(tmp_path: Path) -> None:
