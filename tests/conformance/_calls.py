@@ -125,6 +125,8 @@ def error_of(error: Exception) -> dict[str, Any]:
         or "setup_delegation() already called" in str(error)
     ):
         return {"name": "already_set_up"}
+    if isinstance(error, TypeError) and "not a strategy stored with the room" in str(error):
+        return {"name": "kind_not_stored"}
     if isinstance(error, ChannelNotBoundError):
         return {"name": "channel_not_bound"}
     if isinstance(error, RefusedArgumentError):
@@ -377,7 +379,11 @@ async def _register_channel(kit: RoomKit, harness: Harness, spec: Mapping[str, A
     register_channel(kit, harness, spec["channel"])
 
 
-def register_channel(kit: RoomKit, harness: Harness, channel: Mapping[str, Any]) -> None:
+def register_channel(
+    kit: RoomKit, harness: Harness, channel: Mapping[str, Any], *, process: bool = False
+) -> None:
+    """Registers *channel* on *kit*; in a *process* of the setup, a scripted
+    agent answers from the model the run's kit's agent of its id has."""
     if channel["type"] == ChannelType.HOST:
         kit.register_channel(HostChannel(channel["id"]))
         return
@@ -397,6 +403,7 @@ def register_channel(kit: RoomKit, harness: Harness, channel: Mapping[str, Any])
                 lambda room_id, channel_id, event: harness.record(
                     "ingested", room_id, channel_id, event
                 ),
+                harness.models if process else None,
             )
         )
         harness.models.update(models)
@@ -500,7 +507,14 @@ async def _steer(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any
     return await kit.steer(directive, spec["channel_id"], **room, **_org(spec))
 
 
+async def _close(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
+    """Closes the kit the call names: a process that stops (README, ``close``)."""
+    harness.closed(kit)
+    await kit.close()
+
+
 CALLS: dict[str, Call] = {
+    "close": _close,
     "process_inbound": _process_inbound,
     "send_event": _send_event,
     "post": _post,

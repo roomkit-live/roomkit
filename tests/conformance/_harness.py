@@ -207,6 +207,27 @@ class Harness:
         if "text_events" in self.scenario.get("expect", {}):
             kwargs["realtime"] = _TextRecorder(self.observed.text_events)
         self.kit = RoomKit(**kwargs)
+        # The other processes of `setup.processes`, by id, and the kits closed.
+        self.processes: dict[str, RoomKit] = {}
+        self._closed: list[RoomKit] = []
+
+    def kit_of(self, spec: Mapping[str, Any]) -> RoomKit:
+        """The kit a call's ``kit`` names: a process of the setup, the run's
+        own kit when it names none (README, ``processes``)."""
+        name = spec.get("kit")
+        if name is None:
+            return self.kit
+        if name not in self.processes:
+            raise UnreadableError(f"no process {name!r} in setup.processes")
+        return self.processes[name]
+
+    def closed(self, kit: RoomKit) -> None:
+        """*kit* was closed by a ``close`` call: no wait, no close of it again."""
+        self._closed.append(kit)
+
+    def _open_kits(self) -> list[RoomKit]:
+        kits = [self.kit, *self.processes.values()]
+        return [kit for kit in kits if all(kit is not closed for closed in self._closed)]
 
     def strategy(self, strategy_id: str) -> Orchestration:
         """The scripted strategy *strategy_id* names (README, \"Setup\")."""
@@ -389,7 +410,8 @@ class Harness:
             await self._thinking_read()
             await self._observe()
         finally:
-            await self.kit.close()
+            for kit in self._open_kits():
+                await kit.close()
             self.auditors.close()
         return self._problems + compare(
             self.scenario.get("expect", {}), self.observed, self._checks
@@ -424,8 +446,18 @@ class Harness:
             register_hook(self.kit, self, hook)
         for hook in setup.get("identity_hooks", []):
             register_identity_hook(self.kit, self, hook)
+        for process in setup.get("processes", []):
+            self.processes[process["id"]] = self._process()
         await start_backend(self.kit)
         await self.idle()
+
+    def _process(self) -> RoomKit:
+        """Another process serving the rooms: a kit over the run's store and
+        lock manager, holding the setup's channels as objects of its own."""
+        kit = RoomKit(store=self.kit.store, lock_manager=self.kit.lock_manager)
+        for channel in self.scenario.get("setup", {}).get("channels", []):
+            register_channel(kit, self, channel, process=True)
+        return kit
 
     async def _step(self, step: Mapping[str, Any], path: str) -> None:
         if "call" in step:
@@ -516,7 +548,8 @@ class Harness:
         calls |= VERIFICATION_CALLS | ROUTING_CALLS | HANDOFF_CALLS | DISCUSSION_CALLS
         call = (calls | DELEGATE_TOOL_CALLS)[spec["call"]]
         try:
-            result = await asyncio.wait_for(call(self.kit, self, resolved), CALL_BOUND_S)
+            kit = self.kit_of(spec)
+            result = await asyncio.wait_for(call(kit, self, resolved), CALL_BOUND_S)
         except TimeoutError:
             self._problems.append(f"{spec['call']} did not return within {CALL_BOUND_S} s")
             return {"result": None, "error": {"name": "<hung>"}}
@@ -544,18 +577,48 @@ class Harness:
 
         It reads the kit's internals (its lanes, its observers, its held
         tasks): the Python core offers no public wait for its background work.
+        With other processes, until no kit does: each discussion's driver is
+        roused first, so that it reads what another process stored, until a
+        round changes nothing the store holds of the rooms.
         """
-        quiet = 0
         try:
             async with asyncio.timeout(CALL_BOUND_S):
-                while quiet < 3:
-                    busy = await self._drain_once()
-                    await asyncio.sleep(0)
-                    quiet = 0 if busy else quiet + 1
+                if not self.processes:
+                    await self._quiet()
+                    return
+                before = None
+                while True:
+                    for kit in self._open_kits():
+                        for discussion in list(kit._discussions.values()):
+                            discussion.wake()
+                        await self._quiet(kit)
+                    after = await self._rooms_read()
+                    if after == before:
+                        return
+                    before = after
         except TimeoutError:
             self._problems.append(f"the kit did not go idle within {CALL_BOUND_S} s")
 
-    async def _drain_once(self, *, after_turn: bool = True) -> bool:
+    async def _quiet(self, kit: RoomKit | None = None) -> None:
+        quiet = 0
+        while quiet < 3:
+            busy = await self._drain_once(kit=kit)
+            await asyncio.sleep(0)
+            quiet = 0 if busy else quiet + 1
+
+    async def _rooms_read(self) -> list[tuple[str, int | None, Any, bool]]:
+        """What the store holds of each room that the processes move: its
+        latest index and its discussion's queue version."""
+        read = []
+        for room in await self.kit.store.list_rooms(limit=1000):
+            queue = (room.metadata or {}).get("_speak_queue") or {}
+            stored = "_discussion" in (room.metadata or {})
+            read.append((room.id, room.latest_index, queue.get("version"), stored))
+        return read
+
+    async def _drain_once(self, *, after_turn: bool = True, kit: RoomKit | None = None) -> bool:
+        if kit is not None and kit is not self.kit:
+            return await self._drain_process(kit)
         busy = False
         for lane in list(self.kit._lanes._lanes.values()):
             if lane._indexed or lane._unindexed or lane._busy:
@@ -593,6 +656,26 @@ class Harness:
             busy = True
             await asyncio.sleep(0.005)
         if discussions_busy(self.kit):
+            busy = True
+            await asyncio.sleep(0.001)
+        return busy
+
+    async def _drain_process(self, kit: RoomKit) -> bool:
+        """One pass of the idle wait over another process's kit: its lanes,
+        its observers and hook tasks, its discussions."""
+        busy = False
+        for lane in list(kit._lanes._lanes.values()):
+            if lane._indexed or lane._unindexed or lane._busy:
+                busy = True
+                await lane.drain()
+        if kit.hook_engine.running_observers():
+            busy = True
+            await kit.hook_engine.drain_observers()
+        tasks = [task for task in kit._pending_hook_tasks if not task.done()]
+        if tasks:
+            busy = True
+            await asyncio.wait(tasks, timeout=CALL_BOUND_S)
+        if discussions_busy(kit):
             busy = True
             await asyncio.sleep(0.001)
         return busy

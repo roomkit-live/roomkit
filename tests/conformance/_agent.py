@@ -515,14 +515,18 @@ def scripted_agent(
     labelled: Callable[[Any], Any] | None = None,
     auditors: Auditors | None = None,
     ingested: Callable[[str, str, RoomEvent], None] | None = None,
+    shared: Mapping[str, ScriptedModel] | None = None,
 ) -> tuple[AIChannel, dict[str, ScriptedModel]]:
     """The AI channel of a scripted agent, and its models by the name
     ``expect.models`` gives them: its own under its id, its memory's
     summarizer under ``<id>/summarizer``, its fallback under
     ``<id>/fallback``; a round or a tool with a ``gate``
     holds at it; the tools *kit* makes that it is given, after its own; its
-    calls' arguments read by *labelled* as the model writes them."""
-    model = ScriptedModel(
+    calls' arguments read by *labelled* as the model writes them. A model
+    *shared* holds under its name is answered from, as another process's
+    channel of the same id is (README, ``processes``)."""
+    shared = shared or {}
+    model = shared.get(spec["id"]) or ScriptedModel(
         spec["model"]["rounds"],
         gates,
         vision=bool(spec["model"].get("vision", False)),
@@ -581,7 +585,7 @@ def scripted_agent(
     if "retry_policy" in spec:
         kwargs["retry_policy"] = _retry_policy(spec["retry_policy"])
     if "fallback_model" in spec:
-        fallback = ScriptedModel(
+        fallback = shared.get(f"{spec['id']}/fallback") or ScriptedModel(
             spec["fallback_model"]["rounds"],
             gates,
             vision=bool(spec["fallback_model"].get("vision", False)),
@@ -613,7 +617,9 @@ def scripted_agent(
         memory = spec["memory"]
         summarizer = None
         if "summarizer" in memory:
-            summarizer = ScriptedModel(memory["summarizer"]["rounds"], gates)
+            summarizer = shared.get(f"{spec['id']}/summarizer") or ScriptedModel(
+                memory["summarizer"]["rounds"], gates
+            )
             models[f"{spec['id']}/summarizer"] = summarizer
         kwargs["memory"] = scripted_memory(
             memory, spec.get("max_context_events", 50), summarizer, _told(ingested, spec["id"])

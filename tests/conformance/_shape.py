@@ -56,7 +56,9 @@ SETUP = {
     "identities",
     "strategies",
     "session_auditor",
+    "processes",
 }
+PROCESS = {"id"}
 KIT = {
     "max_chain_depth",
     "process_timeout_ms",
@@ -414,6 +416,7 @@ CALLS: dict[str, set[str]] = {
     },
     "cancel_delivery": {"key", "reason"},
     "steer": {"channel_id", "directive", "room_id"},
+    "close": set(),
 }
 CALLS |= STORE_ARGUMENTS | READ_MARKER_ARGUMENTS | TASK_ARGUMENTS | MEMBER_ARGUMENTS
 CALLS |= INPUT_ARGUMENTS
@@ -456,6 +459,8 @@ def unknown_members(scenario: Mapping[str, Any]) -> list[str]:
         _hook(hook, f"setup.hooks[{position}]", found)
     for position, strategy in enumerate(setup.get("strategies", [])):
         _strategy(strategy, f"setup.strategies[{position}]", found)
+    for position, process in enumerate(setup.get("processes", [])):
+        _members(process, PROCESS, f"setup.processes[{position}]", found)
     for position, step in enumerate(scenario.get("steps", [])):
         _step(step, f"steps[{position}]", found)
     expect = scenario.get("expect", {})
@@ -650,7 +655,7 @@ def _reaction(reaction: Mapping[str, Any], path: str, found: list[str]) -> None:
 
 def _step(step: Mapping[str, Any], path: str, found: list[str]) -> None:
     if "call" in step:
-        _call(step, {"as", "background", "expect"}, path, found)
+        _call(step, {"as", "background", "expect", "kit"}, path, found)
         return
     kinds = [kind for kind in STEPS if kind in step]
     if len(kinds) != 1:
@@ -660,7 +665,7 @@ def _step(step: Mapping[str, Any], path: str, found: list[str]) -> None:
     if kinds[0] == "await" and "expect" in step:
         _outcome(step["expect"], f"{path}.expect", found)
     for index, call in enumerate(step.get("concurrent", [])):
-        _call(call, {"as", "expect"}, f"{path}.concurrent[{index}]", found)
+        _call(call, {"as", "expect", "kit"}, f"{path}.concurrent[{index}]", found)
 
 
 def _call(call: Mapping[str, Any], extra: set[str], path: str, found: list[str]) -> None:

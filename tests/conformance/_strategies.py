@@ -15,7 +15,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from roomkit import RoomKit
-from roomkit.orchestration import Loop, Pipeline, Supervisor, Swarm
+from roomkit.orchestration import Discussion, Loop, Pipeline, Supervisor, Swarm
 from roomkit.orchestration.base import Orchestration
 from tests.conformance._discussion import installed_discussion
 from tests.conformance._script import perform
@@ -176,11 +176,29 @@ async def _room_strategy(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]
     raise TypeError(f"room {spec['room_id']} holds a strategy no scenario named")
 
 
+# The kinds of strategy `room_strategy_is_current` names (README, "Calls").
+KINDS: dict[str, type[Orchestration]] = {
+    "Discussion": Discussion,
+    "Pipeline": Pipeline,
+    "Swarm": Swarm,
+    "Loop": Loop,
+    "Supervisor": Supervisor,
+}
+
+
+async def _room_strategy_is_current(
+    kit: RoomKit, harness: Harness, spec: Mapping[str, Any]
+) -> Any:
+    kind = KINDS[spec["kind"]]
+    return await kit.room_strategy_is_current(spec["room_id"], kind, **_org(spec))
+
+
 STRATEGY_CALLS: dict[str, Call] = {
     "install_strategy": _install,
     "uninstall_strategy": _uninstall,
     "claim_room_strategy": _claim,
     "room_strategy": _room_strategy,
+    "room_strategy_is_current": _room_strategy_is_current,
 }
 
 STRATEGY_ARGUMENTS: dict[str, set[str]] = {
@@ -188,4 +206,5 @@ STRATEGY_ARGUMENTS: dict[str, set[str]] = {
     "uninstall_strategy": {"room_id"},
     "claim_room_strategy": {"room_id", "strategy"},
     "room_strategy": {"room_id"},
+    "room_strategy_is_current": {"room_id", "kind"},
 }
