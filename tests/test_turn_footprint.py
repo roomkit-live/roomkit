@@ -20,16 +20,20 @@ from roomkit.channels._ai_cuts import CUT_NOTE
 from roomkit.channels._speaker import SPEAKER_ATTRIBUTION_NOTE
 from roomkit.channels._turn_notes import turn_notes
 from roomkit.channels.agent import Agent
+from roomkit.channels.ai import AIChannel
 from roomkit.core.framework import RoomKit
 from roomkit.memory import (
     BudgetAwareMemory,
+    CompactingMemory,
     MemoryProvider,
     MemoryResult,
     SlidingWindowMemory,
+    SummarizingMemory,
     TurnFootprint,
     current_turn_footprint,
 )
 from roomkit.memory.token_estimator import (
+    estimate_context_tokens,
     estimate_message_tokens,
     estimate_tokens,
     estimate_tool_tokens,
@@ -281,13 +285,84 @@ async def test_a_budget_aware_memory_reserves_at_least_the_measured_footprint() 
     assert declared_larger == measured
 
 
-async def test_the_reply_is_reserved_once_the_larger_of_the_margin_and_its_budget() -> None:
+def _windowed(kind: str, window: int) -> MemoryProvider:
+    """A memory of *kind* that keeps the turn within *window*, its defaults otherwise."""
+    inner = SlidingWindowMemory(max_events=200)
+    summarizer = MockAIProvider(responses=["The person asked many things."])
+    if kind == "budget_aware":
+        return BudgetAwareMemory(inner, max_context_tokens=window)
+    if kind == "compacting":
+        return CompactingMemory(inner, summarizer, max_context_tokens=window)
+    return SummarizingMemory(inner, summarizer, max_context_tokens=window)
+
+
+@pytest.mark.parametrize("kind", ["budget_aware", "compacting", "summarizing"])
+async def test_the_window_holds_the_turn_its_history_and_its_reply(kind: str) -> None:
+    """A 32K window, a 12K system prompt, 8K of tools and a 6K reply: a memory
+    that keeps the turn within the window sizes the history to what the rest
+    of the turn leaves, so what the model is sent and the reply it may write
+    fit the window, some history kept (RMK-450)."""
+    window, reply = 32_000, 6_000
+    provider = MockAIProvider(responses=["ok"])
+    agent = AIChannel(
+        "agent",
+        provider=provider,
+        system_prompt="Follow the house rules. " * 2_000,
+        max_tokens=reply,
+        tools=[
+            AITool(name=f"tool_{n}", description="Looks things up. " * 235, parameters={})
+            for n in range(8)
+        ],
+        tool_handler=AsyncMock(return_value="ok"),
+        tool_search=False,
+        memory=_windowed(kind, window),
+    )
+    history = [
+        make_event(body=f"message {n} " + "word " * 400, room_id="r1", channel_id="member")
+        if n % 2 == 0
+        else make_event(
+            body=f"answer {n} " + "word " * 400,
+            room_id="r1",
+            channel_id="agent",
+            channel_type=ChannelType.AI,
+        )
+        for n in range(120)
+    ]
+    current = make_event(body="What did we decide?", room_id="r1", channel_id="member")
+    member = ChannelBinding(channel_id="member", room_id="r1", channel_type=ChannelType.SMS)
+    room = RoomContext(
+        room=Room(id="r1"), bindings=[member, _binding()], recent_events=[*history, current]
+    )
+
+    await respond(agent, current, _binding(), room)
+
+    sent = provider.calls[0]
+    assert estimate_tokens(sent.system_prompt or "") > 12_000
+    assert sum(estimate_tool_tokens(tool) for tool in sent.tools or []) > 8_000
+    assert len(sent.messages) > 2
+    assert estimate_context_tokens(sent) + reply <= window
+
+
+@pytest.mark.parametrize(
+    "memory",
+    [
+        BudgetAwareMemory(SlidingWindowMemory(max_events=100), max_context_tokens=20_000),
+        CompactingMemory(
+            SlidingWindowMemory(max_events=100),
+            MockAIProvider(responses=["summary"]),
+            max_context_tokens=20_000,
+        ),
+    ],
+    ids=["budget_aware", "compacting"],
+)
+async def test_the_reply_is_reserved_once_the_larger_of_the_margin_and_its_budget(
+    memory: MemoryProvider,
+) -> None:
     """The 15 % margin is the reply's headroom: a reply budget under it changes
     nothing, one over it is reserved instead of it, never on top."""
     history = [make_event(body="history " * 200, room_id="r1") for _ in range(80)]
     current = make_event(body="now", room_id="r1")
     context = RoomContext(room=Room(id="r1"), recent_events=[*history, current])
-    memory = BudgetAwareMemory(SlidingWindowMemory(max_events=100), max_context_tokens=20_000)
 
     async def kept(reply_tokens: int) -> int:
         footprint = TurnFootprint(input_tokens=1_000, reply_tokens=reply_tokens)
