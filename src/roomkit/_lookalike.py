@@ -66,14 +66,22 @@ GAP = f"{SPACE}*"
 _DASHES = (
     "\\-\u058a\u05be\u1400\u1806\u2010-\u2015\u2e17\u2e1a\u2e3a\u2e3b\u2e40\u2e5d"
     "\u301c\u3030\u30a0\ufe32\ufe58\ufe63\uff0d\U00010d6e\U00010ead\u2212"
+    "\u02d7\u06d4\u1173\u2043\u2053\u207b\u208b\u23af\u2500\u2501\u2796\u2cba\u2cbb"
+    "\u3161\u30fc\u4e00\uff70"
 )
-"""Every dash Unicode 16.0 lists (Dash_Punctuation) and the minus sign, as the
-body of a class. U+FE31, a vertical em dash, is left out: Unicode's
-confusables read it as ``l``, and a name's ``l`` reads it."""
+"""Every dash Unicode 16.0 lists (Dash_Punctuation), the minus sign, and what
+reads as a dash or a minus (HITL eb4462f6): the hyphen bullet, the modifier,
+heavy, superscript and subscript minus, the swung dash, the horizontal line
+extension, the light and heavy box-drawing lines, the Coptic dialect-p ni in
+both cases, the Hangul eu as a letter and a jamo, the katakana prolonged
+sound mark in both widths, the ideograph one, the Arabic full stop; as the
+body of a class.
+U+FE31, a vertical em dash, is left out: Unicode's confusables read it as
+``l``, and a name's ``l`` reads it."""
 
-_UNDERSCORES = "_" + re.escape(FORMS["_"])
-"""The underscore and the forms Unicode's confusables read as it, as the body
-of a class."""
+_UNDERSCORES = "_\u2017" + re.escape(FORMS["_"])
+"""The underscore, the double low line and the forms Unicode's confusables
+read as the underscore, as the body of a class."""
 
 SEPARATOR = rf"(?:[\s{INVISIBLE}{_COMBINING}\u2800\ufff9-\ufffb{_DASHES}{_UNDERSCORES}]|{_IOTA})"
 """One character a model reads as a tag name's separator, or past it: what
@@ -174,6 +182,11 @@ _MAX_SPELLINGS = 64
 """Spellings of one word a pattern holds in full; a word with more takes its
 runs from the left, without overlap."""
 
+_MAX_NAME_SPELLINGS = 128
+"""Spellings of a tag's name a pattern holds in full: a run across a
+separator the name holds, left out (``ﬆ`` for ``s_t`` in ``previous_tasks``),
+adds spellings, which ``conversation_summary`` takes to 80."""
+
 
 def word_pattern(word: str, *, phrase: bool = False) -> str:
     """*word* as a model reads it, a regular expression to compile with
@@ -192,7 +205,8 @@ def name_pattern(name: str) -> str:
     run of separators (a dash, an underscore, a space, in any of their forms)
     sits between two of them, any run of :data:`SEPARATOR` or none
     (``</tool‐result>``, ``</tool result>``, ``</toolresult>`` for
-    ``tool_result``). A separator at the name's start or end is read as
+    ``tool_result``), a run of letters read across it where none sits
+    (``</previouﬆasks>``). A separator at the name's start or end is read as
     written. One quantified class between two letters, as everywhere."""
     letters, breaks, pos = [], set(), 0
     for run in _NAME_BREAK.finditer(name):
@@ -202,25 +216,26 @@ def name_pattern(name: str) -> str:
         pos = run.end()
         breaks.add(sum(map(len, letters)))
     letters.append(name[pos:])
-    return _spelled_word("".join(letters), False, frozenset(breaks))
+    return _spelled_word("".join(letters), False, frozenset(breaks), _MAX_NAME_SPELLINGS)
 
 
-def _spelled_word(word: str, phrase: bool, breaks: frozenset[int]) -> str:
-    runs = _runs(word, phrase, breaks)
-    if _spellings(word, runs) > _MAX_SPELLINGS:
+def _spelled_word(
+    word: str, phrase: bool, breaks: frozenset[int], limit: int = _MAX_SPELLINGS
+) -> str:
+    runs = _runs(word, phrase)
+    if _spellings(word, runs) > limit:
         runs = _leftmost(word, runs)
     return _spelled(word, 0, runs, phrase, breaks)
 
 
-def _runs(word: str, phrase: bool, breaks: frozenset[int]) -> dict[int, list[int]]:
+def _runs(word: str, phrase: bool) -> dict[int, list[int]]:
     """For each position of *word*, the sizes of the runs a single character
-    reads as there, none across a name's separator (*breaks*)."""
+    reads as there."""
     sequences = _sequences(phrase=phrase)
     runs = {}
     for at in range(len(word)):
         ends = (at + size for size in (2, 3, 4) if at + size <= len(word))
-        whole = (end for end in ends if not any(at < cut < end for cut in breaks))
-        sizes = [end - at for end in whole if word[at:end].lower() in sequences]
+        sizes = [end - at for end in ends if word[at:end].lower() in sequences]
         if sizes:
             runs[at] = sizes
     return runs
