@@ -47,9 +47,16 @@ from roomkit.providers.ai.base import (
     response_stream_events,
     stream_call_of,
 )
+from roomkit.providers.ai.response_schema import (
+    check_schema_answer,
+    checked_stream,
+    schema_for_generate,
+)
+from roomkit.providers.ai.tool_calls import is_malformed_call
 from roomkit.providers.deepseek.ai import DEEPSEEK_CHAT
 from roomkit.providers.kimi.ai import KIMI_CHAT
 from roomkit.providers.minimax.ai import MINIMAX_CHAT
+from roomkit.providers.utils import _aclose_stream
 from roomkit.skills.registry import SkillRegistry
 from roomkit.tasks import CancelTaskTool, TaskStatusTool
 from roomkit.tools import current_response_metadata
@@ -110,8 +117,12 @@ class ScriptedModel(AIProvider):
         name: str = "scripted",
         provider: str = "scripted",
         chat_dialect: str | None = None,
+        response_schema: bool = False,
+        response_schema_with_tools: bool = False,
     ) -> None:
         self._chat_dialect = None if chat_dialect is None else CHAT_DIALECTS[chat_dialect]
+        self._response_schema = response_schema
+        self._response_schema_with_tools = response_schema_with_tools
         self._context_window = context_window
         self._name = name
         self._provider = provider
@@ -134,6 +145,14 @@ class ScriptedModel(AIProvider):
     def supports_vision(self) -> bool:
         return self._vision
 
+    @property
+    def supports_response_schema(self) -> bool:
+        return self._response_schema
+
+    @property
+    def supports_response_schema_with_tools(self) -> bool:
+        return self._response_schema_with_tools
+
     def catalog_entry(self) -> ModelInfo | None:
         """The model's catalogue entry, with the price and the context window
         the scenario gives it; none for a model the scenario gives neither."""
@@ -144,10 +163,26 @@ class ScriptedModel(AIProvider):
         )
 
     async def generate(self, context: AIContext) -> AIResponse:
+        self._refuse_unsupported(context)
         round_ = self._next_round(context)
         await self._hold(round_)
         _refuse(round_)
-        return _response(round_, self._labelled)
+        response = _response(round_, self._labelled)
+        # As a real provider: a round that calls, or that ended on a call its
+        # provider could not hand over, is no answer (RFC §6.7).
+        if not response.tool_calls and not is_malformed_call(response.finish_reason):
+            _check_answer(context, response.content, response.finish_reason, self._provider)
+        return response
+
+    def _refuse_unsupported(self, context: AIContext) -> None:
+        """Refuse, before the request is made or kept, a schema the model
+        cannot take (README, ``model.response_schema``)."""
+        schema_for_generate(
+            context,
+            supported=self._response_schema,
+            with_tools=self._response_schema_with_tools,
+            provider=self._provider,
+        )
 
     async def _hold(self, round_: Mapping[str, Any]) -> None:
         """Hold the round at its ``gate``, before it writes anything."""
@@ -155,6 +190,20 @@ class ScriptedModel(AIProvider):
             await self._gates.hold(gate)
 
     async def generate_structured_stream(self, context: AIContext) -> AsyncIterator[StreamEvent]:
+        """The round's events, under a response schema refused before the
+        request when the model takes none, and checked before its done event
+        (README, ``model.response_schema``)."""
+        self._refuse_unsupported(context)
+        stream = checked_stream(
+            self._scripted_stream(context), context, provider=self._provider, refusal=_refused
+        )
+        try:
+            async for event in stream:
+                yield event
+        finally:
+            await _aclose_stream(stream)
+
+    async def _scripted_stream(self, context: AIContext) -> AsyncIterator[StreamEvent]:
         """The round's text as its deltas, then its calls and its end; a round
         that ``fails`` raises once its deltas are written, once its calls are
         with ``failure_after_calls``, or once its end is with
@@ -211,6 +260,7 @@ class ScriptedModel(AIProvider):
                 "reasoning_effort": context.reasoning_effort,
                 "thinking_budget": context.thinking_budget,
                 "enable_thinking": context.enable_thinking,
+                "response_schema": context.response_schema,
                 "tools": {
                     tool.name: position for position, tool in enumerate(context.tools or [])
                 },
@@ -227,6 +277,27 @@ class ScriptedModel(AIProvider):
         if position >= len(self._rounds):
             raise ModelPastItsScriptError(f"generation {position + 1} is past the script")
         return self._rounds[position]
+
+
+def _refused(done: StreamDone) -> str | None:
+    """Why a scripted round declined to answer: its ``refusal`` finish reason."""
+    return "refusal" if done.finish_reason == "refusal" else None
+
+
+def _check_answer(
+    context: AIContext, content: str, finish_reason: str | None, provider: str
+) -> None:
+    """Refuse a whole answer that did not deliver the JSON document its
+    schema asks for (RFC §6.7); none is checked without a schema."""
+    if context.response_schema is None:
+        return
+    check_schema_answer(
+        content,
+        schema=context.response_schema,
+        provider=provider,
+        refusal="refusal" if finish_reason == "refusal" else None,
+        finish_reason=finish_reason,
+    )
 
 
 def _refuse(round_: Mapping[str, Any]) -> None:
@@ -461,6 +532,8 @@ def scripted_agent(
         name=spec["model"].get("name", "scripted"),
         provider=spec["model"].get("provider", "scripted"),
         chat_dialect=spec["model"].get("chat_dialect"),
+        response_schema=bool(spec["model"].get("response_schema", False)),
+        response_schema_with_tools=bool(spec["model"].get("response_schema_with_tools", False)),
     )
     models = {spec["id"]: model}
     tools = spec.get("tools", [])
@@ -485,6 +558,7 @@ def scripted_agent(
         "temperature",
         "max_tokens",
         "reasoning_effort",
+        "response_schema",
         "thinking_budget",
         "enable_thinking",
         "thinking_coalesce_ms",

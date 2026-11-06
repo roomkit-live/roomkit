@@ -102,6 +102,7 @@ CHANNEL = {
     "tool_timeouts_ms",
     "turn_budget_tokens",
     "reasoning_effort",
+    "response_schema",
     "turn_budget_usd",
     "system_prompt",
     "temperature",
@@ -151,7 +152,17 @@ AGENT = {
     "greeting",
     "auto_greet",
 }
-MODEL = {"rounds", "vision", "pricing", "context_window", "name", "provider", "chat_dialect"}
+MODEL = {
+    "rounds",
+    "vision",
+    "pricing",
+    "context_window",
+    "name",
+    "provider",
+    "chat_dialect",
+    "response_schema",
+    "response_schema_with_tools",
+}
 MODEL_ROUND = {
     "text",
     "deltas",
@@ -198,6 +209,7 @@ TURN_CONFIG = {
     "temperature",
     "max_tokens",
     "reasoning_effort",
+    "response_schema",
     "turn_budget_tokens",
     "turn_budget_usd",
     "tool_handler",
