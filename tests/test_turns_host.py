@@ -26,7 +26,12 @@ from roomkit.orchestration.strategies.supervisor import Supervisor
 from roomkit.providers.ai.base import AIResponse, AITool, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.speaking.always import AlwaysSpeak
-from roomkit.tools.context import _current_turn_chain_depth
+from roomkit.tools.context import (
+    _current_turn_chain_depth,
+    current_tool_actor_id,
+    current_tool_call,
+    current_tool_room_id,
+)
 from tests.test_framework import SimpleChannel
 
 USE = AITool(name="use_host", description="Use the host.", parameters={"type": "object"})
@@ -573,4 +578,133 @@ async def test_send_event_from_a_turn_the_lane_itself_reads_returns_detached() -
     assert [e.content.body for e in sent] == ["posted"]
     texts = [e.content.body for e in result.response_events if isinstance(e.content, TextContent)]
     assert texts == ["Presented."]
+    await kit.close()
+
+
+# -- The verbs a host declares ----------------------------------------------------
+
+
+async def test_a_declared_verb_runs_on_the_owner_under_what_the_turn_gave_the_call(
+    verbs: list[tuple[str, str]],
+) -> None:
+    """A host's code that needs the owner's process reaches it by name: the
+    owner runs it with the turn's room, actor and tool call, its arguments
+    and its result data (RFC §10.6.5)."""
+    on_executor: dict[str, Any] = {}
+
+    async def use(host: TurnHost) -> Any:
+        on_executor["actor"] = current_tool_actor_id()
+        on_executor["call"] = current_tool_call()
+        return await host.call("app.where", {"page": "/boards"})
+
+    async def where(arguments: dict[str, Any]) -> dict[str, Any]:
+        call = current_tool_call()
+        return {
+            "room": current_tool_room_id(),
+            "actor": current_tool_actor_id(),
+            "tool_call_id": call.tool_call_id if call else None,
+            "arguments": arguments,
+        }
+
+    kit, _, seen = await _kit(use)
+    kit.declare_host_verb("app.where", where)
+
+    await kit.send_event(
+        room_id="r1", channel_id="ops", content=TextContent(body="go"), participant_id="alice"
+    )
+
+    assert on_executor["actor"] == "alice"
+    assert seen["result"] == {
+        "room": "r1",
+        "actor": "alice",
+        "tool_call_id": on_executor["call"].tool_call_id,
+        "arguments": {"page": "/boards"},
+    }
+    assert _on_owner(verbs, "app.where")
+    await kit.close()
+
+
+async def test_a_declared_verb_that_raises_raises_in_the_tool_with_its_class() -> None:
+    async def use(host: TurnHost) -> Any:
+        try:
+            await host.call("app.refuse")
+        except PermissionError as exc:
+            return str(exc)
+        return None
+
+    async def refuse(arguments: dict[str, Any]) -> None:
+        raise PermissionError("not this member")
+
+    kit, _, seen = await _kit(use)
+    kit.declare_host_verb("app.refuse", refuse)
+
+    await _say(kit)
+
+    assert seen["result"] == "not this member"
+    await kit.close()
+
+
+async def test_a_verb_no_host_declared_is_refused_by_the_owner() -> None:
+    async def use(host: TurnHost) -> Any:
+        try:
+            await host.call("app.missing", {})
+        except ValueError as exc:
+            return str(exc)
+        return None
+
+    kit, _, seen = await _kit(use)
+
+    await _say(kit)
+
+    assert "No verb 'app.missing'" in seen["result"]
+    await kit.close()
+
+
+async def test_a_declared_verb_needs_its_turn() -> None:
+    ran: list[dict[str, Any]] = []
+
+    async def use(host: TurnHost) -> Any:
+        return None
+
+    async def record(arguments: dict[str, Any]) -> None:
+        ran.append(arguments)
+
+    kit, _, seen = await _kit(use)
+    kit.declare_host_verb("app.record", record)
+
+    await _say(kit)
+
+    with pytest.raises(RuntimeError, match="needs a turn"):
+        await seen["host"].call("app.record", {"late": True})
+    assert ran == []
+    await kit.close()
+
+
+async def test_a_roomkit_verb_is_sent_by_its_own_method_only() -> None:
+    async def use(host: TurnHost) -> Any:
+        try:
+            await host.call("update_room_metadata", {"room_id": "r1", "metadata": {"x": 1}})
+        except ValueError as exc:
+            return str(exc)
+        return None
+
+    kit, _, seen = await _kit(use)
+
+    await _say(kit)
+
+    assert "TurnHost.update_room_metadata" in seen["result"]
+    assert (await kit.get_room("r1")).metadata == {}
+    await kit.close()
+
+
+@pytest.mark.parametrize("name", ["", "send_event", "app.twice"])
+async def test_a_verb_name_already_held_or_empty_is_refused(name: str) -> None:
+    async def verb(arguments: dict[str, Any]) -> None:
+        return None
+
+    kit = RoomKit()
+    kit.declare_host_verb("app.twice", verb)
+
+    with pytest.raises(ValueError):
+        kit.declare_host_verb(name, verb)
     await kit.close()

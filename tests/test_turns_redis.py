@@ -41,6 +41,7 @@ from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.store.base import ConversationStore
 from roomkit.store.memory import InMemoryStore
 from roomkit.store.sqlite import SQLiteStore
+from roomkit.tools.context import current_tool_room_id
 from roomkit.turns import TurnClient, TurnExecutor, TurnTimeouts
 from roomkit.turns._redis_beat import BeatThread, LiveExecutors
 from roomkit.turns._redis_clients import call_bound, read_block, redis_clients
@@ -1894,3 +1895,47 @@ def _weather_agent(channel_id: str) -> Agent:
         tools=[AITool(name="get_weather", description="The weather.")],
         tool_handler=weather,
     )
+
+
+async def test_a_verb_the_host_declared_runs_on_the_owner_from_an_executor_elsewhere(
+    prefix: str, redis_client: Any
+) -> None:
+    """A host tool on an executor reaches what only the owner's process holds
+    through a verb the owner's host declared (RFC §10.6.5): the verb runs
+    there, for the turn's room, its arguments and its result crossing Redis."""
+    store = InMemoryStore()
+    served: list[tuple[str | None, dict[str, Any]]] = []
+    tool = AITool(name="navigate", description="Open a page.", parameters={"type": "object"})
+
+    async def handler(name: str, arguments: dict[str, Any]) -> str:
+        host = current_turn_host()
+        assert host is not None
+        answer = await host.call("app.navigate", {"page": "/boards"})
+        return json.dumps(answer)
+
+    calling = AIResponse(
+        content="", tool_calls=[AIToolCall(id="c1", name="navigate", arguments={})]
+    )
+    agent = Agent(
+        "worker",
+        provider=MockAIProvider(ai_responses=[calling, AIResponse(content="Opened.")]),
+        tools=[tool],
+        tool_handler=handler,
+    )
+    host, executor = await _hosted(prefix, store, agent)
+    kit = await _owner(prefix, "worker", store=store)
+
+    async def navigate(arguments: dict[str, Any]) -> dict[str, Any]:
+        served.append((current_tool_room_id(), arguments))
+        return {"opened": arguments["page"]}
+
+    kit.declare_host_verb("app.navigate", navigate)
+    try:
+        await kit.process_inbound(_said("Open my boards."), room_id="r")
+
+        assert served == [("r", {"page": "/boards"})]
+        assert await _answers(kit) == ["Opened."]
+    finally:
+        await kit.close()
+        await host.close()
+        await executor.close()

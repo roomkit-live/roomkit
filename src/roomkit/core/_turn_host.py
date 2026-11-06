@@ -15,6 +15,10 @@ and at the depth its ``room_call`` carries (RFC §10.6.5).
 
 The tasks the room's hosts delegate are kept for ``wait_task`` as long as
 they run, and once ended until :data:`ENDED_TASKS_KEPT` more ended after them.
+
+A verb the host declared (:meth:`KitHost.declare`) runs the host's code with
+its arguments as data, under what the turn gave the call; its result goes
+back as data. It is served during its turn only.
 """
 
 from __future__ import annotations
@@ -36,6 +40,7 @@ from roomkit.turns.host import (
     BETWEEN_TURNS,
     VERBS,
     AddObservation,
+    DeclaredVerb,
     Delegate,
     PostStatus,
     RoomTasks,
@@ -91,8 +96,24 @@ class KitHost(OwnerHost):
             "room_tasks": self._room_tasks,
             "room_vision": self._room_vision,
         }
+        self._declared: dict[str, DeclaredVerb] = {}
+
+    def declare(self, name: str, verb: DeclaredVerb) -> None:
+        """Serve *verb* under *name* for the hosts of this kit's turns.
+
+        Raises:
+            ValueError: *name* is empty, one of RoomKit's verbs, or declared.
+        """
+        if not name:
+            raise ValueError("A host verb needs a name")
+        if name in VERBS or name in self._declared:
+            raise ValueError(f"A turn's host already has a verb {name!r}")
+        self._declared[name] = verb
 
     async def call(self, request: TurnRequest, verb: str, arguments: dict[str, Any]) -> Any:
+        declared = self._declared.get(verb)
+        if declared is not None:
+            return to_jsonable_python(await declared(dict(arguments)), fallback=str)
         serve, args = self._parsed(verb, arguments)
         return to_jsonable_python(await serve(_Scope.of(request), args), fallback=str)
 

@@ -17,6 +17,14 @@ A host acts for its turn's room: a verb naming another room, or another
 organization than the room's, is refused. The verbs are enumerated here, each
 with the record its arguments cross as; the owner validates what it receives
 against it, and refuses an argument the record does not name.
+
+A host also declares verbs of its own on the room owner
+(``RoomKit.declare_host_verb``), for its code that needs the owner's process
+(a connection only the owner holds, a service it runs): :meth:`TurnHost.call`
+sends one by its name, its arguments and its result data, and the owner runs
+it under what the turn gave the call, which the accessors of
+``roomkit.tools.context`` read. A declared verb needs its turn: it is not sent
+after the turn ended.
 """
 
 from __future__ import annotations
@@ -38,6 +46,11 @@ from roomkit.turns.wire import ErrorRecord
 
 HostCaller = Callable[[str, dict[str, Any]], Awaitable[Any]]
 """Sends one verb and its arguments to the room owner; its result, as data."""
+
+DeclaredVerb = Callable[[dict[str, Any]], Awaitable[Any]]
+"""A verb a host declares on the room owner: its arguments in, its result
+out, both data; the turn's room, actor and chain depth read from the
+accessors of ``roomkit.tools.context``."""
 
 
 class _Verb(BaseModel):
@@ -255,9 +268,26 @@ class TurnHost:
         note = await self._verb("room_vision", RoomVision())
         return None if note is None else str(note)
 
+    async def call(self, verb: str, arguments: dict[str, Any] | None = None) -> Any:
+        """Run *verb*, one the host declared on the room owner
+        (``RoomKit.declare_host_verb``), with *arguments*: its result, as
+        data. The owner runs it under what this turn gave the call (its room,
+        its actor, its chain depth) and refuses a verb it does not serve.
+
+        Raises:
+            ValueError: *verb* is one of RoomKit's own, which its method sends.
+            RuntimeError: the turn ended (a declared verb needs its turn).
+        """
+        if verb in VERBS:
+            raise ValueError(f"{verb!r} is a verb of RoomKit's: send it with TurnHost.{verb}")
+        return await self._send(verb, dict(arguments or {}))
+
     async def _verb(self, verb: str, args: _Verb) -> Any:
+        return await self._send(verb, args.model_dump(mode="json"))
+
+    async def _send(self, verb: str, arguments: dict[str, Any]) -> Any:
         if self._open:
-            return await self._call(verb, args.model_dump(mode="json"))
+            return await self._call(verb, arguments)
         if self._between_turns is None:
             raise RuntimeError(f"The turn this host served has ended: {verb} is not sent")
         if verb not in BETWEEN_TURNS:
@@ -265,7 +295,7 @@ class TurnHost:
                 f"{verb} needs a turn: after its turn ended, a host sends "
                 f"{', '.join(sorted(BETWEEN_TURNS))} only (RFC §10.6.5)"
             )
-        return await self._between_turns(verb, args.model_dump(mode="json"))
+        return await self._between_turns(verb, arguments)
 
 
 _TURN_HOST: contextvars.ContextVar[TurnHost | None] = contextvars.ContextVar(

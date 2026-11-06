@@ -163,6 +163,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A host declares verbs of its own for its turns' `TurnHost`** (RFC §10.6.5,
+  RMK-1470). A host tool that needs what only the room owner's process holds (a
+  person's live connection, a service the owner runs) could not run on an
+  executor of another process: the host's verbs were RoomKit's fixed set.
+  `kit.declare_host_verb(name, verb)` serves an `async (arguments) -> result` of
+  the owner's process, and code on the executor runs it with
+  `current_turn_host().call(name, arguments)`, its arguments and result data. It
+  runs on the owner under what the turn gave the call, which the accessors of
+  `roomkit.tools.context` read (the turn's room, actor, requester, chain depth,
+  tool call), and during its turn only; a name RoomKit's verbs or another
+  declared verb hold is refused. `DeclaredVerb` (from `roomkit.turns`) types it.
+
 - **`AIChannelTurnConfig.tool_timeouts` bounds a turn's calls with its tools**
   (RFC §21.6, RMK-1469). A channel's per-tool bounds are fixed when it is built, yet the
   tools a turn declares come from its configuration: a tool a person's turn

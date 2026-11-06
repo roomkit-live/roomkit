@@ -1270,6 +1270,7 @@
     "ChannelControl",
     "ChannelResult",
     "CommittedEvent",
+    "DeclaredVerb",
     "ExecutorLink",
     "InMemoryTurnBackend",
     "OwnerEvents",

@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from roomkit.orchestration.base import Orchestration
     from roomkit.telemetry.base import TelemetryProvider
     from roomkit.telemetry.config import TelemetryConfig
+    from roomkit.turns.host import DeclaredVerb
     from roomkit.voice.backends.base import VoiceBackend
     from roomkit.voice.stt.base import STTProvider
     from roomkit.voice.tts.base import TTSProvider
@@ -673,10 +674,11 @@ class RoomKit(
         # The tools orchestration sets up for a channel, kept beside its
         # declaration, never on the live object (RFC §10.6.2).
         self._owner_tools = OwnerToolStore(self._channels.get)
+        self._host = KitHost(self)
         self._turns = registry_turn_client(
             self._channels,
             backend,
-            host=KitHost(self),
+            host=self._host,
             events=KitEvents(self),
             owner_tools=self._owner_tools,
             error_classes=error_classes,
@@ -757,6 +759,21 @@ class RoomKit(
             turn_id=turn_id,
             organization_id=organization_id,
         )
+
+    def declare_host_verb(self, name: str, verb: DeclaredVerb) -> None:
+        """Serve *verb* under *name* for the ``TurnHost`` of this kit's turns
+        (RFC §10.6.5): code on a turn's executor, in this process or another,
+        runs it with ``current_turn_host().call(name, arguments)``, for host
+        code that needs this process (a connection or a service only it
+        holds). It runs here, with its arguments and its result as data,
+        under what the turn gave the call: the accessors of
+        ``roomkit.tools.context`` read the turn's room, its actor, the
+        requester and the chain depth. It is served during its turn only.
+
+        Raises:
+            ValueError: *name* is empty, one of RoomKit's verbs, or declared.
+        """
+        self._host.declare(name, verb)
 
     def input_request(
         self, request_id: str, *, organization_id: str | None = None
