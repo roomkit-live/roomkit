@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 from contextlib import asynccontextmanager
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -925,6 +926,27 @@ class TestPostgresStore:
         assert "event_sequences" in mock_conn.fetchrow.call_args.args[0]
         call_args = mock_conn.execute.call_args
         assert "INSERT INTO events" in call_args[0][0]
+
+    @pytest.mark.parametrize(
+        "answers",
+        [
+            # The refusal statement wrote the sequence: the room came back with none.
+            [None, {"next_index": 4}],
+            # It held the room it found instead: the next pass writes the sequence.
+            [None, None, {"next_index": 4}],
+        ],
+    )
+    async def test_an_add_whose_room_was_not_held_takes_the_index_it_wrote(
+        self, answers: list[Any]
+    ) -> None:
+        """RMK-1394: the first statement found no room to hold; the index is the one
+        the statement that wrote the sequence gave, however many passes it took."""
+        store, mock_conn = _make_store_with_pool()
+        mock_conn.fetchrow.side_effect = answers
+        result = await store.add_event_auto_index("room-1", _make_event())
+        assert result.index == 3
+        statements = [call.args[0] for call in mock_conn.fetchrow.call_args_list]
+        assert all("FOR NO KEY UPDATE" in statement for statement in statements)
 
     # ── Binding operations ──────────────────────────────────────
 

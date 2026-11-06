@@ -1672,11 +1672,15 @@ async def test_an_add_to_a_missing_room_stays_the_foreign_key_s_refusal(
         assert await conn.fetchval("SELECT count(*) FROM event_sequences") == 0
 
 
-async def _until_a_session(conn: Any, seen: str) -> None:
-    """Return once the query *seen*, a count of sessions, finds one."""
+async def _until_blocked_behind(holder: Any) -> None:
+    """Return once a session waits on one that waits on *holder*."""
     deadline = asyncio.get_running_loop().time() + 2
+    behind = (
+        "SELECT count(*) FROM pg_stat_activity a, pg_stat_activity b"
+        " WHERE b.pid = ANY(pg_blocking_pids(a.pid)) AND $1 = ANY(pg_blocking_pids(b.pid))"
+    )
     async with asyncio.timeout_at(deadline):
-        while not await conn.fetchval(seen):
+        while not await holder.fetchval(behind, holder.get_server_pid()):
             await asyncio.sleep(0.005)
 
 
@@ -1808,15 +1812,9 @@ async def test_an_add_holds_a_room_whose_id_came_back_before_its_sequence(
             await deleter.execute(
                 "INSERT INTO event_sequences (room_id, next_index) VALUES ('r1', 5)"
             )
-        await _until_a_session(
-            outside, "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND NOT granted"
-        )
+        await _until_blocked_by(outside)
         delete = asyncio.create_task(store.delete_room("r1"))
-        await _until_a_session(
-            outside,
-            "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database()"
-            " AND wait_event_type = 'Lock' AND query LIKE 'DELETE FROM rooms%'",
-        )
+        await _until_blocked_behind(outside)
         await outside.execute("SELECT pg_advisory_unlock($1)", key)
         stored, deleted = await asyncio.wait_for(asyncio.gather(add, delete), 3)
         assert stored.id == event.id

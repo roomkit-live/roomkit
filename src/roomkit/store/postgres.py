@@ -338,6 +338,16 @@ _OBSERVE_THROUGH_THE_ROOM = (
 )
 
 
+# A missing room's refusal, the foreign key's, that takes no sequence of a room it finds
+# and holds that room instead (see _write_sequence).
+_REFUSE_UNLESS_THE_ROOM_IS_HELD = (
+    "WITH held AS MATERIALIZED (SELECT id FROM rooms WHERE id = $1 FOR NO KEY UPDATE)"
+    " INSERT INTO event_sequences(room_id, next_index)"
+    " SELECT $1, $2::integer WHERE NOT EXISTS (SELECT 1 FROM held)"
+    " ON CONFLICT(room_id) DO NOTHING RETURNING next_index"
+)
+
+
 async def _write_sequence(conn: Any, statement: str, room_id: str, first: int) -> int:
     """Write a room's sequence by *statement*, the room's row taken first in the same
     statement, the order of a commit; the mark it now stands at.
@@ -351,18 +361,16 @@ async def _write_sequence(conn: Any, statement: str, room_id: str, first: int) -
     stream of them would starve.
 
     A room not there to hold leaves the sequence alone, and its refusal stays the foreign
-    key's. Should that statement find a sequence after all, the id has come back again,
-    which only another session's deletion, creation and write since can do.
+    key's, by a second statement that holds the room it finds instead: then the next pass
+    takes the sequence. Left open: a room committed after that statement's snapshot, which
+    its foreign key reads, as the room is created again under the add, with no sequence
+    yet: that one is taken before the room (RMK-1394). Another pass needs another
+    session's deletion, creation and write in between.
     """
     while True:
         row = await conn.fetchrow(statement, room_id, first)
         if row is None:
-            row = await conn.fetchrow(
-                "INSERT INTO event_sequences(room_id, next_index) VALUES($1, $2)"
-                " ON CONFLICT(room_id) DO NOTHING RETURNING next_index",
-                room_id,
-                first,
-            )
+            row = await conn.fetchrow(_REFUSE_UNLESS_THE_ROOM_IS_HELD, room_id, first)
         if row is not None:
             return int(row["next_index"])
 

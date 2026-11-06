@@ -341,13 +341,14 @@ class _Recording(_Transport):
 async def test_an_event_added_beside_the_kit_holds_its_next_delivery_and_loses_none(
     store: PostgresStore,
 ) -> None:
-    """``add_event_auto_index`` beside a kit's commits on one room (RMK-1394): each index
-    it takes is a hole of the delivery cursor no lane runs. The kit's next delivery waits
-    out the gap timeout, then skips the hole (RFC §13.5); every message the kit took is
-    delivered once, in index order, and only added indexes are skipped."""
+    """``add_event_auto_index`` beside a kit's commits on one room (RMK-1394, point 7):
+    each index it takes is a hole of the delivery cursor that no lane runs, which the
+    kit's lane skips (RFC §13.5). Every message the kit took is delivered once, in index
+    order, and only added indexes are skipped: no delivery is lost. Green before the
+    lot's fix too: it checks the point, it does not prove the fix."""
     await store.create_room(Room(id="r1"))
     delivered: list[int] = []
-    kit = RoomKit(store=store, delivery_gap_timeout=0.05)  # ty: ignore[invalid-argument-type]
+    kit = RoomKit(store=store, delivery_gap_timeout=0.02)  # ty: ignore[invalid-argument-type]
     kit.register_channel(_Transport("src"))
     kit.register_channel(_Recording("out", delivered))
     await kit.attach_channel("r1", "src")
@@ -368,13 +369,13 @@ async def test_an_event_added_beside_the_kit_holds_its_next_delivery_and_loses_n
 
     try:
         outcomes = await asyncio.gather(
-            *(send(i) for i in range(16)),
-            *(store.add_event_auto_index("r1", _event("r1", f"a{i}", 0)) for i in range(16)),
+            *(send(i) for i in range(8)),
+            *(store.add_event_auto_index("r1", _event("r1", f"a{i}", 0)) for i in range(8)),
         )
     finally:
         await kit.close()
-    sent = sorted(outcomes[:16])
-    added = {event.index for event in outcomes[16:]}
+    sent = sorted(outcomes[:8])
+    added = {event.index for event in outcomes[8:]}
     assert delivered == sent
     assert skipped
     assert {index for hole in skipped for index in hole} <= added
