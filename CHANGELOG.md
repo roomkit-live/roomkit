@@ -151,10 +151,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **MiniMax and Kimi, whose reasoning goes back to them** (HITL 2c2b7153, RMK-1409).
   `MiniMaxAIProvider` and `KimiAIProvider`, from `roomkit.providers.minimax` and
   `roomkit.providers.kimi` (`pip install roomkit[minimax]`, `roomkit[kimi]`), on the vendor's API or behind a `base_url` (vLLM, llama.cpp,
-  OpenRouter, a LiteLLM proxy): the class is the choice, and a generic provider still sends no
+  OpenRouter): the class is the choice, and a generic provider still sends no
   reasoning. A round's reasoning goes in `reasoning_content` for as long as a turn lasts; a round
-  with none sends nothing on MiniMax and a single space on Kimi, which answers 400 to a round
-  without the field (`ChatDialect.round_thinking_placeholder`). Read from the vendors' pages, not
+  with none sends nothing on MiniMax and a single space on Kimi, which requires the field
+  (`ChatDialect.round_thinking_placeholder`). Read from the vendors' pages, not
   checked on their wires.
 
 - **Each generation of a turn tells what it used, and a cut turn keeps it**
