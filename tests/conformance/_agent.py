@@ -603,6 +603,8 @@ def scripted_agent(
         kwargs["fallback_provider"] = fallback
     if "max_author_images" in spec:
         kwargs["max_author_images"] = spec["max_author_images"]
+    if "evict_threshold_tokens" in spec:
+        kwargs["evict_threshold_tokens"] = spec["evict_threshold_tokens"]
     if "describe_empty_event" in spec:
         says = spec["describe_empty_event"]["says"]
         kwargs["describe_empty_event"] = lambda event: says
