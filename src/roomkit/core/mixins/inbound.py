@@ -1299,7 +1299,7 @@ class InboundMixin(HelpersMixin):
                     opening=opening,
                 )
             except _RoomTakenError:
-                logger.debug("A room created for a routed message names someone else by now")
+                logger.debug("A room created for a routed message is no longer its own")
                 continue
             if not created:
                 # Its room known only now, a message its room's own work
@@ -1308,6 +1308,7 @@ class InboundMixin(HelpersMixin):
             if created or await self._claim_room(room_id, message, channel, own, deadline):
                 return room_id, created
             logger.debug("Room %s is no longer the routed message's; routing it again", room_id)
+        _still_within(deadline)
         _charge_opening(opening)
         routed = _Routed(channel, own)
         return await self._open_room_for(message, None, organization_id, routed=routed), True
@@ -1634,11 +1635,11 @@ class _RoutingTimeoutError(Exception):
 
 def _still_within(deadline: float) -> None:
     """Raise :class:`_RoutingTimeoutError` when the call's *deadline* (RFC
-    §13.6) has passed, before routing asks the router: a message routed once
-    more after its room's creation hooks, which no deadline bounds, may come
-    back past it, and a wait already past its deadline only fails at its
-    first suspension, which a router or a store that does not suspend never
-    reaches."""
+    §13.6) has passed, before routing asks the router or opens the last new
+    room: a message routed once more after its room's creation hooks, which
+    no deadline bounds, may come back past it, and a wait already past its
+    deadline only fails at its first suspension, which a router or a store
+    that does not suspend never reaches."""
     if asyncio.get_running_loop().time() >= deadline:
         raise _RoutingTimeoutError(None)
 
