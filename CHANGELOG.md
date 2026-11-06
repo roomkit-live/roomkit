@@ -445,7 +445,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   wait, for theirs, on the room's other writes, and they on them; an add holds it in
   the statement that takes the sequence, one statement fewer. A missing room is refused
   as before. Left open: a room id created again under live writes, with no sequence yet
-  for a moment, can still have one of them killed: an add, a commit, a deletion.
+  for a moment, can still have one of them killed: an add, a commit, a deletion (HITL
+  d49b8b14: kept). On a room a kit serves, an index `add_event` or
+  `add_event_auto_index` takes opens a hole the next delivery waits
+  `delivery_gap_timeout` to skip, as their docs now say (HITL ab765c3d).
 
 - **A hook's injected event stays in its message's trace** (RMK-1301).
   Its `framework.broadcast` was a root span, a trace apart from the call's: it is
