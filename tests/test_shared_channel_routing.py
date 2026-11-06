@@ -1385,6 +1385,7 @@ class TestARoomBeingCreated:
         assert bob.event is not None and bob.event.room_id == rooms[0]
         assert alices.event is not None and alices.event.room_id not in (rooms[0], None)
         assert await shop.named_on(rooms[0]) == BOB
+        assert await shop.named_on(alices.event.room_id) == ALICE
         assert all("alice" not in body for body in shop.sent_to(BOB))
         assert all("alice" not in _text(m) for call in shop.ai.calls[:1] for m in call.messages)
 
@@ -1393,7 +1394,7 @@ class TestARoomBeingCreated:
         """Every new room a hook binds to Bob; the second one's hooks run past
         the call's process_timeout: the message is refused process_timeout,
         no third room opened."""
-        kit = RoomKit(inbound_router=_NewIds(), process_timeout=0.02)
+        kit = RoomKit(inbound_router=_NewIds(), process_timeout=0.04)
         kit.register_channel(SMSChannel("sms", provider=MockSMSProvider()))
         rooms: list[str] = []
 
@@ -1402,7 +1403,7 @@ class TestARoomBeingCreated:
             rooms.append(ctx.room.id)
             await kit.attach_channel(ctx.room.id, "sms", metadata={"phone_number": BOB})
             if len(rooms) == 2:
-                await asyncio.sleep(0.05)
+                await asyncio.sleep(0.08)
 
         result = await kit.process_inbound(
             InboundMessage(channel_id="sms", sender_id=ALICE, content=TextContent(body="hi"))
