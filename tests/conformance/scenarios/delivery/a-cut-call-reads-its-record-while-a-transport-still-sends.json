@@ -1,0 +1,118 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-cut-call-reads-its-record-while-a-transport-still-sends",
+  "title": "A deferred call cut while a transport still sends its agent's answer reads the record the turn wrote",
+  "rules": [
+    "§10.1 Explicit delivery cancellation",
+    "§6.7"
+  ],
+  "notes": "Python: src/roomkit/models/delivery.py DeliveryHandle.cancel, report_cascade (the cascade's record, its stream read, its transport still sending). roomkit-rs: crates/roomkit/src/turns/tests/records.rs a_cut_call_reads_its_record_while_a_transport_still_sends (RMK-1323).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "deliver": [
+          {
+            "when": {
+              "text": "Hi"
+            },
+            "gate": "ws-holds"
+          }
+        ]
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "cite",
+            "description": "Cite.",
+            "returns": "cited",
+            "writes_record": {
+              "cited": 1
+            }
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "cite"
+                }
+              ]
+            },
+            {
+              "text": "Hi"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Go"
+        }
+      },
+      "defer_delivery": true,
+      "as": "a"
+    },
+    {
+      "wait_for": "ws-holds"
+    },
+    {
+      "call": "delivery.cancel",
+      "of": "a",
+      "reason": "stopped",
+      "expect": {
+        "result": {
+          "response_metadata": {
+            "cited": 1,
+            "turns": {
+              "agent": {
+                "loop_end_reason": "completed"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "open": "ws-holds"
+    },
+    {
+      "idle": true
+    }
+  ]
+}
