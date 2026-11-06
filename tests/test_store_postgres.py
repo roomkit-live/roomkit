@@ -22,7 +22,7 @@ from uuid import uuid4
 
 import pytest
 
-from roomkit import AddressLinkedError, EventNotFoundError, IdentityNotFoundError
+from roomkit import AddressLinkedError, EventNotFoundError, IdentityNotFoundError, RoomKit
 from roomkit.core.mixins.verification import HELD_KEY
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.enums import ChannelType, EventType, RoomStatus
@@ -445,15 +445,19 @@ async def test_a_refusal_on_a_host_ends_the_list(
 _UNREADABLE_COLUMNS = [
     ("channel_addresses", '["a@globex.example"]'),
     ("channel_addresses", '{"sms": "a@globex.example"}'),
+    ("channel_addresses", '{"sms": ["+1555"], "SMS": "a@globex.example"}'),
     ("external_ids", '"a@globex.example"'),
     ("metadata", '["a@globex.example"]'),
 ]
 
 
 async def _spoil_the_row(store: Any, column: str, value: str) -> None:
-    """Writes *value* into the identity i1's *column*, as an older release or a hand could."""
+    """Writes the JSON text *value* into the identity i1's *column*, as an older release or
+    a hand could: as text, so that the server reads it, not the pool's codec."""
     async with store._pool.acquire() as conn:
-        await conn.execute(f"UPDATE identities SET {column} = $1::jsonb WHERE id = 'i1'", value)
+        await conn.execute(
+            f"UPDATE identities SET {column} = $1::text::jsonb WHERE id = 'i1'", value
+        )
 
 
 @pytest.mark.parametrize(("column", "value"), _UNREADABLE_COLUMNS)
@@ -474,18 +478,19 @@ async def test_a_record_the_model_cannot_read_serves_no_read(
 
 async def _read_by_id(store: Any, door: str) -> object:
     """Reach the identity i1's row by its id through *door*, for globex, its organization."""
-    from roomkit import RoomKit
-
     if door == "get_identity":
         return await store.get_identity("i1")
     if door == "link_address":
         return await store.link_address("i1", "sms", "+2", organization_id="globex")
     if door == "unlink_address":
         return await store.unlink_address("i1", "sms", "+2", organization_id="globex")
-    kit = RoomKit(store=store)
     await store.create_room(Room(id="r1", organization_id="globex"))
     await store.add_participant(Participant(id="p1", room_id="r1", channel_id="sms"))
-    return await kit.resolve_participant("r1", "p1", "i1", organization_id="globex")
+    kit = RoomKit(store=store)
+    try:
+        return await kit.resolve_participant("r1", "p1", "i1", organization_id="globex")
+    finally:
+        await kit.close()
 
 
 @pytest.mark.parametrize(

@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from roomkit import AddressLinkedError, RoomKit
+from roomkit import AddressLinkedError, ParticipantNotFoundError, RoomKit, RoomNotFoundError
 from roomkit.core.exceptions import IdempotencyKeyTakenError
 from roomkit.core.mixins.verification import HELD_KEY
 from roomkit.models.channel import ChannelBinding
@@ -904,6 +904,7 @@ _UNREADABLE_RECORDS = [
     '{"id": "i1", "email": "a@globex.example", "channel_addresses": "x"}',
     '{"id": "i1", "channel_addresses": "a@globex.example"}',
     '["a@globex.example"]',
+    '{"id": "i1", "channel_addresses": {"sms": ["+1555"], "SMS": "a@globex.example"}}',
     "not json, a@globex.example",
     b'\xff{"id": "i1", "email": "a@globex.example"}',
 ]
@@ -987,8 +988,6 @@ async def test_resolve_participant_checks_the_room_and_the_participant_first(
     """HITL 70fef50d: the room's organization and the participant are checked before the
     identity is read, so that a caller of another organization, or one naming a
     participant the room lacks, learns nothing of an identity that cannot be read."""
-    from roomkit import ParticipantNotFoundError, RoomNotFoundError
-
     path = tmp_path / "older.db"
     store = SQLiteStore(path)
     await store.create_identity(Identity(id="i1", organization_id="globex"))

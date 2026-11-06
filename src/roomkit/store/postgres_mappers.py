@@ -10,8 +10,6 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from pydantic import ValidationError
-
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.event import ChannelData, EventSource, RoomEvent
 from roomkit.models.identity import Identity
@@ -174,7 +172,9 @@ def _row_to_identity(row: Any) -> Identity:
             external_ids=_json(row["external_ids"]),
             metadata=_json(row["metadata"]),
         )
-    except ValidationError:
+    except ValueError:
+        # The model's ValidationError, or the JSONDecodeError of a JSONB string that
+        # holds no JSON text, which carries the column's text.
         pass
     # Raised outside the handler: the model's error is not even its context.
     raise ValueError(f"Identity {row['id']} has a record the model cannot read")
