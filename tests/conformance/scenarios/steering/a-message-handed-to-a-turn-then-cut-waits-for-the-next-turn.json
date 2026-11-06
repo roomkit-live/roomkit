@@ -1,0 +1,218 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "steering/a-message-handed-to-a-turn-then-cut-waits-for-the-next-turn",
+  "title": "A message handed to the running turn, which is cut before it reads it, starts no turn: it stays in the room, and the next turn reads it",
+  "rules": [
+    "§6.4",
+    "§21.3",
+    "§10.1 Explicit delivery cancellation"
+  ],
+  "notes": "The message's delivery is over before the cut: the turn's loop took it. Python: core/_room_turns.py RoomTurns._steered; channels/_ai_steering.py (RMK-1371).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "list_files"
+                }
+              ]
+            },
+            {
+              "text": "a.py"
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "list_files",
+            "description": "List the project's files.",
+            "parameters": {
+              "type": "object"
+            },
+            "gate": "tool",
+            "returns": "a.py b.txt"
+          }
+        ],
+        "steer_room_turns": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "dev",
+        "content": {
+          "type": "text",
+          "body": "List the files."
+        },
+        "delivery_key": "first"
+      },
+      "background": true,
+      "as": "first"
+    },
+    {
+      "wait_for": "tool"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "dev",
+        "content": {
+          "type": "text",
+          "body": "Only the .py files."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "cancel_delivery",
+      "key": "first",
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "open": "tool"
+    },
+    {
+      "await": "first",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "cancellation_reason": "caller_cancelled"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "dev",
+        "content": {
+          "type": "text",
+          "body": "Is it done?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "List the files."
+          }
+        },
+        {
+          "index": 1,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 2,
+          "content": {
+            "body": "Only the .py files."
+          }
+        },
+        {
+          "index": 3,
+          "type": "tool_call_end"
+        },
+        {
+          "index": 4,
+          "content": {
+            "body": "Is it done?"
+          }
+        },
+        {
+          "index": 5,
+          "source": {
+            "channel_id": "agent"
+          },
+          "content": {
+            "body": "a.py"
+          },
+          "metadata": {
+            "loop_end_reason": "completed"
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "List the files."
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "List the files."
+            },
+            {
+              "role": "user",
+              "text": "Only the .py files."
+            },
+            {
+              "role": "user",
+              "text": "Is it done?"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
