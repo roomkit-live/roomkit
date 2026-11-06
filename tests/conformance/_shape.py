@@ -340,6 +340,8 @@ CALLS: dict[str, set[str]] = {
     "process_inbound": {"message", "room_id", "defer_delivery"},
     "delivery.cancel": {"of", "reason", "timeout_ms"},
     "delivery.wait": {"of"},
+    "regenerate_response": {"room_id", "trigger_id"},
+    "regenerate_target": {"room_id"},
     "send_event": {
         "room_id",
         "channel_id",

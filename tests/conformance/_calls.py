@@ -351,6 +351,15 @@ async def _close_room(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -
     return await kit.close_room(spec["room_id"], **_org(spec))
 
 
+async def _regenerate_response(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
+    trigger = {"trigger_id": spec["trigger_id"]} if "trigger_id" in spec else {}
+    return await kit.regenerate_response(spec["room_id"], **trigger, **_org(spec))
+
+
+async def _regenerate_target(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
+    return await kit.regenerate_target(spec["room_id"], **_org(spec))
+
+
 async def _send_greeting(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
     names = {key: spec[key] for key in ("channel_id", "agent_id", "greeting") if key in spec}
     return await kit.send_greeting(spec["room_id"], **names, **_org(spec))
@@ -508,6 +517,8 @@ CALLS: dict[str, Call] = {
     "update_binding_metadata": _update_binding_metadata,
     "close_room": _close_room,
     "send_greeting": _send_greeting,
+    "regenerate_response": _regenerate_response,
+    "regenerate_target": _regenerate_target,
     "archive_room": _archive_room,
     "check_timers": _check_timers,
     "register_channel": _register_channel,
