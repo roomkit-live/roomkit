@@ -48,8 +48,14 @@ from roomkit.models.enums import (
     HookExecution,
     HookTrigger,
 )
-from roomkit.models.event import DeleteContent, EditContent, RoomEvent, TextContent
-from roomkit.models.hook import HookResult
+from roomkit.models.event import (
+    DeleteContent,
+    EditContent,
+    EventSource,
+    RoomEvent,
+    TextContent,
+)
+from roomkit.models.hook import HookResult, InjectedEvent
 from roomkit.models.room import Room
 from roomkit.models.store_filter import EventFilter
 from roomkit.models.streaming import SegmentBreakMarker
@@ -408,6 +414,47 @@ class TestAnAdoptedCallBeforeItsCommit:
         sent = await asyncio.wait_for(started[0], timeout=5)
         outcome = (result.reason, sent.index, [_body(e) for e in await _messages(kit)])
         assert outcome == ("process_timeout", 2, ["Heads up"])
+        await kit.close()
+
+    @pytest.mark.wallclock
+    async def test_the_event_is_answered_at_its_deadline_while_an_injection_holds_the_lock(
+        self,
+    ) -> None:
+        """A task an off-lock hook starts and never awaits makes a call,
+        adopted beside the check, whose locked hook injects an event; that
+        event's locked hook is slow when the event's process_timeout passes
+        in its off-lock check: the event is answered then, refused; the call
+        commits."""
+        kit = await _room(RoomKit(process_timeout=0.2), SimpleChannel("ws"))
+        started: list[asyncio.Task[RoomEvent]] = []
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST, name="slow")
+        async def slow(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            if _body(event) == "Follow-up":
+                await asyncio.sleep(0.4)
+            if _body(event) == "Heads up":
+                follow_up = RoomEvent(
+                    room_id="r1",
+                    source=EventSource(channel_id="ws", channel_type=ChannelType.WEBSOCKET),
+                    content=TextContent(body="Follow-up"),
+                )
+                return HookResult.allow([InjectedEvent(event=follow_up)])
+            return HookResult.allow()
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST, name="notifier", needs_lock=False)
+        async def notifier(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            if _body(event) == "hello":
+                heads_up = kit.send_event("r1", "ws", TextContent(body="Heads up"))
+                started.append(asyncio.create_task(heads_up))  # never awaited
+                await asyncio.sleep(0.3)
+            return HookResult.allow()
+
+        loop = asyncio.get_running_loop()
+        sent_at = loop.time()
+        result = await kit.process_inbound(_message("hello"))
+        on_time = loop.time() - sent_at < 0.32
+        sent = await asyncio.wait_for(started[0], timeout=5)
+        assert (result.reason, on_time, sent.index) == ("process_timeout", True, 2)
         await kit.close()
 
     @pytest.mark.wallclock
