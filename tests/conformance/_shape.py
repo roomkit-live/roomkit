@@ -13,7 +13,11 @@ from collections.abc import Mapping
 from typing import Any
 
 from tests.conformance._delegate_tool import DELEGATE_TOOL_ARGUMENTS
-from tests.conformance._discussion import DISCUSSION_ARGUMENTS, DISCUSSION_MEMBERS
+from tests.conformance._discussion import (
+    DISCUSSION_ARGUMENTS,
+    DISCUSSION_MEMBERS,
+    DISPATCH_MEMBERS,
+)
 from tests.conformance._handoff import HANDOFF_ARGUMENTS
 from tests.conformance._inputs import INPUT_ARGUMENTS
 from tests.conformance._media import ATTACHED_MEDIA, MEDIA_RESOLVER
@@ -469,6 +473,8 @@ def _strategy(strategy: Mapping[str, Any], path: str, found: list[str]) -> None:
         _members(strategy["pipeline"], PIPELINE, f"{path}.pipeline", found)
     if "discussion" in strategy:
         _members(strategy["discussion"], DISCUSSION_MEMBERS, f"{path}.discussion", found)
+        dispatch = strategy["discussion"].get("dispatch", {})
+        _members(dispatch, DISPATCH_MEMBERS, f"{path}.discussion.dispatch", found)
     for member, known in (("install", STRATEGY_STEP), ("uninstall", STRATEGY_UNINSTALL)):
         step = strategy.get(member, {})
         _members(step, known, f"{path}.{member}", found)

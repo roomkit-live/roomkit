@@ -224,6 +224,9 @@ DISCUSSION_MEMBERS = {
 }
 """The members a setup's strategy with a ``discussion`` may give."""
 
+DISPATCH_MEMBERS = {"decisions", "delay_ms", "error", "gate"}
+"""The members a scripted dispatch policy may give."""
+
 DISCUSSION_ARGUMENTS: dict[str, set[str]] = {
     "speak_queue": {"room_id", "organization_id"},
     "listen_only": {"room_id", "channel_ids", "organization_id"},
