@@ -373,7 +373,16 @@ def register_channel(kit: RoomKit, harness: Harness, channel: Mapping[str, Any])
         return
     if "model" in channel:
         agent, models = read(
-            lambda: scripted_agent(channel, harness.gates, kit, harness.labelled, harness.auditors)
+            lambda: scripted_agent(
+                channel,
+                harness.gates,
+                kit,
+                harness.labelled,
+                harness.auditors,
+                lambda room_id, channel_id, event: harness.record(
+                    "ingested", room_id, channel_id, event
+                ),
+            )
         )
         harness.models.update(models)
         kit.register_channel(agent)

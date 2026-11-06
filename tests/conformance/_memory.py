@@ -8,7 +8,7 @@ scenario names.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from roomkit.knowledge import KnowledgeResult, KnowledgeSource
@@ -29,9 +29,16 @@ from roomkit.tools import current_response_metadata
 
 class ScriptedMemory(MemoryProvider):
     """The room's latest events, as :class:`SlidingWindowMemory` reads them,
-    and what the scenario says the memory built, retrieved and names."""
+    and what the scenario says the memory built, retrieved and names; each
+    event it is handed goes to *ingested* (``expect.ingested``)."""
 
-    def __init__(self, spec: Mapping[str, Any], max_events: int) -> None:
+    def __init__(
+        self,
+        spec: Mapping[str, Any],
+        max_events: int,
+        ingested: Callable[[str, RoomEvent], None] | None = None,
+    ) -> None:
+        self._ingested = ingested
         self._window = SlidingWindowMemory(max_events=spec.get("max_events", max_events))
         self._messages = [
             AIMessage(role=message["role"], content=message["text"])
@@ -44,6 +51,12 @@ class ScriptedMemory(MemoryProvider):
     @property
     def recent_events_window(self) -> int:
         return self._window.recent_events_window
+
+    async def ingest(
+        self, room_id: str, event: RoomEvent, *, channel_id: str | None = None
+    ) -> None:
+        if self._ingested is not None:
+            self._ingested(room_id, event)
 
     async def retrieve(
         self,
@@ -68,12 +81,16 @@ class ScriptedMemory(MemoryProvider):
 
 
 def scripted_memory(
-    spec: Mapping[str, Any], max_events: int, summarizer: AIProvider | None
+    spec: Mapping[str, Any],
+    max_events: int,
+    summarizer: AIProvider | None,
+    ingested: Callable[[str, RoomEvent], None] | None = None,
 ) -> MemoryProvider:
     """The memory *spec* describes, its wrappers from the innermost; *max_events*
-    is its window by default, the agent's ``max_context_events``, and
-    *summarizer* the model a compacting or summarizing memory summarizes with."""
-    memory: MemoryProvider = ScriptedMemory(spec, max_events)
+    is its window by default, the agent's ``max_context_events``, *summarizer*
+    the model a compacting or summarizing memory summarizes with, and
+    *ingested* told each event the memory is handed."""
+    memory: MemoryProvider = ScriptedMemory(spec, max_events, ingested)
     if (budget := spec.get("budget_aware")) is not None:
         memory = BudgetAwareMemory(
             memory,

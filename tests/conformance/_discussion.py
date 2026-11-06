@@ -4,7 +4,8 @@
 agent a channel id or an agent given live, and reads it, installed nowhere. A
 setup's strategy with a ``discussion`` is one installed through the kit, its
 ``done`` read from the ``discussion.done`` call; ``speak_queue`` reads its queue,
-and an ``ON_SPEAK_QUEUE`` hook records each change it is handed.
+``listen_only`` and ``talk_again`` change it, and an ``ON_SPEAK_QUEUE`` hook
+records each change it is handed.
 """
 
 from __future__ import annotations
@@ -68,6 +69,18 @@ async def _speak_queue(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) 
     return None if queue is None else queue_record(queue)
 
 
+async def _listen_only(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None:
+    await kit.listen_only(
+        spec["room_id"], spec["channel_ids"], organization_id=spec.get("organization_id")
+    )
+
+
+async def _talk_again(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None:
+    await kit.talk_again(
+        spec["room_id"], spec["channel_ids"], organization_id=spec.get("organization_id")
+    )
+
+
 async def _discussion_done(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None:
     harness.discussion_done[spec["strategy"]] = spec["holds"]
 
@@ -103,6 +116,8 @@ def discussions_busy(kit: RoomKit) -> bool:
 DISCUSSION_CALLS: dict[str, Call] = {
     "discussion": _discussion,
     "speak_queue": _speak_queue,
+    "listen_only": _listen_only,
+    "talk_again": _talk_again,
     "discussion.done": _discussion_done,
 }
 
@@ -122,6 +137,8 @@ DISCUSSION_MEMBERS = {
 
 DISCUSSION_ARGUMENTS: dict[str, set[str]] = {
     "speak_queue": {"room_id", "organization_id"},
+    "listen_only": {"room_id", "channel_ids", "organization_id"},
+    "talk_again": {"room_id", "channel_ids", "organization_id"},
     "discussion.done": {"strategy", "holds"},
     "discussion": {
         "agents",

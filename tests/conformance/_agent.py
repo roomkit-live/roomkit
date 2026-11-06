@@ -22,6 +22,7 @@ from roomkit import Agent, AIChannelTurnConfig
 from roomkit.channels.ai import AIChannel
 from roomkit.core.exceptions import ToolFailedError, ToolRefusedError, UnservedToolCallError
 from roomkit.models.channel import RetryPolicy
+from roomkit.models.event import RoomEvent
 from roomkit.models.tool_call import ToolCallEvent
 from roomkit.providers.ai import (
     OPENAI_CHAT,
@@ -442,6 +443,7 @@ def scripted_agent(
     kit: RoomKit,
     labelled: Callable[[Any], Any] | None = None,
     auditors: Auditors | None = None,
+    ingested: Callable[[str, str, RoomEvent], None] | None = None,
 ) -> tuple[AIChannel, dict[str, ScriptedModel]]:
     """The AI channel of a scripted agent, and its models by the name
     ``expect.models`` gives them: its own under its id, its memory's
@@ -535,7 +537,9 @@ def scripted_agent(
         if "summarizer" in memory:
             summarizer = ScriptedModel(memory["summarizer"]["rounds"], gates)
             models[f"{spec['id']}/summarizer"] = summarizer
-        kwargs["memory"] = scripted_memory(memory, spec.get("max_context_events", 50), summarizer)
+        kwargs["memory"] = scripted_memory(
+            memory, spec.get("max_context_events", 50), summarizer, _told(ingested, spec["id"])
+        )
     if "human_input" in spec:
         kwargs["human_input_handler"] = _human_input(spec["human_input"])
     for setting in TOOL_SEARCH_SETTINGS:
@@ -564,6 +568,15 @@ def scripted_agent(
         **kwargs,
     )
     return channel, models
+
+
+def _told(
+    ingested: Callable[[str, str, RoomEvent], None] | None, channel_id: str
+) -> Callable[[str, RoomEvent], None] | None:
+    """What a scripted memory of *channel_id* tells each event it is handed."""
+    if ingested is None:
+        return None
+    return lambda room_id, event: ingested(room_id, channel_id, event)
 
 
 def _audited(handler: Any, spec: Mapping[str, Any], auditors: Auditors | None) -> Any:
