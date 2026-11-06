@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from typing import Any
 
 import asyncpg
 import pytest
@@ -321,3 +322,59 @@ async def test_ai_reentry_commits_delivered_with_consistent_counters(store: Post
         assert room.latest_index == max(e.index for e in events)
     finally:
         await kit.close()
+
+
+class _Recording(_Transport):
+    """A transport that records the index of each event it is handed."""
+
+    def __init__(self, channel_id: str, delivered: list[int]) -> None:
+        super().__init__(channel_id)
+        self._delivered = delivered
+
+    async def deliver(
+        self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
+    ) -> ChannelOutput:
+        self._delivered.append(event.index)
+        return ChannelOutput.empty()
+
+
+async def test_an_event_added_beside_the_kit_holds_its_next_delivery_and_loses_none(
+    store: PostgresStore,
+) -> None:
+    """``add_event_auto_index`` beside a kit's commits on one room (RMK-1394): each index
+    it takes is a hole of the delivery cursor no lane runs. The kit's next delivery waits
+    out the gap timeout, then skips the hole (RFC §13.5); every message the kit took is
+    delivered once, in index order, and only added indexes are skipped."""
+    await store.create_room(Room(id="r1"))
+    delivered: list[int] = []
+    kit = RoomKit(store=store, delivery_gap_timeout=0.05)  # ty: ignore[invalid-argument-type]
+    kit.register_channel(_Transport("src"))
+    kit.register_channel(_Recording("out", delivered))
+    await kit.attach_channel("r1", "src")
+    await kit.attach_channel("r1", "out")
+    skipped: list[range] = []
+
+    @kit.on("delivery_skipped")
+    async def record(event: Any) -> None:
+        skipped.append(range(event.data["from_index"], event.data["to_index"] + 1))
+
+    async def send(i: int) -> int:
+        result = await kit.process_inbound(
+            InboundMessage(channel_id="src", sender_id="u1", content=TextContent(body=f"m{i}")),
+            room_id="r1",
+        )
+        assert result.event is not None
+        return result.event.index
+
+    try:
+        outcomes = await asyncio.gather(
+            *(send(i) for i in range(16)),
+            *(store.add_event_auto_index("r1", _event("r1", f"a{i}", 0)) for i in range(16)),
+        )
+    finally:
+        await kit.close()
+    sent = sorted(outcomes[:16])
+    added = {event.index for event in outcomes[16:]}
+    assert delivered == sent
+    assert skipped
+    assert {index for hole in skipped for index in hole} <= added
