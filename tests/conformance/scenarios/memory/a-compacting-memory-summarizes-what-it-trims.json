@@ -1,13 +1,13 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "memory/a-compacting-memory-summarizes-what-it-trims",
-  "title": "A compacting memory past its window less its margin keeps the latest events that fit beside the summary's share, and has a model summarize the ones it trims, the summary's message first",
+  "title": "A compacting memory past what its window leaves once the turn's input, the current event and its reply are paid for keeps the latest events that fit beside the summary's share, and has a model summarize the ones it trims, the summary's message first",
   "rules": [
     "§20.3",
     "§20.2",
     "§6.4"
   ],
-  "notes": "Python's CompactingMemory: the events that do not fit int(max_context_tokens * (1 - safety_margin_ratio)) less int(max_context_tokens * summary_ratio) are summarized, the latest min_events always kept; the summary's message comes first. Here the window of 200 leaves 150 tokens for the events: the latest answer, question and answer (110 tokens) fit, the first question (104) does not.",
+  "notes": "Python's CompactingMemory: the history's budget is max_context_tokens less the larger of the safety margin (15 %) and the turn's reply budget (max_tokens), the turn's measured input (its system prompt, its tools, room for its notes: the header, the speaker note and the cut answers' note) and the current event, each text estimated as len // 4 + 1 tokens; the events that do not fit that budget less int(max_context_tokens * summary_ratio) are summarized, the latest min_events always kept; the summary's message comes first. Here the window of 800 less the reply of 250 (over the margin's 120) leaves 550; the measured input (263 tokens of notes' room) and the current question (104) leave 183, and the summary's share (40) leaves 143 for the events: the latest answer, question and answer (110 tokens) fit, the first question (104) does not.",
   "setup": {
     "channels": [
       {
@@ -33,7 +33,8 @@
         },
         "memory": {
           "compacting": {
-            "max_context_tokens": 200,
+            "max_context_tokens": 800,
+            "summary_ratio": 0.05,
             "min_events": 2
           },
           "summarizer": {
@@ -43,7 +44,8 @@
               }
             ]
           }
-        }
+        },
+        "max_tokens": 250
       }
     ],
     "rooms": [
