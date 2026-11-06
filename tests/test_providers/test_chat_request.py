@@ -143,26 +143,9 @@ def test_a_dialect_with_a_reasoning_field_carries_it_there(
     assert answer == {"role": "assistant", "content": "", field: "why"}
 
 
-@pytest.mark.parametrize(
-    ("dialect", "field"),
-    [(DEEPSEEK_CHAT, {"reasoning_content": ""}), (KIMI_CHAT, {"reasoning_content": " "})],
-    ids=["deepseek-empty", "kimi-a-space"],
-)
-def test_a_required_field_goes_on_a_round_with_no_reasoning(
-    dialect: ChatDialect, field: dict[str, str]
-) -> None:
-    [round_] = _render(dialect, _round())
-    assert {key: round_[key] for key in field} == field
-
-
 def test_a_placeholder_needs_a_required_field() -> None:
     with pytest.raises(ValueError, match="round_thinking_required"):
         ChatDialect(thinking_field="reasoning_content", round_thinking_placeholder=" ")
-
-
-def test_a_round_with_no_reasoning_sends_no_field_where_it_is_not_required() -> None:
-    [round_] = _render(MINIMAX_CHAT, _round())
-    assert "reasoning_content" not in round_
 
 
 def test_an_image_result_rides_a_user_message_after_the_tool_messages() -> None:

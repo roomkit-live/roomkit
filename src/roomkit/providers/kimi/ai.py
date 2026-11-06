@@ -6,7 +6,7 @@ from typing import Any, ClassVar
 
 from roomkit.providers.ai.base import AIContext, ModelInfo
 from roomkit.providers.ai.chat_request import ChatDialect
-from roomkit.providers.ai.reasoning import floored_effort, reasoning_floor
+from roomkit.providers.ai.reasoning import floored_effort, nearest_level, reasoning_floor
 from roomkit.providers.ai.tool_declaration import ToolNameRule
 from roomkit.providers.kimi.config import KimiConfig
 from roomkit.providers.kimi.models import MODELS
@@ -16,13 +16,18 @@ from roomkit.providers.vendor_endpoint import KIMI_BASE_URL, is_vendor_endpoint
 # From Kimi's API reference, not measured.
 KIMI_TOOL_NAMES = ToolNameRule("kimi", r"[a-zA-Z_][a-zA-Z0-9_-]{0,127}")
 
+# The efforts K3 takes, least to most (Kimi's API reference); another goes as
+# the nearest of them (RFC §6.7), on the scale it is read on.
+_LEVELS = ("low", "high", "max")
+_SCALE = ("minimal", "low", "medium", "high", "xhigh", "max")
+
 # Earlier reasoning goes back in ``reasoning_content``, on every round that
-# called tools: Kimi answers 400 to one without it ("thinking is enabled but
-# reasoning_content is missing in assistant tool call message", its error
-# reference), and a later turn's rounds hold no reasoning (RFC §6.4). An empty
-# field reads as a missing one, so a round with no reasoning sends a single
-# space: "the minimum value the API accepts", LiteLLM's Moonshot transformation
-# says; not checked on Kimi's wire.
+# called tools: Kimi's platform says it is required in a tool loop, Kimi Code's
+# error reference gives the 400 ("thinking is enabled but reasoning_content is
+# missing in assistant tool call message"), and a later turn's rounds hold no
+# reasoning (RFC §6.4). An empty field reads as a missing one, so a round with
+# no reasoning sends a single space: "the minimum value the API accepts",
+# LiteLLM's Moonshot transformation says. Not checked on Kimi's wire.
 KIMI_CHAT = ChatDialect(
     thinking_field="reasoning_content",
     round_thinking_required=True,
@@ -83,11 +88,15 @@ class KimiAIProvider(OpenAIAIProvider):
 
     def _apply_sampling_kwargs(self, kwargs: dict[str, Any], context: AIContext) -> None:
         """Temperature where the config says the server takes it, and reasoning
-        effort on a turn with tools as on any other; a turn that states off
-        sends the model's floor, K3 always thinking (RFC §6.7)."""
+        effort on a turn with tools as on any other (RFC §6.7). On a model the
+        catalogue names, a turn that states off sends its floor, K3 always
+        thinking, and another effort the nearest level K3 takes; on any other
+        model the effort goes as stated."""
         if context.temperature is not None and self._config.supports_custom_temperature:
             kwargs["temperature"] = context.temperature
-        floor = reasoning_floor(self.catalog_entry())
-        effort = floored_effort(context, self._config.reasoning_effort, floor)
+        entry = self.catalog_entry()
+        effort = floored_effort(context, self._config.reasoning_effort, reasoning_floor(entry))
+        if entry is not None:
+            effort = nearest_level(effort, _LEVELS, scale=_SCALE)
         if effort is not None:
             kwargs["reasoning_effort"] = effort

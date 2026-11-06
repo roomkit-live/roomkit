@@ -41,7 +41,9 @@ from roomkit.providers.anthropic import AnthropicAIProvider
 from roomkit.providers.cerebras import CerebrasAIProvider
 from roomkit.providers.deepseek import DeepSeekAIProvider
 from roomkit.providers.gemini import GeminiAIProvider
+from roomkit.providers.kimi import KimiAIProvider
 from roomkit.providers.meta import MetaAIProvider
+from roomkit.providers.minimax import MiniMaxAIProvider
 from roomkit.providers.mistral import MistralAIProvider
 from roomkit.providers.ollama import OllamaAIProvider
 from roomkit.providers.openai import OpenAIAIProvider
@@ -59,6 +61,8 @@ CURATED_PROVIDERS = {
     "Mistral": MistralAIProvider,
     "xAI": XAIAIProvider,
     "DeepSeek": DeepSeekAIProvider,
+    "MiniMax": MiniMaxAIProvider,
+    "Kimi": KimiAIProvider,
     "Qwen": QwenAIProvider,
     "Meta": MetaAIProvider,
     "Ollama": OllamaAIProvider,

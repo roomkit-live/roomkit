@@ -59,7 +59,8 @@ def nearest_level(
 
 # The catalogue tag naming the least ``reasoning_effort`` a model takes on its
 # vendor's wire (``reasoning_floor_none``, ``reasoning_floor_minimal``,
-# ``reasoning_floor_low``), each one checked on the wire before it is set.
+# ``reasoning_floor_low``), each one checked on the wire before it is set, or,
+# where the catalogue's docstring says so, read from the vendor's API reference.
 _FLOOR_TAG = "reasoning_floor_"
 
 

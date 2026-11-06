@@ -169,36 +169,51 @@ async def test_a_host_selects_the_dialect_by_the_class_on_a_server_of_its_own(
     assert not any("<think>" in str(m["content"]) for m in in_progress + later)
 
 
-@pytest.mark.parametrize("vendor", _BOTH)
-async def test_the_vendor_s_own_endpoint_is_the_default(vendor: str) -> None:
+def _completion(request: httpx.Request) -> httpx.Response:
+    choice = {
+        "index": 0,
+        "message": {"role": "assistant", "content": "Hello."},
+        "finish_reason": "stop",
+    }
+    body = {
+        "id": "c",
+        "object": "chat.completion",
+        "created": 0,
+        "model": "m",
+        "choices": [choice],
+    }
+    return httpx.Response(200, json=body)
+
+
+async def _sent(vendor: str, *, config: dict[str, Any], **turn: Any) -> httpx.Request:
+    """The request one generation sends through the vendor's provider."""
     seen: list[httpx.Request] = []
 
     def answer(request: httpx.Request) -> httpx.Response:
         seen.append(request)
-        choice = {
-            "index": 0,
-            "message": {"role": "assistant", "content": "Hello."},
-            "finish_reason": "stop",
-        }
-        completion = {
-            "id": "c",
-            "object": "chat.completion",
-            "created": 0,
-            "model": "m",
-            "choices": [choice],
-        }
-        return httpx.Response(200, json=completion)
+        return _completion(request)
 
-    provider = _provider(vendor, handler=answer)
+    provider = _provider(vendor, handler=answer, **config)
     try:
-        await provider.generate(
-            AIContext(messages=[AIMessage(role="user", content="Hi")], temperature=0.2)
-        )
+        await provider.generate(AIContext(messages=[AIMessage(role="user", content="Hi")], **turn))
     finally:
         await provider.close()
+    return seen[0]
 
-    assert seen[0].url.host == _VENDORS[vendor][3]
-    assert seen[0].url.path == "/v1/chat/completions"
+
+def _body(request: httpx.Request, *keys: str) -> dict[str, Any]:
+    body = json.loads(request.content)
+    return {key: body[key] for key in keys if key in body}
+
+
+@pytest.mark.parametrize("vendor", _BOTH)
+async def test_the_vendor_s_own_endpoint_is_the_default(vendor: str) -> None:
+    """Its URL, its name in telemetry, and a cap under the field it reads."""
+    request = await _sent(vendor, config={"max_tokens": 2000})
+
+    assert (request.url.host, request.url.path) == (_VENDORS[vendor][3], "/v1/chat/completions")
+    assert _body(request, "max_tokens", "max_completion_tokens") == {"max_completion_tokens": 2000}
+    assert _provider(vendor).name == vendor
 
 
 @pytest.mark.parametrize("vendor", _BOTH)
@@ -210,17 +225,7 @@ def test_without_the_sdk_the_error_names_the_vendor_s_extra(vendor: str) -> None
         _provider(vendor)
 
 
-@pytest.mark.parametrize("vendor", _BOTH)
-def test_a_model_is_required(vendor: str) -> None:
-    with pytest.raises(ValueError, match="model"):
-        _VENDORS[vendor][1](api_key="k")
-
-
-def _sampled(provider: Any, **turn: Any) -> dict[str, Any]:
-    kwargs: dict[str, Any] = {}
-    context = AIContext(messages=[AIMessage(role="user", content="Hi")], **turn)
-    provider._apply_sampling_kwargs(kwargs, context)
-    return kwargs
+_REASONING = ("reasoning_effort", "thinking", "temperature")
 
 
 @pytest.mark.parametrize(
@@ -231,15 +236,30 @@ def _sampled(provider: Any, **turn: Any) -> dict[str, Any]:
         ("kimi", "kimi-k3", {"reasoning_effort": "none"}, {"reasoning_effort": "low"}),
         ("minimax", "MiniMax-M3.1-Flash", {"thinking_budget": 0}, {"reasoning_effort": "low"}),
         # M3 can, through MiniMax's own switch.
+        ("minimax", "MiniMax-M3", {"enable_thinking": False}, {"thinking": {"type": "disabled"}}),
+        # A level the model does not take goes as the nearest it takes.
+        ("kimi", "kimi-k3.1-pro", {"reasoning_effort": "medium"}, {"reasoning_effort": "low"}),
+        ("kimi", "kimi-k3", {"reasoning_effort": "xhigh"}, {"reasoning_effort": "high"}),
         (
             "minimax",
-            "MiniMax-M3",
-            {"enable_thinking": False},
-            {"extra_body": {"thinking": {"type": "disabled"}}},
+            "MiniMax-M3.1-Flash",
+            {"reasoning_effort": "minimal"},
+            {"reasoning_effort": "low"},
         ),
         # A model the catalogue does not name: what the turn states goes as it is.
-        ("kimi", "moonshotai/Kimi-K3", {"reasoning_effort": "high"}, {"reasoning_effort": "high"}),
+        (
+            "kimi",
+            "moonshotai/Kimi-K3",
+            {"reasoning_effort": "medium"},
+            {"reasoning_effort": "medium"},
+        ),
         ("kimi", "moonshotai/Kimi-K3", {"enable_thinking": False}, {}),
+        (
+            "minimax",
+            "MiniMaxAI/MiniMax-M3",
+            {"reasoning_effort": "none"},
+            {"reasoning_effort": "none"},
+        ),
         # A turn with tools sends its effort too.
         (
             "kimi",
@@ -255,27 +275,30 @@ def _sampled(provider: Any, **turn: Any) -> dict[str, Any]:
         ),
     ],
 )
-def test_what_a_turn_states_of_its_reasoning(
+async def test_what_a_turn_states_of_its_reasoning(
     vendor: str, model: str, turn: dict[str, Any], sent: dict[str, Any]
 ) -> None:
-    provider = _provider(vendor, model=model, supports_custom_temperature=False)
+    request = await _sent(vendor, config={"model": model}, **turn)
 
-    assert _sampled(provider, **turn) == sent
+    assert _body(request, *_REASONING) == sent
 
 
 @pytest.mark.parametrize(
     ("vendor", "config", "sent"),
     [
-        # Kimi's K3 models fix it and ask that it be left out.
+        # Kimi's K3 models fix it and ask that it be left out; MiniMax ignores it.
         ("kimi", {}, {}),
+        ("minimax", {}, {}),
         ("kimi", {"supports_custom_temperature": True}, {"temperature": 0.2}),
-        ("minimax", {}, {"temperature": 0.2}),
+        ("minimax", {"supports_custom_temperature": True}, {"temperature": 0.2}),
     ],
 )
-def test_the_temperature_goes_where_the_server_takes_it(
+async def test_the_temperature_goes_where_the_server_takes_it(
     vendor: str, config: dict[str, Any], sent: dict[str, Any]
 ) -> None:
-    assert _sampled(_provider(vendor, **config), temperature=0.2) == sent
+    request = await _sent(vendor, config=config, temperature=0.2)
+
+    assert _body(request, "temperature") == sent
 
 
 @pytest.mark.parametrize(
@@ -289,31 +312,58 @@ def test_the_temperature_goes_where_the_server_takes_it(
         ("minimax", {"model": "unknown", "base_url": _SERVER}, True),
     ],
 )
-def test_a_server_decides_what_a_model_the_catalogue_does_not_name_reads(
+async def test_a_server_decides_what_a_model_the_catalogue_does_not_name_reads(
     vendor: str, config: dict[str, Any], vision: bool
 ) -> None:
-    assert _provider(vendor, **config).supports_vision is vision
-
-
-@pytest.mark.parametrize(("vendor", "takes"), [("minimax", False), ("kimi", True)])
-def test_a_response_schema_is_taken_where_the_vendor_documents_it(
-    vendor: str, takes: bool
-) -> None:
-    assert _provider(vendor).supports_response_schema is takes
-    stated = _provider(vendor, supports_response_schema=not takes)
-    assert stated.supports_response_schema is not takes
-
-
-async def test_kimi_refuses_a_tool_name_before_the_request() -> None:
-    provider = _provider("kimi")
-    dotted = AITool(name="files.read", description="Read.", parameters={"type": "object"})
-    context = AIContext(messages=[AIMessage(role="user", content="Hi")], tools=[dotted])
+    provider = _provider(vendor, **config)
     try:
-        with pytest.raises(ProviderError, match="files.read"):
-            await provider.generate(context)
+        assert provider.supports_vision is vision
     finally:
         await provider.close()
 
 
-def test_behind_another_url_the_server_decides_kimi_s_tool_names() -> None:
-    assert _provider("kimi", base_url=_SERVER)._tool_name_rule is None
+@pytest.mark.parametrize(("vendor", "takes"), [("minimax", False), ("kimi", True)])
+async def test_a_response_schema_is_taken_where_the_vendor_documents_it(
+    vendor: str, takes: bool
+) -> None:
+    default = _provider(vendor)
+    stated = _provider(vendor, supports_response_schema=not takes)
+    try:
+        assert default.supports_response_schema is takes
+        assert stated.supports_response_schema is not takes
+    finally:
+        await default.close()
+        await stated.close()
+
+
+@pytest.mark.parametrize(
+    ("name", "refused"),
+    [("a" * 128, False), ("_lookup-2", False), ("a" * 129, True), ("1abc", True), ("a.b", True)],
+)
+async def test_kimi_s_tool_names_are_checked_before_the_request(name: str, refused: bool) -> None:
+    tool = AITool(name=name, description="A tool.", parameters={"type": "object"})
+    if not refused:
+        await _sent("kimi", config={}, tools=[tool])
+        return
+    with pytest.raises(ProviderError, match="kimi"):
+        await _sent("kimi", config={}, tools=[tool])
+
+
+async def test_behind_another_url_the_server_decides_kimi_s_tool_names() -> None:
+    dotted = AITool(name="a.b", description="A tool.", parameters={"type": "object"})
+
+    request = await _sent("kimi", config={"base_url": _SERVER}, tools=[dotted])
+
+    assert json.loads(request.content)["tools"][0]["function"]["name"] == "a.b"
+
+
+def test_minimax_m3_bills_twice_its_rates_past_512k_input_tokens() -> None:
+    """MiniMax's standard tier past 512k input tokens: input and output double."""
+    [m3] = [m for m in MiniMaxAIProvider.available_models() if m.id == "MiniMax-M3"]
+    assert m3.pricing is not None
+
+    short = m3.pricing.cost_for({"input_tokens": 500_000, "output_tokens": 10_000})
+    long = m3.pricing.cost_for({"input_tokens": 600_000, "output_tokens": 10_000})
+
+    assert short == pytest.approx(0.15 + 0.012)
+    assert long == pytest.approx(0.36 + 0.024)

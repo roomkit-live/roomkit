@@ -24,8 +24,12 @@ class KimiConfig(OpenAIConfig):
     Kimi's weights: the reasoning goes back the same way."""
 
     max_tokens: int | None = None
-    """No cap unless one is set. Reasoning counts toward it, and Kimi recommends
-    at least 16,000 so that an answer is not cut after its reasoning."""
+    """No cap unless one is set, which leaves K3's own default, 131,072. Reasoning
+    counts toward it: a small cap cuts an answer after its reasoning."""
+
+    use_max_completion_tokens: bool = True
+    """A cap goes as ``max_completion_tokens``, since Kimi deprecates
+    ``max_tokens``; set False for a server that reads ``max_tokens`` alone."""
 
     supports_custom_temperature: bool = False
     """Kimi's K3 models fix ``temperature`` and ask that it be left out. Set True

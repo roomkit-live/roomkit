@@ -6,7 +6,7 @@ from typing import Any, ClassVar
 
 from roomkit.providers.ai.base import AIContext, ModelInfo
 from roomkit.providers.ai.chat_request import ChatDialect
-from roomkit.providers.ai.reasoning import floored_effort, reasoning_floor
+from roomkit.providers.ai.reasoning import floored_effort, nearest_level, reasoning_floor
 from roomkit.providers.minimax.config import MiniMaxConfig
 from roomkit.providers.minimax.models import MODELS
 from roomkit.providers.openai.ai import OpenAIAIProvider
@@ -18,6 +18,11 @@ from roomkit.providers.vendor_endpoint import MINIMAX_BASE_URL, is_vendor_endpoi
 # templates read that field, M2's and M3's alike, and a <think> block in the
 # content only as a fallback under M2's tag; M3's is <mm:think>.
 MINIMAX_CHAT = ChatDialect(thinking_field="reasoning_content")
+
+# The efforts M3.1-Flash takes, least to most (MiniMax's API reference); another
+# goes as the nearest of them (RFC §6.7).
+_LEVELS = ("low", "medium", "high", "xhigh", "max")
+_SCALE = ("minimal", "low", "medium", "high", "xhigh", "max")
 
 
 class MiniMaxAIProvider(OpenAIAIProvider):
@@ -68,17 +73,24 @@ class MiniMaxAIProvider(OpenAIAIProvider):
         return not is_vendor_endpoint(self._config.base_url, MINIMAX_BASE_URL)
 
     def _apply_sampling_kwargs(self, kwargs: dict[str, Any], context: AIContext) -> None:
-        """Temperature and reasoning effort, on a turn with tools as on any other.
+        """Temperature where the config says the server takes it, and reasoning
+        effort on a turn with tools as on any other (RFC §6.7).
 
-        A turn that states off sends the model's floor (RFC §6.7): ``low`` on
-        M3.1-Flash, which cannot stop reasoning, and on M3 MiniMax's own switch,
-        since its ``reasoning_effort`` is effective for M3.1-Flash alone.
+        On a model the catalogue names, a turn that states off sends its floor:
+        ``low`` on M3.1-Flash, which cannot stop reasoning, and on M3 MiniMax's
+        own switch, since its ``reasoning_effort`` is effective for M3.1-Flash
+        alone; another effort goes as the nearest level M3.1-Flash takes. On any
+        other model the effort goes as stated.
         """
         if context.temperature is not None and self._config.supports_custom_temperature:
             kwargs["temperature"] = context.temperature
-        floor = reasoning_floor(self.catalog_entry())
+        entry = self.catalog_entry()
+        floor = reasoning_floor(entry)
         effort = floored_effort(context, self._config.reasoning_effort, floor)
-        if effort == "none":
+        if effort == "none" and floor == "none":
             kwargs.setdefault("extra_body", {})["thinking"] = {"type": "disabled"}
-        elif effort is not None:
+            return
+        if entry is not None:
+            effort = nearest_level(effort, _LEVELS, scale=_SCALE)
+        if effort is not None:
             kwargs["reasoning_effort"] = effort

@@ -27,6 +27,14 @@ class MiniMaxConfig(OpenAIConfig):
     """No cap unless one is set. Reasoning counts toward it, and MiniMax documents
     that a cap too small yields ``finish_reason: "length"`` with an empty answer."""
 
+    use_max_completion_tokens: bool = True
+    """A cap goes as ``max_completion_tokens``, MiniMax's field for new
+    integrations; set False for a server that reads ``max_tokens`` alone."""
+
+    supports_custom_temperature: bool = False
+    """MiniMax's API ignores ``temperature`` and always uses 1, the value its
+    model cards recommend. Set True for a server of your own that honours it."""
+
     reasoning_effort: str | None = None
     """``"low"`` | ``"medium"`` | ``"high"`` | ``"xhigh"`` | ``"max"``, effective
     for MiniMax-M3.1-Flash only, also on a turn with tools. ``None`` leaves the

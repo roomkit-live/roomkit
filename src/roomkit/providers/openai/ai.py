@@ -3,9 +3,9 @@
 Reading what the endpoint sends back — reasoning conventions, tool-call
 fragments, the overflow fact — lives in ``providers/ai/openai_dialect.py``,
 shared with the other providers speaking this dialect. The request side stays
-on the class: ``OpenAIAIProvider`` is the base of eight derivatives (Azure,
-Cerebras, DeepSeek, LiteLLM, OpenRouter, Qwen, vLLM, xAI) that override its request
-hooks (``_apply_sampling_kwargs``, ``_usage_from``, ``_provider_name``) and
+on the class: ``OpenAIAIProvider`` is the base of its derivatives (Azure,
+Cerebras, DeepSeek, Kimi, LiteLLM, Meta, MiniMax, OpenRouter, Qwen, vLLM, xAI) that
+override its request hooks (``_apply_sampling_kwargs``, ``_usage_from``, ``_provider_name``) and
 inherit ``_build_messages`` as a tested part of their surface. That side is
 not what keeps the module above the size signal, though: the two call paths,
 ``generate`` and ``generate_structured_stream``, each carry their own request
