@@ -3294,7 +3294,8 @@ shown: …]` past the bound, `[Image unavailable: …]` for a
 reference that does not resolve, `[Image refused by the model's provider: …]`
 for an image a provider refused on an earlier turn (the turn's first request
 failed on a non-retried error that is no authentication, payment, permission,
-missing model or rate limit). A `file:`, `ftp:`, `javascript:`, `vbscript:` or
+missing model or rate limit, nor a refusal before any request, which
+`ProviderError.before_request` marks). A `file:`, `ftp:`, `javascript:`, `vbscript:` or
 schemeless URL, a one-letter scheme, a `..` segment or a backslash is refused
 when the `MediaContent` is built, and a link's or a `data:` URI's scheme is
 stored in lower case (`HTTP://…` as `http://…`). A transport channel receives the reference
