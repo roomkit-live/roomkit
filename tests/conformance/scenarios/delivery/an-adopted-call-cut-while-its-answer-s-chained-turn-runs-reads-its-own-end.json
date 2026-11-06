@@ -7,7 +7,7 @@
     "§9.5.1 Reentrance",
     "§6.4 The turn's record"
   ],
-  "notes": "Python: src/roomkit/core/mixins/inbound_streaming.py _read_streams (a chained stream's end is not its caller's: if sr.chained: continue) and _record_cancelled_read (not sr.chained), models/delivery.py report_cascade. RMK-1322 item 5 read 'cancelled' for Python: this pins what both read.",
+  "notes": "Python: src/roomkit/core/mixins/inbound_streaming.py _read_streams (a chained stream's end is not its caller's: if sr.chained: continue) and _record_cancelled_read (not sr.chained), models/delivery.py report_cascade. The message is addressed to a alone, so b's turn is on a's answer. RMK-1322 item 5 read 'cancelled' for Python: this pins what both read.",
   "setup": {
     "channels": [
       {
@@ -78,7 +78,10 @@
                     "type": "text",
                     "body": "side"
                   },
-                  "delivery_key": "k"
+                  "delivery_key": "k",
+                  "addressed_to": [
+                    "a"
+                  ]
                 },
                 "defer_delivery": true,
                 "as": "side"
