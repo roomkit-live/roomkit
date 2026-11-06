@@ -1,0 +1,140 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "response-schema/a-final-answer-failing-its-schema-after-a-round-is-no-interruption",
+  "title": "A turn that ran a round of calls and whose final answer fails its schema fails with that error: it was not interrupted, so no marker is stored and no response is reported",
+  "rules": [
+    "§6.7",
+    "Appendix A.9"
+  ],
+  "notes": "Python: tests/test_turn_that_did_not_complete.py::test_a_final_answer_failing_its_schema_after_a_round_is_no_interruption.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "response_schema": {
+          "type": "object",
+          "properties": {
+            "department": {
+              "type": "string",
+              "enum": [
+                "billing",
+                "other"
+              ]
+            }
+          },
+          "required": [
+            "department"
+          ],
+          "additionalProperties": false
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found"
+          }
+        ],
+        "model": {
+          "response_schema": true,
+          "response_schema_with_tools": true,
+          "rounds": [
+            {
+              "text": "Let me check that.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "text": "Sure, it is billing."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "report",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "My card was charged twice."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "the answer is not a JSON document"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "content": {
+            "body": "Let me check that."
+          }
+        },
+        {
+          "index": 2,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 3,
+          "type": "tool_call_end"
+        }
+      ]
+    },
+    "hooks": {
+      "report": []
+    }
+  }
+}

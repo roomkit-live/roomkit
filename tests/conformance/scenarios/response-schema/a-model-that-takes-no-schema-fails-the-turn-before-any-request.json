@@ -1,0 +1,119 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "response-schema/a-model-that-takes-no-schema-fails-the-turn-before-any-request",
+  "title": "A turn under a response schema whose model takes none fails before any request, unsupported: nothing is asked, stored or sent, and ON_ERROR fires once",
+  "rules": [
+    "§6.7",
+    "Appendix A.9",
+    "§9.2"
+  ],
+  "notes": "Python: tests/test_channels/test_ai_response_schema.py TestTurn::test_a_provider_without_support_fails_the_turn_before_any_request.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "response_schema": {
+          "type": "object",
+          "properties": {
+            "department": {
+              "type": "string",
+              "enum": [
+                "billing",
+                "other"
+              ]
+            }
+          },
+          "required": [
+            "department"
+          ],
+          "additionalProperties": false
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "{\"department\": \"billing\"}"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "errors",
+        "trigger": "on_error",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "My card was charged twice."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "does not support a response schema"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": []
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0
+        }
+      ]
+    },
+    "hooks": {
+      "errors": [
+        {
+          "trigger": "on_error",
+          "event": {
+            "metadata": {
+              "error": {
+                "$contains": "does not support a response schema"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

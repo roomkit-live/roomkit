@@ -1,0 +1,131 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "response-schema/an-answer-that-fails-its-check-is-never-stored-nor-sent",
+  "title": "A streamed answer that is not the JSON document its schema asks for fails the turn, invalid_json: none of its text is stored or sent, ON_ERROR fires once, and no response is reported",
+  "rules": [
+    "§6.7",
+    "Appendix A.9",
+    "§9.2"
+  ],
+  "notes": "Python: tests/test_channels/test_ai_response_schema.py TestStreamedTurnThroughTheRoom::test_an_answer_that_fails_the_check_is_never_stored_nor_sent.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "response_schema": {
+          "type": "object",
+          "properties": {
+            "department": {
+              "type": "string",
+              "enum": [
+                "billing",
+                "other"
+              ]
+            }
+          },
+          "required": [
+            "department"
+          ],
+          "additionalProperties": false
+        },
+        "model": {
+          "response_schema": true,
+          "rounds": [
+            {
+              "deltas": [
+                "Sure! ",
+                "The department is billing."
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "errors",
+        "trigger": "on_error",
+        "execution": "async"
+      },
+      {
+        "name": "report",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "My card was charged twice."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "the answer is not a JSON document"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": []
+      }
+    },
+    "hooks": {
+      "errors": [
+        {
+          "trigger": "on_error",
+          "event": {
+            "metadata": {
+              "error": {
+                "$contains": "the answer is not a JSON document"
+              }
+            }
+          }
+        }
+      ],
+      "report": []
+    }
+  }
+}

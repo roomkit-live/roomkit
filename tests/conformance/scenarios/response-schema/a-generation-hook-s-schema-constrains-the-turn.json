@@ -1,0 +1,133 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "response-schema/a-generation-hook-s-schema-constrains-the-turn",
+  "title": "A BEFORE_AI_GENERATION hook that hands back a context with a response schema constrains the turn: the request carries it, and a prose answer fails its check, nothing stored",
+  "rules": [
+    "§6.7",
+    "§9.3"
+  ],
+  "notes": "Python: channels/_ai_generation.py returns the hook's ai_context, which the turn runs on (_ai_streaming.py), its response_schema with it; tests/test_response_schema.py TestAIContextField::test_refuses_it_on_assignment_as_a_hook_would_set_it.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "response_schema": true,
+          "rounds": [
+            {
+              "text": "Sure, billing."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "schema",
+        "trigger": "before_ai_generation",
+        "priority": 0,
+        "reactions": [
+          {
+            "result": {
+              "action": "modify",
+              "event": {
+                "response_schema": {
+                  "type": "object",
+                  "properties": {
+                    "department": {
+                      "type": "string",
+                      "enum": [
+                        "billing",
+                        "other"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "department"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "My card was charged twice."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "the answer is not a JSON document"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "response_schema": {
+            "type": "object",
+            "properties": {
+              "department": {
+                "type": "string",
+                "enum": [
+                  "billing",
+                  "other"
+                ]
+              }
+            },
+            "required": [
+              "department"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0
+        }
+      ]
+    }
+  }
+}

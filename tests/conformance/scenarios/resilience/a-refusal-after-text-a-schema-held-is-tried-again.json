@@ -1,0 +1,146 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "resilience/a-refusal-after-text-a-schema-held-is-tried-again",
+  "title": "Under a response schema, a generation the provider refuses as worth another try after text the turn held is tried again: nothing of it was handed, and the document of the try is stored",
+  "rules": [
+    "§6.4",
+    "§6.7"
+  ],
+  "notes": "Python: channels/_ai_resilience.py counts what it emitted after hold_until_checked (_structured_stream), so held text hands nothing and the retry runs.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "response_schema": {
+          "type": "object",
+          "properties": {
+            "department": {
+              "type": "string",
+              "enum": [
+                "billing",
+                "other"
+              ]
+            }
+          },
+          "required": [
+            "department"
+          ],
+          "additionalProperties": false
+        },
+        "retry_policy": {
+          "max_retries": 1,
+          "base_delay_ms": 1
+        },
+        "model": {
+          "response_schema": true,
+          "rounds": [
+            {
+              "text": "{\"department\": ",
+              "refuses": {
+                "status": 503,
+                "message": "overloaded",
+                "retryable": true
+              }
+            },
+            {
+              "text": "{\"department\": \"billing\"}"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "My card was charged twice."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "response_schema": {
+            "type": "object",
+            "properties": {
+              "department": {
+                "type": "string",
+                "enum": [
+                  "billing",
+                  "other"
+                ]
+              }
+            },
+            "required": [
+              "department"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "response_schema": {
+            "type": "object",
+            "properties": {
+              "department": {
+                "type": "string",
+                "enum": [
+                  "billing",
+                  "other"
+                ]
+              }
+            },
+            "required": [
+              "department"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "content": {
+            "body": "{\"department\": \"billing\"}"
+          }
+        }
+      ]
+    }
+  }
+}

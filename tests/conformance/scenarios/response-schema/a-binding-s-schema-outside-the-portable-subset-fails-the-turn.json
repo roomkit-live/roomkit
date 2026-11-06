@@ -1,0 +1,87 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "response-schema/a-binding-s-schema-outside-the-portable-subset-fails-the-turn",
+  "title": "A binding whose response schema is outside the portable subset fails the turn before its model is asked, the error naming the rule it breaks",
+  "rules": [
+    "§6.7",
+    "Appendix A.9"
+  ],
+  "notes": "Python: tests/test_channels/test_ai_response_schema.py TestResolution::test_a_binding_schema_outside_the_subset_fails_the_turn.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "response_schema": true,
+          "rounds": [
+            {
+              "text": "{\"department\": \"billing\"}"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "response_schema": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "My card was charged twice."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "1 validation error for AIContext\nresponse_schema\n  Value error, a response schema must be a JSON Schema whose root type is 'object' [type=value_error, input_value={'type': 'string'}, input_type=dict]"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": []
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0
+        }
+      ]
+    }
+  }
+}

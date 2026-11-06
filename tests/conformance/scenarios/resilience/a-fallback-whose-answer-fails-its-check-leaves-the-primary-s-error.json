@@ -1,0 +1,107 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "resilience/a-fallback-whose-answer-fails-its-check-leaves-the-primary-s-error",
+  "title": "Under a response schema, a fallback whose answer fails its check handed nothing, its text held: the turn fails with the primary's error, and nothing is stored",
+  "rules": [
+    "§6.4",
+    "§6.7"
+  ],
+  "notes": "Python: channels/_ai_resilience.py _fallback_stream leaves the primary's error when the fallback emitted nothing, what a response schema holds not counted.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "response_schema": {
+          "type": "object",
+          "properties": {
+            "department": {
+              "type": "string",
+              "enum": [
+                "billing",
+                "other"
+              ]
+            }
+          },
+          "required": [
+            "department"
+          ],
+          "additionalProperties": false
+        },
+        "model": {
+          "response_schema": true,
+          "rounds": [
+            {
+              "refuses": {
+                "status": 503,
+                "message": "primary down",
+                "retryable": true
+              }
+            }
+          ]
+        },
+        "fallback_model": {
+          "response_schema": true,
+          "rounds": [
+            {
+              "text": "Sure, billing."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "My card was charged twice."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "primary down"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0
+        }
+      ]
+    }
+  }
+}

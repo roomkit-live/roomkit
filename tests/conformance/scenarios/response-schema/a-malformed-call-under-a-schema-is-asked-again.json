@@ -1,0 +1,141 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "response-schema/a-malformed-call-under-a-schema-is-asked-again",
+  "title": "Under a response schema, a round that ended on a call its provider could not parse is not checked: the loop tells the model and asks again, and the turn answers with the document",
+  "rules": [
+    "§6.7",
+    "§6.4",
+    "Appendix A.9"
+  ],
+  "notes": "Python: tests/test_channels/test_ai_empty_retry.py::test_a_schema_turn_asks_again_instead_of_failing_its_check.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "response_schema": {
+          "type": "object",
+          "properties": {
+            "city": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "city"
+          ],
+          "additionalProperties": false
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found"
+          }
+        ],
+        "model": {
+          "response_schema": true,
+          "response_schema_with_tools": true,
+          "rounds": [
+            {
+              "text": "",
+              "finish_reason": "MALFORMED_FUNCTION_CALL"
+            },
+            {
+              "text": "{\"city\": \"Paris\"}"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "My card was charged twice."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "response_schema": {
+            "type": "object",
+            "properties": {
+              "city": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "city"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "response_schema": {
+            "type": "object",
+            "properties": {
+              "city": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "city"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "content": {
+            "body": "{\"city\": \"Paris\"}"
+          },
+          "metadata": {
+            "loop_end_reason": "completed"
+          }
+        }
+      ]
+    }
+  }
+}

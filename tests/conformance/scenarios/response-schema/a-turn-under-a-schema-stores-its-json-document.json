@@ -1,0 +1,135 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "response-schema/a-turn-under-a-schema-stores-its-json-document",
+  "title": "An agent built with a response schema asks its model for that schema and the room stores the JSON document the model wrote as the turn's message, delivered whole",
+  "rules": [
+    "§6.7",
+    "Appendix A.9"
+  ],
+  "notes": "Python: tests/test_channels/test_ai_response_schema.py TestTurn::test_the_answer_is_the_json_document, TestStreamedTurnThroughTheRoom::test_an_answer_that_passes_is_stored_and_sent_whole.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "response_schema": {
+          "type": "object",
+          "properties": {
+            "department": {
+              "type": "string",
+              "enum": [
+                "billing",
+                "other"
+              ]
+            }
+          },
+          "required": [
+            "department"
+          ],
+          "additionalProperties": false
+        },
+        "model": {
+          "response_schema": true,
+          "rounds": [
+            {
+              "deltas": [
+                "{\"department\": ",
+                "\"billing\"}"
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "My card was charged twice."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "response_schema": {
+            "type": "object",
+            "properties": {
+              "department": {
+                "type": "string",
+                "enum": [
+                  "billing",
+                  "other"
+                ]
+              }
+            },
+            "required": [
+              "department"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "content": {
+            "body": "{\"department\": \"billing\"}"
+          },
+          "metadata": {
+            "loop_end_reason": "completed"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [
+          {
+            "index": 1,
+            "type": "message",
+            "content": {
+              "body": "{\"department\": \"billing\"}"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
