@@ -1,0 +1,90 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "locks/a-regeneration-refused-room-closed-carries-its-lock-s-failed-release",
+  "title": "A regeneration refused room_closed under a room lock whose release fails carries that failure as its error",
+  "rules": [
+    "§13.5 A release that fails",
+    "§13.6"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/regenerate.py, regenerate_response collects the failed releases of its call and makes the first its result's error when it has none. Found by the light review of RMK-1443's lot 1 (G3).",
+  "setup": {
+    "kit": {
+      "lock_manager": {
+        "release_error": "lease expired"
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "First answer"
+            },
+            {
+              "text": "Saturday answer"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "What is the weather?"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "close_room",
+      "room_id": "room-1"
+    },
+    {
+      "lock_releases": "fail"
+    },
+    {
+      "call": "regenerate_response",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "room_closed",
+          "event": null,
+          "error": {
+            "$contains": "lease expired"
+          }
+        }
+      }
+    }
+  ]
+}

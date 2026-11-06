@@ -1,0 +1,100 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "locks/a-regeneration-carries-its-lock-s-failed-release",
+  "title": "A regeneration whose choice was made under a room lock whose release failed answers again all the same and carries that failure as its error",
+  "rules": [
+    "§13.5 A release that fails",
+    "§13.6"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/regenerate.py, _finish_regeneration: a failed release of the planning lock is met before the cascade's errors (RFC §13.5).",
+  "setup": {
+    "kit": {
+      "lock_manager": {
+        "release_error": "lease expired"
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "First answer"
+            },
+            {
+              "text": "Second answer"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "What is the weather?"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "lock_releases": "fail"
+    },
+    {
+      "call": "regenerate_response",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "id": "room-1#0"
+          },
+          "response_events": [
+            {
+              "content": {
+                "body": "Second answer"
+              }
+            }
+          ],
+          "error": {
+            "$contains": "lease expired"
+          }
+        }
+      }
+    },
+    {
+      "lock_releases": "succeed"
+    },
+    {
+      "idle": true
+    }
+  ]
+}
