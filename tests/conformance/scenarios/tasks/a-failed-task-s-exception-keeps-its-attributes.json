@@ -8,7 +8,7 @@
     "§10.6.8",
     "§5.13"
   ],
-  "notes": "Python: tests/test_provider_error_names_provider.py (str(ProviderError) leads with its provider and status), turns/_error_codec.py error_record (attributes: the error's JSON attributes, a ProviderError's retryable, provider, status_code and context_overflow), core/mixins/lane_execution.py _delivery_error (retryable as the raised error's retryable, true when it has none). The worker's provider mock refuses with status 503: the task fails with the provider's text, and its exception, read by the turn's host through wait_task, carries the refusal's attributes. The clerk's budget-aware memory finds the message alone past its window and raises a ProviderError, not retryable, before the turn: the message's delivery to the clerk fails with code ProviderError, not retryable. A scripted model's refusal fails the turn's stream instead, which the result's error reports, its delivery result not kept.",
+  "notes": "Python: tests/test_provider_error_names_provider.py (str(ProviderError) leads with its provider and status), turns/_error_codec.py error_record (attributes: the error's JSON attributes, a ProviderError's retryable, provider, status_code, context_overflow and before_request), core/mixins/lane_execution.py _delivery_error (retryable as the raised error's retryable, true when it has none). The worker's provider mock refuses with status 503: the task fails with the provider's text, and its exception, read by the turn's host through wait_task, carries the refusal's attributes. The clerk's budget-aware memory finds the message alone past its window and raises a ProviderError, not retryable, before the turn: the message's delivery to the clerk fails with code ProviderError, not retryable. A scripted model's refusal fails the turn's stream instead, which the result's error reports, its delivery result not kept.",
   "setup": {
     "channels": [
       {
@@ -102,7 +102,8 @@
                         "retryable": false,
                         "provider": "mock",
                         "status_code": 503,
-                        "context_overflow": null
+                        "context_overflow": null,
+                        "before_request": false
                       }
                     }
                   }
