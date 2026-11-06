@@ -1,0 +1,126 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/on-ai-response-reports-the-agents-answer",
+  "title": "ON_AI_RESPONSE reports an ACP turn's answer as an AI channel's: its text, its end and the counters the agent returned, unaltered",
+  "rules": [
+    "§6.4",
+    "§9.2"
+  ],
+  "notes": "Python: tests/test_channels/test_acp.py::TestACPChannel::test_on_ai_response_fires_for_a_channel_that_is_not_an_aichannel, test_the_counters_are_relayed_exactly_as_the_agent_sent_them, test_a_finished_turn_reports_what_it_produced.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "Hi "
+                    }
+                  },
+                  {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "there."
+                    }
+                  }
+                ],
+                "usage": {
+                  "inputTokens": 120,
+                  "outputTokens": 30,
+                  "totalTokens": 150,
+                  "cachedReadTokens": 100
+                }
+              }
+            ],
+            "initialize": {
+              "agent_info": {
+                "name": "scripted-agent",
+                "version": "1.0.0"
+              }
+            }
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "response",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "response": [
+        {
+          "trigger": "on_ai_response",
+          "room_id": "room-1",
+          "response": {
+            "channel_id": "claude",
+            "response_content": "Hi there.",
+            "segments": [
+              "Hi there."
+            ],
+            "tool_calls_count": 0,
+            "round_count": 0,
+            "loop_end_reason": "completed",
+            "usage": {
+              "total_tokens": 150,
+              "input_tokens": 120,
+              "output_tokens": 30,
+              "cached_read_tokens": 100
+            },
+            "streaming": true,
+            "thinking": ""
+          }
+        }
+      ]
+    }
+  }
+}

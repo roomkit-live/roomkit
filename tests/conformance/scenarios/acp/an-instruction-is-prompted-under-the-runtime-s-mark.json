@@ -1,0 +1,124 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/an-instruction-is-prompted-under-the-runtime-s-mark",
+  "title": "An instruction addressed to an ACP agent is prompted in the room's session under the runtime's mark, never as a participant's line, and the agent's text answers it",
+  "rules": [
+    "§6.4",
+    "§10.1.1 step 6"
+  ],
+  "notes": "Python: src/roomkit/channels/acp.py on_event, mark_instruction (tests/test_channels/test_acp_instruction.py covers the rest of the instruction's cases, stream L's lot 8). The prompt's text is matched as holding the mark and the instruction: the catch-up before it is lot 8's.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "Hello, I can help."
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "host",
+        "content": {
+          "type": "text",
+          "body": "Introduce yourself"
+        },
+        "event_type": "instruction",
+        "addressed_to": [
+          "claude"
+        ]
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "type": "instruction"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "acp_wire": {
+      "claude": [
+        {
+          "method": "initialize"
+        },
+        {
+          "method": "session/new"
+        },
+        {
+          "method": "session/prompt",
+          "params": {
+            "sessionId": "session-1",
+            "prompt": [
+              {
+                "type": "text",
+                "text": {
+                  "$contains": "[Instruction from the application: nobody in this conversation said it. Act on it now, in your own words, without quoting it.]\nIntroduce yourself"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message",
+          "content": {
+            "body": "Hello, I can help."
+          },
+          "source": {
+            "channel_id": "claude"
+          }
+        }
+      ]
+    }
+  }
+}

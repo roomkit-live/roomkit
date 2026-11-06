@@ -1,0 +1,135 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/a-stop-reason-other-than-end-turn-is-named-on-the-turn",
+  "title": "An ACP turn the agent ends on another reason than end_turn names it on its record, as the turn's end and to ON_AI_RESPONSE, which its answer carries",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: tests/test_channels/test_acp.py::TestACPChannel::test_a_refusal_is_named_on_the_turn, test_a_truncated_turn_is_named_too; tests/test_inbound_turns_record.py::test_an_acp_turn_names_its_stop_reason.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "I will not."
+                    }
+                  }
+                ],
+                "stop_reason": "refusal"
+              }
+            ],
+            "initialize": {
+              "agent_info": {
+                "name": "scripted-agent",
+                "version": "1.0.0"
+              }
+            }
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "response",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Do it"
+        }
+      },
+      "expect": {
+        "result": {
+          "response_metadata": {
+            "acp": {
+              "protocol_version": 1,
+              "prompt_returned": true,
+              "stop_reason": "refusal"
+            },
+            "turns": {
+              "claude": {
+                "loop_end_reason": "refusal"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0
+        },
+        {
+          "index": 1,
+          "content": {
+            "body": "I will not."
+          },
+          "metadata": {
+            "acp": {
+              "stop_reason": "refusal"
+            }
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "response": [
+        {
+          "trigger": "on_ai_response",
+          "room_id": "room-1",
+          "response": {
+            "channel_id": "claude",
+            "response_content": "I will not.",
+            "loop_end_reason": "refusal",
+            "usage": {}
+          }
+        }
+      ]
+    }
+  }
+}

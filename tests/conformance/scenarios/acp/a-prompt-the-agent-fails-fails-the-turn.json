@@ -1,0 +1,155 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/a-prompt-the-agent-fails-fails-the-turn",
+  "title": "A prompt the agent answers with an error fails the turn as the acp provider's error, ON_ERROR told, the text it streamed kept, its record marked interrupted, and no ON_AI_RESPONSE",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: tests/test_channels/test_acp.py::TestACPChannel::test_a_turn_that_never_returned_is_marked_interrupted, test_a_failed_turn_is_not_a_response.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "Partial"
+                    }
+                  }
+                ],
+                "error": {
+                  "code": -32603,
+                  "message": "Internal error"
+                }
+              }
+            ],
+            "initialize": {
+              "agent_info": {
+                "name": "scripted-agent",
+                "version": "1.0.0"
+              }
+            }
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "error",
+        "trigger": "on_error",
+        "execution": "async"
+      },
+      {
+        "name": "response",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "error": "ACP agent prompt failed: Internal error",
+          "response_metadata": {
+            "acp": {
+              "protocol_version": 1,
+              "interrupted": true,
+              "prompt_returned": {
+                "$absent": true
+              }
+            },
+            "turns": {
+              "claude": {
+                "loop_end_reason": "interrupted"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0
+        },
+        {
+          "index": 1,
+          "content": {
+            "body": "Partial"
+          },
+          "metadata": {
+            "acp": {
+              "protocol_version": 1,
+              "interrupted": true
+            }
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "error": [
+        {
+          "trigger": "on_error",
+          "room_id": "room-1",
+          "event": {
+            "source": {
+              "channel_id": "claude"
+            },
+            "content": {
+              "body": "ACP agent prompt failed: Internal error"
+            },
+            "metadata": {
+              "error": "ACP agent prompt failed: Internal error",
+              "error_type": "ProviderError",
+              "error_category": "streaming"
+            }
+          }
+        }
+      ],
+      "response": []
+    }
+  }
+}

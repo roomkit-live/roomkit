@@ -1,0 +1,214 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/each-room-has-its-own-session",
+  "title": "Each room an ACP channel serves has a session of its own on the channel's one connection, its room named in the session's _meta",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: tests/test_channels/test_acp.py::TestACPChannel::test_sessions_are_isolated_by_room_and_can_be_cancelled. The prompt's text is matched as holding the message: the catch-up the RFC's §19.3.2 adds before it is lot 8's of stream L.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "For one."
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "For two."
+                    }
+                  }
+                ]
+              }
+            ],
+            "initialize": {
+              "agent_info": {
+                "name": "scripted-agent",
+                "version": "1.0.0"
+              }
+            }
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "In one"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "In two"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0
+        },
+        {
+          "index": 1,
+          "content": {
+            "body": "For one."
+          }
+        }
+      ],
+      "room-2": [
+        {
+          "index": 0
+        },
+        {
+          "index": 1,
+          "content": {
+            "body": "For two."
+          }
+        }
+      ]
+    },
+    "acp_wire": {
+      "claude": [
+        {
+          "method": "initialize",
+          "params": {
+            "protocolVersion": 1,
+            "clientCapabilities": {
+              "$absent": true
+            },
+            "clientInfo": {
+              "name": "roomkit",
+              "title": "RoomKit",
+              "version": {
+                "$present": true
+              }
+            }
+          }
+        },
+        {
+          "method": "session/new",
+          "params": {
+            "cwd": "/srv/project",
+            "mcpServers": [],
+            "_meta": {
+              "roomkit.live/roomId": "room-1",
+              "roomkit.live/sessionScope": "room"
+            }
+          }
+        },
+        {
+          "method": "session/prompt",
+          "params": {
+            "sessionId": "session-1",
+            "prompt": [
+              {
+                "type": "text",
+                "text": {
+                  "$contains": "In one"
+                }
+              }
+            ],
+            "_meta": {
+              "roomkit.live/eventId": "room-1#0"
+            }
+          }
+        },
+        {
+          "method": "session/new",
+          "params": {
+            "cwd": "/srv/project",
+            "mcpServers": [],
+            "_meta": {
+              "roomkit.live/roomId": "room-2",
+              "roomkit.live/sessionScope": "room"
+            }
+          }
+        },
+        {
+          "method": "session/prompt",
+          "params": {
+            "sessionId": "session-2",
+            "prompt": [
+              {
+                "type": "text",
+                "text": {
+                  "$contains": "In two"
+                }
+              }
+            ],
+            "_meta": {
+              "roomkit.live/eventId": "room-2#0"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

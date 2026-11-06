@@ -1,0 +1,185 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/a-message-is-prompted-and-the-agents-text-answers-it",
+  "title": "A message reaches an ACP agent as the prompt of the room's session, opened for it, and the agent's text is the room's answer, its record on the result and the message",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: tests/test_channels/test_acp.py::TestACPChannel::test_streams_updates_and_reuses_room_session, test_framework_persists_acp_stream_segments, test_a_clean_turn_marks_nothing, test_the_record_is_the_one_the_output_carries. The client's initialize sends no clientCapabilities: its file system and terminal are off, ACP's defaults, which the Python SDK leaves out. The prompt's text is matched as holding the message: the catch-up the RFC's §19.3.2 adds before it is lot 8's of stream L.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "Hi "
+                    }
+                  },
+                  {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "there."
+                    }
+                  }
+                ]
+              }
+            ],
+            "initialize": {
+              "agent_info": {
+                "name": "scripted-agent",
+                "version": "1.0.0"
+              }
+            }
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "response_metadata": {
+            "acp": {
+              "protocol_version": 1,
+              "prompt_returned": true,
+              "stop_reason": {
+                "$absent": true
+              },
+              "interrupted": {
+                "$absent": true
+              }
+            },
+            "turns": {
+              "claude": {
+                "loop_end_reason": "completed"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "Hello"
+          }
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "chain_depth": 1,
+          "content": {
+            "type": "text",
+            "body": "Hi there."
+          },
+          "source": {
+            "channel_id": "claude",
+            "channel_type": "ai",
+            "direction": "outbound"
+          },
+          "metadata": {
+            "acp": {
+              "protocol_version": 1,
+              "prompt_returned": true
+            }
+          }
+        }
+      ]
+    },
+    "acp_wire": {
+      "claude": [
+        {
+          "method": "initialize",
+          "params": {
+            "protocolVersion": 1,
+            "clientCapabilities": {
+              "$absent": true
+            },
+            "clientInfo": {
+              "name": "roomkit",
+              "title": "RoomKit",
+              "version": {
+                "$present": true
+              }
+            }
+          }
+        },
+        {
+          "method": "session/new",
+          "params": {
+            "cwd": "/srv/project",
+            "mcpServers": [],
+            "_meta": {
+              "roomkit.live/roomId": "room-1",
+              "roomkit.live/sessionScope": "room"
+            }
+          }
+        },
+        {
+          "method": "session/prompt",
+          "params": {
+            "sessionId": "session-1",
+            "prompt": [
+              {
+                "type": "text",
+                "text": {
+                  "$contains": "Hello"
+                }
+              }
+            ],
+            "_meta": {
+              "roomkit.live/eventId": "room-1#0"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
