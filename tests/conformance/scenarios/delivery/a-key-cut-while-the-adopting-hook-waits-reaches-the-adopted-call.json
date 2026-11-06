@@ -1,0 +1,179 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-key-cut-while-the-adopting-hook-waits-reaches-the-adopted-call",
+  "title": "A key cut while the adopting hook waits reaches the adopted call's stream; the hook's wait reads the reason",
+  "rules": [
+    "§9.5.1 Reentrance",
+    "§10.1 Explicit delivery cancellation"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true,
+        "deliver_stream": [
+          {
+            "hold_after": "A1",
+            "hold_gate": "reading"
+          }
+        ]
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "A1"
+            },
+            {
+              "text": "A2"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "adopts",
+        "trigger": "before_broadcast",
+        "needs_lock": false,
+        "reactions": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "ws",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "side"
+                  },
+                  "delivery_key": "k"
+                },
+                "defer_delivery": true,
+                "as": "side"
+              },
+              {
+                "call": "delivery.wait",
+                "of": "side",
+                "expect": {
+                  "result": {
+                    "cancellation_reason": "stopped",
+                    "response_metadata": {
+                      "turns": {
+                        "agent": {
+                          "loop_end_reason": "cancelled"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "background": true,
+      "as": "h"
+    },
+    {
+      "wait_for": "reading"
+    },
+    {
+      "call": "cancel_delivery",
+      "key": "k",
+      "reason": "stopped",
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "open": "reading"
+    },
+    {
+      "await": "h"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "delivery.wait",
+      "of": "side",
+      "expect": {
+        "result": {
+          "cancellation_reason": "stopped",
+          "response_metadata": {
+            "turns": {
+              "agent": {
+                "loop_end_reason": "cancelled"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "side"
+          }
+        },
+        {
+          "content": {
+            "body": "A1"
+          }
+        },
+        {
+          "content": {
+            "body": "hello"
+          }
+        },
+        {
+          "content": {
+            "body": "A2"
+          }
+        }
+      ]
+    }
+  },
+  "notes": "Python: src/roomkit/models/delivery.py DeliveryHandle.wait, cancel and report_cascade, src/roomkit/core/mixins/inbound.py (a call the admission work makes, adopted with a cascade of its own) (RMK-1322, RMK-1329; found by the lot's review)."
+}

@@ -1,0 +1,157 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-hook-waiting-on-an-adopted-call-whose-answer-sends-into-the-room-ends-at-the-timeout",
+  "title": "A hook waiting on its adopted call whose answer's delivery sends into the room ends at the event's process_timeout",
+  "rules": [
+    "§9.5.1 Reentrance",
+    "§13.6"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "deliver": [
+          {
+            "when": {
+              "text": "A1"
+            },
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "ws",
+                  "sender_id": "bob",
+                  "content": {
+                    "type": "text",
+                    "body": "echo"
+                  }
+                },
+                "as": "routed"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "A1"
+            },
+            {
+              "text": "A2"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "adopts",
+        "trigger": "before_broadcast",
+        "needs_lock": false,
+        "reactions": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "ws",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "side"
+                  }
+                },
+                "defer_delivery": true,
+                "as": "side"
+              },
+              {
+                "call": "delivery.wait",
+                "of": "side"
+              }
+            ]
+          }
+        ],
+        "timeout_ms": 5000
+      }
+    ],
+    "kit": {
+      "process_timeout_ms": 300
+    }
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "process_timeout",
+          "event": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "side"
+          }
+        },
+        {
+          "content": {
+            "body": "A1"
+          }
+        },
+        {
+          "content": {
+            "body": "echo"
+          }
+        },
+        {
+          "content": {
+            "body": "A2"
+          }
+        }
+      ]
+    }
+  },
+  "notes": "Python: src/roomkit/models/delivery.py DeliveryHandle.wait, cancel and report_cascade, src/roomkit/core/mixins/inbound.py (a call the admission work makes, adopted with a cascade of its own) (RMK-1322, RMK-1329; found by the lot's review)."
+}

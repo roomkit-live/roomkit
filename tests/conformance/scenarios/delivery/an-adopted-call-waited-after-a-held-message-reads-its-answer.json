@@ -1,0 +1,220 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/an-adopted-call-waited-after-a-held-message-reads-its-answer",
+  "title": "An off-lock hook that sends a message held for its sender's identity, then waits for a deferred call, reads that call's answer",
+  "rules": [
+    "§9.5.1 Reentrance",
+    "§10.1 step 5"
+  ],
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "when": {
+              "channel_id": "ws"
+            },
+            "repeat": true,
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "alice-id",
+                "display_name": "Alice"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "A1"
+            },
+            {
+              "text": "A2"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "identity_hooks": [
+      {
+        "name": "unknown",
+        "trigger": "on_identity_unknown",
+        "channel_ids": [
+          "sms"
+        ],
+        "reactions": [
+          {
+            "repeat": true,
+            "result": {
+              "status": "challenge_sent",
+              "message": "Identify yourself",
+              "inject": {
+                "event": {
+                  "content": {
+                    "type": "text",
+                    "body": "Who are you?"
+                  }
+                },
+                "target_channel_ids": [
+                  "sms"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "adopts",
+        "trigger": "before_broadcast",
+        "needs_lock": false,
+        "reactions": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "+15551234567",
+                  "content": {
+                    "type": "text",
+                    "body": "x"
+                  }
+                },
+                "as": "x",
+                "expect": {
+                  "result": {
+                    "blocked": true,
+                    "reason": "identity_challenge_sent"
+                  }
+                }
+              },
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "ws",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "side"
+                  }
+                },
+                "defer_delivery": true,
+                "as": "side"
+              },
+              {
+                "call": "delivery.wait",
+                "of": "side",
+                "expect": {
+                  "result": {
+                    "response_events": [
+                      {
+                        "content": {
+                          "body": "A1"
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "Who are you?"
+          }
+        },
+        {
+          "content": {
+            "body": "side"
+          }
+        },
+        {
+          "content": {
+            "body": "A1"
+          }
+        },
+        {
+          "content": {
+            "body": "hello"
+          }
+        },
+        {
+          "content": {
+            "body": "A2"
+          }
+        }
+      ]
+    }
+  },
+  "notes": "Python: src/roomkit/models/delivery.py DeliveryHandle.wait, cancel and report_cascade, src/roomkit/core/mixins/inbound.py (a call the admission work makes, adopted with a cascade of its own) (RMK-1322, RMK-1329; found by the lot's review)."
+}

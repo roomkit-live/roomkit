@@ -1,0 +1,135 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/an-adopted-call-its-hook-cancels-at-once-runs-no-turn",
+  "title": "An off-lock hook that cancels the call it adopted at once: the call reads the reason, no turn of it runs",
+  "rules": [
+    "§9.5.1 Reentrance",
+    "§10.1 Explicit delivery cancellation"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "A1"
+            },
+            {
+              "text": "A2"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "adopts",
+        "trigger": "before_broadcast",
+        "needs_lock": false,
+        "reactions": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "ws",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "side"
+                  }
+                },
+                "defer_delivery": true,
+                "as": "side"
+              },
+              {
+                "call": "delivery.cancel",
+                "of": "side",
+                "reason": "stopped",
+                "expect": {
+                  "result": {
+                    "cancellation_reason": "stopped"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "delivery.wait",
+      "of": "side",
+      "expect": {
+        "result": {
+          "cancellation_reason": "stopped",
+          "response_events": []
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "side"
+          }
+        },
+        {
+          "content": {
+            "body": "hello"
+          }
+        },
+        {
+          "content": {
+            "body": "A1"
+          }
+        }
+      ]
+    }
+  },
+  "notes": "Python: src/roomkit/models/delivery.py DeliveryHandle.wait, cancel and report_cascade, src/roomkit/core/mixins/inbound.py (a call the admission work makes, adopted with a cascade of its own) (RMK-1322, RMK-1329; found by the lot's review)."
+}

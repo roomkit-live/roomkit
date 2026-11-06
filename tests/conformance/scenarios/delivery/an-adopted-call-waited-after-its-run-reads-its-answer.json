@@ -1,0 +1,144 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/an-adopted-call-waited-after-its-run-reads-its-answer",
+  "title": "A deferred call an off-lock hook makes, waited once the run is over, reads its turn's end and its answer",
+  "rules": [
+    "§10.1 Explicit delivery cancellation",
+    "§9.5.1 Reentrance",
+    "§6.4 The turn's record"
+  ],
+  "notes": "Python: src/roomkit/models/delivery.py DeliveryHandle.wait and report_cascade, src/roomkit/core/mixins/inbound.py (a call a hook makes, adopted by the cascade whose hook made it, its handle told once that cascade read its streams) (RMK-1322, RMK-1329).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "A1"
+            },
+            {
+              "text": "A2"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "adopts",
+        "trigger": "before_broadcast",
+        "needs_lock": false,
+        "reactions": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "ws",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "side"
+                  }
+                },
+                "defer_delivery": true,
+                "as": "side"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "delivery.wait",
+      "of": "side",
+      "expect": {
+        "result": {
+          "response_metadata": {
+            "turns": {
+              "agent": {
+                "loop_end_reason": "completed"
+              }
+            }
+          },
+          "response_events": [
+            {
+              "type": "message",
+              "content": {
+                "body": "A1"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "side"
+          }
+        },
+        {
+          "content": {
+            "body": "hello"
+          }
+        },
+        {
+          "content": {
+            "body": "A1"
+          }
+        },
+        {
+          "content": {
+            "body": "A2"
+          }
+        }
+      ]
+    }
+  }
+}

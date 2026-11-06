@@ -1,0 +1,177 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/an-adopted-call-cut-while-its-answer-s-chained-turn-runs-reads-its-own-end",
+  "title": "A deferred call an off-lock hook made, cut by its key while another agent's turn on its agent's answer runs, reads its reason and its own agent's completed end, never the chained turn's",
+  "rules": [
+    "§10.1 Explicit delivery cancellation",
+    "§9.5.1 Reentrance",
+    "§6.4 The turn's record"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/inbound_streaming.py _read_streams (a chained stream's end is not its caller's: if sr.chained: continue) and _record_cancelled_read (not sr.chained), models/delivery.py report_cascade. RMK-1322 item 5 read 'cancelled' for Python: this pins what both read.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "A1"
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "gate": "b-runs",
+              "text": "B1"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "b",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "adopts",
+        "trigger": "before_broadcast",
+        "needs_lock": false,
+        "reactions": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "ws",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "side"
+                  },
+                  "delivery_key": "k"
+                },
+                "defer_delivery": true,
+                "as": "side"
+              }
+            ],
+            "result": {
+              "action": "block",
+              "reason": "kept out"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "background": true,
+      "as": "h"
+    },
+    {
+      "wait_for": "b-runs"
+    },
+    {
+      "call": "cancel_delivery",
+      "key": "k",
+      "reason": "stopped",
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "await": "h"
+    },
+    {
+      "call": "delivery.wait",
+      "of": "side",
+      "expect": {
+        "result": {
+          "cancellation_reason": "stopped",
+          "response_metadata": {
+            "turns": {
+              "a": {
+                "loop_end_reason": "completed"
+              },
+              "b": {
+                "$absent": true
+              }
+            }
+          },
+          "response_events": [
+            {
+              "content": {
+                "body": "A1"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "side"
+          }
+        },
+        {
+          "content": {
+            "body": "hello"
+          },
+          "status": "blocked"
+        },
+        {
+          "content": {
+            "body": "A1"
+          }
+        }
+      ]
+    }
+  }
+}
