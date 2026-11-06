@@ -1,0 +1,278 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reasoning/kimi-s-dialect-sends-a-round-s-reasoning-in-its-field",
+  "title": "Kimi's dialect carries a round's reasoning in reasoning_content, a single space for a round with none, a later turn's rounds included",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: providers/kimi/ai.py KIMI_CHAT; tests/test_providers/test_minimax_kimi.py. Kimi answers 400 to a tool round without the field (\"thinking is enabled but reasoning_content is missing in assistant tool call message\", its error reference), and a later turn's rounds hold no reasoning (§6.4). An empty field reads as missing: LiteLLM's Moonshot transformation sends a single space, \"the minimum value the API accepts\". Not checked on Kimi's wire.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "get_weather",
+            "description": "The weather.",
+            "returns": "sunny"
+          }
+        ],
+        "model": {
+          "chat_dialect": "kimi",
+          "rounds": [
+            {
+              "stream": [
+                {
+                  "thinking": "WHY."
+                },
+                {
+                  "text": "Let me look."
+                },
+                {
+                  "call": {
+                    "id": "c1",
+                    "name": "get_weather"
+                  }
+                }
+              ]
+            },
+            {
+              "stream": [
+                {
+                  "call": {
+                    "id": "c2",
+                    "name": "get_weather"
+                  }
+                }
+              ]
+            },
+            {
+              "thinking": [
+                "DONE."
+              ],
+              "text": "Sunny."
+            },
+            {
+              "text": "You are welcome."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "dev",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "dev",
+        "content": {
+          "type": "text",
+          "body": "thanks"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {
+          "chat_messages": [
+            {
+              "role": "user",
+              "content": "go"
+            },
+            {
+              "role": "assistant",
+              "content": "Let me look.",
+              "reasoning_content": "WHY.",
+              "reasoning": {
+                "$absent": true
+              },
+              "reasoning_details": {
+                "$absent": true
+              },
+              "tool_calls": [
+                {
+                  "type": "function",
+                  "function": {
+                    "name": "get_weather",
+                    "arguments": "{}"
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool",
+              "content": "sunny"
+            },
+            {
+              "role": "assistant",
+              "content": null,
+              "reasoning_content": " ",
+              "reasoning": {
+                "$absent": true
+              },
+              "reasoning_details": {
+                "$absent": true
+              },
+              "tool_calls": [
+                {
+                  "type": "function",
+                  "function": {
+                    "name": "get_weather",
+                    "arguments": "{}"
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool",
+              "content": "sunny"
+            }
+          ]
+        },
+        {
+          "chat_messages": [
+            {
+              "role": "user",
+              "content": "go"
+            },
+            {
+              "role": "assistant",
+              "content": "Let me look.",
+              "reasoning_content": {
+                "$absent": true
+              },
+              "reasoning": {
+                "$absent": true
+              },
+              "reasoning_details": {
+                "$absent": true
+              }
+            },
+            {
+              "role": "assistant",
+              "content": null,
+              "reasoning_content": " ",
+              "reasoning": {
+                "$absent": true
+              },
+              "reasoning_details": {
+                "$absent": true
+              },
+              "tool_calls": [
+                {
+                  "type": "function",
+                  "function": {
+                    "name": "get_weather",
+                    "arguments": "{}"
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool",
+              "content": "sunny"
+            },
+            {
+              "role": "assistant",
+              "content": null,
+              "reasoning_content": " ",
+              "reasoning": {
+                "$absent": true
+              },
+              "reasoning_details": {
+                "$absent": true
+              },
+              "tool_calls": [
+                {
+                  "type": "function",
+                  "function": {
+                    "name": "get_weather",
+                    "arguments": "{}"
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool",
+              "content": "sunny"
+            },
+            {
+              "role": "assistant",
+              "content": "Sunny.",
+              "reasoning_content": {
+                "$absent": true
+              },
+              "reasoning": {
+                "$absent": true
+              },
+              "reasoning_details": {
+                "$absent": true
+              }
+            },
+            {
+              "role": "user",
+              "content": "thanks"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
