@@ -18,7 +18,7 @@ import unicodedata
 from collections.abc import Collection
 from typing import Any
 
-from roomkit._lookalike import COLON, GAP, INVISIBLE, QUOTE, char_class, word_pattern
+from roomkit._lookalike import COLON, GAP, INVISIBLE, QUOTE, char_class, name_pattern
 
 
 def bounded_text(text: str, limit: int) -> str:
@@ -85,17 +85,18 @@ as well and are not listed."""
 def _tag_name(tag: str, *, exact: bool = False) -> str:
     """*tag*'s name as a model reads it: each letter in any of its forms (case,
     Unicode's confusables, :mod:`roomkit._lookalike`), any invisible character
-    between them, and no letter,
-    digit or underscore of a longer name after it. A hyphen, a dot or any
-    other mark ends it: read as a closing tag, such a name closes the block
-    for a model, so a closing tag errs toward one. *exact*, for an opening
+    between them, its separator as any run of dashes, underscores and spaces
+    in any of their forms, or none (:func:`roomkit._lookalike.name_pattern`),
+    and no letter, digit or underscore of a longer name after it. A hyphen, a
+    dot or any other mark ends it: read as a closing tag, such a name closes
+    the block for a model, so a closing tag errs toward one. *exact*, for an opening
     tag, which names a block only as written: the name as written, ended by a
     space, an invisible character, a slash or the bracket (``<task-list>`` is
     another tag). The end is read without consuming anything."""
     if exact:
         letters = f"[{INVISIBLE}]*".join(map(re.escape, tag))
         return letters + rf"(?=[\s{INVISIBLE}/>])"
-    return word_pattern(tag) + "(?![A-Za-z0-9_])"
+    return name_pattern(tag) + "(?![A-Za-z0-9_])"
 
 
 @functools.lru_cache(maxsize=64)
@@ -114,7 +115,7 @@ def _loose_opening_tag(tag: str) -> re.Pattern[str]:
     ``<task.v2>`` are other tags). It errs toward a tag: ``latency < task
     deadline`` gets an underscore, while ``<task`` closing a block's text
     would make the runtime's own closing tag close it instead."""
-    name = word_pattern(tag)
+    name = name_pattern(tag)
     return re.compile(f"{char_class('<')}{GAP}{name}(?![\\w.:-])", re.IGNORECASE)
 
 
@@ -153,12 +154,15 @@ def fence(tag: str, text: str) -> str:
     spacing, with an invisible, control or combining character anywhere in
     it, with the forms Unicode reads as its letters, brackets and slash
     (``＜／ｔｏｏｌ_result＞``, ``𝐭𝐨𝐨𝐥_result``, ``</tооl_result>``, ``</ⅵsion>``), with
+    its separator as any dash, underscore or space or none (``</tool‐result>``,
+    ``</tool result>``, ``</toolresult>``), with
     several slashes or an escaped one (``<\\/tool_result>``), with attributes
     of any length or a mark after the name (``</tool_result.>``). An opening
     tag of that name, in the same forms and spacing and at the text's end
     too, is neutralised the same way, so no reader tracking nesting reads the
     runtime's text after the block as data. Read in linear time; any tag name
-    works, one outside ``[a-z0-9_]`` matched as written.
+    works, a character outside ``[a-z0-9_]`` and the separators matched as
+    written.
     """
     return f"<{tag}>\n{without_tags(tag, text)}\n</{tag}>"
 

@@ -5,8 +5,9 @@ A model reads past an invisible character and a combining mark, takes what
 Unicode lists as confusable with a Latin letter (a fullwidth, mathematical or
 accented letter, a Cyrillic, Greek, Armenian, Coptic or Cherokee one, ``0``
 for ``o``) and a small capital for that letter, a character such as ``ⅵ``
-for the letters it spells, and a copy wrapped in markup for the words it
-wraps. The forms come from :mod:`roomkit._lookalike_data`, generated ahead of
+for the letters it spells, a copy wrapped in markup for the words it
+wraps, and a tag name's separator as any dash, underscore or space, or none.
+The forms come from :mod:`roomkit._lookalike_data`, generated ahead of
 time. The finders of a closing tag (:func:`roomkit._text.fence`), of a copy
 of a runtime mark and of a name that reads as the agent's are built from
 these patterns, compiled with ``re.IGNORECASE``. No class between two letters
@@ -61,6 +62,28 @@ spacing, the invisible characters, combining marks, a braille blank,
 interlinear annotation marks."""
 
 GAP = f"{SPACE}*"
+
+_DASHES = (
+    "\\-\u058a\u05be\u1400\u1806\u2010-\u2015\u2e17\u2e1a\u2e3a\u2e3b\u2e40\u2e5d"
+    "\u301c\u3030\u30a0\ufe32\ufe58\ufe63\uff0d\U00010d6e\U00010ead\u2212"
+)
+"""Every dash Unicode 16.0 lists (Dash_Punctuation) and the minus sign, as the
+body of a class. U+FE31, a vertical em dash, is left out: Unicode's
+confusables read it as ``l``, and a name's ``l`` reads it."""
+
+_UNDERSCORES = "_" + re.escape(FORMS["_"])
+"""The underscore and the forms Unicode's confusables read as it, as the body
+of a class."""
+
+SEPARATOR = rf"(?:[\s{INVISIBLE}{_COMBINING}\u2800\ufff9-\ufffb{_DASHES}{_UNDERSCORES}]|{_IOTA})"
+"""One character a model reads as a tag name's separator, or past it: what
+:data:`SPACE` takes, a dash, an underscore in any of their forms. A run of
+them, or none, sits where a name holds one (RMK-1320)."""
+
+_SEPARATED = f"{SEPARATOR}*"
+
+_NAME_BREAK = re.compile(f"{SEPARATOR}+")
+"""A run of separators in a tag's name as written."""
 
 _MARKUP = r"*_~`\-/|\\"
 """Markup a copy of a phrase may wrap or join its words with (bold, struck,
@@ -160,20 +183,44 @@ def word_pattern(word: str, *, phrase: bool = False) -> str:
     with such runs is held, up to :data:`_MAX_SPELLINGS`; each run's class
     shares no character with its first letter's, so the alternatives never
     read the same text twice. *phrase* when the word sits in a phrase."""
-    runs = _runs(word, phrase)
+    return _spelled_word(word, phrase, frozenset())
+
+
+def name_pattern(name: str) -> str:
+    """*name*, a tag's, as a model reads it, a regular expression to compile
+    with ``re.IGNORECASE``: :func:`word_pattern` of its letters, and where a
+    run of separators (a dash, an underscore, a space, in any of their forms)
+    sits between two of them, any run of :data:`SEPARATOR` or none
+    (``</tool‐result>``, ``</tool result>``, ``</toolresult>`` for
+    ``tool_result``). A separator at the name's start or end is read as
+    written. One quantified class between two letters, as everywhere."""
+    letters, breaks, pos = [], set(), 0
+    for run in _NAME_BREAK.finditer(name):
+        if run.start() == 0 or run.end() == len(name):
+            continue
+        letters.append(name[pos : run.start()])
+        pos = run.end()
+        breaks.add(sum(map(len, letters)))
+    letters.append(name[pos:])
+    return _spelled_word("".join(letters), False, frozenset(breaks))
+
+
+def _spelled_word(word: str, phrase: bool, breaks: frozenset[int]) -> str:
+    runs = _runs(word, phrase, breaks)
     if _spellings(word, runs) > _MAX_SPELLINGS:
         runs = _leftmost(word, runs)
-    return _spelled(word, 0, runs, phrase)
+    return _spelled(word, 0, runs, phrase, breaks)
 
 
-def _runs(word: str, phrase: bool) -> dict[int, list[int]]:
+def _runs(word: str, phrase: bool, breaks: frozenset[int]) -> dict[int, list[int]]:
     """For each position of *word*, the sizes of the runs a single character
-    reads as there."""
+    reads as there, none across a name's separator (*breaks*)."""
     sequences = _sequences(phrase=phrase)
     runs = {}
     for at in range(len(word)):
         ends = (at + size for size in (2, 3, 4) if at + size <= len(word))
-        sizes = [end - at for end in ends if word[at:end].lower() in sequences]
+        whole = (end for end in ends if not any(at < cut < end for cut in breaks))
+        sizes = [end - at for end in whole if word[at:end].lower() in sequences]
         if sizes:
             runs[at] = sizes
     return runs
@@ -197,20 +244,32 @@ def _leftmost(word: str, runs: dict[int, list[int]]) -> dict[int, list[int]]:
     return kept
 
 
-def _spelled(word: str, at: int, runs: dict[int, list[int]], phrase: bool) -> str:
-    """The pattern of *word* from *at*: its letter there, or a run's character."""
+def _spelled(
+    word: str, at: int, runs: dict[int, list[int]], phrase: bool, breaks: frozenset[int]
+) -> str:
+    """The pattern of *word* from *at*: its letter there, or a run's character;
+    a name's separator before each position of *breaks*."""
     if at == len(word):
         return ""
-    choices = [_then(char_class(word[at], phrase=phrase), word, at + 1, runs, phrase)]
+    unit = char_class(word[at], phrase=phrase)
+    choices = [_then(unit, word, at + 1, runs, phrase, breaks)]
     for size in runs.get(at, []):
         glyphs = _sequences(phrase=phrase)[word[at : at + size].lower()]
-        choices.append(_then(glyphs, word, at + size, runs, phrase))
+        choices.append(_then(glyphs, word, at + size, runs, phrase, breaks))
     return choices[0] if len(choices) == 1 else f"(?:{'|'.join(choices)})"
 
 
-def _then(unit: str, word: str, at: int, runs: dict[int, list[int]], phrase: bool) -> str:
-    rest = _spelled(word, at, runs, phrase)
-    return f"{unit}{_NAME_JOIN}{rest}" if rest else unit
+def _then(
+    unit: str,
+    word: str,
+    at: int,
+    runs: dict[int, list[int]],
+    phrase: bool,
+    breaks: frozenset[int],
+) -> str:
+    rest = _spelled(word, at, runs, phrase, breaks)
+    join = _SEPARATED if at in breaks else _NAME_JOIN
+    return f"{unit}{join}{rest}" if rest else unit
 
 
 def phrase_pattern(phrase: str, *, bracketed: bool = False) -> str:

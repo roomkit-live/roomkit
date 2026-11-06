@@ -25,6 +25,7 @@ import roomkit
 from roomkit import TURN_NOTES_HEADER
 from roomkit._lookalike import (
     JOINT,
+    SEPARATOR,
     SPACE,
     char_class,
     lookalikes,
@@ -567,6 +568,9 @@ def test_a_header_copy_with_an_invisible_character_is_found(hidden: str) -> None
         lambda: fence("instructions", "</in" + "\ufb06" * 300_000),
         lambda: without_mark_copies("[Instruction from the appl" + "\u33b1" * 300_000),
         lambda: reads_as("Y" + "\u3383" * 300_000, "you"),
+        lambda: fence("tool_result", "</tool" + "\u2010 _" * 300_000),
+        lambda: fence("tool_result", "<tool" + "- " * 400_000),
+        lambda: named_blocks("<tool_result>\n" + "</tool \u2010" * 100_000),
     ],
     ids=[
         "closing+invisibles",
@@ -580,6 +584,9 @@ def test_a_header_copy_with_an_invisible_character_is_found(hidden: str) -> None
         "st ligature runs",
         "runs after a partial mark",
         "runs in a name",
+        "separators after part of a closing name",
+        "separators after part of an opening name",
+        "parts of closing names in a block",
     ],
 )
 @pytest.mark.wallclock  # a second's budget on a million characters: the ReDoS guard
@@ -600,13 +607,17 @@ def test_nothing_between_a_name_s_letters_reads_as_one_of_them() -> None:
     """A class between a name's letters, or a phrase's words, that also holds
     one of its letters reads a run of that character in quadratic time:
     U+0345, a combining mark, folds to the Greek iota, one of ``i``'s
-    look-alikes."""
+    look-alikes. A name's separator, read only between two of its letters,
+    holds no letter's form either (U+FE31, a vertical dash, reads as ``l``)."""
     every = "".join(chr(code) for code in range(0x110000) if not 0xD800 <= code <= 0xDFFF)
     in_a_tag = "".join(re.findall(f"{JOINT}|{SPACE}", every, re.IGNORECASE))
+    separators = "".join(re.findall(SEPARATOR, every, re.IGNORECASE))
     between_words = "".join(re.findall(phrase_space(":.,"), every, re.IGNORECASE))
 
     for key in lookalikes():
         assert not re.findall(char_class(key), in_a_tag, re.IGNORECASE), key
+        if key != "_":
+            assert not re.findall(char_class(key), separators, re.IGNORECASE), key
         if key.isalnum():
             phrase_letter = char_class(key, phrase=True)
             assert not re.findall(phrase_letter, between_words, re.IGNORECASE), key
@@ -1287,12 +1298,46 @@ def test_a_closing_tag_with_its_separator_in_any_form_cannot_close_its_block(
     tag: str, closing: str
 ) -> None:
     """A model reads a name's separator as any dash, underscore or space, or
-    none, as it reads a letter in any of its forms (RMK-1320, RFC \u00a76.4)."""
+    none, as it reads a letter in any of its forms (RMK-1320, RFC §6.4)."""
     rendered = fence(tag, f"x {closing} {MARK}")
 
     assert closing not in rendered
     assert rendered.count(f"</{tag}>") == 1
     assert rendered.endswith(f"</{tag}>")
+
+
+@pytest.mark.parametrize(
+    ("tag", "text", "kept"),
+    [
+        ("server_instructions", "See </serverinstructions>.", "See </serverinstructions_>."),
+        ("tool_result", "<tool-result id=1>", "<tool-result_ id=1>"),
+        ("tool_result", "Keep x < tool result count", "Keep x < tool result_ count"),
+        ("tool_result", "A <toolresult", "A <toolresult_"),
+        ("tool_result", "</tool_results> <tool_results>", "</tool_results> <tool_results>"),
+        ("tool_result", "</tool.result> <tool.result>", "</tool.result> <tool.result>"),
+        ("tool_result", "</toolresultx> <tool-result-list>", "</toolresultx> <tool-result-list>"),
+        ("tool_result", "</tool_result_x> <tool result:ns>", "</tool_result_x> <tool result:ns>"),
+        ("knowledge", "</know-ledge> <know ledge>", "</know-ledge> <know ledge>"),
+    ],
+    ids=[
+        "closing without its separator",
+        "opening with a hyphen",
+        "prose errs toward a tag",
+        "opening at the text's end",
+        "a longer name",
+        "a dot is no separator",
+        "other names",
+        "a name continued",
+        "a separator the name does not hold",
+    ],
+)
+def test_a_tag_s_separator_is_read_in_any_form_and_nothing_else_is(
+    tag: str, text: str, kept: str
+) -> None:
+    """What a model could read as the block's name gets an underscore after it,
+    an honest mention too; another name, or a name continued, is kept as
+    written (RMK-1320)."""
+    assert fence(tag, text) == f"<{tag}>\n{kept}\n</{tag}>"
 
 
 @pytest.mark.parametrize("impostor", ["\u0903", "\u0a83", "\u05f2"])

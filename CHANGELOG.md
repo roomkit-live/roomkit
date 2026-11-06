@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **A tag's separator in another form no longer closes its block** (RFC §6.4, HITL
+  6004cc75, RMK-1320). `fence` read a tag name's letters in every form but its separator
+  only as written: an MCP server's instructions, a tool's result or a worker's output
+  holding `</server‐instructions>` (U+2010), `</tool result>` or `</toolresult>` kept it
+  as written, which a model can read as the block's end. Where a name holds a separator,
+  any run of dashes (Unicode's Dash_Punctuation and the minus sign), underscores and
+  spaces in any of their forms, or none, is now read as it, for any tag
+  `roomkit.tools.fence` is given. An honest mention of such a form gets the underscore too
+  (`See </serverinstructions_>.`).
+
 - `PostgresStore` quotes no identity row the model cannot read, as `SQLiteStore` (HITL 70fef50d, RMK-1431): `get_identity` raises `ValueError("Identity <id> has a record the model cannot read")`, where a JSONB column of another shape raised a `ValidationError`, or a `JSONDecodeError`, quoting it; `link_address` and `unlink_address` read the whole row and refuse such a one so, where they took it, some written back broken or failing with an `AttributeError`; `resolve_identity` returns `None` and logs a warning naming the id alone.
 - **BREAKING: a message never commits into a room whose binding, made while the room was
   created for it, names someone else** (HITL 9a2e6d19, ef0ef858, RMK-1396). While Alice's
