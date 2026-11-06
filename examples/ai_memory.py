@@ -34,15 +34,58 @@ from roomkit import (
     RoomEvent,
     RoomKit,
 )
-from roomkit.memory import SlidingWindowMemory, SummarizingMemory
+from roomkit.memory import (
+    MemoryProvider,
+    SlidingWindowMemory,
+    SummarizingMemory,
+    current_turn_footprint,
+    estimate_event_tokens,
+    history_budget,
+)
 from roomkit.providers.anthropic import AnthropicAIProvider, AnthropicConfig
 
 _CYAN = "\033[36m"
 _RESET = "\033[0m"
 
+# The summarizing memory's settings, which the report below reads too. The
+# window is tight so compression is visible after a few exchanges: the system
+# prompt and the runtime's notes take about 300 tokens of it, which leaves the
+# history about 1,000.
+WINDOW = 1300
+MAX_EVENTS = 100
+TIER1_RATIO = 0.3
+TIER2_RATIO = 0.5
 
-class VerboseSummarizingMemory(SummarizingMemory):
-    """SummarizingMemory that prints context usage and compression events."""
+
+def _tokens(events: list[RoomEvent]) -> int:
+    return sum(estimate_event_tokens(event) for event in events)
+
+
+def _history_budget(current_event: RoomEvent) -> int:
+    """What the turn leaves the history of the window, as SummarizingMemory
+    reckons it (RFC §20): the window less the input the AI channel measured,
+    the turn's reply budget and the current event. Its tiers are fractions
+    of it, and it keeps the history within it."""
+    footprint = current_turn_footprint()
+    return history_budget(
+        max_context_tokens=WINDOW,
+        safety_margin_ratio=0.0,
+        reserved_tokens=footprint.input_tokens if footprint else 0,
+        current_event=current_event,
+        reply_tokens=footprint.reply_tokens if footprint else 0,
+    )
+
+
+class UsageReport(MemoryProvider):
+    """Wraps a memory and prints what it kept of the room's history, and
+    each summary, after each turn."""
+
+    def __init__(self, memory: MemoryProvider) -> None:
+        self._memory = memory
+
+    @property
+    def recent_events_window(self) -> int:
+        return self._memory.recent_events_window
 
     async def retrieve(
         self,
@@ -52,25 +95,19 @@ class VerboseSummarizingMemory(SummarizingMemory):
         *,
         channel_id: str | None = None,
     ) -> MemoryResult:
-        # Tokens before compression
-        inner_result = await self._inner.retrieve(
+        # The room's latest events as the sliding window reads them, before compression.
+        earlier = [e for e in context.recent_events[-MAX_EVENTS:] if e.id != current_event.id]
+        before_tokens = _tokens(earlier)
+        budget = _history_budget(current_event)
+
+        result = await self._memory.retrieve(
             room_id, current_event, context, channel_id=channel_id
         )
-        before_tokens = self._estimate_events_tokens(inner_result.events)
-        # What the turn leaves the history of the window: the tiers are fractions of it.
-        budget = self._history_budget(current_event)
+
+        after_tokens = _tokens(result.events)
         pct_before = int(before_tokens / budget * 100) if budget else 0
-
-        # Run normal retrieve (which may apply tier 1/2)
-        result = await super().retrieve(room_id, current_event, context, channel_id=channel_id)
-
-        after_tokens = self._estimate_events_tokens(result.events)
         pct_after = int(after_tokens / budget * 100) if budget else 0
-
-        tier1_threshold = int(budget * self._tier1_ratio)
-        tier2_threshold = int(budget * self._tier2_ratio)
-
-        if before_tokens > tier2_threshold and after_tokens < before_tokens:
+        if before_tokens > int(budget * TIER2_RATIO) and after_tokens < before_tokens:
             print(
                 f"\n{_CYAN}  [memory] tier 2 — summarized: "
                 f"{before_tokens} → {after_tokens} tokens "
@@ -81,7 +118,7 @@ class VerboseSummarizingMemory(SummarizingMemory):
                 if isinstance(message.content, str) and "[Conversation summary" in message.content:
                     print(f"{_CYAN}  {message.content}{_RESET}")
             print()
-        elif before_tokens > tier1_threshold and after_tokens < before_tokens:
+        elif before_tokens > int(budget * TIER1_RATIO) and after_tokens < before_tokens:
             print(
                 f"\n{_CYAN}  [memory] tier 1 — truncated: "
                 f"{before_tokens} → {after_tokens} tokens "
@@ -89,8 +126,18 @@ class VerboseSummarizingMemory(SummarizingMemory):
             )
         else:
             print(f"\n{_CYAN}  [memory] {after_tokens}/{budget} tokens ({pct_after}%){_RESET}\n")
-
         return result
+
+    async def ingest(
+        self, room_id: str, event: RoomEvent, *, channel_id: str | None = None
+    ) -> None:
+        await self._memory.ingest(room_id, event, channel_id=channel_id)
+
+    async def clear(self, room_id: str) -> None:
+        await self._memory.clear(room_id)
+
+    async def close(self) -> None:
+        await self._memory.close()
 
 
 async def main() -> None:
@@ -105,22 +152,22 @@ async def main() -> None:
         AnthropicConfig(api_key=api_key, model="claude-haiku-5-5")
     )
 
-    # Tight window so compression is visible after a few exchanges. The
-    # system prompt and the runtime's notes take about 300 tokens of it, which
-    # leaves the history about 1,000. Tier 2 keeps recent events within (half
-    # of that - summary_max_tokens) tokens but never fewer than min_events.
-    # With about 100 tokens and min_events=2, exactly the last question and
-    # answer stay verbatim, so the summarized part ends on an answer: one
-    # ending on a question gets it answered, not summarized.
-    # summary_max_tokens also leaves room for every city asked about so far.
-    memory = VerboseSummarizingMemory(
-        inner=SlidingWindowMemory(max_events=100),
-        provider=summary_provider,
-        max_context_tokens=1300,
-        tier1_ratio=0.3,
-        tier2_ratio=0.5,
-        summary_max_tokens=400,
-        min_events=2,
+    # Tier 2 keeps recent events within (half of what the turn leaves -
+    # summary_max_tokens) tokens but never fewer than min_events. With about
+    # 100 tokens and min_events=2, exactly the last question and answer stay
+    # verbatim, so the summarized part ends on an answer: one ending on a
+    # question gets it answered, not summarized. summary_max_tokens also
+    # leaves room for every city asked about so far.
+    memory = UsageReport(
+        SummarizingMemory(
+            inner=SlidingWindowMemory(max_events=MAX_EVENTS),
+            provider=summary_provider,
+            max_context_tokens=WINDOW,
+            tier1_ratio=TIER1_RATIO,
+            tier2_ratio=TIER2_RATIO,
+            summary_max_tokens=400,
+            min_events=2,
+        )
     )
 
     kit = RoomKit()
