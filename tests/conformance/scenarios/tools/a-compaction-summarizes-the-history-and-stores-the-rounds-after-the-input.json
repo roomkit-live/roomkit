@@ -1,0 +1,277 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-compaction-summarizes-the-history-and-stores-the-rounds-after-the-input",
+  "title": "When the turn's input falls in the older half of the context, the compaction summarizes the history before it into the input and also stores the long results of the rounds between the input and the half, a preview in their place",
+  "rules": [
+    "§6.4",
+    "§21.5"
+  ],
+  "notes": "Python: tests/test_channels/test_compaction_keeps_input.py::test_the_history_before_the_input_is_summarized_into_it (its evicted_c1). Nine messages, the input at 2: the half (4) is c1's result, which the cut moves past to 5; messages[:2] are summarized into the input, c1's result (2399 characters) is stored, c2's and c3's rounds are kept.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "a1"
+            },
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "step_a",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c3",
+                  "name": "step_b",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "refuses": {
+                "status": 400,
+                "message": "the request was refused",
+                "context_overflow": true
+              }
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "The lookup tool",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "a 001\na 002\na 003\na 004\na 005\na 006\na 007\na 008\na 009\na 010\na 011\na 012\na 013\na 014\na 015\na 016\na 017\na 018\na 019\na 020\na 021\na 022\na 023\na 024\na 025\na 026\na 027\na 028\na 029\na 030\na 031\na 032\na 033\na 034\na 035\na 036\na 037\na 038\na 039\na 040\na 041\na 042\na 043\na 044\na 045\na 046\na 047\na 048\na 049\na 050\na 051\na 052\na 053\na 054\na 055\na 056\na 057\na 058\na 059\na 060\na 061\na 062\na 063\na 064\na 065\na 066\na 067\na 068\na 069\na 070\na 071\na 072\na 073\na 074\na 075\na 076\na 077\na 078\na 079\na 080\na 081\na 082\na 083\na 084\na 085\na 086\na 087\na 088\na 089\na 090\na 091\na 092\na 093\na 094\na 095\na 096\na 097\na 098\na 099\na 100\na 101\na 102\na 103\na 104\na 105\na 106\na 107\na 108\na 109\na 110\na 111\na 112\na 113\na 114\na 115\na 116\na 117\na 118\na 119\na 120\na 121\na 122\na 123\na 124\na 125\na 126\na 127\na 128\na 129\na 130\na 131\na 132\na 133\na 134\na 135\na 136\na 137\na 138\na 139\na 140\na 141\na 142\na 143\na 144\na 145\na 146\na 147\na 148\na 149\na 150\na 151\na 152\na 153\na 154\na 155\na 156\na 157\na 158\na 159\na 160\na 161\na 162\na 163\na 164\na 165\na 166\na 167\na 168\na 169\na 170\na 171\na 172\na 173\na 174\na 175\na 176\na 177\na 178\na 179\na 180\na 181\na 182\na 183\na 184\na 185\na 186\na 187\na 188\na 189\na 190\na 191\na 192\na 193\na 194\na 195\na 196\na 197\na 198\na 199\na 200\na 201\na 202\na 203\na 204\na 205\na 206\na 207\na 208\na 209\na 210\na 211\na 212\na 213\na 214\na 215\na 216\na 217\na 218\na 219\na 220\na 221\na 222\na 223\na 224\na 225\na 226\na 227\na 228\na 229\na 230\na 231\na 232\na 233\na 234\na 235\na 236\na 237\na 238\na 239\na 240\na 241\na 242\na 243\na 244\na 245\na 246\na 247\na 248\na 249\na 250\na 251\na 252\na 253\na 254\na 255\na 256\na 257\na 258\na 259\na 260\na 261\na 262\na 263\na 264\na 265\na 266\na 267\na 268\na 269\na 270\na 271\na 272\na 273\na 274\na 275\na 276\na 277\na 278\na 279\na 280\na 281\na 282\na 283\na 284\na 285\na 286\na 287\na 288\na 289\na 290\na 291\na 292\na 293\na 294\na 295\na 296\na 297\na 298\na 299\na 300\na 301\na 302\na 303\na 304\na 305\na 306\na 307\na 308\na 309\na 310\na 311\na 312\na 313\na 314\na 315\na 316\na 317\na 318\na 319\na 320\na 321\na 322\na 323\na 324\na 325\na 326\na 327\na 328\na 329\na 330\na 331\na 332\na 333\na 334\na 335\na 336\na 337\na 338\na 339\na 340\na 341\na 342\na 343\na 344\na 345\na 346\na 347\na 348\na 349\na 350\na 351\na 352\na 353\na 354\na 355\na 356\na 357\na 358\na 359\na 360\na 361\na 362\na 363\na 364\na 365\na 366\na 367\na 368\na 369\na 370\na 371\na 372\na 373\na 374\na 375\na 376\na 377\na 378\na 379\na 380\na 381\na 382\na 383\na 384\na 385\na 386\na 387\na 388\na 389\na 390\na 391\na 392\na 393\na 394\na 395\na 396\na 397\na 398\na 399\na 400"
+          },
+          {
+            "name": "step_a",
+            "description": "The step_a tool",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "ok a"
+          },
+          {
+            "name": "step_b",
+            "description": "The step_b tool",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "ok b"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "q1"
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "q2"
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {},
+        {},
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "[Context compacted — earlier conversation summary]\n[user]: “q1”\n[assistant]: “a1”\n\nq2"
+            },
+            {
+              "role": "assistant",
+              "text": ""
+            },
+            {
+              "role": "tool",
+              "text": ""
+            },
+            {
+              "role": "assistant",
+              "text": ""
+            },
+            {
+              "role": "tool",
+              "text": ""
+            },
+            {
+              "role": "assistant",
+              "text": ""
+            },
+            {
+              "role": "tool",
+              "text": ""
+            }
+          ],
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "name": "lookup",
+              "content": "Result too large (600 tokens). Full output saved as 'evicted_c1'. Use read_stored_result to read it with pagination.\n\nPreview:\na 001\na 002\na 003\na 004\na 005\n\n[... 390 lines omitted ...]\n\na 396\na 397\na 398\na 399\na 400",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c2",
+              "name": "step_a",
+              "content": "ok a",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c3",
+              "name": "step_b",
+              "content": "ok b",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "q1"
+          }
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "a1"
+          }
+        },
+        {
+          "index": 2,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "q2"
+          }
+        },
+        {
+          "index": 3,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 4,
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "c1",
+            "result": "a 001\na 002\na 003\na 004\na 005\na 006\na 007\na 008\na 009\na 010\na 011\na 012\na 013\na 014\na 015\na 016\na 017\na 018\na 019\na 020\na 021\na 022\na 023\na 024\na 025\na 026\na 027\na 028\na 029\na 030\na 031\na 032\na 033\na 034\na 035\na 036\na 037\na 038\na 039\na 040\na 041\na 042\na 043\na 044\na 045\na 046\na 047\na 048\na 049\na 050\na 051\na 052\na 053\na 054\na 055\na 056\na 057\na 058\na 059\na 060\na 061\na 062\na 063\na 064\na 065\na 066\na 067\na 068\na 069\na 070\na 071\na 072\na 073\na 074\na 075\na 076\na 077\na 078\na 079\na 080\na 081\na 082\na 083\na 084\na 085\na 086\na 087\na 088\na 089\na 090\na 091\na 092\na 093\na 094\na 095\na 096\na 097\na 098\na 099\na 100\na 101\na 102\na 103\na 104\na 105\na 106\na 107\na 108\na 109\na 110\na 111\na 112\na 113\na 114\na 115\na 116\na 117\na 118\na 119\na 120\na 121\na 122\na 123\na 124\na 125\na 126\na 127\na 128\na 129\na 130\na 131\na 132\na 133\na 134\na 135\na 136\na 137\na 138\na 139\na 140\na 141\na 142\na 143\na 144\na 145\na 146\na 147\na 148\na 149\na 150\na 151\na 152\na 153\na 154\na 155\na 156\na 157\na 158\na 159\na 160\na 161\na 162\na 163\na 164\na 165\na 166\na 167\na 168\na 169\na 170\na 171\na 172\na 173\na 174\na 175\na 176\na 177\na 178\na 179\na 180\na 181\na 182\na 183\na 184\na 185\na 186\na 187\na 188\na 189\na 190\na 191\na 192\na 193\na 194\na 195\na 196\na 197\na 198\na 199\na 200\na 201\na 202\na 203\na 204\na 205\na 206\na 207\na 208\na 209\na 210\na 211\na 212\na 213\na 214\na 215\na 216\na 217\na 218\na 219\na 220\na 221\na 222\na 223\na 224\na 225\na 226\na 227\na 228\na 229\na 230\na 231\na 232\na 233\na 234\na 235\na 236\na 237\na 238\na 239\na 240\na 241\na 242\na 243\na 244\na 245\na 246\na 247\na 248\na 249\na 250\na 251\na 252\na 253\na 254\na 255\na 256\na 257\na 258\na 259\na 260\na 261\na 262\na 263\na 264\na 265\na 266\na 267\na 268\na 269\na 270\na 271\na 272\na 273\na 274\na 275\na 276\na 277\na 278\na 279\na 280\na 281\na 282\na 283\na 284\na 285\na 286\na 287\na 288\na 289\na 290\na 291\na 292\na 293\na 294\na 295\na 296\na 297\na 298\na 299\na 300\na 301\na 302\na 303\na 304\na 305\na 306\na 307\na 308\na 309\na 310\na 311\na 312\na 313\na 314\na 315\na 316\na 317\na 318\na 319\na 320\na 321\na 322\na 323\na 324\na 325\na 326\na 327\na 328\na 329\na 330\na 331\na 332\na 333\na 334\na 335\na 336\na 337\na 338\na 339\na 340\na 341\na 342\na 343\na 344\na 345\na 346\na 347\na 348\na 349\na 350\na 351\na 352\na 353\na 354\na 355\na 356\na 357\na 358\na 359\na 360\na 361\na 362\na 363\na 364\na 365\na 366\na 367\na 368\na 369\na 370\na 371\na 372\na 373\na 374\na 375\na 376\na 377\na 378\na 379\na 380\na 381\na 382\na 383\na 384\na 385\na 386\na 387\na 388\na 389\na 390\na 391\na 392\na 393\na 394\na 395\na 396\na 397\na 398\na 399\na 400"
+          }
+        },
+        {
+          "index": 5,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 6,
+          "type": "tool_call_end"
+        },
+        {
+          "index": 7,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 8,
+          "type": "tool_call_end"
+        },
+        {
+          "index": 9,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "Done."
+          }
+        }
+      ]
+    }
+  }
+}

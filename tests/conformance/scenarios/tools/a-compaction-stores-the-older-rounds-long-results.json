@@ -1,0 +1,360 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-compaction-stores-the-older-rounds-long-results",
+  "title": "When nothing precedes the turn's input, the compaction stores each result over 2000 characters of the rounds between the input and the half for re-reading, a 1000-character preview in its place: the input and the later rounds stay whole, the call is replayed, the model reads the stored result back, and the turn's later rounds build on the compacted context while the timeline keeps the whole result",
+  "rules": [
+    "§6.4",
+    "§21.5"
+  ],
+  "notes": "Python: tests/test_channels/test_compaction_keeps_input.py::test_a_long_loop_keeps_its_input_and_notes_and_stores_older_results (channels/_compaction.py with_results_stored, _STORED_OVER_CHARS 2000, _STORED_PREVIEW_CHARS 1000). Nine messages, the input at 0: the half (4) is c2's result, which the cut moves past to 5, so c1's and c2's rounds are shortened, c3's and c4's kept. c1's result is exactly 2000 characters (2333 bytes), kept; c2's is one line of 2500 characters, stored, its preview the line cut to 1000 characters (the store's own preview would hold it whole). Every result is under the threshold (5000 tokens), so none is stored at its call.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup_a",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "lookup_b",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c3",
+                  "name": "lookup_c",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c4",
+                  "name": "lookup_d",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "refuses": {
+                "status": 400,
+                "message": "the request was refused",
+                "context_overflow": true
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "r1",
+                  "name": "read_stored_result",
+                  "arguments": {
+                    "result_id": "evicted_c2",
+                    "offset": 0,
+                    "limit": 3
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup_a",
+            "description": "The lookup_a tool",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "é 001\né 002\né 003\né 004\né 005\né 006\né 007\né 008\né 009\né 010\né 011\né 012\né 013\né 014\né 015\né 016\né 017\né 018\né 019\né 020\né 021\né 022\né 023\né 024\né 025\né 026\né 027\né 028\né 029\né 030\né 031\né 032\né 033\né 034\né 035\né 036\né 037\né 038\né 039\né 040\né 041\né 042\né 043\né 044\né 045\né 046\né 047\né 048\né 049\né 050\né 051\né 052\né 053\né 054\né 055\né 056\né 057\né 058\né 059\né 060\né 061\né 062\né 063\né 064\né 065\né 066\né 067\né 068\né 069\né 070\né 071\né 072\né 073\né 074\né 075\né 076\né 077\né 078\né 079\né 080\né 081\né 082\né 083\né 084\né 085\né 086\né 087\né 088\né 089\né 090\né 091\né 092\né 093\né 094\né 095\né 096\né 097\né 098\né 099\né 100\né 101\né 102\né 103\né 104\né 105\né 106\né 107\né 108\né 109\né 110\né 111\né 112\né 113\né 114\né 115\né 116\né 117\né 118\né 119\né 120\né 121\né 122\né 123\né 124\né 125\né 126\né 127\né 128\né 129\né 130\né 131\né 132\né 133\né 134\né 135\né 136\né 137\né 138\né 139\né 140\né 141\né 142\né 143\né 144\né 145\né 146\né 147\né 148\né 149\né 150\né 151\né 152\né 153\né 154\né 155\né 156\né 157\né 158\né 159\né 160\né 161\né 162\né 163\né 164\né 165\né 166\né 167\né 168\né 169\né 170\né 171\né 172\né 173\né 174\né 175\né 176\né 177\né 178\né 179\né 180\né 181\né 182\né 183\né 184\né 185\né 186\né 187\né 188\né 189\né 190\né 191\né 192\né 193\né 194\né 195\né 196\né 197\né 198\né 199\né 200\né 201\né 202\né 203\né 204\né 205\né 206\né 207\né 208\né 209\né 210\né 211\né 212\né 213\né 214\né 215\né 216\né 217\né 218\né 219\né 220\né 221\né 222\né 223\né 224\né 225\né 226\né 227\né 228\né 229\né 230\né 231\né 232\né 233\né 234\né 235\né 236\né 237\né 238\né 239\né 240\né 241\né 242\né 243\né 244\né 245\né 246\né 247\né 248\né 249\né 250\né 251\né 252\né 253\né 254\né 255\né 256\né 257\né 258\né 259\né 260\né 261\né 262\né 263\né 264\né 265\né 266\né 267\né 268\né 269\né 270\né 271\né 272\né 273\né 274\né 275\né 276\né 277\né 278\né 279\né 280\né 281\né 282\né 283\né 284\né 285\né 286\né 287\né 288\né 289\né 290\né 291\né 292\né 293\né 294\né 295\né 296\né 297\né 298\né 299\né 300\né 301\né 302\né 303\né 304\né 305\né 306\né 307\né 308\né 309\né 310\né 311\né 312\né 313\né 314\né 315\né 316\né 317\né 318\né 319\né 320\né 321\né 322\né 323\né 324\né 325\né 326\né 327\né 328\né 329\né 330\né 331\né 332\né 333\nok"
+          },
+          {
+            "name": "lookup_b",
+            "description": "The lookup_b tool",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "b0001 b0002 b0003 b0004 b0005 b0006 b0007 b0008 b0009 b0010 b0011 b0012 b0013 b0014 b0015 b0016 b0017 b0018 b0019 b0020 b0021 b0022 b0023 b0024 b0025 b0026 b0027 b0028 b0029 b0030 b0031 b0032 b0033 b0034 b0035 b0036 b0037 b0038 b0039 b0040 b0041 b0042 b0043 b0044 b0045 b0046 b0047 b0048 b0049 b0050 b0051 b0052 b0053 b0054 b0055 b0056 b0057 b0058 b0059 b0060 b0061 b0062 b0063 b0064 b0065 b0066 b0067 b0068 b0069 b0070 b0071 b0072 b0073 b0074 b0075 b0076 b0077 b0078 b0079 b0080 b0081 b0082 b0083 b0084 b0085 b0086 b0087 b0088 b0089 b0090 b0091 b0092 b0093 b0094 b0095 b0096 b0097 b0098 b0099 b0100 b0101 b0102 b0103 b0104 b0105 b0106 b0107 b0108 b0109 b0110 b0111 b0112 b0113 b0114 b0115 b0116 b0117 b0118 b0119 b0120 b0121 b0122 b0123 b0124 b0125 b0126 b0127 b0128 b0129 b0130 b0131 b0132 b0133 b0134 b0135 b0136 b0137 b0138 b0139 b0140 b0141 b0142 b0143 b0144 b0145 b0146 b0147 b0148 b0149 b0150 b0151 b0152 b0153 b0154 b0155 b0156 b0157 b0158 b0159 b0160 b0161 b0162 b0163 b0164 b0165 b0166 b0167 b0168 b0169 b0170 b0171 b0172 b0173 b0174 b0175 b0176 b0177 b0178 b0179 b0180 b0181 b0182 b0183 b0184 b0185 b0186 b0187 b0188 b0189 b0190 b0191 b0192 b0193 b0194 b0195 b0196 b0197 b0198 b0199 b0200 b0201 b0202 b0203 b0204 b0205 b0206 b0207 b0208 b0209 b0210 b0211 b0212 b0213 b0214 b0215 b0216 b0217 b0218 b0219 b0220 b0221 b0222 b0223 b0224 b0225 b0226 b0227 b0228 b0229 b0230 b0231 b0232 b0233 b0234 b0235 b0236 b0237 b0238 b0239 b0240 b0241 b0242 b0243 b0244 b0245 b0246 b0247 b0248 b0249 b0250 b0251 b0252 b0253 b0254 b0255 b0256 b0257 b0258 b0259 b0260 b0261 b0262 b0263 b0264 b0265 b0266 b0267 b0268 b0269 b0270 b0271 b0272 b0273 b0274 b0275 b0276 b0277 b0278 b0279 b0280 b0281 b0282 b0283 b0284 b0285 b0286 b0287 b0288 b0289 b0290 b0291 b0292 b0293 b0294 b0295 b0296 b0297 b0298 b0299 b0300 b0301 b0302 b0303 b0304 b0305 b0306 b0307 b0308 b0309 b0310 b0311 b0312 b0313 b0314 b0315 b0316 b0317 b0318 b0319 b0320 b0321 b0322 b0323 b0324 b0325 b0326 b0327 b0328 b0329 b0330 b0331 b0332 b0333 b0334 b0335 b0336 b0337 b0338 b0339 b0340 b0341 b0342 b0343 b0344 b0345 b0346 b0347 b0348 b0349 b0350 b0351 b0352 b0353 b0354 b0355 b0356 b0357 b0358 b0359 b0360 b0361 b0362 b0363 b0364 b0365 b0366 b0367 b0368 b0369 b0370 b0371 b0372 b0373 b0374 b0375 b0376 b0377 b0378 b0379 b0380 b0381 b0382 b0383 b0384 b0385 b0386 b0387 b0388 b0389 b0390 b0391 b0392 b0393 b0394 b0395 b0396 b0397 b0398 b0399 b0400 b0401 b0402 b0403 b0404 b0405 b0406 b0407 b0408 b0409 b0410 b0411 b0412 b0413 b0414 b0415 b0416 b041"
+          },
+          {
+            "name": "lookup_c",
+            "description": "The lookup_c tool",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "c 001\nc 002\nc 003\nc 004\nc 005\nc 006\nc 007\nc 008\nc 009\nc 010\nc 011\nc 012\nc 013\nc 014\nc 015\nc 016\nc 017\nc 018\nc 019\nc 020\nc 021\nc 022\nc 023\nc 024\nc 025\nc 026\nc 027\nc 028\nc 029\nc 030\nc 031\nc 032\nc 033\nc 034\nc 035\nc 036\nc 037\nc 038\nc 039\nc 040\nc 041\nc 042\nc 043\nc 044\nc 045\nc 046\nc 047\nc 048\nc 049\nc 050\nc 051\nc 052\nc 053\nc 054\nc 055\nc 056\nc 057\nc 058\nc 059\nc 060\nc 061\nc 062\nc 063\nc 064\nc 065\nc 066\nc 067\nc 068\nc 069\nc 070\nc 071\nc 072\nc 073\nc 074\nc 075\nc 076\nc 077\nc 078\nc 079\nc 080\nc 081\nc 082\nc 083\nc 084\nc 085\nc 086\nc 087\nc 088\nc 089\nc 090\nc 091\nc 092\nc 093\nc 094\nc 095\nc 096\nc 097\nc 098\nc 099\nc 100\nc 101\nc 102\nc 103\nc 104\nc 105\nc 106\nc 107\nc 108\nc 109\nc 110\nc 111\nc 112\nc 113\nc 114\nc 115\nc 116\nc 117\nc 118\nc 119\nc 120\nc 121\nc 122\nc 123\nc 124\nc 125\nc 126\nc 127\nc 128\nc 129\nc 130\nc 131\nc 132\nc 133\nc 134\nc 135\nc 136\nc 137\nc 138\nc 139\nc 140\nc 141\nc 142\nc 143\nc 144\nc 145\nc 146\nc 147\nc 148\nc 149\nc 150\nc 151\nc 152\nc 153\nc 154\nc 155\nc 156\nc 157\nc 158\nc 159\nc 160\nc 161\nc 162\nc 163\nc 164\nc 165\nc 166\nc 167\nc 168\nc 169\nc 170\nc 171\nc 172\nc 173\nc 174\nc 175\nc 176\nc 177\nc 178\nc 179\nc 180\nc 181\nc 182\nc 183\nc 184\nc 185\nc 186\nc 187\nc 188\nc 189\nc 190\nc 191\nc 192\nc 193\nc 194\nc 195\nc 196\nc 197\nc 198\nc 199\nc 200\nc 201\nc 202\nc 203\nc 204\nc 205\nc 206\nc 207\nc 208\nc 209\nc 210\nc 211\nc 212\nc 213\nc 214\nc 215\nc 216\nc 217\nc 218\nc 219\nc 220\nc 221\nc 222\nc 223\nc 224\nc 225\nc 226\nc 227\nc 228\nc 229\nc 230\nc 231\nc 232\nc 233\nc 234\nc 235\nc 236\nc 237\nc 238\nc 239\nc 240\nc 241\nc 242\nc 243\nc 244\nc 245\nc 246\nc 247\nc 248\nc 249\nc 250\nc 251\nc 252\nc 253\nc 254\nc 255\nc 256\nc 257\nc 258\nc 259\nc 260\nc 261\nc 262\nc 263\nc 264\nc 265\nc 266\nc 267\nc 268\nc 269\nc 270\nc 271\nc 272\nc 273\nc 274\nc 275\nc 276\nc 277\nc 278\nc 279\nc 280\nc 281\nc 282\nc 283\nc 284\nc 285\nc 286\nc 287\nc 288\nc 289\nc 290\nc 291\nc 292\nc 293\nc 294\nc 295\nc 296\nc 297\nc 298\nc 299\nc 300\nc 301\nc 302\nc 303\nc 304\nc 305\nc 306\nc 307\nc 308\nc 309\nc 310\nc 311\nc 312\nc 313\nc 314\nc 315\nc 316\nc 317\nc 318\nc 319\nc 320\nc 321\nc 322\nc 323\nc 324\nc 325\nc 326\nc 327\nc 328\nc 329\nc 330\nc 331\nc 332\nc 333\nc 334\nc 335\nc 336\nc 337\nc 338\nc 339\nc 340\nc 341\nc 342\nc 343\nc 344\nc 345\nc 346\nc 347\nc 348\nc 349\nc 350\nc 351\nc 352\nc 353\nc 354\nc 355\nc 356\nc 357\nc 358\nc 359\nc 360\nc 361\nc 362\nc 363\nc 364\nc 365\nc 366\nc 367\nc 368\nc 369\nc 370\nc 371\nc 372\nc 373\nc 374\nc 375\nc 376\nc 377\nc 378\nc 379\nc 380\nc 381\nc 382\nc 383\nc 384\nc 385\nc 386\nc 387\nc 388\nc 389\nc 390\nc 391\nc 392\nc 393\nc 394\nc 395\nc 396\nc 397\nc 398\nc 399\nc 400"
+          },
+          {
+            "name": "lookup_d",
+            "description": "The lookup_d tool",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "d 001\nd 002\nd 003\nd 004\nd 005\nd 006\nd 007\nd 008\nd 009\nd 010\nd 011\nd 012\nd 013\nd 014\nd 015\nd 016\nd 017\nd 018\nd 019\nd 020\nd 021\nd 022\nd 023\nd 024\nd 025\nd 026\nd 027\nd 028\nd 029\nd 030\nd 031\nd 032\nd 033\nd 034\nd 035\nd 036\nd 037\nd 038\nd 039\nd 040\nd 041\nd 042\nd 043\nd 044\nd 045\nd 046\nd 047\nd 048\nd 049\nd 050\nd 051\nd 052\nd 053\nd 054\nd 055\nd 056\nd 057\nd 058\nd 059\nd 060\nd 061\nd 062\nd 063\nd 064\nd 065\nd 066\nd 067\nd 068\nd 069\nd 070\nd 071\nd 072\nd 073\nd 074\nd 075\nd 076\nd 077\nd 078\nd 079\nd 080\nd 081\nd 082\nd 083\nd 084\nd 085\nd 086\nd 087\nd 088\nd 089\nd 090\nd 091\nd 092\nd 093\nd 094\nd 095\nd 096\nd 097\nd 098\nd 099\nd 100\nd 101\nd 102\nd 103\nd 104\nd 105\nd 106\nd 107\nd 108\nd 109\nd 110\nd 111\nd 112\nd 113\nd 114\nd 115\nd 116\nd 117\nd 118\nd 119\nd 120\nd 121\nd 122\nd 123\nd 124\nd 125\nd 126\nd 127\nd 128\nd 129\nd 130\nd 131\nd 132\nd 133\nd 134\nd 135\nd 136\nd 137\nd 138\nd 139\nd 140\nd 141\nd 142\nd 143\nd 144\nd 145\nd 146\nd 147\nd 148\nd 149\nd 150\nd 151\nd 152\nd 153\nd 154\nd 155\nd 156\nd 157\nd 158\nd 159\nd 160\nd 161\nd 162\nd 163\nd 164\nd 165\nd 166\nd 167\nd 168\nd 169\nd 170\nd 171\nd 172\nd 173\nd 174\nd 175\nd 176\nd 177\nd 178\nd 179\nd 180\nd 181\nd 182\nd 183\nd 184\nd 185\nd 186\nd 187\nd 188\nd 189\nd 190\nd 191\nd 192\nd 193\nd 194\nd 195\nd 196\nd 197\nd 198\nd 199\nd 200\nd 201\nd 202\nd 203\nd 204\nd 205\nd 206\nd 207\nd 208\nd 209\nd 210\nd 211\nd 212\nd 213\nd 214\nd 215\nd 216\nd 217\nd 218\nd 219\nd 220\nd 221\nd 222\nd 223\nd 224\nd 225\nd 226\nd 227\nd 228\nd 229\nd 230\nd 231\nd 232\nd 233\nd 234\nd 235\nd 236\nd 237\nd 238\nd 239\nd 240\nd 241\nd 242\nd 243\nd 244\nd 245\nd 246\nd 247\nd 248\nd 249\nd 250\nd 251\nd 252\nd 253\nd 254\nd 255\nd 256\nd 257\nd 258\nd 259\nd 260\nd 261\nd 262\nd 263\nd 264\nd 265\nd 266\nd 267\nd 268\nd 269\nd 270\nd 271\nd 272\nd 273\nd 274\nd 275\nd 276\nd 277\nd 278\nd 279\nd 280\nd 281\nd 282\nd 283\nd 284\nd 285\nd 286\nd 287\nd 288\nd 289\nd 290\nd 291\nd 292\nd 293\nd 294\nd 295\nd 296\nd 297\nd 298\nd 299\nd 300\nd 301\nd 302\nd 303\nd 304\nd 305\nd 306\nd 307\nd 308\nd 309\nd 310\nd 311\nd 312\nd 313\nd 314\nd 315\nd 316\nd 317\nd 318\nd 319\nd 320\nd 321\nd 322\nd 323\nd 324\nd 325\nd 326\nd 327\nd 328\nd 329\nd 330\nd 331\nd 332\nd 333\nd 334\nd 335\nd 336\nd 337\nd 338\nd 339\nd 340\nd 341\nd 342\nd 343\nd 344\nd 345\nd 346\nd 347\nd 348\nd 349\nd 350\nd 351\nd 352\nd 353\nd 354\nd 355\nd 356\nd 357\nd 358\nd 359\nd 360\nd 361\nd 362\nd 363\nd 364\nd 365\nd 366\nd 367\nd 368\nd 369\nd 370\nd 371\nd 372\nd 373\nd 374\nd 375\nd 376\nd 377\nd 378\nd 379\nd 380\nd 381\nd 382\nd 383\nd 384\nd 385\nd 386\nd 387\nd 388\nd 389\nd 390\nd 391\nd 392\nd 393\nd 394\nd 395\nd 396\nd 397\nd 398\nd 399\nd 400"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "q1"
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {},
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "name": "lookup_a",
+              "content": "é 001\né 002\né 003\né 004\né 005\né 006\né 007\né 008\né 009\né 010\né 011\né 012\né 013\né 014\né 015\né 016\né 017\né 018\né 019\né 020\né 021\né 022\né 023\né 024\né 025\né 026\né 027\né 028\né 029\né 030\né 031\né 032\né 033\né 034\né 035\né 036\né 037\né 038\né 039\né 040\né 041\né 042\né 043\né 044\né 045\né 046\né 047\né 048\né 049\né 050\né 051\né 052\né 053\né 054\né 055\né 056\né 057\né 058\né 059\né 060\né 061\né 062\né 063\né 064\né 065\né 066\né 067\né 068\né 069\né 070\né 071\né 072\né 073\né 074\né 075\né 076\né 077\né 078\né 079\né 080\né 081\né 082\né 083\né 084\né 085\né 086\né 087\né 088\né 089\né 090\né 091\né 092\né 093\né 094\né 095\né 096\né 097\né 098\né 099\né 100\né 101\né 102\né 103\né 104\né 105\né 106\né 107\né 108\né 109\né 110\né 111\né 112\né 113\né 114\né 115\né 116\né 117\né 118\né 119\né 120\né 121\né 122\né 123\né 124\né 125\né 126\né 127\né 128\né 129\né 130\né 131\né 132\né 133\né 134\né 135\né 136\né 137\né 138\né 139\né 140\né 141\né 142\né 143\né 144\né 145\né 146\né 147\né 148\né 149\né 150\né 151\né 152\né 153\né 154\né 155\né 156\né 157\né 158\né 159\né 160\né 161\né 162\né 163\né 164\né 165\né 166\né 167\né 168\né 169\né 170\né 171\né 172\né 173\né 174\né 175\né 176\né 177\né 178\né 179\né 180\né 181\né 182\né 183\né 184\né 185\né 186\né 187\né 188\né 189\né 190\né 191\né 192\né 193\né 194\né 195\né 196\né 197\né 198\né 199\né 200\né 201\né 202\né 203\né 204\né 205\né 206\né 207\né 208\né 209\né 210\né 211\né 212\né 213\né 214\né 215\né 216\né 217\né 218\né 219\né 220\né 221\né 222\né 223\né 224\né 225\né 226\né 227\né 228\né 229\né 230\né 231\né 232\né 233\né 234\né 235\né 236\né 237\né 238\né 239\né 240\né 241\né 242\né 243\né 244\né 245\né 246\né 247\né 248\né 249\né 250\né 251\né 252\né 253\né 254\né 255\né 256\né 257\né 258\né 259\né 260\né 261\né 262\né 263\né 264\né 265\né 266\né 267\né 268\né 269\né 270\né 271\né 272\né 273\né 274\né 275\né 276\né 277\né 278\né 279\né 280\né 281\né 282\né 283\né 284\né 285\né 286\né 287\né 288\né 289\né 290\né 291\né 292\né 293\né 294\né 295\né 296\né 297\né 298\né 299\né 300\né 301\né 302\né 303\né 304\né 305\né 306\né 307\né 308\né 309\né 310\né 311\né 312\né 313\né 314\né 315\né 316\né 317\né 318\né 319\né 320\né 321\né 322\né 323\né 324\né 325\né 326\né 327\né 328\né 329\né 330\né 331\né 332\né 333\nok",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c2",
+              "name": "lookup_b",
+              "content": "b0001 b0002 b0003 b0004 b0005 b0006 b0007 b0008 b0009 b0010 b0011 b0012 b0013 b0014 b0015 b0016 b0017 b0018 b0019 b0020 b0021 b0022 b0023 b0024 b0025 b0026 b0027 b0028 b0029 b0030 b0031 b0032 b0033 b0034 b0035 b0036 b0037 b0038 b0039 b0040 b0041 b0042 b0043 b0044 b0045 b0046 b0047 b0048 b0049 b0050 b0051 b0052 b0053 b0054 b0055 b0056 b0057 b0058 b0059 b0060 b0061 b0062 b0063 b0064 b0065 b0066 b0067 b0068 b0069 b0070 b0071 b0072 b0073 b0074 b0075 b0076 b0077 b0078 b0079 b0080 b0081 b0082 b0083 b0084 b0085 b0086 b0087 b0088 b0089 b0090 b0091 b0092 b0093 b0094 b0095 b0096 b0097 b0098 b0099 b0100 b0101 b0102 b0103 b0104 b0105 b0106 b0107 b0108 b0109 b0110 b0111 b0112 b0113 b0114 b0115 b0116 b0117 b0118 b0119 b0120 b0121 b0122 b0123 b0124 b0125 b0126 b0127 b0128 b0129 b0130 b0131 b0132 b0133 b0134 b0135 b0136 b0137 b0138 b0139 b0140 b0141 b0142 b0143 b0144 b0145 b0146 b0147 b0148 b0149 b0150 b0151 b0152 b0153 b0154 b0155 b0156 b0157 b0158 b0159 b0160 b0161 b0162 b0163 b0164 b0165 b0166 b0167 b0168 b0169 b0170 b0171 b0172 b0173 b0174 b0175 b0176 b0177 b0178 b0179 b0180 b0181 b0182 b0183 b0184 b0185 b0186 b0187 b0188 b0189 b0190 b0191 b0192 b0193 b0194 b0195 b0196 b0197 b0198 b0199 b0200 b0201 b0202 b0203 b0204 b0205 b0206 b0207 b0208 b0209 b0210 b0211 b0212 b0213 b0214 b0215 b0216 b0217 b0218 b0219 b0220 b0221 b0222 b0223 b0224 b0225 b0226 b0227 b0228 b0229 b0230 b0231 b0232 b0233 b0234 b0235 b0236 b0237 b0238 b0239 b0240 b0241 b0242 b0243 b0244 b0245 b0246 b0247 b0248 b0249 b0250 b0251 b0252 b0253 b0254 b0255 b0256 b0257 b0258 b0259 b0260 b0261 b0262 b0263 b0264 b0265 b0266 b0267 b0268 b0269 b0270 b0271 b0272 b0273 b0274 b0275 b0276 b0277 b0278 b0279 b0280 b0281 b0282 b0283 b0284 b0285 b0286 b0287 b0288 b0289 b0290 b0291 b0292 b0293 b0294 b0295 b0296 b0297 b0298 b0299 b0300 b0301 b0302 b0303 b0304 b0305 b0306 b0307 b0308 b0309 b0310 b0311 b0312 b0313 b0314 b0315 b0316 b0317 b0318 b0319 b0320 b0321 b0322 b0323 b0324 b0325 b0326 b0327 b0328 b0329 b0330 b0331 b0332 b0333 b0334 b0335 b0336 b0337 b0338 b0339 b0340 b0341 b0342 b0343 b0344 b0345 b0346 b0347 b0348 b0349 b0350 b0351 b0352 b0353 b0354 b0355 b0356 b0357 b0358 b0359 b0360 b0361 b0362 b0363 b0364 b0365 b0366 b0367 b0368 b0369 b0370 b0371 b0372 b0373 b0374 b0375 b0376 b0377 b0378 b0379 b0380 b0381 b0382 b0383 b0384 b0385 b0386 b0387 b0388 b0389 b0390 b0391 b0392 b0393 b0394 b0395 b0396 b0397 b0398 b0399 b0400 b0401 b0402 b0403 b0404 b0405 b0406 b0407 b0408 b0409 b0410 b0411 b0412 b0413 b0414 b0415 b0416 b041",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c3",
+              "name": "lookup_c",
+              "content": "c 001\nc 002\nc 003\nc 004\nc 005\nc 006\nc 007\nc 008\nc 009\nc 010\nc 011\nc 012\nc 013\nc 014\nc 015\nc 016\nc 017\nc 018\nc 019\nc 020\nc 021\nc 022\nc 023\nc 024\nc 025\nc 026\nc 027\nc 028\nc 029\nc 030\nc 031\nc 032\nc 033\nc 034\nc 035\nc 036\nc 037\nc 038\nc 039\nc 040\nc 041\nc 042\nc 043\nc 044\nc 045\nc 046\nc 047\nc 048\nc 049\nc 050\nc 051\nc 052\nc 053\nc 054\nc 055\nc 056\nc 057\nc 058\nc 059\nc 060\nc 061\nc 062\nc 063\nc 064\nc 065\nc 066\nc 067\nc 068\nc 069\nc 070\nc 071\nc 072\nc 073\nc 074\nc 075\nc 076\nc 077\nc 078\nc 079\nc 080\nc 081\nc 082\nc 083\nc 084\nc 085\nc 086\nc 087\nc 088\nc 089\nc 090\nc 091\nc 092\nc 093\nc 094\nc 095\nc 096\nc 097\nc 098\nc 099\nc 100\nc 101\nc 102\nc 103\nc 104\nc 105\nc 106\nc 107\nc 108\nc 109\nc 110\nc 111\nc 112\nc 113\nc 114\nc 115\nc 116\nc 117\nc 118\nc 119\nc 120\nc 121\nc 122\nc 123\nc 124\nc 125\nc 126\nc 127\nc 128\nc 129\nc 130\nc 131\nc 132\nc 133\nc 134\nc 135\nc 136\nc 137\nc 138\nc 139\nc 140\nc 141\nc 142\nc 143\nc 144\nc 145\nc 146\nc 147\nc 148\nc 149\nc 150\nc 151\nc 152\nc 153\nc 154\nc 155\nc 156\nc 157\nc 158\nc 159\nc 160\nc 161\nc 162\nc 163\nc 164\nc 165\nc 166\nc 167\nc 168\nc 169\nc 170\nc 171\nc 172\nc 173\nc 174\nc 175\nc 176\nc 177\nc 178\nc 179\nc 180\nc 181\nc 182\nc 183\nc 184\nc 185\nc 186\nc 187\nc 188\nc 189\nc 190\nc 191\nc 192\nc 193\nc 194\nc 195\nc 196\nc 197\nc 198\nc 199\nc 200\nc 201\nc 202\nc 203\nc 204\nc 205\nc 206\nc 207\nc 208\nc 209\nc 210\nc 211\nc 212\nc 213\nc 214\nc 215\nc 216\nc 217\nc 218\nc 219\nc 220\nc 221\nc 222\nc 223\nc 224\nc 225\nc 226\nc 227\nc 228\nc 229\nc 230\nc 231\nc 232\nc 233\nc 234\nc 235\nc 236\nc 237\nc 238\nc 239\nc 240\nc 241\nc 242\nc 243\nc 244\nc 245\nc 246\nc 247\nc 248\nc 249\nc 250\nc 251\nc 252\nc 253\nc 254\nc 255\nc 256\nc 257\nc 258\nc 259\nc 260\nc 261\nc 262\nc 263\nc 264\nc 265\nc 266\nc 267\nc 268\nc 269\nc 270\nc 271\nc 272\nc 273\nc 274\nc 275\nc 276\nc 277\nc 278\nc 279\nc 280\nc 281\nc 282\nc 283\nc 284\nc 285\nc 286\nc 287\nc 288\nc 289\nc 290\nc 291\nc 292\nc 293\nc 294\nc 295\nc 296\nc 297\nc 298\nc 299\nc 300\nc 301\nc 302\nc 303\nc 304\nc 305\nc 306\nc 307\nc 308\nc 309\nc 310\nc 311\nc 312\nc 313\nc 314\nc 315\nc 316\nc 317\nc 318\nc 319\nc 320\nc 321\nc 322\nc 323\nc 324\nc 325\nc 326\nc 327\nc 328\nc 329\nc 330\nc 331\nc 332\nc 333\nc 334\nc 335\nc 336\nc 337\nc 338\nc 339\nc 340\nc 341\nc 342\nc 343\nc 344\nc 345\nc 346\nc 347\nc 348\nc 349\nc 350\nc 351\nc 352\nc 353\nc 354\nc 355\nc 356\nc 357\nc 358\nc 359\nc 360\nc 361\nc 362\nc 363\nc 364\nc 365\nc 366\nc 367\nc 368\nc 369\nc 370\nc 371\nc 372\nc 373\nc 374\nc 375\nc 376\nc 377\nc 378\nc 379\nc 380\nc 381\nc 382\nc 383\nc 384\nc 385\nc 386\nc 387\nc 388\nc 389\nc 390\nc 391\nc 392\nc 393\nc 394\nc 395\nc 396\nc 397\nc 398\nc 399\nc 400",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c4",
+              "name": "lookup_d",
+              "content": "d 001\nd 002\nd 003\nd 004\nd 005\nd 006\nd 007\nd 008\nd 009\nd 010\nd 011\nd 012\nd 013\nd 014\nd 015\nd 016\nd 017\nd 018\nd 019\nd 020\nd 021\nd 022\nd 023\nd 024\nd 025\nd 026\nd 027\nd 028\nd 029\nd 030\nd 031\nd 032\nd 033\nd 034\nd 035\nd 036\nd 037\nd 038\nd 039\nd 040\nd 041\nd 042\nd 043\nd 044\nd 045\nd 046\nd 047\nd 048\nd 049\nd 050\nd 051\nd 052\nd 053\nd 054\nd 055\nd 056\nd 057\nd 058\nd 059\nd 060\nd 061\nd 062\nd 063\nd 064\nd 065\nd 066\nd 067\nd 068\nd 069\nd 070\nd 071\nd 072\nd 073\nd 074\nd 075\nd 076\nd 077\nd 078\nd 079\nd 080\nd 081\nd 082\nd 083\nd 084\nd 085\nd 086\nd 087\nd 088\nd 089\nd 090\nd 091\nd 092\nd 093\nd 094\nd 095\nd 096\nd 097\nd 098\nd 099\nd 100\nd 101\nd 102\nd 103\nd 104\nd 105\nd 106\nd 107\nd 108\nd 109\nd 110\nd 111\nd 112\nd 113\nd 114\nd 115\nd 116\nd 117\nd 118\nd 119\nd 120\nd 121\nd 122\nd 123\nd 124\nd 125\nd 126\nd 127\nd 128\nd 129\nd 130\nd 131\nd 132\nd 133\nd 134\nd 135\nd 136\nd 137\nd 138\nd 139\nd 140\nd 141\nd 142\nd 143\nd 144\nd 145\nd 146\nd 147\nd 148\nd 149\nd 150\nd 151\nd 152\nd 153\nd 154\nd 155\nd 156\nd 157\nd 158\nd 159\nd 160\nd 161\nd 162\nd 163\nd 164\nd 165\nd 166\nd 167\nd 168\nd 169\nd 170\nd 171\nd 172\nd 173\nd 174\nd 175\nd 176\nd 177\nd 178\nd 179\nd 180\nd 181\nd 182\nd 183\nd 184\nd 185\nd 186\nd 187\nd 188\nd 189\nd 190\nd 191\nd 192\nd 193\nd 194\nd 195\nd 196\nd 197\nd 198\nd 199\nd 200\nd 201\nd 202\nd 203\nd 204\nd 205\nd 206\nd 207\nd 208\nd 209\nd 210\nd 211\nd 212\nd 213\nd 214\nd 215\nd 216\nd 217\nd 218\nd 219\nd 220\nd 221\nd 222\nd 223\nd 224\nd 225\nd 226\nd 227\nd 228\nd 229\nd 230\nd 231\nd 232\nd 233\nd 234\nd 235\nd 236\nd 237\nd 238\nd 239\nd 240\nd 241\nd 242\nd 243\nd 244\nd 245\nd 246\nd 247\nd 248\nd 249\nd 250\nd 251\nd 252\nd 253\nd 254\nd 255\nd 256\nd 257\nd 258\nd 259\nd 260\nd 261\nd 262\nd 263\nd 264\nd 265\nd 266\nd 267\nd 268\nd 269\nd 270\nd 271\nd 272\nd 273\nd 274\nd 275\nd 276\nd 277\nd 278\nd 279\nd 280\nd 281\nd 282\nd 283\nd 284\nd 285\nd 286\nd 287\nd 288\nd 289\nd 290\nd 291\nd 292\nd 293\nd 294\nd 295\nd 296\nd 297\nd 298\nd 299\nd 300\nd 301\nd 302\nd 303\nd 304\nd 305\nd 306\nd 307\nd 308\nd 309\nd 310\nd 311\nd 312\nd 313\nd 314\nd 315\nd 316\nd 317\nd 318\nd 319\nd 320\nd 321\nd 322\nd 323\nd 324\nd 325\nd 326\nd 327\nd 328\nd 329\nd 330\nd 331\nd 332\nd 333\nd 334\nd 335\nd 336\nd 337\nd 338\nd 339\nd 340\nd 341\nd 342\nd 343\nd 344\nd 345\nd 346\nd 347\nd 348\nd 349\nd 350\nd 351\nd 352\nd 353\nd 354\nd 355\nd 356\nd 357\nd 358\nd 359\nd 360\nd 361\nd 362\nd 363\nd 364\nd 365\nd 366\nd 367\nd 368\nd 369\nd 370\nd 371\nd 372\nd 373\nd 374\nd 375\nd 376\nd 377\nd 378\nd 379\nd 380\nd 381\nd 382\nd 383\nd 384\nd 385\nd 386\nd 387\nd 388\nd 389\nd 390\nd 391\nd 392\nd 393\nd 394\nd 395\nd 396\nd 397\nd 398\nd 399\nd 400",
+              "is_error": false
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "q1"
+            },
+            {
+              "role": "assistant",
+              "text": ""
+            },
+            {
+              "role": "tool",
+              "text": ""
+            },
+            {
+              "role": "assistant",
+              "text": ""
+            },
+            {
+              "role": "tool",
+              "text": ""
+            },
+            {
+              "role": "assistant",
+              "text": ""
+            },
+            {
+              "role": "tool",
+              "text": ""
+            },
+            {
+              "role": "assistant",
+              "text": ""
+            },
+            {
+              "role": "tool",
+              "text": ""
+            }
+          ],
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "name": "lookup_a",
+              "content": "é 001\né 002\né 003\né 004\né 005\né 006\né 007\né 008\né 009\né 010\né 011\né 012\né 013\né 014\né 015\né 016\né 017\né 018\né 019\né 020\né 021\né 022\né 023\né 024\né 025\né 026\né 027\né 028\né 029\né 030\né 031\né 032\né 033\né 034\né 035\né 036\né 037\né 038\né 039\né 040\né 041\né 042\né 043\né 044\né 045\né 046\né 047\né 048\né 049\né 050\né 051\né 052\né 053\né 054\né 055\né 056\né 057\né 058\né 059\né 060\né 061\né 062\né 063\né 064\né 065\né 066\né 067\né 068\né 069\né 070\né 071\né 072\né 073\né 074\né 075\né 076\né 077\né 078\né 079\né 080\né 081\né 082\né 083\né 084\né 085\né 086\né 087\né 088\né 089\né 090\né 091\né 092\né 093\né 094\né 095\né 096\né 097\né 098\né 099\né 100\né 101\né 102\né 103\né 104\né 105\né 106\né 107\né 108\né 109\né 110\né 111\né 112\né 113\né 114\né 115\né 116\né 117\né 118\né 119\né 120\né 121\né 122\né 123\né 124\né 125\né 126\né 127\né 128\né 129\né 130\né 131\né 132\né 133\né 134\né 135\né 136\né 137\né 138\né 139\né 140\né 141\né 142\né 143\né 144\né 145\né 146\né 147\né 148\né 149\né 150\né 151\né 152\né 153\né 154\né 155\né 156\né 157\né 158\né 159\né 160\né 161\né 162\né 163\né 164\né 165\né 166\né 167\né 168\né 169\né 170\né 171\né 172\né 173\né 174\né 175\né 176\né 177\né 178\né 179\né 180\né 181\né 182\né 183\né 184\né 185\né 186\né 187\né 188\né 189\né 190\né 191\né 192\né 193\né 194\né 195\né 196\né 197\né 198\né 199\né 200\né 201\né 202\né 203\né 204\né 205\né 206\né 207\né 208\né 209\né 210\né 211\né 212\né 213\né 214\né 215\né 216\né 217\né 218\né 219\né 220\né 221\né 222\né 223\né 224\né 225\né 226\né 227\né 228\né 229\né 230\né 231\né 232\né 233\né 234\né 235\né 236\né 237\né 238\né 239\né 240\né 241\né 242\né 243\né 244\né 245\né 246\né 247\né 248\né 249\né 250\né 251\né 252\né 253\né 254\né 255\né 256\né 257\né 258\né 259\né 260\né 261\né 262\né 263\né 264\né 265\né 266\né 267\né 268\né 269\né 270\né 271\né 272\né 273\né 274\né 275\né 276\né 277\né 278\né 279\né 280\né 281\né 282\né 283\né 284\né 285\né 286\né 287\né 288\né 289\né 290\né 291\né 292\né 293\né 294\né 295\né 296\né 297\né 298\né 299\né 300\né 301\né 302\né 303\né 304\né 305\né 306\né 307\né 308\né 309\né 310\né 311\né 312\né 313\né 314\né 315\né 316\né 317\né 318\né 319\né 320\né 321\né 322\né 323\né 324\né 325\né 326\né 327\né 328\né 329\né 330\né 331\né 332\né 333\nok",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c2",
+              "name": "lookup_b",
+              "content": "Result too large (626 tokens). Full output saved as 'evicted_c2'. Use read_stored_result to read it with pagination.\n\nPreview:\nb0001 b0002 b0003 b0004 b0005 b0006 b0007 b0008 b0009 b0010 b0011 b0012 b0013 b0014 b0015 b0016 b0017 b0018 b0019 b0020 b0021 b0022 b0023 b0024 b0025 b0026 b0027 b0028 b0029 b0030 b0031 b0032 b0033 b0034 b0035 b0036 b0037 b0038 b0039 b0040 b0041 b0042 b0043 b0044 b0045 b0046 b0047 b0048 b0049 b0050 b0051 b0052 b0053 b0054 b0055 b0056 b0057 b0058 b0059 b0060 b0061 b0062 b0063 b0064 b0065 b0066 b0067 b0068 b0069 b0070 b0071 b0072 b0073 b0074 b0075 b0076 b0077 b0078 b0079 b0080 b0081 b0082 b0083 b0084 b0085 b0086 b0087 b0088 b0089 b0090 b0091 b0092 b0093 b0094 b0095 b0096 b0097 b0098 b0099 b0100 b0101 b0102 b0103 b0104 b0105 b0106 b0107 b0108 b0109 b0110 b0111 b0112 b0113 b0114 b0115 b0116 b0117 b0118 b0119 b0120 b0121 b0122 b0123 b0124 b0125 b0126 b0127 b0128 b0129 b0130 b0131 b0132 b0133 b0134 b0135 b0136 b0137 b0138 b0139 b0140 b0141 b0142 b0143 b0144 b0145 b0146 b0147 b0148 b0149 b0150 b0151 b0152 b0153 b0154 b0155 b0156 b015 [... 1560 chars truncated ...]",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c3",
+              "name": "lookup_c",
+              "content": "c 001\nc 002\nc 003\nc 004\nc 005\nc 006\nc 007\nc 008\nc 009\nc 010\nc 011\nc 012\nc 013\nc 014\nc 015\nc 016\nc 017\nc 018\nc 019\nc 020\nc 021\nc 022\nc 023\nc 024\nc 025\nc 026\nc 027\nc 028\nc 029\nc 030\nc 031\nc 032\nc 033\nc 034\nc 035\nc 036\nc 037\nc 038\nc 039\nc 040\nc 041\nc 042\nc 043\nc 044\nc 045\nc 046\nc 047\nc 048\nc 049\nc 050\nc 051\nc 052\nc 053\nc 054\nc 055\nc 056\nc 057\nc 058\nc 059\nc 060\nc 061\nc 062\nc 063\nc 064\nc 065\nc 066\nc 067\nc 068\nc 069\nc 070\nc 071\nc 072\nc 073\nc 074\nc 075\nc 076\nc 077\nc 078\nc 079\nc 080\nc 081\nc 082\nc 083\nc 084\nc 085\nc 086\nc 087\nc 088\nc 089\nc 090\nc 091\nc 092\nc 093\nc 094\nc 095\nc 096\nc 097\nc 098\nc 099\nc 100\nc 101\nc 102\nc 103\nc 104\nc 105\nc 106\nc 107\nc 108\nc 109\nc 110\nc 111\nc 112\nc 113\nc 114\nc 115\nc 116\nc 117\nc 118\nc 119\nc 120\nc 121\nc 122\nc 123\nc 124\nc 125\nc 126\nc 127\nc 128\nc 129\nc 130\nc 131\nc 132\nc 133\nc 134\nc 135\nc 136\nc 137\nc 138\nc 139\nc 140\nc 141\nc 142\nc 143\nc 144\nc 145\nc 146\nc 147\nc 148\nc 149\nc 150\nc 151\nc 152\nc 153\nc 154\nc 155\nc 156\nc 157\nc 158\nc 159\nc 160\nc 161\nc 162\nc 163\nc 164\nc 165\nc 166\nc 167\nc 168\nc 169\nc 170\nc 171\nc 172\nc 173\nc 174\nc 175\nc 176\nc 177\nc 178\nc 179\nc 180\nc 181\nc 182\nc 183\nc 184\nc 185\nc 186\nc 187\nc 188\nc 189\nc 190\nc 191\nc 192\nc 193\nc 194\nc 195\nc 196\nc 197\nc 198\nc 199\nc 200\nc 201\nc 202\nc 203\nc 204\nc 205\nc 206\nc 207\nc 208\nc 209\nc 210\nc 211\nc 212\nc 213\nc 214\nc 215\nc 216\nc 217\nc 218\nc 219\nc 220\nc 221\nc 222\nc 223\nc 224\nc 225\nc 226\nc 227\nc 228\nc 229\nc 230\nc 231\nc 232\nc 233\nc 234\nc 235\nc 236\nc 237\nc 238\nc 239\nc 240\nc 241\nc 242\nc 243\nc 244\nc 245\nc 246\nc 247\nc 248\nc 249\nc 250\nc 251\nc 252\nc 253\nc 254\nc 255\nc 256\nc 257\nc 258\nc 259\nc 260\nc 261\nc 262\nc 263\nc 264\nc 265\nc 266\nc 267\nc 268\nc 269\nc 270\nc 271\nc 272\nc 273\nc 274\nc 275\nc 276\nc 277\nc 278\nc 279\nc 280\nc 281\nc 282\nc 283\nc 284\nc 285\nc 286\nc 287\nc 288\nc 289\nc 290\nc 291\nc 292\nc 293\nc 294\nc 295\nc 296\nc 297\nc 298\nc 299\nc 300\nc 301\nc 302\nc 303\nc 304\nc 305\nc 306\nc 307\nc 308\nc 309\nc 310\nc 311\nc 312\nc 313\nc 314\nc 315\nc 316\nc 317\nc 318\nc 319\nc 320\nc 321\nc 322\nc 323\nc 324\nc 325\nc 326\nc 327\nc 328\nc 329\nc 330\nc 331\nc 332\nc 333\nc 334\nc 335\nc 336\nc 337\nc 338\nc 339\nc 340\nc 341\nc 342\nc 343\nc 344\nc 345\nc 346\nc 347\nc 348\nc 349\nc 350\nc 351\nc 352\nc 353\nc 354\nc 355\nc 356\nc 357\nc 358\nc 359\nc 360\nc 361\nc 362\nc 363\nc 364\nc 365\nc 366\nc 367\nc 368\nc 369\nc 370\nc 371\nc 372\nc 373\nc 374\nc 375\nc 376\nc 377\nc 378\nc 379\nc 380\nc 381\nc 382\nc 383\nc 384\nc 385\nc 386\nc 387\nc 388\nc 389\nc 390\nc 391\nc 392\nc 393\nc 394\nc 395\nc 396\nc 397\nc 398\nc 399\nc 400",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c4",
+              "name": "lookup_d",
+              "content": "d 001\nd 002\nd 003\nd 004\nd 005\nd 006\nd 007\nd 008\nd 009\nd 010\nd 011\nd 012\nd 013\nd 014\nd 015\nd 016\nd 017\nd 018\nd 019\nd 020\nd 021\nd 022\nd 023\nd 024\nd 025\nd 026\nd 027\nd 028\nd 029\nd 030\nd 031\nd 032\nd 033\nd 034\nd 035\nd 036\nd 037\nd 038\nd 039\nd 040\nd 041\nd 042\nd 043\nd 044\nd 045\nd 046\nd 047\nd 048\nd 049\nd 050\nd 051\nd 052\nd 053\nd 054\nd 055\nd 056\nd 057\nd 058\nd 059\nd 060\nd 061\nd 062\nd 063\nd 064\nd 065\nd 066\nd 067\nd 068\nd 069\nd 070\nd 071\nd 072\nd 073\nd 074\nd 075\nd 076\nd 077\nd 078\nd 079\nd 080\nd 081\nd 082\nd 083\nd 084\nd 085\nd 086\nd 087\nd 088\nd 089\nd 090\nd 091\nd 092\nd 093\nd 094\nd 095\nd 096\nd 097\nd 098\nd 099\nd 100\nd 101\nd 102\nd 103\nd 104\nd 105\nd 106\nd 107\nd 108\nd 109\nd 110\nd 111\nd 112\nd 113\nd 114\nd 115\nd 116\nd 117\nd 118\nd 119\nd 120\nd 121\nd 122\nd 123\nd 124\nd 125\nd 126\nd 127\nd 128\nd 129\nd 130\nd 131\nd 132\nd 133\nd 134\nd 135\nd 136\nd 137\nd 138\nd 139\nd 140\nd 141\nd 142\nd 143\nd 144\nd 145\nd 146\nd 147\nd 148\nd 149\nd 150\nd 151\nd 152\nd 153\nd 154\nd 155\nd 156\nd 157\nd 158\nd 159\nd 160\nd 161\nd 162\nd 163\nd 164\nd 165\nd 166\nd 167\nd 168\nd 169\nd 170\nd 171\nd 172\nd 173\nd 174\nd 175\nd 176\nd 177\nd 178\nd 179\nd 180\nd 181\nd 182\nd 183\nd 184\nd 185\nd 186\nd 187\nd 188\nd 189\nd 190\nd 191\nd 192\nd 193\nd 194\nd 195\nd 196\nd 197\nd 198\nd 199\nd 200\nd 201\nd 202\nd 203\nd 204\nd 205\nd 206\nd 207\nd 208\nd 209\nd 210\nd 211\nd 212\nd 213\nd 214\nd 215\nd 216\nd 217\nd 218\nd 219\nd 220\nd 221\nd 222\nd 223\nd 224\nd 225\nd 226\nd 227\nd 228\nd 229\nd 230\nd 231\nd 232\nd 233\nd 234\nd 235\nd 236\nd 237\nd 238\nd 239\nd 240\nd 241\nd 242\nd 243\nd 244\nd 245\nd 246\nd 247\nd 248\nd 249\nd 250\nd 251\nd 252\nd 253\nd 254\nd 255\nd 256\nd 257\nd 258\nd 259\nd 260\nd 261\nd 262\nd 263\nd 264\nd 265\nd 266\nd 267\nd 268\nd 269\nd 270\nd 271\nd 272\nd 273\nd 274\nd 275\nd 276\nd 277\nd 278\nd 279\nd 280\nd 281\nd 282\nd 283\nd 284\nd 285\nd 286\nd 287\nd 288\nd 289\nd 290\nd 291\nd 292\nd 293\nd 294\nd 295\nd 296\nd 297\nd 298\nd 299\nd 300\nd 301\nd 302\nd 303\nd 304\nd 305\nd 306\nd 307\nd 308\nd 309\nd 310\nd 311\nd 312\nd 313\nd 314\nd 315\nd 316\nd 317\nd 318\nd 319\nd 320\nd 321\nd 322\nd 323\nd 324\nd 325\nd 326\nd 327\nd 328\nd 329\nd 330\nd 331\nd 332\nd 333\nd 334\nd 335\nd 336\nd 337\nd 338\nd 339\nd 340\nd 341\nd 342\nd 343\nd 344\nd 345\nd 346\nd 347\nd 348\nd 349\nd 350\nd 351\nd 352\nd 353\nd 354\nd 355\nd 356\nd 357\nd 358\nd 359\nd 360\nd 361\nd 362\nd 363\nd 364\nd 365\nd 366\nd 367\nd 368\nd 369\nd 370\nd 371\nd 372\nd 373\nd 374\nd 375\nd 376\nd 377\nd 378\nd 379\nd 380\nd 381\nd 382\nd 383\nd 384\nd 385\nd 386\nd 387\nd 388\nd 389\nd 390\nd 391\nd 392\nd 393\nd 394\nd 395\nd 396\nd 397\nd 398\nd 399\nd 400",
+              "is_error": false
+            }
+          ]
+        },
+        {
+          "tool_results": [
+            {},
+            {
+              "tool_call_id": "c2",
+              "name": "lookup_b",
+              "content": "Result too large (626 tokens). Full output saved as 'evicted_c2'. Use read_stored_result to read it with pagination.\n\nPreview:\nb0001 b0002 b0003 b0004 b0005 b0006 b0007 b0008 b0009 b0010 b0011 b0012 b0013 b0014 b0015 b0016 b0017 b0018 b0019 b0020 b0021 b0022 b0023 b0024 b0025 b0026 b0027 b0028 b0029 b0030 b0031 b0032 b0033 b0034 b0035 b0036 b0037 b0038 b0039 b0040 b0041 b0042 b0043 b0044 b0045 b0046 b0047 b0048 b0049 b0050 b0051 b0052 b0053 b0054 b0055 b0056 b0057 b0058 b0059 b0060 b0061 b0062 b0063 b0064 b0065 b0066 b0067 b0068 b0069 b0070 b0071 b0072 b0073 b0074 b0075 b0076 b0077 b0078 b0079 b0080 b0081 b0082 b0083 b0084 b0085 b0086 b0087 b0088 b0089 b0090 b0091 b0092 b0093 b0094 b0095 b0096 b0097 b0098 b0099 b0100 b0101 b0102 b0103 b0104 b0105 b0106 b0107 b0108 b0109 b0110 b0111 b0112 b0113 b0114 b0115 b0116 b0117 b0118 b0119 b0120 b0121 b0122 b0123 b0124 b0125 b0126 b0127 b0128 b0129 b0130 b0131 b0132 b0133 b0134 b0135 b0136 b0137 b0138 b0139 b0140 b0141 b0142 b0143 b0144 b0145 b0146 b0147 b0148 b0149 b0150 b0151 b0152 b0153 b0154 b0155 b0156 b015 [... 1560 chars truncated ...]",
+              "is_error": false
+            },
+            {},
+            {},
+            {
+              "tool_call_id": "r1",
+              "name": "read_stored_result",
+              "content": "{\"content\": \"b0001 b0002 b0003 b0004 b0005 b0006 b0007 b0008 b0009 b0010 b0011 b0012 b0013 b0014 b0015 b0016 b0017 b0018 b0019 b0020 b0021 b0022 b0023 b0024 b0025 b0026 b0027 b0028 b0029 b0030 b0031 b0032 b0033 b0034 b0035 b0036 b0037 b0038 b0039 b0040 b0041 b0042 b0043 b0044 b0045 b0046 b0047 b0048 b0049 b0050 b0051 b0052 b0053 b0054 b0055 b0056 b0057 b0058 b0059 b0060 b0061 b0062 b0063 b0064 b0065 b0066 b0067 b0068 b0069 b0070 b0071 b0072 b0073 b0074 b0075 b0076 b0077 b0078 b0079 b0080 b0081 b0082 b0083 b0084 b0085 b0086 b0087 b0088 b0089 b0090 b0091 b0092 b0093 b0094 b0095 b0096 b0097 b0098 b0099 b0100 b0101 b0102 b0103 b0104 b0105 b0106 b0107 b0108 b0109 b0110 b0111 b0112 b0113 b0114 b0115 b0116 b0117 b0118 b0119 b0120 b0121 b0122 b0123 b0124 b0125 b0126 b0127 b0128 b0129 b0130 b0131 b0132 b0133 b0134 b0135 b0136 b0137 b0138 b0139 b0140 b0141 b0142 b0143 b0144 b0145 b0146 b0147 b0148 b0149 b0150 b0151 b0152 b0153 b0154 b0155 b0156 b0157 b0158 b0159 b0160 b0161 b0162 b0163 b0164 b0165 b0166 b0167 b0168 b0169 b0170 b0171 b0172 b0173 b0174 b0175 b0176 b0177 b0178 b0179 b0180 b0181 b0182 b0183 b0184 b0185 b0186 b0187 b0188 b0189 b0190 b0191 b0192 b0193 b0194 b0195 b0196 b0197 b0198 b0199 b0200 b0201 b0202 b0203 b0204 b0205 b0206 b0207 b0208 b0209 b0210 b0211 b0212 b0213 b0214 b0215 b0216 b0217 b0218 b0219 b0220 b0221 b0222 b0223 b0224 b0225 b0226 b0227 b0228 b0229 b0230 b0231 b0232 b0233 b0234 b0235 b0236 b0237 b0238 b0239 b0240 b0241 b0242 b0243 b0244 b0245 b0246 b0247 b0248 b0249 b0250 b0251 b0252 b0253 b0254 b0255 b0256 b0257 b0258 b0259 b0260 b0261 b0262 b0263 b0264 b0265 b0266 b0267 b0268 b0269 b0270 b0271 b0272 b0273 b0274 b0275 b0276 b0277 b0278 b0279 b0280 b0281 b0282 b0283 b0284 b0285 b0286 b0287 b0288 b0289 b0290 b0291 b0292 b0293 b0294 b0295 b0296 b0297 b0298 b0299 b0300 b0301 b0302 b0303 b0304 b0305 b0306 b0307 b0308 b0309 b0310 b0311 b0312 b0313 b0314 b0315 b0316 b0317 b0318 b0319 b0320 b0321 b0322 b0323 b0324 b0325 b0326 b0327 b0328 b0329 b0330 b0331 b0332 b0333 b0334 b0335 b0336 b0337 b0338 b0339 b0340 b0341 b0342 b0343 b0344 b0345 b0346 b0347 b0348 b0349 b0350 b0351 b0352 b0353 b0354 b0355 b0356 b0357 b0358 b0359 b0360 b0361 b0362 b0363 b0364 b0365 b0366 b0367 b0368 b0369 b0370 b0371 b0372 b0373 b0374 b0375 b0376 b0377 b0378 b0379 b0380 b0381 b0382 b0383 b0384 b0385 b0386 b0387 b0388 b0389 b0390 b0391 b0392 b0393 b0394 b0395 b0396 b0397 b0398 b0399 b0400 b0401 b0402 b0403 b0404 b0405 b0406 b0407 b0408 b0409 b0410 b0411 b0412 b0413 b0414 b0415 b0416 b041\", \"offset\": 0, \"lines_returned\": 1, \"total_lines\": 1, \"has_more\": false, \"next_offset\": null}",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "q1"
+          }
+        },
+        {
+          "index": 1,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 2,
+          "type": "tool_call_end"
+        },
+        {
+          "index": 3,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 4,
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "c2",
+            "result": "b0001 b0002 b0003 b0004 b0005 b0006 b0007 b0008 b0009 b0010 b0011 b0012 b0013 b0014 b0015 b0016 b0017 b0018 b0019 b0020 b0021 b0022 b0023 b0024 b0025 b0026 b0027 b0028 b0029 b0030 b0031 b0032 b0033 b0034 b0035 b0036 b0037 b0038 b0039 b0040 b0041 b0042 b0043 b0044 b0045 b0046 b0047 b0048 b0049 b0050 b0051 b0052 b0053 b0054 b0055 b0056 b0057 b0058 b0059 b0060 b0061 b0062 b0063 b0064 b0065 b0066 b0067 b0068 b0069 b0070 b0071 b0072 b0073 b0074 b0075 b0076 b0077 b0078 b0079 b0080 b0081 b0082 b0083 b0084 b0085 b0086 b0087 b0088 b0089 b0090 b0091 b0092 b0093 b0094 b0095 b0096 b0097 b0098 b0099 b0100 b0101 b0102 b0103 b0104 b0105 b0106 b0107 b0108 b0109 b0110 b0111 b0112 b0113 b0114 b0115 b0116 b0117 b0118 b0119 b0120 b0121 b0122 b0123 b0124 b0125 b0126 b0127 b0128 b0129 b0130 b0131 b0132 b0133 b0134 b0135 b0136 b0137 b0138 b0139 b0140 b0141 b0142 b0143 b0144 b0145 b0146 b0147 b0148 b0149 b0150 b0151 b0152 b0153 b0154 b0155 b0156 b0157 b0158 b0159 b0160 b0161 b0162 b0163 b0164 b0165 b0166 b0167 b0168 b0169 b0170 b0171 b0172 b0173 b0174 b0175 b0176 b0177 b0178 b0179 b0180 b0181 b0182 b0183 b0184 b0185 b0186 b0187 b0188 b0189 b0190 b0191 b0192 b0193 b0194 b0195 b0196 b0197 b0198 b0199 b0200 b0201 b0202 b0203 b0204 b0205 b0206 b0207 b0208 b0209 b0210 b0211 b0212 b0213 b0214 b0215 b0216 b0217 b0218 b0219 b0220 b0221 b0222 b0223 b0224 b0225 b0226 b0227 b0228 b0229 b0230 b0231 b0232 b0233 b0234 b0235 b0236 b0237 b0238 b0239 b0240 b0241 b0242 b0243 b0244 b0245 b0246 b0247 b0248 b0249 b0250 b0251 b0252 b0253 b0254 b0255 b0256 b0257 b0258 b0259 b0260 b0261 b0262 b0263 b0264 b0265 b0266 b0267 b0268 b0269 b0270 b0271 b0272 b0273 b0274 b0275 b0276 b0277 b0278 b0279 b0280 b0281 b0282 b0283 b0284 b0285 b0286 b0287 b0288 b0289 b0290 b0291 b0292 b0293 b0294 b0295 b0296 b0297 b0298 b0299 b0300 b0301 b0302 b0303 b0304 b0305 b0306 b0307 b0308 b0309 b0310 b0311 b0312 b0313 b0314 b0315 b0316 b0317 b0318 b0319 b0320 b0321 b0322 b0323 b0324 b0325 b0326 b0327 b0328 b0329 b0330 b0331 b0332 b0333 b0334 b0335 b0336 b0337 b0338 b0339 b0340 b0341 b0342 b0343 b0344 b0345 b0346 b0347 b0348 b0349 b0350 b0351 b0352 b0353 b0354 b0355 b0356 b0357 b0358 b0359 b0360 b0361 b0362 b0363 b0364 b0365 b0366 b0367 b0368 b0369 b0370 b0371 b0372 b0373 b0374 b0375 b0376 b0377 b0378 b0379 b0380 b0381 b0382 b0383 b0384 b0385 b0386 b0387 b0388 b0389 b0390 b0391 b0392 b0393 b0394 b0395 b0396 b0397 b0398 b0399 b0400 b0401 b0402 b0403 b0404 b0405 b0406 b0407 b0408 b0409 b0410 b0411 b0412 b0413 b0414 b0415 b0416 b041"
+          }
+        },
+        {
+          "index": 5,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 6,
+          "type": "tool_call_end"
+        },
+        {
+          "index": 7,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 8,
+          "type": "tool_call_end"
+        },
+        {
+          "index": 9,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 10,
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "r1",
+            "result": "{\"content\": \"b0001 b0002 b0003 b0004 b0005 b0006 b0007 b0008 b0009 b0010 b0011 b0012 b0013 b0014 b0015 b0016 b0017 b0018 b0019 b0020 b0021 b0022 b0023 b0024 b0025 b0026 b0027 b0028 b0029 b0030 b0031 b0032 b0033 b0034 b0035 b0036 b0037 b0038 b0039 b0040 b0041 b0042 b0043 b0044 b0045 b0046 b0047 b0048 b0049 b0050 b0051 b0052 b0053 b0054 b0055 b0056 b0057 b0058 b0059 b0060 b0061 b0062 b0063 b0064 b0065 b0066 b0067 b0068 b0069 b0070 b0071 b0072 b0073 b0074 b0075 b0076 b0077 b0078 b0079 b0080 b0081 b0082 b0083 b0084 b0085 b0086 b0087 b0088 b0089 b0090 b0091 b0092 b0093 b0094 b0095 b0096 b0097 b0098 b0099 b0100 b0101 b0102 b0103 b0104 b0105 b0106 b0107 b0108 b0109 b0110 b0111 b0112 b0113 b0114 b0115 b0116 b0117 b0118 b0119 b0120 b0121 b0122 b0123 b0124 b0125 b0126 b0127 b0128 b0129 b0130 b0131 b0132 b0133 b0134 b0135 b0136 b0137 b0138 b0139 b0140 b0141 b0142 b0143 b0144 b0145 b0146 b0147 b0148 b0149 b0150 b0151 b0152 b0153 b0154 b0155 b0156 b0157 b0158 b0159 b0160 b0161 b0162 b0163 b0164 b0165 b0166 b0167 b0168 b0169 b0170 b0171 b0172 b0173 b0174 b0175 b0176 b0177 b0178 b0179 b0180 b0181 b0182 b0183 b0184 b0185 b0186 b0187 b0188 b0189 b0190 b0191 b0192 b0193 b0194 b0195 b0196 b0197 b0198 b0199 b0200 b0201 b0202 b0203 b0204 b0205 b0206 b0207 b0208 b0209 b0210 b0211 b0212 b0213 b0214 b0215 b0216 b0217 b0218 b0219 b0220 b0221 b0222 b0223 b0224 b0225 b0226 b0227 b0228 b0229 b0230 b0231 b0232 b0233 b0234 b0235 b0236 b0237 b0238 b0239 b0240 b0241 b0242 b0243 b0244 b0245 b0246 b0247 b0248 b0249 b0250 b0251 b0252 b0253 b0254 b0255 b0256 b0257 b0258 b0259 b0260 b0261 b0262 b0263 b0264 b0265 b0266 b0267 b0268 b0269 b0270 b0271 b0272 b0273 b0274 b0275 b0276 b0277 b0278 b0279 b0280 b0281 b0282 b0283 b0284 b0285 b0286 b0287 b0288 b0289 b0290 b0291 b0292 b0293 b0294 b0295 b0296 b0297 b0298 b0299 b0300 b0301 b0302 b0303 b0304 b0305 b0306 b0307 b0308 b0309 b0310 b0311 b0312 b0313 b0314 b0315 b0316 b0317 b0318 b0319 b0320 b0321 b0322 b0323 b0324 b0325 b0326 b0327 b0328 b0329 b0330 b0331 b0332 b0333 b0334 b0335 b0336 b0337 b0338 b0339 b0340 b0341 b0342 b0343 b0344 b0345 b0346 b0347 b0348 b0349 b0350 b0351 b0352 b0353 b0354 b0355 b0356 b0357 b0358 b0359 b0360 b0361 b0362 b0363 b0364 b0365 b0366 b0367 b0368 b0369 b0370 b0371 b0372 b0373 b0374 b0375 b0376 b0377 b0378 b0379 b0380 b0381 b0382 b0383 b0384 b0385 b0386 b0387 b0388 b0389 b0390 b0391 b0392 b0393 b0394 b0395 b0396 b0397 b0398 b0399 b0400 b0401 b0402 b0403 b0404 b0405 b0406 b0407 b0408 b0409 b0410 b0411 b0412 b0413 b0414 b0415 b0416 b041\", \"offset\": 0, \"lines_returned\": 1, \"total_lines\": 1, \"has_more\": false, \"next_offset\": null}"
+          }
+        },
+        {
+          "index": 11,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "Done."
+          }
+        }
+      ]
+    }
+  }
+}

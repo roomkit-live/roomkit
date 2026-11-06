@@ -1,0 +1,208 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-compaction-stores-the-text-of-a-result-of-parts-and-keeps-its-images",
+  "title": "A compaction stores a result of parts of the older rounds whose text, its parts joined, is over 2000 characters: one placeholder previewing it in 1000 characters where its first text part was, its images kept where they were",
+  "rules": [
+    "§6.4",
+    "§21.5"
+  ],
+  "notes": "Python: tests/test_channels/test_compaction_keeps_input.py::test_a_result_of_parts_stores_its_text_and_keeps_its_image (channels/_compaction.py _stored, ToolEviction.evict_parts). Seven messages, the input at 0: the half (3) is the second round's call, so the first round is shortened. Each text part is 1199 characters, 2399 joined.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "vision": true,
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "shot",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "step_a",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c3",
+                  "name": "step_b",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "refuses": {
+                "status": 400,
+                "message": "the request was refused",
+                "context_overflow": true
+              }
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "shot",
+            "description": "The shot tool",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns_parts": [
+              {
+                "text": "p 001\np 002\np 003\np 004\np 005\np 006\np 007\np 008\np 009\np 010\np 011\np 012\np 013\np 014\np 015\np 016\np 017\np 018\np 019\np 020\np 021\np 022\np 023\np 024\np 025\np 026\np 027\np 028\np 029\np 030\np 031\np 032\np 033\np 034\np 035\np 036\np 037\np 038\np 039\np 040\np 041\np 042\np 043\np 044\np 045\np 046\np 047\np 048\np 049\np 050\np 051\np 052\np 053\np 054\np 055\np 056\np 057\np 058\np 059\np 060\np 061\np 062\np 063\np 064\np 065\np 066\np 067\np 068\np 069\np 070\np 071\np 072\np 073\np 074\np 075\np 076\np 077\np 078\np 079\np 080\np 081\np 082\np 083\np 084\np 085\np 086\np 087\np 088\np 089\np 090\np 091\np 092\np 093\np 094\np 095\np 096\np 097\np 098\np 099\np 100\np 101\np 102\np 103\np 104\np 105\np 106\np 107\np 108\np 109\np 110\np 111\np 112\np 113\np 114\np 115\np 116\np 117\np 118\np 119\np 120\np 121\np 122\np 123\np 124\np 125\np 126\np 127\np 128\np 129\np 130\np 131\np 132\np 133\np 134\np 135\np 136\np 137\np 138\np 139\np 140\np 141\np 142\np 143\np 144\np 145\np 146\np 147\np 148\np 149\np 150\np 151\np 152\np 153\np 154\np 155\np 156\np 157\np 158\np 159\np 160\np 161\np 162\np 163\np 164\np 165\np 166\np 167\np 168\np 169\np 170\np 171\np 172\np 173\np 174\np 175\np 176\np 177\np 178\np 179\np 180\np 181\np 182\np 183\np 184\np 185\np 186\np 187\np 188\np 189\np 190\np 191\np 192\np 193\np 194\np 195\np 196\np 197\np 198\np 199\np 200"
+              },
+              {
+                "image": "https://example.com/a.png",
+                "mime_type": "image/png"
+              },
+              {
+                "text": "p 201\np 202\np 203\np 204\np 205\np 206\np 207\np 208\np 209\np 210\np 211\np 212\np 213\np 214\np 215\np 216\np 217\np 218\np 219\np 220\np 221\np 222\np 223\np 224\np 225\np 226\np 227\np 228\np 229\np 230\np 231\np 232\np 233\np 234\np 235\np 236\np 237\np 238\np 239\np 240\np 241\np 242\np 243\np 244\np 245\np 246\np 247\np 248\np 249\np 250\np 251\np 252\np 253\np 254\np 255\np 256\np 257\np 258\np 259\np 260\np 261\np 262\np 263\np 264\np 265\np 266\np 267\np 268\np 269\np 270\np 271\np 272\np 273\np 274\np 275\np 276\np 277\np 278\np 279\np 280\np 281\np 282\np 283\np 284\np 285\np 286\np 287\np 288\np 289\np 290\np 291\np 292\np 293\np 294\np 295\np 296\np 297\np 298\np 299\np 300\np 301\np 302\np 303\np 304\np 305\np 306\np 307\np 308\np 309\np 310\np 311\np 312\np 313\np 314\np 315\np 316\np 317\np 318\np 319\np 320\np 321\np 322\np 323\np 324\np 325\np 326\np 327\np 328\np 329\np 330\np 331\np 332\np 333\np 334\np 335\np 336\np 337\np 338\np 339\np 340\np 341\np 342\np 343\np 344\np 345\np 346\np 347\np 348\np 349\np 350\np 351\np 352\np 353\np 354\np 355\np 356\np 357\np 358\np 359\np 360\np 361\np 362\np 363\np 364\np 365\np 366\np 367\np 368\np 369\np 370\np 371\np 372\np 373\np 374\np 375\np 376\np 377\np 378\np 379\np 380\np 381\np 382\np 383\np 384\np 385\np 386\np 387\np 388\np 389\np 390\np 391\np 392\np 393\np 394\np 395\np 396\np 397\np 398\np 399\np 400"
+              }
+            ]
+          },
+          {
+            "name": "step_a",
+            "description": "The step_a tool",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "ok a"
+          },
+          {
+            "name": "step_b",
+            "description": "The step_b tool",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "ok b"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "q1"
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "name": "shot",
+              "content": [
+                {
+                  "text": "p 001\np 002\np 003\np 004\np 005\np 006\np 007\np 008\np 009\np 010\np 011\np 012\np 013\np 014\np 015\np 016\np 017\np 018\np 019\np 020\np 021\np 022\np 023\np 024\np 025\np 026\np 027\np 028\np 029\np 030\np 031\np 032\np 033\np 034\np 035\np 036\np 037\np 038\np 039\np 040\np 041\np 042\np 043\np 044\np 045\np 046\np 047\np 048\np 049\np 050\np 051\np 052\np 053\np 054\np 055\np 056\np 057\np 058\np 059\np 060\np 061\np 062\np 063\np 064\np 065\np 066\np 067\np 068\np 069\np 070\np 071\np 072\np 073\np 074\np 075\np 076\np 077\np 078\np 079\np 080\np 081\np 082\np 083\np 084\np 085\np 086\np 087\np 088\np 089\np 090\np 091\np 092\np 093\np 094\np 095\np 096\np 097\np 098\np 099\np 100\np 101\np 102\np 103\np 104\np 105\np 106\np 107\np 108\np 109\np 110\np 111\np 112\np 113\np 114\np 115\np 116\np 117\np 118\np 119\np 120\np 121\np 122\np 123\np 124\np 125\np 126\np 127\np 128\np 129\np 130\np 131\np 132\np 133\np 134\np 135\np 136\np 137\np 138\np 139\np 140\np 141\np 142\np 143\np 144\np 145\np 146\np 147\np 148\np 149\np 150\np 151\np 152\np 153\np 154\np 155\np 156\np 157\np 158\np 159\np 160\np 161\np 162\np 163\np 164\np 165\np 166\np 167\np 168\np 169\np 170\np 171\np 172\np 173\np 174\np 175\np 176\np 177\np 178\np 179\np 180\np 181\np 182\np 183\np 184\np 185\np 186\np 187\np 188\np 189\np 190\np 191\np 192\np 193\np 194\np 195\np 196\np 197\np 198\np 199\np 200"
+                },
+                {
+                  "image": "https://example.com/a.png",
+                  "mime_type": "image/png"
+                },
+                {
+                  "text": "p 201\np 202\np 203\np 204\np 205\np 206\np 207\np 208\np 209\np 210\np 211\np 212\np 213\np 214\np 215\np 216\np 217\np 218\np 219\np 220\np 221\np 222\np 223\np 224\np 225\np 226\np 227\np 228\np 229\np 230\np 231\np 232\np 233\np 234\np 235\np 236\np 237\np 238\np 239\np 240\np 241\np 242\np 243\np 244\np 245\np 246\np 247\np 248\np 249\np 250\np 251\np 252\np 253\np 254\np 255\np 256\np 257\np 258\np 259\np 260\np 261\np 262\np 263\np 264\np 265\np 266\np 267\np 268\np 269\np 270\np 271\np 272\np 273\np 274\np 275\np 276\np 277\np 278\np 279\np 280\np 281\np 282\np 283\np 284\np 285\np 286\np 287\np 288\np 289\np 290\np 291\np 292\np 293\np 294\np 295\np 296\np 297\np 298\np 299\np 300\np 301\np 302\np 303\np 304\np 305\np 306\np 307\np 308\np 309\np 310\np 311\np 312\np 313\np 314\np 315\np 316\np 317\np 318\np 319\np 320\np 321\np 322\np 323\np 324\np 325\np 326\np 327\np 328\np 329\np 330\np 331\np 332\np 333\np 334\np 335\np 336\np 337\np 338\np 339\np 340\np 341\np 342\np 343\np 344\np 345\np 346\np 347\np 348\np 349\np 350\np 351\np 352\np 353\np 354\np 355\np 356\np 357\np 358\np 359\np 360\np 361\np 362\np 363\np 364\np 365\np 366\np 367\np 368\np 369\np 370\np 371\np 372\np 373\np 374\np 375\np 376\np 377\np 378\np 379\np 380\np 381\np 382\np 383\np 384\np 385\np 386\np 387\np 388\np 389\np 390\np 391\np 392\np 393\np 394\np 395\np 396\np 397\np 398\np 399\np 400"
+                }
+              ],
+              "is_error": false
+            },
+            {},
+            {}
+          ]
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "name": "shot",
+              "content": [
+                {
+                  "text": "Result too large (600 tokens). Full output saved as 'evicted_c1'. Use read_stored_result to read it with pagination.\n\nPreview:\np 001\np 002\np 003\np 004\np 005\n\n[... 390 lines omitted ...]\n\np 396\np 397\np 398\np 399\np 400"
+                },
+                {
+                  "image": "https://example.com/a.png",
+                  "mime_type": "image/png"
+                }
+              ],
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c2",
+              "name": "step_a",
+              "content": "ok a",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c3",
+              "name": "step_b",
+              "content": "ok b",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

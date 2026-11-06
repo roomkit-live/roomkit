@@ -1,0 +1,261 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-compaction-keeps-a-skill-s-instructions-and-a-page-read-back-whole",
+  "title": "A compaction that stores the older rounds' long results keeps a skill's instructions and a page read_stored_result read back whole however long, and leaves a result already stored at its call as its placeholder",
+  "rules": [
+    "§6.4",
+    "§21.5",
+    "§24.4"
+  ],
+  "notes": "Python: tests/test_channels/test_compaction_keeps_input.py::test_a_skill_body_and_a_page_read_back_stay_whole (channels/_compaction.py _stored: kept_whole, REREAD_TOOL, is_eviction_placeholder). Eleven messages, the input at 0: the half (5) is the third round's call, so the first two rounds are shortened. At the threshold 1500, dump's result (6999 characters) is stored at its call; the page read back (3135 characters), the skill's instructions (2099) and lookup's result (2399) are not. At compaction only lookup's is stored, with a 1000-character preview.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "dump",
+                  "arguments": {}
+                },
+                {
+                  "id": "s1",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "long"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "r1",
+                  "name": "read_stored_result",
+                  "arguments": {
+                    "result_id": "evicted_c1"
+                  }
+                },
+                {
+                  "id": "c2",
+                  "name": "lookup",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c3",
+                  "name": "step_a",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c4",
+                  "name": "step_b",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c5",
+                  "name": "step_c",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "refuses": {
+                "status": 400,
+                "message": "the request was refused",
+                "context_overflow": true
+              }
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "dump",
+            "description": "The dump tool",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "d 0001\nd 0002\nd 0003\nd 0004\nd 0005\nd 0006\nd 0007\nd 0008\nd 0009\nd 0010\nd 0011\nd 0012\nd 0013\nd 0014\nd 0015\nd 0016\nd 0017\nd 0018\nd 0019\nd 0020\nd 0021\nd 0022\nd 0023\nd 0024\nd 0025\nd 0026\nd 0027\nd 0028\nd 0029\nd 0030\nd 0031\nd 0032\nd 0033\nd 0034\nd 0035\nd 0036\nd 0037\nd 0038\nd 0039\nd 0040\nd 0041\nd 0042\nd 0043\nd 0044\nd 0045\nd 0046\nd 0047\nd 0048\nd 0049\nd 0050\nd 0051\nd 0052\nd 0053\nd 0054\nd 0055\nd 0056\nd 0057\nd 0058\nd 0059\nd 0060\nd 0061\nd 0062\nd 0063\nd 0064\nd 0065\nd 0066\nd 0067\nd 0068\nd 0069\nd 0070\nd 0071\nd 0072\nd 0073\nd 0074\nd 0075\nd 0076\nd 0077\nd 0078\nd 0079\nd 0080\nd 0081\nd 0082\nd 0083\nd 0084\nd 0085\nd 0086\nd 0087\nd 0088\nd 0089\nd 0090\nd 0091\nd 0092\nd 0093\nd 0094\nd 0095\nd 0096\nd 0097\nd 0098\nd 0099\nd 0100\nd 0101\nd 0102\nd 0103\nd 0104\nd 0105\nd 0106\nd 0107\nd 0108\nd 0109\nd 0110\nd 0111\nd 0112\nd 0113\nd 0114\nd 0115\nd 0116\nd 0117\nd 0118\nd 0119\nd 0120\nd 0121\nd 0122\nd 0123\nd 0124\nd 0125\nd 0126\nd 0127\nd 0128\nd 0129\nd 0130\nd 0131\nd 0132\nd 0133\nd 0134\nd 0135\nd 0136\nd 0137\nd 0138\nd 0139\nd 0140\nd 0141\nd 0142\nd 0143\nd 0144\nd 0145\nd 0146\nd 0147\nd 0148\nd 0149\nd 0150\nd 0151\nd 0152\nd 0153\nd 0154\nd 0155\nd 0156\nd 0157\nd 0158\nd 0159\nd 0160\nd 0161\nd 0162\nd 0163\nd 0164\nd 0165\nd 0166\nd 0167\nd 0168\nd 0169\nd 0170\nd 0171\nd 0172\nd 0173\nd 0174\nd 0175\nd 0176\nd 0177\nd 0178\nd 0179\nd 0180\nd 0181\nd 0182\nd 0183\nd 0184\nd 0185\nd 0186\nd 0187\nd 0188\nd 0189\nd 0190\nd 0191\nd 0192\nd 0193\nd 0194\nd 0195\nd 0196\nd 0197\nd 0198\nd 0199\nd 0200\nd 0201\nd 0202\nd 0203\nd 0204\nd 0205\nd 0206\nd 0207\nd 0208\nd 0209\nd 0210\nd 0211\nd 0212\nd 0213\nd 0214\nd 0215\nd 0216\nd 0217\nd 0218\nd 0219\nd 0220\nd 0221\nd 0222\nd 0223\nd 0224\nd 0225\nd 0226\nd 0227\nd 0228\nd 0229\nd 0230\nd 0231\nd 0232\nd 0233\nd 0234\nd 0235\nd 0236\nd 0237\nd 0238\nd 0239\nd 0240\nd 0241\nd 0242\nd 0243\nd 0244\nd 0245\nd 0246\nd 0247\nd 0248\nd 0249\nd 0250\nd 0251\nd 0252\nd 0253\nd 0254\nd 0255\nd 0256\nd 0257\nd 0258\nd 0259\nd 0260\nd 0261\nd 0262\nd 0263\nd 0264\nd 0265\nd 0266\nd 0267\nd 0268\nd 0269\nd 0270\nd 0271\nd 0272\nd 0273\nd 0274\nd 0275\nd 0276\nd 0277\nd 0278\nd 0279\nd 0280\nd 0281\nd 0282\nd 0283\nd 0284\nd 0285\nd 0286\nd 0287\nd 0288\nd 0289\nd 0290\nd 0291\nd 0292\nd 0293\nd 0294\nd 0295\nd 0296\nd 0297\nd 0298\nd 0299\nd 0300\nd 0301\nd 0302\nd 0303\nd 0304\nd 0305\nd 0306\nd 0307\nd 0308\nd 0309\nd 0310\nd 0311\nd 0312\nd 0313\nd 0314\nd 0315\nd 0316\nd 0317\nd 0318\nd 0319\nd 0320\nd 0321\nd 0322\nd 0323\nd 0324\nd 0325\nd 0326\nd 0327\nd 0328\nd 0329\nd 0330\nd 0331\nd 0332\nd 0333\nd 0334\nd 0335\nd 0336\nd 0337\nd 0338\nd 0339\nd 0340\nd 0341\nd 0342\nd 0343\nd 0344\nd 0345\nd 0346\nd 0347\nd 0348\nd 0349\nd 0350\nd 0351\nd 0352\nd 0353\nd 0354\nd 0355\nd 0356\nd 0357\nd 0358\nd 0359\nd 0360\nd 0361\nd 0362\nd 0363\nd 0364\nd 0365\nd 0366\nd 0367\nd 0368\nd 0369\nd 0370\nd 0371\nd 0372\nd 0373\nd 0374\nd 0375\nd 0376\nd 0377\nd 0378\nd 0379\nd 0380\nd 0381\nd 0382\nd 0383\nd 0384\nd 0385\nd 0386\nd 0387\nd 0388\nd 0389\nd 0390\nd 0391\nd 0392\nd 0393\nd 0394\nd 0395\nd 0396\nd 0397\nd 0398\nd 0399\nd 0400\nd 0401\nd 0402\nd 0403\nd 0404\nd 0405\nd 0406\nd 0407\nd 0408\nd 0409\nd 0410\nd 0411\nd 0412\nd 0413\nd 0414\nd 0415\nd 0416\nd 0417\nd 0418\nd 0419\nd 0420\nd 0421\nd 0422\nd 0423\nd 0424\nd 0425\nd 0426\nd 0427\nd 0428\nd 0429\nd 0430\nd 0431\nd 0432\nd 0433\nd 0434\nd 0435\nd 0436\nd 0437\nd 0438\nd 0439\nd 0440\nd 0441\nd 0442\nd 0443\nd 0444\nd 0445\nd 0446\nd 0447\nd 0448\nd 0449\nd 0450\nd 0451\nd 0452\nd 0453\nd 0454\nd 0455\nd 0456\nd 0457\nd 0458\nd 0459\nd 0460\nd 0461\nd 0462\nd 0463\nd 0464\nd 0465\nd 0466\nd 0467\nd 0468\nd 0469\nd 0470\nd 0471\nd 0472\nd 0473\nd 0474\nd 0475\nd 0476\nd 0477\nd 0478\nd 0479\nd 0480\nd 0481\nd 0482\nd 0483\nd 0484\nd 0485\nd 0486\nd 0487\nd 0488\nd 0489\nd 0490\nd 0491\nd 0492\nd 0493\nd 0494\nd 0495\nd 0496\nd 0497\nd 0498\nd 0499\nd 0500\nd 0501\nd 0502\nd 0503\nd 0504\nd 0505\nd 0506\nd 0507\nd 0508\nd 0509\nd 0510\nd 0511\nd 0512\nd 0513\nd 0514\nd 0515\nd 0516\nd 0517\nd 0518\nd 0519\nd 0520\nd 0521\nd 0522\nd 0523\nd 0524\nd 0525\nd 0526\nd 0527\nd 0528\nd 0529\nd 0530\nd 0531\nd 0532\nd 0533\nd 0534\nd 0535\nd 0536\nd 0537\nd 0538\nd 0539\nd 0540\nd 0541\nd 0542\nd 0543\nd 0544\nd 0545\nd 0546\nd 0547\nd 0548\nd 0549\nd 0550\nd 0551\nd 0552\nd 0553\nd 0554\nd 0555\nd 0556\nd 0557\nd 0558\nd 0559\nd 0560\nd 0561\nd 0562\nd 0563\nd 0564\nd 0565\nd 0566\nd 0567\nd 0568\nd 0569\nd 0570\nd 0571\nd 0572\nd 0573\nd 0574\nd 0575\nd 0576\nd 0577\nd 0578\nd 0579\nd 0580\nd 0581\nd 0582\nd 0583\nd 0584\nd 0585\nd 0586\nd 0587\nd 0588\nd 0589\nd 0590\nd 0591\nd 0592\nd 0593\nd 0594\nd 0595\nd 0596\nd 0597\nd 0598\nd 0599\nd 0600\nd 0601\nd 0602\nd 0603\nd 0604\nd 0605\nd 0606\nd 0607\nd 0608\nd 0609\nd 0610\nd 0611\nd 0612\nd 0613\nd 0614\nd 0615\nd 0616\nd 0617\nd 0618\nd 0619\nd 0620\nd 0621\nd 0622\nd 0623\nd 0624\nd 0625\nd 0626\nd 0627\nd 0628\nd 0629\nd 0630\nd 0631\nd 0632\nd 0633\nd 0634\nd 0635\nd 0636\nd 0637\nd 0638\nd 0639\nd 0640\nd 0641\nd 0642\nd 0643\nd 0644\nd 0645\nd 0646\nd 0647\nd 0648\nd 0649\nd 0650\nd 0651\nd 0652\nd 0653\nd 0654\nd 0655\nd 0656\nd 0657\nd 0658\nd 0659\nd 0660\nd 0661\nd 0662\nd 0663\nd 0664\nd 0665\nd 0666\nd 0667\nd 0668\nd 0669\nd 0670\nd 0671\nd 0672\nd 0673\nd 0674\nd 0675\nd 0676\nd 0677\nd 0678\nd 0679\nd 0680\nd 0681\nd 0682\nd 0683\nd 0684\nd 0685\nd 0686\nd 0687\nd 0688\nd 0689\nd 0690\nd 0691\nd 0692\nd 0693\nd 0694\nd 0695\nd 0696\nd 0697\nd 0698\nd 0699\nd 0700\nd 0701\nd 0702\nd 0703\nd 0704\nd 0705\nd 0706\nd 0707\nd 0708\nd 0709\nd 0710\nd 0711\nd 0712\nd 0713\nd 0714\nd 0715\nd 0716\nd 0717\nd 0718\nd 0719\nd 0720\nd 0721\nd 0722\nd 0723\nd 0724\nd 0725\nd 0726\nd 0727\nd 0728\nd 0729\nd 0730\nd 0731\nd 0732\nd 0733\nd 0734\nd 0735\nd 0736\nd 0737\nd 0738\nd 0739\nd 0740\nd 0741\nd 0742\nd 0743\nd 0744\nd 0745\nd 0746\nd 0747\nd 0748\nd 0749\nd 0750\nd 0751\nd 0752\nd 0753\nd 0754\nd 0755\nd 0756\nd 0757\nd 0758\nd 0759\nd 0760\nd 0761\nd 0762\nd 0763\nd 0764\nd 0765\nd 0766\nd 0767\nd 0768\nd 0769\nd 0770\nd 0771\nd 0772\nd 0773\nd 0774\nd 0775\nd 0776\nd 0777\nd 0778\nd 0779\nd 0780\nd 0781\nd 0782\nd 0783\nd 0784\nd 0785\nd 0786\nd 0787\nd 0788\nd 0789\nd 0790\nd 0791\nd 0792\nd 0793\nd 0794\nd 0795\nd 0796\nd 0797\nd 0798\nd 0799\nd 0800\nd 0801\nd 0802\nd 0803\nd 0804\nd 0805\nd 0806\nd 0807\nd 0808\nd 0809\nd 0810\nd 0811\nd 0812\nd 0813\nd 0814\nd 0815\nd 0816\nd 0817\nd 0818\nd 0819\nd 0820\nd 0821\nd 0822\nd 0823\nd 0824\nd 0825\nd 0826\nd 0827\nd 0828\nd 0829\nd 0830\nd 0831\nd 0832\nd 0833\nd 0834\nd 0835\nd 0836\nd 0837\nd 0838\nd 0839\nd 0840\nd 0841\nd 0842\nd 0843\nd 0844\nd 0845\nd 0846\nd 0847\nd 0848\nd 0849\nd 0850\nd 0851\nd 0852\nd 0853\nd 0854\nd 0855\nd 0856\nd 0857\nd 0858\nd 0859\nd 0860\nd 0861\nd 0862\nd 0863\nd 0864\nd 0865\nd 0866\nd 0867\nd 0868\nd 0869\nd 0870\nd 0871\nd 0872\nd 0873\nd 0874\nd 0875\nd 0876\nd 0877\nd 0878\nd 0879\nd 0880\nd 0881\nd 0882\nd 0883\nd 0884\nd 0885\nd 0886\nd 0887\nd 0888\nd 0889\nd 0890\nd 0891\nd 0892\nd 0893\nd 0894\nd 0895\nd 0896\nd 0897\nd 0898\nd 0899\nd 0900\nd 0901\nd 0902\nd 0903\nd 0904\nd 0905\nd 0906\nd 0907\nd 0908\nd 0909\nd 0910\nd 0911\nd 0912\nd 0913\nd 0914\nd 0915\nd 0916\nd 0917\nd 0918\nd 0919\nd 0920\nd 0921\nd 0922\nd 0923\nd 0924\nd 0925\nd 0926\nd 0927\nd 0928\nd 0929\nd 0930\nd 0931\nd 0932\nd 0933\nd 0934\nd 0935\nd 0936\nd 0937\nd 0938\nd 0939\nd 0940\nd 0941\nd 0942\nd 0943\nd 0944\nd 0945\nd 0946\nd 0947\nd 0948\nd 0949\nd 0950\nd 0951\nd 0952\nd 0953\nd 0954\nd 0955\nd 0956\nd 0957\nd 0958\nd 0959\nd 0960\nd 0961\nd 0962\nd 0963\nd 0964\nd 0965\nd 0966\nd 0967\nd 0968\nd 0969\nd 0970\nd 0971\nd 0972\nd 0973\nd 0974\nd 0975\nd 0976\nd 0977\nd 0978\nd 0979\nd 0980\nd 0981\nd 0982\nd 0983\nd 0984\nd 0985\nd 0986\nd 0987\nd 0988\nd 0989\nd 0990\nd 0991\nd 0992\nd 0993\nd 0994\nd 0995\nd 0996\nd 0997\nd 0998\nd 0999\nd 1000"
+          },
+          {
+            "name": "lookup",
+            "description": "The lookup tool",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "l 001\nl 002\nl 003\nl 004\nl 005\nl 006\nl 007\nl 008\nl 009\nl 010\nl 011\nl 012\nl 013\nl 014\nl 015\nl 016\nl 017\nl 018\nl 019\nl 020\nl 021\nl 022\nl 023\nl 024\nl 025\nl 026\nl 027\nl 028\nl 029\nl 030\nl 031\nl 032\nl 033\nl 034\nl 035\nl 036\nl 037\nl 038\nl 039\nl 040\nl 041\nl 042\nl 043\nl 044\nl 045\nl 046\nl 047\nl 048\nl 049\nl 050\nl 051\nl 052\nl 053\nl 054\nl 055\nl 056\nl 057\nl 058\nl 059\nl 060\nl 061\nl 062\nl 063\nl 064\nl 065\nl 066\nl 067\nl 068\nl 069\nl 070\nl 071\nl 072\nl 073\nl 074\nl 075\nl 076\nl 077\nl 078\nl 079\nl 080\nl 081\nl 082\nl 083\nl 084\nl 085\nl 086\nl 087\nl 088\nl 089\nl 090\nl 091\nl 092\nl 093\nl 094\nl 095\nl 096\nl 097\nl 098\nl 099\nl 100\nl 101\nl 102\nl 103\nl 104\nl 105\nl 106\nl 107\nl 108\nl 109\nl 110\nl 111\nl 112\nl 113\nl 114\nl 115\nl 116\nl 117\nl 118\nl 119\nl 120\nl 121\nl 122\nl 123\nl 124\nl 125\nl 126\nl 127\nl 128\nl 129\nl 130\nl 131\nl 132\nl 133\nl 134\nl 135\nl 136\nl 137\nl 138\nl 139\nl 140\nl 141\nl 142\nl 143\nl 144\nl 145\nl 146\nl 147\nl 148\nl 149\nl 150\nl 151\nl 152\nl 153\nl 154\nl 155\nl 156\nl 157\nl 158\nl 159\nl 160\nl 161\nl 162\nl 163\nl 164\nl 165\nl 166\nl 167\nl 168\nl 169\nl 170\nl 171\nl 172\nl 173\nl 174\nl 175\nl 176\nl 177\nl 178\nl 179\nl 180\nl 181\nl 182\nl 183\nl 184\nl 185\nl 186\nl 187\nl 188\nl 189\nl 190\nl 191\nl 192\nl 193\nl 194\nl 195\nl 196\nl 197\nl 198\nl 199\nl 200\nl 201\nl 202\nl 203\nl 204\nl 205\nl 206\nl 207\nl 208\nl 209\nl 210\nl 211\nl 212\nl 213\nl 214\nl 215\nl 216\nl 217\nl 218\nl 219\nl 220\nl 221\nl 222\nl 223\nl 224\nl 225\nl 226\nl 227\nl 228\nl 229\nl 230\nl 231\nl 232\nl 233\nl 234\nl 235\nl 236\nl 237\nl 238\nl 239\nl 240\nl 241\nl 242\nl 243\nl 244\nl 245\nl 246\nl 247\nl 248\nl 249\nl 250\nl 251\nl 252\nl 253\nl 254\nl 255\nl 256\nl 257\nl 258\nl 259\nl 260\nl 261\nl 262\nl 263\nl 264\nl 265\nl 266\nl 267\nl 268\nl 269\nl 270\nl 271\nl 272\nl 273\nl 274\nl 275\nl 276\nl 277\nl 278\nl 279\nl 280\nl 281\nl 282\nl 283\nl 284\nl 285\nl 286\nl 287\nl 288\nl 289\nl 290\nl 291\nl 292\nl 293\nl 294\nl 295\nl 296\nl 297\nl 298\nl 299\nl 300\nl 301\nl 302\nl 303\nl 304\nl 305\nl 306\nl 307\nl 308\nl 309\nl 310\nl 311\nl 312\nl 313\nl 314\nl 315\nl 316\nl 317\nl 318\nl 319\nl 320\nl 321\nl 322\nl 323\nl 324\nl 325\nl 326\nl 327\nl 328\nl 329\nl 330\nl 331\nl 332\nl 333\nl 334\nl 335\nl 336\nl 337\nl 338\nl 339\nl 340\nl 341\nl 342\nl 343\nl 344\nl 345\nl 346\nl 347\nl 348\nl 349\nl 350\nl 351\nl 352\nl 353\nl 354\nl 355\nl 356\nl 357\nl 358\nl 359\nl 360\nl 361\nl 362\nl 363\nl 364\nl 365\nl 366\nl 367\nl 368\nl 369\nl 370\nl 371\nl 372\nl 373\nl 374\nl 375\nl 376\nl 377\nl 378\nl 379\nl 380\nl 381\nl 382\nl 383\nl 384\nl 385\nl 386\nl 387\nl 388\nl 389\nl 390\nl 391\nl 392\nl 393\nl 394\nl 395\nl 396\nl 397\nl 398\nl 399\nl 400"
+          },
+          {
+            "name": "step_a",
+            "description": "The step_a tool",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "ok a"
+          },
+          {
+            "name": "step_b",
+            "description": "The step_b tool",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "ok b"
+          },
+          {
+            "name": "step_c",
+            "description": "The step_c tool",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "ok c"
+          }
+        ],
+        "evict_threshold_tokens": 1500,
+        "skills": [
+          {
+            "name": "long",
+            "description": "A long procedure",
+            "instructions": "Rule 001: follow it.\nRule 002: follow it.\nRule 003: follow it.\nRule 004: follow it.\nRule 005: follow it.\nRule 006: follow it.\nRule 007: follow it.\nRule 008: follow it.\nRule 009: follow it.\nRule 010: follow it.\nRule 011: follow it.\nRule 012: follow it.\nRule 013: follow it.\nRule 014: follow it.\nRule 015: follow it.\nRule 016: follow it.\nRule 017: follow it.\nRule 018: follow it.\nRule 019: follow it.\nRule 020: follow it.\nRule 021: follow it.\nRule 022: follow it.\nRule 023: follow it.\nRule 024: follow it.\nRule 025: follow it.\nRule 026: follow it.\nRule 027: follow it.\nRule 028: follow it.\nRule 029: follow it.\nRule 030: follow it.\nRule 031: follow it.\nRule 032: follow it.\nRule 033: follow it.\nRule 034: follow it.\nRule 035: follow it.\nRule 036: follow it.\nRule 037: follow it.\nRule 038: follow it.\nRule 039: follow it.\nRule 040: follow it.\nRule 041: follow it.\nRule 042: follow it.\nRule 043: follow it.\nRule 044: follow it.\nRule 045: follow it.\nRule 046: follow it.\nRule 047: follow it.\nRule 048: follow it.\nRule 049: follow it.\nRule 050: follow it.\nRule 051: follow it.\nRule 052: follow it.\nRule 053: follow it.\nRule 054: follow it.\nRule 055: follow it.\nRule 056: follow it.\nRule 057: follow it.\nRule 058: follow it.\nRule 059: follow it.\nRule 060: follow it.\nRule 061: follow it.\nRule 062: follow it.\nRule 063: follow it.\nRule 064: follow it.\nRule 065: follow it.\nRule 066: follow it.\nRule 067: follow it.\nRule 068: follow it.\nRule 069: follow it.\nRule 070: follow it.\nRule 071: follow it.\nRule 072: follow it.\nRule 073: follow it.\nRule 074: follow it.\nRule 075: follow it.\nRule 076: follow it.\nRule 077: follow it.\nRule 078: follow it.\nRule 079: follow it.\nRule 080: follow it.\nRule 081: follow it.\nRule 082: follow it.\nRule 083: follow it.\nRule 084: follow it.\nRule 085: follow it.\nRule 086: follow it.\nRule 087: follow it.\nRule 088: follow it.\nRule 089: follow it.\nRule 090: follow it.\nRule 091: follow it.\nRule 092: follow it.\nRule 093: follow it.\nRule 094: follow it.\nRule 095: follow it.\nRule 096: follow it.\nRule 097: follow it.\nRule 098: follow it.\nRule 099: follow it.\nRule 100: follow it."
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "q1"
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "name": "dump",
+              "content": "Result too large (1750 tokens). Full output saved as 'evicted_c1'. Use read_stored_result to read it with pagination.\n\nPreview:\nd 0001\nd 0002\nd 0003\nd 0004\nd 0005\n\n[... 990 lines omitted ...]\n\nd 0996\nd 0997\nd 0998\nd 0999\nd 1000",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "s1",
+              "name": "activate_skill",
+              "content": {
+                "$contains": "Rule 050: follow it."
+              },
+              "is_error": false
+            },
+            {
+              "tool_call_id": "r1",
+              "name": "read_stored_result",
+              "content": "{\"content\": \"d 0001\\nd 0002\\nd 0003\\nd 0004\\nd 0005\\nd 0006\\nd 0007\\nd 0008\\nd 0009\\nd 0010\\nd 0011\\nd 0012\\nd 0013\\nd 0014\\nd 0015\\nd 0016\\nd 0017\\nd 0018\\nd 0019\\nd 0020\\nd 0021\\nd 0022\\nd 0023\\nd 0024\\nd 0025\\nd 0026\\nd 0027\\nd 0028\\nd 0029\\nd 0030\\nd 0031\\nd 0032\\nd 0033\\nd 0034\\nd 0035\\nd 0036\\nd 0037\\nd 0038\\nd 0039\\nd 0040\\nd 0041\\nd 0042\\nd 0043\\nd 0044\\nd 0045\\nd 0046\\nd 0047\\nd 0048\\nd 0049\\nd 0050\\nd 0051\\nd 0052\\nd 0053\\nd 0054\\nd 0055\\nd 0056\\nd 0057\\nd 0058\\nd 0059\\nd 0060\\nd 0061\\nd 0062\\nd 0063\\nd 0064\\nd 0065\\nd 0066\\nd 0067\\nd 0068\\nd 0069\\nd 0070\\nd 0071\\nd 0072\\nd 0073\\nd 0074\\nd 0075\\nd 0076\\nd 0077\\nd 0078\\nd 0079\\nd 0080\\nd 0081\\nd 0082\\nd 0083\\nd 0084\\nd 0085\\nd 0086\\nd 0087\\nd 0088\\nd 0089\\nd 0090\\nd 0091\\nd 0092\\nd 0093\\nd 0094\\nd 0095\\nd 0096\\nd 0097\\nd 0098\\nd 0099\\nd 0100\\nd 0101\\nd 0102\\nd 0103\\nd 0104\\nd 0105\\nd 0106\\nd 0107\\nd 0108\\nd 0109\\nd 0110\\nd 0111\\nd 0112\\nd 0113\\nd 0114\\nd 0115\\nd 0116\\nd 0117\\nd 0118\\nd 0119\\nd 0120\\nd 0121\\nd 0122\\nd 0123\\nd 0124\\nd 0125\\nd 0126\\nd 0127\\nd 0128\\nd 0129\\nd 0130\\nd 0131\\nd 0132\\nd 0133\\nd 0134\\nd 0135\\nd 0136\\nd 0137\\nd 0138\\nd 0139\\nd 0140\\nd 0141\\nd 0142\\nd 0143\\nd 0144\\nd 0145\\nd 0146\\nd 0147\\nd 0148\\nd 0149\\nd 0150\\nd 0151\\nd 0152\\nd 0153\\nd 0154\\nd 0155\\nd 0156\\nd 0157\\nd 0158\\nd 0159\\nd 0160\\nd 0161\\nd 0162\\nd 0163\\nd 0164\\nd 0165\\nd 0166\\nd 0167\\nd 0168\\nd 0169\\nd 0170\\nd 0171\\nd 0172\\nd 0173\\nd 0174\\nd 0175\\nd 0176\\nd 0177\\nd 0178\\nd 0179\\nd 0180\\nd 0181\\nd 0182\\nd 0183\\nd 0184\\nd 0185\\nd 0186\\nd 0187\\nd 0188\\nd 0189\\nd 0190\\nd 0191\\nd 0192\\nd 0193\\nd 0194\\nd 0195\\nd 0196\\nd 0197\\nd 0198\\nd 0199\\nd 0200\\nd 0201\\nd 0202\\nd 0203\\nd 0204\\nd 0205\\nd 0206\\nd 0207\\nd 0208\\nd 0209\\nd 0210\\nd 0211\\nd 0212\\nd 0213\\nd 0214\\nd 0215\\nd 0216\\nd 0217\\nd 0218\\nd 0219\\nd 0220\\nd 0221\\nd 0222\\nd 0223\\nd 0224\\nd 0225\\nd 0226\\nd 0227\\nd 0228\\nd 0229\\nd 0230\\nd 0231\\nd 0232\\nd 0233\\nd 0234\\nd 0235\\nd 0236\\nd 0237\\nd 0238\\nd 0239\\nd 0240\\nd 0241\\nd 0242\\nd 0243\\nd 0244\\nd 0245\\nd 0246\\nd 0247\\nd 0248\\nd 0249\\nd 0250\\nd 0251\\nd 0252\\nd 0253\\nd 0254\\nd 0255\\nd 0256\\nd 0257\\nd 0258\\nd 0259\\nd 0260\\nd 0261\\nd 0262\\nd 0263\\nd 0264\\nd 0265\\nd 0266\\nd 0267\\nd 0268\\nd 0269\\nd 0270\\nd 0271\\nd 0272\\nd 0273\\nd 0274\\nd 0275\\nd 0276\\nd 0277\\nd 0278\\nd 0279\\nd 0280\\nd 0281\\nd 0282\\nd 0283\\nd 0284\\nd 0285\\nd 0286\\nd 0287\\nd 0288\\nd 0289\\nd 0290\\nd 0291\\nd 0292\\nd 0293\\nd 0294\\nd 0295\\nd 0296\\nd 0297\\nd 0298\\nd 0299\\nd 0300\\nd 0301\\nd 0302\\nd 0303\\nd 0304\\nd 0305\\nd 0306\\nd 0307\\nd 0308\\nd 0309\\nd 0310\\nd 0311\\nd 0312\\nd 0313\\nd 0314\\nd 0315\\nd 0316\\nd 0317\\nd 0318\\nd 0319\\nd 0320\\nd 0321\\nd 0322\\nd 0323\\nd 0324\\nd 0325\\nd 0326\\nd 0327\\nd 0328\\nd 0329\\nd 0330\\nd 0331\\nd 0332\\nd 0333\\nd 0334\\nd 0335\\nd 0336\\nd 0337\\nd 0338\\nd 0339\\nd 0340\\nd 0341\\nd 0342\\nd 0343\\nd 0344\\nd 0345\\nd 0346\\nd 0347\\nd 0348\\nd 0349\\nd 0350\\nd 0351\\nd 0352\\nd 0353\\nd 0354\\nd 0355\", \"offset\": 0, \"lines_returned\": 355, \"total_lines\": 1000, \"has_more\": true, \"next_offset\": 355, \"warning\": \"PARTIAL CONTENT — lines 1-355 of 1000. Never conclude that something is absent or that this is the complete result until you have read EVERY page; continue with offset=355.\"}",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c2",
+              "name": "lookup",
+              "content": "Result too large (600 tokens). Full output saved as 'evicted_c2'. Use read_stored_result to read it with pagination.\n\nPreview:\nl 001\nl 002\nl 003\nl 004\nl 005\n\n[... 390 lines omitted ...]\n\nl 396\nl 397\nl 398\nl 399\nl 400",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c3",
+              "name": "step_a",
+              "content": "ok a",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c4",
+              "name": "step_b",
+              "content": "ok b",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c5",
+              "name": "step_c",
+              "content": "ok c",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
