@@ -99,6 +99,23 @@ async def test_a_cancelled_cascade_reports_its_cleanup_incomplete_while_an_end_i
     await client.close()
 
 
+async def _unending(channel: ScriptedChannel) -> AsyncIterator[Any]:
+    yield "one"
+    await asyncio.Event().wait()
+
+
+def _deaf_to_its_end(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make the executor deaf to a turn's close and cancel, as one stuck in a
+    blocking call: the turn's end never comes."""
+    apply_control = ExecutorTurn._apply_control
+
+    async def deaf(turn: ExecutorTurn, message: Any) -> None:
+        if not isinstance(message, Close | Cancel):
+            await apply_control(turn, message)
+
+    monkeypatch.setattr(ExecutorTurn, "_apply_control", deaf)
+
+
 @pytest.mark.parametrize("stuck", [True, False], ids=["executor stuck", "its executor ends it"])
 async def test_a_cancelled_cascade_waits_for_the_end_of_a_stream_it_never_read(
     stuck: bool, monkeypatch: pytest.MonkeyPatch
@@ -108,20 +125,9 @@ async def test_a_cancelled_cascade_waits_for_the_end_of_a_stream_it_never_read(
     An executor that never reads the close, stuck in a blocking call, leaves
     the cleanup incomplete at the waiter's timeout; one that ends the turn
     lets it return."""
-
-    async def script(channel: ScriptedChannel) -> AsyncIterator[Any]:
-        yield "one"
-        await asyncio.Event().wait()
-
     if stuck:
-        apply_control = ExecutorTurn._apply_control
-
-        async def deaf_to_its_end(turn: ExecutorTurn, message: Any) -> None:
-            if not isinstance(message, Close | Cancel):
-                await apply_control(turn, message)
-
-        monkeypatch.setattr(ExecutorTurn, "_apply_control", deaf_to_its_end)
-    client = _client(ScriptedChannel(script), QUICK)
+        _deaf_to_its_end(monkeypatch)
+    client = _client(ScriptedChannel(_unending), QUICK)
     stream = (await _run(client)).response_stream
     cascade = DeliveryCascade("room", reentry_budget=10)
     cascade.add_streams([_response(stream)])
@@ -131,6 +137,23 @@ async def test_a_cancelled_cascade_waits_for_the_end_of_a_stream_it_never_read(
             await cascade.cancel_and_wait("caller_cancelled", timeout=0.05)
     else:
         await cascade.cancel_and_wait("caller_cancelled", timeout=2.0)
+    await client.close()
+
+
+async def test_a_cancelled_cascade_waits_for_no_stream_it_is_handed_once_cancelled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A stream a delivery set hands the cascade once it is cancelled is
+    dropped unread: the cleanup closes it without waiting for its end (RFC
+    §10.1), so an executor that never ends the turn holds no waiter."""
+    _deaf_to_its_end(monkeypatch)
+    client = _client(ScriptedChannel(_unending), QUICK)
+    stream = (await _run(client)).response_stream
+    cascade = DeliveryCascade("room", reentry_budget=10)
+    cascade.cancel("caller_cancelled")
+    cascade.add_streams([_response(stream)])
+
+    await cascade.cancel_and_wait("caller_cancelled", timeout=0.05)
     await client.close()
 
 
