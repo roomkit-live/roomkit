@@ -115,6 +115,7 @@ if TYPE_CHECKING:
     from roomkit.tools._human_input_channel import ChannelHumanInput
     from roomkit.tools.context import _ToolLoopContext
     from roomkit.tools.policy import ToolPolicy
+    from roomkit.tools.timeout import ToolTimeouts
 
 if TYPE_CHECKING:
     from roomkit.channels._ai_contract import _AIChannelContract
@@ -199,6 +200,7 @@ class AIContextMixin(_AIChannelContract):
     _planner: TaskPlanner | None
     _user_tools: list[AITool]
     _config_provider: ConfigProvider | None
+    _tool_timeouts: ToolTimeouts
     _tool_search: bool | None
     _tool_search_pinned: set[str]
     _tool_search_threshold: int
@@ -243,6 +245,7 @@ class AIContextMixin(_AIChannelContract):
         loop_ctx.turn_budget = self._turn_budget(binding, turn)
         loop_ctx.tool_handler = turn.tool_handler if turn is not None else None
         loop_ctx.skills = self._given_turn_skills(turn)
+        loop_ctx.tool_timeouts = self._given_turn_timeouts(turn)
 
         # A standalone instruction reads nothing of the room (RFC §10.1.1 step
         # 7): no history below, and none of the room's working memories either
@@ -900,6 +903,15 @@ class AIContextMixin(_AIChannelContract):
         if self._config_provider is not None:
             turn = await self._config_provider(binding, context)
         return turn, self._turn_settings(binding, turn)
+
+    def _given_turn_timeouts(self, turn: AIChannelTurnConfig | None) -> ToolTimeouts | None:
+        """The bounds of *turn*'s calls (RFC §21.6): the channel's under the
+        ones its configuration gives, ``None`` when it gives none. A bound
+        that is not positive fails the turn, before its model is asked."""
+        given = turn.tool_timeouts if turn is not None else None
+        if given is None:
+            return None
+        return self._tool_timeouts.overridden(given)
 
     def _given_turn_skills(self, turn: AIChannelTurnConfig | None) -> SkillRegistry | None:
         """The skill registry *turn*'s configuration gives it (RFC §24.3),

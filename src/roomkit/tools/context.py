@@ -46,6 +46,7 @@ if TYPE_CHECKING:
     from roomkit.models.tool_call import DeclaredTool
     from roomkit.providers.ai.base import AIMessage, AITool
     from roomkit.skills.registry import SkillRegistry
+    from roomkit.tools.timeout import ToolTimeouts
 
 
 @dataclass
@@ -148,6 +149,10 @@ class _ToolLoopContext:
     # The config provider's skill registry for this turn (RFC §24.3),
     # inherited like its handler. None reads the channel's.
     skills: SkillRegistry | None = None
+    # The config provider's bounds for this turn's calls (RFC §21.6), the
+    # channel's merged under them, inherited like its handler. None reads the
+    # channel's.
+    tool_timeouts: ToolTimeouts | None = None
     # Names withdrawn for the rest of the turn (``withdraw``).
     # ``all_context_tools`` has already lost them; this keeps the channel's
     # per-round injections (the eviction re-read) from bringing one back.
@@ -388,6 +393,7 @@ class _ToolLoopContext:
             ctx.all_context_tools = parent.all_context_tools
             ctx.tool_handler = parent.tool_handler
             ctx.skills = parent.skills
+            ctx.tool_timeouts = parent.tool_timeouts
             ctx.admits = parent.admits
             ctx.withdrawn_tools = parent.withdrawn_tools
             ctx.unavailable_tools = parent.unavailable_tools

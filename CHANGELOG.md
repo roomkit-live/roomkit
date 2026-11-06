@@ -163,6 +163,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`AIChannelTurnConfig.tool_timeouts` bounds a turn's calls with its tools**
+  (RFC §21.6, RMK-1469). A channel's per-tool bounds are fixed when it is built, yet the
+  tools a turn declares come from its configuration: a tool a person's turn
+  declares that the channel was never built with (their own server's, whose
+  handler keeps a bound of its own) was cut at the channel's default. A turn's
+  configuration now gives the bounds of its calls beside the tools and the
+  handler, above the channel's, for that turn only; a bound that is not
+  positive fails the turn before its model is asked. `ToolTimeouts.overridden`
+  merges a map over a channel's bounds.
+
 - **`RoomKit.input_request` reads a turn's open human-input request**
   (RMK-1467). A door that answers a request (`answer_input`) must tell who it
   was put to, and on an executor of another process the request was the

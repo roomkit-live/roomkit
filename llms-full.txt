@@ -2995,6 +2995,17 @@ with a registry, an empty one will do (`AIChannel(skills=SkillRegistry())`):
 one built without serves no skill tools, and ignores a turn's registry with a
 warning.
 
+Bound the turn's tool calls with the tools they bound by returning
+`tool_timeouts`, a map from a tool's name to its bound in seconds (`None`
+leaves its calls unbounded): it sits above the channel's `tool_timeouts`, a
+name it does not give keeping the channel's bound, then its default (RFC
+§21.6). A tool a turn declares may be one the channel was never built with,
+such as a person's own server, whose handler keeps a bound of its own: the
+channel's map cannot name it, so its bound travels with the tool and its
+handler. The bounds are the turn's alone: the next turn, on any room, reads
+the channel's unless its configuration gives its own. A bound that is not
+positive fails the turn before its model is asked.
+
 ## Streaming
 
 AIChannel supports streaming responses to WebSocket clients:

@@ -11,7 +11,7 @@ per-room operator intent).
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -53,6 +53,14 @@ class AIChannelTurnConfig:
     only on a channel built with a registry (an empty one will do): a
     channel without one serves no skill tools. Like the turn's handler, it
     is never installed on the shared channel or read by another turn."""
+    tool_timeouts: Mapping[str, float | None] | None = None
+    """The bound of a call to each tool named, for this turn (RFC §21.6):
+    above the channel's own per-tool bounds, a name absent keeping the
+    channel's; ``None`` for a name leaves its calls unbounded. The bounds
+    travel with the tools and the handler that serve them, since a tool the
+    turn declares may be one the channel was never built with. A bound that
+    is not positive fails the turn before its model is asked. Never
+    installed on the shared channel or read by another turn."""
 
 
 ConfigProvider = Callable[["ChannelBinding", "RoomContext"], Awaitable[AIChannelTurnConfig | None]]

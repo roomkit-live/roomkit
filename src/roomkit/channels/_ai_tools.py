@@ -1425,11 +1425,11 @@ class AIToolsMixin(_AIChannelContract):
         return as_tool_result(answer)
 
     def _call_timeout(self, name: str, room_id: str | None) -> float | None:
-        """The bound of one call to *name* (RFC §21.6): the channel's, unless
-        the tool keeps a bound of its own."""
-        return self._registry.bound(
-            name, room_id, self._tool_timeouts, own=name in self._own_bound_tools()
-        )
+        """The bound of one call to *name* (RFC §21.6): the turn's, which its
+        configuration may give, else the channel's, unless the tool keeps a
+        bound of its own."""
+        timeouts = self._get_loop_ctx().tool_timeouts or self._tool_timeouts
+        return self._registry.bound(name, room_id, timeouts, own=name in self._own_bound_tools())
 
     def _own_bound_tools(self) -> set[str]:
         """The tools outside the registry that carry a bound of their own: a

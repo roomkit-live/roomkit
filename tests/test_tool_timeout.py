@@ -20,12 +20,14 @@ from typing import Any
 
 import pytest
 
-from roomkit import ConferenceRealtimeConfig, ToolTimeoutError
+from roomkit import AIChannelTurnConfig, ConferenceRealtimeConfig, ToolTimeoutError
 from roomkit.channels._tool_registry import orchestration_tool, schema_tool
 from roomkit.channels.agent import Agent
 from roomkit.channels.ai import AIChannel
 from roomkit.channels.realtime_voice import RealtimeVoiceChannel
 from roomkit.core.framework import RoomKit
+from roomkit.models.channel import ChannelBinding
+from roomkit.models.context import RoomContext
 from roomkit.orchestration.pipeline import ConversationPipeline, PipelineStage
 from roomkit.orchestration.state import ConversationState, set_conversation_state
 from roomkit.providers.ai.base import AITool
@@ -95,6 +97,14 @@ class TestToolTimeouts:
         assert ToolTimeouts(10.0).for_call("delegate", waits=True) is None
         assert ToolTimeouts(10.0, {"delegate": 30.0}).for_call("delegate", waits=True) == 30.0
 
+    def test_overridden_bounds_keep_the_default_and_every_name_not_given(self) -> None:
+        timeouts = ToolTimeouts(10.0, {"report": 120.0, "export": None})
+        turn = timeouts.overridden({"export": 30.0, "device": None})
+        assert turn.for_call("lookup") == 10.0
+        assert turn.for_call("report") == 120.0
+        assert turn.for_call("export") == 30.0
+        assert turn.for_call("device") is None
+
     @pytest.mark.parametrize("bounds", [(0.0, {}), (-1.0, {}), (10.0, {"slow": 0.0})])
     def test_a_bound_that_is_not_positive_is_refused(
         self, bounds: tuple[float, dict[str, float | None]]
@@ -156,6 +166,57 @@ async def test_a_text_tool_bound_lets_a_slow_tool_finish(streaming: bool) -> Non
 
     assert not hung.cancelled
     assert _tool_payload(provider.calls[1], "slow") == {"ok": True}
+
+
+def _configured(
+    provider: MockAIProvider, hung: _Hung, *turns: dict[str, float | None] | None
+) -> AIChannel:
+    """A channel bound at :data:`BOUND` whose config provider declares SLOW
+    and its handler for each turn, with *turns*' bounds, one per turn."""
+    given = iter(turns)
+
+    async def resolve(binding: ChannelBinding, context: RoomContext) -> AIChannelTurnConfig:
+        return AIChannelTurnConfig(
+            tools=[AITool(**SLOW)], tool_handler=hung.handler, tool_timeouts=next(given)
+        )
+
+    return AIChannel("ai1", provider=provider, tool_timeout_seconds=BOUND, config_provider=resolve)
+
+
+async def test_a_turns_configuration_bounds_the_tools_it_declares(streaming: bool) -> None:
+    """A tool the turn declares may be one the channel was never built with:
+    its bound travels with it, beside the handler that serves it."""
+    provider, hung = _calling("slow", streaming), _Hung(delay=LONGER)
+
+    await _turn(_configured(provider, hung, {"slow": None}))
+
+    assert not hung.cancelled
+    assert _tool_payload(provider.calls[1], "slow") == {"ok": True}
+
+
+async def test_a_turns_bounds_are_never_the_next_turns(streaming: bool) -> None:
+    """The bounds are the turn's: one that gives none reads the channel's."""
+    provider = MockAIProvider(
+        ai_responses=_calls(("slow", {})) + _calls(("slow", {})), streaming=streaming
+    )
+    hung = _Hung(delay=LONGER)
+    channel = _configured(provider, hung, {"slow": None}, None)
+
+    await _turn(channel)
+    assert not hung.cancelled
+    await _turn(channel)
+
+    assert hung.cancelled
+    assert "ToolTimeoutError" in _tool_payload(provider.calls[3], "slow")["error"]
+
+
+async def test_a_turns_bound_that_is_not_positive_fails_the_turn() -> None:
+    provider, hung = _calling("slow", False), _Hung()
+
+    with pytest.raises(ValueError, match="must be positive or None"):
+        await _turn(_configured(provider, hung, {"slow": 0.0}))
+
+    assert provider.calls == []  # refused before the model is asked
 
 
 async def test_a_human_input_tool_keeps_its_own_bound(streaming: bool) -> None:

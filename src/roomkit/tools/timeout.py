@@ -30,6 +30,11 @@ class ToolTimeouts:
             if bound is not None and bound <= 0:
                 raise ValueError(f"tool timeout for {key!r} must be positive or None, got {bound}")
 
+    def overridden(self, per_tool: Mapping[str, float | None]) -> ToolTimeouts:
+        """These bounds under *per_tool*'s, a name *per_tool* gives keeping
+        its own; a bound that is not positive fails here."""
+        return ToolTimeouts(self.default, {**self.per_tool, **per_tool})
+
     def for_call(self, name: str, *, waits: bool = False) -> float | None:
         """The bound of a call to *name*.
 
