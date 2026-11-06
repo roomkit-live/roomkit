@@ -213,6 +213,35 @@ async def test_a_failing_policy_asks_every_candidate() -> None:
     await kit.close()
 
 
+async def test_a_decision_whose_message_cannot_be_read_asks_every_candidate_unreported(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Rule 18 reports a decision the policy failed to take; a failure before
+    the policy is asked, the store's read of the message, asks every
+    candidate all the same and is reported to no hook."""
+    policy = MockDispatchPolicy([["sre"]])
+    kit = RoomKit()
+    seen = _decisions(kit)
+    await _room(kit, _team(), dispatch=policy)
+    read = kit.store.get_event
+    failed: list[str] = []
+
+    async def unreadable_once(event_id: str) -> RoomEvent | None:
+        if not failed:
+            failed.append(event_id)
+            raise RuntimeError("the store is down")
+        return await read(event_id)
+
+    monkeypatch.setattr(kit.store, "get_event", unreadable_once)
+    await _say(kit, "anyone?")
+    await _settle(kit)
+
+    assert sorted(await _answers(kit)) == sorted(AGENTS)
+    assert policy.turns == []
+    assert seen == []
+    await kit.close()
+
+
 class _Broken(DispatchPolicy):
     async def decide(self, turn: DispatchTurn) -> DispatchDecision:
         return None  # type: ignore[return-value]
