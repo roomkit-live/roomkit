@@ -157,6 +157,23 @@ class _TextRecorder(InMemoryRealtime):
         await super().publish(channel, event)
 
 
+# The calls a call's `kit` may run on another process (README, "Calls").
+KIT_CALLS = frozenset(
+    {
+        "process_inbound",
+        "install_strategy",
+        "uninstall_strategy",
+        "claim_room_strategy",
+        "room_strategy",
+        "room_strategy_is_current",
+        "speak_queue",
+        "listen_only",
+        "talk_again",
+        "close",
+    }
+)
+
+
 class Harness:
     """One run of one scenario."""
 
@@ -217,6 +234,8 @@ class Harness:
         name = spec.get("kit")
         if name is None:
             return self.kit
+        if spec["call"] not in KIT_CALLS:
+            raise UnreadableError(f"{spec['call']} takes no kit")
         if name not in self.processes:
             raise UnreadableError(f"no process {name!r} in setup.processes")
         return self.processes[name]
