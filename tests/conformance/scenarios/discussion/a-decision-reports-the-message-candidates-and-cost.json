@@ -1,0 +1,159 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-decision-reports-the-message-candidates-and-cost",
+  "title": "ON_DISPATCH_DECISION reports the message, the candidates, the decision whole and how long it took",
+  "rules": [
+    "§19.7.5 rule 18"
+  ],
+  "notes": "Python: tests/orchestration/test_discussion_dispatch.py test_a_decision_reports_the_message_candidates_and_cost.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "investigator",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "investigator here"
+            }
+          ]
+        }
+      },
+      {
+        "id": "dev",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "dev here"
+            }
+          ]
+        }
+      },
+      {
+        "id": "sre",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "sre here"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "investigator",
+            "dev",
+            "sre"
+          ],
+          "dispatch": {
+            "decisions": [
+              {
+                "agents": [
+                  "dev"
+                ],
+                "reason": "deploys are dev's",
+                "judgments": {
+                  "dev": 0.9
+                }
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "decisions",
+        "trigger": "on_dispatch_decision",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "was anything deployed?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "decisions": [
+        {
+          "trigger": "on_dispatch_decision",
+          "room_id": "r1",
+          "dispatch_decision": {
+            "event": {
+              "source": {
+                "channel_id": "ops"
+              },
+              "content": {
+                "body": "was anything deployed?"
+              },
+              "id": "r1#0"
+            },
+            "candidates": [
+              "investigator",
+              "dev",
+              "sre"
+            ],
+            "decision": {
+              "agents": [
+                "dev"
+              ],
+              "reason": "deploys are dev's",
+              "judgments": {
+                "dev": 0.9
+              }
+            },
+            "duration_ms": {
+              "$present": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

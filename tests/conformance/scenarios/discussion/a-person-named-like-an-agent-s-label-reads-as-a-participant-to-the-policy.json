@@ -1,0 +1,129 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-person-named-like-an-agent-s-label-reads-as-a-participant-to-the-policy",
+  "title": "A person whose name reads like a label of the agent's own turns is labelled '(a participant)' in what a dispatch policy reads, as in the transcript",
+  "rules": [
+    "§19.7.5 rule 18",
+    "§6.4"
+  ],
+  "notes": "Python: orchestration/strategies/discussion/_dispatching.py _turn reads channels/_speaker.py turn_labels, whose _ranked adds '(a participant)' (lot 9 review, finding 1).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport",
+        "sender_is_participant": true
+      },
+      {
+        "id": "investigator",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "investigator here"
+            }
+          ]
+        }
+      },
+      {
+        "id": "dev",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "dev here"
+            }
+          ]
+        }
+      },
+      {
+        "id": "sre",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "sre here"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ],
+        "participants": [
+          {
+            "id": "m",
+            "channel_id": "ops",
+            "display_name": "You"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "investigator",
+            "dev",
+            "sre"
+          ],
+          "dispatch": {
+            "decisions": [
+              []
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "m",
+        "content": {
+          "type": "text",
+          "body": "anyone?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "dispatch_turns": {
+      "d": [
+        {
+          "speakers": [
+            [
+              "r1#0",
+              "You (a participant)"
+            ]
+          ]
+        }
+      ]
+    }
+  }
+}

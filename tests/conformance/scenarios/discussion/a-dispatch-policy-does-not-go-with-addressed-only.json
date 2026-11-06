@@ -1,0 +1,60 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-dispatch-policy-does-not-go-with-addressed-only",
+  "title": "A discussion refuses a dispatch policy with addressed_only, and a dispatch_timeout that is not positive",
+  "rules": [
+    "§19.7.5 rule 18"
+  ],
+  "notes": "Python: tests/orchestration/test_discussion_dispatch.py test_a_dispatch_policy_does_not_go_with_addressed_only. orchestration/strategies/discussion/strategy.py _check_dispatch.",
+  "setup": {
+    "channels": [
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "discussion",
+      "agents": [
+        "a"
+      ],
+      "addressed_only": true,
+      "dispatch": {},
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "discussion",
+      "agents": [
+        "a"
+      ],
+      "dispatch": {},
+      "dispatch_timeout_ms": 0,
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "discussion",
+      "agents": [
+        "a"
+      ],
+      "dispatch": {},
+      "dispatch_timeout_ms": 1,
+      "expect": {
+        "result": {
+          "agents": [
+            "a"
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

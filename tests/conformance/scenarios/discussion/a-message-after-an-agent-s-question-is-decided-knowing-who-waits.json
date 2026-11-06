@@ -1,0 +1,202 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-message-after-an-agent-s-question-is-decided-knowing-who-waits",
+  "title": "A message after an agent asked its author is decided knowing who waits: the agent that asked comes first among the candidates, and what was asked is cleared",
+  "rules": [
+    "§19.7.5 rule 18"
+  ],
+  "notes": "Python: tests/orchestration/test_discussion_dispatch.py test_a_message_after_an_agents_question_is_decided_knowing_who_waits.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "investigator",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "@ops which region?"
+            },
+            {
+              "text": "on it"
+            }
+          ]
+        }
+      },
+      {
+        "id": "dev",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "dev here"
+            }
+          ]
+        }
+      },
+      {
+        "id": "sre",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "sre here"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "investigator",
+            "dev",
+            "sre"
+          ],
+          "dispatch": {
+            "decisions": [
+              [
+                "sre"
+              ]
+            ]
+          },
+          "people": [
+            "ops"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@investigator checkout fails"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "what does the error rate look like?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "asked": []
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "@investigator checkout fails"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "investigator"
+          },
+          "content": {
+            "body": "@ops which region?"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "what does the error rate look like?"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "sre"
+          },
+          "content": {
+            "body": "sre here"
+          }
+        }
+      ]
+    },
+    "dispatch_turns": {
+      "d": [
+        {
+          "asked": [
+            "investigator"
+          ],
+          "candidates": [
+            {
+              "channel_id": "investigator"
+            },
+            {
+              "channel_id": "dev"
+            },
+            {
+              "channel_id": "sre"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

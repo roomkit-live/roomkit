@@ -1,0 +1,160 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/the-dispatch-policy-reads-agents-by-their-handles",
+  "title": "The policy reads each candidate's handle, and an agent's earlier message labelled by it, never by its channel id",
+  "rules": [
+    "§19.7.5 rule 18",
+    "§19.7.5 rule 4"
+  ],
+  "notes": "Python: tests/orchestration/test_discussion_handles.py test_the_dispatch_policy_reads_agents_by_their_handles.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent:3f2a1b2c-0d4e-4f5a-8b6c-7d8e9f0a1b2c",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Clause 4 caps it. @Counsel lawful?"
+            }
+          ]
+        },
+        "agent": {
+          "name": "Jev",
+          "description": "reads the contract"
+        }
+      },
+      {
+        "id": "agent:9b1c2d3e-4f5a-6b7c-8d9e-0f1a2b3c4d5e",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Lawful."
+            }
+          ]
+        },
+        "agent": {
+          "name": "Counsel",
+          "description": "checks the law"
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "agent:3f2a1b2c-0d4e-4f5a-8b6c-7d8e9f0a1b2c",
+            "agent:9b1c2d3e-4f5a-6b7c-8d9e-0f1a2b3c4d5e"
+          ],
+          "dispatch": {
+            "decisions": [
+              []
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@Jev clause 4?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "thanks, and the next step?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "dispatch_turns": {
+      "d": [
+        {
+          "candidates": [
+            {
+              "channel_id": "agent:3f2a1b2c-0d4e-4f5a-8b6c-7d8e9f0a1b2c",
+              "handle": "Jev"
+            },
+            {
+              "channel_id": "agent:9b1c2d3e-4f5a-6b7c-8d9e-0f1a2b3c4d5e",
+              "handle": "Counsel"
+            }
+          ],
+          "speakers": [
+            [
+              "r1#0",
+              "@ops"
+            ],
+            [
+              "r1#1",
+              "@Jev"
+            ],
+            [
+              "r1#2",
+              "@Counsel"
+            ],
+            [
+              "r1#3",
+              "@ops"
+            ]
+          ]
+        }
+      ]
+    }
+  }
+}

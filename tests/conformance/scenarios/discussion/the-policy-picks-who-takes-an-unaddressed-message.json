@@ -1,0 +1,168 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/the-policy-picks-who-takes-an-unaddressed-message",
+  "title": "A dispatch policy picks who takes a person's message that names no one; it reads the message, its candidates and who said it",
+  "rules": [
+    "§19.7.5 rule 18"
+  ],
+  "notes": "Python: tests/orchestration/test_discussion_dispatch.py test_the_policy_picks_who_takes_an_unaddressed_message.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "investigator",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "investigator here"
+            }
+          ]
+        }
+      },
+      {
+        "id": "dev",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "dev here"
+            }
+          ]
+        }
+      },
+      {
+        "id": "sre",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "sre here"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "investigator",
+            "dev",
+            "sre"
+          ],
+          "dispatch": {
+            "decisions": [
+              [
+                "sre"
+              ]
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "the error rate is climbing"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "the error rate is climbing"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "sre"
+          },
+          "content": {
+            "body": "sre here"
+          }
+        }
+      ]
+    },
+    "models": {
+      "investigator": [],
+      "dev": []
+    },
+    "dispatch_turns": {
+      "d": [
+        {
+          "room_id": "r1",
+          "event": {
+            "source": {
+              "channel_id": "ops"
+            },
+            "content": {
+              "body": "the error rate is climbing"
+            }
+          },
+          "candidates": [
+            {
+              "channel_id": "investigator"
+            },
+            {
+              "channel_id": "dev"
+            },
+            {
+              "channel_id": "sre"
+            }
+          ],
+          "speakers": [
+            [
+              "r1#0",
+              "@ops"
+            ]
+          ],
+          "asked": [],
+          "recent": []
+        }
+      ]
+    }
+  }
+}

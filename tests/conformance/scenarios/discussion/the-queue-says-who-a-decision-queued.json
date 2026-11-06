@@ -1,0 +1,157 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/the-queue-says-who-a-decision-queued",
+  "title": "The speak queue tells who a decision queued, for the message decided",
+  "rules": [
+    "§19.7.5 rule 18"
+  ],
+  "notes": "Python: tests/orchestration/test_discussion_dispatch.py test_the_queue_says_who_a_decision_queued. The decision is told after the queue's change it made, before the turn it gives (lot 9 review, finding 5).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "investigator",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "investigator here"
+            }
+          ]
+        }
+      },
+      {
+        "id": "dev",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "dev here"
+            }
+          ]
+        }
+      },
+      {
+        "id": "sre",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "sre here"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "investigator",
+            "dev",
+            "sre"
+          ],
+          "dispatch": {
+            "decisions": [
+              [
+                "dev"
+              ]
+            ]
+          }
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "follow",
+        "trigger": "on_speak_queue",
+        "execution": "async"
+      },
+      {
+        "name": "decisions",
+        "trigger": "on_dispatch_decision",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "deploy?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "follow": [
+        {
+          "speak_queue": {
+            "change": "queued",
+            "channel_ids": [
+              "dev"
+            ],
+            "event_id": "r1#0"
+          }
+        },
+        {
+          "speak_queue": {
+            "change": "turn_given",
+            "channel_ids": [
+              "dev"
+            ]
+          }
+        },
+        {
+          "speak_queue": {
+            "change": "turn_ended",
+            "channel_ids": [
+              "dev"
+            ]
+          }
+        }
+      ]
+    },
+    "hook_order": [
+      "follow",
+      "decisions",
+      "follow",
+      "follow"
+    ]
+  }
+}

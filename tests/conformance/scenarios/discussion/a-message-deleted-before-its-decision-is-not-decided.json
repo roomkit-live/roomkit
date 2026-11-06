@@ -1,0 +1,180 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-message-deleted-before-its-decision-is-not-decided",
+  "title": "A message deleted while it waits for its decision is not handed to the policy, nor answered",
+  "rules": [
+    "§19.7.5 rule 18",
+    "§10.3"
+  ],
+  "notes": "Python: tests/orchestration/test_discussion_dispatch.py test_a_message_deleted_before_its_decision_is_not_decided. The kit's delete_event removes the message from the room.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "investigator",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "investigator here"
+            }
+          ]
+        }
+      },
+      {
+        "id": "dev",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "dev here"
+            }
+          ]
+        }
+      },
+      {
+        "id": "sre",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "sre here"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "investigator",
+            "dev",
+            "sre"
+          ],
+          "dispatch": {
+            "decisions": [
+              [
+                "sre"
+              ],
+              [
+                "dev"
+              ]
+            ],
+            "gate": "deciding"
+          }
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "the error rate is climbing"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "wait_for": "deciding"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "the code is 4417"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "delete_event",
+      "room_id": "r1",
+      "event_id": "r1#1"
+    },
+    {
+      "open": "deciding"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "dispatch_turns": {
+      "d": [
+        {
+          "event": {
+            "source": {
+              "channel_id": "ops"
+            },
+            "content": {
+              "body": "the error rate is climbing"
+            }
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "r1": [
+        {
+          "id": "r1#0",
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "the error rate is climbing"
+          }
+        },
+        {
+          "id": "r1#2",
+          "source": {
+            "channel_id": "sre"
+          },
+          "content": {
+            "body": "sre here"
+          }
+        }
+      ]
+    }
+  }
+}
