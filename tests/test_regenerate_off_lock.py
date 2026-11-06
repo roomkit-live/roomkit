@@ -247,3 +247,44 @@ async def test_a_caller_cancelled_cuts_the_turn_it_was_waiting_for(door: str) ->
     await kit.close()
 
     assert tasks == ["producer:cancelled"]
+
+
+async def test_a_room_read_past_process_timeout_refuses_the_regeneration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``process_timeout`` bounds the regeneration's choice too, its read of
+    the room under the lock (RFC §13.6): a read that outlasts it refuses the
+    call ``process_timeout`` with nothing run, and the lock is released."""
+    kit, _, slow = await _kit_with("ai", pause=0.0, process_timeout=CUT)
+    await kit.process_inbound(_message())
+    timeouts: list[FrameworkEvent] = []
+
+    @kit.on("process_timeout")
+    async def on_timeout(event: FrameworkEvent) -> None:
+        timeouts.append(event)
+
+    reading = asyncio.Event()
+    build_context = kit._build_context
+
+    async def slow_read(room_id: str, **kwargs: Any) -> Any:
+        if kwargs.get("reads_history"):
+            reading.set()
+            await asyncio.Event().wait()  # never answers; the bound cuts it
+        return await build_context(room_id, **kwargs)
+
+    bounds = opened_with_cut(monkeypatch)
+    monkeypatch.setattr(kit, "_build_context", slow_read)
+    async with asyncio.timeout(5.0):
+        regeneration = asyncio.ensure_future(kit.regenerate_response("r"))
+        await reading.wait()  # the room is read under the lock, within the bound
+        expire(bounds)
+        result = await regeneration
+    monkeypatch.setattr(kit, "_build_context", build_context)
+    # The lock is free again: the next message goes through.
+    after = await kit.process_inbound(_message("again"))
+    await kit.close()
+    assert result is not None
+    assert (result.blocked, result.reason) == (True, "process_timeout")
+    assert [(e.room_id, e.data.get("operation")) for e in timeouts] == [("r", "regenerate")]
+    assert slow.started == 2  # the first message's and "again"'s turns, none regenerated
+    assert not after.blocked

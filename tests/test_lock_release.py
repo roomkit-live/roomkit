@@ -6,6 +6,7 @@ import asyncio
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from typing import Any
 
 import pytest
 
@@ -22,6 +23,7 @@ from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import ChannelCategory, HookTrigger
 from roomkit.models.event import RoomEvent, TextContent
 from roomkit.models.hook import HookResult
+from roomkit.providers.ai.base import AIContext, AIResponse
 from roomkit.providers.ai.mock import MockAIProvider
 from tests.test_framework import SimpleChannel
 from tests.test_streamed_response_failure import _FailsMidAnswer
@@ -167,6 +169,53 @@ class TestARegenerate:
             assert result is not None and isinstance(result.error, ConnectionError)
         finally:
             locks.failing = False
+            await kit.close()
+
+    async def test_a_refusal_in_the_lane_reports_the_failed_release(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The room closed while the regeneration waited in its lane: the
+        refusal carries the failed release of the lock its choice was made
+        under (RMK-1443 G3)."""
+        gate = asyncio.Event()
+
+        class _Gated(MockAIProvider):
+            async def generate(self, context: AIContext) -> AIResponse:
+                if self.calls:
+                    await gate.wait()
+                return await super().generate(context)
+
+        locks = _LeaseLost()
+        kit, _ = await _room(locks)
+        kit.register_channel(AIChannel("ai", provider=_Gated(responses=["a", "b", "c"])))
+        await kit.attach_channel("r1", "ai", category=ChannelCategory.INTELLIGENCE)
+        queued = asyncio.Event()
+        enqueue_regeneration = kit._enqueue_regeneration
+
+        def enqueued(*args: Any, **kwargs: Any) -> Any:
+            plan = enqueue_regeneration(*args, **kwargs)
+            queued.set()
+            return plan
+
+        monkeypatch.setattr(kit, "_enqueue_regeneration", enqueued)
+        try:
+            await kit.process_inbound(_message())
+            # A second message's turn keeps the lane busy at the gate.
+            second = await kit.process_inbound(_message("again"), defer_delivery=True)
+            locks.failing = True
+            regeneration = asyncio.ensure_future(kit.regenerate_response("r1"))
+            await asyncio.wait_for(queued.wait(), 1.0)
+            await kit.close_room("r1")
+            gate.set()
+            result = await asyncio.wait_for(regeneration, 5.0)
+            assert second.delivery is not None
+            await second.delivery.wait()
+            assert result is not None
+            assert (result.blocked, result.reason) == (True, "room_closed")
+            assert isinstance(result.error, ConnectionError)
+        finally:
+            locks.failing = False
+            gate.set()
             await kit.close()
 
 
