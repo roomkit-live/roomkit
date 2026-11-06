@@ -516,8 +516,11 @@ class Harness:
                 self._problems.append(f"{spec['call']} raised an unmapped error: {unmapped}")
                 return {"result": None, "error": {"name": "<unmapped>"}}
         if "as" in spec:
-            # A delegation through the turn's host answers its task's id.
+            # A delegation through the turn's host answers its task's id, and a
+            # delegate handler's call its task's.
             named = result if spec["call"] == "host.delegate" else result_event_id(result)
+            if spec["call"] == "delegate.handle":
+                named = result["task_id"]
             self._labels[spec["as"]] = named
             self._labels |= opened_labels(spec, result)
         return {"result": dump(result), "error": None}
