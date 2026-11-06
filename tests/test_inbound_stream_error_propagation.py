@@ -27,6 +27,7 @@ from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage, InboundResult
 from roomkit.models.enums import ChannelCategory, HookExecution, HookTrigger
 from roomkit.models.event import RoomEvent, TextContent
+from roomkit.orchestration.strategies import Discussion
 from roomkit.providers.ai.base import (
     AIContext,
     AIResponse,
@@ -36,6 +37,7 @@ from roomkit.providers.ai.base import (
     StreamEvent,
 )
 from roomkit.providers.ai.mock import MockAIProvider
+from tests.orchestration.test_strategy_discussion import _settle
 from tests.test_framework import SimpleChannel
 from tests.turn_errors import same_error
 
@@ -447,7 +449,8 @@ async def test_a_headless_turn_failing_after_a_round_is_no_roomkit_warning(
 
 async def test_a_delegated_turn_failure_is_one_line_at_its_level(caplog) -> None:
     """The delegation receives the child's failure and logs it, once, by its
-    status: the child's own stream line stays at DEBUG."""
+    status: read as the task's trace, the child's stream has no line of its
+    own."""
     exc = ProviderError("upstream down", provider="mock", status_code=503)
     kit = RoomKit()
     kit.register_channel(AIChannel("w1", provider=_GenerateRaisingProvider(exc)))
@@ -477,6 +480,93 @@ async def test_a_background_task_failure_is_one_line_at_its_level(caplog) -> Non
     records = _roomkit_records(caplog, logging.WARNING)
     assert [r.levelno for r in records] == [logging.ERROR]
     assert records[0].getMessage().startswith(f"Task {task.id} failed (provider=mock, status=503)")
+
+
+async def test_a_delegated_turn_failure_in_a_shared_room_is_one_line_at_its_level(caplog) -> None:
+    """A task whose child room a transport is shared into reads its worker's
+    stream through the room: that stream's line stays at DEBUG, for the task
+    to log the failure once, by its status."""
+    exc = ProviderError("upstream down", provider="mock", status_code=503)
+    kit = RoomKit()
+    kit.register_channel(SimpleChannel("email-out"))
+    kit.register_channel(AIChannel("w1", provider=_GenerateRaisingProvider(exc)))
+    await kit.create_room(room_id="r1")
+    await kit.attach_channel("r1", "email-out")
+    with caplog.at_level(logging.DEBUG):
+        task = await kit.delegate(
+            room_id="r1", agent_id="w1", task="go", wait=True, share_channels=["email-out"]
+        )
+    await kit.close()
+
+    records = _roomkit_records(caplog, logging.WARNING)
+    assert [r.levelno for r in records] == [logging.ERROR]
+    assert (
+        records[0]
+        .getMessage()
+        .startswith(f"Inline task {task.id} failed (provider=mock, status=503)")
+    )
+
+
+async def test_another_agent_s_streamed_failure_in_a_task_room_is_its_turn_s_line(caplog) -> None:
+    """Another agent shared into a task's room, whose stream fails with a
+    503: the room's reader logs its own turn's at DEBUG, the task's room
+    path once at its level, as another agent's when the room's two streams
+    leave whose it was untold; its chained turn on the worker's answer is
+    no turn of the task's, logged at its level."""
+    exc = ProviderError("B's upstream 503", provider="b", status_code=503)
+    kit = RoomKit()
+    kit.register_channel(SimpleChannel("email-out"))
+    kit.register_channel(AIChannel("b", provider=_StreamRaisingProvider(exc)))
+    kit.register_channel(AIChannel("w1", provider=MockAIProvider(responses=["Found it."])))
+    await kit.create_room(room_id="r1")
+    await kit.attach_channel("r1", "email-out")
+    await kit.attach_channel("r1", "b", category=ChannelCategory.INTELLIGENCE)
+    with caplog.at_level(logging.DEBUG):
+        task = await kit.delegate(
+            room_id="r1", agent_id="w1", task="go", wait=True, share_channels=["b", "email-out"]
+        )
+    await kit.close()
+
+    assert task.result is not None and task.result.output == "Found it."
+    room = task.child_room_id
+    records = _roomkit_records(caplog, logging.WARNING)
+    assert [(r.levelno, r.getMessage()) for r in records] == [
+        (
+            logging.ERROR,
+            f"stream consumption (no targets) of b for room {room} failed "
+            "(provider=b, status=503): B's upstream 503",
+        ),
+        (
+            logging.ERROR,
+            f"In {room}, another agent's turn failed (provider=b, status=503): B's upstream 503",
+        ),
+    ]
+
+
+async def test_a_discussion_turn_s_failure_is_logged_at_its_level(caplog) -> None:
+    """A discussion's turn is the discussion's, not the message's caller's:
+    its stream's failure is logged at its own level."""
+    exc = ProviderError("model gone", provider="mock", status_code=404)
+    kit = RoomKit()
+    kit.register_channel(SimpleChannel("sms1"))
+    agent = AIChannel("ai1", provider=_GenerateRaisingProvider(exc))
+    await kit.create_room(room_id="r1", orchestration=Discussion([agent]))
+    await kit.attach_channel("r1", "sms1")
+    with caplog.at_level(logging.DEBUG):
+        await kit.process_inbound(
+            InboundMessage(
+                channel_id="sms1",
+                sender_id="u1",
+                content=TextContent(body="go"),
+                addressed_to=["ai1"],
+            )
+        )
+        await _settle(kit)
+    await kit.close()
+
+    records = _roomkit_records(caplog, logging.WARNING)
+    assert [r.levelno for r in records] == [logging.ERROR]
+    assert "stream consumption (no targets) of ai1" in records[0].getMessage()
 
 
 # ── regenerate_response surfaces the same error ───────────────────────────
