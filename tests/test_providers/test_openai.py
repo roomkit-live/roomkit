@@ -389,10 +389,10 @@ class TestOpenAIAIProvider:
                 {"prompt_tokens": None, "completion_tokens": 7, "cache_write_tokens": 5},
                 {"output_tokens": 7, "cache_creation_input_tokens": 5},
             ),
-            # A counter of another shape is none.
+            # A prompt below zero holds no cache read.
             (
-                {"prompt_tokens": 100, "completion_tokens": 7, "cache_write_tokens": "12"},
-                {"input_tokens": 100, "output_tokens": 7},
+                {"prompt_tokens": -5, "completion_tokens": 7, "cached_tokens": 2},
+                {"input_tokens": 0, "output_tokens": 7},
             ),
         ],
         ids=[
@@ -401,7 +401,7 @@ class TestOpenAIAIProvider:
             "cached-above-the-prompt",
             "no-prompt-a-cache-read",
             "no-prompt-a-cache-write",
-            "a-cache-write-of-another-shape",
+            "a-prompt-below-zero",
         ],
     )
     async def test_a_count_the_server_leaves_out_stays_unknown(

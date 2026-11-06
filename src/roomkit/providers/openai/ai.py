@@ -426,8 +426,9 @@ class OpenAIAIProvider(AIProvider):
         A counter the server leaves out stays unknown, never 0, which a budget
         would read as a free generation (RFC §6.4): without ``prompt_tokens``
         there is no input count, nor a cache read, which is a share of the
-        prompt and bounded by it. A cache write a server writes as anything
-        but a whole number is none.
+        prompt and bounded by it. A cache write the usage reports beside its
+        details, which the SDK leaves as the server wrote it, is none unless
+        it is a whole number.
         """
         prompt = getattr(raw, "prompt_tokens", None)
         completion = getattr(raw, "completion_tokens", None)
@@ -440,7 +441,7 @@ class OpenAIAIProvider(AIProvider):
         )
         usage: dict[str, int] = {}
         if prompt is not None:
-            cached = min(cached, prompt)
+            cached = min(cached, max(prompt, 0))
             usage["input_tokens"] = max(prompt - cached - written, 0)
         if completion is not None:
             usage["output_tokens"] = completion

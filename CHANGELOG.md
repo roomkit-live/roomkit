@@ -256,8 +256,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `prompt_tokens` or `completion_tokens` reported it as 0, and the turn's record said
   `ai_usage_complete` true: a budget read a free generation. `{"completion_tokens": 7}` now
   reads `{"output_tokens": 7}` and the record is incomplete, as roomkit-rs reads it. A cache
-  read is bounded by the prompt, and dropped without one; a cache write that is not a whole
-  number is ignored, where it raised `TypeError`. DeepSeek's and xAI's readers do the same.
+  read is bounded by the prompt, and dropped without one. A `cache_write_tokens` the usage
+  reports beside its details that is not a whole number is ignored, where it raised
+  `TypeError`. DeepSeek's reader leaves an omitted completion, and an input it cannot
+  derive, out too; xAI's adds its reasoning only to an output count it has.
 
 - **BREAKING: a model's reasoning no longer goes back on Chat Completions** (RFC §6.4,
   RMK-1369). `ChatDialect()` sent it as a `<think>` block in the content, which a generic

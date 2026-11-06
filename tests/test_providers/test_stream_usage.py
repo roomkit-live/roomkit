@@ -59,7 +59,9 @@ def test_the_openai_family_asks_for_stream_usage_by_default(
     assert config.include_stream_usage is expected
 
 
-def _stream(requests: list[dict[str, Any]]) -> Callable[[httpx.Request], httpx.Response]:
+def _stream(
+    requests: list[dict[str, Any]], usage: dict[str, Any] = _USAGE
+) -> Callable[[httpx.Request], httpx.Response]:
     def handle(request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content)
         requests.append(body)
@@ -68,7 +70,7 @@ def _stream(requests: list[dict[str, Any]]) -> Callable[[httpx.Request], httpx.R
             {"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]},
         ]
         if body.get("stream_options", {}).get("include_usage"):
-            frames.append({"choices": [], "usage": _USAGE})
+            frames.append({"choices": [], "usage": usage})
         chunk = {"id": "c", "object": "chat.completion.chunk", "created": 0, "model": _MODEL}
         payload = "".join(f"data: {json.dumps({**chunk, **f})}\n\n" for f in frames)
         return httpx.Response(
@@ -129,6 +131,36 @@ async def test_a_server_that_rejects_the_option_can_turn_it_off() -> None:
 
     assert "stream_options" not in requests[0]
     assert usage == {}
+
+
+@pytest.mark.parametrize(
+    ("sent", "read"),
+    [
+        ({"completion_tokens": 7}, {"output_tokens": 7}),
+        # A count the SDK does not declare reaches the provider as written:
+        # one that is no whole number is none, where it raised TypeError.
+        (
+            {"prompt_tokens": 100, "completion_tokens": 7, "cache_write_tokens": "12"},
+            {"input_tokens": 100, "output_tokens": 7},
+        ),
+        # One it declares it reads as pydantic's lax int does: "12" is 12.
+        (
+            {
+                "prompt_tokens": 100,
+                "completion_tokens": 7,
+                "prompt_tokens_details": {"cache_write_tokens": "12"},
+            },
+            {"input_tokens": 88, "output_tokens": 7, "cache_creation_input_tokens": 12},
+        ),
+    ],
+    ids=["no-prompt", "a-usage-cache-write-of-another-shape", "a-details-cache-write-as-text"],
+)
+async def test_a_count_reads_as_the_sdk_built_it(
+    sent: dict[str, Any], read: dict[str, int]
+) -> None:
+    """What the server wrote, through the SDK's own objects (RFC §6.4, RMK-1441)."""
+    async with _provider(_stream([], sent)) as provider:
+        assert await _streamed_usage(provider) == read
 
 
 def _xai_usage(completion: int) -> dict[str, int]:
