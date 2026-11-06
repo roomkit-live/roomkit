@@ -667,10 +667,18 @@ INSERT INTO schema_version (version)
 -- once, so the stored field is the whole answer and its readers stay the
 -- same. A message held for verification records the visibility its release
 -- restores; a recorded 'all' takes the binding's too. Version 3 records the
--- rewrite as done.
+-- rewrite as done. The rooms first, in one order: a commit with a target holds
+-- its room, then that event, and version 4 below writes rooms.
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM schema_version WHERE version >= 3) THEN
+        PERFORM 1 FROM rooms WHERE id IN (
+            SELECT e.room_id FROM events e JOIN bindings b
+                ON b.room_id = e.room_id AND b.channel_id = e.source_channel_id
+            WHERE COALESCE(b.visibility, 'all') <> 'all'
+              AND (e.visibility = 'all'
+                   OR e.metadata -> 'roomkit:verification_held' ->> 'visibility' = 'all')
+        ) ORDER BY id FOR NO KEY UPDATE;
         UPDATE events e SET visibility = b.visibility
         FROM bindings b
         WHERE b.room_id = e.room_id

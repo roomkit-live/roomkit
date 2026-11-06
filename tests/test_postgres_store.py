@@ -680,12 +680,12 @@ class TestPostgresStore:
 
     async def test_add_event(self) -> None:
         store, mock_conn = _make_store_with_pool()
+        mock_conn.fetchrow.return_value = {"next_index": 1}
         event = _make_event()
         result = await store.add_event(event)
         assert result.id == event.id
-        written = [call.args[0] for call in mock_conn.execute.await_args_list]
-        assert any("event_sequences" in statement for statement in written)
-        assert "INSERT INTO events" in written[-1]
+        assert "event_sequences" in mock_conn.fetchrow.call_args.args[0]
+        assert "INSERT INTO events" in mock_conn.execute.call_args.args[0]
 
     async def test_get_event_found(self) -> None:
         store, mock_conn = _make_store_with_pool()
@@ -919,7 +919,7 @@ class TestPostgresStore:
     async def test_add_event_auto_index(self) -> None:
         store, mock_conn = _make_store_with_pool()
         event = _make_event()
-        mock_conn.fetchrow.return_value = {"event_index": 3}
+        mock_conn.fetchrow.return_value = {"next_index": 4}
         result = await store.add_event_auto_index("room-1", event)
         assert result.index == 3
         assert "event_sequences" in mock_conn.fetchrow.call_args.args[0]

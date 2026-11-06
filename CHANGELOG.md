@@ -434,6 +434,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   first, `FOR NO KEY UPDATE`, one more statement: for its few statements an add also
   waits on `update_room`, `patch_room_metadata` and `advance_delivered_index`, and
   they on it. A missing room is refused as before.
+- **`PostgresStore` takes a room's locks in one order on its other writes** (RMK-1394).
+  `delete_event` and `write_change_target` took the message, then its edits, while
+  `delete_room` takes the room, then its events in the order it finds them; the
+  repair of `dedupe_event_indices` and the boot that rewrites versions 3 and 4 took
+  events, then rooms, against a commit with a target; an add whose room was deleted
+  and created again meanwhile took the new sequence holding nothing. The server killed
+  one of each pair with `DeadlockDetectedError`. Each now holds the room first; an add
+  holds it in the statement that takes the sequence, one statement fewer. Nothing
+  else a caller reads changes.
 
 - **A hook's injected event stays in its message's trace** (RMK-1301).
   Its `framework.broadcast` was a root span, a trace apart from the call's: it is

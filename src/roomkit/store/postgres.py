@@ -308,42 +308,73 @@ async def _write_room_row(conn: Any, room: Room) -> Room:
     )
 
 
-async def _hold_room_first(conn: Any, room_id: str) -> None:
-    """Take the room's row before its sequence, the order of a commit.
+async def _hold_room_first(conn: Any, room_id: str) -> bool:
+    """Take the room's row before its events, the order of its deletion and of a commit;
+    whether the room is there to hold.
 
-    The event's foreign key would otherwise take it after, and a commit holding the
-    room would wait on the sequence this write holds, while this write waits on the
-    room: the server kills one of them. ``FOR NO KEY UPDATE``, not the key share the
-    foreign key needs: adds would share that one past a waiting ``FOR UPDATE``, which
-    a stream of them would starve. A missing room stays the foreign key's refusal, in
-    the next statement.
+    A deletion holds the room, then takes its events in the order it finds them, and a
+    message edited twice sits after its first edit: a write of a message and its edits
+    holding them first would wait on what the deletion holds, and the deletion on them,
+    and the server kills one. ``FOR NO KEY UPDATE``, as :func:`_write_sequence`.
     """
-    await conn.execute("SELECT 1 FROM rooms WHERE id = $1 FOR NO KEY UPDATE", room_id)
+    held = await conn.fetchval("SELECT 1 FROM rooms WHERE id = $1 FOR NO KEY UPDATE", room_id)
+    return held is not None
+
+
+# Writes of a room's sequence that take the room's row first, in the same statement
+# (see _write_sequence): a reservation of the next index, and an index given seen.
+_RESERVE_THROUGH_THE_ROOM = (
+    "WITH held AS MATERIALIZED (SELECT id FROM rooms WHERE id = $1 FOR NO KEY UPDATE)"
+    " INSERT INTO event_sequences(room_id, next_index) SELECT id, $2::integer FROM held"
+    " ON CONFLICT(room_id) DO UPDATE SET next_index = event_sequences.next_index + 1"
+    " RETURNING next_index"
+)
+_OBSERVE_THROUGH_THE_ROOM = (
+    "WITH held AS MATERIALIZED (SELECT id FROM rooms WHERE id = $1 FOR NO KEY UPDATE)"
+    " INSERT INTO event_sequences(room_id, next_index) SELECT id, $2::integer FROM held"
+    " ON CONFLICT(room_id) DO UPDATE"
+    " SET next_index = GREATEST(event_sequences.next_index, EXCLUDED.next_index)"
+    " RETURNING next_index"
+)
+
+
+async def _write_sequence(conn: Any, statement: str, room_id: str, first: int) -> int:
+    """Write a room's sequence by *statement*, the room's row taken first in the same
+    statement, the order of a commit; the mark it now stands at.
+
+    The event's foreign key would otherwise take the room after, and a commit holding it
+    would wait on the sequence this write holds, while this write waits on the room: the
+    server kills one of them. In one statement, as a hold of its own could find no row,
+    the room being deleted, and its id come back with a sequence by the next: that one
+    would be taken with nothing held. ``FOR NO KEY UPDATE``, not the key share the
+    foreign key needs: adds would share that one past a waiting ``FOR UPDATE``, which a
+    stream of them would starve.
+
+    A room not there to hold leaves the sequence alone, and its refusal stays the foreign
+    key's. Should that statement find a sequence after all, the id has come back again,
+    which only another session's deletion, creation and write since can do.
+    """
+    while True:
+        row = await conn.fetchrow(statement, room_id, first)
+        if row is None:
+            row = await conn.fetchrow(
+                "INSERT INTO event_sequences(room_id, next_index) VALUES($1, $2)"
+                " ON CONFLICT(room_id) DO NOTHING RETURNING next_index",
+                room_id,
+                first,
+            )
+        if row is not None:
+            return int(row["next_index"])
 
 
 async def _reserve_event_index(conn: Any, room_id: str) -> int:
     """Atomically reserve and return a room's next monotonic event index."""
-    row = await conn.fetchrow(
-        "INSERT INTO event_sequences(room_id, next_index) VALUES($1, 1)"
-        " ON CONFLICT(room_id) DO UPDATE"
-        " SET next_index = event_sequences.next_index + 1"
-        " RETURNING next_index - 1 AS event_index",
-        room_id,
-    )
-    if row is None:  # pragma: no cover - INSERT .. RETURNING always returns
-        raise RuntimeError(f"Could not reserve an event index for room {room_id!r}")
-    return int(row["event_index"])
+    return await _write_sequence(conn, _RESERVE_THROUGH_THE_ROOM, room_id, 1) - 1
 
 
 async def _observe_event_index(conn: Any, room_id: str, event_index: int) -> None:
     """Keep automatic assignment ahead of caller-supplied event indexes."""
-    await conn.execute(
-        "INSERT INTO event_sequences(room_id, next_index) VALUES($1, $2)"
-        " ON CONFLICT(room_id) DO UPDATE"
-        " SET next_index = GREATEST(event_sequences.next_index, EXCLUDED.next_index)",
-        room_id,
-        event_index + 1,
-    )
+    await _write_sequence(conn, _OBSERVE_THROUGH_THE_ROOM, room_id, event_index + 1)
 
 
 def _room_filter(params: list[Any], room_filter: RoomFilter | None) -> str:
@@ -830,6 +861,12 @@ class PostgresStore(ConversationStore):
                 return report
 
             if affected_rooms:
+                # Before the events: a commit with a target holds its room, then that
+                # event, and this writes the room's counters below.
+                await conn.execute(
+                    "SELECT 1 FROM rooms WHERE id = ANY($1::text[]) ORDER BY id FOR NO KEY UPDATE",
+                    affected_rooms,
+                )
                 await conn.execute(
                     "WITH renum AS ("
                     "  SELECT id, row_number() OVER "
@@ -1287,7 +1324,6 @@ class PostgresStore(ConversationStore):
                 self._acquire() as conn,
                 conn.transaction(),
             ):
-                await _hold_room_first(conn, event.room_id)
                 await _observe_event_index(conn, event.room_id, event.index)
                 await _insert_event(conn, event)
         return event
@@ -1312,6 +1348,8 @@ class PostgresStore(ConversationStore):
         # one transaction; no row of the change (RFC §10.3).
         with self._query_span("write_change_target", "events"):
             async with self._acquire() as conn, conn.transaction():
+                if not await _hold_room_first(conn, room_id):
+                    raise target_gone(target)
                 if not await _update_event_row(conn, target, room_id=room_id):
                     raise target_gone(target)
                 if is_marked_deleted(target):
@@ -1336,6 +1374,8 @@ class PostgresStore(ConversationStore):
     ) -> list[RoomEvent]:
         with self._query_span("delete_event", "events"):
             async with self._acquire() as conn, conn.transaction():
+                if not await _hold_room_first(conn, room_id):
+                    return []
                 root = await conn.fetchval(
                     "SELECT 1 FROM events WHERE room_id = $1 AND id = $2", room_id, event_id
                 )
@@ -1596,7 +1636,6 @@ class PostgresStore(ConversationStore):
                 self._acquire() as conn,
                 conn.transaction(),
             ):
-                await _hold_room_first(conn, room_id)
                 next_idx = await _reserve_event_index(conn, room_id)
                 indexed = event.model_copy(update={"index": next_idx})
                 await _insert_event(conn, indexed)
