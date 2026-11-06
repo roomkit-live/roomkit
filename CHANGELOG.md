@@ -444,8 +444,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   KEY UPDATE`: `delete_event` and `write_change_target` take one more statement and
   wait, for theirs, on the room's other writes, and they on them; an add holds it in
   the statement that takes the sequence, one statement fewer. A missing room is refused
-  as before. Left open: an add whose room is created again under it, with no sequence
-  yet, while a commit holds the new room.
+  as before. Left open: a room id created again under live writes, with no sequence yet
+  for a moment, can still have one of them killed: an add, a commit, a deletion.
 
 - **A hook's injected event stays in its message's trace** (RMK-1301).
   Its `framework.broadcast` was a root span, a trace apart from the call's: it is
