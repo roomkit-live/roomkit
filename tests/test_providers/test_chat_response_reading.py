@@ -467,9 +467,13 @@ async def test_an_id_that_is_no_text_another_entry_holds_is_not_taken_again(
     assert calls == [("lookup", {})]
 
 
-@pytest.mark.parametrize("again", [None, 7], ids=["no-id", "same-id"])
+@pytest.mark.parametrize(
+    ("held", "again"),
+    [(7, None), (7, 7), (7, 7.0), (1, True), (True, 1)],
+    ids=["no-id", "same-id", "7-7.0", "1-true", "true-1"],
+)
 async def test_a_call_named_under_an_id_that_is_no_text_fails_where_it_is_named(
-    again: int | None,
+    held: Any, again: Any
 ) -> None:
     """The call fails as its name comes, under the id an earlier fragment of
     its index gave: nothing after it reaches the reader (RMK-1372)."""
@@ -477,7 +481,12 @@ async def test_a_call_named_under_an_id_that_is_no_text_fails_where_it_is_named(
         _completion([]),
         [
             _chunk(
-                [{"index": 0, "delta": {"tool_calls": [{"index": 0, "id": 7, "type": "custom"}]}}]
+                [
+                    {
+                        "index": 0,
+                        "delta": {"tool_calls": [{"index": 0, "id": held, "type": "custom"}]},
+                    }
+                ]
             ),
             _chunk([{"index": 0, "delta": {"tool_calls": [{**NAMED, "index": 0, "id": again}]}}]),
             _chunk([{"index": 0, "delta": {"content": "after"}, "finish_reason": None}]),
