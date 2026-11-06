@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from roomkit import AIChannel, ChannelCategory, InboundMessage, RoomKit, TextContent
+from roomkit import AIChannel, ChannelCategory, EventType, InboundMessage, RoomKit, TextContent
 from roomkit.providers.ai.base import (
     AIContext,
     AIMessage,
@@ -1246,7 +1246,7 @@ async def _lookup(name: str, arguments: dict[str, Any]) -> str:
 
 async def _room_turn(server: _Server, said: str) -> list[str]:
     """*said* in a room whose agent runs the OpenAI provider on *server*'s
-    wire: what the room stored of the agent's answer."""
+    wire: what the room stored of the agent's messages."""
     config = OpenAIConfig(api_key="k", model="m", base_url="http://wire.test/v1")
     provider = OpenAIAIProvider(config, transport=server.transport)
     kit = RoomKit()
@@ -1264,7 +1264,9 @@ async def _room_turn(server: _Server, said: str) -> list[str]:
     return [
         event.content.body
         for event in events
-        if event.source.channel_id == "ai" and isinstance(event.content, TextContent)
+        if event.source.channel_id == "ai"
+        and event.type == EventType.MESSAGE
+        and isinstance(event.content, TextContent)
     ]
 
 
