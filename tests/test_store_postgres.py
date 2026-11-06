@@ -476,6 +476,18 @@ async def test_a_record_the_model_cannot_read_serves_no_read(
     assert "a@globex.example" not in caplog.text
 
 
+async def test_a_replacement_repairs_a_row_the_model_cannot_read(store: Any) -> None:
+    """A replacement of an identity whose row holds a member the model refuses writes the
+    addresses it declares, and the row reads again."""
+    await store.create_identity(Identity(id="i1", organization_id="globex"))
+    await _spoil_the_row(
+        store, "channel_addresses", '{"sms": ["+1555"], "SMS": "a@globex.example"}'
+    )
+    identity = Identity(id="i1", organization_id="globex", channel_addresses={"sms": ["+1555"]})
+    await store.create_identity(identity)
+    assert await store.get_identity("i1") == identity
+
+
 async def test_a_row_with_an_empty_id_serves_no_read(
     store: Any, caplog: pytest.LogCaptureFixture
 ) -> None:
