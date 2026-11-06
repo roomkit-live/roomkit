@@ -98,6 +98,11 @@ def _streamed_refusal(done: StreamDone) -> str | None:
     return "content_filter" if done.finish_reason == "content_filter" else None
 
 
+def _whole(value: Any) -> int | None:
+    """*value* when a server wrote it as a whole number, else ``None``."""
+    return value if type(value) is int and value >= 0 else None
+
+
 class OpenAIAIProvider(AIProvider):
     """AI provider using the OpenAI Chat Completions API."""
 
@@ -415,20 +420,29 @@ class OpenAIAIProvider(AIProvider):
         ``prompt_tokens`` includes cache reads and explicit cache writes, while
         roomkit reports those counters separately. Subtract both from ordinary
         input so a budget or cost dashboard cannot charge them twice.
+
+        A counter the server leaves out stays unknown, never 0, which a budget
+        would read as a free generation (RFC §6.4): without ``prompt_tokens``
+        there is no input count, nor a cache read, which is a share of the
+        prompt and bounded by it. A cache write a server writes as anything
+        but a whole number is none.
         """
-        prompt = raw.prompt_tokens or 0
+        prompt = getattr(raw, "prompt_tokens", None)
+        completion = getattr(raw, "completion_tokens", None)
         details = getattr(raw, "prompt_tokens_details", None)
         cached = (getattr(details, "cached_tokens", 0) if details else 0) or 0
         written = (
-            (getattr(details, "cache_write_tokens", 0) if details else 0)
-            or getattr(raw, "cache_write_tokens", 0)
+            _whole(getattr(details, "cache_write_tokens", None) if details else None)
+            or _whole(getattr(raw, "cache_write_tokens", None))
             or 0
         )
-        usage = {
-            "input_tokens": max(prompt - cached - written, 0),
-            "output_tokens": raw.completion_tokens or 0,
-        }
-        if cached:
+        usage: dict[str, int] = {}
+        if prompt is not None:
+            cached = min(cached, prompt)
+            usage["input_tokens"] = max(prompt - cached - written, 0)
+        if completion is not None:
+            usage["output_tokens"] = completion
+        if cached and prompt is not None:
             usage["cache_read_input_tokens"] = cached
         if written:
             usage["cache_creation_input_tokens"] = written

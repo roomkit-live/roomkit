@@ -245,6 +245,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **BREAKING: a usage counter an OpenAI-compatible server leaves out stays unknown** (RFC
+  §6.4, HITL e2e71208, 6ae64eef, RMK-1441). A Chat Completions usage without
+  `prompt_tokens` or `completion_tokens` reported it as 0, and the turn's record said
+  `ai_usage_complete` true: a budget read a free generation. `{"completion_tokens": 7}` now
+  reads `{"output_tokens": 7}` and the record is incomplete, as roomkit-rs reads it. A cache
+  read is bounded by the prompt, and dropped without one; a cache write that is not a whole
+  number is ignored, where it raised `TypeError`. DeepSeek's and xAI's readers do the same.
+
 - **BREAKING: a model's reasoning no longer goes back on Chat Completions** (RFC §6.4,
   RMK-1369). `ChatDialect()` sent it as a `<think>` block in the content, which a generic
   server reads as text the model said: on a real Qwen, each step of a turn lost its prompt

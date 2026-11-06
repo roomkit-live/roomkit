@@ -363,6 +363,27 @@ class TestDeepSeekUsage:
         assert usage["input_tokens"] == 400
         assert usage["cache_read_input_tokens"] == 600
 
+    @pytest.mark.parametrize(
+        ("counts", "usage"),
+        [
+            (
+                {"prompt_cache_hit_tokens": 960, "prompt_cache_miss_tokens": 40},
+                {"input_tokens": 40, "cache_read_input_tokens": 960},
+            ),
+            (
+                {"completion_tokens": 50, "prompt_cache_hit_tokens": 600},
+                {"output_tokens": 50, "cache_read_input_tokens": 600},
+            ),
+        ],
+        ids=["no-completion", "no-miss-nor-prompt"],
+    )
+    def test_a_count_the_server_leaves_out_stays_unknown(
+        self, counts: dict[str, int], usage: dict[str, int]
+    ) -> None:
+        """A counter DeepSeek leaves out is absent, never 0 (RFC §6.4, RMK-1441)."""
+        fields = {"prompt_tokens": None, "completion_tokens": None, **counts}
+        assert self._usage(**fields) == usage
+
     def test_zero_hit_reports_no_cache_counter(self) -> None:
         usage = self._usage(
             prompt_tokens=100,

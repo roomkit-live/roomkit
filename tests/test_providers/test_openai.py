@@ -369,6 +369,59 @@ class TestOpenAIAIProvider:
 
             assert result.usage == {"input_tokens": 42, "output_tokens": 7}
 
+    @pytest.mark.parametrize(
+        ("counts", "usage"),
+        [
+            ({"prompt_tokens": None, "completion_tokens": 7}, {"output_tokens": 7}),
+            ({"prompt_tokens": 42, "completion_tokens": None}, {"input_tokens": 42}),
+            # A cache read the prompt cannot hold is bounded by it.
+            (
+                {"prompt_tokens": 10, "completion_tokens": 7, "cached_tokens": 40},
+                {"input_tokens": 0, "output_tokens": 7, "cache_read_input_tokens": 10},
+            ),
+            # The read is a share of the prompt: unknown with it. A write is
+            # reported apart, and kept.
+            (
+                {"prompt_tokens": None, "completion_tokens": 7, "cached_tokens": 40},
+                {"output_tokens": 7},
+            ),
+            (
+                {"prompt_tokens": None, "completion_tokens": 7, "cache_write_tokens": 5},
+                {"output_tokens": 7, "cache_creation_input_tokens": 5},
+            ),
+            # A counter of another shape is none.
+            (
+                {"prompt_tokens": 100, "completion_tokens": 7, "cache_write_tokens": "12"},
+                {"input_tokens": 100, "output_tokens": 7},
+            ),
+        ],
+        ids=[
+            "no-prompt",
+            "no-completion",
+            "cached-above-the-prompt",
+            "no-prompt-a-cache-read",
+            "no-prompt-a-cache-write",
+            "a-cache-write-of-another-shape",
+        ],
+    )
+    async def test_a_count_the_server_leaves_out_stays_unknown(
+        self, counts: dict[str, Any], usage: dict[str, int]
+    ) -> None:
+        """A counter the server omits is absent, never 0: a budget would read
+        a 0 as a free generation (RFC §6.4, RMK-1441)."""
+        with patch.dict("sys.modules", {"openai": _mock_openai_module()}):
+            from roomkit.providers.openai.ai import OpenAIAIProvider
+
+            provider = OpenAIAIProvider(_config())
+            provider._client = MagicMock()
+            provider._client.chat.completions.create = AsyncMock(
+                return_value=_mock_response(**counts)
+            )
+
+            result = await provider.generate(_context())
+
+            assert result.usage == usage
+
     @pytest.mark.asyncio
     async def test_generate_reports_the_cached_prefix_apart_from_fresh_input(self) -> None:
         # OpenAI's prompt_tokens counts the cached prefix; reporting both

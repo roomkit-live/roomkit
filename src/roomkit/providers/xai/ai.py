@@ -51,7 +51,8 @@ class XAIAIProvider(OpenAIAIProvider):
         usage = OpenAIAIProvider._usage_from(raw)
         reasoning = usage.get("reasoning_tokens", 0)
         apart = (raw.prompt_tokens or 0) + (raw.completion_tokens or 0) + reasoning
-        if reasoning and getattr(raw, "total_tokens", None) == apart:
+        # An output the server left out stays unknown (RFC §6.4).
+        if reasoning and "output_tokens" in usage and getattr(raw, "total_tokens", None) == apart:
             usage["output_tokens"] += reasoning
         return usage
 

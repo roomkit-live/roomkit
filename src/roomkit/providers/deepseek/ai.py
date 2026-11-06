@@ -121,15 +121,22 @@ class DeepSeekAIProvider(OpenAIAIProvider):
         looks only at the OpenAI shape, so every cached token would be counted
         — and priced — as ordinary input: a thirty-fold overcharge at DeepSeek's
         published rates. An endpoint that reports neither shape (a proxy) falls
-        back to the parent.
+        back to the parent. A counter it leaves out stays unknown, never 0
+        (RFC §6.4): without a miss count nor a prompt, there is no input count.
         """
         hit = getattr(raw, "prompt_cache_hit_tokens", None)
         if hit is None:
             return OpenAIAIProvider._usage_from(raw)
         miss = getattr(raw, "prompt_cache_miss_tokens", None)
-        if miss is None:
-            miss = max((raw.prompt_tokens or 0) - hit, 0)
-        usage = {"input_tokens": miss, "output_tokens": raw.completion_tokens or 0}
+        prompt = getattr(raw, "prompt_tokens", None)
+        if miss is None and prompt is not None:
+            miss = max(prompt - hit, 0)
+        completion = getattr(raw, "completion_tokens", None)
+        usage: dict[str, int] = {}
+        if miss is not None:
+            usage["input_tokens"] = miss
+        if completion is not None:
+            usage["output_tokens"] = completion
         if hit:
             usage["cache_read_input_tokens"] = hit
         return {**usage, **OpenAIAIProvider._reasoning_detail(raw)}

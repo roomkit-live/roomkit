@@ -151,3 +151,19 @@ def test_xai_reasoning_reported_beside_the_completion_is_billed_as_output() -> N
     assert apart == {"input_tokens": 279, "output_tokens": 95, "reasoning_tokens": 89}
     # Shaped like OpenAI's, the reasoning is already in the completion: never twice.
     assert inside == apart
+
+
+def test_xai_reasoning_beside_an_omitted_completion_leaves_the_output_unknown() -> None:
+    """A completion the server leaves out stays unknown (RFC §6.4, RMK-1441),
+    even where the total says the reasoning was reported apart."""
+    usage = XAIAIProvider._usage_from(
+        SimpleNamespace(
+            prompt_tokens=279,
+            completion_tokens=None,
+            total_tokens=368,
+            prompt_tokens_details=None,
+            completion_tokens_details=SimpleNamespace(reasoning_tokens=89),
+        )
+    )
+
+    assert usage == {"input_tokens": 279, "reasoning_tokens": 89}
