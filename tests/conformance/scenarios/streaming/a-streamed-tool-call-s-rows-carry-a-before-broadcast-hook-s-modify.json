@@ -1,0 +1,189 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-streamed-tool-call-s-rows-carry-a-before-broadcast-hook-s-modify",
+  "title": "A streamed tool call's start and end pass BEFORE_BROADCAST like the text around them: they are stored and delivered as the hook modified them",
+  "rules": [
+    "§12.2 step 13s",
+    "§10.1 step 9",
+    "§9.4"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms1",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ai1",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look up",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "ok"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "Looking."
+              ],
+              "calls": [
+                {
+                  "id": "tc1",
+                  "name": "lookup",
+                  "arguments": {
+                    "q": "x"
+                  }
+                }
+              ]
+            },
+            {
+              "deltas": [
+                "Found."
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms1"
+          },
+          {
+            "channel_id": "ai1",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "label",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "type": "tool_call_start"
+            },
+            "result": {
+              "action": "modify",
+              "event": {
+                "metadata": {
+                  "label": "Lookup · tool_call_start"
+                }
+              }
+            },
+            "repeat": true
+          },
+          {
+            "when": {
+              "type": "tool_call_end"
+            },
+            "result": {
+              "action": "modify",
+              "event": {
+                "metadata": {
+                  "label": "Lookup · tool_call_end"
+                }
+              }
+            },
+            "repeat": true
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms1",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "go"
+          }
+        },
+        {
+          "type": "message",
+          "content": {
+            "body": "Looking."
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "status": "delivered",
+          "metadata": {
+            "label": "Lookup · tool_call_start"
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "status": "delivered",
+          "metadata": {
+            "label": "Lookup · tool_call_end"
+          }
+        },
+        {
+          "type": "message",
+          "content": {
+            "body": "Found."
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms1": [
+          {
+            "id": "room-1#1"
+          },
+          {
+            "id": "room-1#2",
+            "type": "tool_call_start",
+            "metadata": {
+              "label": "Lookup · tool_call_start"
+            }
+          },
+          {
+            "id": "room-1#3",
+            "type": "tool_call_end",
+            "metadata": {
+              "label": "Lookup · tool_call_end"
+            }
+          },
+          {
+            "id": "room-1#4"
+          }
+        ]
+      }
+    }
+  },
+  "notes": "Python: tests/test_streaming_before_broadcast.py::test_streamed_tool_call_events_carry_before_broadcast_modification. A modify's event is a patch: the hook writes the row's metadata as the label alone."
+}

@@ -1,0 +1,339 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/two-overlapping-calls-each-return-their-own-answer",
+  "title": "Two calls into a room that overlap each return their own agent's answer as their response events, none of the other's",
+  "rules": [
+    "§10.1 step 18",
+    "§10.2"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "user",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "streamed",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "first answer",
+              "gate": "first-1"
+            },
+            {
+              "text": "second answer"
+            }
+          ]
+        }
+      },
+      {
+        "id": "whole",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "first answer",
+              "whole_response": {},
+              "gate": "first-2"
+            },
+            {
+              "text": "second answer",
+              "whole_response": {}
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "user"
+          },
+          {
+            "channel_id": "streamed",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "user"
+          },
+          {
+            "channel_id": "whole",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "user",
+        "sender_id": "person",
+        "content": {
+          "type": "text",
+          "body": "first task"
+        }
+      },
+      "background": true,
+      "as": "streamed_first"
+    },
+    {
+      "wait_for": "first-1"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "user",
+        "sender_id": "person",
+        "content": {
+          "type": "text",
+          "body": "second task"
+        }
+      },
+      "as": "streamed_second",
+      "defer_delivery": true,
+      "expect": {
+        "result": {
+          "event": {
+            "id": "room-1#1"
+          }
+        }
+      }
+    },
+    {
+      "open": "first-1"
+    },
+    {
+      "await": "streamed_first",
+      "expect": {
+        "result": {
+          "event": {
+            "id": "room-1#0"
+          },
+          "response_events": [
+            {
+              "type": "message",
+              "status": "delivered",
+              "source": {
+                "channel_id": "streamed"
+              },
+              "responds_to": "room-1#0",
+              "content": {
+                "type": "text",
+                "body": "first answer"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "delivery.wait",
+      "of": "streamed_second",
+      "expect": {
+        "result": {
+          "event": {
+            "id": "room-1#1"
+          },
+          "response_events": [
+            {
+              "type": "message",
+              "status": "delivered",
+              "source": {
+                "channel_id": "streamed"
+              },
+              "responds_to": "room-1#1",
+              "content": {
+                "type": "text",
+                "body": "second answer"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "user",
+        "sender_id": "person",
+        "content": {
+          "type": "text",
+          "body": "first task"
+        }
+      },
+      "background": true,
+      "as": "whole_first"
+    },
+    {
+      "wait_for": "first-2"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "user",
+        "sender_id": "person",
+        "content": {
+          "type": "text",
+          "body": "second task"
+        }
+      },
+      "as": "whole_second",
+      "defer_delivery": true,
+      "expect": {
+        "result": {
+          "event": {
+            "id": "room-2#1"
+          }
+        }
+      }
+    },
+    {
+      "open": "first-2"
+    },
+    {
+      "await": "whole_first",
+      "expect": {
+        "result": {
+          "event": {
+            "id": "room-2#0"
+          },
+          "response_events": [
+            {
+              "type": "message",
+              "status": "delivered",
+              "source": {
+                "channel_id": "whole"
+              },
+              "responds_to": "room-2#0",
+              "content": {
+                "type": "text",
+                "body": "first answer"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "delivery.wait",
+      "of": "whole_second",
+      "expect": {
+        "result": {
+          "event": {
+            "id": "room-2#1"
+          },
+          "response_events": [
+            {
+              "type": "message",
+              "status": "delivered",
+              "source": {
+                "channel_id": "whole"
+              },
+              "responds_to": "room-2#1",
+              "content": {
+                "type": "text",
+                "body": "second answer"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": {
+        "$unordered": [
+          {
+            "content": {
+              "body": "first task"
+            }
+          },
+          {
+            "content": {
+              "body": "second task"
+            }
+          },
+          {
+            "type": "message",
+            "status": "delivered",
+            "source": {
+              "channel_id": "streamed"
+            },
+            "responds_to": "room-1#0",
+            "content": {
+              "type": "text",
+              "body": "first answer"
+            }
+          },
+          {
+            "type": "message",
+            "status": "delivered",
+            "source": {
+              "channel_id": "streamed"
+            },
+            "responds_to": "room-1#1",
+            "content": {
+              "type": "text",
+              "body": "second answer"
+            }
+          }
+        ]
+      },
+      "room-2": {
+        "$unordered": [
+          {
+            "content": {
+              "body": "first task"
+            }
+          },
+          {
+            "content": {
+              "body": "second task"
+            }
+          },
+          {
+            "type": "message",
+            "status": "delivered",
+            "source": {
+              "channel_id": "whole"
+            },
+            "responds_to": "room-2#0",
+            "content": {
+              "type": "text",
+              "body": "first answer"
+            }
+          },
+          {
+            "type": "message",
+            "status": "delivered",
+            "source": {
+              "channel_id": "whole"
+            },
+            "responds_to": "room-2#1",
+            "content": {
+              "type": "text",
+              "body": "second answer"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "notes": "Python: tests/test_inbound_response_events.py::test_concurrent_calls_keep_disjoint_responses[streamed and not]. The first call's turn is held at its gate; the second message is committed meanwhile (a deferred call returns at its commit, §10.1 step 18), so both calls are in flight at once. Each call's response events are its own agent's answer to its own event, whichever answer the room stores first. room-1's agent streams, room-2's reads whole."
+}

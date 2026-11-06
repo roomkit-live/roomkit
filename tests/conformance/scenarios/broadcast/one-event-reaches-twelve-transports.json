@@ -1,0 +1,249 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "broadcast/one-event-reaches-twelve-transports",
+  "title": "One event broadcast to twelve transports reaches each of them once, and the call reports each delivery",
+  "rules": [
+    "§10.2 step 3",
+    "§10.2 step 3e"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ch0",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ch1",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ch2",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ch3",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ch4",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ch5",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ch6",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ch7",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ch8",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ch9",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ch10",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ch11",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ch12",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ch0"
+          },
+          {
+            "channel_id": "ch1"
+          },
+          {
+            "channel_id": "ch2"
+          },
+          {
+            "channel_id": "ch3"
+          },
+          {
+            "channel_id": "ch4"
+          },
+          {
+            "channel_id": "ch5"
+          },
+          {
+            "channel_id": "ch6"
+          },
+          {
+            "channel_id": "ch7"
+          },
+          {
+            "channel_id": "ch8"
+          },
+          {
+            "channel_id": "ch9"
+          },
+          {
+            "channel_id": "ch10"
+          },
+          {
+            "channel_id": "ch11"
+          },
+          {
+            "channel_id": "ch12"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ch0",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "To everyone"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "delivery_results": {
+            "ch1": {
+              "status": "sent"
+            },
+            "ch2": {
+              "status": "sent"
+            },
+            "ch3": {
+              "status": "sent"
+            },
+            "ch4": {
+              "status": "sent"
+            },
+            "ch5": {
+              "status": "sent"
+            },
+            "ch6": {
+              "status": "sent"
+            },
+            "ch7": {
+              "status": "sent"
+            },
+            "ch8": {
+              "status": "sent"
+            },
+            "ch9": {
+              "status": "sent"
+            },
+            "ch10": {
+              "status": "sent"
+            },
+            "ch11": {
+              "status": "sent"
+            },
+            "ch12": {
+              "status": "sent"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "deliveries": {
+      "room-1": {
+        "ch0": [],
+        "ch1": [
+          {
+            "id": "room-1#0"
+          }
+        ],
+        "ch2": [
+          {
+            "id": "room-1#0"
+          }
+        ],
+        "ch3": [
+          {
+            "id": "room-1#0"
+          }
+        ],
+        "ch4": [
+          {
+            "id": "room-1#0"
+          }
+        ],
+        "ch5": [
+          {
+            "id": "room-1#0"
+          }
+        ],
+        "ch6": [
+          {
+            "id": "room-1#0"
+          }
+        ],
+        "ch7": [
+          {
+            "id": "room-1#0"
+          }
+        ],
+        "ch8": [
+          {
+            "id": "room-1#0"
+          }
+        ],
+        "ch9": [
+          {
+            "id": "room-1#0"
+          }
+        ],
+        "ch10": [
+          {
+            "id": "room-1#0"
+          }
+        ],
+        "ch11": [
+          {
+            "id": "room-1#0"
+          }
+        ],
+        "ch12": [
+          {
+            "id": "room-1#0"
+          }
+        ]
+      }
+    }
+  },
+  "notes": "Python: tests/test_router.py::TestBroadcastConcurrency::test_many_channels_no_data_loss. The targets are delivered concurrently (§10.2 step 3): the set loses none of their outcomes."
+}

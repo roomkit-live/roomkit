@@ -1,0 +1,309 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-deferred-call-s-response-events-are-its-own-answer",
+  "title": "A deferred call's wait returns as its response events its own agent's answer alone, stored and delivered, streamed or read whole, never the answer to the call before it",
+  "rules": [
+    "§10.1 step 18",
+    "§10.1 step 14"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "user",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "streamed",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "first answer"
+            },
+            {
+              "text": "second answer"
+            }
+          ]
+        }
+      },
+      {
+        "id": "whole",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "first answer",
+              "whole_response": {}
+            },
+            {
+              "text": "second answer",
+              "whole_response": {}
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "user"
+          },
+          {
+            "channel_id": "streamed",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "user"
+          },
+          {
+            "channel_id": "whole",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "user",
+        "sender_id": "person",
+        "content": {
+          "type": "text",
+          "body": "first task"
+        }
+      },
+      "defer_delivery": true,
+      "as": "streamed0"
+    },
+    {
+      "call": "delivery.wait",
+      "of": "streamed0",
+      "expect": {
+        "result": {
+          "event": {
+            "id": "room-1#0"
+          },
+          "response_events": [
+            {
+              "id": "room-1#1",
+              "type": "message",
+              "status": "delivered",
+              "source": {
+                "channel_id": "streamed"
+              },
+              "content": {
+                "type": "text",
+                "body": "first answer"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "user",
+        "sender_id": "person",
+        "content": {
+          "type": "text",
+          "body": "second task"
+        }
+      },
+      "defer_delivery": true,
+      "as": "streamed1"
+    },
+    {
+      "call": "delivery.wait",
+      "of": "streamed1",
+      "expect": {
+        "result": {
+          "event": {
+            "id": "room-1#2"
+          },
+          "response_events": [
+            {
+              "id": "room-1#3",
+              "type": "message",
+              "status": "delivered",
+              "source": {
+                "channel_id": "streamed"
+              },
+              "content": {
+                "type": "text",
+                "body": "second answer"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "user",
+        "sender_id": "person",
+        "content": {
+          "type": "text",
+          "body": "first task"
+        }
+      },
+      "defer_delivery": true,
+      "as": "whole0"
+    },
+    {
+      "call": "delivery.wait",
+      "of": "whole0",
+      "expect": {
+        "result": {
+          "event": {
+            "id": "room-2#0"
+          },
+          "response_events": [
+            {
+              "id": "room-2#1",
+              "type": "message",
+              "status": "delivered",
+              "source": {
+                "channel_id": "whole"
+              },
+              "content": {
+                "type": "text",
+                "body": "first answer"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "user",
+        "sender_id": "person",
+        "content": {
+          "type": "text",
+          "body": "second task"
+        }
+      },
+      "defer_delivery": true,
+      "as": "whole1"
+    },
+    {
+      "call": "delivery.wait",
+      "of": "whole1",
+      "expect": {
+        "result": {
+          "event": {
+            "id": "room-2#2"
+          },
+          "response_events": [
+            {
+              "id": "room-2#3",
+              "type": "message",
+              "status": "delivered",
+              "source": {
+                "channel_id": "whole"
+              },
+              "content": {
+                "type": "text",
+                "body": "second answer"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "first task"
+          }
+        },
+        {
+          "id": "room-1#1",
+          "type": "message",
+          "status": "delivered",
+          "source": {
+            "channel_id": "streamed"
+          },
+          "content": {
+            "type": "text",
+            "body": "first answer"
+          }
+        },
+        {
+          "content": {
+            "body": "second task"
+          }
+        },
+        {
+          "id": "room-1#3",
+          "type": "message",
+          "status": "delivered",
+          "source": {
+            "channel_id": "streamed"
+          },
+          "content": {
+            "type": "text",
+            "body": "second answer"
+          }
+        }
+      ],
+      "room-2": [
+        {
+          "content": {
+            "body": "first task"
+          }
+        },
+        {
+          "id": "room-2#1",
+          "type": "message",
+          "status": "delivered",
+          "source": {
+            "channel_id": "whole"
+          },
+          "content": {
+            "type": "text",
+            "body": "first answer"
+          }
+        },
+        {
+          "content": {
+            "body": "second task"
+          }
+        },
+        {
+          "id": "room-2#3",
+          "type": "message",
+          "status": "delivered",
+          "source": {
+            "channel_id": "whole"
+          },
+          "content": {
+            "type": "text",
+            "body": "second answer"
+          }
+        }
+      ]
+    }
+  },
+  "notes": "Python: tests/test_inbound_response_events.py::test_response_events_belong_to_their_call[deferred, streamed and not]. room-1's agent streams its answer, room-2's reads it whole. The response events are the stored rows: their ids are the timeline's."
+}

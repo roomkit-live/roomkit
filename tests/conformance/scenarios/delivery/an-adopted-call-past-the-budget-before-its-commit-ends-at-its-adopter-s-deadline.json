@@ -1,0 +1,498 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/an-adopted-call-past-the-budget-before-its-commit-ends-at-its-adopter-s-deadline",
+  "title": "A call an off-lock hook makes into its room past the reentry budget, waiting for the room lock an agent's answer holds when its adopter's process_timeout passes, ends with the hook's body: its BLOCKED record is never stored, and the adopter is refused on time",
+  "rules": [
+    "§9.5.1 Reentrance",
+    "§13.6",
+    "§8.3"
+  ],
+  "notes": "Python: src/roomkit/core/framework.py, _store_entry_past_cap takes the room lock inside the hook's body, which the off-lock check runs within the call's deadline: past it the body is cancelled, and the record's wait for the lock with it. max_chain_depth 2: a reentry budget of 20 passes, and the agent's answer within the depth limit. Found by the review of RMK-1443 item 1's lot.",
+  "setup": {
+    "kit": {
+      "process_timeout_ms": 200,
+      "max_chain_depth": 2
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "on_event": [
+          {
+            "when": {
+              "text": "c"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "r"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "holds",
+        "trigger": "before_broadcast",
+        "timeout_ms": 1000,
+        "reactions": [
+          {
+            "when": {
+              "text": "r"
+            },
+            "gate": "held"
+          }
+        ]
+      },
+      {
+        "name": "burns",
+        "trigger": "before_broadcast",
+        "needs_lock": false,
+        "timeout_ms": 5000,
+        "reactions": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "nope",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "burn 0"
+                  }
+                },
+                "expect": {
+                  "error": "channel_not_registered"
+                }
+              },
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "nope",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "burn 1"
+                  }
+                },
+                "expect": {
+                  "error": "channel_not_registered"
+                }
+              },
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "nope",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "burn 2"
+                  }
+                },
+                "expect": {
+                  "error": "channel_not_registered"
+                }
+              },
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "nope",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "burn 3"
+                  }
+                },
+                "expect": {
+                  "error": "channel_not_registered"
+                }
+              },
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "nope",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "burn 4"
+                  }
+                },
+                "expect": {
+                  "error": "channel_not_registered"
+                }
+              },
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "nope",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "burn 5"
+                  }
+                },
+                "expect": {
+                  "error": "channel_not_registered"
+                }
+              },
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "nope",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "burn 6"
+                  }
+                },
+                "expect": {
+                  "error": "channel_not_registered"
+                }
+              },
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "nope",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "burn 7"
+                  }
+                },
+                "expect": {
+                  "error": "channel_not_registered"
+                }
+              },
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "nope",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "burn 8"
+                  }
+                },
+                "expect": {
+                  "error": "channel_not_registered"
+                }
+              },
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "nope",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "burn 9"
+                  }
+                },
+                "expect": {
+                  "error": "channel_not_registered"
+                }
+              },
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "nope",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "burn 10"
+                  }
+                },
+                "expect": {
+                  "error": "channel_not_registered"
+                }
+              },
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "nope",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "burn 11"
+                  }
+                },
+                "expect": {
+                  "error": "channel_not_registered"
+                }
+              },
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "nope",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "burn 12"
+                  }
+                },
+                "expect": {
+                  "error": "channel_not_registered"
+                }
+              },
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "nope",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "burn 13"
+                  }
+                },
+                "expect": {
+                  "error": "channel_not_registered"
+                }
+              },
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "nope",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "burn 14"
+                  }
+                },
+                "expect": {
+                  "error": "channel_not_registered"
+                }
+              },
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "nope",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "burn 15"
+                  }
+                },
+                "expect": {
+                  "error": "channel_not_registered"
+                }
+              },
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "nope",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "burn 16"
+                  }
+                },
+                "expect": {
+                  "error": "channel_not_registered"
+                }
+              },
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "nope",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "burn 17"
+                  }
+                },
+                "expect": {
+                  "error": "channel_not_registered"
+                }
+              },
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "nope",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "burn 18"
+                  }
+                },
+                "expect": {
+                  "error": "channel_not_registered"
+                }
+              },
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "nope",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "burn 19"
+                  }
+                },
+                "expect": {
+                  "error": "channel_not_registered"
+                }
+              },
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "nope",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "burn 20"
+                  }
+                },
+                "expect": {
+                  "result": {
+                    "blocked": true,
+                    "reason": "reentry_loop_cap",
+                    "event": null
+                  }
+                }
+              },
+              {
+                "call": "send_event",
+                "room_id": "room-1",
+                "channel_id": "ws",
+                "content": {
+                  "type": "text",
+                  "body": "x"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "c"
+        }
+      },
+      "background": true,
+      "as": "c"
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "background": true,
+      "as": "h"
+    },
+    {
+      "await": "h",
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "process_timeout",
+          "event": null
+        }
+      }
+    },
+    {
+      "open": "held"
+    },
+    {
+      "await": "c",
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "c"
+          }
+        },
+        {
+          "content": {
+            "body": "r"
+          }
+        }
+      ]
+    },
+    "framework_events": {
+      "room-1": [
+        {
+          "event": "event_processed"
+        },
+        {
+          "event": "process_timeout"
+        }
+      ]
+    }
+  }
+}

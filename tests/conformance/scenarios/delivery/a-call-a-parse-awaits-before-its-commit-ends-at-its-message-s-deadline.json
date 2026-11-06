@@ -1,0 +1,112 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-call-a-parse-awaits-before-its-commit-ends-at-its-message-s-deadline",
+  "title": "A call a message's parse makes into its room and awaits, held by a locked hook when the message's process_timeout passes, ends with the parse: nothing of it is stored, and only the message's process_timeout is reported",
+  "rules": [
+    "§9.5.1 Reentrance",
+    "§13.6"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/inbound.py, _prepare_event runs the parse within the call's deadline (asyncio.timeout_at): past it the parse is cancelled, and the call it awaits with it. Found by the review of RMK-1443 item 1's lot.",
+  "setup": {
+    "kit": {
+      "process_timeout_ms": 200
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "parse": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "ws",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "side"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "slow",
+        "trigger": "before_broadcast",
+        "timeout_ms": 5000,
+        "reactions": [
+          {
+            "when": {
+              "text": "side"
+            },
+            "gate": "sidegate"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "background": true,
+      "as": "h"
+    },
+    {
+      "await": "h",
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "process_timeout",
+          "event": null
+        }
+      }
+    },
+    {
+      "open": "sidegate"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": []
+    },
+    "framework_events": {
+      "room-1": [
+        {
+          "event": "process_timeout"
+        }
+      ]
+    }
+  }
+}

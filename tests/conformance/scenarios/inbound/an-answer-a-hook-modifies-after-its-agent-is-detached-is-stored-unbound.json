@@ -1,0 +1,147 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/an-answer-a-hook-modifies-after-its-agent-is-detached-is-stored-unbound",
+  "title": "The answer of an agent detached during its turn is still its BEFORE_BROADCAST hooks' to decide: it is stored as the hook modified it, refused source_unbound, and the deferred call's wait returns no response event",
+  "rules": [
+    "§10.1 step 18",
+    "§10.1 step 9",
+    "§7.5 rule 2",
+    "§7.5 rule 7"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "user",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "assistant",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "private answer",
+              "whole_response": {},
+              "gate": "generating"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "user"
+          },
+          {
+            "channel_id": "assistant",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "gate",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "source_channel_id": "assistant"
+            },
+            "result": {
+              "action": "modify",
+              "event": {
+                "content": {
+                  "type": "text",
+                  "body": "safe answer"
+                }
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "user",
+        "sender_id": "person",
+        "content": {
+          "type": "text",
+          "body": "task"
+        }
+      },
+      "defer_delivery": true,
+      "as": "task"
+    },
+    {
+      "wait_for": "generating"
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "room-1",
+      "channel_id": "assistant"
+    },
+    {
+      "open": "generating"
+    },
+    {
+      "call": "delivery.wait",
+      "of": "task",
+      "expect": {
+        "result": {
+          "response_events": []
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "task"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "assistant"
+          },
+          "status": "blocked",
+          "blocked_by": "source_unbound",
+          "content": {
+            "type": "text",
+            "body": "safe answer"
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "gate": [
+        {
+          "event": {
+            "id": "room-1#0"
+          }
+        },
+        {
+          "event": {
+            "source": {
+              "channel_id": "assistant"
+            },
+            "content": {
+              "body": "private answer"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "notes": "Python: tests/test_inbound_response_events.py::test_detached_response_still_obeys_broadcast_hooks[blocked=False]. A detached source writes nothing into the room (§7.5 rules 2 and 7): its answer is the hooks' to decide, then stored refused."
+}

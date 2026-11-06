@@ -1,0 +1,244 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-streamed-row-of-a-detached-agent-keeps-its-hook-s-effects",
+  "title": "A streamed row stored after its agent is detached is stored BLOCKED source_unbound, and the task, the observation and the injected event its BEFORE_BROADCAST hook gives land all the same",
+  "rules": [
+    "§12.2 step 13s",
+    "§9.4",
+    "§7.5 rule 2",
+    "§7.5 rule 7"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms1",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "audit",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ai1",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look up",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "ok",
+            "gate": "looking"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "Looking."
+              ],
+              "calls": [
+                {
+                  "id": "tc1",
+                  "name": "lookup",
+                  "arguments": {
+                    "q": "x"
+                  }
+                }
+              ]
+            },
+            {
+              "deltas": [
+                "Found."
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms1"
+          },
+          {
+            "channel_id": "audit"
+          },
+          {
+            "channel_id": "ai1",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "side_effects",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "Found."
+            },
+            "result": {
+              "action": "allow",
+              "tasks": [
+                {
+                  "title": "Follow up"
+                }
+              ],
+              "observations": [
+                {
+                  "category": "audit",
+                  "content": "Observed"
+                }
+              ],
+              "injected_events": [
+                {
+                  "target_channel_ids": [
+                    "audit"
+                  ],
+                  "event": {
+                    "content": {
+                      "type": "text",
+                      "body": "notice"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms1",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "background": true,
+      "as": "go"
+    },
+    {
+      "wait_for": "looking"
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "room-1",
+      "channel_id": "ai1"
+    },
+    {
+      "open": "looking"
+    },
+    {
+      "await": "go"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "go"
+          }
+        },
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "ai1"
+          },
+          "content": {
+            "body": "Looking."
+          },
+          "status": "delivered"
+        },
+        {
+          "type": "tool_call_start",
+          "status": "delivered"
+        },
+        {
+          "type": "tool_call_end",
+          "status": "blocked",
+          "blocked_by": "source_unbound"
+        },
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "ai1"
+          },
+          "content": {
+            "body": "Found."
+          },
+          "status": "blocked",
+          "blocked_by": "source_unbound"
+        },
+        {
+          "source": {
+            "channel_id": "system"
+          },
+          "content": {
+            "body": "notice"
+          },
+          "status": "delivered"
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "audit": [
+          {
+            "id": "room-1#0"
+          },
+          {
+            "id": "room-1#1"
+          },
+          {
+            "id": "room-1#2"
+          },
+          {
+            "id": "room-1#5",
+            "content": {
+              "body": "notice"
+            }
+          }
+        ]
+      }
+    },
+    "tasks": {
+      "room-1": [
+        {
+          "title": "Follow up"
+        }
+      ]
+    },
+    "observations": {
+      "room-1": [
+        {
+          "content": "Observed"
+        }
+      ]
+    }
+  },
+  "notes": "Python: tests/test_streaming_before_broadcast.py::test_stream_hook_effects_without_persistence_or_source_binding[detached=True]: a source with no binding writes nothing into the room (§7.5 rules 2 and 7), and the effects of the hooks its row passed stand. Its [detached=False] case needs a persistence policy, which roomkit-rs does not have. The agent is detached while its tool call is held: the rows after it read no binding."
+}

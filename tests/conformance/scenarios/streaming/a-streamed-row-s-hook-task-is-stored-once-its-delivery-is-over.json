@@ -1,0 +1,160 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-streamed-row-s-hook-task-is-stored-once-its-delivery-is-over",
+  "title": "The task a BEFORE_BROADCAST hook gives a streamed row is stored once the row's delivery is over, before the call returns",
+  "rules": [
+    "§12.2 step 13s",
+    "§10.1 step 15",
+    "§9.4"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms1",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "slow",
+        "type": "websocket",
+        "category": "transport",
+        "deliver": [
+          {
+            "when": {
+              "source_channel_id": "ai1"
+            },
+            "gate": "slow"
+          }
+        ]
+      },
+      {
+        "id": "ai1",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "answer"
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms1"
+          },
+          {
+            "channel_id": "slow"
+          },
+          {
+            "channel_id": "ai1",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "side_effects",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "source_channel_id": "ai1"
+            },
+            "result": {
+              "action": "allow",
+              "tasks": [
+                {
+                  "title": "Follow up"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms1",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "background": true,
+      "as": "go"
+    },
+    {
+      "wait_for": "slow"
+    },
+    {
+      "call": "list_tasks",
+      "room_id": "room-1",
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "open": "slow"
+    },
+    {
+      "await": "go",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "list_tasks",
+      "room_id": "room-1",
+      "expect": {
+        "result": [
+          {
+            "title": "Follow up"
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "go"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ai1"
+          },
+          "content": {
+            "body": "answer"
+          },
+          "status": "delivered"
+        }
+      ]
+    },
+    "tasks": {
+      "room-1": [
+        {
+          "title": "Follow up"
+        }
+      ]
+    }
+  },
+  "notes": "Python: tests/test_streaming_before_broadcast.py::test_stream_hook_tasks_wait_for_delivery_and_finish_before_return. The call is still in flight while the row's delivery is held; its effects are written once that delivery is over, before the call returns."
+}

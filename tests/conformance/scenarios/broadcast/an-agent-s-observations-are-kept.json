@@ -1,0 +1,100 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "broadcast/an-agent-s-observations-are-kept",
+  "title": "The observations an agent's turn returns without answering are kept for the room, and nothing re-enters",
+  "rules": [
+    "§10.2 step 3c",
+    "§10.2 step 3e",
+    "§10.1 step 15"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "output": {
+              "observations": [
+                {
+                  "category": "test",
+                  "content": "observation text"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "response_events": []
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello"
+          }
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "ai": [
+          {
+            "id": "room-1#0"
+          }
+        ]
+      }
+    },
+    "observations": {
+      "room-1": [
+        {
+          "channel_id": "ai",
+          "category": "test",
+          "content": "observation text"
+        }
+      ]
+    }
+  },
+  "notes": "Python: tests/test_router.py::TestSideEffects::test_side_effects_collected."
+}

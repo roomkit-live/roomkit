@@ -1,0 +1,252 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-streamed-tool-call-s-rows-a-hook-blocks-are-stored-blocked-and-its-effects-stand",
+  "title": "A streamed tool call's start and end a BEFORE_BROADCAST hook blocks are stored BLOCKED by it and delivered to no one, each announced, the text around them untouched, and the effects the block carries land once",
+  "rules": [
+    "§12.2 step 13s",
+    "§10.1 step 10",
+    "§9.4"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms1",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ai1",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look up",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "ok"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "Looking."
+              ],
+              "calls": [
+                {
+                  "id": "tc1",
+                  "name": "lookup",
+                  "arguments": {
+                    "q": "x"
+                  }
+                }
+              ]
+            },
+            {
+              "deltas": [
+                "Found."
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms1"
+          },
+          {
+            "channel_id": "ai1",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "blocker",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "type": "tool_call_start"
+            },
+            "result": {
+              "action": "block",
+              "reason": "withheld",
+              "tasks": [
+                {
+                  "title": "Follow up"
+                }
+              ],
+              "observations": [
+                {
+                  "category": "audit",
+                  "content": "Observed"
+                }
+              ],
+              "injected_events": [
+                {
+                  "target_channel_ids": [
+                    "sms1"
+                  ],
+                  "event": {
+                    "content": {
+                      "type": "text",
+                      "body": "tool call withheld"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "when": {
+              "type": "tool_call_end"
+            },
+            "result": {
+              "action": "block",
+              "reason": "withheld"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms1",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": {
+        "$unordered": [
+          {
+            "content": {
+              "body": "go"
+            },
+            "id": "room-1#0"
+          },
+          {
+            "type": "message",
+            "content": {
+              "body": "Looking."
+            },
+            "status": "delivered",
+            "id": "room-1#1"
+          },
+          {
+            "type": "tool_call_start",
+            "status": "blocked",
+            "blocked_by": "blocker",
+            "id": "room-1#2"
+          },
+          {
+            "source": {
+              "channel_id": "system"
+            },
+            "content": {
+              "body": "tool call withheld"
+            },
+            "status": "delivered"
+          },
+          {
+            "type": "tool_call_end",
+            "status": "blocked",
+            "blocked_by": "blocker"
+          },
+          {
+            "type": "message",
+            "content": {
+              "body": "Found."
+            },
+            "status": "delivered"
+          }
+        ]
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "sms1": {
+          "$unordered": [
+            {
+              "content": {
+                "body": "Looking."
+              }
+            },
+            {
+              "content": {
+                "body": "tool call withheld"
+              }
+            },
+            {
+              "content": {
+                "body": "Found."
+              }
+            }
+          ]
+        }
+      }
+    },
+    "tasks": {
+      "room-1": [
+        {
+          "title": "Follow up"
+        }
+      ]
+    },
+    "observations": {
+      "room-1": [
+        {
+          "content": "Observed"
+        }
+      ]
+    },
+    "framework_events": {
+      "room-1": [
+        {
+          "$unordered": [
+            {
+              "event": "event_processed",
+              "event_id": "room-1#0"
+            },
+            {
+              "event": "event_blocked",
+              "channel_id": "ai1",
+              "blocked_by": "blocker",
+              "event_id": "room-1#2"
+            },
+            {
+              "event": "event_blocked",
+              "channel_id": "ai1",
+              "blocked_by": "blocker"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "notes": "Python: tests/test_streaming_before_broadcast.py::test_streamed_tool_call_events_dropped_when_before_broadcast_blocks. Refused means out of the timeline the room received and undelivered, but committed BLOCKED as the audit record and announced as event_blocked, like every other refusal. The injected notice commits after its cause, another event possibly between them (§9.4): its place past the tool call's start is not compared, nor the order of the call's end and the closing text, which the format cannot leave half open."
+}

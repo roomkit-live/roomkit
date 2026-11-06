@@ -1,0 +1,191 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-streaming-target-reads-each-tool-call-row-once-as-its-hook-left-it",
+  "title": "A streaming target reads each of a streamed tool call's rows once, inline in the stream and as its BEFORE_BROADCAST hook modified it, and is never delivered them again",
+  "rules": [
+    "§12.2 step 13s",
+    "§9.4"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms1",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws1",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "ai1",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look up",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "ok"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "Looking."
+              ],
+              "calls": [
+                {
+                  "id": "tc1",
+                  "name": "lookup",
+                  "arguments": {
+                    "q": "x"
+                  }
+                }
+              ]
+            },
+            {
+              "deltas": [
+                "Found."
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms1"
+          },
+          {
+            "channel_id": "ws1"
+          },
+          {
+            "channel_id": "ai1",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "label",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "type": "tool_call_start"
+            },
+            "result": {
+              "action": "modify",
+              "event": {
+                "metadata": {
+                  "label": "Lookup"
+                }
+              }
+            },
+            "repeat": true
+          },
+          {
+            "when": {
+              "type": "tool_call_end"
+            },
+            "result": {
+              "action": "modify",
+              "event": {
+                "metadata": {
+                  "label": "Lookup"
+                }
+              }
+            },
+            "repeat": true
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms1",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "streamed": {
+      "room-1": {
+        "ws1": [
+          {
+            "text": "Looking."
+          },
+          {
+            "row": {
+              "id": "room-1#1",
+              "content": {
+                "body": "Looking."
+              }
+            }
+          },
+          {
+            "row": {
+              "id": "room-1#2",
+              "type": "tool_call_start",
+              "metadata": {
+                "label": "Lookup"
+              }
+            }
+          },
+          {
+            "row": {
+              "id": "room-1#3",
+              "type": "tool_call_end",
+              "metadata": {
+                "label": "Lookup"
+              }
+            }
+          },
+          {
+            "text": "Found."
+          },
+          {
+            "row": {
+              "id": "room-1#4",
+              "content": {
+                "body": "Found."
+              }
+            }
+          }
+        ]
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "ws1": [
+          {
+            "index": 0
+          }
+        ]
+      }
+    }
+  },
+  "notes": "Python: tests/test_streaming_before_broadcast.py::test_streamed_tool_call_events_reach_the_streaming_transport_as_events. The stream hands the channel consuming it every row inline, so the delivery lane leaves that channel out of the tool call's rows as of the text's."
+}

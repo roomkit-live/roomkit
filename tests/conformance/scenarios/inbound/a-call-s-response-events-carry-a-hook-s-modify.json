@@ -1,0 +1,203 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-call-s-response-events-carry-a-hook-s-modify",
+  "title": "A call's response events carry its agent's answer as a BEFORE_BROADCAST hook modified it",
+  "rules": [
+    "§10.1 step 18",
+    "§10.1 step 9",
+    "§9.4"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "user",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "streamed",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "raw answer"
+            }
+          ]
+        }
+      },
+      {
+        "id": "whole",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "raw answer",
+              "whole_response": {}
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "user"
+          },
+          {
+            "channel_id": "streamed",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "user"
+          },
+          {
+            "channel_id": "whole",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "gate",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "source_channel_id": "streamed"
+            },
+            "result": {
+              "action": "modify",
+              "event": {
+                "content": {
+                  "type": "text",
+                  "body": "safe answer"
+                }
+              }
+            },
+            "repeat": true
+          },
+          {
+            "when": {
+              "source_channel_id": "whole"
+            },
+            "result": {
+              "action": "modify",
+              "event": {
+                "content": {
+                  "type": "text",
+                  "body": "safe answer"
+                }
+              }
+            },
+            "repeat": true
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "user",
+        "sender_id": "person",
+        "content": {
+          "type": "text",
+          "body": "task"
+        }
+      },
+      "expect": {
+        "result": {
+          "response_events": [
+            {
+              "id": "room-1#1",
+              "source": {
+                "channel_id": "streamed"
+              },
+              "content": {
+                "type": "text",
+                "body": "safe answer"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "user",
+        "sender_id": "person",
+        "content": {
+          "type": "text",
+          "body": "task"
+        }
+      },
+      "expect": {
+        "result": {
+          "response_events": [
+            {
+              "id": "room-2#1",
+              "source": {
+                "channel_id": "whole"
+              },
+              "content": {
+                "type": "text",
+                "body": "safe answer"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "task"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "streamed"
+          },
+          "status": "delivered",
+          "content": {
+            "type": "text",
+            "body": "safe answer"
+          }
+        }
+      ],
+      "room-2": [
+        {
+          "content": {
+            "body": "task"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "whole"
+          },
+          "status": "delivered",
+          "content": {
+            "type": "text",
+            "body": "safe answer"
+          }
+        }
+      ]
+    }
+  },
+  "notes": "Python: tests/test_inbound_response_events.py::test_response_events_obey_broadcast_hooks[blocked=False, streamed and not]. room-1's agent streams its answer, room-2's reads it whole."
+}

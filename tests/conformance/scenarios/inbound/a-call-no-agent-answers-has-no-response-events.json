@@ -1,0 +1,173 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-call-no-agent-answers-has-no-response-events",
+  "title": "A call no agent answers returns no response events, none of an earlier call's",
+  "rules": [
+    "§10.1 step 18"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "user",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "streamed",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "first answer"
+            }
+          ]
+        }
+      },
+      {
+        "id": "whole",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "first answer",
+              "whole_response": {}
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "user"
+          },
+          {
+            "channel_id": "streamed",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "user"
+          },
+          {
+            "channel_id": "whole",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "user",
+        "sender_id": "person",
+        "content": {
+          "type": "text",
+          "body": "first task"
+        }
+      },
+      "expect": {
+        "result": {
+          "response_events": [
+            {
+              "id": "room-1#1",
+              "type": "message",
+              "status": "delivered",
+              "source": {
+                "channel_id": "streamed"
+              },
+              "content": {
+                "type": "text",
+                "body": "first answer"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "room-1",
+      "channel_id": "streamed"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "user",
+        "sender_id": "person",
+        "content": {
+          "type": "text",
+          "body": "no agent"
+        }
+      },
+      "expect": {
+        "result": {
+          "response_events": []
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "user",
+        "sender_id": "person",
+        "content": {
+          "type": "text",
+          "body": "first task"
+        }
+      },
+      "expect": {
+        "result": {
+          "response_events": [
+            {
+              "id": "room-2#1",
+              "type": "message",
+              "status": "delivered",
+              "source": {
+                "channel_id": "whole"
+              },
+              "content": {
+                "type": "text",
+                "body": "first answer"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "room-2",
+      "channel_id": "whole"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "user",
+        "sender_id": "person",
+        "content": {
+          "type": "text",
+          "body": "no agent"
+        }
+      },
+      "expect": {
+        "result": {
+          "response_events": []
+        }
+      }
+    }
+  ],
+  "notes": "Python: tests/test_inbound_response_events.py::test_a_call_without_an_answer_has_no_other_calls_events[streamed and not]."
+}

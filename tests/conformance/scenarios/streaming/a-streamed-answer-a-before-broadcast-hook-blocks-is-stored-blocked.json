@@ -1,0 +1,125 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-streamed-answer-a-before-broadcast-hook-blocks-is-stored-blocked",
+  "title": "A streamed answer's row a BEFORE_BROADCAST hook blocks is stored BLOCKED by the hook and delivered to no one",
+  "rules": [
+    "§12.2 step 13s",
+    "§10.1 step 10",
+    "§9.4"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms1",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ai1",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "[SECRET] ",
+                "leaked"
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms1"
+          },
+          {
+            "channel_id": "ai1",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "blocker",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "source_channel_id": "ai1"
+            },
+            "result": {
+              "action": "block",
+              "reason": "withheld"
+            },
+            "repeat": true
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms1",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "go"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ai1"
+          },
+          "status": "blocked",
+          "blocked_by": "blocker",
+          "content": {
+            "type": "text",
+            "body": "[SECRET] leaked"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms1": []
+      }
+    },
+    "framework_events": {
+      "room-1": [
+        {
+          "$unordered": [
+            {
+              "event": "event_blocked",
+              "event_id": "room-1#1",
+              "channel_id": "ai1",
+              "blocked_by": "blocker"
+            },
+            {
+              "event": "event_processed",
+              "event_id": "room-1#0"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "notes": "Python: tests/test_streaming_before_broadcast.py::test_streamed_segment_dropped_when_before_broadcast_blocks."
+}

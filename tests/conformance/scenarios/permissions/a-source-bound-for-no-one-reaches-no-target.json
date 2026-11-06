@@ -1,0 +1,154 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "permissions/a-source-bound-for-no-one-reaches-no-target",
+  "title": "A message from a source bound with visibility none is stored for no one and reaches no target; one from a source bound for the transports is stored with it and reaches them alone",
+  "rules": [
+    "§7.3",
+    "§10.2 step 2",
+    "§10.2 step 3c"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "hidden",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "staff",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Never asked"
+                }
+              }
+            ],
+            "repeat": true
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "hidden",
+            "visibility": "none"
+          },
+          {
+            "channel_id": "staff",
+            "visibility": "transport"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "hidden",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "For the record only"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "visibility": "none"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "staff",
+        "sender_id": "+15557654321",
+        "content": {
+          "type": "text",
+          "body": "For the consoles"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "visibility": "transport"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "For the record only"
+          },
+          "visibility": "none",
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "For the consoles"
+          },
+          "visibility": "transport",
+          "status": "delivered"
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "hidden": [
+          {
+            "id": "room-1#1"
+          }
+        ],
+        "staff": [],
+        "ws": [
+          {
+            "id": "room-1#1"
+          }
+        ],
+        "ai": []
+      }
+    },
+    "turns": {
+      "room-1": {
+        "ai": []
+      }
+    }
+  },
+  "notes": "Python: tests/test_router.py::TestVisibility::test_none_visibility and TestVisibilityStamping::test_event_visibility_stamped_from_source. A message's own visibility is all unless its caller sets one: the stored one is its source binding's (§7.3, the intersection of all with any value), which delivery reads alone."
+}

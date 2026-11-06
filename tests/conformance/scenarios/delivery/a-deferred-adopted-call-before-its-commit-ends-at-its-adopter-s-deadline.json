@@ -1,0 +1,120 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-deferred-adopted-call-before-its-commit-ends-at-its-adopter-s-deadline",
+  "title": "A deferred call an off-lock hook makes into its room, held by a locked hook when its adopter's process_timeout passes, ends with the hook's body: nothing of it is stored, and only the adopter's process_timeout is reported",
+  "rules": [
+    "§9.5.1 Reentrance",
+    "§13.6"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/inbound.py, the off-lock check runs its hooks within the call's deadline (process_timeout): past it the hook's body is cancelled, and with it the call it awaits, before that call's commit. Found by the review of RMK-1432 (RMK-1443 item 1); decided as Python's by the maintainer.",
+  "setup": {
+    "kit": {
+      "process_timeout_ms": 200
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "adopts",
+        "trigger": "before_broadcast",
+        "needs_lock": false,
+        "timeout_ms": 5000,
+        "reactions": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "ws",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "side"
+                  }
+                },
+                "defer_delivery": true,
+                "as": "side"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "slow",
+        "trigger": "before_broadcast",
+        "timeout_ms": 5000,
+        "reactions": [
+          {
+            "when": {
+              "text": "side"
+            },
+            "gate": "sidegate"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "background": true,
+      "as": "h"
+    },
+    {
+      "await": "h",
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "process_timeout",
+          "event": null
+        }
+      }
+    },
+    {
+      "open": "sidegate"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": []
+    },
+    "framework_events": {
+      "room-1": [
+        {
+          "event": "process_timeout"
+        }
+      ]
+    }
+  }
+}
