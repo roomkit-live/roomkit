@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
+from roomkit import AIChannel, ChannelCategory, InboundMessage, RoomKit, TextContent
 from roomkit.providers.ai.base import (
     AIContext,
     AIMessage,
@@ -22,8 +25,10 @@ from roomkit.providers.ai.base import (
 )
 from roomkit.providers.ai.openai_dialect import ThinkTagParser, extract_think_tags
 from roomkit.providers.ai.response_schema import ResponseSchemaError
+from roomkit.providers.openai import OpenAIAIProvider
 from roomkit.providers.openai.config import OpenAIConfig
 from tests.private_module import load_private_copy
+from tests.test_framework import SimpleChannel
 
 
 class _FakeAPIStatusError(Exception):
@@ -1108,6 +1113,71 @@ class TestThinkTagParser:
         assert thinking == "abc"
         assert text == "xyz"
 
+    @pytest.mark.parametrize(
+        ("chunks", "reasoning", "answer"),
+        [
+            pytest.param(
+                ["The parser reads the <think> tag at the start. Everything after is lost."],
+                " tag at the start. Everything after is lost.",
+                "The parser reads the ",
+                id="a-tag-the-answer-writes",
+            ),
+            pytest.param(["<think>weighing"], "weighing", "", id="an-open-block-alone"),
+            pytest.param(["<think>a</think>answer"], "a", "answer", id="a-block-at-the-start"),
+            pytest.param(
+                ["\n \n<think>a</think>answer"],
+                "a",
+                "\n \nanswer",
+                id="whitespace-before-the-block",
+            ),
+            pytest.param(
+                ["\N{ZERO WIDTH NO-BREAK SPACE}<think>a</think>answer"],
+                "a",
+                "\N{ZERO WIDTH NO-BREAK SPACE}answer",
+                id="a-bom-before-the-block",
+            ),
+            pytest.param(
+                ["<thi", "nk>a</th", "ink>answer"], "a", "answer", id="a-tag-split-at-the-start"
+            ),
+            pytest.param(
+                ["The parser reads the <thi", "nk> tag."],
+                " tag.",
+                "The parser reads the ",
+                id="a-tag-split-in-the-answer",
+            ),
+            pytest.param(
+                ["<think>a</think>answer <think>b</think> more"],
+                "ab",
+                "answer  more",
+                id="a-second-block-after-the-answer",
+            ),
+            pytest.param(
+                ["<think>a</think><think>b</think>answer"],
+                "ab",
+                "answer",
+                id="a-second-block-right-after-the-first",
+            ),
+            pytest.param(
+                ["<think>a</think>\n\n<think>b</think>answer"],
+                "ab",
+                "\n\nanswer",
+                id="a-second-block-after-whitespace",
+            ),
+        ],
+    )
+    def test_where_a_think_tag_stands(
+        self, chunks: list[str], reasoning: str | None, answer: str
+    ) -> None:
+        """What one generation's ``<think>`` tags read as, by where they
+        stand: streamed in *chunks* and read whole alike (RMK-1327)."""
+        parser = ThinkTagParser()
+        segments = [s for chunk in chunks for s in parser.feed(chunk)] + parser.flush()
+        thinking = "".join(s for k, s in segments if k == "thinking")
+        said = "".join(s for k, s in segments if k == "text")
+
+        assert (thinking or None, said) == (reasoning, answer)
+        assert extract_think_tags("".join(chunks)) == (reasoning, answer)
+
 
 class TestExtractThinkTags:
     """Unit tests for the non-streaming <think> tag extraction."""
@@ -1141,6 +1211,83 @@ class TestExtractThinkTags:
         thinking, text = extract_think_tags("<think> weighing it \n</think>\n\nThe answer.  ")
         assert thinking == " weighing it \n"
         assert text == "\n\nThe answer.  "
+
+
+_LOOKUP = AITool(name="lookup", description="Look it up.")
+
+
+def _completion_stream(*deltas: dict[str, Any], finish: str) -> bytes:
+    """A Chat Completions stream whose chunks carry *deltas*, then *finish*."""
+    choices = [{"index": 0, "delta": delta, "finish_reason": None} for delta in deltas]
+    choices.append({"index": 0, "delta": {}, "finish_reason": finish})
+    head = {"id": "chatcmpl-0", "object": "chat.completion.chunk", "created": 0, "model": "m"}
+    lines = [f"data: {json.dumps({**head, 'choices': [choice]})}\n\n" for choice in choices]
+    return "".join([*lines, "data: [DONE]\n\n"]).encode()
+
+
+class _Server:
+    """An OpenAI-compatible server answering each request with the next of
+    *streams*, keeping each request's body."""
+
+    def __init__(self, *streams: bytes) -> None:
+        self._streams = list(streams)
+        self.requests: list[dict[str, Any]] = []
+        self.transport = httpx.MockTransport(self._answer)
+
+    def _answer(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(json.loads(request.content))
+        headers = {"content-type": "text/event-stream"}
+        return httpx.Response(200, headers=headers, content=self._streams.pop(0))
+
+
+async def _lookup(name: str, arguments: dict[str, Any]) -> str:
+    return "sunny"
+
+
+async def _room_turn(server: _Server, said: str) -> list[str]:
+    """*said* in a room whose agent runs the OpenAI provider on *server*'s
+    wire: what the room stored of the agent's answer."""
+    config = OpenAIConfig(api_key="k", model="m", base_url="http://wire.test/v1")
+    provider = OpenAIAIProvider(config, transport=server.transport)
+    kit = RoomKit()
+    kit.register_channel(SimpleChannel("user"))
+    kit.register_channel(AIChannel("ai", provider=provider, tool_handler=_lookup, tools=[_LOOKUP]))
+    try:
+        await kit.create_room(room_id="room")
+        await kit.attach_channel("room", "user")
+        await kit.attach_channel("room", "ai", category=ChannelCategory.INTELLIGENCE)
+        message = InboundMessage(channel_id="user", sender_id="u", content=TextContent(body=said))
+        await kit.process_inbound(message, room_id="room")
+        events = await kit.store.list_events("room")
+    finally:
+        await kit.close()
+    return [
+        event.content.body
+        for event in events
+        if event.source.channel_id == "ai" and isinstance(event.content, TextContent)
+    ]
+
+
+class TestThinkTagsInARoom:
+    """A model's ``<think>`` tags as an integrator meets them: the OpenAI
+    provider on a server's wire, under an AI channel, in a room (RMK-1327)."""
+
+    async def test_each_round_of_a_tool_loop_reads_its_own_start(self) -> None:
+        call = {"index": 0, "id": "c1", "type": "function"}
+        call["function"] = {"name": "lookup", "arguments": "{}"}
+        server = _Server(
+            _completion_stream(
+                {"content": "<think>WHY-1</think>"}, {"tool_calls": [call]}, finish="tool_calls"
+            ),
+            _completion_stream({"content": "<think>WHY-2</think>Sunny."}, finish="stop"),
+        )
+
+        stored = await _room_turn(server, "weather?")
+
+        assert stored == ["Sunny."]
+        replayed = json.dumps(server.requests[1]["messages"])
+        assert "WHY-1" not in replayed
+        assert "<think>" not in replayed
 
 
 class TestOpenAIHeadersAndExtraBody:
