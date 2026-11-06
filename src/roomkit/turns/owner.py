@@ -20,6 +20,7 @@ from roomkit.channels.declared import DeclaredChannel
 from roomkit.core.task_utils import acting_tasks, close_callers
 from roomkit.core.visibility import answers_reach
 from roomkit.models.enums import Visibility
+from roomkit.models.pending_input import PendingInputEvent
 from roomkit.models.steering import Cancel as SteeringCancel
 from roomkit.telemetry.context import get_current_span
 from roomkit.turns._error_codec import ErrorClasses, error_record
@@ -366,6 +367,33 @@ class TurnClient(RoomOwner):
             self._serving = True
             assert self.executor is not None
             await self.backend.serve(self.executor)
+
+    def input_request(
+        self, request_id: str, *, organization_id: str | None = None
+    ) -> PendingInputEvent | None:
+        """The open human-input request *request_id* of a turn this client
+        started (RFC §10.6.5), as ``ON_USER_INPUT_REQUIRED`` reads it: its room,
+        channel, tool call and the actor of its turn. ``None`` when no turn of
+        this client holds it open, or, with *organization_id*, when its room is
+        another organization's (RFC §17.2)."""
+        entry = self.inputs.request(request_id)
+        if entry is None:
+            return None
+        turn, request = entry
+        asked = turn.request
+        if organization_id is not None and asked.context.room.organization_id != organization_id:
+            return None
+        return PendingInputEvent(
+            pending_id=request.request_id,
+            tool_name=request.tool_name,
+            arguments=dict(request.arguments),
+            room_id=request.room_id or asked.room_id,
+            tool_call_id=request.tool_call_id or "",
+            channel_id=request.channel_id or asked.channel_id,
+            channel_type=asked.binding.channel_type,
+            timestamp=request.created_at or asked.event.created_at,
+            actor_id=request.actor_id,
+        )
 
     async def steer(
         self,

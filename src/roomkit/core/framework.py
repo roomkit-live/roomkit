@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from roomkit.channels._author_images import AttachedMedia, MediaResolver
     from roomkit.core.lanes import DeliveryCascade
     from roomkit.delivery.base import DeliveryBackend
+    from roomkit.models.pending_input import PendingInputEvent
     from roomkit.models.steering import SteeringDirective
     from roomkit.orchestration.base import Orchestration
     from roomkit.telemetry.base import TelemetryProvider
@@ -756,6 +757,19 @@ class RoomKit(
             turn_id=turn_id,
             organization_id=organization_id,
         )
+
+    def input_request(
+        self, request_id: str, *, organization_id: str | None = None
+    ) -> PendingInputEvent | None:
+        """The open human-input request *request_id* of a turn this kit
+        started, wherever the turn runs (RFC §10.6.5): its room, channel, tool
+        call and the actor of its turn, as ``ON_USER_INPUT_REQUIRED`` reads
+        them, so a door answering it can tell who was asked before it calls
+        :meth:`answer_input`. ``None`` once it is answered, settled or
+        withdrawn, for an id no turn of this kit opened, and, with
+        *organization_id*, for a request in another organization's room (RFC
+        §17.2)."""
+        return self._turns.input_request(request_id, organization_id=organization_id)
 
     async def answer_input(self, request_id: str, value: str) -> bool:
         """Answer the human-input request *request_id* of a turn this kit

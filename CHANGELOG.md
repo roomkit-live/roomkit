@@ -163,6 +163,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`RoomKit.input_request` reads a turn's open human-input request**
+  (RMK-1467). A door that answers a request (`answer_input`) must tell who it
+  was put to, and on an executor of another process the request was the
+  executor's alone: the owner kept its id and its tool. The executor now sends
+  the request's room, channel, tool call and the actor of its turn with it, and
+  `kit.input_request(request_id, organization_id=...)` returns it as
+  `ON_USER_INPUT_REQUIRED` read it (a `PendingInputEvent`), `None` once it is no
+  longer open or in another organization's room.
+
 - **`ProviderError(..., before_request=False)`** and its `before_request` attribute (HITL
   d91b8137, RMK-1436): the provider refused before sending any request. An unsupported
   `ResponseSchemaError`, OpenAI's refusal of a model Chat Completions does not serve or of

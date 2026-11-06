@@ -51,7 +51,8 @@ class OwnerInputs:
 
     def __init__(self, hold: float) -> None:
         self._hold = hold
-        self._open: dict[str, OwnerTurn] = {}
+        # Each open request with the turn that opened it.
+        self._open: dict[str, tuple[OwnerTurn, InputRequest]] = {}
         self._held: dict[str, _Held] = {}
         # Answers sent to a request's executor, awaiting whether they settled it.
         self._awaiting: dict[str, tuple[OwnerTurn, asyncio.Future[bool]]] = {}
@@ -69,11 +70,12 @@ class OwnerInputs:
         if held is not None:
             self._deliver(turn, held.answer, held.verdict)
             return
-        self._open[request_id] = turn
+        self._open[request_id] = (turn, request)
 
     def closed(self, turn: OwnerTurn, request_id: str) -> None:
         """*turn*'s request settled where its tool waits."""
-        if self._open.get(request_id) is turn:
+        entry = self._open.get(request_id)
+        if entry is not None and entry[0] is turn:
             del self._open[request_id]
             self._remember(request_id)
 
@@ -88,13 +90,18 @@ class OwnerInputs:
     def turn_ended(self, turn: OwnerTurn) -> None:
         """*turn* is over: its open requests are withdrawn, and an answer
         still awaiting its verdict was not taken."""
-        for request_id in [rid for rid, open_turn in self._open.items() if open_turn is turn]:
+        for request_id in [rid for rid, (opener, _) in self._open.items() if opener is turn]:
             del self._open[request_id]
             self._remember(request_id)
         for request_id, (awaited_turn, verdict) in list(self._awaiting.items()):
             if awaited_turn is turn:
                 del self._awaiting[request_id]
                 _decide(verdict, False)
+
+    def request(self, request_id: str) -> tuple[OwnerTurn, InputRequest] | None:
+        """The open request *request_id* and the turn that opened it; ``None``
+        once it is answered, settled or withdrawn, or before it opens."""
+        return self._open.get(request_id)
 
     async def answer(self, request_id: str, value: str) -> bool:
         """Answer *request_id* with *value*: whether the waiting tool reads it."""
@@ -118,9 +125,9 @@ class OwnerInputs:
         if request_id in self._settled or request_id in self._held:
             return False
         verdict: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
-        turn = self._open.pop(request_id, None)
-        if turn is not None:
-            self._deliver(turn, answer, verdict)
+        entry = self._open.pop(request_id, None)
+        if entry is not None:
+            self._deliver(entry[0], answer, verdict)
             return await verdict
         self._hold_early(answer, verdict)
         try:

@@ -10,6 +10,7 @@ a duplicate is seen on arrival.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated, Any, Literal
 from uuid import uuid4
 
@@ -210,12 +211,20 @@ class End(BaseModel):
 
 class InputRequest(BaseModel):
     """A tool of the turn asked a human for input (RFC §10.6.5): sent before
-    ``ON_USER_INPUT_REQUIRED`` fires, so the owner can answer it at once."""
+    ``ON_USER_INPUT_REQUIRED`` fires, so the owner can answer it at once, with
+    what the tool knows of it, which the owner's host reads by its id
+    (``RoomKit.input_request``). A field an older executor leaves out reads as
+    the turn's own (its room, its channel) or as unknown."""
 
     type: Literal["input_request"] = "input_request"
     request_id: str
     tool_name: str
     arguments: dict[str, Any]
+    room_id: str | None = None
+    channel_id: str | None = None
+    tool_call_id: str | None = None
+    actor_id: str | None = None
+    created_at: datetime | None = None
 
 
 class InputClosed(BaseModel):

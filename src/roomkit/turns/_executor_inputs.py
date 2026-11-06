@@ -62,6 +62,11 @@ class ExecutorInputs:
                 request_id=pending.pending_id,
                 tool_name=pending.tool_name,
                 arguments=pending.arguments,
+                room_id=pending.room_id,
+                channel_id=pending.channel_id,
+                tool_call_id=pending.tool_call_id,
+                actor_id=pending.actor_id,
+                created_at=pending.created_at,
             )
         )
 

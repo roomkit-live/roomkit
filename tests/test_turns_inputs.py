@@ -40,6 +40,7 @@ ASK = AITool(
 async def _kit(
     *,
     timeout: float = 5,
+    organization_id: str | None = None,
 ) -> tuple[RoomKit, AIChannel, HumanInputToolHandler, list[PendingInputEvent], list[Any]]:
     """A kit whose agent asks the user once, then answers."""
     call = AIResponse(
@@ -52,7 +53,7 @@ async def _kit(
     kit = RoomKit()
     kit.register_channel(SimpleChannel("ops"))
     kit.register_channel(agent)
-    await kit.create_room(room_id="r1")
+    await kit.create_room(room_id="r1", organization_id=organization_id)
     await kit.attach_channel("r1", "ops")
     await kit.attach_channel("r1", "agent", category=ChannelCategory.INTELLIGENCE)
     asked: list[PendingInputEvent] = []
@@ -96,6 +97,44 @@ async def test_the_owner_answers_a_turns_request() -> None:
     # The request is answered once.
     assert await kit.answer_input(pending_id, "Red") is False
     assert await kit.reject_input(pending_id, "late") is False
+    await kit.close()
+
+
+async def test_the_owner_reads_an_open_request_as_its_hook_did() -> None:
+    """A door answering a request tells who was asked first: the owner reads
+    the request by its id, its room, channel, tool call and the actor of its
+    turn, until it is answered (RFC §10.6.5)."""
+    kit, _, _, asked, _ = await _kit()
+    turn = _say(kit)
+    pending_id = await _asked(asked)
+
+    read = kit.input_request(pending_id)
+
+    assert read is not None
+    hooked = asked[0]
+    for field in ("pending_id", "tool_name", "arguments", "room_id", "tool_call_id"):
+        assert getattr(read, field) == getattr(hooked, field), field
+    assert (read.channel_id, read.channel_type, read.actor_id) == (
+        hooked.channel_id,
+        hooked.channel_type,
+        hooked.actor_id,
+    )
+    assert await kit.answer_input(pending_id, "Blue") is True
+    assert kit.input_request(pending_id) is None
+    await asyncio.wait_for(turn, 5)
+    await kit.close()
+
+
+async def test_an_open_request_is_read_within_its_organization_only() -> None:
+    kit, _, _, asked, _ = await _kit(organization_id="org-a")
+    turn = _say(kit)
+    pending_id = await _asked(asked)
+
+    assert kit.input_request(pending_id, organization_id="org-b") is None
+    assert kit.input_request(pending_id, organization_id="org-a") is not None
+    assert kit.input_request("no-such-request") is None
+    assert await kit.answer_input(pending_id, "Blue") is True
+    await asyncio.wait_for(turn, 5)
     await kit.close()
 
 
