@@ -16,6 +16,7 @@ import logging
 from dataclasses import replace
 
 from roomkit.memory._summary import SummaryLines, is_summary, summary_message
+from roomkit.memory._turn_budget import turn_history_budget
 from roomkit.memory._wrapper import _MemoryWrapper
 from roomkit.memory.base import MemoryProvider, MemoryResult
 from roomkit.memory.token_estimator import (
@@ -39,16 +40,22 @@ class SummarizingMemory(_MemoryWrapper):
     and applies two tiers of context reduction:
 
     * **Tier 1** — truncate large event bodies in older messages when total
-      estimated tokens exceed ``tier1_ratio * max_context_tokens``.
+      estimated tokens exceed ``tier1_ratio`` of the history's budget.
     * **Tier 2** — summarize older events via a lightweight AI provider when
-      total tokens still exceed ``tier2_ratio * max_context_tokens``.
+      total tokens still exceed ``tier2_ratio`` of it.
+
+    Then the oldest events are dropped until the result fits the budget. The
+    budget is what ``max_context_tokens``, the model's window, leaves once
+    the rest of the turn is in it (RFC §20): read for an AI channel's turn,
+    the input the channel measured (:func:`current_turn_footprint`) and the
+    turn's reply budget; the current event.
 
     Parameters:
         inner: The wrapped memory provider.
         provider: A lightweight AI provider for summarization (e.g. Haiku).
-        max_context_tokens: Total token budget for the AI context.
-        tier1_ratio: Fraction of budget that triggers tier-1 truncation.
-        tier2_ratio: Fraction of budget that triggers tier-2 summarization.
+        max_context_tokens: The model's context window.
+        tier1_ratio: Fraction of the history's budget that triggers tier-1 truncation.
+        tier2_ratio: Fraction of the history's budget that triggers tier-2 summarization.
         truncate_chars: Max characters per old event body in tier 1.
         summary_max_tokens: Max tokens for the LLM summary response.
         min_events: Minimum events to keep before summarizing (tier 2).
@@ -95,6 +102,7 @@ class SummarizingMemory(_MemoryWrapper):
             room_id, current_event, context, channel_id=channel_id
         )
         events = inner_result.events
+        budget = self._history_budget(current_event)
 
         # What the inner provider injects occupies the window: its messages
         # and the turn's notes, which no tier can cut.
@@ -103,20 +111,31 @@ class SummarizingMemory(_MemoryWrapper):
         total_tokens = msg_tokens + event_tokens
 
         # Tier 1: proactive truncation of old event bodies (no LLM call)
-        tier1_threshold = int(self._max_context_tokens * self._tier1_ratio)
+        tier1_threshold = int(budget * self._tier1_ratio)
         if total_tokens > tier1_threshold and len(events) > 1:
             events = self._apply_tier1(events)
             event_tokens = self._estimate_events_tokens(events)
             total_tokens = msg_tokens + event_tokens
 
         # Tier 2: LLM-based summarization
-        tier2_threshold = int(self._max_context_tokens * self._tier2_ratio)
+        tier2_threshold = int(budget * self._tier2_ratio)
         if total_tokens > tier2_threshold and len(events) > self._min_events:
             lines = SummaryLines(context, current_event, channel_id)
             result = await self._apply_tier2(room_id, events, inner_result, tier2_threshold, lines)
-            return self._enforce_budget(result)
+            return self._enforce_budget(result, budget)
 
-        return self._enforce_budget(replace(inner_result, events=events))
+        return self._enforce_budget(replace(inner_result, events=events), budget)
+
+    def _history_budget(self, current_event: RoomEvent) -> int:
+        """What the history may take of the window in *current_event*'s turn:
+        ``max_context_tokens`` less the input the AI channel measured, the
+        turn's reply budget and the current event (RFC §20). The tiers'
+        thresholds are fractions of it, and the result is kept within it."""
+        return turn_history_budget(
+            max_context_tokens=self._max_context_tokens,
+            safety_margin_ratio=0.0,
+            current_event=current_event,
+        )
 
     # -- Tier 1: truncation -----------------------------------------------------
 
@@ -257,13 +276,13 @@ class SummarizingMemory(_MemoryWrapper):
 
     # -- Budget enforcement -----------------------------------------------------
 
-    def _enforce_budget(self, result: MemoryResult) -> MemoryResult:
-        """Drop oldest events until total tokens fits within max_context_tokens."""
+    def _enforce_budget(self, result: MemoryResult, budget: int) -> MemoryResult:
+        """Drop oldest events until total tokens fits within *budget*."""
         msg_tokens = self._injected_tokens(result)
         events = list(result.events)
 
         total = msg_tokens + self._estimate_events_tokens(events)
-        while total > self._max_context_tokens and len(events) > 1:
+        while total > budget and len(events) > 1:
             events.pop(0)
             total = msg_tokens + self._estimate_events_tokens(events)
 

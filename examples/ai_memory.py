@@ -1,7 +1,8 @@
 """AI Memory — SummarizingMemory for long conversations.
 
 SummarizingMemory uses a two-tier strategy to keep conversations within
-the context budget:
+what the turn leaves of the model's window (its system prompt, its tools,
+the runtime's notes and its reply are paid for first):
 
 - **Tier 1** — truncates old message bodies (cheap, no LLM call)
 - **Tier 2** — summarizes old messages with a lightweight model (Haiku)
@@ -56,7 +57,8 @@ class VerboseSummarizingMemory(SummarizingMemory):
             room_id, current_event, context, channel_id=channel_id
         )
         before_tokens = self._estimate_events_tokens(inner_result.events)
-        budget = self._max_context_tokens
+        # What the turn leaves the history of the window: the tiers are fractions of it.
+        budget = self._history_budget(current_event)
         pct_before = int(before_tokens / budget * 100) if budget else 0
 
         # Run normal retrieve (which may apply tier 1/2)
@@ -103,16 +105,18 @@ async def main() -> None:
         AnthropicConfig(api_key=api_key, model="claude-haiku-5-5")
     )
 
-    # Tight budget so compression is visible after a few exchanges.
-    # Tier 2 keeps recent events within (500 - summary_max_tokens) tokens but
-    # never fewer than min_events. With 100 tokens and min_events=2, exactly
-    # the last question and answer stay verbatim, so the summarized part ends
-    # on an answer: one ending on a question gets it answered, not summarized.
+    # Tight window so compression is visible after a few exchanges. The
+    # system prompt and the runtime's notes take about 300 tokens of it, which
+    # leaves the history about 1,000. Tier 2 keeps recent events within (half
+    # of that - summary_max_tokens) tokens but never fewer than min_events.
+    # With about 100 tokens and min_events=2, exactly the last question and
+    # answer stay verbatim, so the summarized part ends on an answer: one
+    # ending on a question gets it answered, not summarized.
     # summary_max_tokens also leaves room for every city asked about so far.
     memory = VerboseSummarizingMemory(
         inner=SlidingWindowMemory(max_events=100),
         provider=summary_provider,
-        max_context_tokens=1000,
+        max_context_tokens=1300,
         tier1_ratio=0.3,
         tier2_ratio=0.5,
         summary_max_tokens=400,
@@ -141,8 +145,9 @@ async def main() -> None:
         room_id="memory-room",
         welcome=(
             "\nMemory demo — SummarizingMemory compresses old messages.\n"
-            "Budget is 1,000 tokens: past half of it, older exchanges are\n"
-            "summarized by Haiku, so compression triggers after a few exchanges.\n"
+            "The window is 1,300 tokens, about 1,000 of them left to the history:\n"
+            "past half of that, older exchanges are summarized by Haiku, so\n"
+            "compression triggers after a few exchanges.\n"
             "Context usage (and each summary) is shown after each turn.\n"
         ),
     )

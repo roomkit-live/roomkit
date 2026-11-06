@@ -3471,7 +3471,15 @@ a host passes 0 unless it knows a part the channel cannot. For the reply it
 reserves the larger of its safety margin and `reply_tokens`, never both. What a
 `BEFORE_AI_GENERATION` hook adds after the memory read is not measured: a host
 that adds a large block there lowers `max_context_tokens` by it.
-`CompactingMemory` and `SummarizingMemory` do not read the footprint.
+
+`CompactingMemory` reckons its budget the same way, then keeps the summary's
+share (`summary_ratio` of the window) out of it. `SummarizingMemory`'s tiers
+are fractions of what the window leaves once the measured input,
+`reply_tokens` and the current event are in it, and its result is cut to that.
+For all three, `max_context_tokens` is the model's context window, not a
+budget for the history: a 32,000-token window with a 12,000-token system
+prompt, 8,000 tokens of tools and a 6,000-token reply leaves the history, a
+summary included, under 6,000 tokens.
 
 ```python
 from roomkit.memory import BudgetAwareMemory, SlidingWindowMemory
@@ -3499,8 +3507,8 @@ ai = AIChannel(
 )
 ```
 
-- **Tier 1** (~50% capacity): Truncates large text bodies in older events to 2000 chars. No LLM call — cheap and fast.
-- **Tier 2** (~85% capacity): Calls the summary provider to summarize older events into a concise paragraph. Keeps recent events at full fidelity. Supports chained summaries (prior summary is incorporated into the new one).
+- **Tier 1** (~50% of what the turn leaves of the window): Truncates large text bodies in older events to 2000 chars. No LLM call — cheap and fast.
+- **Tier 2** (~85% of it): Calls the summary provider to summarize older events into a concise paragraph. Keeps recent events at full fidelity. Supports chained summaries (prior summary is incorporated into the new one).
 
 ### Knowledge Retrieval (RAG)
 

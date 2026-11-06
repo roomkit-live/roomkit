@@ -9,13 +9,10 @@ from collections import OrderedDict
 from dataclasses import replace
 
 from roomkit.memory._summary import SummaryLines, summary_message
+from roomkit.memory._turn_budget import turn_history_budget
 from roomkit.memory._wrapper import _MemoryWrapper
 from roomkit.memory.base import MemoryProvider, MemoryResult
-from roomkit.memory.token_estimator import (
-    estimate_event_tokens,
-    estimate_message_tokens,
-    estimate_notes_tokens,
-)
+from roomkit.memory.token_estimator import estimate_event_tokens
 from roomkit.models.context import RoomContext
 from roomkit.models.event import RoomEvent
 from roomkit.providers.ai.base import AIContext, AIMessage, AIProvider
@@ -31,6 +28,14 @@ class CompactingMemory(_MemoryWrapper):
     When events exceed the token budget, older events are summarized using
     a lightweight AI provider (e.g. Haiku) and injected as a pre-built
     message at the start of the conversation.
+
+    The budget is what ``max_context_tokens``, the model's window, leaves
+    once the rest of the turn is in it, as :class:`BudgetAwareMemory`
+    reckons it (RFC §20): read for an AI channel's turn, the input the
+    channel measured (:func:`current_turn_footprint`) and the reply, the
+    larger of the safety margin and the turn's reply budget; the current
+    event; the messages and notes of the memory it wraps. The summary's
+    share, ``summary_ratio`` of the window, comes out of that budget.
     """
 
     def __init__(
@@ -72,10 +77,13 @@ class CompactingMemory(_MemoryWrapper):
         )
         # What the inner provider carries besides its events (its messages,
         # and the notes that ride the turn's input) is not compacted: it is
-        # paid for first.
-        carried = sum(estimate_message_tokens(m) for m in inner_result.messages)
-        carried += estimate_notes_tokens(inner_result.notes)
-        budget = int(self._max_context_tokens * (1 - self._safety_margin_ratio)) - carried
+        # paid for first, with the rest of the turn.
+        budget = turn_history_budget(
+            max_context_tokens=self._max_context_tokens,
+            safety_margin_ratio=self._safety_margin_ratio,
+            current_event=current_event,
+            carried=inner_result,
+        )
 
         events = inner_result.events
         # An image costs what the provider bills for its pixels, never its
