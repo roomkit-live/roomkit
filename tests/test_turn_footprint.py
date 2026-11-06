@@ -296,12 +296,18 @@ def _windowed(kind: str, window: int) -> MemoryProvider:
     return SummarizingMemory(inner, summarizer, max_context_tokens=window)
 
 
-@pytest.mark.parametrize("kind", ["budget_aware", "compacting", "summarizing"])
-async def test_the_window_holds_the_turn_its_history_and_its_reply(kind: str) -> None:
+@pytest.mark.parametrize(
+    ("kind", "words"),
+    [("budget_aware", 400), ("compacting", 400), ("summarizing", 400), ("summarizing", 1_500)],
+    ids=["budget_aware", "compacting", "summarizing", "summarizing_past_its_floor"],
+)
+async def test_the_window_holds_the_turn_its_history_and_its_reply(kind: str, words: int) -> None:
     """A 32K window, a 12K system prompt, 8K of tools and a 6K reply: a memory
     that keeps the turn within the window sizes the history to what the rest
     of the turn leaves, so what the model is sent and the reply it may write
-    fit the window, some history kept (RMK-450)."""
+    fit the window, some history kept (RMK-450). Past its floor, a summarizing
+    memory's tier 2 keeps its ``min_events`` long events, more than that
+    budget: its last cut is what keeps the window."""
     window, reply = 32_000, 6_000
     provider = MockAIProvider(responses=["ok"])
     agent = AIChannel(
@@ -318,10 +324,10 @@ async def test_the_window_holds_the_turn_its_history_and_its_reply(kind: str) ->
         memory=_windowed(kind, window),
     )
     history = [
-        make_event(body=f"message {n} " + "word " * 400, room_id="r1", channel_id="member")
+        make_event(body=f"message {n} " + "word " * words, room_id="r1", channel_id="member")
         if n % 2 == 0
         else make_event(
-            body=f"answer {n} " + "word " * 400,
+            body=f"answer {n} " + "word " * words,
             room_id="r1",
             channel_id="agent",
             channel_type=ChannelType.AI,
@@ -343,26 +349,16 @@ async def test_the_window_holds_the_turn_its_history_and_its_reply(kind: str) ->
     assert estimate_context_tokens(sent) + reply <= window
 
 
-@pytest.mark.parametrize(
-    "memory",
-    [
-        BudgetAwareMemory(SlidingWindowMemory(max_events=100), max_context_tokens=20_000),
-        CompactingMemory(
-            SlidingWindowMemory(max_events=100),
-            MockAIProvider(responses=["summary"]),
-            max_context_tokens=20_000,
-        ),
-    ],
-    ids=["budget_aware", "compacting"],
-)
+@pytest.mark.parametrize("kind", ["budget_aware", "compacting"])
 async def test_the_reply_is_reserved_once_the_larger_of_the_margin_and_its_budget(
-    memory: MemoryProvider,
+    kind: str,
 ) -> None:
     """The 15 % margin is the reply's headroom: a reply budget under it changes
     nothing, one over it is reserved instead of it, never on top."""
     history = [make_event(body="history " * 200, room_id="r1") for _ in range(80)]
     current = make_event(body="now", room_id="r1")
     context = RoomContext(room=Room(id="r1"), recent_events=[*history, current])
+    memory = _windowed(kind, 20_000)
 
     async def kept(reply_tokens: int) -> int:
         footprint = TurnFootprint(input_tokens=1_000, reply_tokens=reply_tokens)

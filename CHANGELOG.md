@@ -334,13 +334,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tokens of tools and a 6,000-token reply, the model was sent 44,155 tokens through
   `CompactingMemory` and 47,197 through `SummarizingMemory`. Both now read the turn's
   footprint (`current_turn_footprint()`), as `BudgetAwareMemory` does, and the request
-  and its reply fit the window. `CompactingMemory` keeps the events that fit the window
-  less the measured input, the current event, the messages and notes of the memory it
-  wraps and the reply (the larger of its safety margin and the turn's `max_tokens`), the
-  summary's share then taken out. `SummarizingMemory`'s `tier1_ratio`, `tier2_ratio` and
-  its last cut are fractions of the window less the measured input, the turn's
-  `max_tokens` and the current event. `max_context_tokens` is the model's window: a host
-  that passed a budget for the history there keeps less history, and passes the window.
+  and its reply fit the window, unless the `min_events` latest events a memory always
+  keeps do not. `CompactingMemory` keeps the events that fit the window less the measured
+  input, the current event, the messages and notes of the memory it wraps and the reply
+  (the larger of its safety margin and the turn's `max_tokens`), the summary's share then
+  taken out. `SummarizingMemory`'s `tier1_ratio` and `tier2_ratio` are fractions of the
+  window less the measured input, the turn's `max_tokens` and the current event, and its
+  last cut keeps the history within that. `max_context_tokens` is the model's window: a
+  host that passed a budget for the history there keeps less history, and passes the
+  window.
 
 - **BREAKING: a usage counter an OpenAI-compatible server leaves out stays unknown** (RFC
   §6.4, HITL e2e71208, 6ae64eef, RMK-1441). A Chat Completions usage without
