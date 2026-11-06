@@ -1,0 +1,114 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-room-the-caller-names-is-not-left-by-its-first-message",
+  "title": "A room the caller names keeps its message whatever a concurrent message wrote on its binding: the room is the caller's choice",
+  "rules": [
+    "§5.7",
+    "§10.1 step 2",
+    "§10.4"
+  ],
+  "notes": "room_id is the host's choice, never held to the routed check.",
+  "setup": {
+    "kit": {
+      "router": {
+        "room_id": "shared"
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {}
+      }
+    ],
+    "hooks": [
+      {
+        "name": "hold",
+        "trigger": "on_room_created",
+        "priority": 1,
+        "reactions": [
+          {
+            "gate": "created"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "shared",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "alice: hi"
+        }
+      },
+      "background": true,
+      "as": "alice"
+    },
+    {
+      "wait_for": "created"
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "bob: hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "shared"
+          }
+        }
+      }
+    },
+    {
+      "open": "created"
+    },
+    {
+      "await": "alice",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "shared"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "shared": {
+        "sms": {
+          "participant_id": "+15550000002"
+        }
+      }
+    },
+    "timeline": {
+      "shared": [
+        {
+          "content": {
+            "body": "bob: hi"
+          }
+        },
+        {
+          "content": {
+            "body": "alice: hi"
+          }
+        }
+      ]
+    }
+  }
+}

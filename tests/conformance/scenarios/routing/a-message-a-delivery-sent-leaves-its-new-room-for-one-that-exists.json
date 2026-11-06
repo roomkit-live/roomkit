@@ -1,0 +1,457 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-message-a-delivery-sent-leaves-its-new-room-for-one-that-exists",
+  "title": "A message a room's delivery sent leaves the room it created for a room that exists: its cascade there has a budget of its own",
+  "rules": [
+    "§9.5.1",
+    "§10.1 step 2"
+  ],
+  "notes": "Room W's delivery to ws sends Alice's message m, routed: the default router finds none, so m creates a room, which a hook binds to Bob. While m waits, Alice's own m2 opens a room of hers. m is routed once more, step 1 gives it Alice's room, which exists. Every m delivered to ws there sends another m into that room, until the budget the room's cascade draws on is spent. Found by the review of RMK-1396.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {}
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "deliver": [
+          {
+            "when": {
+              "text": "trigger"
+            },
+            "do": [
+              {
+                "call": "process_inbound",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "+15550000001",
+                  "content": {
+                    "type": "text",
+                    "body": "m"
+                  }
+                },
+                "as": "m"
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "m"
+            },
+            "repeat": true,
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "$room",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "+15550000001",
+                  "content": {
+                    "type": "text",
+                    "body": "m"
+                  }
+                },
+                "as": "loop"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-w",
+        "bindings": [
+          {
+            "channel_id": "sms",
+            "participant_id": "+15550000009"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "bind",
+        "trigger": "on_room_created",
+        "priority": 0,
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "attach_channel",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "participant_id": "+15550000002"
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "attach_channel",
+                "room_id": "$room",
+                "channel_id": "ws"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "hold",
+        "trigger": "on_room_created",
+        "priority": 1,
+        "reactions": [
+          {
+            "gate": "g"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-w",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000009",
+        "content": {
+          "type": "text",
+          "body": "trigger"
+        }
+      },
+      "background": true,
+      "as": "t"
+    },
+    {
+      "wait_for": "g"
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "m2"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    },
+    {
+      "open": "g"
+    },
+    {
+      "await": "t",
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    }
+  ],
+  "expect": {
+    "actions": {
+      "m": [
+        {
+          "result": {
+            "blocked": false,
+            "event": {
+              "room_id": "$r1"
+            }
+          }
+        }
+      ],
+      "loop": [
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": false
+          }
+        },
+        {
+          "result": {
+            "blocked": true,
+            "reason": "reentry_loop_cap",
+            "event": null
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "$r2": []
+    },
+    "bindings": {
+      "$r2": {
+        "sms": {
+          "participant_id": "+15550000002"
+        }
+      },
+      "$r1": {
+        "sms": {
+          "participant_id": "+15550000001"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,120 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-first-message-leaves-a-room-a-message-with-no-address-took",
+  "title": "A first message that created a room leaves it when, its hooks over, a message with no address holds its binding: the name no sender is",
+  "rules": [
+    "§5.7",
+    "§10.1 step 2",
+    "§10.4"
+  ],
+  "notes": "Inverts zz-race-address-then-no-address, found by the review of RMK-1339 and kept on RMK-1396.",
+  "setup": {
+    "kit": {
+      "router": {
+        "room_id": "shared"
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {}
+      }
+    ],
+    "hooks": [
+      {
+        "name": "hold",
+        "trigger": "on_room_created",
+        "priority": 1,
+        "reactions": [
+          {
+            "gate": "created"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "alice: hi"
+        }
+      },
+      "background": true,
+      "as": "alice"
+    },
+    {
+      "wait_for": "created"
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "",
+        "content": {
+          "type": "text",
+          "body": "no one"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "shared"
+          }
+        }
+      }
+    },
+    {
+      "open": "created"
+    },
+    {
+      "await": "alice",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "shared": {
+        "sms": {
+          "participant_id": "system"
+        }
+      },
+      "$r1": {
+        "sms": {
+          "participant_id": "+15550000001"
+        }
+      }
+    },
+    "timeline": {
+      "shared": [
+        {
+          "content": {
+            "body": "no one"
+          }
+        }
+      ],
+      "$r1": [
+        {
+          "content": {
+            "body": "alice: hi"
+          }
+        }
+      ]
+    }
+  }
+}

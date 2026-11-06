@@ -1,0 +1,85 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-sender-takes-no-paused-new-room",
+  "title": "A sender does not take a new room a creation hook paused, its binding naming no one: every room opened for the message is left and it is refused room_taken",
+  "rules": [
+    "§10.1 step 2",
+    "§10.4"
+  ],
+  "notes": "The hook attaches the channel naming no one and pauses each new room: no room opened for the message is its own. Rooms are counted by the hook's calls. Found by the review of RMK-1396.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {}
+      }
+    ],
+    "hooks": [
+      {
+        "name": "bind",
+        "trigger": "on_room_created",
+        "reactions": [
+          {
+            "repeat": true,
+            "do": [
+              {
+                "call": "attach_channel",
+                "room_id": "$room",
+                "channel_id": "sms"
+              },
+              {
+                "call": "store.update_room_if",
+                "room": {
+                  "id": "$room",
+                  "status": "paused",
+                  "paused_at": "2026-01-01T12:00:00Z"
+                },
+                "status": "active",
+                "paused_at": null,
+                "last_activity_at": null
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "alice: hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "room_taken",
+          "event": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "bind": [
+        {
+          "trigger": "on_room_created"
+        },
+        {
+          "trigger": "on_room_created"
+        },
+        {
+          "trigger": "on_room_created"
+        }
+      ]
+    }
+  }
+}

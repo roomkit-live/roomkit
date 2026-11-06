@@ -1,0 +1,89 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-hook-s-member-on-the-channel-sends-the-message-to-a-new-room",
+  "title": "A creation hook adding a member reached through the channel, its binding naming no one, makes the room that member's: the message leaves it",
+  "rules": [
+    "§10.1 step 2",
+    "§10.4"
+  ],
+  "notes": "step 3's conditions under the lock read the member. Found by the review of RMK-1396.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {}
+      }
+    ],
+    "hooks": [
+      {
+        "name": "bind",
+        "trigger": "on_room_created",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "attach_channel",
+                "room_id": "$room",
+                "channel_id": "sms"
+              },
+              {
+                "call": "add_member",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "participant_id": "carol"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "alice: hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r2"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "$r1": {
+        "sms": {
+          "participant_id": null
+        }
+      },
+      "$r2": {
+        "sms": {
+          "participant_id": "+15550000001"
+        }
+      }
+    },
+    "timeline": {
+      "$r1": [],
+      "$r2": [
+        {
+          "content": {
+            "body": "alice: hi"
+          }
+        }
+      ]
+    }
+  }
+}

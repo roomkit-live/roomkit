@@ -1,0 +1,117 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-message-past-its-deadline-in-its-room-s-hooks-is-not-routed-again",
+  "title": "A routed message whose call's process_timeout passed while its room's creation hooks ran, the room taken meanwhile, is refused process_timeout rather than routed once more",
+  "rules": [
+    "§10.1 step 2",
+    "§10.4"
+  ],
+  "notes": "The hooks are not bounded by the call's deadline; the re-route is (RFC §13.6): no other room is opened. Found by the review of RMK-1396.",
+  "setup": {
+    "kit": {
+      "router": {
+        "room_id": "shared"
+      },
+      "process_timeout_ms": 100
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {}
+      }
+    ],
+    "hooks": [
+      {
+        "name": "hold",
+        "trigger": "on_room_created",
+        "timeout_ms": 300,
+        "reactions": [
+          {
+            "gate": "created"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "alice: secret"
+        }
+      },
+      "background": true,
+      "as": "alice"
+    },
+    {
+      "wait_for": "created"
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "bob: secret"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "shared"
+          }
+        }
+      }
+    },
+    {
+      "await": "alice",
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "process_timeout",
+          "event": null
+        }
+      }
+    },
+    {
+      "open": "created"
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "shared": {
+        "sms": {
+          "participant_id": "+15550000002"
+        }
+      }
+    },
+    "rooms": {
+      "$r1": null
+    },
+    "timeline": {
+      "shared": [
+        {
+          "content": {
+            "body": "bob: secret"
+          }
+        }
+      ]
+    },
+    "framework_events": {
+      "*": [
+        {
+          "event": "process_timeout"
+        }
+      ]
+    }
+  }
+}

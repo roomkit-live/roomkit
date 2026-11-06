@@ -6,7 +6,7 @@
     "§10.4 A delivery status follows its message",
     "§5.7"
   ],
-  "notes": "Two rooms hold Bob under the key; the newest's channel reads Carol, the older's Bob. Only the newest the store finds is read: the status is lost, and reaches no wrong room. Found by the light review of RMK-1129.",
+  "notes": "Two ACTIVE rooms hold Bob under the key; the newest's channel reads Carol, the older's Bob. Only the newest the store finds is read: the status is lost, and reaches no wrong room. Found by the light review of RMK-1129.",
   "setup": {
     "channels": [
       {

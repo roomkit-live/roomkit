@@ -1,0 +1,122 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-hook-closing-a-room-another-was-routed-into-refuses-the-first-message",
+  "title": "A creation hook closes the room once another sender was recorded in it",
+  "rules": [
+    "§7.5 rule 7",
+    "§10.1 step 2"
+  ],
+  "notes": "Review probe. Found by the review of RMK-1396.",
+  "setup": {
+    "kit": {
+      "router": {
+        "room_id": "shared"
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {}
+      }
+    ],
+    "hooks": [
+      {
+        "name": "before",
+        "trigger": "on_room_created",
+        "priority": 0,
+        "reactions": [
+          {
+            "do": []
+          }
+        ]
+      },
+      {
+        "name": "hold",
+        "trigger": "on_room_created",
+        "priority": 1,
+        "reactions": [
+          {
+            "gate": "created",
+            "do": [
+              {
+                "call": "close_room",
+                "room_id": "$room"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "alice: secret"
+        }
+      },
+      "background": true,
+      "as": "alice"
+    },
+    {
+      "wait_for": "created"
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "bob: secret"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "shared"
+          }
+        }
+      }
+    },
+    {
+      "open": "created"
+    },
+    {
+      "await": "alice",
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "room_closed",
+          "event": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "shared": {
+        "sms": {
+          "participant_id": "+15550000002"
+        }
+      }
+    },
+    "timeline": {
+      "shared": [
+        {
+          "content": {
+            "body": "bob: secret"
+          }
+        }
+      ]
+    }
+  }
+}

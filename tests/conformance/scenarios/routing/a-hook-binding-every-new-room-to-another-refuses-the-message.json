@@ -1,0 +1,87 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-hook-binding-every-new-room-to-another-refuses-the-message",
+  "title": "When no room opened for a message is still its own, the message is refused room_taken, nothing of it stored",
+  "rules": [
+    "§5.7",
+    "§10.1 step 2",
+    "§10.4"
+  ],
+  "notes": "The hook binds each new room of the channel to Bob. Routed once more, then given a new room, then a last one: none is the message's. Maintainer's decision, HITL ef0ef858. The rooms stay as the hook left them.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {}
+      }
+    ],
+    "hooks": [
+      {
+        "name": "bind",
+        "trigger": "on_room_created",
+        "reactions": [
+          {
+            "repeat": true,
+            "do": [
+              {
+                "call": "attach_channel",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "metadata": {
+                  "phone_number": "+15550000002"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "alice: hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "room_taken",
+          "event": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "$r1": {
+        "sms": {
+          "participant_id": "+15550000002"
+        }
+      },
+      "$r2": {
+        "sms": {
+          "participant_id": "+15550000002"
+        }
+      },
+      "$r3": {
+        "sms": {
+          "participant_id": "+15550000002"
+        }
+      }
+    },
+    "timeline": {
+      "$r1": [],
+      "$r2": [],
+      "$r3": []
+    }
+  }
+}

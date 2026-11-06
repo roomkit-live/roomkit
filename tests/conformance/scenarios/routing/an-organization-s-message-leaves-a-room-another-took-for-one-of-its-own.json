@@ -1,0 +1,128 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/an-organization-s-message-leaves-a-room-another-took-for-one-of-its-own",
+  "title": "A message acting for an organization leaves the room another sender took, and gets one in its organization",
+  "rules": [
+    "§10.1 step 2",
+    "§10.4"
+  ],
+  "notes": "Review probe. Found by the review of RMK-1396.",
+  "setup": {
+    "kit": {
+      "router": {
+        "room_id": "shared"
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {}
+      }
+    ],
+    "hooks": [
+      {
+        "name": "hold",
+        "trigger": "on_room_created",
+        "reactions": [
+          {
+            "gate": "created"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "alice: secret"
+        }
+      },
+      "background": true,
+      "organization_id": "acme",
+      "as": "alice"
+    },
+    {
+      "wait_for": "created"
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "bob: secret"
+        }
+      },
+      "organization_id": "acme",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "shared"
+          }
+        }
+      }
+    },
+    {
+      "open": "created"
+    },
+    {
+      "await": "alice",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "shared": {
+        "organization_id": "acme"
+      },
+      "$r1": {
+        "organization_id": "acme"
+      }
+    },
+    "bindings": {
+      "shared": {
+        "sms": {
+          "participant_id": "+15550000002"
+        }
+      },
+      "$r1": {
+        "sms": {
+          "participant_id": "+15550000001"
+        }
+      }
+    },
+    "timeline": {
+      "shared": [
+        {
+          "content": {
+            "body": "bob: secret"
+          }
+        }
+      ],
+      "$r1": [
+        {
+          "content": {
+            "body": "alice: secret"
+          }
+        }
+      ]
+    }
+  }
+}

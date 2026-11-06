@@ -1,0 +1,118 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-hook-binding-the-first-room-to-another-gives-the-message-a-new-one",
+  "title": "A binding an ON_ROOM_CREATED hook made naming someone else, in the room created for a message, sends the message to a room of its own",
+  "rules": [
+    "§5.7",
+    "§10.1 step 2",
+    "§10.4"
+  ],
+  "notes": "The room stays as the hook left it, delivering to Bob, with nothing of Alice in it.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {}
+      }
+    ],
+    "hooks": [
+      {
+        "name": "bind",
+        "trigger": "on_room_created",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "attach_channel",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "metadata": {
+                  "phone_number": "+15550000002"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "alice: hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r2"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "bob: hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "$r1": {
+        "sms": {
+          "participant_id": "+15550000002",
+          "metadata": {
+            "phone_number": "+15550000002"
+          }
+        }
+      },
+      "$r2": {
+        "sms": {
+          "participant_id": "+15550000001",
+          "metadata": {
+            "phone_number": "+15550000001"
+          }
+        }
+      }
+    },
+    "timeline": {
+      "$r1": [
+        {
+          "content": {
+            "body": "bob: hi"
+          }
+        }
+      ],
+      "$r2": [
+        {
+          "content": {
+            "body": "alice: hi"
+          }
+        }
+      ]
+    }
+  }
+}

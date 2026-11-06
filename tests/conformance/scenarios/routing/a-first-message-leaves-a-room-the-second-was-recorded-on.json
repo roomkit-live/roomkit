@@ -1,0 +1,212 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-first-message-leaves-a-room-the-second-was-recorded-on",
+  "title": "A first message that created a room leaves it when, its hooks over, the binding names another sender: it gets a room of its own, and reads nothing of theirs",
+  "rules": [
+    "§5.7",
+    "§10.1 step 2",
+    "§10.4"
+  ],
+  "notes": "A router answers one missing id for two senders. Alice's message creates the room and waits in ON_ROOM_CREATED; Bob's finds the room and is recorded on the binding it attaches. Under the lock Alice's is held to the check of any routed room, so she is routed once more, and that second answer not being hers gives her a new room. Her turn reads her words alone, and its answer goes to her number. Inverts zz-race-first-lands-in-second-s-room, found by the review of RMK-1339 and kept on RMK-1396. The hooks repeat, so the new room binds the agent too: its hold passes at once, the gate open.",
+  "setup": {
+    "kit": {
+      "router": {
+        "room_id": "shared"
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {}
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "r0"
+              ]
+            },
+            {
+              "deltas": [
+                "r1"
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "attach_agent",
+        "trigger": "on_room_created",
+        "priority": 0,
+        "reactions": [
+          {
+            "repeat": true,
+            "do": [
+              {
+                "call": "attach_channel",
+                "room_id": "$room",
+                "channel_id": "agent"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "hold",
+        "trigger": "on_room_created",
+        "priority": 1,
+        "reactions": [
+          {
+            "gate": "created"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "alice: my secret"
+        }
+      },
+      "background": true,
+      "as": "alice"
+    },
+    {
+      "wait_for": "created"
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "bob: my secret"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "shared"
+          }
+        }
+      }
+    },
+    {
+      "open": "created"
+    },
+    {
+      "await": "alice",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "shared": {
+        "sms": {
+          "participant_id": "+15550000002",
+          "metadata": {
+            "phone_number": "+15550000002"
+          }
+        }
+      },
+      "$r1": {
+        "sms": {
+          "participant_id": "+15550000001",
+          "metadata": {
+            "phone_number": "+15550000001"
+          }
+        }
+      }
+    },
+    "timeline": {
+      "shared": [
+        {
+          "content": {
+            "body": "bob: my secret"
+          }
+        },
+        {
+          "$present": true
+        }
+      ],
+      "$r1": [
+        {
+          "content": {
+            "body": "alice: my secret"
+          }
+        },
+        {
+          "$present": true
+        }
+      ]
+    },
+    "deliveries": {
+      "shared": {
+        "sms": [
+          {
+            "content": {
+              "body": "r0"
+            }
+          }
+        ]
+      },
+      "$r1": {
+        "sms": [
+          {
+            "content": {
+              "body": "r1"
+            }
+          }
+        ]
+      }
+    },
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$contains": "bob: my secret"
+              }
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$contains": "alice: my secret"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

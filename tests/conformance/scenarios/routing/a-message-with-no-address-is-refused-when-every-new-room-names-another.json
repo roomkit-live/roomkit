@@ -1,0 +1,77 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-message-with-no-address-is-refused-when-every-new-room-names-another",
+  "title": "A message with no address, when every room opened for it names someone else, is refused room_taken",
+  "rules": [
+    "§5.7",
+    "§10.1 step 2",
+    "§10.4"
+  ],
+  "notes": "It is no one's: it commits into no room whose binding names a correspondent.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {}
+      }
+    ],
+    "hooks": [
+      {
+        "name": "bind",
+        "trigger": "on_room_created",
+        "reactions": [
+          {
+            "repeat": true,
+            "do": [
+              {
+                "call": "attach_channel",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "metadata": {
+                  "phone_number": "+15550000002"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "",
+        "content": {
+          "type": "text",
+          "body": "no one"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "room_taken",
+          "event": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "$r1": {
+        "sms": {
+          "participant_id": "+15550000002"
+        }
+      }
+    },
+    "timeline": {
+      "$r1": [],
+      "$r2": [],
+      "$r3": []
+    }
+  }
+}

@@ -1,0 +1,106 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-hook-s-group-binding-keeps-the-message-when-a-newer-room-waits",
+  "title": "A message with no address takes the group binding a creation hook made in the room it created, though a newer room bound to the channel naming no one exists by then",
+  "rules": [
+    "§10.1 step 2",
+    "§10.4"
+  ],
+  "notes": "A re-route would land in the newer room: the group binding keeps the message where it is. Found by the light review of RMK-1396.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {}
+      }
+    ],
+    "hooks": [
+      {
+        "name": "bind",
+        "trigger": "on_room_created",
+        "reactions": [
+          {
+            "gate": "g1",
+            "do": [
+              {
+                "call": "store.add_binding",
+                "binding": {
+                  "room_id": "$room",
+                  "channel_id": "sms",
+                  "channel_type": "sms",
+                  "group": true
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "",
+        "content": {
+          "type": "text",
+          "body": "no one"
+        }
+      },
+      "background": true,
+      "as": "first"
+    },
+    {
+      "wait_for": "g1"
+    },
+    {
+      "call": "create_room",
+      "room": {
+        "id": "other"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "other",
+      "channel_id": "sms"
+    },
+    {
+      "open": "g1"
+    },
+    {
+      "await": "first",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "$r1": {
+        "sms": {
+          "group": true,
+          "participant_id": null
+        }
+      }
+    },
+    "timeline": {
+      "$r1": [
+        {
+          "content": {
+            "body": "no one"
+          }
+        }
+      ],
+      "other": []
+    }
+  }
+}

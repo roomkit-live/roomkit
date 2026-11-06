@@ -1,13 +1,13 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "routing/a-hook-s-binding-under-the-key-of-a-channel-reading-no-recipient-keeps-its-recipient",
-  "title": "A binding a hook stored with a value under the declared key, in a room a message with no address opened, is that recipient's, on a channel whose recipient_address answers none",
+  "title": "A binding a hook stored with a recipient, in a room a message with no address opened, is that recipient's: the message leaves it for a closed room, and the name no sender is is not written over it",
   "rules": [
     "§5.7",
     "§10.1 step 2",
     "§10.4"
   ],
-  "notes": "The name no sender is is not written over it: Bob, the recipient, is found and recorded; Carol is not.",
+  "notes": "The hook writes straight to the store, so nothing named the recipient as correspondent. The message with no address commits into no room whose binding names another: routed once more, it opens a closed room. Bob, the recipient, is found and recorded; Carol is not. Found by the light review of RMK-1339; the message's leaving by RMK-1396.",
   "setup": {
     "channels": [
       {
@@ -57,7 +57,7 @@
         "result": {
           "blocked": false,
           "event": {
-            "room_id": "$r1"
+            "room_id": "$r2"
           }
         }
       }
@@ -76,7 +76,7 @@
         "result": {
           "blocked": false,
           "event": {
-            "room_id": "$r2"
+            "room_id": "$r3"
           }
         }
       }
@@ -110,15 +110,15 @@
             "phone_number": "+15550000002"
           }
         }
+      },
+      "$r2": {
+        "sms": {
+          "participant_id": "system"
+        }
       }
     },
     "timeline": {
       "$r1": [
-        {
-          "content": {
-            "body": "first"
-          }
-        },
         {
           "content": {
             "body": "the recipient answers"
@@ -126,6 +126,13 @@
         }
       ],
       "$r2": [
+        {
+          "content": {
+            "body": "first"
+          }
+        }
+      ],
+      "$r3": [
         {
           "content": {
             "body": "carol: hi"

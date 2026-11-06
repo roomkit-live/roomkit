@@ -1,0 +1,132 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-first-message-leaves-a-room-the-default-router-gave-another",
+  "title": "With the default router, a hook attaching the message's channel naming no one, then waiting: the second sender is admitted at step 3 and recorded, and the first leaves",
+  "rules": [
+    "§5.7",
+    "§10.1 step 2",
+    "§10.4"
+  ],
+  "notes": "No custom router is needed for this race. The first room is created for Alice with a fresh id; the hook's binding makes it the one room bound to the channel, so Bob is admitted and recorded while Alice's message waits. Under the lock her room is no longer hers: routed once more, step 3 refuses her and she gets a new room.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {}
+      }
+    ],
+    "hooks": [
+      {
+        "name": "bind",
+        "trigger": "on_room_created",
+        "priority": 0,
+        "reactions": [
+          {
+            "repeat": true,
+            "do": [
+              {
+                "call": "attach_channel",
+                "room_id": "$room",
+                "channel_id": "sms"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "hold",
+        "trigger": "on_room_created",
+        "priority": 1,
+        "reactions": [
+          {
+            "gate": "created"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "alice: my secret"
+        }
+      },
+      "background": true,
+      "as": "alice"
+    },
+    {
+      "wait_for": "created"
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "bob: my secret"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    },
+    {
+      "open": "created"
+    },
+    {
+      "await": "alice",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r2"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "$r1": {
+        "sms": {
+          "participant_id": "+15550000002"
+        }
+      },
+      "$r2": {
+        "sms": {
+          "participant_id": "+15550000001"
+        }
+      }
+    },
+    "timeline": {
+      "$r1": [
+        {
+          "content": {
+            "body": "bob: my secret"
+          }
+        }
+      ],
+      "$r2": [
+        {
+          "content": {
+            "body": "alice: my secret"
+          }
+        }
+      ]
+    }
+  }
+}
