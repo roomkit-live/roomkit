@@ -30,7 +30,7 @@ from roomkit.tools import (
     current_tool_room_id,
     tool_turn_context,
 )
-from roomkit.tools.context import _current_turn_chain_depth, _ToolLoopContext
+from roomkit.tools.context import _ToolLoopContext, current_tool_chain_depth
 
 
 def _readers() -> tuple[object, ...]:
@@ -134,8 +134,8 @@ class TestTheTurnItDescribes:
 
     def test_the_turn_carries_its_chain_depth(self) -> None:
         with tool_turn_context(room_id="r1", chain_depth=3):
-            assert _current_turn_chain_depth() == 3
-        assert _current_turn_chain_depth() == 0
+            assert current_tool_chain_depth() == 3
+        assert current_tool_chain_depth() == 0
 
 
 class TestWhatTheHandlerWritesBack:

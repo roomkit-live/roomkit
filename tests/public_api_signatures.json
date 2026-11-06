@@ -5633,6 +5633,9 @@
   "roomkit.tools.current_tool_call": {
     "__call__": ["def"]
   },
+  "roomkit.tools.current_tool_chain_depth": {
+    "__call__": ["def"]
+  },
   "roomkit.tools.current_tool_requester": {
     "__call__": ["def"]
   },

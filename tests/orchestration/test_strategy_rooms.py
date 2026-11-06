@@ -34,7 +34,7 @@ from roomkit.orchestration.strategies.loop import Loop
 from roomkit.orchestration.strategies.supervisor import Supervisor, _install_auto
 from roomkit.providers.ai.base import AIResponse, AITool, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
-from roomkit.tools.context import _current_turn_chain_depth
+from roomkit.tools.context import current_tool_chain_depth
 from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
 from tests.conftest import make_event
 from tests.test_framework import SimpleChannel
@@ -143,11 +143,11 @@ async def test_voice_results_continue_the_chain_of_the_models_answer(
     dispatched: list[tuple[str, int]] = []
 
     async def run_and_deliver(**kwargs: Any) -> None:
-        dispatched.append(("supervisor", _current_turn_chain_depth()))
+        dispatched.append(("supervisor", current_tool_chain_depth()))
         kwargs["on_done"]()
 
     async def loop_and_deliver(**kwargs: Any) -> None:
-        dispatched.append(("loop", _current_turn_chain_depth()))
+        dispatched.append(("loop", current_tool_chain_depth()))
         kwargs["on_done"]()
 
     monkeypatch.setattr(_install_auto, "_async_run_and_deliver", run_and_deliver)

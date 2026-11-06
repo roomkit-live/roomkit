@@ -19,10 +19,10 @@ from uuid import uuid4
 
 from roomkit.channels._tool_registry import TurnOwnerTools, orchestration_tool
 from roomkit.tools.context import (
-    _current_turn_chain_depth,
     current_tool_actor_id,
     current_tool_allowed_names,
     current_tool_call,
+    current_tool_chain_depth,
     current_tool_requester,
     current_tool_room_id,
 )
@@ -135,7 +135,7 @@ def _call_context() -> CallContext:
         tool_call_id=record.tool_call_id if record is not None else "",
         room_id=current_tool_room_id() or "",
         channel_id=record.channel_id if record is not None else "",
-        chain_depth=_current_turn_chain_depth(),
+        chain_depth=current_tool_chain_depth(),
         actor_id=current_tool_actor_id(),
         allowed_names=None if allowed is None else sorted(allowed),
         requester=current_tool_requester(),

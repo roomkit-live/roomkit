@@ -27,11 +27,11 @@ from roomkit.providers.ai.base import AIResponse, AITool, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.tasks.delegate import DelegateHandler, setup_delegation
 from roomkit.tools.context import (
-    _current_turn_chain_depth,
     current_response_metadata,
     current_tool_actor_id,
     current_tool_allowed_names,
     current_tool_call,
+    current_tool_chain_depth,
     current_tool_requester,
     current_tool_room,
     current_tool_room_id,
@@ -127,7 +127,7 @@ async def test_a_handler_runs_on_the_owner_under_what_the_turn_gave_its_call(
             room_object=getattr(current_tool_room(), "id", None),
             requester=current_tool_requester(),
             call=(record.tool_call_id, record.channel_id),
-            depth=_current_turn_chain_depth(),
+            depth=current_tool_chain_depth(),
             actor=current_tool_actor_id(),
             allowed=current_tool_allowed_names(),
             record=current_response_metadata(),

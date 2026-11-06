@@ -29,7 +29,7 @@ from roomkit.orchestration.handoff import (
     realtime_prompt,
 )
 from roomkit.orchestration.state import get_conversation_state
-from roomkit.tools.context import _current_turn_chain_depth, current_tool_room_id
+from roomkit.tools.context import current_tool_chain_depth, current_tool_room_id
 from roomkit.tools.result import declined_answer
 
 if TYPE_CHECKING:
@@ -300,7 +300,7 @@ class RealtimePipeline:
                 # At the handing-off call's depth: the new agent's greeting
                 # continues that chain, it does not open one (RFC §8.3).
                 await rtv.inject_text(
-                    session, msg, role="system", chain_depth=_current_turn_chain_depth()
+                    session, msg, role="system", chain_depth=current_tool_chain_depth()
                 )
 
 

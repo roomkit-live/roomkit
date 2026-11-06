@@ -532,11 +532,14 @@ def current_tool_actor_id() -> str | None:
     return ctx.actor_id if ctx is not None else None
 
 
-def _current_turn_chain_depth() -> int:
+def current_tool_chain_depth() -> int:
     """The chain depth of the response the current turn produces; 0 outside a turn.
 
     What a result delivered later on the turn's behalf inherits (RFC §21.4,
-    §23.3). Internal: the delegation paths read it, no host needs to.
+    §23.3), the turn over or not: a host that hands the turn's work to another
+    context (another process, a task outside the turn) reads it here, with the
+    turn's actor, and runs that work under them (:func:`tool_turn_context`),
+    so what the work sends continues the turn's chain (RFC §8.3).
     """
     ctx = _current_loop_ctx.get()
     return ctx.chain_depth if ctx is not None else 0
@@ -547,7 +550,7 @@ def _live_turn_chain_depth() -> int:
     while it runs; 0 outside one, and once it is over (RFC §8.3).
 
     What a call into a room made within it is at least as deep as. Unlike
-    :func:`_current_turn_chain_depth`, which a result delivered later on the
+    :func:`current_tool_chain_depth`, which a result delivered later on the
     turn's behalf reads, it is gone for a task the turn spawned once the turn
     ended. Internal: the kit's entry points read it.
     """

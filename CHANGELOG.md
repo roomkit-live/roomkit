@@ -164,6 +164,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`current_tool_chain_depth()` reads the turn's chain depth** (RFC §21.4, RMK-1495).
+  The body of an asynchronous hook can hand its work to another context (a task
+  outside the turn, another process); what that work sends continues the turn's
+  chain when it runs under the turn's depth and actor (`tool_turn_context`), and
+  the depth was readable by RoomKit alone. `roomkit.tools.current_tool_chain_depth()`
+  answers it, as `current_tool_actor_id()` answers the actor: the depth of the
+  response the turn produces, the turn over or not; 0 outside a turn.
+
 - **A verb the host declares can be served after its turn** (RFC §10.6.5,
   RMK-1493). Work a turn begins can outlive it (an asynchronous hook writing a
   card once the answer is out), and a verb declared with `kit.declare_host_verb`

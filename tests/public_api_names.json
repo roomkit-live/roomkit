@@ -1255,6 +1255,7 @@
     "current_tool_actor_id",
     "current_tool_allowed_names",
     "current_tool_call",
+    "current_tool_chain_depth",
     "current_tool_requester",
     "current_tool_room",
     "current_tool_room_id",

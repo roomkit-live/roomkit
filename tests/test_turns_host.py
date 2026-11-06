@@ -27,9 +27,9 @@ from roomkit.providers.ai.base import AIResponse, AITool, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.speaking.always import AlwaysSpeak
 from roomkit.tools.context import (
-    _current_turn_chain_depth,
     current_tool_actor_id,
     current_tool_call,
+    current_tool_chain_depth,
     current_tool_room_id,
 )
 from tests.test_framework import SimpleChannel
@@ -372,7 +372,7 @@ async def test_a_delegation_through_the_host_keeps_its_turns_chain_depth() -> No
     run_background = type(kit)._run_background
 
     async def spy(self: Any, *args: Any, **kwargs: Any) -> Any:
-        depths.append(_current_turn_chain_depth())
+        depths.append(current_tool_chain_depth())
         return await run_background(self, *args, **kwargs)
 
     with pytest.MonkeyPatch.context() as patch:
@@ -434,7 +434,7 @@ async def test_a_delegation_a_hook_makes_before_the_tool_loop_keeps_the_turns_de
 
     async def spy(self: Any, *args: Any, **kwargs: Any) -> Any:
         if not depths.done():
-            depths.set_result(_current_turn_chain_depth())
+            depths.set_result(current_tool_chain_depth())
         return await run_background(self, *args, **kwargs)
 
     @kit.hook(HookTrigger.ON_SPEAK_DECISION, execution=HookExecution.ASYNC)

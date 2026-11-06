@@ -23,7 +23,7 @@ from roomkit.core.exceptions import RoomKitError
 from roomkit.core.task_utils import check_open, hold_task
 from roomkit.orchestration.status_bus import StatusLevel
 from roomkit.tasks.handback import hand_back, not_handed_back
-from roomkit.tools.context import _current_turn_chain_depth, current_tool_call
+from roomkit.tools.context import current_tool_call, current_tool_chain_depth
 
 if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
@@ -92,7 +92,7 @@ async def run_in_background[T](kit: RoomKit, run: BackgroundRun[T]) -> None:
     the turn that made it (§23.3), and a realtime voice channel is told in
     the session that made the call.
     """
-    chain_depth = _current_turn_chain_depth()
+    chain_depth = current_tool_chain_depth()
     session = get_current_voice_session()
     outcome = await _work(run, closing=kit._closed)
     text = run.told(outcome)

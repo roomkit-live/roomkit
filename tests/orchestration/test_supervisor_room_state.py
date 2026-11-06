@@ -17,7 +17,7 @@ from roomkit.channels.agent import Agent
 from roomkit.models.room import Room
 from roomkit.orchestration.strategies.supervisor import Supervisor, _inject_strategy
 from roomkit.providers.ai.mock import MockAIProvider
-from roomkit.tools.context import _current_turn_chain_depth
+from roomkit.tools.context import current_tool_chain_depth
 from tests.orchestration.test_strategy_supervisor import _make_mock_kit
 from tests.tool_room import owner_tool_call_in, owner_tools_in, tool_call_in
 
@@ -86,7 +86,7 @@ async def test_async_results_continue_the_chain_of_the_turn_that_dispatched(
     dispatched: list[tuple[str, int]] = []
 
     async def run_and_deliver(**kwargs: Any) -> None:
-        dispatched.append((kwargs["room_id"], _current_turn_chain_depth()))
+        dispatched.append((kwargs["room_id"], current_tool_chain_depth()))
         kwargs["on_done"]()
 
     monkeypatch.setattr(_inject_strategy, "_async_run_and_deliver", run_and_deliver)

@@ -63,7 +63,7 @@ from roomkit.tasks.status import (
     room_task_lines,
 )
 from roomkit.telemetry.base import Attr, SpanKind, sensitive
-from roomkit.tools.context import _current_turn_chain_depth
+from roomkit.tools.context import current_tool_chain_depth
 
 if TYPE_CHECKING:
     from roomkit.channels._ai_callbacks import RoomTasksLoader
@@ -824,7 +824,7 @@ class DelegationMixin(HelpersMixin):
         # Read now, inside the tool call that delegated: the result continues
         # that turn's chain (RFC §23.3), whenever it comes back, and a
         # realtime voice channel is told in the session that made the call.
-        chain_depth = _current_turn_chain_depth()
+        chain_depth = current_tool_chain_depth()
         session = get_current_voice_session()
         session_id = session.id if session is not None else None
 

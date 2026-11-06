@@ -23,7 +23,7 @@ from roomkit import (
 )
 from roomkit.models.event import TextContent
 from roomkit.tools import current_tool_call, current_tool_room_id
-from roomkit.tools.context import _current_turn_chain_depth
+from roomkit.tools.context import current_tool_chain_depth
 from roomkit.voice.realtime.mock import MockRealtimeProvider
 from tests.conference.test_conference_realtime import ROOM, realtime_kit, until
 
@@ -40,7 +40,7 @@ class _Handler:
         self.started += 1
         call = current_tool_call()
         self.seen.append(
-            (current_tool_room_id(), call and call.tool_call_id, _current_turn_chain_depth())
+            (current_tool_room_id(), call and call.tool_call_id, current_tool_chain_depth())
         )
         await self.release.wait()
         return f"r{self.started}"
