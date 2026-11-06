@@ -1,12 +1,12 @@
 {
   "$schema": "../../scenario.schema.json",
-  "id": "routing/a-binding-naming-the-sender-s-identity-gets-no-address-written",
-  "title": "The record writes no recipient on a binding naming the sender's identity: it names a conversation other than their address's",
+  "id": "routing/a-binding-naming-the-sender-s-identity-gets-their-address",
+  "title": "The record writes the sender's address as the recipient of a binding naming their identity, which holds none",
   "rules": [
     "§5.7",
     "§10.1 step 2"
   ],
-  "notes": "A binding the host named by the identity holds no value under the key. Bob is found at step 1 and goes on in the room; the record's write of a recipient is for a binding naming the sender by their address.",
+  "notes": "A binding the host named by the identity holds no value under the key. Bob is found at step 1, and the room answers him at the address he wrote from (HITL b75a9c93).",
   "setup": {
     "identities": [
       {
@@ -70,9 +70,7 @@
         "sms": {
           "participant_id": "identity-of-bob",
           "metadata": {
-            "phone_number": {
-              "$absent": true
-            }
+            "phone_number": "+15550000002"
           }
         }
       }

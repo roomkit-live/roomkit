@@ -1,13 +1,13 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "routing/a-recipient-naming-the-sender-s-identity-is-recorded-as-the-channel-reads-it",
-  "title": "A binding whose recipient, as the channel reads it, is the sender's identity is theirs: the record names that recipient and writes no address beside it",
+  "title": "A binding whose recipient, as the channel reads it, is the sender's identity is theirs: the record names that recipient, and writes the sender's address under the declared key",
   "rules": [
     "§5.7",
     "§10.1 step 2",
     "§10.4"
   ],
-  "notes": "reached_at holds Bob's identity. Bob's address is linked to it, so the one room bound to the channel admits him, and the correspondent is the recipient as the channel reads it. The binding then names the identity, not the conversation's address, so no reply metadata is written.",
+  "notes": "reached_at holds Bob's identity. Bob's address is linked to it, so the one room bound to the channel admits him, and the correspondent is the recipient as the channel reads it. The declared key holds no value, so the record writes his address there (HITL b75a9c93).",
   "setup": {
     "identities": [
       {
@@ -75,9 +75,7 @@
           "participant_id": "identity-of-bob",
           "metadata": {
             "reached_at": "identity-of-bob",
-            "phone_number": {
-              "$absent": true
-            }
+            "phone_number": "+15550000002"
           }
         }
       }
