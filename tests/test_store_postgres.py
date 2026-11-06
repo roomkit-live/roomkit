@@ -709,6 +709,18 @@ async def test_an_event_update_over_a_jsonb_string_holding_no_json_writes_it(
     )
 
 
+async def test_an_event_update_over_a_jsonb_string_returns_its_delivery_results(
+    store: Any,
+) -> None:
+    """HITL f9737c41: an update over an event whose delivery results the row holds as a
+    JSON string returns them as the value the string holds."""
+    await _a_row_of_each_table(store)
+    event = await store.get_event("e1")
+    await _held_as_a_string(store, "events", "delivery_results")
+    updated = await store.update_event(event)
+    assert updated.delivery_results == {"ch2": {"status": "sent"}}
+
+
 @pytest.mark.parametrize(("column", "value"), _UNREADABLE_COLUMNS)
 async def test_a_record_the_model_cannot_read_serves_no_read(
     store: Any, column: str, value: str, caplog: pytest.LogCaptureFixture
