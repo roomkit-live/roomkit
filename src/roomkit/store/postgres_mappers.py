@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from pydantic import ValidationError
+
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.event import ChannelData, EventSource, RoomEvent
 from roomkit.models.identity import Identity
@@ -157,18 +159,25 @@ def _row_to_participant(row: Any) -> Participant:
 
 
 def _row_to_identity(row: Any) -> Identity:
-    """Convert a database row to an Identity model."""
-    return Identity(
-        id=row["id"],
-        organization_id=row["organization_id"],
-        display_name=row["display_name"],
-        email=row["email"],
-        phone=row["phone"],
-        channel_addresses=_json(row["channel_addresses"]),
-        external_id=row["external_id"],
-        external_ids=_json(row["external_ids"]),
-        metadata=_json(row["metadata"]),
-    )
+    """Convert a database row to an Identity model. A row the model cannot read raises a
+    fixed ``ValueError``, the id alone, as ``SQLiteStore`` does: the model's error quotes
+    the row, which may be another organization's (HITL 47b7dfc6, 70fef50d)."""
+    try:
+        return Identity(
+            id=row["id"],
+            organization_id=row["organization_id"],
+            display_name=row["display_name"],
+            email=row["email"],
+            phone=row["phone"],
+            channel_addresses=_json(row["channel_addresses"]),
+            external_id=row["external_id"],
+            external_ids=_json(row["external_ids"]),
+            metadata=_json(row["metadata"]),
+        )
+    except ValidationError:
+        pass
+    # Raised outside the handler: the model's error is not even its context.
+    raise ValueError(f"Identity {row['id']} has a record the model cannot read")
 
 
 def _row_to_task(row: Any) -> Task:

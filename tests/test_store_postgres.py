@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import os
 import socket
 import struct
@@ -437,6 +438,72 @@ async def test_a_refusal_on_a_host_ends_the_list(
         dsn = f"postgresql://{quote(parts['user'])}@/{parts['database']}?sslmode=disable"
         with pytest.raises(error):
             await _connects(dsn)
+
+
+# A row of the identity i1 the model cannot read: a JSONB column of another shape than its
+# field's, each quoting an address of globex's (HITL 70fef50d).
+_UNREADABLE_COLUMNS = [
+    ("channel_addresses", '["a@globex.example"]'),
+    ("channel_addresses", '{"sms": "a@globex.example"}'),
+    ("external_ids", '"a@globex.example"'),
+    ("metadata", '["a@globex.example"]'),
+]
+
+
+async def _spoil_the_row(store: Any, column: str, value: str) -> None:
+    """Writes *value* into the identity i1's *column*, as an older release or a hand could."""
+    async with store._pool.acquire() as conn:
+        await conn.execute(f"UPDATE identities SET {column} = $1::jsonb WHERE id = 'i1'", value)
+
+
+@pytest.mark.parametrize(("column", "value"), _UNREADABLE_COLUMNS)
+async def test_a_record_the_model_cannot_read_serves_no_read(
+    store: Any, column: str, value: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    """HITL 4ee4d298, 70fef50d: it resolves to nobody, and neither the caller nor the log
+    reads the row, which may be another organization's."""
+    identity = Identity(id="i1", organization_id="globex", channel_addresses={"sms": ["+1555"]})
+    await store.create_identity(identity)
+    await _spoil_the_row(store, column, value)
+    with caplog.at_level(logging.WARNING, logger="roomkit.store.postgres"):
+        resolved = await store.resolve_identity("sms", "+1555", organization_id="globex")
+    assert resolved is None
+    assert "i1" in caplog.text
+    assert "a@globex.example" not in caplog.text
+
+
+async def _read_by_id(store: Any, door: str) -> object:
+    """Reach the identity i1's row by its id through *door*, for globex, its organization."""
+    from roomkit import RoomKit
+
+    if door == "get_identity":
+        return await store.get_identity("i1")
+    if door == "link_address":
+        return await store.link_address("i1", "sms", "+2", organization_id="globex")
+    if door == "unlink_address":
+        return await store.unlink_address("i1", "sms", "+2", organization_id="globex")
+    kit = RoomKit(store=store)
+    await store.create_room(Room(id="r1", organization_id="globex"))
+    await store.add_participant(Participant(id="p1", room_id="r1", channel_id="sms"))
+    return await kit.resolve_participant("r1", "p1", "i1", organization_id="globex")
+
+
+@pytest.mark.parametrize(
+    "door", ["get_identity", "link_address", "unlink_address", "resolve_participant"]
+)
+@pytest.mark.parametrize(("column", "value"), _UNREADABLE_COLUMNS)
+async def test_a_read_by_id_of_a_record_the_model_cannot_read_quotes_none_of_it(
+    store: Any, column: str, value: str, door: str
+) -> None:
+    """HITL 47b7dfc6, 70fef50d: the read fails with a fixed error, the id alone, as on
+    SQLiteStore: the row may be another organization's."""
+    await store.create_identity(Identity(id="i1", organization_id="globex"))
+    await _spoil_the_row(store, column, value)
+    with pytest.raises(ValueError) as refused:
+        await _read_by_id(store, door)
+    assert str(refused.value) == "Identity i1 has a record the model cannot read"
+    assert refused.value.__cause__ is None
+    assert refused.value.__context__ is None
 
 
 class TestRoomOperations:

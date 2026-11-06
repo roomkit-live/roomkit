@@ -416,12 +416,13 @@ async def _locked_addresses(
     identity, or one of another organization, is not found.
     """
     row = await conn.fetchrow(
-        "SELECT organization_id, channel_addresses FROM identities WHERE id = $1 FOR UPDATE",
+        "SELECT * FROM identities WHERE id = $1 FOR UPDATE",
         identity_id,
     )
     if row is None or (row["organization_id"] or "") != (organization_id or ""):
         raise IdentityNotFoundError(f"Identity {identity_id} not found")
-    return _jsonb(row["channel_addresses"])
+    # A row the model cannot read is refused, the id alone, as SQLiteStore refuses it.
+    return _row_to_identity(row).channel_addresses
 
 
 async def _file_address(
@@ -2063,7 +2064,15 @@ class PostgresStore(ConversationStore):
                 address,
                 organization_id or "",
             )
-        return _row_to_identity(row) if row is not None else None
+        if row is None:
+            return None
+        try:
+            return _row_to_identity(row)
+        except ValueError:
+            # It serves no read, and the row is quoted nowhere: it may be another
+            # organization's (HITL 4ee4d298, 70fef50d).
+            logger.warning("Identity %s has a record the model cannot read", row["id"])
+            return None
 
     async def link_address(
         self,

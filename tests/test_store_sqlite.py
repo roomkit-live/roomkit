@@ -980,6 +980,34 @@ async def test_a_read_by_id_of_a_record_the_model_cannot_read_quotes_none_of_it(
     assert refused.value.__context__ is None
 
 
+@pytest.mark.parametrize("missing", ["room", "participant"])
+async def test_resolve_participant_checks_the_room_and_the_participant_first(
+    tmp_path: Path, missing: str
+) -> None:
+    """HITL 70fef50d: the room's organization and the participant are checked before the
+    identity is read, so that a caller of another organization, or one naming a
+    participant the room lacks, learns nothing of an identity that cannot be read."""
+    from roomkit import ParticipantNotFoundError, RoomNotFoundError
+
+    path = tmp_path / "older.db"
+    store = SQLiteStore(path)
+    await store.create_identity(Identity(id="i1", organization_id="globex"))
+    _spoil_the_record(path, _UNREADABLE_RECORDS[2])
+    kit = RoomKit(store=store)
+    try:
+        if missing == "room":
+            await store.create_room(Room(id="r1", organization_id="globex"))
+            await store.add_participant(Participant(id="p1", room_id="r1", channel_id="sms"))
+            error: type[Exception] = RoomNotFoundError
+        else:
+            await store.create_room(Room(id="r1", organization_id="acme"))
+            error = ParticipantNotFoundError
+        with pytest.raises(error):
+            await kit.resolve_participant("r1", "p1", "i1", organization_id="acme")
+    finally:
+        await kit.close()
+
+
 async def test_an_unlink_removes_the_identity_s_rows_in_every_scope(tmp_path: Path) -> None:
     """RFC §5.6: a link revoked is revoked, a row a file's migration left in another
     scope with it, so that no later rewrite can restore it."""
