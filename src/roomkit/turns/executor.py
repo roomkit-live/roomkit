@@ -22,13 +22,13 @@ from roomkit.core.hooks import HookEngine, HookRegistration, hook_decorator
 from roomkit.core.task_utils import acting_tasks, cancel_and_wait
 from roomkit.models.enums import HookExecution
 from roomkit.turns._error_codec import ErrorClasses, error_record
-from roomkit.turns._executor_channels import ChannelFactory, ExecutorChannels
+from roomkit.turns._executor_channels import ChannelFactory, ExecutorChannels, close_quietly
 from roomkit.turns._executor_rooms import ExecutorRooms
 from roomkit.turns._executor_turn import ExecutorTurn
 from roomkit.turns._wiring import TurnWiring
 from roomkit.turns._wiring_env import StoreWiringEnv
 from roomkit.turns.base import TurnTimeouts
-from roomkit.turns.wire import ChannelCall, ChannelResult, CommittedEvent
+from roomkit.turns.wire import ChannelCall, ChannelReleased, ChannelResult, CommittedEvent
 
 if TYPE_CHECKING:
     from roomkit.channels._author_images import AttachedMedia, MediaResolver
@@ -121,6 +121,10 @@ class TurnExecutor:
             build_channel, owns=owns_channels, wire=self.wire, telemetry=telemetry
         )
         self._rooms = ExecutorRooms(self.executor_id, self._channels.get)
+        # Channels let go of (``channel_released``), each with the turns that
+        # run on it or still may, closed once those end.
+        self._retiring: dict[int, tuple[Channel, set[asyncio.Task[None]]]] = {}
+        self._closing: set[asyncio.Task[None]] = set()
 
     @property
     def hooks(self) -> HookEngine:
@@ -329,12 +333,20 @@ class TurnExecutor:
                 # Left running past its cut: nothing of it is heard again.
                 self._turns[task].stop_watching()
         await self._channels.close()
+        retiring, self._retiring = list(self._retiring.values()), {}
+        for channel, _holders in retiring:
+            self._close_released(channel)
+        if self._closing:
+            await asyncio.gather(*self._closing, return_exceptions=True)
         return left
 
     async def control(self, message: ChannelControl) -> ChannelResult | None:
         """Apply a channel control message of the owner's (RFC §10.6.3): a
         ``channel_call``'s result; nothing for ``room_attached``,
-        ``room_detached`` and ``committed_event``."""
+        ``room_detached``, ``committed_event`` and ``channel_released``."""
+        if isinstance(message, ChannelReleased):
+            await self._release(message.channel_id)
+            return None
         try:
             channel = await self._channels.get(message.channel_id)
         except Exception as exc:
@@ -349,6 +361,31 @@ class TurnExecutor:
 
     def _forget(self, task: asyncio.Task[None]) -> None:
         self._turns.pop(task, None)
+        for key, (channel, holders) in list(self._retiring.items()):
+            holders.discard(task)
+            if not holders:
+                del self._retiring[key]
+                self._close_released(channel)
+
+    async def _release(self, channel_id: str) -> None:
+        """Let go of the channel built for *channel_id* (``channel_released``):
+        the next turn builds it anew, and this one is closed once the turns
+        that run on it, or still may, end."""
+        channel = await self._channels.release(channel_id)
+        if channel is None:
+            return
+        holders = {task for task, turn in self._turns.items() if turn.may_run_on(channel)}
+        if holders:
+            self._retiring[id(channel)] = (channel, holders)
+        else:
+            self._close_released(channel)
+
+    def _close_released(self, channel: Channel) -> None:
+        task = asyncio.get_running_loop().create_task(
+            close_quietly(channel), name=f"roomkit-release-{channel.channel_id}"
+        )
+        self._closing.add(task)
+        task.add_done_callback(self._closing.discard)
 
     async def _turn_channel(self, request: TurnRequest, stale: bool) -> Channel | None:
         """The channel of *request*'s turn, readied for its room (RFC §10.6.2)

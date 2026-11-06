@@ -1,5 +1,5 @@
-"""ChannelStateMixin — what a room keeps for a channel, and its per-room verbs
-(RFC §10.6.3, §6.4)."""
+"""ChannelStateMixin — what a room keeps for a channel, its per-room verbs,
+and the release of a declared channel's build (RFC §10.6.3, §6.4)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 from roomkit.core.exceptions import ChannelNotFoundError, ChannelNotRegisteredError
 from roomkit.models.enums import ChannelCategory
 from roomkit.turns._rooms import room_state_key, stored_room_state
-from roomkit.turns.wire import ChannelCall, RoomDetached
+from roomkit.turns.wire import ChannelCall, ChannelReleased, RoomDetached
 
 if TYPE_CHECKING:
     from roomkit.channels.base import Channel
@@ -79,6 +79,21 @@ class ChannelStateMixin:
         if answer.error is not None:
             raise self._turns.errors.rebuild(answer.error)
         return answer.result
+
+    async def release_channel(self, channel_id: str) -> None:
+        """Have every executor holding a build of *channel_id* let it go
+        (RFC §10.6.3): each closes it once the turns running on it end, and
+        builds it anew for the next turn, in this process or another. For a
+        channel declared to the kit whose host changed what it is built from
+        (its model, its provider); a channel the kit holds live is its
+        registry's, which its host replaces by registering the successor.
+
+        Raises:
+            ChannelNotRegisteredError: the kit holds no channel *channel_id*.
+        """
+        if channel_id not in self._channels:
+            raise ChannelNotRegisteredError(f"No channel {channel_id!r} is registered")
+        await self._turns.control(ChannelReleased(channel_id=channel_id))
 
     async def _keep_answered_state(
         self, room_id: str, channel_id: str, state: dict[str, Any]

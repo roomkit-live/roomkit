@@ -273,10 +273,11 @@ class TurnClient(RoomOwner):
 
     async def control(self, message: ChannelControl) -> ChannelResult | None:
         """Send a channel control message (RFC §10.6.3): a ``channel_call``'s
-        result; nothing for ``room_attached``, ``room_detached`` and
-        ``committed_event``. After a ``room_detached``, the room's next turn
-        of the channel names no previous turn, so an executor that missed the
-        message still drops the room's state (RFC §10.6.3). A
+        result; nothing for ``room_attached``, ``room_detached``,
+        ``committed_event`` and ``channel_released``. After a
+        ``room_detached``, the room's next turn of the channel names no
+        previous turn, so an executor that missed the message still drops the
+        room's state (RFC §10.6.3). A
         ``committed_event`` goes where the room's turns would, the room's
         hooks named.
 

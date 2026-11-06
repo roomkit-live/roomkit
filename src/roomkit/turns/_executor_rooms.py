@@ -25,7 +25,7 @@ from roomkit.turns.wire import ChannelCall, ChannelResult, RoomAttached, RoomDet
 
 if TYPE_CHECKING:
     from roomkit.channels.base import Channel
-    from roomkit.turns.wire import ChannelControl, PreviousTurn, TurnRequest
+    from roomkit.turns.wire import PreviousTurn, TurnRequest
 
 logger = logging.getLogger("roomkit.turns")
 
@@ -72,7 +72,7 @@ class ExecutorRooms:
         await self._ready(channel, request.channel_id, request.room_id, stored, stale=stale)
 
     async def apply(
-        self, channel: Channel | None, message: ChannelControl
+        self, channel: Channel | None, message: RoomAttached | RoomDetached | ChannelCall
     ) -> ChannelResult | None:
         """Apply one channel control message to *channel* (``None``: the
         factory has none): a ``channel_call``'s result; nothing for the

@@ -492,8 +492,17 @@ Control = Annotated[
 ]
 
 
+class ChannelReleased(BaseModel):
+    """The channel's build is stale (its host changed what it was built
+    from): an executor holding it lets it go, closed once the turns running
+    on it end, and builds it anew for the next one (RFC §10.6.3)."""
+
+    type: Literal["channel_released"] = "channel_released"
+    channel_id: str
+
+
 ChannelControl = Annotated[
-    RoomAttached | RoomDetached | CommittedEvent | ChannelCall,
+    RoomAttached | RoomDetached | CommittedEvent | ChannelCall | ChannelReleased,
     Field(discriminator="type"),
 ]
 

@@ -480,6 +480,11 @@ class ExecutorTurn:
                 self._cut_turn("owner_lost")
                 return
 
+    def may_run_on(self, channel: Channel) -> bool:
+        """Whether this turn runs on *channel*, or still may: a turn of its
+        id that has not got its channel yet."""
+        return self._request.channel_id == channel.channel_id and self._built in (None, channel)
+
     @property
     def turn_id(self) -> str:
         return self._request.turn_id

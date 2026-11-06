@@ -1897,6 +1897,7 @@
     "regenerate_target": ["async def", "room_id", "*", "organization_id=None"],
     "register_channel": ["def", "channel"],
     "reject_input": ["async def", "request_id", "reason=''"],
+    "release_channel": ["async def", "channel_id"],
     "remove_member": ["async def", "room_id", "participant_id", "*", "status=<ParticipantStatus.LEFT: 'left'>", "organization_id=None"],
     "remove_room_hook": ["async def", "room_id", "name", "*", "organization_id=None"],
     "rename_member": ["async def", "room_id", "participant_id", "display_name", "*", "organization_id=None"],
@@ -2804,7 +2805,8 @@
     "update_binding_metadata": ["async def", "room_id", "channel_id", "metadata", "*", "organization_id=None"]
   },
   "roomkit.core.mixins.ChannelStateMixin": {
-    "channel_call": ["async def", "channel_id", "room_id", "verb", "*", "organization_id=None", "**arguments"]
+    "channel_call": ["async def", "channel_id", "room_id", "verb", "*", "organization_id=None", "**arguments"],
+    "release_channel": ["async def", "channel_id"]
   },
   "roomkit.core.mixins.DelegationMixin": {
     "cancel_task": ["async def", "task_id", "*", "organization_id=None"],

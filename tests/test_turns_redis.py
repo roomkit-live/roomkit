@@ -1939,3 +1939,35 @@ async def test_a_verb_the_host_declared_runs_on_the_owner_from_an_executor_elsew
         await kit.close()
         await host.close()
         await executor.close()
+
+
+async def test_a_released_channel_is_let_go_by_its_executor_elsewhere(
+    prefix: str, redis_client: Any
+) -> None:
+    """The owner's release reaches an executor of another process that holds
+    the channel built (RFC §10.6.3): its next turn runs on a new build."""
+    store = InMemoryStore()
+    builds: list[_Worker] = []
+
+    def build(channel_id: str) -> _Worker | None:
+        if channel_id != "worker":
+            return None
+        built = _Worker("worker", MockAIProvider(responses=[f"Build {len(builds)}."] * 3))
+        builds.append(built)
+        return built
+
+    host = _backend(prefix)
+    executor = TurnExecutor(build, hosts={"worker"}, executor_id="host-a", store=store)
+    await host.serve(executor)
+    kit = await _owner(prefix, "worker", store=store)
+    try:
+        await kit.process_inbound(_said("Hi."), room_id="r")
+        await kit.release_channel("worker")
+        await kit.process_inbound(_said("Again."), room_id="r")
+
+        assert await _answers(kit) == ["Build 0.", "Build 1."]
+        assert len(builds) == 2
+    finally:
+        await kit.close()
+        await host.close()
+        await executor.close()

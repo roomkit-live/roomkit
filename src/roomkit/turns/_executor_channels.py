@@ -94,10 +94,22 @@ class ExecutorChannels:
             if self._closed:
                 raise RuntimeError("The executor closed while the channel was built")
         except BaseException:
-            await _closed_quietly(channel)
+            await close_quietly(channel)
             raise
         self._built[channel_id] = channel
         return channel
+
+    async def release(self, channel_id: str) -> Channel | None:
+        """Let go of the channel built for *channel_id*, after a build of it
+        still running: the next :meth:`get` builds it anew. The channel let
+        go, for its caller to close; ``None`` when none was built, or when
+        the channels are a registry's, whose owner replaces them."""
+        if not self._owns:
+            return None
+        pending = self._building.get(channel_id)
+        if pending is not None:
+            await asyncio.wait({pending})
+        return self._built.pop(channel_id, None)
 
     async def close(self) -> None:
         """Close what the executor built, a build still running included;
@@ -108,10 +120,10 @@ class ExecutorChannels:
             await asyncio.gather(*building, return_exceptions=True)
         built, self._built = list(self._built.values()), {}
         for channel in built:
-            await _closed_quietly(channel)
+            await close_quietly(channel)
 
 
-async def _closed_quietly(channel: Channel) -> None:
+async def close_quietly(channel: Channel) -> None:
     try:
         await channel.close()
     except Exception:

@@ -163,6 +163,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`kit.release_channel` has a declared channel built anew** (RFC §10.6.3,
+  RMK-1477). An executor built a declared channel once and kept it until it
+  closed, so a host that changed what the channel is built from (its model, its
+  provider) had no way to have it rebuilt. `await kit.release_channel(channel_id)`
+  sends a `channel_released` control to the executors that may run the
+  channel's turns, in this process or another: one holding a build lets it go,
+  builds it anew for the next turn, and closes the old one once the turns
+  running on it end, never cutting them for this. An owner and its executors
+  across Redis upgrade together: an older executor refuses the new message.
+
 - **A host declares verbs of its own for its turns' `TurnHost`** (RFC §10.6.5,
   RMK-1470). A host tool that needs what only the room owner's process holds (a
   person's live connection, a service the owner runs) could not run on an
