@@ -1,0 +1,106 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "regenerate/an-archived-room-refuses-a-regeneration",
+  "title": "An archived room refuses a regeneration room_closed before the agent runs",
+  "rules": [
+    "§13.6",
+    "§5.1",
+    "§8.2"
+  ],
+  "notes": "Python: tests/test_integration/test_regenerate.py TestRegenerateStatusGuard::test_an_archived_room_is_refused_too.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "First answer"
+            },
+            {
+              "text": "Second answer"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "What is the weather?"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "archive_room",
+      "room_id": "room-1"
+    },
+    {
+      "call": "regenerate_response",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "room_closed"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "What is the weather?"
+            }
+          ]
+        }
+      ]
+    },
+    "framework_events": {
+      "room-1": [
+        "event_processed",
+        "room_archived",
+        {
+          "event": "room_refused_event",
+          "event_id": "room-1#0",
+          "status": "archived",
+          "operation": "regenerate",
+          "event_type": "message"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "regenerate/a-closed-room-with-nothing-to-regenerate-refuses-it-too",
+  "title": "A closed room refuses a regeneration room_closed whether or not it holds a message to answer again: its room_refused_event names no event",
+  "rules": [
+    "§13.6",
+    "§5.1",
+    "§8.2"
+  ],
+  "notes": "Python: tests/test_integration/test_regenerate.py TestRegenerateStatusGuard::test_a_closed_room_with_nothing_to_regenerate_is_still_refused. The framework event keeps its keys, null (RFC §8.2).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "close_room",
+      "room_id": "room-1"
+    },
+    {
+      "call": "regenerate_response",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "room_closed"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "framework_events": {
+      "room-1": [
+        "room_closed",
+        {
+          "event": "room_refused_event",
+          "event_id": null,
+          "status": "closed",
+          "operation": "regenerate",
+          "event_type": null
+        }
+      ]
+    }
+  }
+}

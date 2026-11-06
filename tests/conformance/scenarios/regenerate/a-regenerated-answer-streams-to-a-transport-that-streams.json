@@ -1,0 +1,145 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "regenerate/a-regenerated-answer-streams-to-a-transport-that-streams",
+  "title": "A regenerated answer the model streams reaches a transport that takes streams as it is written, and is stored once",
+  "rules": [
+    "§13.6",
+    "§10.1 step 14"
+  ],
+  "notes": "Python: tests/test_integration/test_regenerate.py TestRegenerate::test_regenerate_streaming_provider. The trigger is not handed to the transport again: the re-broadcast is scoped to intelligence channels.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "First ",
+                "answer"
+              ]
+            },
+            {
+              "deltas": [
+                "Second ",
+                "answer"
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "What is the weather?"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "regenerate_response",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "event": {
+            "id": "room-1#0"
+          },
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "What is the weather?"
+          }
+        },
+        {
+          "content": {
+            "body": "First answer"
+          }
+        },
+        {
+          "content": {
+            "body": "Second answer"
+          }
+        }
+      ]
+    },
+    "streamed": {
+      "room-1": {
+        "ws": [
+          {
+            "text": "First "
+          },
+          {
+            "text": "answer"
+          },
+          {
+            "row": {
+              "content": {
+                "body": "First answer"
+              }
+            }
+          },
+          {
+            "text": "Second "
+          },
+          {
+            "text": "answer"
+          },
+          {
+            "row": {
+              "content": {
+                "body": "Second answer"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": []
+      }
+    }
+  }
+}

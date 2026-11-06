@@ -1,0 +1,147 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "regenerate/a-regeneration-skips-a-deleted-message",
+  "title": "A message its sender deleted is no target: the regeneration answers the message before it, and the deleted text reaches no model",
+  "rules": [
+    "§13.6",
+    "§10.3"
+  ],
+  "notes": "Python: tests/test_edit_delete_authorization.py TestNoReplayOfAWithdrawnMessage::test_a_regeneration_skips_a_deleted_message.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "First answer"
+            },
+            {
+              "text": "Second answer"
+            },
+            {
+              "text": "Third answer"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "first"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "the code is 4417"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "delete",
+          "target_event_id": "room-1#2",
+          "delete_type": "sender"
+        },
+        "event_type": "delete"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "regenerate_target",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "id": "room-1#0"
+        }
+      }
+    },
+    {
+      "call": "regenerate_response",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "event": {
+            "id": "room-1#0"
+          },
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {
+          "messages": [
+            {
+              "role": "assistant",
+              "text": "First answer"
+            },
+            {
+              "role": "assistant",
+              "text": "Second answer"
+            },
+            {
+              "role": "user",
+              "text": "first"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

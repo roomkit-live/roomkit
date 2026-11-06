@@ -1,0 +1,143 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "regenerate/a-message-landing-after-a-named-trigger-refuses-the-regeneration",
+  "title": "A regeneration naming the trigger its caller read is refused trigger_moved once another message became the newest, with no generation and nothing written",
+  "rules": [
+    "§13.6"
+  ],
+  "notes": "Python: tests/test_integration/test_regenerate.py TestRegenerateTriggerId::test_a_message_landing_in_between_refuses_the_regenerate: the pipeline answered the new message already, and a regeneration would answer it twice.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "First answer"
+            },
+            {
+              "text": "Saturday answer"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "What is the weather?"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "regenerate_target",
+      "room_id": "room-1",
+      "as": "t",
+      "expect": {
+        "result": {
+          "id": "room-1#0"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "And on Saturdays?"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "regenerate_response",
+      "room_id": "room-1",
+      "trigger_id": "$t",
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "trigger_moved",
+          "event": null,
+          "error": null,
+          "response_events": []
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "What is the weather?"
+          }
+        },
+        {
+          "content": {
+            "body": "First answer"
+          }
+        },
+        {
+          "content": {
+            "body": "And on Saturdays?"
+          }
+        },
+        {
+          "content": {
+            "body": "Saturday answer"
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {},
+        {}
+      ]
+    },
+    "framework_events": {
+      "room-1": [
+        "event_processed",
+        "event_processed"
+      ]
+    }
+  }
+}

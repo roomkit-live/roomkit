@@ -1,0 +1,112 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "regenerate/a-regeneration-answers-a-message-no-agent-answered",
+  "title": "A message the room received before any agent was bound is answered by a regeneration once an agent is",
+  "rules": [
+    "§13.6"
+  ],
+  "notes": "Python: tests/test_integration/test_regenerate.py TestRegenerate::test_regenerate_with_no_prior_response.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Recovered answer"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Are you there?"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "agent",
+      "category": "intelligence"
+    },
+    {
+      "call": "regenerate_response",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "event": {
+            "id": "room-1#0"
+          },
+          "blocked": false,
+          "response_events": [
+            {
+              "content": {
+                "body": "Recovered answer"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "Are you there?"
+          }
+        },
+        {
+          "content": {
+            "body": "Recovered answer"
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Are you there?"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "regenerate/a-room-with-no-message-has-nothing-to-regenerate",
+  "title": "A room that holds no message a transport wrote has no target and nothing to regenerate: both read null, and nothing is written",
+  "rules": [
+    "§13.6"
+  ],
+  "notes": "Python: tests/test_integration/test_regenerate.py TestRegenerate::test_regenerate_empty_room_returns_none and TestRegenerateTarget::test_target_is_none_without_a_transport_message.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "regenerate_target",
+      "room_id": "room-1",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "regenerate_response",
+      "room_id": "room-1",
+      "expect": {
+        "result": null
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": []
+    },
+    "framework_events": {
+      "room-1": []
+    }
+  }
+}

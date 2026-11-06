@@ -1,0 +1,119 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "regenerate/a-regeneration-skips-an-edit-row",
+  "title": "An edit row is no target: the regeneration's target is the message it edited, as the edit left it",
+  "rules": [
+    "§13.6",
+    "§10.3"
+  ],
+  "notes": "Python: tests/test_edit_delete_authorization.py TestNoReplayOfAWithdrawnMessage::test_a_regeneration_skips_an_edit_row.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "First answer"
+            },
+            {
+              "text": "Second answer"
+            },
+            {
+              "text": "Third answer"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "v1"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "edit",
+          "target_event_id": "room-1#0",
+          "new_content": {
+            "type": "text",
+            "body": "v2"
+          },
+          "edit_source": "sender"
+        },
+        "event_type": "edit"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "regenerate_target",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "id": "room-1#0",
+          "content": {
+            "body": "v2"
+          }
+        }
+      }
+    },
+    {
+      "call": "regenerate_response",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "event": {
+            "id": "room-1#0",
+            "content": {
+              "body": "v2"
+            }
+          },
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {}
+}

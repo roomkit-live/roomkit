@@ -1,0 +1,112 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "regenerate/the-named-trigger-regenerates-as-usual",
+  "title": "A regeneration naming the trigger its caller read, still the newest message, answers it again",
+  "rules": [
+    "§13.6"
+  ],
+  "notes": "Python: tests/test_integration/test_regenerate.py TestRegenerateTriggerId::test_the_named_trigger_regenerates_as_usual.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "First answer"
+            },
+            {
+              "text": "Second answer"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "What is the weather?"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "regenerate_target",
+      "room_id": "room-1",
+      "as": "t"
+    },
+    {
+      "call": "regenerate_response",
+      "room_id": "room-1",
+      "trigger_id": "$t",
+      "expect": {
+        "result": {
+          "event": {
+            "id": "room-1#0"
+          },
+          "blocked": false,
+          "reason": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "What is the weather?"
+          }
+        },
+        {
+          "content": {
+            "body": "First answer"
+          }
+        },
+        {
+          "content": {
+            "body": "Second answer"
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {},
+        {}
+      ]
+    }
+  }
+}

@@ -1,0 +1,139 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "regenerate/a-regeneration-answers-the-last-message-again",
+  "title": "A regeneration runs the room's agent again on the last message, which it neither stores again nor hands the agent twice, and stores the new answer",
+  "rules": [
+    "§13.6",
+    "§10.1 step 14"
+  ],
+  "notes": "Python: tests/test_integration/test_regenerate.py TestRegenerate::test_regenerate_adds_response_without_duplicating_user_message and test_regenerate_context_includes_user_message. The earlier answer stays: removing it is the caller's (regenerate_response's docstring). The agent reads the message once, last, after the answers that followed it: its history leaves the trigger out by id and the turn adds it at the end.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "First answer"
+            },
+            {
+              "text": "Second answer"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "What is the weather?"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "regenerate_response",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "event": {
+            "id": "room-1#0",
+            "content": {
+              "body": "What is the weather?"
+            }
+          },
+          "blocked": false,
+          "reason": null,
+          "error": null,
+          "response_events": [
+            {
+              "content": {
+                "body": "Second answer"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "What is the weather?"
+          }
+        },
+        {
+          "content": {
+            "body": "First answer"
+          }
+        },
+        {
+          "content": {
+            "body": "Second answer"
+          },
+          "source": {
+            "channel_id": "agent"
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "What is the weather?"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "assistant",
+              "text": "First answer"
+            },
+            {
+              "role": "user",
+              "text": "What is the weather?"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

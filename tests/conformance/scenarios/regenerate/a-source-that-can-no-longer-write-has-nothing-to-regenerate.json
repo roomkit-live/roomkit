@@ -1,0 +1,108 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "regenerate/a-source-that-can-no-longer-write-has-nothing-to-regenerate",
+  "title": "A message whose source binding is read-only now is no target: a regeneration reads null, and one naming it is refused trigger_moved",
+  "rules": [
+    "§13.6",
+    "§7.5"
+  ],
+  "notes": "Python: tests/test_integration/test_regenerate.py TestRegenerateTarget::test_target_is_none_when_the_source_is_read_only and TestRegenerateTriggerId::test_nothing_left_to_replay_is_a_moved_trigger.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "First answer"
+            },
+            {
+              "text": "Second answer"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "What is the weather?"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "regenerate_target",
+      "room_id": "room-1",
+      "as": "t"
+    },
+    {
+      "call": "set_access",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "access": "read_only"
+    },
+    {
+      "call": "regenerate_target",
+      "room_id": "room-1",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "regenerate_response",
+      "room_id": "room-1",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "regenerate_response",
+      "room_id": "room-1",
+      "trigger_id": "$t",
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "trigger_moved",
+          "event": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {}
+      ]
+    }
+  }
+}

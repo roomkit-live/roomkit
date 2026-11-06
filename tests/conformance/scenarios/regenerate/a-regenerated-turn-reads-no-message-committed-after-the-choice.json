@@ -1,0 +1,196 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "regenerate/a-regenerated-turn-reads-no-message-committed-after-the-choice",
+  "title": "A regenerated turn that waits its place reads the room as the regeneration's choice read it, its channel's answers since: a message committed meanwhile is not in its history (its message the room's first event, index 0)",
+  "rules": [
+    "§13.6",
+    "§6.4"
+  ],
+  "notes": "Python: core/mixins/regenerate.py _plan_regeneration builds the context under the room lock and _enqueue_regeneration plans the re-broadcast with it; the agent serializes its room turns, so the regenerated turn waits for the turn on the message, then reads the room less what came after it was asked, its own answers kept (RFC §6.4). The room is written through the store, so no lifecycle record takes index 0.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "serialize_room_turns": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "First answer",
+              "gate": "g1"
+            },
+            {
+              "text": "Second answer"
+            },
+            {
+              "text": "Third answer"
+            }
+          ]
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "hold",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "HOLD"
+            },
+            "gate": "g0",
+            "result": {
+              "action": "block",
+              "reason": "held"
+            }
+          },
+          {
+            "when": {
+              "text": "SPAM"
+            },
+            "result": {
+              "action": "block",
+              "reason": "spam"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-1"
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-1",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "category": "transport"
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-1",
+        "channel_id": "agent",
+        "channel_type": "ai",
+        "category": "intelligence"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Q0"
+        }
+      },
+      "background": true,
+      "as": "m0"
+    },
+    {
+      "wait_for": "g1"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "HOLD"
+        }
+      },
+      "background": true,
+      "as": "h"
+    },
+    {
+      "wait_for": "g0"
+    },
+    {
+      "call": "regenerate_response",
+      "room_id": "room-1",
+      "trigger_id": "room-1#0",
+      "background": true,
+      "as": "r"
+    },
+    {
+      "wait_for_lock": "room-1",
+      "waiters": 1
+    },
+    {
+      "open": "g0"
+    },
+    {
+      "await": "h"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Later message"
+        }
+      },
+      "defer_delivery": true
+    },
+    {
+      "open": "g1"
+    },
+    {
+      "await": "m0"
+    },
+    {
+      "await": "r",
+      "expect": {
+        "result": {
+          "event": {
+            "id": "room-1#0",
+            "index": 0
+          },
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "messages": [
+            {
+              "role": "assistant",
+              "text": "First answer"
+            },
+            {
+              "role": "user",
+              "text": "Q0"
+            }
+          ]
+        },
+        {}
+      ]
+    }
+  }
+}

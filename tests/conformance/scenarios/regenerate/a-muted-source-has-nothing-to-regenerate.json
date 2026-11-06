@@ -1,0 +1,90 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "regenerate/a-muted-source-has-nothing-to-regenerate",
+  "title": "A message whose source binding is muted now is no target, and a regeneration reads null",
+  "rules": [
+    "§13.6",
+    "§7.5"
+  ],
+  "notes": "Python: tests/test_integration/test_regenerate.py TestRegenerateTarget::test_target_is_none_when_the_source_binding_cannot_write.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "First answer"
+            },
+            {
+              "text": "Second answer"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "What is the weather?"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "mute",
+      "room_id": "room-1",
+      "channel_id": "sms"
+    },
+    {
+      "call": "regenerate_target",
+      "room_id": "room-1",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "regenerate_response",
+      "room_id": "room-1",
+      "expect": {
+        "result": null
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {}
+      ]
+    }
+  }
+}

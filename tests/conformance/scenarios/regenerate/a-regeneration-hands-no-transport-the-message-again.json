@@ -1,0 +1,141 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "regenerate/a-regeneration-hands-no-transport-the-message-again",
+  "title": "A regeneration hands its message to the agents alone: another transport is never delivered it again, and no event_processed is emitted",
+  "rules": [
+    "§13.6"
+  ],
+  "notes": "Python: regenerate_response's docstring (visibility intelligence; the trigger's own hooks, delivery report and event_processed do not run again).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "First answer"
+            },
+            {
+              "text": "Second answer"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "What is the weather?"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "regenerate_response",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "event": {
+            "id": "room-1#0"
+          },
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "body": "What is the weather?"
+            }
+          },
+          {
+            "content": {
+              "body": "First answer"
+            }
+          },
+          {
+            "content": {
+              "body": "Second answer"
+            }
+          }
+        ]
+      }
+    },
+    "framework_events": {
+      "room-1": [
+        "delivery_succeeded",
+        "event_processed"
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "What is the weather?"
+          },
+          "chain_depth": 0
+        },
+        {
+          "content": {
+            "body": "First answer"
+          },
+          "responds_to": "room-1#0",
+          "chain_depth": 1,
+          "visibility": "all"
+        },
+        {
+          "content": {
+            "body": "Second answer"
+          },
+          "responds_to": "room-1#0",
+          "chain_depth": 1,
+          "visibility": "all"
+        }
+      ]
+    }
+  }
+}
