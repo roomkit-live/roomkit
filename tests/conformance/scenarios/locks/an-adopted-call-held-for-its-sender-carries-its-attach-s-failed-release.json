@@ -1,0 +1,121 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "locks/an-adopted-call-held-for-its-sender-carries-its-attach-s-failed-release",
+  "title": "A call an off-lock hook adopts, held as the identity resolver challenges its sender after its step 2 attached its channel under a lock whose release failed, carries that failure as its error",
+  "rules": [
+    "§13.5 A release that fails",
+    "§9.5.1 Reentrance",
+    "§11.3"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/inbound.py, the nested process_inbound's _process_inbound_inner makes its own first failed release its result's error when it carries none, a refusal included. Found by the light review of RMK-1443's lot 1 (G2).",
+  "setup": {
+    "kit": {
+      "lock_manager": {
+        "release_error": "lease expired"
+      },
+      "identity_resolver": {
+        "answers": [
+          {
+            "when": {
+              "text": "side"
+            },
+            "repeat": true,
+            "result": {
+              "status": "challenge_sent",
+              "challenge_type": "sms_code",
+              "message": "code sent by sms"
+            }
+          }
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "adopts",
+        "trigger": "before_broadcast",
+        "needs_lock": false,
+        "timeout_ms": 5000,
+        "reactions": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "+15551234567",
+                  "content": {
+                    "type": "text",
+                    "body": "side"
+                  }
+                },
+                "expect": {
+                  "result": {
+                    "blocked": true,
+                    "reason": "code sent by sms",
+                    "event": null,
+                    "error": {
+                      "$contains": "lease expired"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "lock_releases": "fail"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "content": {
+              "body": "hello"
+            }
+          }
+        }
+      }
+    }
+  ]
+}
