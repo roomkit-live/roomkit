@@ -1345,11 +1345,11 @@ def _room(char: str) -> bool:
     [*SEPARATED_TAGS, "knowledge", "previous_tasks_summary", "conversation_summary_instructions"],
 )
 def test_every_spelling_of_a_name_is_read(name: str) -> None:
-    """A name's pattern holds every spelling of its letters, however many.
-    Capped at 64 spellings, ``conversation_summary_instructions``, an
-    integrator's name, left 144 of its 400 as written; with the runs across
-    a separator, capped at 128, ``previous_tasks_summary`` left 112 of 240
-    (RMK-1320)."""
+    """A name's pattern holds every spelling of its letters, counted by part
+    (what no multi-letter look-alike spans), up to 64 a part. Capped at 64 as
+    a whole, ``conversation_summary_instructions``, an integrator's name,
+    left 144 of its 400 as written; with the runs across a separator,
+    capped at 128, ``previous_tasks_summary`` left 112 of 240 (RMK-1320)."""
     missed = [s for s in _spellings_of(name) if f"</{s}>" in without_tags(name, f"x </{s}> y")]
 
     assert missed == []
