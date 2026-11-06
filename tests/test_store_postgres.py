@@ -15,6 +15,7 @@ import os
 import socket
 import struct
 from collections.abc import AsyncIterator, Callable
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, quote, unquote, urlparse
@@ -24,13 +25,14 @@ import pytest
 
 from roomkit import AddressLinkedError, EventNotFoundError, IdentityNotFoundError, RoomKit
 from roomkit.core.mixins.verification import HELD_KEY
-from roomkit.models.channel import ChannelBinding
+from roomkit.models.channel import ChannelBinding, RateLimit, RetryPolicy
 from roomkit.models.enums import ChannelType, EventType, RoomStatus
-from roomkit.models.event import EditContent, TextContent
+from roomkit.models.event import ChannelData, EditContent, EventSource, RoomEvent, TextContent
 from roomkit.models.identity import Identity
 from roomkit.models.participant import Participant
-from roomkit.models.room import Room
+from roomkit.models.room import Room, RoomTimers
 from roomkit.models.task import Observation, Task
+from roomkit.models.verification import Verification, VerificationRequest
 from roomkit.store.base import marked_deleted
 from tests.conftest import PoolCheckoutRecorder
 
@@ -458,6 +460,253 @@ async def _spoil_the_row(store: Any, column: str, value: str) -> None:
         await conn.execute(
             f"UPDATE identities SET {column} = $1::text::jsonb WHERE id = 'i1'", value
         )
+
+
+# HITL f9737c41: a JSONB column that holds a JSON string reads as the value its text
+# holds, as the pool's codec decodes the column and the mappers decode a string once more
+# (``_json``, ``_jsonb``). Such a row comes from a write by hand. Each table's key names
+# the row a test writes, as other tests' rows stay in the tables the fixture keeps.
+_JSONB_COLUMNS = [
+    ("rooms", "metadata"),
+    ("rooms", "timers"),
+    ("events", "content"),
+    ("events", "source_extra"),
+    ("events", "metadata"),
+    ("events", "channel_data"),
+    ("events", "delivery_results"),
+    ("bindings", "capabilities"),
+    ("bindings", "metadata"),
+    ("bindings", "rate_limit"),
+    ("bindings", "retry_policy"),
+    ("participants", "metadata"),
+    ("identities", "channel_addresses"),
+    ("identities", "external_ids"),
+    ("identities", "metadata"),
+    ("verifications", "data"),
+    ("verification_requests", "data"),
+    ("tasks", "metadata"),
+    ("observations", "metadata"),
+]
+
+_JSONB_ROW_KEYS = {
+    "rooms": "id = 'r1'",
+    "events": "id = 'e1'",
+    "bindings": "room_id = 'r1' AND channel_id = 'ch1'",
+    "participants": "room_id = 'r1' AND id = 'p1'",
+    "identities": "id = 'i1'",
+    "verifications": "identity_id = 'i1'",
+    "verification_requests": "id = 'q1'",
+    "tasks": "id = 't1'",
+    "observations": "id = 'o1'",
+}
+
+
+async def _a_row_of_each_table(store: Any) -> None:
+    """A row in each table with a JSONB column, each such column an object with members."""
+    async with store._pool.acquire() as conn:
+        await conn.execute("DELETE FROM verifications WHERE identity_id = 'i1'")
+        await conn.execute("DELETE FROM verification_requests WHERE id = 'q1'")
+    at = datetime(2026, 1, 1, 12, tzinfo=UTC)
+    await store.create_room(
+        Room(id="r1", metadata={"topic": "refund"}, timers=RoomTimers(inactive_after_seconds=60))
+    )
+    await store.add_event(
+        RoomEvent(
+            id="e1",
+            room_id="r1",
+            index=0,
+            source=EventSource(
+                channel_id="ch1",
+                channel_type=ChannelType.SMS,
+                external_id="x1",
+                raw_payload={"sid": "SM1"},
+            ),
+            content=TextContent(body="hello"),
+            metadata={"k": "v"},
+            channel_data=ChannelData(thread_id="th1"),
+            delivery_results={"ch2": {"status": "sent"}},
+        )
+    )
+    await store.add_binding(
+        ChannelBinding(
+            channel_id="ch1",
+            room_id="r1",
+            channel_type=ChannelType.SMS,
+            metadata={"k": "v"},
+            rate_limit=RateLimit(max_per_second=2.0),
+            retry_policy=RetryPolicy(max_retries=5),
+        )
+    )
+    await store.add_participant(
+        Participant(id="p1", room_id="r1", channel_id="ch1", metadata={"k": "v"})
+    )
+    await store.create_identity(
+        Identity(
+            id="i1",
+            organization_id="acme",
+            channel_addresses={"sms": ["+1555"]},
+            external_ids={"crm": "c1"},
+            metadata={"k": "v"},
+        )
+    )
+    await store.put_verification(Verification(identity_id="i1", method="otp", verified_at=at))
+    await store.create_verification_request(
+        VerificationRequest(
+            id="q1",
+            identity_id="i1",
+            room_id="r1",
+            channel_id="ch1",
+            method="otp",
+            secret_hash="h",
+            window_start=at,
+            created_at=at,
+            expires_at=at + timedelta(minutes=5),
+            max_attempts=3,
+        )
+    )
+    await store.add_task(Task(id="t1", room_id="r1", title="Follow up", metadata={"k": "v"}))
+    await store.add_observation(
+        Observation(id="o1", room_id="r1", channel_id="ch1", content="calm", metadata={"k": "v"})
+    )
+
+
+async def _read_the_row(store: Any, table: str) -> object:
+    """The model the row of *table* that ``_a_row_of_each_table`` wrote reads as."""
+    readers: dict[str, Callable[[], Any]] = {
+        "rooms": lambda: store.get_room("r1"),
+        "events": lambda: store.get_event("e1"),
+        "bindings": lambda: store.get_binding("r1", "ch1"),
+        "participants": lambda: store.get_participant("r1", "p1"),
+        "identities": lambda: store.get_identity("i1"),
+        "verifications": lambda: store.get_verification("i1"),
+        "verification_requests": lambda: store.get_verification_request("q1"),
+        "tasks": lambda: store.get_task("t1"),
+        "observations": lambda: store.list_observations("r1"),
+    }
+    return await readers[table]()
+
+
+async def _held_as_a_string(store: Any, table: str, column: str) -> None:
+    """Writes the row's *column* over as a JSON string of its own text, as a hand could."""
+    row = _JSONB_ROW_KEYS[table]
+    async with store._pool.acquire() as conn:
+        await conn.execute(f"UPDATE {table} SET {column} = to_jsonb({column}::text) WHERE {row}")
+        held = await conn.fetchval(f"SELECT jsonb_typeof({column}) FROM {table} WHERE {row}")
+    assert held == "string"
+
+
+@pytest.mark.parametrize(("table", "column"), _JSONB_COLUMNS)
+async def test_a_jsonb_string_holding_json_reads_as_its_value(
+    store: Any, table: str, column: str
+) -> None:
+    """HITL f9737c41: the column reads as the value its text holds, as the object did."""
+    await _a_row_of_each_table(store)
+    written = await _read_the_row(store, table)
+    await _held_as_a_string(store, table, column)
+    assert await _read_the_row(store, table) == written
+
+
+async def _column_value(store: Any, table: str, column: str) -> object:
+    """The row's *column* as the pool's codec reads it, and the JSON type it holds."""
+    row = _JSONB_ROW_KEYS[table]
+    async with store._pool.acquire() as conn:
+        return tuple(
+            await conn.fetchrow(
+                f"SELECT {column}, jsonb_typeof({column}) FROM {table} WHERE {row}"
+            )
+        )
+
+
+async def _write_the_row_again(store: Any, write: str) -> None:
+    """Writes over the row through *write*, with the model the row reads as; a commit adds
+    an event to the room r1, not its activity."""
+    if write == "commit_event":
+        later = RoomEvent(
+            room_id="r1",
+            source=EventSource(channel_id="ch1", channel_type=ChannelType.SMS),
+            content=TextContent(body="later"),
+        )
+        await store.commit_event("r1", later, activity=False)
+        return
+    table = {
+        "update_room": "rooms",
+        "add_binding": "bindings",
+        "update_binding": "bindings",
+        "put_verification": "verifications",
+        "update_verification_request": "verification_requests",
+        "create_identity": "identities",
+    }[write]
+    await getattr(store, write)(await _read_the_row(store, table))
+
+
+@pytest.mark.parametrize(
+    ("table", "column", "write"),
+    [
+        ("rooms", "timers", "update_room"),
+        ("rooms", "timers", "commit_event"),
+        ("bindings", "capabilities", "add_binding"),
+        ("bindings", "rate_limit", "add_binding"),
+        ("bindings", "retry_policy", "add_binding"),
+        ("bindings", "capabilities", "update_binding"),
+        ("bindings", "rate_limit", "update_binding"),
+        ("bindings", "retry_policy", "update_binding"),
+        ("verifications", "data", "put_verification"),
+        ("verification_requests", "data", "update_verification_request"),
+        ("identities", "channel_addresses", "create_identity"),
+    ],
+)
+async def test_a_write_over_a_jsonb_string_leaves_an_object(
+    store: Any, table: str, column: str, write: str
+) -> None:
+    """HITL f9737c41: a write over the row holds the object the column held, which both
+    implementations read, not the string, nor the string and the object as one array."""
+    await _a_row_of_each_table(store)
+    written = await _column_value(store, table, column)
+    await _held_as_a_string(store, table, column)
+    await _write_the_row_again(store, write)
+    assert await _column_value(store, table, column) == written
+    assert written[1] == "object"
+
+
+@pytest.mark.parametrize("change", ["link_address", "unlink_address"])
+async def test_an_address_change_over_a_jsonb_string_writes_an_object(
+    store: Any, change: str
+) -> None:
+    """HITL f9737c41: a link or an unlink reads the identity's addresses as the value the
+    string holds, and writes the changed object, the address rows with it."""
+    await _a_row_of_each_table(store)
+    await _held_as_a_string(store, "identities", "channel_addresses")
+    address = "+2" if change == "link_address" else "+1555"
+    await getattr(store, change)("i1", "sms", address, organization_id="acme")
+    held = ["+1555", "+2"] if change == "link_address" else []
+    assert await _column_value(store, "identities", "channel_addresses") == (
+        {"sms": held} if held else {},
+        "object",
+    )
+    identity = await store.get_identity("i1")
+    assert identity is not None
+    assert identity.channel_addresses == ({"sms": held} if held else {})
+    resolved = await store.resolve_identity("sms", address, organization_id="acme")
+    assert (resolved is not None) == (change == "link_address")
+
+
+async def test_an_event_update_over_a_jsonb_string_holding_no_json_writes_it(
+    store: Any,
+) -> None:
+    """HITL f9737c41: an update reads nothing of the row it writes over: a content and
+    delivery results that hold no JSON text are no refusal, and the content is written."""
+    await _a_row_of_each_table(store)
+    event = await store.get_event("e1")
+    async with store._pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE events SET content = to_jsonb('not json'::text),"
+            " delivery_results = to_jsonb('not json'::text) WHERE id = 'e1'"
+        )
+    await store.update_event(event)
+    assert await _column_value(store, "events", "content") == (
+        {"type": "text", "body": "hello", "language": None},
+        "object",
+    )
 
 
 @pytest.mark.parametrize(("column", "value"), _UNREADABLE_COLUMNS)
