@@ -38,6 +38,7 @@ class MiniMaxAIProvider(OpenAIAIProvider):
     """
 
     _config: MiniMaxConfig
+    _install_extra: ClassVar[str] = "minimax"
     _chat_dialect: ClassVar[ChatDialect] = MINIMAX_CHAT
     # Its API documents response_format for MiniMax-Text-01 alone, which it no
     # longer lists: a response schema is refused up front.

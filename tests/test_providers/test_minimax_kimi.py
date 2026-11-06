@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from typing import Any
+from unittest.mock import patch
 
 import httpx
 import pytest
@@ -198,6 +199,15 @@ async def test_the_vendor_s_own_endpoint_is_the_default(vendor: str) -> None:
 
     assert seen[0].url.host == _VENDORS[vendor][3]
     assert seen[0].url.path == "/v1/chat/completions"
+
+
+@pytest.mark.parametrize("vendor", _BOTH)
+def test_without_the_sdk_the_error_names_the_vendor_s_extra(vendor: str) -> None:
+    with (
+        patch.dict("sys.modules", {"openai": None}),
+        pytest.raises(ImportError, match=rf"roomkit\[{vendor}\]"),
+    ):
+        _provider(vendor)
 
 
 @pytest.mark.parametrize("vendor", _BOTH)

@@ -8,7 +8,7 @@ it in ``reasoning_content``, for as long as a turn lasts. A round that did not
 think sends nothing.
 
 Requires:
-    pip install roomkit[openai]
+    pip install roomkit[minimax]
 
 Environment:
     MINIMAX_API_KEY   your key (https://platform.minimax.io), "unused" on your own server

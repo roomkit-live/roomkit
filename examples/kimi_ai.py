@@ -10,7 +10,7 @@ The example runs two turns: the first calls a tool, and the second reads that
 round again, with no reasoning stored.
 
 Requires:
-    pip install roomkit[openai]
+    pip install roomkit[kimi]
 
 Environment:
     KIMI_API_KEY   your key (https://platform.kimi.ai), "unused" on your own server

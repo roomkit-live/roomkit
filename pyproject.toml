@@ -52,6 +52,8 @@ litellm = ["openai>=2.28,<3"]
 xai = ["openai>=2.28,<3"]
 meta = ["openai>=2.28,<3"]
 deepseek = ["openai>=2.28,<3"]
+minimax = ["openai>=2.28,<3"]
+kimi = ["openai>=2.28,<3"]
 cerebras = ["openai>=2.28,<3"]
 # Named `qwen-ai` rather than `qwen`: the Qwen *voice* extras below install
 # different packages for different subsystems, and an unqualified `qwen` would
@@ -192,6 +194,8 @@ providers = [
     "roomkit[xai]",
     "roomkit[meta]",
     "roomkit[deepseek]",
+    "roomkit[minimax]",
+    "roomkit[kimi]",
     "roomkit[cerebras]",
     "roomkit[qwen-ai]",
     "roomkit[ollama]",

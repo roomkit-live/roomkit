@@ -48,6 +48,7 @@ class KimiAIProvider(OpenAIAIProvider):
     """
 
     _config: KimiConfig
+    _install_extra: ClassVar[str] = "kimi"
     _chat_dialect: ClassVar[ChatDialect] = KIMI_CHAT
 
     @property
