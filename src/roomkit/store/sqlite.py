@@ -2217,7 +2217,7 @@ class SQLiteStore(ConversationStore):
             return
         try:
             holder = self._x_get_identity(row[0])
-        except ValidationError:
+        except ValueError:
             raise address_linked(channel_type) from None
         if holder is not None and (holder.organization_id or "") == organization_id:
             raise address_linked(channel_type)
@@ -2226,13 +2226,23 @@ class SQLiteStore(ConversationStore):
         return await self._run(self._x_get_identity, identity_id)
 
     def _x_get_identity(self, identity_id: str) -> Identity | None:
+        """The identity *identity_id*; a record the model cannot read raises a fixed
+        ``ValueError``, the id alone: the model's error quotes the record, which may be
+        another organization's (HITL 47b7dfc6)."""
         row = (
             self._db()
             # As bytes: SQLite's own refusal of text that is no UTF-8 quotes the record.
             .execute("SELECT CAST(data AS BLOB) FROM identities WHERE id = ?", (identity_id,))
             .fetchone()
         )
-        return Identity.model_validate_json(row[0]) if row is not None else None
+        if row is None:
+            return None
+        try:
+            return Identity.model_validate_json(row[0])
+        except ValidationError:
+            raise ValueError(
+                f"Identity {identity_id} has a record the model cannot read"
+            ) from None
 
     async def resolve_identity(
         self, channel_type: str, address: str, organization_id: str | None = None
@@ -2257,10 +2267,10 @@ class SQLiteStore(ConversationStore):
             return None
         try:
             identity = self._x_get_identity(row[0])
-        except ValidationError:
-            # It serves no read, and the model's error is not passed on: it quotes the
-            # record, which may be another organization's (HITL 4ee4d298).
-            logger.warning("Identity %s has a record the model cannot read", row[0])
+        except ValueError as unreadable:
+            # It serves no read, and the record is quoted nowhere: it may be another
+            # organization's (HITL 4ee4d298).
+            logger.warning("%s", unreadable)
             return None
         # In its own organization only (RFC §17.2), whatever a row left by a file's
         # migration or written directly says.

@@ -53,6 +53,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   67dc3147): a Telegram channel post is its chat's. A custom router is told `None` for
   a message with no address, where it was told the raw id (HITL 710a6c27).
 
+- **`SQLiteStore`'s reads by id quote no unreadable record** (HITL 47b7dfc6, RMK-1410).
+  `get_identity`, `create_identity`, `link_address`, `unlink_address` and the kit's
+  `resolve_participant`, given the id of an identity whose record the model cannot read,
+  raised a `ValidationError` quoting that record, maybe another organization's, to a
+  caller of any organization. They now raise `ValueError("Identity <id> has a record the
+  model cannot read")`, the id alone.
+
 - **`SQLiteStore.resolve_identity` quotes no unreadable record** (HITL 4ee4d298). An
   address row whose identity's record the model cannot read, which no API writes, raised
   a `ValidationError` quoting that record, maybe another organization's, to a caller
