@@ -325,13 +325,13 @@ async def test_a_tcp_user_timeout_is_the_server_s_setting(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """HITL 22f38d15 (C): asyncpg passes ``tcp_user_timeout`` to the server, which takes it
-    for its own setting of the session."""
+    for its own setting of the session, with its unit: ``1s`` is 1000 ms."""
     from roomkit.store.postgres import PostgresStore
 
     assert POSTGRES_DSN is not None
     _without_pg_variables(monkeypatch, tmp_path / "home")
     store = PostgresStore(
-        f"{POSTGRES_DSN}{'&' if '?' in POSTGRES_DSN else '?'}tcp_user_timeout=1000"
+        f"{POSTGRES_DSN}{'&' if '?' in POSTGRES_DSN else '?'}tcp_user_timeout=1s"
     )
     await store.init(min_size=1, max_size=1)
     try:
