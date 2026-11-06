@@ -1339,3 +1339,75 @@ class TestTheLockChecksTheRoomAgain:
         assert (landed == "paused") is kept
         if not kept:
             assert await shop.named_on("paused") is None
+
+
+class _NewIds(InboundRoomRouter):
+    """A host's router answering a new missing room id each time it is asked."""
+
+    def __init__(self) -> None:
+        self.asked = 0
+
+    async def route(self, channel_id: str, channel_type: Any, *args: Any, **kw: Any) -> str:
+        self.asked += 1
+        return f"new-{self.asked}"
+
+
+class TestARoomBeingCreated:
+    """RFC §10.1 step 2, §10.4: a room step 2 creates for a routed message is
+    held, once its ON_ROOM_CREATED hooks are over, to the check of any routed
+    room (RMK-1396). Each hook here attaches, then waits, in that order: a
+    conformance scenario's hooks run at once."""
+
+    async def test_a_sender_step_three_admits_meanwhile_keeps_the_room(self) -> None:
+        """The default router: a hook attaches the number to Alice's new room,
+        so Bob's first message finds it the one room bound and is recorded
+        there. Alice's message leaves it: Bob's agent reads nothing of hers,
+        and nothing of hers reaches his number."""
+        shop = _Shop(InMemoryStore())
+        rooms: list[str] = []
+        held, release = asyncio.Event(), asyncio.Event()
+
+        @shop.kit.hook(HookTrigger.ON_ROOM_CREATED, priority=1)
+        async def bind_then_hold(event: Any, ctx: RoomContext) -> None:
+            rooms.append(ctx.room.id)
+            await shop.kit.attach_channel(ctx.room.id, "sms")
+            if len(rooms) == 1:
+                held.set()
+                await release.wait()
+
+        alice = asyncio.create_task(shop.text(ALICE, "alice: my secret"))
+        await held.wait()
+        bob = await shop.text(BOB, "bob: my secret")
+        release.set()
+        alices = await alice
+        await shop.kit.close()
+
+        assert bob.event is not None and bob.event.room_id == rooms[0]
+        assert alices.event is not None and alices.event.room_id not in (rooms[0], None)
+        assert await shop.named_on(rooms[0]) == BOB
+        assert all("alice" not in body for body in shop.sent_to(BOB))
+        assert all("alice" not in _text(m) for call in shop.ai.calls[:1] for m in call.messages)
+
+    @pytest.mark.wallclock
+    async def test_a_deadline_passed_in_the_second_room_s_hooks_opens_no_third(self) -> None:
+        """Every new room a hook binds to Bob; the second one's hooks run past
+        the call's process_timeout: the message is refused process_timeout,
+        no third room opened."""
+        kit = RoomKit(inbound_router=_NewIds(), process_timeout=0.02)
+        kit.register_channel(SMSChannel("sms", provider=MockSMSProvider()))
+        rooms: list[str] = []
+
+        @kit.hook(HookTrigger.ON_ROOM_CREATED)
+        async def bind_to_bob(event: Any, ctx: RoomContext) -> None:
+            rooms.append(ctx.room.id)
+            await kit.attach_channel(ctx.room.id, "sms", metadata={"phone_number": BOB})
+            if len(rooms) == 2:
+                await asyncio.sleep(0.05)
+
+        result = await kit.process_inbound(
+            InboundMessage(channel_id="sms", sender_id=ALICE, content=TextContent(body="hi"))
+        )
+        await kit.close()
+
+        assert (result.blocked, result.reason) == (True, "process_timeout")
+        assert len(await kit.store.list_rooms()) == 2
