@@ -206,3 +206,24 @@ def test_a_reasoning_field_is_the_assistants_own() -> None:
 def test_an_empty_part_list_stays_a_list() -> None:
     [rendered] = _render(OPENAI_CHAT, AIMessage(role="user", content=[]))
     assert rendered["content"] == []
+
+
+@pytest.mark.parametrize("role", ["assistant", "tool"])
+def test_a_message_holding_a_call_and_its_result_sends_the_call_alone(role: str) -> None:
+    """A message whose parts hold both a call and a result renders as the
+    assistant's round that called, its result left out (RMK-1408)."""
+    held = _round(AIToolResultPart(tool_call_id="c1", name="lookup", result="found"))
+    rendered = _render(OPENAI_CHAT, held.model_copy(update={"role": role}))
+    assert rendered == [
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "c1",
+                    "type": "function",
+                    "function": {"name": "lookup", "arguments": '{"q": "x"}'},
+                }
+            ],
+        }
+    ]
