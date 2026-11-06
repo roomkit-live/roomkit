@@ -257,6 +257,27 @@ async def test_a_password_file_others_can_read_is_not_read(
         await _connects(f"{dsn}{parts['query']}")
 
 
+async def test_an_empty_pgpassword_is_a_password(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """asyncpg takes an empty ``PGPASSWORD`` for the password, and reads no password file
+    then: a matching ``~/.pgpass`` is not read, and the server refuses the empty one."""
+    import asyncpg
+
+    parts = _connection_parts()
+    _without_pg_variables(monkeypatch, tmp_path / "home")
+    await _skip_unless_tcp_asks_a_password(parts)
+    passfile = tmp_path / "home" / ".pgpass"
+    passfile.write_text(f"*:*:*:*:{parts['password']}\n")
+    passfile.chmod(0o600)
+    monkeypatch.setenv("PGPASSWORD", "")
+    dsn = (
+        f"postgresql://{quote(parts['user'])}@{parts['host']}:{parts['port']}/{parts['database']}"
+    )
+    with pytest.raises(asyncpg.InvalidPasswordError):
+        await _connects(f"{dsn}{parts['query']}")
+
+
 @pytest.mark.parametrize("form", ["netloc", "query", "environment"])
 async def test_a_host_list_goes_past_a_dead_host(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, form: str
