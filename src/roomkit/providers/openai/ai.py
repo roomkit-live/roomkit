@@ -322,7 +322,9 @@ class OpenAIAIProvider(AIProvider):
             refused = f"{model} takes no function tools on Chat Completions"
         else:
             return
-        raise ProviderError(refused, provider=self._provider_name, context_overflow=False)
+        raise ProviderError(
+            refused, provider=self._provider_name, context_overflow=False, before_request=True
+        )
 
     def _tool_turn_effort(self, effort: str | None) -> str | None:
         """The reasoning effort a turn with tools sends on this endpoint.

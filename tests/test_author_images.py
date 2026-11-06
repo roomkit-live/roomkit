@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import base64
 import contextlib
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from typing import Any
 
 import pytest
@@ -38,9 +38,11 @@ from roomkit.models.event import (
     VideoContent,
 )
 from roomkit.models.room import Room
+from roomkit.providers.ai import ResponseSchemaError, ToolNameRule
 from roomkit.providers.ai.base import (
     AIContext,
     AIImagePart,
+    AIMessage,
     AIResponse,
     AITextPart,
     AITool,
@@ -52,6 +54,8 @@ from roomkit.providers.ai.base import (
 )
 from roomkit.providers.ai.image_parts import image_part_base64
 from roomkit.providers.ai.mock import MockAIProvider
+from roomkit.providers.openai.ai import OpenAIAIProvider
+from roomkit.providers.openai.config import OpenAIConfig
 from roomkit.providers.utils import to_data_uri
 from tests.conftest import make_event
 from tests.test_framework import SimpleChannel
@@ -482,6 +486,24 @@ async def _lookup(name: str, arguments: dict[str, Any]) -> str:
     return "found"
 
 
+async def _openai_refusal(model: str, *, tools: bool) -> ProviderError:
+    """What OpenAI's provider raises before the request for *model*."""
+    provider = OpenAIAIProvider(OpenAIConfig(api_key="sk-test", model=model))
+    context = AIContext(
+        messages=[AIMessage(role="user", content="hi")], tools=[_LOOKUP] if tools else []
+    )
+    with pytest.raises(ProviderError) as refused:
+        await provider.generate(context)
+    return refused.value
+
+
+def _name_refusal(rule: ToolNameRule) -> ProviderError:
+    """What a vendor's tool name rule raises for a name it refuses."""
+    with pytest.raises(ProviderError) as refused:
+        rule.check(["1abc"])
+    return refused.value
+
+
 async def _turns(
     provider: MockAIProvider, *, tool: bool = False, schema: dict[str, Any] | None = None
 ) -> AIContext:
@@ -530,6 +552,40 @@ class TestRefusal:
         error = ProviderError(f"{status} invalid x-api-key", retryable=False, status_code=status)
 
         context = await _turns(_Scripted([error, _OK]))
+
+        assert _images(context) == [_PNG]
+
+    @pytest.mark.parametrize(
+        "refusal",
+        [
+            # The turn's schema a model that takes none is refused (RMK-1436).
+            lambda: ResponseSchemaError(
+                "mock does not support a response schema", reason="unsupported", provider="mock"
+            ),
+            # A model OpenAI's Chat Completions does not serve, refused before
+            # the request as its catalogue states it.
+            lambda: _openai_refusal("gpt-5.5-pro", tools=False),
+            lambda: _openai_refusal("gpt-6-astra", tools=True),
+            # A tool name the vendor refuses, checked before the request.
+            lambda: _name_refusal(ToolNameRule("acme", r"[a-z]+")),
+        ],
+        ids=[
+            "unsupported-schema",
+            "responses-only-model",
+            "model-without-chat-tools",
+            "tool-name",
+        ],
+    )
+    async def test_a_refusal_before_any_request_refuses_nothing(
+        self, refusal: Callable[[], Awaitable[ProviderError] | ProviderError], streaming: bool
+    ) -> None:
+        """No request went out: nothing says the provider refused the content,
+        and the image goes on the next turn as its author sent it (RFC §6.4)."""
+        error = refusal()
+        if not isinstance(error, ProviderError):
+            error = await error
+
+        context = await _turns(_Scripted([error, _OK], streaming=streaming))
 
         assert _images(context) == [_PNG]
 

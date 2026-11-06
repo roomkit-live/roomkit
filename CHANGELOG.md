@@ -163,6 +163,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`ProviderError(..., before_request=False)`** and its `before_request` attribute (HITL
+  d91b8137, RMK-1436): the provider refused before sending any request. An unsupported
+  `ResponseSchemaError`, OpenAI's refusal of a model Chat Completions does not serve or of
+  tools for one that takes none there, a tool name a vendor refuses (`ToolNameRule`) and a
+  tool Gemini cannot declare set it.
+
 - **A host can let `delegate_task` hand the conversation over** (RFC §23.4, RMK-1363).
   `DelegateHandler(max_conversation=N)`, 0 by default, gives the tool a `conversation` argument
   held to N, the messages both the calling agent and the notified channel may read; none when
@@ -409,6 +415,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `headers={"Authorization": "Bearer ..."}`, not in the URL.
 
 ### Fixed
+
+- **A refusal before any request refuses no author image** (RFC §6.4, HITL fb46b635,
+  d91b8137, RMK-1436). A response schema the model does not take, a model OpenAI's Chat
+  Completions does not serve, a tool name the vendor refuses: the turn failed before
+  anything was sent, yet the person's images read as refused by the model's provider for
+  the rest of the room. They now go on the next turn as sent.
 
 - **A binding naming the sender by their identity gets their address as its recipient**
   (HITL b75a9c93, RMK-1129). A room the host opened naming an identity and no recipient

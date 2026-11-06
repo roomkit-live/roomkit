@@ -237,6 +237,11 @@ class ProviderError(Exception):
             wording decides as a fallback — an envelope may rewrap the
             provider's prose, and prose must never override an explicit
             answer.
+        before_request: Did the provider refuse before sending any request?
+            A response schema the model does not take, a model its endpoint
+            does not serve, a tool name the vendor refuses: nothing reached
+            the vendor, so the error says nothing of what the request carried
+            (RFC §6.4).
     """
 
     def __init__(
@@ -247,12 +252,14 @@ class ProviderError(Exception):
         provider: str = "",
         status_code: int | None = None,
         context_overflow: bool | None = None,
+        before_request: bool = False,
     ) -> None:
         super().__init__(message)
         self.retryable = retryable
         self.provider = provider
         self.status_code = status_code
         self.context_overflow = context_overflow
+        self.before_request = before_request
 
     def __str__(self) -> str:
         """The provider's message, led by the provider and the status it answered:

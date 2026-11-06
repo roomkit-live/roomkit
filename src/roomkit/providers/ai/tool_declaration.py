@@ -75,4 +75,5 @@ class ToolNameRule:
                     f"tool {name!r}: {self.vendor} accepts tool names matching {self.pattern}",
                     provider=self.vendor,
                     context_overflow=False,
+                    before_request=True,
                 )

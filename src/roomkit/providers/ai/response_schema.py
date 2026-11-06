@@ -45,7 +45,9 @@ class ResponseSchemaError(ProviderError):
     """
 
     def __init__(self, message: str, *, reason: ResponseSchemaFailure, provider: str = "") -> None:
-        super().__init__(message, retryable=False, provider=provider)
+        super().__init__(
+            message, retryable=False, provider=provider, before_request=reason == "unsupported"
+        )
         self.reason: ResponseSchemaFailure = reason
 
 

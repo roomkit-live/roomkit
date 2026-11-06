@@ -879,7 +879,12 @@ _NOT_CONTENT_STATUSES = frozenset({401, 402, 403, 404, 429})
 
 def refuses_content(error: ProviderError) -> bool:
     """Whether *error* may be the provider refusing what a request carried: not
-    retried, and no authentication, payment, permission, missing model or rate
-    limit (RFC §6.4). Only the turn's first request, before anything streamed, can
-    say so: a later round, or a stream under way, shows the content was taken."""
-    return not error.retryable and error.status_code not in _NOT_CONTENT_STATUSES
+    retried, no authentication, payment, permission, missing model or rate
+    limit, and no refusal before any request, which nothing reached (RFC §6.4).
+    Only the turn's first request, before anything streamed, can say so: a later
+    round, or a stream under way, shows the content was taken."""
+    return (
+        not error.retryable
+        and error.status_code not in _NOT_CONTENT_STATUSES
+        and not error.before_request
+    )

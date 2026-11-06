@@ -90,6 +90,7 @@ class TestToolNameAnyVendorAccepts:
         assert str(raised.value) == "tool 'Not.Ok': acme accepts tool names matching [a-z]+"
         assert raised.value.retryable is False
         assert raised.value.context_overflow is False
+        assert raised.value.before_request is True
 
 
 def _openai(**config: Any) -> Any:

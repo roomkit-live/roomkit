@@ -48,6 +48,7 @@ class TestADeclarationGeminiRefuses:
 
         assert raised.value.provider == "gemini"
         assert raised.value.retryable is False
+        assert raised.value.before_request is True
         assert "minimum" in str(raised.value)
 
     def test_a_tool_named_like_an_overflow_is_not_one(self) -> None:

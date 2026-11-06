@@ -192,6 +192,7 @@ class TestMockHonoursTheContract:
             await provider.generate(_context(response_schema=VERDICT))
 
         assert exc.value.reason == "unsupported"
+        assert exc.value.before_request is True
         assert provider.calls == []
 
     async def test_tools_in_the_same_turn_are_refused(self) -> None:
@@ -249,3 +250,5 @@ class TestMockHonoursTheContract:
         assert isinstance(error, ProviderError)
         assert error.retryable is False
         assert error.provider == "mock"
+        # Only an unsupported schema is refused before any request.
+        assert error.before_request is False

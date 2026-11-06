@@ -80,8 +80,9 @@ class TestDeclaration:
             pytest.skip(f"{driver.label}: the server decides its names, the provider checks none")
         for name in driver.refused_names:
             tool = AITool(name=name, description="d")
-            with pytest.raises(ProviderError, match=name):
+            with pytest.raises(ProviderError, match=name) as raised:
                 await generation(driver, Script(text="ok"), "stream", tool_context(tool))
+            assert raised.value.before_request is True
         assert driver.requests == []
 
     async def test_a_name_the_vendor_accepts_is_declared(self, driver: Driver) -> None:

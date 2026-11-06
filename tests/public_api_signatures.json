@@ -3460,7 +3460,7 @@
     "__init__": ["def", "*", "id", "display_name=None", "context_window=None", "supports_vision=None", "deprecated=False", "capabilities=<factory>", "pricing=None"]
   },
   "roomkit.providers.ai.ProviderError": {
-    "__init__": ["def", "message", "*", "retryable=False", "provider=''", "status_code=None", "context_overflow=None"]
+    "__init__": ["def", "message", "*", "retryable=False", "provider=''", "status_code=None", "context_overflow=None", "before_request=False"]
   },
   "roomkit.providers.ai.RoundTranscript": {
     "__init__": ["def"],

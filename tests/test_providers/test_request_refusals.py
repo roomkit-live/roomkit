@@ -56,6 +56,7 @@ class TestOpenAIModelsChatRefuses:
             await provider.generate(_context(tools=True))
 
         assert raised.value.retryable is False
+        assert raised.value.before_request is True
         provider._client.chat.completions.create.assert_not_awaited()
 
     async def test_the_same_model_without_tools_is_asked(self) -> None:
@@ -70,8 +71,10 @@ class TestOpenAIModelsChatRefuses:
     async def test_a_responses_only_model_fails_before_the_request(self, model: str) -> None:
         provider = _openai(model)
 
-        with pytest.raises(ProviderError, match="Responses API only"):
+        with pytest.raises(ProviderError, match="Responses API only") as raised:
             [e async for e in provider.generate_structured_stream(_context(tools=False))]
+
+        assert raised.value.before_request is True
 
         provider._client.chat.completions.create.assert_not_awaited()
 

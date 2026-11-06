@@ -396,6 +396,7 @@ def function_declaration(
             f"Gemini cannot declare tool {name!r}: {where}: {first.get('msg', exc)}{more}",
             provider="gemini",
             context_overflow=False,
+            before_request=True,
         ) from exc
 
 
