@@ -1826,6 +1826,57 @@ async def test_an_add_holds_a_room_whose_id_came_back_before_its_sequence(
         await deleter.close()
 
 
+@pytest.mark.parametrize("adding", ["add_event", "add_event_auto_index"])
+async def test_a_missing_room_s_refusal_holds_the_room_that_came_back(store, adding: str) -> None:
+    """An add's first statement finds no room; the room is created before the refusal's
+    statement, with no sequence, and a commit holds it and reserves its index. The
+    refusal holds that room before it writes anything: had it written the sequence
+    first, it would wait on the room through the foreign key while the commit waits on
+    that sequence, and the server kills one (RMK-1394). The trigger stops the add after
+    its first statement, once per transaction; the commit's session passes it."""
+    import asyncpg
+
+    key = 0x524D4B31333935  # This test's alone: "RMK1395".
+    outside = await asyncpg.connect(POSTGRES_DSN)
+    committer = await asyncpg.connect(POSTGRES_DSN)
+    try:
+        await outside.execute(
+            "CREATE FUNCTION rk_test_stop_once() RETURNS trigger AS $$ BEGIN"
+            " IF current_setting('rk_test.stopped', true) IS DISTINCT FROM 'yes' THEN"
+            " PERFORM set_config('rk_test.stopped', 'yes', true);"
+            f" PERFORM pg_advisory_xact_lock({key}); END IF; RETURN NULL; END"
+            " $$ LANGUAGE plpgsql"
+        )
+        await outside.execute(
+            "CREATE TRIGGER rk_test_stop_once AFTER INSERT ON event_sequences"
+            " FOR EACH STATEMENT EXECUTE FUNCTION rk_test_stop_once()"
+        )
+        await outside.execute("SELECT pg_advisory_lock($1)", key)
+        if adding == "add_event":
+            added = store.add_event(_make_event(room_id="r1", index=7))
+        else:
+            added = store.add_event_auto_index("r1", _make_event(room_id="r1"))
+        add = asyncio.create_task(added)
+        await _until_blocked_by(outside)
+        await committer.execute("SET rk_test.stopped = 'yes'")
+        await committer.execute("INSERT INTO rooms (id) VALUES ('r1')")
+        async with committer.transaction():
+            await committer.execute("SELECT 1 FROM rooms WHERE id = 'r1' FOR UPDATE")
+            await outside.execute("SELECT pg_advisory_unlock($1)", key)
+            await _until_blocked_by(committer)
+            await committer.execute(
+                "INSERT INTO event_sequences(room_id, next_index) VALUES('r1', 1)"
+                " ON CONFLICT(room_id) DO UPDATE SET next_index = event_sequences.next_index + 1"
+            )
+        stored = await asyncio.wait_for(add, 3)
+        assert [e.id for e in await store.list_events("r1")] == [stored.id]
+    finally:
+        await outside.execute("DROP TRIGGER IF EXISTS rk_test_stop_once ON event_sequences")
+        await outside.execute("DROP FUNCTION IF EXISTS rk_test_stop_once()")
+        await outside.close()
+        await committer.close()
+
+
 @pytest.mark.stress
 async def test_a_room_deleted_and_created_again_under_its_adds_never_deadlocks() -> None:
     """Adds at full pace on one room id, which a loop deletes and creates again: an add is
