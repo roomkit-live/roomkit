@@ -295,6 +295,52 @@ async def test_an_empty_pgpassword_is_a_password(
         await _connects(f"{dsn}{parts['query']}")
 
 
+@pytest.mark.parametrize(
+    "setting",
+    [
+        "connect_timeout=3",
+        "keepalives=1",
+        "keepalives_idle=30",
+        "keepalives_interval=10",
+        "keepalives_retries=3",
+        "channel_binding=prefer",
+        "load_balance_hosts=random",
+    ],
+)
+async def test_a_parameter_asyncpg_does_not_read_goes_to_the_server(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, setting: str
+) -> None:
+    """HITL 22f38d15 (C): asyncpg reads none of these parameters and passes each to the
+    server as a setting, which refuses the connection."""
+    import asyncpg
+
+    assert POSTGRES_DSN is not None
+    _without_pg_variables(monkeypatch, tmp_path / "home")
+    dsn = f"{POSTGRES_DSN}{'&' if '?' in POSTGRES_DSN else '?'}{setting}"
+    with pytest.raises(asyncpg.UndefinedObjectError, match="unrecognized configuration parameter"):
+        await _connects(dsn)
+
+
+async def test_a_tcp_user_timeout_is_the_server_s_setting(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """HITL 22f38d15 (C): asyncpg passes ``tcp_user_timeout`` to the server, which takes it
+    for its own setting of the session."""
+    from roomkit.store.postgres import PostgresStore
+
+    assert POSTGRES_DSN is not None
+    _without_pg_variables(monkeypatch, tmp_path / "home")
+    store = PostgresStore(
+        f"{POSTGRES_DSN}{'&' if '?' in POSTGRES_DSN else '?'}tcp_user_timeout=1000"
+    )
+    await store.init(min_size=1, max_size=1)
+    try:
+        async with store._pool.acquire() as conn:
+            assert await conn.fetchval("SHOW tcp_user_timeout") == "1000"
+    finally:
+        await store.close()
+
+
 @pytest.mark.parametrize("form", ["netloc", "query", "environment"])
 async def test_a_host_list_goes_past_a_dead_host(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, form: str
