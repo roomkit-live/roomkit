@@ -1805,21 +1805,38 @@ class _StuckOnAnswers(AILikeChannel):
         return ChannelOutput.empty()
 
 
-async def test_a_cut_call_carries_the_answers_already_stored(close_grace: float) -> None:
+@pytest.mark.parametrize("needs_lock", [True, False])
+async def test_a_cut_call_carries_the_answers_already_stored(
+    close_grace: float, needs_lock: bool
+) -> None:
+    """The call and the one its hook adopted each read the close's cut and
+    the answers their cascade stored (RMK-1322)."""
     kit = await _kit(_Transport("ws"))
     stuck = _StuckOnAnswers("stuck")
     kit.register_channel(AILikeChannel("ai", response="hello"))
     kit.register_channel(stuck)
     await kit.attach_channel("r", "ai", category=ChannelCategory.INTELLIGENCE)
     await kit.attach_channel("r", "stuck", category=ChannelCategory.INTELLIGENCE)
+    handles = []
+
+    @kit.hook(HookTrigger.BEFORE_BROADCAST, needs_lock=needs_lock, name="side")
+    async def side(event: RoomEvent, ctx: RoomContext) -> HookResult:
+        if event.content == TextContent(body="hi"):
+            adopted = await kit.process_inbound(_message("side"), room_id="r", defer_delivery=True)
+            handles.append(adopted.delivery)
+        return HookResult.allow()
+
     call = asyncio.ensure_future(kit.process_inbound(_message("hi"), room_id="r"))
     await stuck.started.wait()
 
     await kit.close()
 
-    result = await call
-    assert result.cancellation_reason == "kit_closed"
-    assert [getattr(e.content, "body", None) for e in result.response_events] == ["hello"]
+    results = [await call, await handles[0].wait()]
+    assert [r.cancellation_reason for r in results] == ["kit_closed", "kit_closed"]
+    assert [[getattr(e.content, "body", None) for e in r.response_events] for r in results] == [
+        ["hello"],
+        ["hello"],
+    ]
 
 
 # -- 7. Bound ------------------------------------------------------------------
