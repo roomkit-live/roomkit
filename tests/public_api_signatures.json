@@ -4050,7 +4050,7 @@
     "supports_vision": ["property"]
   },
   "roomkit.providers.kimi.KimiConfig": {
-    "__init__": ["def", "*", "api_key", "base_url='https://api.moonshot.ai/v1'", "model", "max_tokens=None", "timeout=30.0", "connect_timeout=5.0", "max_retries=0", "include_stream_usage=True", "use_max_completion_tokens=False", "supports_custom_temperature=False", "reasoning_effort=None", "default_headers=None", "extra_body=None", "supports_response_schema=None", "supports_response_schema_with_tools=None", "supports_reasoning_effort_with_tools=None"]
+    "__init__": ["def", "*", "api_key", "base_url='https://api.moonshot.ai/v1'", "model", "max_tokens=None", "timeout=30.0", "connect_timeout=5.0", "max_retries=0", "include_stream_usage=True", "use_max_completion_tokens=True", "supports_custom_temperature=False", "reasoning_effort=None", "default_headers=None", "extra_body=None", "supports_response_schema=None", "supports_response_schema_with_tools=None", "supports_reasoning_effort_with_tools=None"]
   },
   "roomkit.providers.litellm.LiteLLMAIProvider": {
     "__init__": ["def", "config", "*", "transport=None"],
@@ -4181,7 +4181,7 @@
     "supports_vision": ["property"]
   },
   "roomkit.providers.minimax.MiniMaxConfig": {
-    "__init__": ["def", "*", "api_key", "base_url='https://api.minimax.io/v1'", "model", "max_tokens=None", "timeout=30.0", "connect_timeout=5.0", "max_retries=0", "include_stream_usage=True", "use_max_completion_tokens=False", "supports_custom_temperature=True", "reasoning_effort=None", "default_headers=None", "extra_body=None", "supports_response_schema=None", "supports_response_schema_with_tools=None", "supports_reasoning_effort_with_tools=None"]
+    "__init__": ["def", "*", "api_key", "base_url='https://api.minimax.io/v1'", "model", "max_tokens=None", "timeout=30.0", "connect_timeout=5.0", "max_retries=0", "include_stream_usage=True", "use_max_completion_tokens=True", "supports_custom_temperature=False", "reasoning_effort=None", "default_headers=None", "extra_body=None", "supports_response_schema=None", "supports_response_schema_with_tools=None", "supports_reasoning_effort_with_tools=None"]
   },
   "roomkit.providers.mistral.MistralAIProvider": {
     "__init__": ["def", "config"],
