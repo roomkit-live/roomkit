@@ -1,0 +1,92 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/an-agent-s-owner-tools-are-declared-in-the-order-they-were-set-up",
+  "title": "The tools the room's owner serves an agent are declared in the order they were set up, whichever kind each is: work_in_background, then delegate_task, whose call waits by design, then task_status and cancel_task",
+  "rules": [
+    "§6.4",
+    "§10.6.5",
+    "§23.4"
+  ],
+  "notes": "Python: channels/_tool_registry.py ChannelRegistry.entries and owner_entries, each in the order they were registered; turns/_executor_calls.py TurnOwnerTools built from the request's owner_tools in their order. tasks/delegate.py _served_entry sets delegate_task up as waiting by design (waits=True); core/mixins/background.py setup_background and setup_task_tools set theirs up as bounded. A bounded tool on each side of the waiting one: an order grouped by kind, whichever comes first, is not this one.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "speaker",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Hello."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "speaker"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "setup_background",
+      "agent_id": "speaker"
+    },
+    {
+      "call": "delegate_handler",
+      "handler": "tool"
+    },
+    {
+      "call": "setup_delegation",
+      "agent_id": "speaker",
+      "handler": "tool"
+    },
+    {
+      "call": "setup_task_tools",
+      "agent_id": "speaker"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "speaker": [
+        {
+          "tools": {
+            "work_in_background": 0,
+            "delegate_task": 1,
+            "task_status": 2,
+            "cancel_task": 3
+          }
+        }
+      ]
+    }
+  }
+}
