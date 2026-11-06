@@ -227,3 +227,17 @@ def test_a_message_holding_a_call_and_its_result_sends_the_call_alone(role: str)
             ],
         }
     ]
+
+
+@pytest.mark.parametrize(
+    ("role", "field"), [("assistant", {"reasoning_content": ""}), ("tool", {})]
+)
+def test_a_call_round_s_required_reasoning_field_is_the_assistants_alone(
+    role: str, field: dict[str, str]
+) -> None:
+    """A dialect that requires a round's reasoning field writes it on the
+    assistant's own round only: a message of another role holding a call is
+    rendered as the assistant's round, without it (RMK-1408)."""
+    held = _round(AIToolResultPart(tool_call_id="c1", name="lookup", result="found"))
+    [rendered] = _render(DEEPSEEK_CHAT, held.model_copy(update={"role": role}))
+    assert {k: v for k, v in rendered.items() if k == "reasoning_content"} == field
