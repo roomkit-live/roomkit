@@ -714,7 +714,9 @@ async def test_an_adopted_call_s_handle_waits_for_the_end_of_a_stream_it_never_r
         assert side.delivery is not None
         await asyncio.wait_for(target.past_the_end.wait(), 2.0)
         try:
-            cancelled.append((await side.delivery.cancel(timeout=0.05)).cancellation_reason)
+            # Stuck, any bound times out: the shortest keeps the test quick.
+            ended = await side.delivery.cancel(timeout=0.01 if stuck else 2.0)
+            cancelled.append(ended.cancellation_reason)
         except TimeoutError:
             cancelled.append("timed out")
         # Nothing more to deliver: the test is the side call's.
