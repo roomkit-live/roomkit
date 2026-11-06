@@ -34,6 +34,7 @@ from pydantic_core import to_jsonable_python
 from roomkit.channels._video_hooks import room_vision_note
 from roomkit.models.enums import TaskStatus
 from roomkit.tasks.status import RUN_ENTRY, TASK_ACTION
+from roomkit.tools.context import ToolCallContext, owner_served_call
 from roomkit.turns._error_codec import error_record
 from roomkit.turns.base import OwnerHost, response_depth
 from roomkit.turns.host import (
@@ -53,6 +54,7 @@ from roomkit.turns.host import (
 if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
     from roomkit.models.context import RoomContext
+    from roomkit.models.room import Room
     from roomkit.tasks.models import DelegatedTask
     from roomkit.turns.wire import RoomCall, TurnRequest
 
@@ -97,9 +99,12 @@ class KitHost(OwnerHost):
             "room_vision": self._room_vision,
         }
         self._declared: dict[str, DeclaredVerb] = {}
+        # The declared verbs served after their turn too.
+        self._between_turns: set[str] = set()
 
-    def declare(self, name: str, verb: DeclaredVerb) -> None:
-        """Serve *verb* under *name* for the hosts of this kit's turns.
+    def declare(self, name: str, verb: DeclaredVerb, *, between_turns: bool = False) -> None:
+        """Serve *verb* under *name* for the hosts of this kit's turns, and
+        after their turn too when *between_turns*.
 
         Raises:
             ValueError: *name* is empty, one of RoomKit's verbs, or declared.
@@ -109,6 +114,8 @@ class KitHost(OwnerHost):
         if name in VERBS or name in self._declared:
             raise ValueError(f"A turn's host already has a verb {name!r}")
         self._declared[name] = verb
+        if between_turns:
+            self._between_turns.add(name)
 
     async def call(self, request: TurnRequest, verb: str, arguments: dict[str, Any]) -> Any:
         declared = self._declared.get(verb)
@@ -118,16 +125,31 @@ class KitHost(OwnerHost):
         return to_jsonable_python(await serve(_Scope.of(request), args), fallback=str)
 
     async def call_between_turns(self, message: RoomCall) -> Any:
-        if message.verb not in BETWEEN_TURNS:
+        if message.verb not in BETWEEN_TURNS and message.verb not in self._between_turns:
             raise ValueError(f"{message.verb!r} needs a turn: it is not served between turns")
         room = await self._kit.store.get_room(message.room_id)
         if room is None:
             raise ValueError(f"No room {message.room_id!r}")
+        declared = self._declared.get(message.verb)
+        if declared is not None:
+            return await self._declared_between_turns(declared, message, room)
         serve, args = self._parsed(message.verb, message.arguments)
         # Work its turn began, which starts fresh once the turn is over
         # (RFC §8.3): the call's depth for its turn floors nothing.
         scope = _Scope(message.room_id, room.organization_id, None, None)
         return to_jsonable_python(await serve(scope, args), fallback=str)
+
+    async def _declared_between_turns(
+        self, verb: DeclaredVerb, message: RoomCall, room: Room
+    ) -> Any:
+        """A declared verb work its turn began calls after the turn: run for the
+        turn's room and channel, as work that starts fresh (RFC §8.3), with no
+        actor nor tool call, the turn being over."""
+        call = ToolCallContext(room_id=message.room_id, channel_id=message.channel_id)
+        with owner_served_call(
+            call, room=room, actor_id=None, requester=None, chain_depth=0, allowed_names=None
+        ):
+            return to_jsonable_python(await verb(dict(message.arguments)), fallback=str)
 
     def _parsed(self, verb: str, arguments: dict[str, Any]) -> tuple[Verb, Any]:
         """The kit's code serving *verb*, and its arguments validated.

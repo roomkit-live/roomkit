@@ -164,6 +164,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A verb the host declares can be served after its turn** (RFC §10.6.5,
+  RMK-1493). Work a turn begins can outlive it (an asynchronous hook writing a
+  card once the answer is out), and a verb declared with `kit.declare_host_verb`
+  was served during its turn only. `kit.declare_host_verb(name, verb,
+  between_turns=True)` serves it after the turn too, for the turn's room and
+  channel, with no actor nor tool call, as work that starts fresh (RFC §8.3).
+  After its turn, a host sends the verbs the host declared to the owner, which
+  serves those declared so and refuses the others with a `ValueError` naming
+  the verb; RoomKit's own verbs keep their rule.
+
 - **`kit.release_channel` has a declared channel built anew** (RFC §10.6.3,
   RMK-1477). An executor built a declared channel once and kept it until it
   closed, so a host that changed what the channel is built from (its model, its

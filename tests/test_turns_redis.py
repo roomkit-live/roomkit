@@ -1971,3 +1971,42 @@ async def test_a_released_channel_is_let_go_by_its_executor_elsewhere(
         await kit.close()
         await host.close()
         await executor.close()
+
+
+async def test_a_verb_declared_between_turns_reaches_the_owner_after_a_turn_elsewhere(
+    prefix: str, redis_client: Any
+) -> None:
+    """An asynchronous hook on an executor of another process runs a verb the
+    owner declared ``between_turns`` once its turn ended (RFC §10.6.5): the
+    owner serves it for the turn's room."""
+    store = InMemoryStore()
+    worker = _Worker("worker", MockAIProvider(responses=["Hi."] * 5, streaming=True))
+    host, executor = await _hosted(prefix, store, worker)
+    later_work: list[asyncio.Task[Any]] = []
+    served: list[tuple[str | None, dict[str, Any]]] = []
+
+    async def write_later(turn_host: Any) -> None:
+        await asyncio.sleep(0.3)  # the turn has returned
+        await turn_host.call("app.card", {"verdict": "ok"})
+
+    @executor.hook(HookTrigger.ON_AI_RESPONSE, execution=HookExecution.ASYNC)
+    async def later(event: Any, context: Any) -> None:
+        later_work.append(asyncio.get_running_loop().create_task(write_later(current_turn_host())))
+
+    kit = await _owner(prefix, "worker", store=store)
+
+    async def card(arguments: dict[str, Any]) -> None:
+        served.append((current_tool_room_id(), arguments))
+
+    kit.declare_host_verb("app.card", card, between_turns=True)
+    try:
+        await kit.process_inbound(_said("Hi."), room_id="r")
+        async with asyncio.timeout(5):
+            while not served:
+                await asyncio.sleep(0.02)
+
+        assert served == [("r", {"verdict": "ok"})]
+    finally:
+        await kit.close()
+        await host.close()
+        await executor.close()

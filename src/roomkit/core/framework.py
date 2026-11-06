@@ -760,7 +760,9 @@ class RoomKit(
             organization_id=organization_id,
         )
 
-    def declare_host_verb(self, name: str, verb: DeclaredVerb) -> None:
+    def declare_host_verb(
+        self, name: str, verb: DeclaredVerb, *, between_turns: bool = False
+    ) -> None:
         """Serve *verb* under *name* for the ``TurnHost`` of this kit's turns
         (RFC §10.6.5): code on a turn's executor, in this process or another,
         runs it with ``current_turn_host().call(name, arguments)``, for host
@@ -768,12 +770,15 @@ class RoomKit(
         holds). It runs here, with its arguments and its result as data,
         under what the turn gave the call: the accessors of
         ``roomkit.tools.context`` read the turn's room, its actor, the
-        requester and the chain depth. It is served during its turn only.
+        requester and the chain depth. It is served during its turn only,
+        unless *between_turns*: then work the turn began (an asynchronous
+        hook's, say) still runs it after the turn, for the turn's room and
+        channel, with no actor nor tool call, as work that starts fresh.
 
         Raises:
             ValueError: *name* is empty, one of RoomKit's verbs, or declared.
         """
-        self._host.declare(name, verb)
+        self._host.declare(name, verb, between_turns=between_turns)
 
     def input_request(
         self, request_id: str, *, organization_id: str | None = None

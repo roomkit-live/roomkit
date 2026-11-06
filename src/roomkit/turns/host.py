@@ -23,8 +23,9 @@ A host also declares verbs of its own on the room owner
 (a connection only the owner holds, a service it runs): :meth:`TurnHost.call`
 sends one by its name, its arguments and its result data, and the owner runs
 it under what the turn gave the call, which the accessors of
-``roomkit.tools.context`` read. A declared verb needs its turn: it is not sent
-after the turn ended.
+``roomkit.tools.context`` read. A declared verb needs its turn, unless it was
+declared ``between_turns``: then work the turn began still sends it after the
+turn, for the turn's room, with no actor nor tool call.
 """
 
 from __future__ import annotations
@@ -273,10 +274,13 @@ class TurnHost:
         (``RoomKit.declare_host_verb``), with *arguments*: its result, as
         data. The owner runs it under what this turn gave the call (its room,
         its actor, its chain depth) and refuses a verb it does not serve.
+        After the turn, work it began still sends it, for the turn's room, and
+        the owner serves it only when it was declared ``between_turns``.
 
         Raises:
-            ValueError: *verb* is one of RoomKit's own, which its method sends.
-            RuntimeError: the turn ended (a declared verb needs its turn).
+            ValueError: *verb* is one of RoomKit's own, which its method sends,
+                or the owner refused it.
+            RuntimeError: the turn ended and the backend reaches no owner then.
         """
         if verb in VERBS:
             raise ValueError(f"{verb!r} is a verb of RoomKit's: send it with TurnHost.{verb}")
@@ -290,11 +294,13 @@ class TurnHost:
             return await self._call(verb, arguments)
         if self._between_turns is None:
             raise RuntimeError(f"The turn this host served has ended: {verb} is not sent")
-        if verb not in BETWEEN_TURNS:
+        if verb in VERBS and verb not in BETWEEN_TURNS:
             raise RuntimeError(
                 f"{verb} needs a turn: after its turn ended, a host sends "
                 f"{', '.join(sorted(BETWEEN_TURNS))} only (RFC §10.6.5)"
             )
+        # A verb the host declared goes to the owner, which serves it after
+        # its turn only when it was declared so.
         return await self._between_turns(verb, arguments)
 
 

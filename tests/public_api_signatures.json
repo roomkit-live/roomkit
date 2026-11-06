@@ -1837,7 +1837,7 @@
     "connect_voice": ["async def", "room_id", "participant_id", "channel_id", "*", "metadata=None", "auto_greet=False"],
     "connect_websocket": ["async def", "channel_id", "connection_id", "send_fn", "*", "room_id", "stream_send_fn=None", "organization_id=None"],
     "create_room": ["async def", "room_id=None", "metadata=None", "recorders=None", "orchestration=<object object>", "organization_id=None", "timers=None", "agent_response_policy=None"],
-    "declare_host_verb": ["def", "name", "verb"],
+    "declare_host_verb": ["def", "name", "verb", "*", "between_turns=False"],
     "delegate": ["async def", "room_id", "agent_id", "task", "*", "wait=False", "context=None", "share_channels=None", "notify=None", "on_complete=None", "require_structured_result=False", "max_result_retries=3", "result_tool=None", "post_status=True", "brief=None", "conversation=0", "hand_back='relay'", "organization_id=None"],
     "delete_event": ["async def", "room_id", "event_id", "*", "cascade_replies=True", "organization_id=None"],
     "deliver": ["async def", "room_id", "content", "*", "channel_id=None", "strategy=None", "metadata=None", "addressed_to=None", "idempotency_key=None", "session_id=None", "chain_depth=0", "instruction=False", "organization_id=None"],

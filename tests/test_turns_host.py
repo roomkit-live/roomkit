@@ -674,9 +674,45 @@ async def test_a_declared_verb_needs_its_turn() -> None:
 
     await _say(kit)
 
-    with pytest.raises(RuntimeError, match="needs a turn"):
+    # Sent after its turn, and refused there by the owner: it was not
+    # declared to be served between turns.
+    with pytest.raises(ValueError, match="needs a turn"):
         await seen["host"].call("app.record", {"late": True})
     assert ran == []
+    await kit.close()
+
+
+async def test_a_verb_declared_between_turns_runs_after_its_turn_for_its_room() -> None:
+    """Work a turn began (an asynchronous hook's) still runs a verb declared
+    ``between_turns`` once the turn is over: for the turn's room and channel,
+    with no actor nor tool call, the turn being over."""
+    ran: list[dict[str, Any]] = []
+
+    async def use(host: TurnHost) -> Any:
+        return None
+
+    async def record(arguments: dict[str, Any]) -> str:
+        call = current_tool_call()
+        ran.append(
+            {
+                "arguments": arguments,
+                "room": current_tool_room_id(),
+                "channel": call.channel_id if call else None,
+                "actor": current_tool_actor_id(),
+            }
+        )
+        return "recorded"
+
+    kit, _, seen = await _kit(use)
+    kit.declare_host_verb("app.record", record, between_turns=True)
+
+    await _say(kit)
+    answer = await seen["host"].call("app.record", {"verdict": "ok"})
+
+    assert answer == "recorded"
+    assert ran == [
+        {"arguments": {"verdict": "ok"}, "room": "r1", "channel": "agent", "actor": None}
+    ]
     await kit.close()
 
 
