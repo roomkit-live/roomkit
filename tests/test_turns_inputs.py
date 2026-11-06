@@ -79,6 +79,18 @@ async def _asked(asked: list[PendingInputEvent]) -> str:
     raise AssertionError("The human was never asked")
 
 
+async def _held(kit: RoomKit, pending_id: str, **scope: Any) -> Any:
+    """The owner's record of *pending_id*, once it reached the owner: the
+    executor sends it before its hook fires, and across a backend a hook
+    there can see the request before the owner has read its record."""
+    for _ in range(200):
+        held = kit.input_request(pending_id, **scope)
+        if held is not None:
+            return held
+        await asyncio.sleep(0.01)
+    raise AssertionError("The request never reached the owner")
+
+
 def _say(kit: RoomKit) -> asyncio.Task[Any]:
     message = InboundMessage(channel_id="ops", sender_id="ops", content=TextContent(body="Hi"))
     return asyncio.create_task(kit.process_inbound(message, room_id="r1"))
@@ -108,9 +120,8 @@ async def test_the_owner_reads_an_open_request_as_its_hook_did() -> None:
     turn = _say(kit)
     pending_id = await _asked(asked)
 
-    read = kit.input_request(pending_id)
+    read = await _held(kit, pending_id)
 
-    assert read is not None
     hooked = asked[0]
     for field in ("pending_id", "tool_name", "arguments", "room_id", "tool_call_id"):
         assert getattr(read, field) == getattr(hooked, field), field
@@ -130,8 +141,8 @@ async def test_an_open_request_is_read_within_its_organization_only() -> None:
     turn = _say(kit)
     pending_id = await _asked(asked)
 
+    await _held(kit, pending_id, organization_id="org-a")
     assert kit.input_request(pending_id, organization_id="org-b") is None
-    assert kit.input_request(pending_id, organization_id="org-a") is not None
     assert kit.input_request("no-such-request") is None
     assert await kit.answer_input(pending_id, "Blue") is True
     await asyncio.wait_for(turn, 5)
