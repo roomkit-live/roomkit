@@ -706,8 +706,8 @@ class ConversationStore(ABC):
     async def add_event(self, event: RoomEvent) -> RoomEvent:
         """Store a new event.
 
-        On a room a kit serves, an index this takes past the room's next is a hole of
-        the delivery cursor that no lane runs: the room's next delivery waits
+        On a room a kit serves, an index this takes at or past the room's next opens a
+        hole in the delivery cursor that no lane runs: the room's next delivery waits
         ``delivery_gap_timeout`` before it skips it (RFC §13.5, HITL ab765c3d).
         """
         ...
