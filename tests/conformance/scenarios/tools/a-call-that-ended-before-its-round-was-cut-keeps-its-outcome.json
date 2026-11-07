@@ -1,0 +1,215 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-call-that-ended-before-its-round-was-cut-keeps-its-outcome",
+  "title": "A turn cut while one call of its round is held closes that call cancelled and the call that already ended served, as its report says",
+  "rules": [
+    "§9.3",
+    "§10.6.4",
+    "§12.2",
+    "§12.4"
+  ],
+  "notes": "Python: tests/test_turn_calls_per_call.py::test_a_call_that_ended_before_its_round_was_cut_keeps_its_outcome; each call's end is set on its start as soon as it ends (ToolCallStartMarker.ended), which the cut closes it with (RMK-1362).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "quick",
+            "description": "Answers at once",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "fine"
+          },
+          {
+            "name": "slow",
+            "description": "Answers once let",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "late",
+            "gate": "held"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "quick",
+                  "arguments": {
+                    "q": "first"
+                  }
+                },
+                {
+                  "id": "c2",
+                  "name": "slow",
+                  "arguments": {
+                    "q": "second"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "never"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "audit",
+        "trigger": "on_tool_call",
+        "execution": "async",
+        "reactions": [
+          {
+            "gate": "reported"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "defer_delivery": true,
+      "as": "a"
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "wait_for": "reported"
+    },
+    {
+      "call": "delivery.cancel",
+      "of": "a",
+      "reason": "stopped"
+    },
+    {
+      "open": "held"
+    },
+    {
+      "open": "reported"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "audit": {
+        "$unordered": [
+          {
+            "trigger": "on_tool_call",
+            "tool_call": {
+              "name": "quick",
+              "tool_call_id": "c1",
+              "arguments": {
+                "q": "first"
+              },
+              "refused": false,
+              "cancelled": false,
+              "is_error": false
+            }
+          },
+          {
+            "trigger": "on_tool_call",
+            "tool_call": {
+              "name": "slow",
+              "tool_call_id": "c2",
+              "arguments": {
+                "q": "second"
+              },
+              "refused": false,
+              "cancelled": true,
+              "is_error": true
+            }
+          }
+        ]
+      }
+    },
+    "timeline": {
+      "room-1": {
+        "$unordered": [
+          {
+            "type": "message"
+          },
+          {
+            "type": "tool_call_start",
+            "content": {
+              "tool_id": "c1",
+              "tool_name": "quick"
+            }
+          },
+          {
+            "type": "tool_call_start",
+            "content": {
+              "tool_id": "c2",
+              "tool_name": "slow"
+            }
+          },
+          {
+            "type": "tool_call_end",
+            "content": {
+              "tool_id": "c1",
+              "tool_name": "quick",
+              "outcome": "served"
+            }
+          },
+          {
+            "type": "tool_call_end",
+            "content": {
+              "tool_id": "c2",
+              "tool_name": "slow",
+              "outcome": "cancelled"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
