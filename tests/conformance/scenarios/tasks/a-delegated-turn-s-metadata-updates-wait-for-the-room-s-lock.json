@@ -1,0 +1,197 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-delegated-turn-s-metadata-updates-wait-for-the-room-s-lock",
+  "title": "The room metadata updates a delegated turn's agent returns are written on its child room under the room's lock, after its tasks: while another call holds the lock, the turn waits, a key that call writes there is then written over by the turn's, and the turn's tasks' ON_TASK_CREATED observers read the room the write left",
+  "rules": [
+    "§23.3 step 5",
+    "§10.1 step 15",
+    "§13.5"
+  ],
+  "notes": "Python: core/mixins/_child_execution.py _broadcast_and_collect persists the broadcast's side effects as a room's (core/mixins/helpers.py _persist_side_effects): the tasks, then the observations, then _write_metadata_updates, which writes the merged updates with patch_room_metadata inside self._lock_manager.locked(room_id), then the stored tasks' ON_TASK_CREATED, before the turn's answer is committed. A call into the child room, whose before_broadcast hook holds the lock while the worker answers, writes its key first; the turn's write waits for that call's locked region, and follows it; the task's observer, started after the write, reads it. RMK-1521.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Look it up."
+            },
+            "gate": "worker",
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Found it."
+                }
+              }
+            ],
+            "output": {
+              "tasks": [
+                {
+                  "title": "Call the customer back"
+                }
+              ],
+              "metadata_updates": {
+                "stage": "qualified"
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "parent",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "hold",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "Call me"
+            },
+            "gate": "held",
+            "do": [
+              {
+                "call": "update_room_metadata",
+                "room_id": "$room",
+                "metadata": {
+                  "stage": "callback"
+                },
+                "as": "meta"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "created",
+        "trigger": "on_task_created",
+        "execution": "async",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "store.get_room",
+                "room_id": "$room",
+                "as": "room"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "worker",
+      "task": "Look it up.",
+      "as": "t"
+    },
+    {
+      "wait_for": "worker"
+    },
+    {
+      "call": "send_event",
+      "room_id": "$r1",
+      "channel_id": "worker",
+      "content": {
+        "type": "text",
+        "body": "Call me"
+      },
+      "background": true,
+      "as": "call"
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "open": "worker"
+    },
+    {
+      "wait_for_lock": "$r1",
+      "waiters": 1
+    },
+    {
+      "open": "held"
+    },
+    {
+      "await": "call",
+      "expect": {
+        "result": {
+          "content": {
+            "type": "text",
+            "body": "Call me"
+          }
+        }
+      }
+    },
+    {
+      "call": "task.wait",
+      "task_id": "$t",
+      "expect": {
+        "result": {
+          "status": "completed",
+          "output": "Found it."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "$r1": {
+        "metadata": {
+          "stage": "qualified"
+        }
+      }
+    },
+    "actions": {
+      "meta": [
+        {
+          "result": {
+            "metadata": {
+              "stage": "callback"
+            }
+          }
+        }
+      ],
+      "room": [
+        {
+          "result": {
+            "metadata": {
+              "stage": "qualified"
+            }
+          }
+        }
+      ]
+    },
+    "tasks": {
+      "$r1": [
+        {
+          "title": "Call the customer back"
+        }
+      ]
+    }
+  }
+}
