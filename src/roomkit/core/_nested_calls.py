@@ -132,36 +132,38 @@ async def nested_calls_after_a_cancel(call: _Call | None) -> None:
     reported, as roomkit-rs's operation runs them on under its lock within
     the event's deadline.
 
-    The event's own ``process_timeout`` falls at that deadline too: both
-    timers can fire in one pass of the loop, and the wait then ends with a
-    cancellation rather than its timeout. Expired, it cuts them all the
-    same before that cancellation goes on up."""
+    Cancelled again meanwhile (a cancel scope that repeats its cancellation,
+    the event's own ``process_timeout`` falling at that deadline), it waits
+    on all the same and raises the first such cancellation once they are
+    settled: the wait sets no timer of its own that cancels the task."""
     if call is None or not call.nested:
         return
     deadline = next(iter(call.nested)).deadline
     within = _current.get()
     past = within is not None and within.cut_at_its_deadline
-    if past or (deadline is not None and asyncio.get_running_loop().time() >= deadline):
+    loop = asyncio.get_running_loop()
+    if past or (deadline is not None and loop.time() >= deadline):
         cut_nested_calls(call)
         return
-    timeout = asyncio.timeout_at(deadline)
-    try:
-        async with timeout:
-            while call.nested:
-                await asyncio.wait([nested.over for nested in call.nested])
-    except TimeoutError:
-        cut_nested_calls(call, past_the_deadline=True)
-    except asyncio.CancelledError:
-        if timeout.expired():
+    cancelled: asyncio.CancelledError | None = None
+    while call.nested:
+        left = None if deadline is None else deadline - loop.time()
+        if left is not None and left <= 0:
             cut_nested_calls(call, past_the_deadline=True)
-        raise
+            break
+        try:
+            await asyncio.wait([nested.over for nested in call.nested], timeout=left)
+        except asyncio.CancelledError as cancel:
+            cancelled = cancelled or cancel
+    if cancelled is not None:
+        raise cancelled
 
 
 def cut_nested_calls(call: _Call | None, *, past_the_deadline: bool = False) -> None:
     """Cut, as their section ends, the calls the tasks of *call* nested
     under it that are not committed yet, once the section's deadline
-    passed (*past_the_deadline*, when its own timer said so) or the nested
-    call the current code runs within was cut at its own."""
+    passed (*past_the_deadline*, when its wait said so) or the nested call
+    the current code runs within was cut at its own."""
     if call is None:
         return
     within = _current.get()

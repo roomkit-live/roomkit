@@ -826,17 +826,20 @@ class TestAnAdoptedCallBeforeItsCommit:
         await kit.close()
 
     @pytest.mark.wallclock
+    @pytest.mark.parametrize("cancels", [1, 2], ids=["cancelled", "cancelled_twice"])
     @pytest.mark.parametrize("body_returned", [False, True], ids=["in_the_body", "body_returned"])
     async def test_a_call_a_locked_hook_s_task_nests_ends_by_the_event_s_deadline_past_its_caller(
-        self, body_returned: bool
+        self, body_returned: bool, cancels: int
     ) -> None:
         """A locked hook's task makes a call nested under the lock, whose own
         locked hook never ends, and the event's caller stops waiting, while
-        the hook's body runs or once it returned: the section keeps the
-        room's lock for the call up to the event's ``process_timeout``,
-        which cuts it, nothing of it stored and nothing reported, neither
-        the event's ``process_timeout`` nor the call's own, which falls
-        later; a message sent then commits (HITL 2c9d64f7)."""
+        the hook's body runs or once it returned, cancelled once or again
+        meanwhile (a cancel scope repeats its cancellation): the section
+        keeps the room's lock for the call up to the event's
+        ``process_timeout``, which cuts it, nothing of it stored and nothing
+        reported, neither the event's ``process_timeout`` nor the call's
+        own, which falls later; a message sent then commits (HITL
+        2c9d64f7)."""
         kit = await _room(RoomKit(process_timeout=0.05), SimpleChannel("ws"))
         entered, returned = asyncio.Event(), asyncio.Event()
         started: list[asyncio.Task[RoomEvent]] = []
@@ -872,6 +875,11 @@ class TestAnAdoptedCallBeforeItsCommit:
         # step; once the body returned, the section is waiting for the call.
         await (returned if body_returned else entered).wait()
         caller.cancel()
+        for _ in range(cancels - 1):
+            # Once the cancelled section waits for the call.
+            for _ in range(3):
+                await asyncio.sleep(0)
+            caller.cancel()
         sent = await asyncio.gather(*started, return_exceptions=True)
         with contextlib.suppress(asyncio.CancelledError):
             await caller
