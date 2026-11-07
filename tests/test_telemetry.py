@@ -1182,6 +1182,7 @@ class TestStoreQuerySpan:
         inbounds = {s.id for s in spans if s.name == "framework.inbound"}
         cursor = [s for s in spans if s.name in _CURSOR_SPANS]
         assert len(inbounds) == 2
+        assert {s.name for s in cursor} == _CURSOR_SPANS
         assert {s.parent_id for s in cursor} <= inbounds
 
     async def test_a_skip_s_cursor_spans_sit_under_the_message_it_lets_through(self) -> None:

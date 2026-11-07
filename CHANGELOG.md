@@ -563,11 +563,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **The delivery cursor's store spans stay in their message's trace** (HITL e228ab14,
-  RMK-1401). On a store that opens `store.*` spans (`PostgresStore`), the
+- **The delivery cursor's store spans stay in their messages' trace** (RFC §15.7, HITL
+  e228ab14, RMK-1401). On a store that opens `store.*` spans (`PostgresStore`), the
   `store.get_delivered_index` and `store.advance_delivered_index` spans of the delivery
   lane were root spans, a trace apart from the message's: they are now children of the
-  span of the call whose message they deliver (`framework.inbound`), as roomkit-rs's; a
+  `framework.inbound` of a message the lane delivers, never roots, as roomkit-rs's; a
   skip past a hole, under the message it lets through.
 
 - **A delivery set keeps its aftermath when the room's cursor write fails** (RFC §10.1
