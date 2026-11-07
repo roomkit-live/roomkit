@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -526,3 +527,53 @@ class TestSideEffectWriteFailures:
             ["Failed to write the room metadata updates ['owner', 'stage']"],
             None,
         )
+
+
+class TestDroppedSetSideEffects:
+    async def test_a_set_the_lane_drops_as_stale_still_stores_its_hooks_side_effects(
+        self, kit: RoomKit, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """RFC §10.1 step 15, §13.5 (RMK-1499): a delivery set the room's lane
+        drops before it ran, its index declared lost by another worker, still
+        stores the task its event's hook gave before the call returns, and the
+        task's ON_TASK_CREATED fires, as after a set that ran."""
+        add_task = kit.store.add_task
+
+        async def slow_add_task(task: Task) -> Task:
+            # A store that takes a while: the call still returns after it.
+            for _ in range(20):
+                await asyncio.sleep(0)
+            return await add_task(task)
+
+        monkeypatch.setattr(kit.store, "add_task", slow_add_task)
+        kit.register_channel(SimpleChannel("sms1"))
+        kit.register_channel(SimpleChannel("ws1"))
+        await kit.create_room(room_id="r1")
+        await kit.attach_channel("r1", "sms1")
+        await kit.attach_channel("r1", "ws1")
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST, name="triage")
+        async def triage(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            task = Task(id="t1", room_id="r1", title="Call the customer back")
+            return HookResult(action="allow", tasks=[task])
+
+        created: list[str] = []
+
+        @kit.hook(HookTrigger.ON_TASK_CREATED, execution=HookExecution.ASYNC, name="follow_up")
+        async def follow_up(event: RoomEvent, ctx: RoomContext) -> None:
+            created.append(event.metadata["task_id"])
+
+        # Another worker's lane declares the next index lost before this
+        # process delivers it.
+        room = await kit.get_room("r1")
+        await kit.store.advance_delivered_index("r1", room.latest_index + 1, force=True)
+        result = await kit.process_inbound(
+            InboundMessage(
+                channel_id="sms1", sender_id="user1", content=TextContent(body="Call me back")
+            )
+        )
+        tasks = [task.id for task in await kit.store.list_tasks("r1")]
+        await kit.hook_engine.drain_observers()
+        await kit.close()
+
+        assert (result.cancellation_reason, tasks, created) == ("delivery_stale", ["t1"], ["t1"])

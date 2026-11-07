@@ -551,6 +551,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A task a hook decided is kept when the room's lane drops its delivery** (RFC §10.1
+  step 15, HITL ee915769, RMK-1499). An event's `BEFORE_BROADCAST` hooks gave a task
+  ("call the customer back"), then its delivery set never ran: the kit closed with the set
+  queued behind another, or another worker declared its index lost (`delivery_stale`). The
+  task was never stored and `ON_TASK_CREATED` never fired. What the hooks gave is now
+  stored as after a set that ran, its tasks' `ON_TASK_CREATED` fired, before the call that
+  made the set returns.
+
 - **A `<think>` the answer writes stays in the answer** (RFC §6.7, HITL 9cf6483f,
   241215eb, RMK-1327). On Chat Completions (OpenAI and the servers behind its provider,
   Mistral's text answers, PolarGrid, the OpenAI vision describer), a `<think>` anywhere in

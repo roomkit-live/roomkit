@@ -771,6 +771,37 @@ class LaneExecutionMixin(HelpersMixin):
         )
         return True
 
+    def _store_dropped_side_effects(self, plan: DeliveryPlan) -> asyncio.Task[None] | None:
+        """Start the write of what the hooks of *plan*'s event gave, its
+        delivery set dropped by the room's lane before it ran (the kit's
+        close, an index another worker declared lost): stored as a set that
+        ran stores them, their tasks' ON_TASK_CREATED fired (RFC §10.1 step
+        15). Started on a fresh context, since a drop may run under the room
+        lock, and held as the kit's pending work, which its close gives its
+        grace. None when the hooks gave nothing to store."""
+        if not plan.fire_after_broadcast or not (plan.hook_tasks or plan.hook_observations):
+            return None
+        task = start_named(
+            self._write_dropped_side_effects(plan),
+            name=f"roomkit-dropped-side-effects-{plan.event.room_id}",
+            context=contextvars.Context(),
+        )
+        task.add_done_callback(self._pending_hook_tasks.discard)
+        self._pending_hook_tasks.add(task)
+        return task
+
+    async def _write_dropped_side_effects(self, plan: DeliveryPlan) -> None:
+        """:meth:`_store_dropped_side_effects`'s write, under the planner's
+        span, as a set's aftermath runs."""
+        with restored_span(plan.parent_span_id, telemetry_ctx=plan.parent_span_ctx):
+            await self._persist_side_effects(
+                plan.event.room_id,
+                list(plan.hook_tasks),
+                list(plan.hook_observations),
+                plan.event,
+                plan.context,
+            )
+
     async def _record_failed_deliveries(
         self, event: RoomEvent, results: dict[str, DeliveryResult]
     ) -> None:

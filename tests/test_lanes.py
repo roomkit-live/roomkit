@@ -53,6 +53,7 @@ class FakeHost:
         self.executed: list[str] = []
         self.post_effects: list[str] = []
         self.reentered: list[str] = []
+        self.dropped: list[str] = []
         self.framework_events: list[tuple[str, dict[str, Any] | None]] = []
         self.execute_gate: asyncio.Event | None = None
         self.executing = asyncio.Event()  # set once a plan entered execution
@@ -75,6 +76,10 @@ class FakeHost:
         self, plan: DeliveryPlan, result: Any, cascade: DeliveryCascade
     ) -> None:
         self.post_effects.append(plan.event.id)
+
+    def _store_dropped_side_effects(self, plan: DeliveryPlan) -> asyncio.Task[None] | None:
+        self.dropped.append(plan.event.id)
+        return None
 
     async def _reentry_commit_pass(
         self, room_id: str, plan: DeliveryPlan, result: Any, cascade: DeliveryCascade

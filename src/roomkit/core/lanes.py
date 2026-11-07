@@ -188,6 +188,7 @@ class DeliveryCascade:
         "_tasks",
         "_turn_work",
         "_cleanup_task",
+        "_kept_writes",
         "_when_over",
         "_over",
         "reader_detached",
@@ -238,6 +239,10 @@ class DeliveryCascade:
         # Its turn work: what a cancellation cancels and its cleanup joins.
         self._turn_work: set[asyncio.Task[Any]] = set()
         self._cleanup_task: asyncio.Task[None] | None = None
+        # The writes of what the hooks of a delivery set its lane dropped
+        # gave (RFC §10.1 step 15): its cancellation does not cut them, and
+        # its drain joins them.
+        self._kept_writes: set[asyncio.Task[Any]] = set()
         self._when_over: list[Callable[[], None]] = []
         self._over = False
         # A reader nobody awaits reads its streams: the delivery is over when
@@ -249,8 +254,10 @@ class DeliveryCascade:
         """No turn work (a turn, a stream's reader) is still unwinding: once
         cancelled, a plan still delivering its event to the transports does
         not hold the turns' resources."""
-        return all(task.done() for task in self._turn_work) and (
-            self._cleanup_task is None or self._cleanup_task.done()
+        return (
+            all(task.done() for task in self._turn_work)
+            and all(task.done() for task in self._kept_writes)
+            and (self._cleanup_task is None or self._cleanup_task.done())
         )
 
     def detach_reader(self, task: asyncio.Task[Any]) -> None:
@@ -317,6 +324,15 @@ class DeliveryCascade:
                 task.cancel()
             raise
 
+    def keep_write(self, task: asyncio.Task[Any]) -> None:
+        """Own *task*, the write of what the hooks of a delivery set its lane
+        dropped gave (RFC §10.1 step 15): no cancellation cuts it, and a
+        waiter on the cascade's drain joins it, so the call that made the set
+        reads its tasks stored."""
+        self.track(task)
+        self._kept_writes.add(task)
+        task.add_done_callback(self._kept_writes.discard)
+
     def turn_work(self) -> set[asyncio.Task[Any]]:
         """The cascade's turn work still running."""
         return {task for task in self._turn_work if not task.done()}
@@ -328,8 +344,11 @@ class DeliveryCascade:
         return {task for task in self._tasks if not task.done()}
 
     async def wait_drained(self) -> None:
-        """Join its turn work, including its asynchronous finalizers."""
+        """Join its turn work, including its asynchronous finalizers, and the
+        writes of what a dropped set's hooks gave."""
         while pending := {task for task in self._turn_work if not task.done()}:
+            await asyncio.wait(pending)
+        while pending := {task for task in self._kept_writes if not task.done()}:
             await asyncio.wait(pending)
         if self._cleanup_task is not None:
             await asyncio.shield(self._cleanup_task)
@@ -572,6 +591,16 @@ class CursorEntry:
     index: int
 
 
+def _keep_side_effects(host: LaneHost, entry: ExecEntry) -> None:
+    """Have what the hooks of *entry*'s event gave stored, its delivery set
+    dropped before it ran (RFC §10.1 step 15): the write is its cascade's,
+    whose drain joins it, so that the call that made the set reads its
+    tasks stored."""
+    kept = host._store_dropped_side_effects(entry.plan)
+    if kept is not None:
+        entry.cascade.keep_write(kept)
+
+
 def _turn(entry: ExecEntry | CursorEntry) -> tuple[int, int]:
     """When a lane runs *entry*: once the cursor reached the index before
     its own, or its anchor when it has none, an index-less entry ahead of
@@ -626,6 +655,8 @@ class LaneHost(Protocol):
     per-event aftermath (delivery framework events, ON_ERROR funnel, side
     effects, AFTER_BROADCAST); ``_report_cut`` reports a cut plan's result
     to its caller, and nothing else of its aftermath.
+    ``_store_dropped_side_effects`` starts the write of what the hooks of a
+    plan the lane dropped before it ran gave, its task or None.
     ``_reentry_commit_pass`` turns the response events of an executed plan
     into fresh commit passes (room lock taken anew) whose plans join the
     same lane.
@@ -644,6 +675,8 @@ class LaneHost(Protocol):
     ) -> None: ...
 
     def _report_cut(self, plan: DeliveryPlan, result: Any, cascade: DeliveryCascade) -> None: ...
+
+    def _store_dropped_side_effects(self, plan: DeliveryPlan) -> asyncio.Task[None] | None: ...
 
     async def _emit_framework_event(
         self,
@@ -826,7 +859,13 @@ class RoomDeliveryLane:
         self._drop_entry(kept, self._reason)
         self._wakeup.set()
 
-    def _drop_entry(self, entry: ExecEntry | CursorEntry, reason: str) -> None:
+    def _drop_entry(
+        self, entry: ExecEntry | CursorEntry, reason: str, *, ran: bool = False
+    ) -> None:
+        """Drop *entry* with *reason*: its cascade cancelled and its unit
+        released. One that never *ran* still has what its event's hooks gave
+        stored (RFC §10.1 step 15), the write joined by its cascade's drain:
+        a task a hook decided is not lost with the delivery."""
         if entry is self._placed_idle:
             self._placed_idle = None
         if isinstance(entry, ExecEntry):
@@ -839,6 +878,8 @@ class RoomDeliveryLane:
                 self.room_id,
                 entry.index,
             )
+            if not ran:
+                _keep_side_effects(self._host, entry)
             entry.cascade.cancel(reason)
             entry.cascade.release()
 
@@ -942,7 +983,7 @@ class RoomDeliveryLane:
             # delivered and is dropped here.
             for run in executed:
                 self._report_cut(run.entry, run.result)
-                self._drop_entry(run.entry, self._reason)
+                self._drop_entry(run.entry, self._reason, ran=True)
         return progressed
 
     def _report_cut(self, entry: ExecEntry, result: Any) -> None:
@@ -1169,6 +1210,7 @@ class RoomLaneRegistry:
                     room_id,
                     entry.index,
                 )
+                _keep_side_effects(self._host, entry)
                 entry.cascade.cancel(KitClosedError.code)
                 entry.cascade.release()
             elif (lane := self._lanes.get(room_id)) is not None:
