@@ -2294,7 +2294,7 @@ class SQLiteStore(ConversationStore):
     ) -> None:
         conn = self._db()
         with _write_transaction(conn):
-            identity = link_target(self._x_get_identity(identity_id), identity_id, organization_id)
+            identity = self._x_link_target(identity_id, organization_id)
             self._x_refuse_held_address(channel_type, address, organization_id, identity_id)
             current = identity.channel_addresses.get(channel_type, [])
             if address not in current:
@@ -2309,6 +2309,21 @@ class SQLiteStore(ConversationStore):
                 " identity_id, organization_id) VALUES(?, ?, ?, ?)",
                 (channel_type, address, identity_id, organization_id),
             )
+
+    def _x_link_target(self, identity_id: str, organization_id: str) -> Identity:
+        """The identity *organization_id* links an address to, or unlinks one from
+        (``link_target``). A caller naming an organization reads
+        ``IdentityNotFoundError`` for a record the model cannot read, which proves no
+        organization: the fixed error would tell that the id exists (RFC §17.2, HITL
+        7cb63f4f). A caller naming none keeps the fixed error."""
+        try:
+            identity = self._x_get_identity(identity_id)
+        except ValueError:
+            if not organization_id:
+                raise
+            identity = None
+        # Raised outside the handler: the store's error is not even its context.
+        return link_target(identity, identity_id, organization_id)
 
     async def unlink_address(
         self,
@@ -2326,7 +2341,7 @@ class SQLiteStore(ConversationStore):
     ) -> None:
         conn = self._db()
         with _write_transaction(conn):
-            identity = link_target(self._x_get_identity(identity_id), identity_id, organization_id)
+            identity = self._x_link_target(identity_id, organization_id)
             # Its own rows only, in every scope: an address another identity holds
             # stays theirs, and a row a migration left elsewhere goes with the link.
             conn.execute(

@@ -946,16 +946,18 @@ async def test_a_record_the_model_cannot_read_serves_no_read(
 
 async def _read_by_id(store: SQLiteStore, door: str) -> object:
     """Reach the identity i1's record by its id through *door*, for acme; the kit's
-    resolve_participant names no organization, as a caller naming one learns nothing of
-    the record (test_resolve_participant_for_an_organization_finds_no_unreadable_identity)."""
+    resolve_participant, link_address and unlink_address name no organization, as a caller
+    naming one learns nothing of the record
+    (test_resolve_participant_for_an_organization_finds_no_unreadable_identity,
+    test_link_and_unlink_for_an_organization_find_no_unreadable_identity)."""
     if door == "get_identity":
         return await store.get_identity("i1")
     if door == "create_identity":
         return await store.create_identity(Identity(id="i1", organization_id="acme"))
     if door == "link_address":
-        return await store.link_address("i1", "sms", "+2", organization_id="acme")
+        return await store.link_address("i1", "sms", "+2")
     if door == "unlink_address":
-        return await store.unlink_address("i1", "sms", "+2", organization_id="acme")
+        return await store.unlink_address("i1", "sms", "+2")
     kit = RoomKit(store=store)
     try:
         await store.create_room(Room(id="r1", organization_id="acme"))
@@ -1039,6 +1041,33 @@ async def test_resolve_participant_for_an_organization_finds_no_unreadable_ident
         await kit.close()
     assert str(refused.value) == "Identity i1 not found"
     assert refused.value.__context__ is None
+
+
+@pytest.mark.parametrize("organization_id", ["globex", "acme"])
+@pytest.mark.parametrize("door", ["link_address", "unlink_address"])
+async def test_link_and_unlink_for_an_organization_find_no_unreadable_identity(
+    tmp_path: Path, door: str, organization_id: str
+) -> None:
+    """HITL 7cb63f4f: a caller naming an organization reads IdentityNotFoundError for a
+    record the model cannot read, which proves no organization, even its own: the
+    store's fixed error would tell another organization that the id exists (RFC §17.2).
+    Nothing is written."""
+    path = tmp_path / "older.db"
+    store = SQLiteStore(path)
+    await store.create_identity(Identity(id="i1", organization_id="globex"))
+    record = _UNREADABLE_RECORDS[2]
+    _spoil_the_record(path, record)
+    try:
+        with pytest.raises(IdentityNotFoundError) as refused:
+            await getattr(store, door)("i1", "sms", "+2", organization_id=organization_id)
+    finally:
+        await store.close()
+    assert str(refused.value) == "Identity i1 not found"
+    assert refused.value.__context__ is None
+    assert _address_rows(path) == []
+    conn = sqlite3.connect(path)
+    assert conn.execute("SELECT data FROM identities WHERE id = 'i1'").fetchone() == (record,)
+    conn.close()
 
 
 async def test_an_unlink_removes_the_identity_s_rows_in_every_scope(tmp_path: Path) -> None:

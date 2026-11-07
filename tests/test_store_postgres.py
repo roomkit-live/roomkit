@@ -770,15 +770,15 @@ async def test_a_row_with_an_empty_id_serves_no_read(
 
 
 async def _read_by_id(store: Any, door: str) -> object:
-    """Reach the identity i1's row by its id through *door*, for globex, its organization;
-    the kit's resolve_participant names no organization, as a caller naming one learns
-    nothing of the row (HITL 3f36d6c8)."""
+    """Reach the identity i1's row by its id through *door*; the kit's resolve_participant,
+    link_address and unlink_address name no organization, as a caller naming one learns
+    nothing of the row (HITL 3f36d6c8, 7cb63f4f)."""
     if door == "get_identity":
         return await store.get_identity("i1")
     if door == "link_address":
-        return await store.link_address("i1", "sms", "+2", organization_id="globex")
+        return await store.link_address("i1", "sms", "+2")
     if door == "unlink_address":
-        return await store.unlink_address("i1", "sms", "+2", organization_id="globex")
+        return await store.unlink_address("i1", "sms", "+2")
     await store.create_room(Room(id="r1", organization_id="globex"))
     await store.add_participant(Participant(id="p1", room_id="r1", channel_id="sms"))
     kit = RoomKit(store=store)
@@ -796,14 +796,37 @@ async def test_a_read_by_id_of_a_record_the_model_cannot_read_quotes_none_of_it(
     store: Any, column: str, value: str, door: str
 ) -> None:
     """HITL 47b7dfc6, 70fef50d: the read fails with a fixed error, the id alone, as on
-    SQLiteStore: the row may be another organization's."""
-    await store.create_identity(Identity(id="i1", organization_id="globex"))
+    SQLiteStore: the row may be another organization's. A link and an unlink naming no
+    organization reach an identity of none, whose row's organization is theirs."""
+    linking = door in ("link_address", "unlink_address")
+    await store.create_identity(Identity(id="i1", organization_id=None if linking else "globex"))
     await _spoil_the_row(store, column, value)
     with pytest.raises(ValueError) as refused:
         await _read_by_id(store, door)
     assert str(refused.value) == "Identity i1 has a record the model cannot read"
     assert refused.value.__cause__ is None
     assert refused.value.__context__ is None
+
+
+@pytest.mark.parametrize("organization_id", ["globex", "acme"])
+@pytest.mark.parametrize("door", ["link_address", "unlink_address"])
+async def test_link_and_unlink_for_an_organization_find_no_unreadable_identity(
+    store: Any, door: str, organization_id: str
+) -> None:
+    """HITL 7cb63f4f: a caller naming an organization reads IdentityNotFoundError for a
+    row the model cannot read, even its own organization's, as on SQLiteStore: the
+    store's fixed error would tell that the id exists (RFC §17.2). Nothing is written."""
+    await store.create_identity(Identity(id="i1", organization_id="globex"))
+    column, value = _UNREADABLE_COLUMNS[1]
+    await _spoil_the_row(store, column, value)
+    with pytest.raises(IdentityNotFoundError) as refused:
+        await getattr(store, door)("i1", "sms", "+2", organization_id=organization_id)
+    assert str(refused.value) == "Identity i1 not found"
+    assert refused.value.__context__ is None
+    async with store._pool.acquire() as conn:
+        assert await conn.fetchval("SELECT count(*) FROM identity_addresses") == 0
+        held = await conn.fetchval(f"SELECT {column}::text FROM identities WHERE id = 'i1'")
+    assert held == value
 
 
 class TestRoomOperations:
