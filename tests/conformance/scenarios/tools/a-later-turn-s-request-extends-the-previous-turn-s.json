@@ -5,7 +5,7 @@
   "rules": [
     "§6.4"
   ],
-  "notes": "Python: channels/_tool_history.py tool_rounds; tests/test_channels/test_tool_history.py::test_a_later_turn_s_request_extends_the_previous_turn_s. A provider that caches a prompt's prefix keeps the whole history only while each request extends the one before it (RMK-1370). Nine calls of 150 to 180 characters each: a window of the last 8 calls, the 3 most recent whole and the older ones a 120-character preview, rewrote the history at each turn.",
+  "notes": "Python: channels/_tool_history.py tool_rounds; tests/test_channels/test_tool_history.py::test_a_later_turn_s_request_extends_the_previous_turn_s. A provider that caches a prompt's prefix keeps the whole history only while each request extends the one before it (RMK-1370). Nine calls of 150 to 180 characters each: a window of the last 8 calls, the 3 most recent whole and the older ones a 120-character preview, rewrote the history at each turn. A call's arguments are left out of chat_messages: each implementation writes their JSON its own way, the same way from one turn to the next.",
   "setup": {
     "channels": [
       {
@@ -300,24 +300,21 @@
                   "id": "$e1",
                   "type": "function",
                   "function": {
-                    "name": "order",
-                    "arguments": "{\"q\": \"42\"}"
+                    "name": "order"
                   }
                 },
                 {
                   "id": "$e2",
                   "type": "function",
                   "function": {
-                    "name": "parcel",
-                    "arguments": "{\"q\": \"42\"}"
+                    "name": "parcel"
                   }
                 },
                 {
                   "id": "$e3",
                   "type": "function",
                   "function": {
-                    "name": "customer",
-                    "arguments": "{\"q\": \"42\"}"
+                    "name": "customer"
                   }
                 }
               ]
@@ -353,24 +350,21 @@
                   "id": "$e4",
                   "type": "function",
                   "function": {
-                    "name": "invoice",
-                    "arguments": "{\"q\": \"42\"}"
+                    "name": "invoice"
                   }
                 },
                 {
                   "id": "$e5",
                   "type": "function",
                   "function": {
-                    "name": "stock",
-                    "arguments": "{\"q\": \"42\"}"
+                    "name": "stock"
                   }
                 },
                 {
                   "id": "$e6",
                   "type": "function",
                   "function": {
-                    "name": "order",
-                    "arguments": "{\"q\": \"42\"}"
+                    "name": "order"
                   }
                 }
               ]
@@ -406,24 +400,21 @@
                   "id": "$e7",
                   "type": "function",
                   "function": {
-                    "name": "parcel",
-                    "arguments": "{\"q\": \"42\"}"
+                    "name": "parcel"
                   }
                 },
                 {
                   "id": "$e8",
                   "type": "function",
                   "function": {
-                    "name": "customer",
-                    "arguments": "{\"q\": \"42\"}"
+                    "name": "customer"
                   }
                 },
                 {
                   "id": "$e9",
                   "type": "function",
                   "function": {
-                    "name": "invoice",
-                    "arguments": "{\"q\": \"42\"}"
+                    "name": "invoice"
                   }
                 }
               ]
@@ -459,24 +450,21 @@
                   "id": "$e1",
                   "type": "function",
                   "function": {
-                    "name": "order",
-                    "arguments": "{\"q\": \"42\"}"
+                    "name": "order"
                   }
                 },
                 {
                   "id": "$e2",
                   "type": "function",
                   "function": {
-                    "name": "parcel",
-                    "arguments": "{\"q\": \"42\"}"
+                    "name": "parcel"
                   }
                 },
                 {
                   "id": "$e3",
                   "type": "function",
                   "function": {
-                    "name": "customer",
-                    "arguments": "{\"q\": \"42\"}"
+                    "name": "customer"
                   }
                 }
               ]
@@ -512,24 +500,21 @@
                   "id": "$e4",
                   "type": "function",
                   "function": {
-                    "name": "invoice",
-                    "arguments": "{\"q\": \"42\"}"
+                    "name": "invoice"
                   }
                 },
                 {
                   "id": "$e5",
                   "type": "function",
                   "function": {
-                    "name": "stock",
-                    "arguments": "{\"q\": \"42\"}"
+                    "name": "stock"
                   }
                 },
                 {
                   "id": "$e6",
                   "type": "function",
                   "function": {
-                    "name": "order",
-                    "arguments": "{\"q\": \"42\"}"
+                    "name": "order"
                   }
                 }
               ]
@@ -565,24 +550,21 @@
                   "id": "$e7",
                   "type": "function",
                   "function": {
-                    "name": "parcel",
-                    "arguments": "{\"q\": \"42\"}"
+                    "name": "parcel"
                   }
                 },
                 {
                   "id": "$e8",
                   "type": "function",
                   "function": {
-                    "name": "customer",
-                    "arguments": "{\"q\": \"42\"}"
+                    "name": "customer"
                   }
                 },
                 {
                   "id": "$e9",
                   "type": "function",
                   "function": {
-                    "name": "invoice",
-                    "arguments": "{\"q\": \"42\"}"
+                    "name": "invoice"
                   }
                 }
               ]

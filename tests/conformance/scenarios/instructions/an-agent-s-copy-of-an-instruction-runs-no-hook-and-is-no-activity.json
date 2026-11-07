@@ -1,0 +1,123 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "instructions/an-agent-s-copy-of-an-instruction-runs-no-hook-and-is-no-activity",
+  "title": "The copy an agent keeps of its instruction is a record no member receives: no hook reads it, no channel is delivered it, and a turn that answers nothing leaves the room with no activity",
+  "rules": [
+    "§10.1.1",
+    "§10.5",
+    "§5.1"
+  ],
+  "notes": "Python: core/mixins/_streaming_segments.py instruction_read writes the row through commit_event. Written as the turn's other rows, BEFORE_BROADCAST read and could rewrite it, and it moved last_activity_at, which an instruction never does (RFC §10.1.1 step 5; HITL 4ffcc5e0, RMK-1407). The instruction itself passes the room's hooks as any instruction.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [],
+        "model": {
+          "chat_dialect": "openai",
+          "rounds": [
+            {
+              "text": ""
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "gate",
+        "trigger": "before_broadcast"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "app",
+        "content": {
+          "type": "text",
+          "body": "Check in silently."
+        },
+        "event_type": "instruction",
+        "addressed_to": [
+          "agent"
+        ]
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "check_timers",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "timers": {
+            "last_activity_at": null
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "type": "instruction_read",
+          "source": {
+            "channel_id": "agent"
+          },
+          "visibility": "agent",
+          "content": {
+            "type": "text",
+            "body": "Check in silently."
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "gate": [
+        {
+          "trigger": "before_broadcast",
+          "event": {
+            "type": "instruction"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": []
+      }
+    }
+  }
+}

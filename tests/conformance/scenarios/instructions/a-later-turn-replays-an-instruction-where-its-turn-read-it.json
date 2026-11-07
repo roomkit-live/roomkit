@@ -6,7 +6,7 @@
     "§10.1.1",
     "§6.4"
   ],
-  "notes": "Python: channels/_tool_history.py kept_instructions, core/mixins/_streaming_segments.py instruction_read; tests/test_channels/test_tool_history.py::test_a_later_turn_replays_an_instruction_at_its_place. Decided in HITL 5e89048c and 25b07f2a (option 1): the agent keeps its own copy, an instruction_read row visible to it alone, and its later turns replay it at its place, so that a provider's prompt cache keeps the history (RMK-1407). The instruction itself is still never stored as the room's.",
+  "notes": "Python: channels/_tool_history.py kept_instructions, core/mixins/_streaming_segments.py instruction_read; tests/test_channels/test_tool_history.py::test_a_later_turn_replays_an_instruction_at_its_place. Decided in HITL 5e89048c and 25b07f2a (option 1): the agent keeps its own copy, an instruction_read row visible to it alone, and its later turns replay it at its place, so that a provider's prompt cache keeps the history (RMK-1407). The instruction itself is still never stored as the room's. A call's arguments are left out of chat_messages: each implementation writes their JSON its own way, the same way from one turn to the next.",
   "setup": {
     "channels": [
       {
@@ -257,8 +257,7 @@
                   "id": "$e2",
                   "type": "function",
                   "function": {
-                    "name": "lookup",
-                    "arguments": "{\"q\": \"42\"}"
+                    "name": "lookup"
                   }
                 }
               ]
@@ -292,8 +291,7 @@
                   "id": "$e2",
                   "type": "function",
                   "function": {
-                    "name": "lookup",
-                    "arguments": "{\"q\": \"42\"}"
+                    "name": "lookup"
                   }
                 }
               ]

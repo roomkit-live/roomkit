@@ -1,12 +1,12 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "instructions/an-instruction-that-opened-the-room-opens-its-later-history",
-  "title": "An instruction that opened the room, before any message, opens the history of the agent's later turns: its turn's request is extended",
+  "title": "An instruction that opened the room, before any message, opens the history of the agent's later turns, the round of its turn after it: its turn's request is extended",
   "rules": [
     "§10.1.1",
     "§6.4"
   ],
-  "notes": "Python: turns/_wiring.py build_tool_history_loader reads the agent's rows from the room's message before its context on, and channels/_tool_history.py with_tool_rounds places an instruction whose turn the history holds, even before its first message: a handoff's greeting, say (RMK-1407).",
+  "notes": "Python: turns/_wiring.py build_tool_history_loader reads the agent's rows from the room's message before its context on, and channels/_tool_history.py with_tool_rounds places an instruction whose turn the history holds, even before its first message, and the rounds of that turn after it: a handoff's greeting that looks something up, say (RMK-1407). A call's arguments are left out of chat_messages: each implementation writes their JSON its own way, the same way from one turn to the next.",
   "setup": {
     "channels": [
       {
@@ -17,12 +17,37 @@
       {
         "id": "agent",
         "type": "ai",
-        "tools": [],
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look an order up",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "Order 42 left the north depot on Monday in two boxes, tracking AB-123; it is expected on Thursday."
+          }
+        ],
         "model": {
           "chat_dialect": "openai",
           "rounds": [
             {
-              "text": "Hello, I am Paul."
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {
+                    "q": "42"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Hello, I am Paul; your order arrives on Thursday."
             },
             {
               "text": "Glad to help."
@@ -55,7 +80,7 @@
         "sender_id": "app",
         "content": {
           "type": "text",
-          "body": "Introduce yourself."
+          "body": "Introduce yourself and look order 42 up."
         },
         "event_type": "instruction",
         "addressed_to": [
@@ -101,7 +126,7 @@
           "chat_messages": [
             {
               "role": "user",
-              "content": "[Instruction from the application: nobody in this conversation said it. Act on it now, in your own words, without quoting it.]\nIntroduce yourself."
+              "content": "[Instruction from the application: nobody in this conversation said it. Act on it now, in your own words, without quoting it.]\nIntroduce yourself and look order 42 up."
             }
           ]
         },
@@ -109,11 +134,55 @@
           "chat_messages": [
             {
               "role": "user",
-              "content": "[Instruction from the application: nobody in this conversation said it. Act on it now, in your own words, without quoting it.]\nIntroduce yourself."
+              "content": "[Instruction from the application: nobody in this conversation said it. Act on it now, in your own words, without quoting it.]\nIntroduce yourself and look order 42 up."
             },
             {
               "role": "assistant",
-              "content": "Hello, I am Paul."
+              "content": null,
+              "tool_calls": [
+                {
+                  "id": "$e2",
+                  "type": "function",
+                  "function": {
+                    "name": "lookup"
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool",
+              "tool_call_id": "$e2",
+              "content": "Order 42 left the north depot on Monday in two boxes, tracking AB-123; it is expected on Thursday."
+            }
+          ]
+        },
+        {
+          "chat_messages": [
+            {
+              "role": "user",
+              "content": "[Instruction from the application: nobody in this conversation said it. Act on it now, in your own words, without quoting it.]\nIntroduce yourself and look order 42 up."
+            },
+            {
+              "role": "assistant",
+              "content": null,
+              "tool_calls": [
+                {
+                  "id": "$e2",
+                  "type": "function",
+                  "function": {
+                    "name": "lookup"
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool",
+              "tool_call_id": "$e2",
+              "content": "Order 42 left the north depot on Monday in two boxes, tracking AB-123; it is expected on Thursday."
+            },
+            {
+              "role": "assistant",
+              "content": "Hello, I am Paul; your order arrives on Thursday."
             },
             {
               "role": "user",

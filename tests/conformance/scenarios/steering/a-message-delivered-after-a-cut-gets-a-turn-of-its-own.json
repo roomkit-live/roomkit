@@ -7,7 +7,7 @@
     "§21.3",
     "§10.1 Explicit delivery cancellation"
   ],
-  "notes": "The room's delivery lane holds the message's set behind the row before it, so the cut turn ends between the message's commit and its delivery. A turn being cut that has not ended yet would still take the message. Python: core/_room_turns.py RoomTurns._steered, the steer reaches nothing and the event takes its place in the line (RMK-1371).",
+  "notes": "The room's delivery lane holds the message's set behind the row before it, so the cut turn ends between the message's commit and its delivery. A turn being cut that has not ended yet would still take the message. Python: core/_room_turns.py RoomTurns._steered, the steer reaches nothing and the event takes its place in the line (RMK-1371). The cut turn's call, cancelled before it answered, is not replayed: no model read its result (RFC §6.4, HITL 4ffcc5e0, RMK-1370).",
   "setup": {
     "channels": [
       {

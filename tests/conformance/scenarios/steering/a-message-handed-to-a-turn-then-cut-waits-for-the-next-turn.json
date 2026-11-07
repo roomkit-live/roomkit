@@ -7,7 +7,7 @@
     "§21.3",
     "§10.1 Explicit delivery cancellation"
   ],
-  "notes": "The message's delivery is over before the cut: the turn's loop took it. Python: core/_room_turns.py RoomTurns._steered; channels/_ai_steering.py (RMK-1371).",
+  "notes": "The message's delivery is over before the cut: the turn's loop took it. Python: core/_room_turns.py RoomTurns._steered; channels/_ai_steering.py (RMK-1371). The cut turn's call, cancelled before it answered, is not replayed: no model read its result (RFC §6.4, HITL 4ffcc5e0, RMK-1370).",
   "setup": {
     "channels": [
       {
