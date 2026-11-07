@@ -561,7 +561,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   logged (`The delivery cursor of room r1 could not be moved to index 2; its delivery goes
   on`) and the round goes on: each set it ran keeps its aftermath, the lane reads the
   cursor as past the index, so the next message is delivered at once and nothing is
-  skipped, and the write is made again at its next round, as roomkit-rs does.
+  skipped, and the write is made again at its next round, as roomkit-rs does. Any other
+  store or claim failure once a set ran (a cursor read, the delivery claim's release)
+  leaves its aftermath to run too; until the write is made, another process's lane waits
+  on that index as on any hole.
 
 - **A held message's release logs its agent's failed turn at its level** (RFC §15.2,
   §11.7.6, HITL 36e60a22, RMK-1500). Once an identity verification is approved, the

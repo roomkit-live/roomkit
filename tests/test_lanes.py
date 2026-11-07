@@ -7,6 +7,8 @@ is the contract under test) and a fake LaneHost that records executions.
 from __future__ import annotations
 
 import asyncio
+import contextlib
+from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest
@@ -626,3 +628,88 @@ async def test_close_runs_the_entry_it_keeps_once_its_index_hole_is_filled(fille
     await asyncio.wait_for(cascade.wait(), timeout=0.5)
     assert host.executed == ["e1"]
     assert cascade.cancelled is None
+
+
+class _ClaimReleaseFailingOnce(InMemoryLockManager):
+    """A claim lock manager whose first release raises, as an advisory unlock
+    on a connection that dropped meanwhile."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.armed = True
+
+    @contextlib.asynccontextmanager
+    async def locked(self, room_id: str) -> AsyncIterator[None]:  # type: ignore[override]
+        async with InMemoryLockManager.locked(self, room_id):
+            yield
+        if self.armed:
+            self.armed = False
+            raise RuntimeError("unlock failed: connection lost")
+
+
+@pytest.mark.asyncio
+async def test_a_round_whose_claim_release_fails_finishes_the_sets_it_ran() -> None:
+    """RMK-1515: the delivery claim's release raises once the round's set ran
+    and its cursor moved. The set keeps its aftermath and its cascade is not
+    cancelled, as roomkit-rs's set, whose claim goes once its outcome is
+    known: a store or claim failure after a set ran is no cut."""
+    store = InMemoryStore()
+    await store.create_room(Room(id=ROOM))
+    host = FakeHost(store)
+    registry = RoomLaneRegistry(host, _ClaimReleaseFailingOnce(), fast_config())
+    cascade = DeliveryCascade(ROOM, reentry_budget=10)
+    enqueue_exec(registry, cascade, "e0", 0)
+    await asyncio.wait_for(cascade.wait(), timeout=2.0)
+    delivered = await cursor(store)
+    await registry.aclose()
+
+    assert (host.executed, host.post_effects, cascade.cancelled, delivered) == (
+        ["e0"],
+        ["e0"],
+        None,
+        0,
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_lane_owing_a_cursor_write_skips_no_index_another_process_holds() -> None:
+    """RMK-1515: process A delivers index 0 and its cursor write fails, B
+    holds index 1, A holds index 2, and A's gap clock runs out first. The
+    round in which A writes the cursor it owes skips nothing: B's set runs,
+    as roomkit-rs's skip never passes an index its own process has not
+    written."""
+    store = InMemoryStore()
+    await store.create_room(Room(id=ROOM))
+    locks = InMemoryLockManager()
+    host_a, host_b = FakeHost(store), FakeHost(store)
+    fast = {"gap_backoff_initial": 0.005, "gap_backoff_max": 0.005}
+    registry_a = RoomLaneRegistry(host_a, locks, fast_config(gap_timeout=0.03, **fast))
+    registry_b = RoomLaneRegistry(host_b, locks, fast_config(gap_timeout=0.3, **fast))
+    advance = store.advance_delivered_index
+    failed: list[int] = []
+
+    async def failing_once(room_id: str, index: int, **kwargs: Any) -> bool:
+        if not failed and not kwargs.get("force"):
+            failed.append(index)
+            raise RuntimeError("store down")
+        return await advance(room_id, index, **kwargs)
+
+    store.advance_delivered_index = failing_once  # type: ignore[method-assign]
+    first = DeliveryCascade(ROOM, reentry_budget=10)
+    enqueue_exec(registry_a, first, "a0", 0)
+    await asyncio.wait_for(first.wait(), timeout=2.0)
+    held, own = DeliveryCascade(ROOM, reentry_budget=10), DeliveryCascade(ROOM, reentry_budget=10)
+    enqueue_exec(registry_b, held, "b1", 1)
+    enqueue_exec(registry_a, own, "a2", 2)
+    await asyncio.wait_for(asyncio.gather(held.wait(), own.wait()), timeout=3.0)
+    delivered = await cursor(store)
+    await registry_a.aclose()
+    await registry_b.aclose()
+
+    assert (failed, host_a.framework_events, host_b.executed, held.cancelled) == (
+        [0],
+        [],
+        ["b1"],
+        None,
+    )
+    assert (host_a.executed, delivered) == (["a0", "a2"], 2)

@@ -743,7 +743,8 @@ class RoomDeliveryLane:
     @property
     def idle(self) -> bool:
         """Whether the lane holds no pending work: a cursor write it owes is
-        some, which its next round makes."""
+        some, so the lane is not retired with it; its next claimed round,
+        which its next entry brings, makes it."""
         return (
             not self._indexed
             and not self._unindexed
@@ -980,9 +981,19 @@ class RoomDeliveryLane:
             return progressed
 
         executed: list[_Executed] = []
+        failure: Exception | None = None
         self._busy = self._sending = True
         try:
-            progressed |= await self._claimed_round(executed, force_skip=force_skip)
+            try:
+                progressed |= await self._claimed_round(executed, force_skip=force_skip)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                # A store or claim failure once the round's sets ran (a
+                # cursor read, the claim's release) leaves them run: their
+                # aftermath follows, as roomkit-rs's does (RMK-1515), and the
+                # lane logs the failure and tries again.
+                failure = exc
             self._sending = False
             while executed:
                 run = executed.pop(0)
@@ -995,6 +1006,8 @@ class RoomDeliveryLane:
             for run in executed:
                 self._report_cut(run.entry, run.result)
                 self._drop_entry(run.entry, self._reason, ran=True)
+        if failure is not None:
+            raise failure
         return progressed
 
     def _report_cut(self, entry: ExecEntry, result: Any) -> None:
@@ -1030,9 +1043,12 @@ class RoomDeliveryLane:
         return progressed
 
     async def _claimed_round(self, executed: list[_Executed], *, force_skip: bool) -> bool:
-        progressed = False
         async with self._claims.locked(delivery_claim_key(self.room_id)):
+            owed = self._owed_cursor
             delivered = await self._write_owed_cursor()
+            # A debt written moves the cursor as a delivery does: a skip
+            # waits for the next round, which measures the gap again.
+            progressed = owed is not None and self._owed_cursor is None
             while self._runs_on:
                 progressed |= self._drop_stale(delivered)
 
@@ -1125,13 +1141,6 @@ class RoomDeliveryLane:
         while stored < owed:
             try:
                 moved = await self._host._store.advance_delivered_index(self.room_id, stored + 1)
-                if not moved:
-                    refreshed = await self._host._store.get_delivered_index(self.room_id)
-                    if refreshed == stored:
-                        # Nothing this lane can write moves it from there.
-                        return max(stored, owed)
-                    stored = refreshed
-                    continue
             except Exception:
                 logger.warning(
                     "The delivery cursor of room %s could not be moved to index %d; "
@@ -1141,9 +1150,16 @@ class RoomDeliveryLane:
                     exc_info=True,
                 )
                 return max(stored, owed)
-            stored += 1
+            if moved:
+                stored += 1
+                continue
+            refreshed = await self._host._store.get_delivered_index(self.room_id)
+            if refreshed == stored:
+                # Nothing this lane writes moves it from there: still owed.
+                return max(stored, owed)
+            stored = refreshed
         self._owed_cursor = None
-        return stored
+        return max(stored, owed)
 
     def _skip_target(self, delivered: int) -> int:
         """The smallest cursor value that unblocks the earliest local entry.

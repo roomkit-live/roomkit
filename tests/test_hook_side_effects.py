@@ -599,7 +599,7 @@ class GatedChannel(SimpleChannel):
 
 
 async def _kit_noting_what_follows(
-    monkeypatch: pytest.MonkeyPatch, ws1: SimpleChannel
+    ws1: SimpleChannel,
 ) -> tuple[RoomKit, list[str], list[tuple[int, int]]]:
     """A kit with room r1 binding sms1 and *ws1*: a BEFORE_BROADCAST hook
     gives task t1 for "Call me back", t2 for "Call me later"; what each
@@ -658,7 +658,7 @@ class TestARoundThatFailsMidway:
         message is delivered at once and no index is skipped, and the write
         is made again at the next round: the cursor catches up with both."""
         ws1 = SimpleChannel("ws1")
-        kit, later, skipped = await _kit_noting_what_follows(monkeypatch, ws1)
+        kit, later, skipped = await _kit_noting_what_follows(ws1)
         advance = kit.store.advance_delivered_index
 
         async def failing_once(room_id: str, index: int, **kwargs: Any) -> bool:
@@ -711,7 +711,7 @@ class TestARoundThatFailsMidway:
         cursor write fails. Both sets keep their aftermath, neither is
         cancelled, and the cursor catches up with both at the next round."""
         ws1 = GatedChannel("ws1", held="Call me back")
-        kit, later, skipped = await _kit_noting_what_follows(monkeypatch, ws1)
+        kit, later, skipped = await _kit_noting_what_follows(ws1)
         advance = kit.store.advance_delivered_index
         writes: list[tuple[int, str]] = []
 
@@ -732,6 +732,7 @@ class TestARoundThatFailsMidway:
             )
         )
         await asyncio.wait_for(ws1.reached.wait(), 5)
+        before = (await kit.store.get_room("r1")).latest_index  # type: ignore[union-attr]
         second = asyncio.create_task(
             kit.process_inbound(
                 InboundMessage(
@@ -739,15 +740,14 @@ class TestARoundThatFailsMidway:
                 )
             )
         )
-        # The second message is placed behind the first's set: both run in
-        # the round the first's delivery holds.
-        lane = kit._lanes.lane("r1")
 
-        async def placed() -> None:
-            while not lane._indexed:
+        # The second message is committed, its set placed behind the first's:
+        # both run in the round the first's delivery holds.
+        async def committed() -> None:
+            while (await kit.store.get_room("r1")).latest_index <= before:  # type: ignore[union-attr]
                 await asyncio.sleep(0)
 
-        await asyncio.wait_for(placed(), 5)
+        await asyncio.wait_for(committed(), 5)
         ws1.opened.set()
         results = await asyncio.wait_for(asyncio.gather(first, second), 5)
         tasks = sorted(task.id for task in await kit.store.list_tasks("r1"))
