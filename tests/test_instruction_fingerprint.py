@@ -113,7 +113,9 @@ async def _stored(kit: RoomKit) -> list[RoomEvent]:
 
 
 def _replies(events: list[RoomEvent]) -> list[RoomEvent]:
-    return [e for e in events if e.source.channel_id == "agent"]
+    """The agent's replies: its messages, not the copy of the instruction it
+    keeps for its later turns."""
+    return [e for e in events if e.source.channel_id == "agent" and e.type == EventType.MESSAGE]
 
 
 # -- Written by the pipeline --
@@ -159,9 +161,10 @@ async def test_every_row_of_a_streamed_answer_records_the_instruction():
 
     await kit.process_inbound(_instruction(), room_id=ROOM)
 
-    rows = _replies(await _stored(kit))
+    rows = [e for e in await _stored(kit) if e.source.channel_id == "agent"]
     kinds = {row.type for row in rows}
-    assert {EventType.MESSAGE, EventType.TOOL_CALL_START, EventType.TOOL_CALL_END} <= kinds
+    rows_of_a_turn = {EventType.MESSAGE, EventType.TOOL_CALL_START, EventType.TOOL_CALL_END}
+    assert rows_of_a_turn | {EventType.INSTRUCTION_READ} == kinds
     assert all(row.metadata.get("instruction") == _fingerprint(TEXT) for row in rows)
     await kit.close()
 

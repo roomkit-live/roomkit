@@ -908,6 +908,7 @@
     "DTMF": ["member", "'dtmf'"],
     "EDIT": ["member", "'edit'"],
     "INSTRUCTION": ["member", "'instruction'"],
+    "INSTRUCTION_READ": ["member", "'instruction_read'"],
     "MESSAGE": ["member", "'message'"],
     "OBSERVATION": ["member", "'observation'"],
     "PARTICIPANT_IDENTIFIED": ["member", "'participant_identified'"],

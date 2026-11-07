@@ -36,12 +36,13 @@ async def _room(kit: RoomKit | None = None) -> tuple[RoomKit, AIChannel]:
     return kit, agent
 
 
-async def _stored_text(kit: RoomKit) -> str:
+async def _stored_text(kit: RoomKit, kind: EventType = EventType.MESSAGE) -> str:
     events = await kit.store.list_events("call")
-    return " ".join(getattr(e.content, "body", "") for e in events)
+    return " ".join(getattr(e.content, "body", "") for e in events if e.type == kind)
 
 
-async def test_an_instruction_opens_the_agent_s_turn_and_is_not_stored() -> None:
+async def test_an_instruction_opens_the_agent_s_turn_and_is_not_stored_as_the_room_s() -> None:
+    """Only the agent keeps it, as its own row (RFC §10.1.1)."""
     kit, agent = await _room()
 
     outcome = await kit.deliver(
@@ -56,6 +57,7 @@ async def test_an_instruction_opens_the_agent_s_turn_and_is_not_stored() -> None
     assert told.startswith("[Instruction from the application")
     assert "order shipped" in told
     assert "order shipped" not in await _stored_text(kit)
+    assert "order shipped" in await _stored_text(kit, EventType.INSTRUCTION_READ)
     await kit.close()
 
 

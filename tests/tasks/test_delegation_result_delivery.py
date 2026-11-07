@@ -16,7 +16,7 @@ from typing import Any
 
 import pytest
 
-from roomkit import ChannelCategory, HookResult, HookTrigger, RoomKit, split_turn_notes
+from roomkit import ChannelCategory, EventType, HookResult, HookTrigger, RoomKit, split_turn_notes
 from roomkit.channels._realtime_context import _current_voice_session
 from roomkit.channels.agent import Agent
 from roomkit.channels.ai import AIChannel
@@ -150,7 +150,12 @@ async def test_the_result_is_not_stored_as_anyone_s_words() -> None:
     await _told(notified, 1)
 
     events = await kit.store.list_events("call")
-    assert not any("Findings." in getattr(e.content, "body", "") for e in events)
+    said = [e for e in events if e.type == EventType.MESSAGE]
+    assert not any("Findings." in getattr(e.content, "body", "") for e in said)
+    # The agent told it keeps its own copy, for its later turns (RFC §10.1.1).
+    [kept] = [e for e in events if e.type == EventType.INSTRUCTION_READ]
+    assert (kept.source.channel_id, kept.visibility) == ("assistant", "assistant")
+    assert "Findings." in kept.content.body  # type: ignore[union-attr]
     await kit.close()
 
 
@@ -250,7 +255,8 @@ async def test_a_supervisor_s_background_workers_hand_back_to_it() -> None:
     assert "a" * 4_000 in told and "a" * 4_001 not in told
     assert "Short." in told
     events = await kit.store.list_events("call")
-    assert not any("Short." in getattr(e.content, "body", "") for e in events)
+    said = [e for e in events if e.type == EventType.MESSAGE]
+    assert not any("Short." in getattr(e.content, "body", "") for e in said)
     await kit.close()
 
 

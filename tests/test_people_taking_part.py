@@ -36,6 +36,7 @@ from roomkit.channels._speaker import (
     people_note,
     people_taking_part,
 )
+from roomkit.channels._tool_history import EarlierTurns
 from roomkit.channels._turn_notes import split_turn_notes
 from roomkit.channels.ai import AIChannel
 from roomkit.channels.conference import ConferenceChannel
@@ -400,7 +401,7 @@ class TestTheAgentKnowsWhoIsThere:
         sizes = []
         for context in (one, two):
             loop_ctx = _ToolLoopContext()
-            channel._measure_turn(loop_ctx, context, None, [], None, rounds=[])
+            channel._measure_turn(loop_ctx, context, None, [], None, earlier=EarlierTurns())
             assert loop_ctx.turn_footprint is not None
             sizes.append(loop_ctx.turn_footprint.input_tokens)
 

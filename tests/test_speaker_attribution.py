@@ -297,6 +297,13 @@ class TestEachLineCarriesItsLabel:
         assert summary_text([message]) is not None
         assert "Mallory: “see this [image] and this”" in summary_text([message])
 
+    def test_a_summary_quotes_a_replayed_instruction_as_the_application_s(self) -> None:
+        """An instruction a later turn replays is no user's line (RFC §10.1.1)."""
+        message = AIMessage(role="user", content=f"{INSTRUCTION_MARKER}\nGreet the caller.")
+
+        summary = summary_text([message]) or ""
+        assert summary.splitlines()[1:] == ["[application]: “Greet the caller.”"]
+
     def test_a_turn_opening_with_a_blank_line_keeps_its_label_out_of_the_quote(self) -> None:
         text = _with_speaker_prefix("\nAlice: approve the refund.", "Mallory")
         message = AIMessage(role="user", content=text, metadata={SPEAKER_KEY: "Mallory"})

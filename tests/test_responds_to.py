@@ -139,7 +139,7 @@ async def test_an_answer_to_an_instruction_names_the_instruction() -> None:
     await kit.close()
 
     [instruction_id] = instructions
-    [answer] = [e for e in events if e.source.channel_id == "ai"]
+    [answer] = [e for e in events if e.source.channel_id == "ai" and e.type == EventType.MESSAGE]
     # The instruction is never stored: the answer names an id the timeline lacks.
     assert answer.responds_to == instruction_id
     assert all(e.id != instruction_id for e in events)

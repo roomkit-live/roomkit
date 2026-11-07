@@ -15,7 +15,7 @@ from roomkit.channels.voice import VoiceChannel
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage, InboundResult
-from roomkit.models.enums import ChannelCategory, ChannelType, HookTrigger
+from roomkit.models.enums import ChannelCategory, ChannelType, EventType, HookTrigger
 from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.models.room import Room
 from roomkit.orchestration._handoff_greeting import HandoffGreeting
@@ -284,7 +284,10 @@ async def test_a_handoff_cue_reaches_its_agent_under_the_framework_s_name() -> N
     await kit.close()
 
     answers = [e for e in await kit.store.list_events("r1") if e.source.channel_id == "b"]
-    assert [e.content.body for e in answers] == ["x"]
+    assert [(e.type, e.content.body) for e in answers] == [
+        (EventType.INSTRUCTION_READ, "Introduce yourself."),  # its own copy (RFC §10.1.1)
+        (EventType.MESSAGE, "x"),
+    ]
 
 
 def _handoff(room_id: str) -> RoomEvent:

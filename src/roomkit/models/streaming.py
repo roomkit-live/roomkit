@@ -20,6 +20,19 @@ from roomkit.models.enums import ToolCallOutcome
 
 
 @dataclass(slots=True)
+class InstructionReadMarker:
+    """Yielded first by a turn the application's instruction opened, with the
+    instruction's text as the turn read it (RFC §10.1.1).
+
+    The framework stores it as the channel's own ``INSTRUCTION_READ`` row,
+    visible to that channel alone, which its later turns replay where the
+    turn read it. No reader of the stream is handed it.
+    """
+
+    text: str
+
+
+@dataclass(slots=True)
 class ToolCallStartMarker:
     """Yielded when a tool call begins execution.
 
@@ -210,7 +223,8 @@ class LoopEndMarker:
 
 #: Union of all marker types that may appear in a streaming response.
 StreamMarker = (
-    ToolCallStartMarker
+    InstructionReadMarker
+    | ToolCallStartMarker
     | ToolCallEndMarker
     | ThinkingDeltaMarker
     | UsageMarker

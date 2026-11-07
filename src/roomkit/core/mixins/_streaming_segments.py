@@ -25,6 +25,7 @@ from roomkit.models.enums import EventDirection, EventStatus, EventType, Visibil
 from roomkit.models.event import EventSource, RoomEvent, TextContent, ToolCallContent
 from roomkit.models.response_metadata import recorded_turn_end
 from roomkit.models.streaming import (
+    InstructionReadMarker,
     LoopEndMarker,
     SegmentBreakMarker,
     ThinkingDeltaMarker,
@@ -552,7 +553,9 @@ class SegmentWriter:
         message.
         """
         rows: list[RoomEvent | None] = []
-        if isinstance(marker, ToolCallStartMarker):
+        if isinstance(marker, InstructionReadMarker):
+            rows = [await self.instruction_read(marker)]
+        elif isinstance(marker, ToolCallStartMarker):
             rows = [await self.flush_text(), await self.tool_start(marker)]
         elif isinstance(marker, SegmentBreakMarker):
             rows = [await self.flush_text()]
@@ -561,6 +564,15 @@ class SegmentWriter:
         elif isinstance(marker, LoopEndMarker):
             self.end_turn(marker)
         return [row for row in rows if row is not None]
+
+    async def instruction_read(self, marker: InstructionReadMarker) -> RoomEvent | None:
+        """The instruction the turn read, as the channel's own row: stored
+        before anything else of the turn, delivered to no channel and handed
+        to no reader of the stream, its visibility the channel alone, so that
+        no other agent's history reads it (RFC §10.1.1)."""
+        row = self._build(EventType.INSTRUCTION_READ, TextContent(body=marker.text))
+        own = self._sr.source_channel_id
+        return await self._write(row.model_copy(update={"visibility": own}), exclude=None)
 
     async def tool_start(self, marker: ToolCallStartMarker) -> RoomEvent | None:
         return await self._write(self._start_row(marker), exclude=set(self._streamed_to))

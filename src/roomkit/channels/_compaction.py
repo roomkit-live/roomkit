@@ -14,6 +14,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from roomkit._text import quoted
+from roomkit.channels._instruction import INSTRUCTION_MARKER
 from roomkit.channels._runtime_record import COMPACTION_HEADER as SUMMARY_HEADER
 from roomkit.channels._speaker import SPEAKER_KEY, said_by, with_said
 from roomkit.channels._tool_eviction import (
@@ -64,8 +65,20 @@ def summary_text(messages: list[AIMessage]) -> str | None:
     """The summary of *messages*, one line each, or ``None`` when there are none."""
     if not messages:
         return None
-    lines = [f"[{message.role}]: {_said(message)}" for message in messages]
+    lines = [_line(message) for message in messages]
     return "\n".join([SUMMARY_HEADER, *lines])
+
+
+def _line(message: AIMessage) -> str:
+    """One summarized message: who it is from, then what it said. The
+    application's instruction a later turn replays is the application's, never
+    a user's: it is quoted under that name, without its mark (RFC §10.1.1)."""
+    content = message.content
+    opening = f"{INSTRUCTION_MARKER}\n"
+    if message.role == "user" and isinstance(content, str) and content.startswith(opening):
+        said = named_blocks(content.removeprefix(opening))
+        return f"[application]: {quoted(said, _SUMMARY_MESSAGE_CHARS)}"
+    return f"[{message.role}]: {_said(message)}"
 
 
 def _part_said(text: str) -> str:

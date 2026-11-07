@@ -23,12 +23,12 @@ compaction does, when a provider refuses the context as too long.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from roomkit.channels._tool_eviction import eviction_placeholder_size, is_eviction_placeholder
 from roomkit.models.enums import EventType, ToolCallOutcome
-from roomkit.models.event import RoomEvent, ToolCallContent
+from roomkit.models.event import RoomEvent, TextContent, ToolCallContent
 from roomkit.providers.ai.base import AIMessage, AITextPart, AIToolCallPart, AIToolResultPart
 from roomkit.providers.ai.tool_intent import with_intent
 from roomkit.tools._open_calls import OpenCalls
@@ -121,6 +121,43 @@ def _round(
     )
 
 
+@dataclass(frozen=True)
+class EarlierTurns:
+    """What a turn's history replays of the channel's earlier turns beside
+    their messages, read from its own rows: their rounds of tool calls and
+    the instructions they read."""
+
+    rounds: list[ToolRound] = field(default_factory=list)
+    instructions: list[ReplayedInstruction] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class ReplayedInstruction:
+    """The application's instruction an earlier turn read: the timeline index
+    of the row the channel kept it in, the turn it opened (the row's
+    correlation id), and the message it reads as, the one that turn sent."""
+
+    index: int
+    turn: str | None
+    message: AIMessage
+
+
+def kept_instructions(
+    rows: list[RoomEvent], read_as: Callable[[str], str | None]
+) -> list[ReplayedInstruction]:
+    """The instructions *rows*, a channel's own rows oldest first, keep, each
+    as the user message *read_as* makes of its text (RFC §10.1.1)."""
+    kept: list[ReplayedInstruction] = []
+    for row in rows:
+        if row.type != EventType.INSTRUCTION_READ or not isinstance(row.content, TextContent):
+            continue
+        text = read_as(row.content.body)
+        if text is not None:
+            message = AIMessage(role="user", content=text)
+            kept.append(ReplayedInstruction(row.index, row.correlation_id, message))
+    return kept
+
+
 def with_tool_rounds(
     messages: list[AIMessage],
     indexes: list[int | None],
@@ -129,10 +166,11 @@ def with_tool_rounds(
     before: int | None,
     answered: int | None = None,
     said: Mapping[int, str] | None = None,
+    instructions: list[ReplayedInstruction] | None = None,
 ) -> tuple[list[AIMessage], list[int | None]]:
     """*messages*, the history's turns at the timeline *indexes*, with each of
-    *rounds* placed after the turns that came before it, and the indexes of
-    the result.
+    *rounds* and *instructions* placed after the turns that came before it,
+    and the indexes of the result.
 
     A round older than the history's first turn is not replayed: its turn's
     input is out of the window, and a history never opens on the assistant's
@@ -144,15 +182,28 @@ def with_tool_rounds(
     belongs to, by its index: a round right after a text of its own turn is
     the text the model wrote with its calls, and reads with them as the one
     message the turn sent, the text first.
+
+    An instruction reads where its turn read it, before what the turn wrote:
+    one after the history's first turn, or one whose turn the history holds,
+    which may then open the history (an instruction that opened the room).
     """
     known = [index for index in indexes if index is not None]
     if not known and answered is None:
         return messages, indexes
     start = min([*known[:1], *([] if answered is None else [answered])])
     placed = [r for r in rounds if r.index > start and (before is None or r.index < before)]
-    if not placed:
+    turns = {turn for turn in (*(said or {}).values(), *(r.turn for r in placed)) if turn}
+    read = [
+        kept
+        for kept in instructions or []
+        if (before is None or kept.index < before) and (kept.index > start or kept.turn in turns)
+    ]
+    if not placed and not read:
         return messages, indexes
     merged: list[tuple[int | None, AIMessage]] = list(zip(indexes, messages, strict=True))
+    for kept in read:
+        at = _position(merged, kept.index)
+        merged[at:at] = [(kept.index, kept.message)]
     for r in placed:
         at = _position(merged, r.index)
         if at and _spoken_with(merged[at - 1], r, said or {}):

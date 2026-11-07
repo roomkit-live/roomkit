@@ -42,8 +42,9 @@ ToolUsageLoader = Callable[[str], Awaitable[list[dict[str, Any]]]]
 """A room's stored tool calls, read to rebuild the channel's tool memory."""
 
 ToolHistoryLoader = Callable[[str, int], Awaitable[list["RoomEvent"]]]
-"""The channel's stored tool rows in a room after a timeline index, oldest
-first, read for the turn's history (RFC §6.4)."""
+"""The channel's own rows in a room a turn's history replays (its tool calls,
+the instructions it read), from the room's message before the given index
+on, oldest first (RFC §6.4, §10.1.1)."""
 
 RoomTasksLoader = Callable[[str], Awaitable[list[dict[str, Any]]]]
 """A room's background tasks as the StatusBus lists them, read for the turn's

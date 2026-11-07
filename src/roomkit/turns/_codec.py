@@ -20,6 +20,7 @@ from pydantic_core import from_json, to_json, to_jsonable_python
 from roomkit.models.channel import ChannelOutput
 from roomkit.models.response_metadata import ResponseMetadata
 from roomkit.models.streaming import (
+    InstructionReadMarker,
     LoopEndMarker,
     SegmentBreakMarker,
     ThinkingDeltaMarker,
@@ -87,6 +88,12 @@ _ITEM_KINDS = (
         lambda item, start: {"thinking": item.thinking},
         lambda data: ThinkingDeltaMarker(thinking=data["thinking"]),
         delta=True,
+    ),
+    _ItemKind(
+        "instruction_read",
+        InstructionReadMarker,
+        lambda item, start: {"text": item.text},
+        lambda data: InstructionReadMarker(text=data["text"]),
     ),
     _ItemKind("tool_start", ToolCallStartMarker, _encode_start, _decode_start),
     _ItemKind(

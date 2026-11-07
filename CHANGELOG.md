@@ -329,6 +329,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **BREAKING: an agent keeps the application's instruction its turn read, and its later
+  turns replay it where the turn read it** (RFC §10.1.1, HITL 5e89048c, 25b07f2a, RMK-1407).
+  An instruction was the turn's input, then absent from every later turn's history: the
+  next request no longer opened with the previous one, and a server that caches a
+  prompt's prefix reprocessed everything after it. An `AIChannel` now stores, first in its
+  answer, a row of its own, `EventType.INSTRUCTION_READ`, holding the instruction's text:
+  visible to it alone, delivered to no channel, never read by another agent's history,
+  and its later turns replay it, marked as the application's, before what that turn
+  wrote. The instruction itself is still never stored as the room's. A standalone
+  instruction is not kept. `get_timeline()` and `list_events()` return the row, and the
+  room's indexes and `event_count` count it; an instruction from before this version was
+  never kept and is not replayed. The row is counted in the turn's footprint, never in a
+  memory's window; an emergency compaction's summary quotes it as the application's. A
+  turn's stream carries it to the owner: owner and executors run the same version.
+
 - **BREAKING: a later turn replays each earlier round of tool calls as its turn sent
   it** (RFC §6.4, HITL 093113a1, 3c7ef9a2, RMK-1370). A turn's history replayed the last 8
   calls, the 3 most recent whole up to 6,000 characters and the older ones as a

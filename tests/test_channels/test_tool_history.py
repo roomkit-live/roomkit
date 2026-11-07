@@ -70,11 +70,13 @@ async def _turns(
     *texts: str,
     rooms: tuple[str, ...] = ("r1",),
     hooks: list[tuple[HookTrigger, _Hook]] = (),  # type: ignore[assignment]
+    instructed: frozenset[int] = frozenset(),
     **channel: Any,
 ) -> list[AIContext]:
     """*texts* sent one after the other into a room with an AI channel (the
-    nth into the nth of *rooms*, the last one for the rest); what the provider
-    received, round by round."""
+    nth into the nth of *rooms*, the last one for the rest), the nth as the
+    application's instruction to the agent when *instructed* holds n; what
+    the provider received, round by round."""
     kit = RoomKit()
     kit.register_channel(SimpleChannel("sms1"))
     kit.register_channel(
@@ -88,8 +90,14 @@ async def _turns(
         await kit.attach_channel(room, "ai1", category=ChannelCategory.INTELLIGENCE)
     try:
         for n, text in enumerate(texts):
+            instruction = {"event_type": EventType.INSTRUCTION, "addressed_to": ["ai1"]}
             await kit.process_inbound(
-                InboundMessage(channel_id="sms1", sender_id="u1", content=TextContent(body=text)),
+                InboundMessage(
+                    channel_id="sms1",
+                    sender_id="u1",
+                    content=TextContent(body=text),
+                    **(instruction if n in instructed else {}),  # type: ignore[arg-type]
+                ),
                 room_id=rooms[min(n, len(rooms) - 1)],
             )
     finally:
@@ -201,6 +209,29 @@ async def test_a_round_s_text_replays_with_its_calls_in_one_message(streaming: b
     opening, sent = _opening(calls[1], calls[2], "Answer one.")
     assert opening == sent
     assert calls[2].messages[: len(calls[1].messages)] == calls[1].messages
+
+
+async def test_a_later_turn_replays_an_instruction_at_its_place(streaming: bool) -> None:
+    """The application's instruction a turn took as its input reads, in a
+    later turn, where that turn sent it, marked as the application's: the
+    later request extends the instructed one (RFC §10.1.1)."""
+    provider = MockAIProvider(
+        ai_responses=[
+            _answer("Answer one."),
+            _round(("c1", "lookup", {"q": "a"})),
+            _answer("Answer two."),
+            _answer("Answer three."),
+        ],
+        streaming=streaming,
+    )
+
+    calls = await _turns(
+        provider, "first question", "Look it up now.", "third question", instructed=frozenset({1})
+    )
+
+    opening, sent = _opening(calls[2], calls[3], "Answer two.")
+    assert opening == sent
+    assert calls[3].messages[: len(calls[2].messages)] == calls[2].messages
 
 
 async def test_a_turn_in_another_room_replays_nothing_of_this_one(streaming: bool) -> None:

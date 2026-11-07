@@ -30,25 +30,47 @@ kit's floor for hooks does."""
 
 
 async def read_tool_rows(
-    store: ConversationStore,
-    room_id: str,
-    channel_id: str,
-    limit: int,
-    *,
-    after_index: int | None = None,
+    store: ConversationStore, room_id: str, channel_id: str, limit: int
 ) -> list[RoomEvent]:
-    """*channel_id*'s stored tool rows in the room, oldest first: its latest
-    *limit*, or its first *limit* after *after_index*."""
-    tools = EventFilter(
-        event_types=[EventType.TOOL_CALL_START, EventType.TOOL_CALL_END],
+    """*channel_id*'s latest *limit* stored tool rows in the room, oldest first."""
+    return await store.get_timeline(
+        room_id,
+        event_filter=EventFilter(
+            event_types=[EventType.TOOL_CALL_START, EventType.TOOL_CALL_END],
+            source_channel_id=channel_id,
+        ),
+        limit=limit,
+        newest_first=True,  # most recent N, returned ascending
+    )
+
+
+async def read_history_rows(
+    store: ConversationStore, room_id: str, channel_id: str, *, after_index: int, limit: int
+) -> list[RoomEvent]:
+    """*channel_id*'s own rows a turn's history replays, its tool calls and
+    the instructions it read, the first *limit* after *after_index*."""
+    own = EventFilter(
+        event_types=[
+            EventType.TOOL_CALL_START,
+            EventType.TOOL_CALL_END,
+            EventType.INSTRUCTION_READ,
+        ],
         source_channel_id=channel_id,
     )
-    if after_index is not None:
-        return await store.get_timeline(
-            room_id, event_filter=tools, limit=limit, after_index=after_index
-        )
-    # The most recent *limit*, returned ascending.
-    return await store.get_timeline(room_id, event_filter=tools, limit=limit, newest_first=True)
+    return await store.get_timeline(
+        room_id, event_filter=own, limit=limit, after_index=after_index
+    )
+
+
+async def read_message_before(store: ConversationStore, room_id: str, index: int) -> int:
+    """The index of the room's last message before *index*, -1 for none."""
+    before = await store.list_events(
+        room_id,
+        limit=1,
+        before_index=index,
+        event_filter=EventFilter(event_types=[EventType.MESSAGE], include_blocked=True),
+    )
+    return before[-1].index if before else -1
 
 
 class WiringEnv(ABC):
@@ -71,11 +93,20 @@ class WiringEnv(ABC):
         be reused. Raises when it cannot be built."""
 
     @abstractmethod
-    async def tool_rows(
-        self, room_id: str, channel_id: str, limit: int, *, after_index: int | None = None
+    async def tool_rows(self, room_id: str, channel_id: str, limit: int) -> list[RoomEvent]:
+        """The channel's latest stored tool rows in the room, oldest first."""
+
+    @abstractmethod
+    async def history_rows(
+        self, room_id: str, channel_id: str, *, after_index: int, limit: int
     ) -> list[RoomEvent]:
-        """The channel's stored tool rows in the room, oldest first: its
-        latest *limit*, or its first *limit* after *after_index*."""
+        """The channel's own rows a turn's history replays (its tool calls,
+        the instructions it read), the first *limit* after *after_index*,
+        oldest first."""
+
+    @abstractmethod
+    async def message_before(self, room_id: str, index: int) -> int:
+        """The index of the room's last message before *index*, -1 for none."""
 
     def realtime(self) -> RealtimeBackend | None:
         """Where a channel's publication made outside a turn goes, ``None``
@@ -142,12 +173,18 @@ class StoreWiringEnv(WiringEnv):
             author_register=register,
         )
 
-    async def tool_rows(
-        self, room_id: str, channel_id: str, limit: int, *, after_index: int | None = None
+    async def tool_rows(self, room_id: str, channel_id: str, limit: int) -> list[RoomEvent]:
+        return await read_tool_rows(self._shared_store(), room_id, channel_id, limit)
+
+    async def history_rows(
+        self, room_id: str, channel_id: str, *, after_index: int, limit: int
     ) -> list[RoomEvent]:
-        return await read_tool_rows(
-            self._shared_store(), room_id, channel_id, limit, after_index=after_index
+        return await read_history_rows(
+            self._shared_store(), room_id, channel_id, after_index=after_index, limit=limit
         )
+
+    async def message_before(self, room_id: str, index: int) -> int:
+        return await read_message_before(self._shared_store(), room_id, index)
 
     def _shared_store(self) -> ConversationStore:
         if self._store is None:

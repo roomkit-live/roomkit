@@ -130,6 +130,9 @@ class EventType(StrEnum):
     # Tool call lifecycle
     TOOL_CALL_START = "tool_call_start"
     TOOL_CALL_END = "tool_call_end"
+    # The application's instruction an agent's turn read, kept by that agent
+    # alone, which its later turns replay at its place (RFC §10.1.1).
+    INSTRUCTION_READ = "instruction_read"
     # Voice pipeline events
     DTMF = "dtmf"
     RECORDING_STARTED = "recording_started"

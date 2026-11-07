@@ -57,7 +57,12 @@ from roomkit.channels._speaker import (
 from roomkit.channels._task_planner import TaskPlanner
 from roomkit.channels._tasks_note import render_tasks_note
 from roomkit.channels._tool_eviction import ToolEviction
-from roomkit.channels._tool_history import ToolRound, tool_rounds, with_tool_rounds
+from roomkit.channels._tool_history import (
+    EarlierTurns,
+    kept_instructions,
+    tool_rounds,
+    with_tool_rounds,
+)
 from roomkit.channels._tool_search import search_tool_defs, should_activate_tool_search
 from roomkit.channels._tool_search_constants import TOOL_SEARCH_PREAMBLE
 from roomkit.channels._turn_budget import TurnBudget, turn_budget
@@ -276,12 +281,17 @@ class AIContextMixin(_AIChannelContract):
 
         own_notes = await self._own_notes(loop_ctx, context, standalone=standalone)
         own_notes += discussion_notes(event)
-        rounds = await self._replayed_rounds(event, context, standalone)
+        earlier = await self._earlier_turns(event, context, standalone)
         self._measure_turn(
-            loop_ctx, context, system_prompt, own_notes, settings.get("max_tokens"), rounds=rounds
+            loop_ctx,
+            context,
+            system_prompt,
+            own_notes,
+            settings.get("max_tokens"),
+            earlier=earlier,
         )
         messages = await self._turn_conversation(
-            event, context, loop_ctx, standalone, own_notes, rounds
+            event, context, loop_ctx, standalone, own_notes, earlier
         )
         loop_ctx.turn_input = turn_input(messages)
 
@@ -359,10 +369,11 @@ class AIContextMixin(_AIChannelContract):
         loop_ctx: _ToolLoopContext,
         standalone: bool,
         own_notes: list[str],
-        rounds: list[ToolRound],
+        earlier: EarlierTurns,
     ) -> list[AIMessage]:
         """The conversation the model reads this turn: the history this channel
-        sees, its earlier *rounds* of tool calls at their place in it, then the
+        sees, what it replays of its *earlier* turns (their rounds of tool
+        calls, the instructions they read) at their place in it, then the
         input carrying the turn's notes, the channel's own (*own_notes*) after
         what the memory retrieved. The notes' header is the
         channel's alone: a copy the conversation holds is replaced (RFC §6.4).
@@ -373,7 +384,7 @@ class AIContextMixin(_AIChannelContract):
         loop_ctx.author_images = await self._author_images(event, memory_result)
         people = self._people(context, standalone)
         messages, attribute_speakers, requester = self._turn_messages(
-            event, context, memory_result, loop_ctx, people, rounds
+            event, context, memory_result, loop_ctx, people, earlier
         )
         # Who a task this turn delegates names as having asked (RFC §19.7).
         loop_ctx.requester = requester
@@ -515,11 +526,12 @@ class AIContextMixin(_AIChannelContract):
         memory_result: MemoryResult,
         loop_ctx: _ToolLoopContext,
         people: tuple[str, ...],
-        rounds: list[ToolRound],
+        earlier: EarlierTurns,
     ) -> tuple[list[AIMessage], bool, str | None]:
-        """The turn's messages, its history with the channel's earlier *rounds*
-        of tool calls at their place, then its input, whether several speakers
-        are labelled in them, and the label of the turn's author when they are.
+        """The turn's messages, its history with what it replays of its
+        *earlier* turns at their place, then its input, whether several
+        speakers are labelled in them, and the label of the turn's author when
+        they are.
 
         ``_determine_role`` flattens every non-self event into one "user"
         stream, which erases who said what in a room where several people
@@ -553,11 +565,12 @@ class AIContextMixin(_AIChannelContract):
         past, past_indexes = with_tool_rounds(
             past,
             past_indexes,
-            rounds,
+            earlier.rounds,
             before=_rounds_before(event),
             # An event that reads as nothing opens no history for a round.
             answered=_answered_index(event) if current_content else None,
             said=self._own_turns(memory_result),
+            instructions=earlier.instructions,
         )
         messages: list[AIMessage] = [*memory, *past]
 
@@ -634,10 +647,7 @@ class AIContextMixin(_AIChannelContract):
             # re-roled by several model APIs — marked so the model never reads
             # it as a participant's words. The pipeline records on each reply
             # which instruction produced it (step 6).
-            instruction = text_form(event.content)
-            current_content = (
-                mark_instruction(without_mark_copies(instruction)) if instruction else None
-            )
+            current_content = _instruction_input(text_form(event.content))
             current_speaker = None
         return current_content, current_speaker
 
@@ -689,36 +699,38 @@ class AIContextMixin(_AIChannelContract):
         plan = self._planner.plan_for(room_id)
         return [TaskPlanner.format_plan_prompt(plan)] if plan else []
 
-    async def _replayed_rounds(
+    async def _earlier_turns(
         self, event: RoomEvent, context: RoomContext, standalone: bool
-    ) -> list[ToolRound]:
-        """This channel's earlier rounds of tool calls in the room, which the
-        turn's history replays at their place (RFC §6.4); none for a
-        standalone turn, which reads nothing of the room (RFC §10.1.1).
+    ) -> EarlierTurns:
+        """What the turn's history replays of this channel's earlier turns in
+        the room, at their place: their rounds of tool calls (RFC §6.4) and the
+        instructions they read (RFC §10.1.1); nothing for a standalone turn,
+        which reads nothing of the room.
 
         Read from the store every turn, the channel's own rows only: what a
         call asked and returned outlives the channel object, and a model reads
         it the way the turn that made the call did. Every row from the room's
-        context on, or from the event a discussion's turn answers: the history
-        the memory reads lies within it, and a round before it is never
-        replayed.
+        message before its context, or before the event a discussion's turn
+        answers: the history the memory reads lies within it, and the
+        instruction that opened its first turn just before.
         """
         if standalone or self._tool_history_loader is None:
-            return []
+            return EarlierTurns()
         answered = _answered_index(event)
         known = [past.index for past in context.recent_events]
         known += [] if answered is None else [answered]
         if not known:
-            return []
+            return EarlierTurns()
         try:
-            rows = await self._tool_history_loader(event.room_id, min(known) - 1)
+            rows = await self._tool_history_loader(event.room_id, min(known))
         except Exception:
             # A store that fails costs the turn its earlier calls, not the turn.
             logger.warning(
                 "Could not read room %s's tool calls for its turn", event.room_id, exc_info=True
             )
-            return []
-        return tool_rounds(rows, resolves=self._eviction.holds, intents=self._tool_call_intents)
+            return EarlierTurns()
+        rounds = tool_rounds(rows, resolves=self._eviction.holds, intents=self._tool_call_intents)
+        return EarlierTurns(rounds, kept_instructions(rows, _instruction_input))
 
     async def _tasks_notes(
         self, loop_ctx: _ToolLoopContext, context: RoomContext, *, standalone: bool
@@ -973,16 +985,17 @@ class AIContextMixin(_AIChannelContract):
         own_notes: list[str],
         max_tokens: object,
         *,
-        rounds: list[ToolRound],
+        earlier: EarlierTurns,
     ) -> None:
         """Measure what the turn takes of the window besides its history, as
         round 0 will send it, before the memory reads the room (RFC §20): the
         system prompt, the tools declared (Tool Search's collapse and the
         re-read tool included), the channel's notes with room for the speaker
         attribution, the people taking part and the cut answer's note the
-        history may call for, the images the input replays, the earlier
-        *rounds* of tool calls the history replays (all of them: the window
-        may drop some, never add one), and the reply budget."""
+        history may call for, the images the input replays, what the history
+        replays of the *earlier* turns, their rounds of tool calls and the
+        instructions they read (all of them: the window may drop some, never
+        add one), and the reply budget."""
         declared = self._eviction.with_reread_tool(
             self._apply_tool_filters(list(loop_ctx.all_context_tools or []))
         )
@@ -997,8 +1010,9 @@ class AIContextMixin(_AIChannelContract):
             + (estimate_message_tokens(AIMessage(role="user", content=images)) if images else 0)
             + sum(
                 estimate_message_tokens(r.calls) + estimate_message_tokens(r.results)
-                for r in rounds
-            ),
+                for r in earlier.rounds
+            )
+            + sum(estimate_message_tokens(kept.message) for kept in earlier.instructions),
             reply_tokens=_reply_tokens(max_tokens),
         )
 
@@ -1226,6 +1240,14 @@ def _reply_tokens(max_tokens: object) -> int:
         return AIContext.model_validate({"max_tokens": max_tokens}).max_tokens or 0
     except ValidationError:
         return 0
+
+
+def _instruction_input(text: str) -> str | None:
+    """The turn's input an instruction's *text* reads as, marked as the
+    application's, its copies of the runtime's marks replaced; ``None`` for a
+    text that reads as nothing. One form for the turn the instruction opens
+    and for the later turns that replay it (RFC §10.1.1)."""
+    return mark_instruction(without_mark_copies(text)) if text else None
 
 
 def _rounds_before(event: RoomEvent) -> int | None:

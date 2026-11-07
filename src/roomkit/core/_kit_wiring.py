@@ -12,7 +12,12 @@ from typing import TYPE_CHECKING, Any
 
 from roomkit.channels._video_hooks import room_vision_note
 from roomkit.core.visibility import binding_reaches_room
-from roomkit.turns._wiring_env import WiringEnv, read_tool_rows
+from roomkit.turns._wiring_env import (
+    WiringEnv,
+    read_history_rows,
+    read_message_before,
+    read_tool_rows,
+)
 from roomkit.turns.base import OwnerEvents
 
 if TYPE_CHECKING:
@@ -42,13 +47,21 @@ class KitWiringEnv(WiringEnv):
     async def context(self, room_id: str, *, carrying: RoomContext | None = None) -> RoomContext:
         return await self._kit._build_context(room_id, carrying=carrying)
 
-    async def tool_rows(
-        self, room_id: str, channel_id: str, limit: int, *, after_index: int | None = None
+    async def tool_rows(self, room_id: str, channel_id: str, limit: int) -> list[RoomEvent]:
+        with self._kit._resource_lease():
+            return await read_tool_rows(self._kit._store, room_id, channel_id, limit)
+
+    async def history_rows(
+        self, room_id: str, channel_id: str, *, after_index: int, limit: int
     ) -> list[RoomEvent]:
         with self._kit._resource_lease():
-            return await read_tool_rows(
-                self._kit._store, room_id, channel_id, limit, after_index=after_index
+            return await read_history_rows(
+                self._kit._store, room_id, channel_id, after_index=after_index, limit=limit
             )
+
+    async def message_before(self, room_id: str, index: int) -> int:
+        with self._kit._resource_lease():
+            return await read_message_before(self._kit._store, room_id, index)
 
     def realtime(self) -> RealtimeBackend | None:
         return self._kit._realtime

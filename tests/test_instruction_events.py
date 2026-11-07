@@ -104,7 +104,12 @@ def _last_input(provider: MockAIProvider) -> str:
 
 
 @pytest.mark.parametrize("streaming", [False, True])
-async def test_the_room_holds_the_agents_reply_and_never_the_instruction(streaming: bool):
+async def test_the_room_holds_the_agents_reply_and_its_own_copy_never_the_instruction(
+    streaming: bool,
+):
+    """The instruction is never stored as the application's event; the agent
+    keeps its own copy, visible to it alone, which no channel is delivered
+    (RFC §10.1.1)."""
     kit, speaker, provider = await _kit(streaming=streaming)
 
     result = await kit.process_inbound(_instruction(), room_id=ROOM)
@@ -112,18 +117,23 @@ async def test_the_room_holds_the_agents_reply_and_never_the_instruction(streami
     assert not result.blocked
     stored = await _messages(kit)
     assert [(e.type, e.source.channel_id, e.content.body) for e in stored] == [
-        (EventType.MESSAGE, "agent", "Bonjour, je suis Paul.")
+        (EventType.INSTRUCTION_READ, "agent", INSTRUCTION),
+        (EventType.MESSAGE, "agent", "Bonjour, je suis Paul."),
     ]
+    copy, reply = stored
+    assert copy.visibility == "agent"
     # A fingerprint, never the text: the reply is stored and fanned out.
-    assert stored[0].metadata["instruction"] == FINGERPRINT
-    assert all(INSTRUCTION not in e.model_dump_json() for e in stored)
+    assert reply.metadata["instruction"] == FINGERPRINT
+    assert INSTRUCTION not in reply.model_dump_json()
     assert speaker.delivered == ["Bonjour, je suis Paul."]
     room = await kit.get_room(ROOM)
     assert room.event_count == len(await kit.store.list_events(ROOM))
     await kit.close()
 
 
-async def test_the_model_reads_it_as_the_applications_direction_for_one_turn():
+async def test_the_model_reads_it_as_the_applications_direction_then_where_it_read_it():
+    """A later turn replays it as the turn read it, before that turn's reply:
+    the later request extends the instructed one (RFC §10.1.1)."""
     kit, _speaker, provider = await _kit()
 
     await kit.process_inbound(_instruction(), room_id=ROOM)
@@ -136,7 +146,11 @@ async def test_the_model_reads_it_as_the_applications_direction_for_one_turn():
         room_id=ROOM,
     )
     later = provider.calls[-1].messages
-    assert all(INSTRUCTION not in str(m.content) for m in later)
+    assert [(m.role, m.content) for m in later] == [
+        ("user", directed),
+        ("assistant", "Bonjour, je suis Paul."),
+        ("user", "Merci"),
+    ]
     await kit.close()
 
 
@@ -290,8 +304,8 @@ async def test_send_event_directs_an_agent_the_same_way(idempotency_key: str | N
         idempotency_key=idempotency_key,
     )
 
-    stored = await _messages(kit)
-    assert [(e.source.channel_id, e.metadata.get("instruction")) for e in stored] == [
+    replies = [e for e in await _messages(kit) if e.type == EventType.MESSAGE]
+    assert [(e.source.channel_id, e.metadata.get("instruction")) for e in replies] == [
         ("agent", FINGERPRINT)
     ]
     assert speaker.delivered == ["Bonjour, je suis Paul."]

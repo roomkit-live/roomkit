@@ -28,6 +28,7 @@ from roomkit.channels._ai_loop_rules import (
 from roomkit.channels._ai_stream_external_tools import _ExternalStreamTools
 from roomkit.channels._ai_stream_round import _StreamRound, _StreamRoundState
 from roomkit.channels._ai_tools import call_end_marker
+from roomkit.channels._instruction import kept_instruction
 from roomkit.channels._mark_copies import compile_mark_patterns, without_mark_copies
 from roomkit.channels._note_blocks import add_turn_note
 from roomkit.channels._turn_notes import carries_turn_images
@@ -36,6 +37,7 @@ from roomkit.core.task_utils import shielded
 from roomkit.models.channel import ChannelOutput
 from roomkit.models.event import RoomEvent
 from roomkit.models.streaming import (
+    InstructionReadMarker,
     LoopEndMarker,
     LoopEndReason,
     SegmentBreakMarker,
@@ -362,6 +364,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                 ai_context,
                 parent_loop_ctx=_current_loop_ctx.get(),
                 parent_span_id=get_current_span(),
+                instruction=kept_instruction(event),
             ),
             response_metadata=ai_context.response_metadata,
         )
@@ -670,8 +673,13 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         *,
         parent_loop_ctx: _ToolLoopContext | None = None,
         parent_span_id: str | None = None,
+        instruction: str | None = None,
     ) -> AsyncGenerator[StreamDelta, None]:
-        """Orchestrate generation, termination decisions and local tool rounds."""
+        """Orchestrate generation, termination decisions and local tool rounds.
+
+        *instruction* is the application's instruction the turn read, which
+        the stream hands the framework first, to keep as the channel's own row
+        for its later turns (RFC §10.1.1)."""
         # A loop driven without a built context (a realtime reasoning turn)
         # cleans what steering injects with patterns not compiled yet.
         await compile_mark_patterns()
@@ -682,6 +690,8 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
             if cancelled:
                 yield turn.end("cancelled")
                 return
+            if instruction is not None:
+                yield InstructionReadMarker(text=instruction)
             rules = self._new_loop_state(
                 "Streaming tool loop", turn.timeout_seconds, loop_ctx.turn_budget
             )

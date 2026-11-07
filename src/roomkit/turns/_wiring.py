@@ -61,8 +61,8 @@ TOOL_MEMORY_CALLS = 30
 """Calls a channel's stored tool rows are read for to rebuild its tool memory
 (the 12 tools re-revealed), after the infra rows are filtered out."""
 
-_TOOL_ROWS_PAGE = 500
-"""Tool rows a turn's history reads from the store at a time."""
+_HISTORY_ROWS_PAGE = 500
+"""A channel's own rows a turn's history reads from the store at a time."""
 
 
 def _standing_decision(event: SpeakDecisionEvent, result: SyncPipelineResult) -> SpeakDecision:
@@ -285,10 +285,12 @@ class TurnWiring:
         return _load
 
     def build_tool_history_loader(self, channel_id: str) -> ToolHistoryLoader:
-        """The reader of AI channel *channel_id*'s tool rows in a room after a
-        timeline index, for the turn's history (RFC §6.4): every one of them,
-        read page by page, since a later turn replays every round its history
-        holds.
+        """The reader of AI channel *channel_id*'s own rows a turn's history
+        replays in a room (RFC §6.4, §10.1.1): its tool rows and the
+        instructions its turns read, every one from the room's message before
+        the history's first event on, read page by page, since a later turn
+        replays all its history holds, the instruction that opened the first
+        of its turns included.
 
         Only the channel's own rows, for the reason the usage loader gives;
         a deleted row is withheld, as from any history (RFC §7.5 rule 8).
@@ -297,16 +299,17 @@ class TurnWiring:
         """
         env = self.env
 
-        async def _load(room_id: str, after_index: int) -> list[RoomEvent]:
+        async def _load(room_id: str, first: int) -> list[RoomEvent]:
+            after = await env.message_before(room_id, first)
             rows: list[RoomEvent] = []
             while True:
-                page = await env.tool_rows(
-                    room_id, channel_id, _TOOL_ROWS_PAGE, after_index=after_index
+                page = await env.history_rows(
+                    room_id, channel_id, after_index=after, limit=_HISTORY_ROWS_PAGE
                 )
                 rows += page
-                if len(page) < _TOOL_ROWS_PAGE:
+                if len(page) < _HISTORY_ROWS_PAGE:
                     return withheld(rows)
-                after_index = page[-1].index
+                after = page[-1].index
 
         return _load
 
