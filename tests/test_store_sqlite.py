@@ -945,15 +945,16 @@ async def test_a_record_the_model_cannot_read_serves_no_read(
 
 
 async def _read_by_id(store: SQLiteStore, door: str) -> object:
-    """Reach the identity i1's record by its id through *door*, create_identity for acme;
-    the kit's resolve_participant and the store's link_address and unlink_address name no
+    """Reach the identity i1's record by its id through *door*; create_identity, the kit's
+    resolve_participant and the store's link_address and unlink_address name no
     organization, as a caller naming one learns nothing of the record
     (test_resolve_participant_for_an_organization_finds_no_unreadable_identity,
-    test_link_and_unlink_for_an_organization_find_no_unreadable_identity)."""
+    test_link_and_unlink_for_an_organization_find_no_unreadable_identity,
+    test_create_identity_for_an_organization_finds_no_unreadable_identity)."""
     if door == "get_identity":
         return await store.get_identity("i1")
     if door == "create_identity":
-        return await store.create_identity(Identity(id="i1", organization_id="acme"))
+        return await store.create_identity(Identity(id="i1"))
     if door == "link_address":
         return await store.link_address("i1", "sms", "+2")
     if door == "unlink_address":
@@ -1064,6 +1065,37 @@ async def test_link_and_unlink_for_an_organization_find_no_unreadable_identity(
     try:
         with pytest.raises(IdentityNotFoundError) as refused:
             await getattr(store, door)("i1", "sms", address, organization_id=organization_id)
+    finally:
+        await store.close()
+    assert str(refused.value) == "Identity i1 not found"
+    assert refused.value.__context__ is None
+    assert _address_rows(path) == [("+1555", "i1", "globex")]
+    conn = sqlite3.connect(path)
+    assert conn.execute("SELECT data FROM identities WHERE id = 'i1'").fetchone() == (record,)
+    conn.close()
+
+
+@pytest.mark.parametrize("organization_id", ["globex", "acme"])
+async def test_create_identity_for_an_organization_finds_no_unreadable_identity(
+    tmp_path: Path, organization_id: str
+) -> None:
+    """HITL cc6072ea: an identity created for an organization over an id whose record the
+    model cannot read reads IdentityNotFoundError, as over a readable record of another
+    organization: the record proves no organization, even the caller's own, and the
+    store's fixed error would tell another organization that the id exists (RFC §17.2).
+    Nothing is written."""
+    path = tmp_path / "older.db"
+    store = SQLiteStore(path)
+    identity = Identity(id="i1", organization_id="globex", channel_addresses={"sms": ["+1555"]})
+    await store.create_identity(identity)
+    record = _UNREADABLE_RECORDS[2]
+    _spoil_the_record(path, record)
+    replacing = Identity(
+        id="i1", organization_id=organization_id, channel_addresses={"sms": ["+2"]}
+    )
+    try:
+        with pytest.raises(IdentityNotFoundError) as refused:
+            await store.create_identity(replacing)
     finally:
         await store.close()
     assert str(refused.value) == "Identity i1 not found"

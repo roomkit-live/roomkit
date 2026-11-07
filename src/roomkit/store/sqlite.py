@@ -2140,11 +2140,7 @@ class SQLiteStore(ConversationStore):
         conn = self._db()
         scope = identity.organization_id or ""
         with _write_transaction(conn):
-            # It replaces the stored identity within its organization only (RFC
-            # §5.6, §17.2): an identity of another is never overwritten.
-            held = self._x_get_identity(identity.id)
-            if held is not None:
-                link_target(held, identity.id, identity.organization_id)
+            self._x_refuse_foreign_identity(identity)
             for channel_type, addresses in identity.channel_addresses.items():
                 for address in addresses:
                     self._x_refuse_held_address(channel_type, address, scope, identity.id)
@@ -2166,6 +2162,25 @@ class SQLiteStore(ConversationStore):
                     )
             self._x_drop_addresses_no_longer_held(conn, identity, scope)
         return identity
+
+    def _x_refuse_foreign_identity(self, identity: Identity) -> None:
+        """Refuse *identity* when the store holds its id for another organization: it
+        replaces the stored identity within its organization only (RFC §5.6, §17.2), an
+        identity of another is never overwritten (``link_target``). A caller naming an
+        organization reads ``IdentityNotFoundError`` for a record the model cannot read,
+        which proves no organization: the fixed error would tell that the id exists
+        (HITL cc6072ea). A caller naming none keeps the fixed error."""
+        try:
+            held = self._x_get_identity(identity.id)
+        except ValueError:
+            if not identity.organization_id:
+                raise
+            held, readable = None, False
+        else:
+            readable = True
+        if held is not None or not readable:
+            # Raised outside the handler: the store's error is not even its context.
+            link_target(held, identity.id, identity.organization_id)
 
     @staticmethod
     def _x_drop_addresses_no_longer_held(
