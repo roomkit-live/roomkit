@@ -10,6 +10,7 @@ the regeneration with a result rather than a bare ``TimeoutError``.
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any
 
 import pytest
@@ -225,6 +226,46 @@ async def test_a_room_closed_while_the_regeneration_waits_refuses_it_before_the_
     assert (result.blocked, result.reason) == (True, "room_closed")
     assert slow.started == started_at_close
     assert "regenerate" in [e.data.get("operation") for e in refused]
+
+
+async def test_a_regeneration_whose_room_read_fails_in_the_lane_is_logged_at_error(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The room's read failing once the lane takes the regeneration, no
+    agent runs and the failure is the call's error (RFC §11.7.6, §13.6); the
+    lane logs the plan that raised once, at ERROR with its traceback (RFC
+    §15.2, RMK-1513)."""
+    kit, _, slow = await _kit_with("ai", pause=0.0)
+    await kit.process_inbound(_message())
+    get_room = kit.store.get_room
+    enqueue_regeneration = kit._enqueue_regeneration
+
+    async def failing_once(room_id: str) -> Any:
+        monkeypatch.setattr(kit.store, "get_room", get_room)
+        raise RuntimeError("store down")
+
+    def enqueued(*args: Any, **kwargs: Any) -> Any:
+        # The choice is made: the lane's read of the room is the next one.
+        plan = enqueue_regeneration(*args, **kwargs)
+        monkeypatch.setattr(kit.store, "get_room", failing_once)
+        return plan
+
+    monkeypatch.setattr(kit, "_enqueue_regeneration", enqueued)
+    with caplog.at_level(logging.DEBUG, logger="roomkit"):
+        result = await kit.regenerate_response("r")
+    await kit.close()
+
+    lines = [
+        (record.name, record.levelname, record.getMessage(), record.exc_info is not None)
+        for record in caplog.records
+        if record.name.startswith("roomkit") and record.levelno >= logging.WARNING
+    ]
+    assert lines == [
+        ("roomkit.lanes", "ERROR", "Delivery execution failed for room r index None", True)
+    ]
+    assert result is not None
+    assert (result.blocked, str(result.error)) == (False, "store down")
+    assert slow.started == 1  # the first message's turn alone
 
 
 @pytest.mark.parametrize("door", ["regenerate", "send_event"])
