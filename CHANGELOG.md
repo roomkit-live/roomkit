@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- A `delegate_task` call's task is set apart in `<task>`, under `Your task, as the delegating agent wrote it:`, once a block follows it in its worker's brief (RFC §6.4, HITL 90c4e28a, RMK-1418): a task its model wrote could imitate the block after it, such as the room's conversation with a line in someone else's name. A task with no block after it is still the worker's instruction as written.
 - **A tag's separator in another form no longer closes its block** (RFC §6.4, HITL
   6004cc75, eb4462f6, RMK-1320). `fence` read a tag name's letters in every form but its
   separator only as written: an MCP server's instructions, a tool's result or a worker's

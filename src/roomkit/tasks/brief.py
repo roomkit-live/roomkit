@@ -10,7 +10,9 @@ on a host's ``delegate``, the calling agent too on a ``delegate_task`` call.
 
 A ``delegate_task`` call's brief carries what its model passed with the task
 and its agent's previous tasks, set apart as data the same way: a model wrote
-them, and they may hold what a tool returned (RFC §6.4).
+them, and they may hold what a tool returned (RFC §6.4). Its task, which the
+model wrote too, is set apart in a frame of its own once a block follows it,
+so that it cannot read as one of the runtime's blocks after it.
 """
 
 from __future__ import annotations
@@ -40,6 +42,10 @@ hand-back bounds what a worker returns."""
 
 PREVIOUS_TASKS_TAG = "previous_tasks"
 """The tag the calling agent's previous tasks are set apart in."""
+
+TASK_TAG = "task"
+"""The tag a ``delegate_task`` call's task is set apart in, once a block
+follows it."""
 
 
 def _quoted_line(tag: str, text: str) -> str:
@@ -115,10 +121,14 @@ def previous_tasks_block(tasks: list[str]) -> str | None:
 
 
 def task_brief(task: str, *blocks: str | None) -> str | None:
-    """A ``delegate_task`` call's brief: its *task*, then the *blocks* it has;
-    ``None`` when it has none, for the worker to read the task as it is."""
+    """A ``delegate_task`` call's brief: its *task*, set apart as its model
+    wrote it, then the *blocks* it has; ``None`` when it has none, for the
+    worker to read the task as it is, its whole instruction (RFC §6.4)."""
     held = [block for block in blocks if block]
-    return "\n\n".join([task, *held]) if held else None
+    if not held:
+        return None
+    framed = "Your task, as the delegating agent wrote it:\n" + fence(TASK_TAG, task)
+    return "\n\n".join([framed, *held])
 
 
 def worker_description(task: str, brief: str | None, conversation: str | None) -> str:

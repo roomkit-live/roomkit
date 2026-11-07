@@ -204,7 +204,9 @@ class TestDelegateHandlerWithCache:
         await kit.close()
 
         read = worker.calls[0].messages[-1].content
-        assert read.startswith("do more work\n\n")
+        assert read.startswith(
+            "Your task, as the delegating agent wrote it:\n<task>\ndo more work\n</task>\n\n"
+        )
         assert '<previous_tasks>\n"previous task"\n</previous_tasks>' in read
 
 
