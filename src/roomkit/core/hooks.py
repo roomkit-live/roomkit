@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import functools
 import logging
 from collections.abc import Awaitable, Callable, Coroutine, Iterable
 from dataclasses import dataclass, field, replace
@@ -482,7 +483,11 @@ async def _run_body(
             await _hook_body(hook, event, context)
 
 
-async def _hook_body(hook: HookRegistration, *args: Any) -> Any:
+async def _hook_body(
+    hook: HookRegistration,
+    *args: Any,
+    timed_out_then_cut: Callable[[], Awaitable[None]] | None = None,
+) -> Any:
     """*hook*'s body on *args* within its timeout, the room locks its caller
     holds and the admission orders it stands in (an off-lock hook's) lent to
     it while it runs: a task it starts acts for it until it returns, and
@@ -492,7 +497,10 @@ async def _hook_body(hook: HookRegistration, *args: Any) -> Any:
     for once the body is over, however it ended, its own timeout included,
     before its outcome is handed on: it commits ahead of the event. The
     section's deadline passing meanwhile, or while the body runs, cuts the
-    nested calls not committed yet (:mod:`roomkit.core._nested_calls`)."""
+    nested calls not committed yet (:mod:`roomkit.core._nested_calls`); a
+    body that timed out before is reported then, *timed_out_then_cut*,
+    ahead of what cut its section, as roomkit-rs hands on a hook's held
+    timeout."""
     outcome: Any = None
     failed: BaseException | None = None
     with lent_while_it_runs() as lent, orders_lent_while_it_runs():
@@ -503,7 +511,12 @@ async def _hook_body(hook: HookRegistration, *args: Any) -> Any:
             raise
         except BaseException as error:
             failed = error
-    await nested_calls_over(lent)
+    try:
+        await nested_calls_over(lent)
+    except asyncio.CancelledError:
+        if isinstance(failed, TimeoutError) and timed_out_then_cut is not None:
+            await timed_out_then_cut()
+        raise
     if failed is not None:
         raise failed
     return outcome
@@ -581,6 +594,18 @@ class HookEngine:
                 "timeout": hook.timeout,
             },
         )
+
+    async def _report_timeout(
+        self, room_id: str, hook: HookRegistration, trigger: HookTrigger
+    ) -> None:
+        """Log and announce that SYNC *hook* timed out (RFC §8.2, §9.3)."""
+        logger.warning(
+            "Sync hook %s timed out after %.1fs",
+            hook.name,
+            hook.timeout,
+            extra={"room_id": room_id},
+        )
+        await self._emit_hook_timeout(room_id, hook, trigger)
 
     def _check_lock_placement(self, hook: HookRegistration, room_id: str | None) -> None:
         """Enforce RFC §9.1's registration rules before *hook* is added.
@@ -1272,15 +1297,16 @@ class HookEngine:
                 # string is a modification, and treating it as absent would hand
                 # the next hook the original secret.
                 current_event = result.event if result.event is not None else event
-                hook_result: HookResult = await _hook_body(hook, current_event, context)
-            except TimeoutError:
-                logger.warning(
-                    "Sync hook %s timed out after %.1fs",
-                    hook.name,
-                    hook.timeout,
-                    extra={"room_id": room_id},
+                hook_result: HookResult = await _hook_body(
+                    hook,
+                    current_event,
+                    context,
+                    timed_out_then_cut=functools.partial(
+                        self._report_timeout, room_id, hook, trigger
+                    ),
                 )
-                await self._emit_hook_timeout(room_id, hook, trigger)
+            except TimeoutError:
+                await self._report_timeout(room_id, hook, trigger)
                 result.hook_errors.append(
                     {"hook": hook.name, "error": f"timeout ({hook.timeout}s)"}
                 )

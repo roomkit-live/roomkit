@@ -705,6 +705,126 @@ class TestAnAdoptedCallBeforeItsCommit:
         assert (after, stored) == ("after #2", ["Heads up"])
         await kit.close()
 
+    async def test_a_task_s_call_that_never_ends_holds_the_section_to_the_event_s_deadline(
+        self,
+    ) -> None:
+        """A locked hook times out while the call its task nested under the
+        lock never ends: the hook's section waits for the call no longer
+        than the event's ``process_timeout``, which refuses both, the
+        hook's timeout reported, then the event's, and the room takes the
+        next message (HITL 57923782)."""
+        kit = await _room(RoomKit(process_timeout=0.05), SimpleChannel("ws"))
+        entered = asyncio.Event()
+        started: list[asyncio.Task[RoomEvent]] = []
+        reported: list[str] = []
+
+        @kit.on("process_timeout")
+        async def on_process_timeout(event: FrameworkEvent) -> None:
+            reported.append("process_timeout")
+
+        @kit.on("hook_timeout")
+        async def on_hook_timeout(event: FrameworkEvent) -> None:
+            reported.append("hook_timeout")
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST, name="slow")
+        async def slow(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            if _body(event) == "Heads up":
+                entered.set()
+                await asyncio.Event().wait()
+            return HookResult.allow()
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST, name="notifier", timeout=0.01)
+        async def notifier(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            if _body(event) == "hello":
+                heads_up = kit.send_event("r1", "ws", TextContent(body="Heads up"))
+                started.append(asyncio.create_task(heads_up))  # never awaited
+                await entered.wait()
+                await asyncio.Event().wait()
+            return HookResult.allow()
+
+        hello = await kit.process_inbound(_message("hello"))
+        sent = await asyncio.gather(*started, return_exceptions=True)
+        bye = await kit.process_inbound(_message("bye"))
+        outcome = (
+            hello.reason,
+            [type(error) for error in sent],
+            [_body(event) for event in await _messages(kit)],
+            bye.blocked,
+            reported,
+        )
+        assert outcome == (
+            "process_timeout",
+            [ProcessTimeoutError],
+            ["bye"],
+            False,
+            ["hook_timeout", "process_timeout"],
+        )
+        await kit.close()
+
+    async def test_a_task_s_call_that_never_ends_holds_an_injected_pass_to_its_own_deadline(
+        self,
+    ) -> None:
+        """A locked hook on an injected event, whose pass has no deadline of
+        its own, times out while the call its task nested under the lock
+        never ends: the pass waits for the call no longer than the call's
+        own ``process_timeout``, which refuses it, reported; the injected
+        event commits, and the room takes the next message (HITL
+        57923782)."""
+        kit = await _room(RoomKit(process_timeout=0.05), SimpleChannel("ws"))
+        entered = asyncio.Event()
+        started: list[asyncio.Task[RoomEvent]] = []
+        reported: list[str] = []
+
+        @kit.on("process_timeout")
+        async def on_process_timeout(event: FrameworkEvent) -> None:
+            reported.append("process_timeout")
+
+        @kit.on("hook_timeout")
+        async def on_hook_timeout(event: FrameworkEvent) -> None:
+            reported.append("hook_timeout")
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST, name="slow")
+        async def slow(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            if _body(event) == "Heads up":
+                entered.set()
+                await asyncio.Event().wait()
+            if _body(event) == "hello":
+                note = RoomEvent(
+                    room_id="r1",
+                    source=EventSource(channel_id="ws", channel_type=ChannelType.WEBSOCKET),
+                    content=TextContent(body="note"),
+                )
+                return HookResult.allow([InjectedEvent(event=note)])
+            return HookResult.allow()
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST, name="notifier", timeout=0.01)
+        async def notifier(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            if _body(event) == "note":
+                heads_up = kit.send_event("r1", "ws", TextContent(body="Heads up"))
+                started.append(asyncio.create_task(heads_up))  # never awaited
+                await entered.wait()
+                await asyncio.Event().wait()
+            return HookResult.allow()
+
+        hello = await kit.process_inbound(_message("hello"))
+        sent = await asyncio.gather(*started, return_exceptions=True)
+        bye = await kit.process_inbound(_message("bye"))
+        outcome = (
+            hello.blocked,
+            [type(error) for error in sent],
+            [_body(event) for event in await _messages(kit)],
+            bye.blocked,
+            reported,
+        )
+        assert outcome == (
+            False,
+            [ProcessTimeoutError],
+            ["hello", "note", "bye"],
+            False,
+            ["process_timeout", "hook_timeout"],
+        )
+        await kit.close()
+
     async def test_a_hook_that_times_out_while_its_entry_works_is_heard_after_it(self) -> None:
         """A locked hook awaits the call it makes, nested under the lock,
         and times out while the call's own locked hook still runs: the
