@@ -9,8 +9,11 @@ from abc import ABC, abstractmethod
 from collections import OrderedDict
 from collections.abc import AsyncGenerator, Callable, Generator
 from contextlib import AbstractContextManager, asynccontextmanager, contextmanager, nullcontext
-from dataclasses import dataclass
-from typing import Any
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from roomkit.core._nested_calls import NestedCall
 
 logger = logging.getLogger("roomkit.locks")
 
@@ -32,6 +35,12 @@ class _LockLease:
 @dataclass(eq=False, slots=True)
 class _Call:
     running: bool = True
+    task: asyncio.Task[Any] | None = None
+    """The task the call runs in: a call into the room another task makes
+    while it runs (a task it spawned) is nested under its section, which
+    waits for it (:mod:`roomkit.core._nested_calls`)."""
+    nested: set[NestedCall] = field(default_factory=set)
+    """The calls its tasks nested under its section, not over yet."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,28 +113,52 @@ def unlocked_context() -> contextvars.Context:
 
 
 @contextmanager
-def lent_while_it_runs() -> Generator[None, None, None]:
+def lent_while_it_runs() -> Generator[_Call | None, None, None]:
     """Run a call (a hook's body) with the room locks this context holds lent
     to it while it runs (RFC §9.5.1 Reentrance, §13.5): a task it spawns,
     awaited or not, acts for it under them while it runs; once it is over,
     that task holds none of them, though the section that holds the lock
-    goes on, and its calls into the room are new arrivals.
+    goes on, and its calls into the room are new arrivals. The lending call,
+    ``None`` when the context holds no lock: the calls its tasks nest under
+    its section are noted on it, for the body to wait for before it is over
+    (:mod:`roomkit.core._nested_calls`).
 
-    Such a call is an ordinary arrival, neither refused nor adopted: it waits
-    for the lock the section holds. A later hook of the same pass that awaits
-    the task therefore waits until its own timeout, which cancels the task
-    it awaited unless it shields it."""
+    A call made once it is over is an ordinary arrival, neither refused nor
+    adopted: it waits for the lock the section holds. A later hook of the
+    same pass that awaits the task therefore waits until its own timeout,
+    which cancels the task it awaited unless it shields it."""
     leases = _held_leases.get()
     if not leases:
-        yield
+        yield None
         return
-    call = _Call()
+    call = _Call(task=asyncio.current_task())
     token = _held_leases.set(tuple(_LentLease(lease, call) for lease in leases))
     try:
-        yield
+        yield call
     finally:
         call.running = False
         _held_leases.reset(token)
+
+
+def lent_call(room_id: str, manager: RoomLockManager) -> _Call | None:
+    """The call (a hook's body) the room lock on *room_id* this context
+    holds of *manager* is lent to, when the current task is another one, a
+    task the call spawned (RFC §9.5.1 Reentrance): a call into the room it
+    makes is nested under that call's section, which waits for it. ``None``
+    for the call's own task, whose calls are the call's own work, and for a
+    lock lent to no call."""
+    if isinstance(manager, ReleaseTolerantLockManager):
+        manager = manager.inner
+    for lease in reversed(_held_leases.get()):
+        if (
+            isinstance(lease, _LentLease)
+            and lease.active
+            and lease.room_id == room_id
+            and lease.manager is manager
+        ):
+            call = lease.call
+            return call if call.task is not asyncio.current_task() else None
+    return None
 
 
 @contextmanager

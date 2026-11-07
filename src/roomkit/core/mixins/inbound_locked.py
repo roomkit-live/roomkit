@@ -407,7 +407,7 @@ class InboundLockedMixin(HelpersMixin):
         # on *queued* (RFC §9.5.1 Reentrance, §9.4).
         # Its BEFORE_BROADCAST observers start once it is over, its event's
         # set placed in the room's lane (RFC §10.1).
-        with section(room_id, cascade.budget, queued):
+        with section(room_id, cascade.budget, queued, deadline):
             async with observed_once_over(
                 self._hook_engine, room_id, closing=lambda: self._closed
             ) as observed:

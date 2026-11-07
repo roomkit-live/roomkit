@@ -329,6 +329,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A call a locked hook's task nests under the lock holds the hook's section** (RFC
+  §9.5.1, HITL 57923782, RMK-1482). A task a locked hook started and did not await could
+  send into the room under the hook's lock, and the event committed once the hook returned,
+  the call working on under a lock its section had let go. The hook's section now waits for
+  such a call: it commits ahead of the event, and one not committed when the event's
+  `process_timeout` passes is refused with it, nothing of either stored, the event's
+  `process_timeout` the one reported (`send_event()` raises `ProcessTimeoutError`,
+  `process_inbound()` returns `blocked=True, reason="process_timeout"`), as roomkit-rs.
 - **BREAKING: an agent keeps the application's instruction its turn read, and its later
   turns replay it where the turn read it** (RFC §10.1.1, HITL 5e89048c, 25b07f2a, RMK-1407).
   An instruction was the turn's input, then absent from every later turn's history: the

@@ -35,6 +35,7 @@ from roomkit.core._closing import Cascades, DoorRuns, event_cut_result, inbound_
 from roomkit.core._instructions import names_an_agent, without_fingerprint
 from roomkit.core._kit_turn_hooks import KitTurnHooks
 from roomkit.core._kit_wiring import KitEvents, KitWiringEnv
+from roomkit.core._nested_calls import nested_in
 from roomkit.core._publication_keys import refuse_reserved
 from roomkit.core._reentrance import REENTRY_LOOP_CAP, Entry, RoomWork, chain_floor
 from roomkit.core._routing_stamps import without_routing_stamps
@@ -1754,7 +1755,17 @@ class RoomKit(
                 return await self._store_entry_past_cap(room_id, event)
         if first_post is not None:
             await first_post.attach()
-        return await self._inject(event, entry, deadline)
+        # Nested by a task of a hook's body: that body's section waits for
+        # it, and ends it with itself (RFC §9.5.1 Reentrance).
+        with nested_in(entry.follows, self._door_runs.before_commit(), entry.deadline) as nested:
+            try:
+                return await self._inject(event, entry, deadline)
+            except asyncio.CancelledError:
+                if nested is None or not nested.timed_out():
+                    raise
+        raise ProcessTimeoutError(
+            f"Room {room_id}: process_timeout expired before the event was committed"
+        )
 
     async def _inject(self, event: RoomEvent, entry: Entry, deadline: float) -> RoomEvent:
         """Direct injection's pipeline for *event* (RFC §10.5), *entry* what

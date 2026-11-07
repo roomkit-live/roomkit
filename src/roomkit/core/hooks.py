@@ -11,6 +11,7 @@ from typing import Any, ClassVar, Protocol
 
 from roomkit.core._changes import holds_change
 from roomkit.core._instructions import kept_metadata
+from roomkit.core._nested_calls import cut_nested_calls, nested_calls_over
 from roomkit.core._reentrance import (
     ReentryBudget,
     after_delivery,
@@ -485,9 +486,24 @@ async def _hook_body(hook: HookRegistration, *args: Any) -> Any:
     """*hook*'s body on *args* within its timeout, the room locks its caller
     holds and the admission orders it stands in (an off-lock hook's) lent to
     it while it runs: a task it starts acts for it until it returns, and
-    calls into the room as a new arrival afterwards (RFC §9.5.1, §13.5)."""
-    with lent_while_it_runs(), orders_lent_while_it_runs():
-        return await asyncio.wait_for(hook.fn(*args), timeout=hook.timeout)
+    calls into the room as a new arrival afterwards (RFC §9.5.1, §13.5).
+
+    A call such a task nests under the lock while the body runs is waited
+    for before the body's outcome is handed on, however the body ended, its
+    lock still lent to it: it commits ahead of the event. Cancelled (the
+    event's ``process_timeout``, its caller gone), the body ends with the
+    nested calls not committed yet, cut (:mod:`roomkit.core._nested_calls`)."""
+    with lent_while_it_runs() as lent, orders_lent_while_it_runs():
+        try:
+            outcome = await asyncio.wait_for(hook.fn(*args), timeout=hook.timeout)
+        except asyncio.CancelledError:
+            cut_nested_calls(lent)
+            raise
+        except BaseException:
+            await nested_calls_over(lent)
+            raise
+        await nested_calls_over(lent)
+        return outcome
 
 
 class HookEngine:

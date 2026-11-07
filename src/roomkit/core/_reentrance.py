@@ -52,12 +52,13 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from roomkit.core.exceptions import ReentrantCallError, ReentryLoopCapError
-from roomkit.core.locks import _has_room_lock
+from roomkit.core.locks import _has_room_lock, lent_call
 from roomkit.tools.context import _current_loop, _live_turn_chain_depth
 
 if TYPE_CHECKING:
     from roomkit.core._queued_injections import QueuedInjections
     from roomkit.core.locks import RoomLockManager
+    from roomkit.core.locks import _Call as _LendingCall
     from roomkit.tools.context import _ToolLoopContext
 
 
@@ -119,6 +120,13 @@ class Entry:
     hook_body: bool = False
     """Whether an ASYNC hook's body made the call: it draws one of the
     budget's hook calls rather than one of its passes."""
+    follows: _LendingCall | None = None
+    """Nested by a task of a hook's body while the body runs: that body's
+    call, whose section waits for this one and ends it with itself
+    (:mod:`roomkit.core._nested_calls`)."""
+    deadline: float | None = None
+    """Nested in a pass's section: that section's deadline, the
+    ``process_timeout`` of its event, when it has one."""
 
     @property
     def adopted(self) -> bool:
@@ -145,6 +153,7 @@ class _Frame:
     queued: QueuedInjections | None = None
     active: bool = True
     hook_body: bool = False
+    deadline: float | None = None
 
 
 @dataclass(eq=False, slots=True)
@@ -180,6 +189,10 @@ class _LentFrame:
     @property
     def hook_body(self) -> bool:
         return self.frame.hook_body
+
+    @property
+    def deadline(self) -> float | None:
+        return self.frame.deadline
 
     @property
     def active(self) -> bool:
@@ -269,11 +282,12 @@ def orders_lent_while_it_runs() -> Generator[None, None, None]:
 
 
 def section(
-    room_id: str, budget: ReentryBudget, queued: QueuedInjections
+    room_id: str, budget: ReentryBudget, queued: QueuedInjections, deadline: float | None = None
 ) -> AbstractContextManager[None]:
     """The locked section of a pass of *room_id*, on the cascade's *budget*,
-    the events its hooks inject queued on *queued*."""
-    return _framed(_Frame(_Kind.SECTION, room_id, budget, queued))
+    the events its hooks inject queued on *queued*, its decision due by
+    *deadline* when it has one (RFC §13.6)."""
+    return _framed(_Frame(_Kind.SECTION, room_id, budget, queued, deadline=deadline))
 
 
 def admission_order(room_id: str, budget: ReentryBudget) -> AbstractContextManager[None]:
@@ -429,8 +443,15 @@ class RoomWork:
                 # serialising its changes): nested, on a budget of its own.
                 return Entry(Placement.NESTED, self.budget(), False)
             section = _innermost(room_id, locked=True, kind=_Kind.SECTION)
-            queued = section.queued if section is not None else None
-            return Entry(Placement.NESTED, frame.budget, True, queued, frame.hook_body)
+            return Entry(
+                Placement.NESTED,
+                frame.budget,
+                True,
+                section.queued if section is not None else None,
+                frame.hook_body,
+                follows=lent_call(room_id, self._lock_manager),
+                deadline=section.deadline if section is not None else None,
+            )
         if frame is not None and frame.kind is _Kind.ADMITTED:
             return Entry(Placement.BESIDE, frame.budget, True)
         if frame is not None and frame.kind is _Kind.DELIVERING:

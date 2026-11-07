@@ -16,6 +16,7 @@ from roomkit.core._changes import for_channels
 from roomkit.core._closing import Cascades, DoorRuns
 from roomkit.core._delivery_keys import DeliveryKeys, NamedDelivery
 from roomkit.core._instructions import FINGERPRINT, names_an_agent
+from roomkit.core._nested_calls import nested_in
 from roomkit.core._publication_keys import admitted_key
 from roomkit.core._reentrance import (
     REENTRY_LOOP_CAP,
@@ -489,19 +490,30 @@ class InboundMixin(HelpersMixin):
         delivery *named* by the message's key from the call's start (RFC
         §10.1), *deadline* the call's (§13.6). A failed release of the room
         lock is the result's error when no earlier error was met (§13.5)."""
-        with collecting_release_failures() as failed_releases:
-            result = await self._route_and_deliver(
-                message,
-                channel,
-                room_id,
-                telemetry,
-                inbound_span_id,
-                defer_delivery,
-                named,
-                deadline=deadline,
-                organization_id=organization_id,
-                charged=charged,
-            )
+        # Nested by a task of a hook's body: that body's section waits for
+        # it, and ends it with itself (RFC §9.5.1 Reentrance).
+        follows, within = (charged.follows, charged.deadline) if charged else (None, None)
+        with (
+            collecting_release_failures() as failed_releases,
+            nested_in(follows, self._door_runs.before_commit(), within) as nested,
+        ):
+            try:
+                result = await self._route_and_deliver(
+                    message,
+                    channel,
+                    room_id,
+                    telemetry,
+                    inbound_span_id,
+                    defer_delivery,
+                    named,
+                    deadline=deadline,
+                    organization_id=organization_id,
+                    charged=charged,
+                )
+            except asyncio.CancelledError:
+                if nested is None or not nested.timed_out():
+                    raise
+                result = InboundResult(blocked=True, reason="process_timeout")
         if result.error is None and failed_releases:
             # In place: a detached delivery's handle holds this result.
             result.error = failed_releases[0]
