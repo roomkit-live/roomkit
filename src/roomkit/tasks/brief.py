@@ -44,8 +44,8 @@ PREVIOUS_TASKS_TAG = "previous_tasks"
 """The tag the calling agent's previous tasks are set apart in."""
 
 TASK_TAG = "task"
-"""The tag a ``delegate_task`` call's task is set apart in, once a block
-follows it."""
+"""The tag a worker's task is set apart in once a block follows it, a
+``delegate_task`` call's or a background task's."""
 
 
 def _quoted_line(tag: str, text: str) -> str:

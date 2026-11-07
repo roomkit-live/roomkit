@@ -17,10 +17,11 @@ import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from roomkit._text import identifier
+from roomkit._text import fence, identifier
 from roomkit.channels._discussion_turn import agent_handle
 from roomkit.models.enums import ChannelCategory
 from roomkit.providers.ai.base import AITool
+from roomkit.tasks.brief import TASK_TAG
 from roomkit.tasks.posting import HAND_BACKS
 from roomkit.tools.context import current_tool_room
 
@@ -70,9 +71,12 @@ class BackgroundSetup:
 
 
 def worker_brief(task: str, agent_name: str, hand_back: str) -> str:
-    """What a background task's worker is told: the task, then how to work
-    and where its findings go. *agent_name* is the agent the task is for, as
-    the room addresses it: its handle in a discussion, else its channel id."""
+    """What a background task's worker is told: the task, set apart as it was
+    asked, then how to work and where its findings go. *agent_name* is the
+    agent the task is for, as the room addresses it: its handle in a
+    discussion, else its channel id. A model, the host or a person wrote the
+    task, and the runtime's text and the room's conversation follow it: set
+    apart, it cannot read as either (RFC §6.4)."""
     agent = identifier(agent_name, "agent")
     where = (
         f"posted to the conversation as it is, as @{agent}'s message, so write it for "
@@ -81,7 +85,7 @@ def worker_brief(task: str, agent_name: str, hand_back: str) -> str:
         else f"handed back to @{agent}, who shares it in the conversation"
     )
     return (
-        f"{task}\n\n"
+        f"Your task, as it was asked:\n{fence(TASK_TAG, task)}\n\n"
         f"You are doing this task in the background for @{agent}, away from the "
         "conversation: nobody there sees this work, and you address no one from here. "
         "Do the work now with your tools, then end with what you found, in a few short "
