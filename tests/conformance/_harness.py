@@ -504,7 +504,8 @@ class Harness:
             except TimeoutError:
                 self._problems.append(f"{path}: no call reached the gate {step['wait_for']}")
         elif "wait_for_lock" in step:
-            room_id, waiters = step["wait_for_lock"], step.get("waiters", 1)
+            room_id = await self.resolve(step["wait_for_lock"], {})
+            waiters = step.get("waiters", 1)
             try:
                 await wait_for_lock(self.kit, room_id, waiters)
             except TimeoutError:
