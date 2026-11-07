@@ -761,8 +761,23 @@ async def test_an_adopted_call_whose_read_turn_s_end_is_owed_times_out(
     cancel returns."""
     if stuck:
         _deaf_to_its_end(monkeypatch)
+    kit, target = await _reading_room(monkeypatch)
+    handles = _keeping_its_read(kit, target, cancel=True)
+
+    await asyncio.wait_for(kit.process_inbound(_message(), room_id="r"), 5.0)
+    handle, cancelled = handles[0]
+    waits = [await _outcome(handle.wait()) for _ in range(2)]
+    await kit.close()
+
+    owed = "Delivery cleanup incomplete for room r: the turns of ['agent'] did not end"
+    ended = f"{owed} on their executor" if stuck else "caller_cancelled"
+    assert (cancelled, waits) == (ended, [ended if stuck else "caller_cancelled"] * 2)
+
+
+async def _reading_room(monkeypatch: pytest.MonkeyPatch) -> tuple[RoomKit, _ReadingTarget]:
+    """A room whose agent's stream never ends, read by a streaming target,
+    its owner giving a cut turn's end up at its 50 ms cancel bound."""
     kit = RoomKit()
-    # The owner gives a cut turn's end up at its cancel bound, 50 ms here.
     monkeypatch.setattr(kit._turns, "_timeouts", QUICK)
     target = _ReadingTarget("ws")
     kit.register_channel(SimpleChannel("tx"))
@@ -772,7 +787,26 @@ async def test_an_adopted_call_whose_read_turn_s_end_is_owed_times_out(
     await kit.attach_channel("r", "tx")
     await kit.attach_channel("r", "ws")
     await kit.attach_channel("r", "agent", category=ChannelCategory.INTELLIGENCE)
-    cancelled: list[str | None] = []
+    return kit, target
+
+
+async def _outcome(waiting: Any) -> str | None:
+    """A wait's or a cancel's end: its cancellation reason, or its timeout's
+    words."""
+    try:
+        return (await waiting).cancellation_reason
+    except TimeoutError as error:
+        return str(error)
+
+
+def _keeping_its_read(
+    kit: RoomKit, target: _ReadingTarget, *, cancel: bool
+) -> list[tuple[Any, str | None]]:
+    """An off-lock hook that, on "Go.", makes a deferred call adopted beside
+    it, keeps its handle once *target* reads its stream, cancels it when
+    *cancel* (what the cancel came to kept beside it), and blocks "Go.":
+    nothing more is delivered."""
+    kept: list[tuple[Any, str | None]] = []
 
     @kit.hook(HookTrigger.BEFORE_BROADCAST, needs_lock=False, name="adopts")
     async def adopts(event: Any, ctx: Any) -> HookResult:
@@ -785,16 +819,29 @@ async def test_an_adopted_call_whose_read_turn_s_end_is_owed_times_out(
         )
         assert side.delivery is not None
         await asyncio.wait_for(target.reading.wait(), 2.0)
-        try:
-            ended = await side.delivery.cancel(timeout=2.0)
-            cancelled.append(ended.cancellation_reason)
-        except TimeoutError as error:
-            cancelled.append(str(error))
-        # Nothing more to deliver: the test is the side call's.
+        cancelled = await _outcome(side.delivery.cancel(timeout=2.0)) if cancel else None
+        kept.append((side.delivery, cancelled))
         return HookResult.block("adopted")
+
+    return kept
+
+
+@pytest.mark.usefixtures("close_grace", "cut_unwind")
+async def test_a_wait_past_the_kit_s_close_on_an_adopted_call_whose_turn_s_end_is_owed_times_out(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The kit's close cancels every cascade in flight, an adopted call's own
+    among them (core/_closing.py): a turn its target read when the close cut
+    it, its end owed, fails every wait on its handle with TimeoutError, as a
+    deferred call's (RFC §10.6.8, §12.10.4)."""
+    _deaf_to_its_end(monkeypatch)
+    kit, target = await _reading_room(monkeypatch)
+    handles = _keeping_its_read(kit, target, cancel=False)
 
     await asyncio.wait_for(kit.process_inbound(_message(), room_id="r"), 5.0)
     await kit.close()
+    handle, _ = handles[0]
+    waits = [await _outcome(handle.wait()) for _ in range(2)]
 
     owed = "Delivery cleanup incomplete for room r: the turns of ['agent'] did not end"
-    assert cancelled == [f"{owed} on their executor" if stuck else "caller_cancelled"]
+    assert waits == [f"{owed} on their executor"] * 2
