@@ -874,14 +874,14 @@ class TestAnAdoptedCallBeforeItsCommit:
         # Woken first, the test cancels the caller ahead of the body's next
         # step; once the body returned, the section is waiting for the call.
         await (returned if body_returned else entered).wait()
-        caller.cancel()
+        caller.cancel("caller gone")
         for _ in range(cancels - 1):
             # Once the cancelled section waits for the call.
             for _ in range(3):
                 await asyncio.sleep(0)
-            caller.cancel()
+            caller.cancel("again")
         sent = await asyncio.gather(*started, return_exceptions=True)
-        with contextlib.suppress(asyncio.CancelledError):
+        with pytest.raises(asyncio.CancelledError) as gone:
             await caller
         other = await kit.process_inbound(_message("other"))
         names = {event_id: body for body, event_id in ids.items()}
@@ -890,8 +890,9 @@ class TestAnAdoptedCallBeforeItsCommit:
             [_body(event) for event in await _messages(kit)],
             other.blocked,
             [names.get(event_id, event_id) for event_id in reported],
+            gone.value.args,
         )
-        assert outcome == ([ProcessTimeoutError], ["other"], False, [])
+        assert outcome == ([ProcessTimeoutError], ["other"], False, [], ("caller gone",))
         await kit.close()
 
     async def test_a_hook_that_times_out_while_its_entry_works_is_heard_after_it(self) -> None:

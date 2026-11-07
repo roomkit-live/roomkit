@@ -20,6 +20,7 @@ passes, where it is cut, nothing of it reported, as roomkit-rs does.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import contextvars
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
@@ -134,8 +135,12 @@ async def nested_calls_after_a_cancel(call: _Call | None) -> None:
 
     Cancelled again meanwhile (a cancel scope that repeats its cancellation,
     the event's own ``process_timeout`` falling at that deadline), it waits
-    on all the same and raises the first such cancellation once they are
-    settled: the wait sets no timer of its own that cancels the task."""
+    on all the same, and returns once they are settled: its caller raises
+    the cancellation that started the wait, whatever came after. The wait
+    sets no timer of its own that cancels the task. An anyio cancel scope
+    repeats its cancellation at every pass of the loop: the wait then wakes
+    at each one, a core busy until the calls are settled, at most up to the
+    deadline (HITL ce551cc0)."""
     if call is None or not call.nested:
         return
     deadline = next(iter(call.nested)).deadline
@@ -145,18 +150,14 @@ async def nested_calls_after_a_cancel(call: _Call | None) -> None:
     if past or (deadline is not None and loop.time() >= deadline):
         cut_nested_calls(call)
         return
-    cancelled: asyncio.CancelledError | None = None
     while call.nested:
         left = None if deadline is None else deadline - loop.time()
         if left is not None and left <= 0:
             cut_nested_calls(call, past_the_deadline=True)
-            break
-        try:
+            return
+        # A repeated cancellation: the one that started the wait is raised.
+        with contextlib.suppress(asyncio.CancelledError):
             await asyncio.wait([nested.over for nested in call.nested], timeout=left)
-        except asyncio.CancelledError as cancel:
-            cancelled = cancelled or cancel
-    if cancelled is not None:
-        raise cancelled
 
 
 def cut_nested_calls(call: _Call | None, *, past_the_deadline: bool = False) -> None:
