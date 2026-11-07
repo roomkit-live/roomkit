@@ -578,3 +578,82 @@ class TestDroppedSetSideEffects:
         await kit.close()
 
         assert (result.cancellation_reason, tasks, created) == ("delivery_stale", ["t1"], ["t1"])
+
+
+class TestARoundThatFailsMidway:
+    async def test_a_set_whose_cursor_write_fails_once_it_ran(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """RMK-1515, today's behaviour: the store fails the room's delivery
+        cursor write once, after the event's delivery set ran. The lane's
+        round raises (lanes._claimed_round), and its finally drops the entry
+        it ran as a cut one (_process_ready, ran=True): the transport was
+        delivered to, but the set's aftermath never runs. The task the
+        event's hook gave is not stored, ON_TASK_CREATED and AFTER_BROADCAST
+        never fire, and the call reads its delivery cancelled. The cursor
+        stays below the index: the room's next message waits for the gap
+        timeout, which skips the index as lost."""
+        kit = RoomKit(delivery_gap_timeout=0.01)
+        advance = kit.store.advance_delivered_index
+
+        async def failing_once(room_id: str, index: int, **kwargs: Any) -> bool:
+            monkeypatch.setattr(kit.store, "advance_delivered_index", advance)
+            raise RuntimeError("store down")
+
+        ws1 = SimpleChannel("ws1")
+        kit.register_channel(SimpleChannel("sms1"))
+        kit.register_channel(ws1)
+        await kit.create_room(room_id="r1")
+        await kit.attach_channel("r1", "sms1")
+        await kit.attach_channel("r1", "ws1")
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST, name="triage")
+        async def triage(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            if not isinstance(event.content, TextContent) or event.content.body != "Call me back":
+                return HookResult(action="allow")
+            task = Task(id="t1", room_id="r1", title="Call the customer back")
+            return HookResult(action="allow", tasks=[task])
+
+        later: list[str] = []
+
+        @kit.hook(HookTrigger.ON_TASK_CREATED, execution=HookExecution.ASYNC, name="follow_up")
+        async def follow_up(event: RoomEvent, ctx: RoomContext) -> None:
+            later.append(f"task_created {event.metadata['task_id']}")
+
+        @kit.hook(HookTrigger.AFTER_BROADCAST, execution=HookExecution.ASYNC, name="audit")
+        async def audit(event: RoomEvent, ctx: RoomContext) -> None:
+            assert isinstance(event.content, TextContent)
+            later.append(f"after_broadcast {event.content.body}")
+
+        skipped: list[tuple[int, int]] = []
+
+        @kit.on("delivery_skipped")
+        async def on_skipped(event: Any) -> None:
+            skipped.append((event.data["from_index"], event.data["to_index"]))
+
+        # The room's records are accounted for: the next cursor write is the
+        # lane's, once the message's set ran.
+        monkeypatch.setattr(kit.store, "advance_delivered_index", failing_once)
+        first = await kit.process_inbound(
+            InboundMessage(
+                channel_id="sms1", sender_id="user1", content=TextContent(body="Call me back")
+            )
+        )
+        tasks = [task.id for task in await kit.store.list_tasks("r1")]
+        await kit.hook_engine.drain_observers()
+        after_first = (len(ws1.delivered), list(later))
+        second = await kit.process_inbound(
+            InboundMessage(channel_id="sms1", sender_id="user1", content=TextContent(body="Hi"))
+        )
+        await kit.hook_engine.drain_observers()
+        await kit.close()
+
+        assert first.event is not None
+        assert (first.cancellation_reason, tasks, after_first) == ("lane_cancelled", [], (1, []))
+        index = first.event.index
+        assert (second.cancellation_reason, len(ws1.delivered), skipped, later) == (
+            None,
+            2,
+            [(index, index)],
+            ["after_broadcast Hi"],
+        )
