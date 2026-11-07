@@ -293,6 +293,7 @@ REACTION = {
     "output",
     "result",
     "stop_after",
+    "stop_after_rows",
     "hold_after",
     "hold_gate",
     "writes_record",

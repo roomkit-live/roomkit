@@ -310,11 +310,13 @@ class ScriptedChannel(Channel):
         context: RoomContext,
     ) -> ChannelOutput:
         """Reads the stream it is handed, recording each delta and row, until
-        its end, or until the delta its reaction's ``stop_after`` names."""
+        its end, or until the delta its reaction's ``stop_after`` names, or
+        the row its ``stop_after_rows`` counts."""
         room_id = binding.room_id
         reaction = self._deliver_stream.pick({"room_id": room_id}) or {}
         await perform(self._harness, {**reaction, "fail": None}, {"room": room_id})
         stop_after = reaction.get("stop_after")
+        rows_left = reaction.get("stop_after_rows")
         try:
             async for item in text_stream:
                 if isinstance(item, str):
@@ -340,6 +342,10 @@ class ScriptedChannel(Channel):
                 elif isinstance(item, RoomEvent):
                     row = {"row": item.model_dump(mode="json")}
                     self._harness.record_streamed(room_id, self.channel_id, row)
+                    if rows_left is not None:
+                        rows_left -= 1
+                        if rows_left == 0:
+                            break
         except Exception:
             self._harness.record_streamed(room_id, self.channel_id, {"failed": True})
             raise
