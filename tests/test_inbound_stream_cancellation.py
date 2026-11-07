@@ -19,6 +19,7 @@ import pytest
 
 from roomkit.channels.agent import Agent
 from roomkit.channels.ai import AIChannel
+from roomkit.core.exceptions import KitClosedError
 from roomkit.core.framework import RoomKit
 from roomkit.core.hooks import HookRegistration
 from roomkit.models.channel import ChannelBinding, ChannelOutput
@@ -245,17 +246,45 @@ class _FailsPastTheEnd(_StreamingTransport):
             raise ValueError("the flush failed")  # noqa: B012
 
 
+class _RefusedPastTheEnd(_StreamingTransport):
+    """Renders a stream; once its read ends, a cut's included, calls back
+    into its kit, and fails as the kit refuses the call."""
+
+    def __init__(self, channel_id: str, kit: RoomKit) -> None:
+        super().__init__(channel_id)
+        self._kit = kit
+        self.refused: Exception | None = None
+
+    async def deliver_stream(
+        self,
+        text_stream: AsyncIterator[Any],
+        event: RoomEvent,
+        binding: ChannelBinding,
+        context: RoomContext,
+    ) -> ChannelOutput:
+        try:
+            await super().deliver_stream(text_stream, event, binding, context)
+        finally:
+            try:
+                await self._kit.create_room(room_id="late")
+            except KitClosedError as exc:
+                self.refused = exc
+                raise
+
+
 class _PastTheCut:
     """A kit whose agent says a word, then calls a tool that never returns,
-    its streaming target failing *flush* seconds past its stream's end, and
-    the ON_ERROR payloads it reports."""
+    its streaming target failing *flush* seconds past its stream's end, or
+    calling back into the kit there (*calls_back*), and the ON_ERROR
+    payloads it reports."""
 
-    def __init__(self, flush: float) -> None:
+    def __init__(self, flush: float, *, calls_back: bool = False) -> None:
         self.running = asyncio.Event()
         self.told = asyncio.Event()
         self.errors: list[RoomEvent] = []
         self.kit = RoomKit()
-        self.kit.register_channel(_FailsPastTheEnd("cli", flush=flush))
+        self.calls_back = _RefusedPastTheEnd("cli", self.kit) if calls_back else None
+        self.kit.register_channel(self.calls_back or _FailsPastTheEnd("cli", flush=flush))
         provider = MockAIProvider(
             ai_responses=[
                 AIResponse(
@@ -332,3 +361,89 @@ async def test_a_target_that_fails_past_a_task_s_cancel_fires_on_error(flush: fl
 
     assert cut.reported() == [("ai", "the flush failed", "streaming")]
     await cut.kit.close()
+
+
+async def test_a_target_the_close_refuses_past_its_cut_fires_no_on_error() -> None:
+    """RFC §12.10.4 (RMK-1330): a target whose failure past the close's cut
+    is the kit's own close, a call back into the kit it refused, is no
+    failure ON_ERROR reports."""
+    cut = _PastTheCut(0, calls_back=True)
+    await cut.room()
+    await cut.kit.attach_channel("room-1", "ai", category=ChannelCategory.INTELLIGENCE)
+    turn = asyncio.create_task(
+        cut.kit.process_inbound(
+            InboundMessage(channel_id="cli", sender_id="user", content=TextContent(body="go")),
+            room_id="room-1",
+        )
+    )
+    await asyncio.wait_for(cut.running.wait(), 5)
+
+    await cut.kit.close()
+    await asyncio.wait_for(turn, 5)
+
+    assert cut.calls_back is not None
+    assert isinstance(cut.calls_back.refused, KitClosedError)
+    assert cut.reported() == []
+
+
+class _FailsAfterHello(MockAIProvider):
+    """Streams a word, then fails."""
+
+    def __init__(self) -> None:
+        super().__init__(streaming=True)
+
+    async def generate_structured_stream(self, context: AIContext) -> AsyncIterator[StreamEvent]:
+        yield StreamTextDelta(text="Hello.")
+        raise RuntimeError("boom")
+
+
+class _WaitsOnARow(_StreamingTransport):
+    """Renders a stream, and waits on the first row of its first one until
+    released."""
+
+    def __init__(self, channel_id: str) -> None:
+        super().__init__(channel_id)
+        self._first = True
+        self.told = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def deliver_stream(
+        self,
+        text_stream: AsyncIterator[Any],
+        event: RoomEvent,
+        binding: ChannelBinding,
+        context: RoomContext,
+    ) -> ChannelOutput:
+        first, self._first = self._first, False
+        async for item in text_stream:
+            if first and isinstance(item, RoomEvent):
+                self.told.set()
+                await self.release.wait()
+        return ChannelOutput.empty()
+
+
+async def test_a_response_failed_before_a_task_s_cut_fires_no_on_error() -> None:
+    """RFC §12.2 step 13s, §23.3 (RMK-1330): the worker's response failed,
+    its shared target still working on the failed text's row when
+    cancel_task cuts the task: the cut wins, no ON_ERROR fires."""
+    kit = RoomKit()
+    target = _WaitsOnARow("cli")
+    kit.register_channel(target)
+    kit.register_channel(Agent("ai", provider=_FailsAfterHello()))
+    errors: list[RoomEvent] = []
+
+    @kit.hook(HookTrigger.ON_ERROR, execution=HookExecution.ASYNC)
+    async def on_error(event: RoomEvent, ctx: RoomContext) -> None:
+        errors.append(event)
+
+    await kit.create_room(room_id="room-1")
+    await kit.attach_channel("room-1", "cli")
+    task = await kit.delegate("room-1", "ai", "Go.", share_channels=["cli"])
+    await asyncio.wait_for(target.told.wait(), 5)
+
+    assert await asyncio.wait_for(kit.cancel_task(task.id), 5)
+    await kit.hook_engine.drain_observers()
+
+    assert errors == []
+    target.release.set()
+    await kit.close()
