@@ -3461,7 +3461,7 @@ is in it. Before it reads its memory, the AI channel measures that rest as the
 first round sends it and exposes it for the turn as `current_turn_footprint()`,
 a `TurnFootprint` (RFC §20): `input_tokens` (the system prompt with an
 `Agent`'s identity, the tools declared under Tool Search and the tool policy,
-the room's plan, the earlier tool calls the history replays, the speaker
+the room's plan, the earlier tool calls and instructions the history replays, the speaker
 attribution) and `reply_tokens` (the turn's `max_tokens`, 0 when the provider applies its
 own). It is `None` in a tool handler and outside an AI channel's turn.
 
