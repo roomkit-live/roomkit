@@ -262,12 +262,26 @@ class InboundMixin(HelpersMixin):
         # A sixth composite level is refused where it is built (RFC §5.3):
         # the message fails before anything is read or written.
         refuse_too_deep(message.content)
+        # What the call is to its room's work, when that work made it; sent
+        # by a task of a hook's body while the body runs, nested under the
+        # hook's section, that section waits for it from now on and ends it
+        # with itself past its deadline (RFC §9.5.1 Reentrance).
+        charged = self._named_room_work(room_id)
+        follows, within = (charged.follows, charged.deadline) if charged else (None, None)
         # The message's key names its delivery from the call's start, before
         # anything is awaited (RFC §10.1): the read of its room's scope too.
-        with self._delivery_keys.naming(message.delivery_key, organization_id) as named:
-            return await self._process_named_inbound(
-                message, room_id, defer_delivery, organization_id, named
-            )
+        with (
+            self._delivery_keys.naming(message.delivery_key, organization_id) as named,
+            nested_in(follows, self._door_runs.before_commit(), within) as nested,
+        ):
+            try:
+                return await self._process_named_inbound(
+                    message, room_id, defer_delivery, organization_id, named, charged
+                )
+            except asyncio.CancelledError:
+                if nested is None or not nested.timed_out():
+                    raise
+        return InboundResult(blocked=True, reason="process_timeout")
 
     async def _process_named_inbound(
         self,
@@ -276,9 +290,11 @@ class InboundMixin(HelpersMixin):
         defer_delivery: bool,
         organization_id: str | None,
         named: NamedDelivery,
+        charged: Entry | None,
     ) -> InboundResult:
         """:meth:`process_inbound` for *message*, whose delivery *named*
-        names, from RFC §10.1 step 1."""
+        names, from RFC §10.1 step 1, *charged* what it is to its room's
+        work when it names a room that work made it in."""
         from roomkit.telemetry.base import SpanKind, sensitive, span_error
         from roomkit.telemetry.context import get_current_span, reset_span, set_current_span
 
@@ -311,7 +327,6 @@ class InboundMixin(HelpersMixin):
         # naming a room of no work, are charged at step 2 once their room is
         # known. The refusal writes nothing, and is traced as any call: a
         # loop the cap cut stays visible.
-        charged = self._named_room_work(room_id)
         if charged is not None and room_id is not None:
             refused = await self._charge_named_room(
                 charged, room_id, message, organization_id, deadline
@@ -490,30 +505,19 @@ class InboundMixin(HelpersMixin):
         delivery *named* by the message's key from the call's start (RFC
         §10.1), *deadline* the call's (§13.6). A failed release of the room
         lock is the result's error when no earlier error was met (§13.5)."""
-        # Nested by a task of a hook's body: that body's section waits for
-        # it, and ends it with itself (RFC §9.5.1 Reentrance).
-        follows, within = (charged.follows, charged.deadline) if charged else (None, None)
-        with (
-            collecting_release_failures() as failed_releases,
-            nested_in(follows, self._door_runs.before_commit(), within) as nested,
-        ):
-            try:
-                result = await self._route_and_deliver(
-                    message,
-                    channel,
-                    room_id,
-                    telemetry,
-                    inbound_span_id,
-                    defer_delivery,
-                    named,
-                    deadline=deadline,
-                    organization_id=organization_id,
-                    charged=charged,
-                )
-            except asyncio.CancelledError:
-                if nested is None or not nested.timed_out():
-                    raise
-                result = InboundResult(blocked=True, reason="process_timeout")
+        with collecting_release_failures() as failed_releases:
+            result = await self._route_and_deliver(
+                message,
+                channel,
+                room_id,
+                telemetry,
+                inbound_span_id,
+                defer_delivery,
+                named,
+                deadline=deadline,
+                organization_id=organization_id,
+                charged=charged,
+            )
         if result.error is None and failed_releases:
             # In place: a detached delivery's handle holds this result.
             result.error = failed_releases[0]

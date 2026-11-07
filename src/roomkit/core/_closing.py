@@ -233,15 +233,14 @@ class DoorRuns:
 
     def before_commit(self) -> Callable[[], bool] | None:
         """For the call the current task runs: a test, read from elsewhere,
-        of whether a section that ends it with itself may still cut it
-        (:mod:`roomkit.core._nested_calls`): before its commit, and while
-        the kit is not closing, whose close cuts it itself (RFC §12.10.4).
-        ``None`` for a call made inside another in the same task, whose
-        commit is not its own."""
+        of whether it is still before its commit, which a section that ends
+        it with itself reads (:mod:`roomkit.core._nested_calls`). ``None``
+        for a call made inside another in the same task, whose commit is not
+        its own."""
         record = _RUN.get()
         if record is None or record.task is not asyncio.current_task():
             return None
-        return lambda: record.committing is None and not self.closed
+        return lambda: record.committing is None
 
     def committed(self) -> None:
         """The current call is past its commit: the close no longer cuts it,

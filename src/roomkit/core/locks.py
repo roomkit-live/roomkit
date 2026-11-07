@@ -120,7 +120,8 @@ def lent_while_it_runs() -> Generator[_Call | None, None, None]:
     that task holds none of them, though the section that holds the lock
     goes on, and its calls into the room are new arrivals. The lending call,
     ``None`` when the context holds no lock: the calls its tasks nest under
-    its section are noted on it, for the body to wait for before it is over
+    its section while it runs are noted on it, each lent the locks for as
+    long as it runs (:func:`relent_to`), for the body's section to wait for
     (:mod:`roomkit.core._nested_calls`).
 
     A call made once it is over is an ordinary arrival, neither refused nor
@@ -137,6 +138,28 @@ def lent_while_it_runs() -> Generator[_Call | None, None, None]:
         yield call
     finally:
         call.running = False
+        _held_leases.reset(token)
+
+
+@contextmanager
+def relent_to(call: _Call) -> Generator[None, None, None]:
+    """Run a call into the room a task of *call* (a hook's body) nested
+    under its section with the locks lent to *call* lent to it instead,
+    for as long as it runs: it keeps them once the body is over, while a
+    later call of that task finds them lent no more (RFC §9.5.1
+    Reentrance)."""
+    own = _Call(task=asyncio.current_task())
+    leases = tuple(
+        _LentLease(lease.lease, own)
+        if isinstance(lease, _LentLease) and lease.call is call
+        else lease
+        for lease in _held_leases.get()
+    )
+    token = _held_leases.set(leases)
+    try:
+        yield
+    finally:
+        own.running = False
         _held_leases.reset(token)
 
 

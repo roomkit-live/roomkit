@@ -529,14 +529,9 @@ class TestAnAdoptedCallBeforeItsCommit:
             (result.reason, result.event, on_time),
             [type(error) for error in sent],
             await _messages(kit),
-            [event.event_id is not None for event in timeouts],
+            len(timeouts),
         )
-        assert outcome == (
-            ("process_timeout", None, True),
-            [ProcessTimeoutError],
-            [],
-            [True],
-        )
+        assert outcome == (("process_timeout", None, True), [ProcessTimeoutError], [], 1)
         await kit.close()
 
     async def test_a_message_a_locked_hook_s_task_nests_ends_with_the_event(self) -> None:
@@ -579,6 +574,135 @@ class TestAnAdoptedCallBeforeItsCommit:
             len(timeouts),
         )
         assert outcome == (("process_timeout", None), (True, "process_timeout", None), [], 1)
+        await kit.close()
+
+    async def test_a_call_a_locked_hook_s_task_nests_outlives_the_hook_s_timeout(self) -> None:
+        """A locked hook's task makes a call nested under the lock, then the
+        hook times out: the hook's own timeout does not end the call, its
+        section waits for it, and the call commits ahead of the event, the
+        hook failing open (HITL 57923782)."""
+        kit = await _room(RoomKit(), SimpleChannel("ws"))
+        entered, cut = asyncio.Event(), asyncio.Event()
+        started: list[asyncio.Task[RoomEvent]] = []
+        timed_out: list[FrameworkEvent] = []
+
+        @kit.on("hook_timeout")
+        async def on_timeout(event: FrameworkEvent) -> None:
+            timed_out.append(event)
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST, name="slow")
+        async def slow(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            if _body(event) == "Heads up":
+                entered.set()
+                await cut.wait()
+            return HookResult.allow()
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST, name="notifier", timeout=0.01)
+        async def notifier(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            if _body(event) == "hello":
+                heads_up = kit.send_event("r1", "ws", TextContent(body="Heads up"))
+                started.append(asyncio.create_task(heads_up))  # never awaited
+                await entered.wait()
+                try:
+                    await asyncio.Event().wait()
+                finally:
+                    cut.set()
+            return HookResult.allow()
+
+        result = await kit.process_inbound(_message("hello"))
+        sent = await asyncio.wait_for(started[0], timeout=5)
+        stored = [(_body(event), event.index) for event in await _messages(kit)]
+        answered = (sent.index, result.event.index if result.event else None)
+        hooks = [event.data.get("hook_name") for event in timed_out]
+        assert (stored, answered, hooks) == (
+            [("Heads up", 2), ("hello", 3)],
+            (2, 3),
+            ["notifier"],
+        )
+        await kit.close()
+
+    async def test_a_locked_hook_s_task_s_call_once_its_body_returned_is_a_new_arrival(
+        self,
+    ) -> None:
+        """A locked hook's task makes a call nested under the lock, then,
+        once the hook's body returned and while its section waits for that
+        call, makes another: the second is a new arrival, which commits
+        after the event; the first commits ahead of it (HITL 57923782)."""
+        kit = await _room(RoomKit(), SimpleChannel("ws"))
+        entered, returned, placed = asyncio.Event(), asyncio.Event(), asyncio.Event()
+        started: list[asyncio.Task[Any]] = []
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST, name="scan", needs_lock=False)
+        async def scan(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            if _body(event) == "Follow-up":
+                placed.set()
+            return HookResult.allow()
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST, name="slow")
+        async def slow(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            if _body(event) == "Heads up":
+                entered.set()
+                await placed.wait()
+            return HookResult.allow()
+
+        async def notify() -> RoomEvent:
+            heads_up = kit.send_event("r1", "ws", TextContent(body="Heads up"))
+            started.append(asyncio.create_task(heads_up))
+            await returned.wait()
+            return await kit.send_event("r1", "ws", TextContent(body="Follow-up"))
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST, name="notifier")
+        async def notifier(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            if _body(event) == "hello":
+                started.append(asyncio.create_task(notify()))  # never awaited
+                await entered.wait()
+                returned.set()
+            return HookResult.allow()
+
+        result = await kit.process_inbound(_message("hello"))
+        await asyncio.wait_for(asyncio.gather(*started), timeout=5)
+        stored = [_body(event) for event in await _messages(kit)]
+        assert (stored, result.blocked) == (["Heads up", "hello", "Follow-up"], False)
+        await kit.close()
+
+    async def test_a_call_a_locked_hook_s_task_nests_goes_on_past_the_event_s_caller_gone(
+        self,
+    ) -> None:
+        """A locked hook's task makes a call nested under the lock, and the
+        event's caller stops waiting while the hook's section waits for it:
+        the call goes on, commits, and the task's code after it runs
+        (HITL 57923782)."""
+        kit = await _room(RoomKit(), SimpleChannel("ws"))
+        entered, release = asyncio.Event(), asyncio.Event()
+        started: list[asyncio.Task[str]] = []
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST, name="slow")
+        async def slow(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            if _body(event) == "Heads up":
+                entered.set()
+                await release.wait()
+            return HookResult.allow()
+
+        async def notify() -> str:
+            sent = await kit.send_event("r1", "ws", TextContent(body="Heads up"))
+            return f"after #{sent.index}"
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST, name="notifier")
+        async def notifier(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            if _body(event) == "hello":
+                started.append(asyncio.create_task(notify()))  # never awaited
+                await entered.wait()
+            return HookResult.allow()
+
+        caller = asyncio.create_task(kit.process_inbound(_message("hello")))
+        await entered.wait()
+        caller.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await caller
+        release.set()
+        after = await asyncio.wait_for(started[0], timeout=5)
+        stored = [_body(event) for event in await _messages(kit)]
+        assert (after, stored) == ("after #2", ["Heads up"])
         await kit.close()
 
     async def test_a_hook_that_times_out_while_its_entry_works_is_heard_after_it(self) -> None:

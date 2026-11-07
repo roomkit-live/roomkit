@@ -35,7 +35,7 @@ from roomkit.core._closing import Cascades, DoorRuns, event_cut_result, inbound_
 from roomkit.core._instructions import names_an_agent, without_fingerprint
 from roomkit.core._kit_turn_hooks import KitTurnHooks
 from roomkit.core._kit_wiring import KitEvents, KitWiringEnv
-from roomkit.core._nested_calls import nested_in
+from roomkit.core._nested_calls import NestedCall, nested_in
 from roomkit.core._publication_keys import refuse_reserved
 from roomkit.core._reentrance import REENTRY_LOOP_CAP, Entry, RoomWork, chain_floor
 from roomkit.core._routing_stamps import without_routing_stamps
@@ -1736,11 +1736,34 @@ class RoomKit(
         self, event: RoomEvent, deadline: float, first_post: _host_post.FirstPost | None
     ) -> RoomEvent:
         """A direct injection of *event* entering its room (RFC §10.5): as
-        the room's own work, it draws its pass first (§9.5.1). A first post
-        attaches its host channel only once the pass is drawn, so past the
-        budget it binds nothing."""
+        the room's own work, it draws its pass first (§9.5.1). Made by a
+        task of a hook's body while the body runs, nested under the hook's
+        section, that section waits for it from now on and ends it with
+        itself past its deadline (RFC §9.5.1 Reentrance)."""
+        entry = self._room_work.entry(event.room_id)
+        with nested_in(entry.follows, self._door_runs.before_commit(), entry.deadline) as nested:
+            try:
+                return await self._enter_drawn(event, entry, deadline, first_post, nested)
+            except asyncio.CancelledError:
+                if nested is None or not nested.timed_out():
+                    raise
+        raise ProcessTimeoutError(
+            f"Room {event.room_id}: process_timeout expired before the event was committed"
+        )
+
+    async def _enter_drawn(
+        self,
+        event: RoomEvent,
+        entry: Entry,
+        deadline: float,
+        first_post: _host_post.FirstPost | None,
+        nested: NestedCall | None,
+    ) -> RoomEvent:
+        """:meth:`_enter_injection` once *entry* is known: a replay of a key
+        its channel holds is read before the budget, a first post attaches
+        its host channel only once the pass is drawn, so past the budget it
+        binds nothing."""
         room_id, channel_id = event.room_id, event.source.channel_id
-        entry = self._room_work.entry(room_id)
         if entry.charged:
             # A replay of a key its channel holds is no pass: it is read
             # before the budget, and draws nothing (RFC §13.4, §9.5.1).
@@ -1752,20 +1775,12 @@ class RoomKit(
             if not entry.draw():
                 # Past the budget of the work that made it, it is not a pass:
                 # its hooks never run (RFC §8.3, §9.5.1).
+                if nested is not None:
+                    nested.committing()
                 return await self._store_entry_past_cap(room_id, event)
         if first_post is not None:
             await first_post.attach()
-        # Nested by a task of a hook's body: that body's section waits for
-        # it, and ends it with itself (RFC §9.5.1 Reentrance).
-        with nested_in(entry.follows, self._door_runs.before_commit(), entry.deadline) as nested:
-            try:
-                return await self._inject(event, entry, deadline)
-            except asyncio.CancelledError:
-                if nested is None or not nested.timed_out():
-                    raise
-        raise ProcessTimeoutError(
-            f"Room {room_id}: process_timeout expired before the event was committed"
-        )
+        return await self._inject(event, entry, deadline)
 
     async def _inject(self, event: RoomEvent, entry: Entry, deadline: float) -> RoomEvent:
         """Direct injection's pipeline for *event* (RFC §10.5), *entry* what

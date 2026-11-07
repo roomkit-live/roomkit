@@ -488,22 +488,25 @@ async def _hook_body(hook: HookRegistration, *args: Any) -> Any:
     it while it runs: a task it starts acts for it until it returns, and
     calls into the room as a new arrival afterwards (RFC §9.5.1, §13.5).
 
-    A call such a task nests under the lock while the body runs is waited
-    for before the body's outcome is handed on, however the body ended, its
-    lock still lent to it: it commits ahead of the event. Cancelled (the
-    event's ``process_timeout``, its caller gone), the body ends with the
-    nested calls not committed yet, cut (:mod:`roomkit.core._nested_calls`)."""
+    A call such a task nested under the lock while the body ran is waited
+    for once the body is over, however it ended, its own timeout included,
+    before its outcome is handed on: it commits ahead of the event. The
+    section's deadline passing meanwhile, or while the body runs, cuts the
+    nested calls not committed yet (:mod:`roomkit.core._nested_calls`)."""
+    outcome: Any = None
+    failed: BaseException | None = None
     with lent_while_it_runs() as lent, orders_lent_while_it_runs():
         try:
             outcome = await asyncio.wait_for(hook.fn(*args), timeout=hook.timeout)
         except asyncio.CancelledError:
             cut_nested_calls(lent)
             raise
-        except BaseException:
-            await nested_calls_over(lent)
-            raise
-        await nested_calls_over(lent)
-        return outcome
+        except BaseException as error:
+            failed = error
+    await nested_calls_over(lent)
+    if failed is not None:
+        raise failed
+    return outcome
 
 
 class HookEngine:
