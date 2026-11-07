@@ -566,7 +566,8 @@ class TestDroppedSetSideEffects:
         # Another worker's lane declares the next index lost before this
         # process delivers it.
         room = await kit.get_room("r1")
-        await kit.store.advance_delivered_index("r1", room.latest_index + 1, force=True)
+        latest = -1 if room.latest_index is None else room.latest_index
+        await kit.store.advance_delivered_index("r1", latest + 1, force=True)
         result = await kit.process_inbound(
             InboundMessage(
                 channel_id="sms1", sender_id="user1", content=TextContent(body="Call me back")

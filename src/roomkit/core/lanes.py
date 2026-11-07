@@ -326,7 +326,8 @@ class DeliveryCascade:
 
     def keep_write(self, task: asyncio.Task[Any]) -> None:
         """Own *task*, the write of what the hooks of a delivery set its lane
-        dropped gave (RFC §10.1 step 15): no cancellation cuts it, and a
+        dropped gave (RFC §10.1 step 15): no cancellation of the cascade
+        cuts it (the kit's close does, once its grace is over), and a
         waiter on the cascade's drain joins it, so the call that made the set
         reads its tasks stored."""
         self.track(task)

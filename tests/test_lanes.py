@@ -249,6 +249,41 @@ async def test_stale_plan_is_dropped_when_cursor_already_passed_it() -> None:
 
 
 @pytest.mark.asyncio
+async def test_a_dropped_set_s_kept_write_holds_its_cascade_s_drain() -> None:
+    """The write of what a dropped set's hooks gave is the cascade's
+    (RMK-1499): its waiter is woken, but the cascade is not drained, and
+    ``wait_drained`` returns, until the write ended."""
+    store, host, registry, _ = await make_rig()
+    written = asyncio.Event()
+
+    async def write() -> None:
+        await written.wait()
+
+    kept: list[asyncio.Task[None]] = []
+
+    def store_dropped(plan: DeliveryPlan) -> asyncio.Task[None]:
+        kept.append(asyncio.ensure_future(write()))
+        return kept[-1]
+
+    host._store_dropped_side_effects = store_dropped  # type: ignore[method-assign]
+    assert await store.advance_delivered_index(ROOM, 1, force=True)
+    cascade = DeliveryCascade(ROOM, reentry_budget=10)
+    enqueue_exec(registry, cascade, "e0", 0)
+    await asyncio.wait_for(cascade.wait(), timeout=2.0)
+    draining = asyncio.ensure_future(cascade.wait_drained())
+    await asyncio.sleep(0)
+    assert (cascade.cancelled, cascade.drained, draining.done()) == (
+        "delivery_stale",
+        False,
+        False,
+    )
+    written.set()
+    await asyncio.wait_for(draining, timeout=1.0)
+    assert cascade.drained
+    await registry.aclose()
+
+
+@pytest.mark.asyncio
 async def test_execution_failure_resolves_wait_and_records_error() -> None:
     store, host, registry, _ = await make_rig()
     boom = RuntimeError("provider exploded")
@@ -275,6 +310,14 @@ async def test_close_aborts_pending_work_and_wakes_waiters(cut_unwind: float) ->
     assert cascade.cancelled is not None
     assert host.executed == []
     assert cascade._pending == 0  # no unit left behind by the aborted round
+    # A set committed once the registry is sealed is dropped too.
+    late = DeliveryCascade(ROOM, reentry_budget=10)
+    enqueue_exec(registry, late, "e2", 2)
+    assert late.cancelled == "kit_closed"
+    # What the hooks of each set dropped before it ran gave is handed to the
+    # host to store (RMK-1499): the queued e1 and the late e2, never e0,
+    # which the close cut as it ran.
+    assert host.dropped == ["e1", "e2"]
 
 
 @pytest.mark.asyncio
