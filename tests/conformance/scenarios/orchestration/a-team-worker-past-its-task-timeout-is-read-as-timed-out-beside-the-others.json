@@ -6,7 +6,7 @@
     "§19.7.3",
     "§23.3"
   ],
-  "notes": "Python: tests/orchestration/test_worker_delegation_bound.py test_a_worker_past_its_bound_is_cut_and_the_call_answers_once (the parallel door); tests/orchestration/test_supervisor_strategy.py TestParallelWorkerFailure::test_parallel_propagates_error; tests/test_supervisor.py TestRunSequential::test_per_task_timeout_fails_one_worker_and_continues (its parallel twin). orchestration/strategies/supervisor/execution.py _run_parallel. The analyst's model waits at a gate no step opens.",
+  "notes": "Python: tests/orchestration/test_worker_delegation_bound.py test_a_worker_past_its_bound_is_cut_and_the_call_answers_once (the parallel door); tests/orchestration/test_supervisor_strategy.py TestParallelWorkerFailure::test_parallel_propagates_error; tests/test_supervisor.py TestRunSequential::test_per_task_timeout_fails_one_worker_and_continues (its parallel twin). orchestration/strategies/supervisor/execution.py _run_parallel. The analyst's model waits at a gate no step opens. A parallel team's child rooms are created side by side: the RFC gives no order of their creation, so their records are matched as $created in either order.",
   "setup": {
     "channels": [
       {
@@ -184,17 +184,21 @@
       ]
     },
     "rooms": {
-      "$r1": {
-        "metadata": {
-          "task_agent_id": "analyst",
-          "task_status": "cancelled"
-        }
-      },
-      "$r2": {
-        "metadata": {
-          "task_agent_id": "critic",
-          "task_status": "completed"
-        }
+      "$created": {
+        "$unordered": [
+          {
+            "metadata": {
+              "task_agent_id": "analyst",
+              "task_status": "cancelled"
+            }
+          },
+          {
+            "metadata": {
+              "task_agent_id": "critic",
+              "task_status": "completed"
+            }
+          }
+        ]
       }
     }
   }

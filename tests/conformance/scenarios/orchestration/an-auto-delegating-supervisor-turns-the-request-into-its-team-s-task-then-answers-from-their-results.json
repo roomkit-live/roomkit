@@ -6,7 +6,7 @@
     "§19.7.3",
     "§23.3"
   ],
-  "notes": "Python: tests/test_supervisor.py TestSupervisorInstall::test_install_auto_delegate_wraps_on_event, TestTwoPassDelegate::test_two_pass_runs_workers, TestAutoDelegate::test_sync_auto_delegate_with_refine, TestTwoPassDelegate::test_two_pass_restores_prompt_on_error (the instruction rides one turn's binding copy); tests/orchestration/test_strategy_supervisor.py test_the_supervisors_turns_answer_at_the_depth_of_its_event[two_pass]. orchestration/strategies/supervisor/_install_auto.py _DelegatingTurns, delegate.py _two_pass_delegate, _formulate_task (TURN_INSTRUCTION), _build_pass1_instruction, _results_event, results.py _present_worker_results; channels/_ai_context.py with_turn_instruction. auto_delegate needs a strategy; refine_task is true by default.",
+  "notes": "Python: tests/test_supervisor.py TestSupervisorInstall::test_install_auto_delegate_wraps_on_event, TestTwoPassDelegate::test_two_pass_runs_workers, TestAutoDelegate::test_sync_auto_delegate_with_refine, TestTwoPassDelegate::test_two_pass_restores_prompt_on_error (the instruction rides one turn's binding copy); tests/orchestration/test_strategy_supervisor.py test_the_supervisors_turns_answer_at_the_depth_of_its_event[two_pass]. orchestration/strategies/supervisor/_install_auto.py _DelegatingTurns, delegate.py _two_pass_delegate, _formulate_task (TURN_INSTRUCTION), _build_pass1_instruction, _results_event, results.py _present_worker_results; channels/_ai_context.py with_turn_instruction. auto_delegate needs a strategy; refine_task is true by default. A parallel team's child rooms are created side by side: the RFC gives no order of their creation, so their records are matched as $created in either order.",
   "setup": {
     "channels": [
       {
@@ -192,17 +192,21 @@
           }
         }
       },
-      "$r1": {
-        "metadata": {
-          "task_agent_id": "analyst",
-          "task_input": "Acme"
-        }
-      },
-      "$r2": {
-        "metadata": {
-          "task_agent_id": "critic",
-          "task_input": "Acme"
-        }
+      "$created": {
+        "$unordered": [
+          {
+            "metadata": {
+              "task_agent_id": "analyst",
+              "task_input": "Acme"
+            }
+          },
+          {
+            "metadata": {
+              "task_agent_id": "critic",
+              "task_input": "Acme"
+            }
+          }
+        ]
       }
     }
   }
