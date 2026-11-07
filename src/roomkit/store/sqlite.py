@@ -2168,19 +2168,20 @@ class SQLiteStore(ConversationStore):
         replaces the stored identity within its organization only (RFC §5.6, §17.2), an
         identity of another is never overwritten (``link_target``). A caller naming an
         organization reads ``IdentityNotFoundError`` for a record the model cannot read,
-        which proves no organization: the fixed error would tell that the id exists
-        (HITL cc6072ea). A caller naming none keeps the fixed error."""
+        which proves no organization, as for a readable record of another: the fixed
+        error would tell another organization that the record cannot be read (HITL
+        cc6072ea). A caller naming none keeps the fixed error."""
         try:
             held = self._x_get_identity(identity.id)
         except ValueError:
             if not identity.organization_id:
                 raise
-            held, readable = None, False
+            held = None
         else:
-            readable = True
-        if held is not None or not readable:
-            # Raised outside the handler: the store's error is not even its context.
-            link_target(held, identity.id, identity.organization_id)
+            if held is None:
+                return
+        # Raised outside the handler: the store's error is not even its context.
+        link_target(held, identity.id, identity.organization_id)
 
     @staticmethod
     def _x_drop_addresses_no_longer_held(

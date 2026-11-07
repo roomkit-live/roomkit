@@ -1082,8 +1082,8 @@ async def test_create_identity_for_an_organization_finds_no_unreadable_identity(
     """HITL cc6072ea: an identity created for an organization over an id whose record the
     model cannot read reads IdentityNotFoundError, as over a readable record of another
     organization: the record proves no organization, even the caller's own, and the
-    store's fixed error would tell another organization that the id exists (RFC §17.2).
-    Nothing is written."""
+    store's fixed error would tell another organization that the record cannot be read
+    (RFC §17.2). Nothing is written."""
     path = tmp_path / "older.db"
     store = SQLiteStore(path)
     identity = Identity(id="i1", organization_id="globex", channel_addresses={"sms": ["+1555"]})
