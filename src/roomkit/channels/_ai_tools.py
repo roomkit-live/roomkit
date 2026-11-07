@@ -707,8 +707,10 @@ class AIToolsMixin(_AIChannelContract):
     ) -> AIToolResultPart:
         """A call past its gates, served and judged, as the model reads it."""
         self._record_call_arguments(tc, arguments, scope)
+        # Read before the handler, which may change the dict it is handed.
+        counted_as = _repeat_key(tc.name, arguments)
         outcome = await self._judged_call(tc, arguments, scope)
-        self._forget_repeats_on_change(tc.name, arguments, outcome, scope.declared_tools)
+        self._forget_repeats_on_change(tc.name, counted_as, outcome, scope.declared_tools)
         self._settle_served_call(tc.id, served=not outcome.failed)
         kept = kept_in_tool_memory(outcome.kind)
         self._settle_recovery(tc.id, kept=kept)
@@ -964,15 +966,15 @@ class AIToolsMixin(_AIChannelContract):
     def _forget_repeats_on_change(
         self,
         name: str,
-        arguments: dict[str, Any],
+        counted_as: tuple[str, str] | None,
         outcome: ToolOutcome,
         declared_tools: list[AITool] | None,
     ) -> None:
         """Start the turn's counts again once a tool that changes state
         answered a call: what the calls before it read may read otherwise now
-        (a test rerun after an edit), on both axes. Its own call keeps its
-        count, so the same change made again and again is still a loop (RFC
-        §6.4)."""
+        (a test rerun after an edit), on both axes. The call's own count,
+        *counted_as* as the guard counted it, stays, so the same change made
+        again and again is still a loop (RFC §6.4)."""
         if outcome.kind is not OutcomeKind.SERVED:
             return
         loop_ctx = self._get_loop_ctx()
@@ -980,12 +982,11 @@ class AIToolsMixin(_AIChannelContract):
         tools = known if known is not None else declared_tools or []
         if not any(tool.name == name and tool.changes_state for tool in tools):
             return
-        key = _repeat_key(name, arguments)
-        own = loop_ctx.repeated_calls.get(key) if key is not None else None
+        own = loop_ctx.repeated_calls.get(counted_as) if counted_as is not None else None
         loop_ctx.repeated_calls.clear()
         loop_ctx.repeated_results.clear()
-        if key is not None and own is not None:
-            loop_ctx.repeated_calls[key] = own
+        if counted_as is not None and own is not None:
+            loop_ctx.repeated_calls[counted_as] = own
 
     def _repeated_call_guard(self, name: str, arguments: dict[str, Any]) -> str | None:
         """Short-circuit a tool call repeated with identical arguments this turn."""

@@ -143,12 +143,19 @@ async def test_a_rerun_after_a_change_runs_only_when_the_tool_changes_state(
     assert ("error" in third) is not changes_state
 
 
-async def test_a_change_made_again_and_again_is_still_refused(streaming: bool) -> None:
-    """The change keeps its own count: the same write three times is a loop."""
+@pytest.mark.parametrize("mutates", [False, True])
+async def test_a_change_made_again_and_again_is_still_refused(
+    streaming: bool, mutates: bool
+) -> None:
+    """The change keeps its own count, as the guard counted it before its
+    handler ran, which may change the arguments it is handed: the same write
+    three times is a loop."""
     writes: list[dict] = []
 
     async def handler(name: str, arguments: dict) -> str:
-        writes.append(arguments)
+        writes.append(dict(arguments))
+        if mutates:
+            arguments.pop("value")
         return json.dumps({"ok": True})
 
     def write(call_id: str) -> AIResponse:
@@ -178,6 +185,48 @@ async def test_a_change_made_again_and_again_is_still_refused(streaming: bool) -
 
     assert len(writes) == 2
     assert "EXACT arguments" in _tool_results(provider.calls[3])[-1]["error"]
+
+
+async def test_two_changes_made_in_turn_start_each_other_s_counts_again(
+    streaming: bool,
+) -> None:
+    """Each change starts the other's count again: two edits made in turn,
+    each three times with the same arguments, all run (RMK-1541's review)."""
+    edits: list[str] = []
+
+    async def handler(name: str, arguments: dict) -> str:
+        edits.append(arguments["value"])
+        return json.dumps({"ok": True})
+
+    def edit(call_id: str, value: str) -> AIResponse:
+        return AIResponse(
+            content="",
+            finish_reason="tool_calls",
+            tool_calls=[AIToolCall(id=call_id, name="edit", arguments={"value": value})],
+        )
+
+    provider = MockAIProvider(
+        ai_responses=[
+            *(edit(f"e{i}", "a" if i % 2 == 0 else "b") for i in range(6)),
+            AIResponse(content="done"),
+        ],
+        streaming=streaming,
+    )
+    edit_tool = AITool(
+        name="edit",
+        description="Edit a file.",
+        parameters=_ECHO_TOOL["parameters"],
+        changes_state=True,
+    )
+    ch = AIChannel("ai1", provider=provider, tool_handler=handler, tools=[edit_tool])
+    await respond(
+        ch,
+        make_event(body="go", channel_id="sms1"),
+        _binding([]),
+        RoomContext(room=Room(id="r1")),
+    )
+
+    assert edits == ["a", "b", "a", "b", "a", "b"]
 
 
 async def test_different_arguments_are_not_guarded(streaming: bool) -> None:

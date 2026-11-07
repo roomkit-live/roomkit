@@ -78,6 +78,22 @@ class TestExtractTools:
         assert defs[0].name == "bar"
         assert handler is None
 
+    def test_a_schema_dict_declares_that_its_tool_changes_state(self) -> None:
+        """A dict in the list, or a Tool's definition, says it as an AITool
+        does (RFC §6.4, the anti-loop guard); one that does not, does not."""
+
+        class Writer(FakeTool):
+            @property
+            def definition(self) -> dict[str, Any]:
+                return {**super().definition, "changes_state": True}
+
+        defs, _ = extract_tools(
+            [{"name": "edit", "description": "e", "changes_state": True}, Writer("write", "ok")]
+            + [{"name": "read", "description": "r"}]
+        )
+
+        assert [d.changes_state for d in defs] == [True, True, False]
+
     def test_mixed_tools_and_aitool(self) -> None:
         t = FakeTool("webcam", "frame")
         ai = AITool(name="search", description="web search")
