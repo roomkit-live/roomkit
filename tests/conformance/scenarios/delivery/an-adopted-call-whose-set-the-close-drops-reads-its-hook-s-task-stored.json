@@ -1,0 +1,238 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/an-adopted-call-whose-set-the-close-drops-reads-its-hook-s-task-stored",
+  "title": "An adopted deferred call whose delivery set the kit's close drops before it ran: its handle answers once the task its event's hook gave is stored, and its ON_TASK_CREATED fires",
+  "rules": [
+    "§9.5.1 Reentrance",
+    "§10.1 step 15",
+    "§10.1 step 18",
+    "§12.10.4"
+  ],
+  "notes": "Python: src/roomkit/core/lanes.py (_drop_entry, _keep_side_effects, DeliveryCascade.keep_write, wait_drained), src/roomkit/core/mixins/lane_execution.py (_store_dropped_side_effects); RMK-1514 item 1, after RMK-1499. hello's off-lock hook makes the deferred call side, whose set waits in the room's lane behind the first message's, held at its transport; a second off-lock hook of hello waits at a gate while the close starts, then waits on side's handle and reads the room's tasks: the drop's write is side's cascade's, which its handle's wait joins, while hello's call is still in its hooks; the first message's transport is let go once hello's call returned.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "deliver": [
+          {
+            "when": {
+              "text": "Is my card blocked?"
+            },
+            "gate": "ws-holds"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "adopts",
+        "trigger": "before_broadcast",
+        "needs_lock": false,
+        "priority": 0,
+        "timeout_ms": 5000,
+        "reactions": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "+15551234567",
+                  "content": {
+                    "type": "text",
+                    "body": "Please call me back"
+                  }
+                },
+                "defer_delivery": true,
+                "as": "side",
+                "expect": {
+                  "result": {
+                    "blocked": false,
+                    "event": {
+                      "content": {
+                        "body": "Please call me back"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "reads",
+        "trigger": "before_broadcast",
+        "needs_lock": false,
+        "priority": 1,
+        "timeout_ms": 5000,
+        "reactions": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "gate": "side-made",
+            "do": [
+              {
+                "call": "delivery.wait",
+                "of": "side",
+                "as": "side_over",
+                "expect": {
+                  "result": {
+                    "cancellation_reason": "kit_closed"
+                  }
+                }
+              },
+              {
+                "call": "store.list_tasks",
+                "room_id": "room-1",
+                "as": "tasks",
+                "expect": {
+                  "result": [
+                    {
+                      "title": "Call the customer back",
+                      "status": "pending"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "triage",
+        "trigger": "before_broadcast",
+        "priority": 2,
+        "reactions": [
+          {
+            "when": {
+              "text": "Please call me back"
+            },
+            "result": {
+              "action": "allow",
+              "tasks": [
+                {
+                  "title": "Call the customer back"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "follow_up",
+        "trigger": "on_task_created",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Is my card blocked?"
+        }
+      },
+      "background": true,
+      "as": "first"
+    },
+    {
+      "wait_for": "ws-holds"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "background": true,
+      "as": "h"
+    },
+    {
+      "wait_for": "side-made"
+    },
+    {
+      "call": "close",
+      "background": true,
+      "as": "closing"
+    },
+    {
+      "open": "side-made"
+    },
+    {
+      "await": "h"
+    },
+    {
+      "open": "ws-holds"
+    },
+    {
+      "await": "closing"
+    },
+    {
+      "await": "first"
+    }
+  ],
+  "expect": {
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "body": "Is my card blocked?"
+            }
+          }
+        ]
+      }
+    },
+    "hooks": {
+      "follow_up": [
+        {
+          "trigger": "on_task_created",
+          "room_id": "room-1",
+          "event": {
+            "type": "task_created",
+            "content": {
+              "body": "Please call me back"
+            },
+            "metadata": {
+              "task_title": "Call the customer back"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
