@@ -337,8 +337,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   event, and one not committed when the event's `process_timeout` passes is refused with it,
   nothing of either stored, the event's `process_timeout` the one reported (`send_event()`
   raises `ProcessTimeoutError`, `process_inbound()` returns `blocked=True,
-  reason="process_timeout"`); the event's caller gone, it goes on. A call the task makes once
-  the body returned is a new arrival, as roomkit-rs.
+  reason="process_timeout"`); the event's caller gone, it goes on under the lock up to the
+  event's deadline, where it is cut, nothing of it reported (HITL 2c9d64f7). A call the task
+  makes once the body returned is a new arrival, as roomkit-rs.
 - **BREAKING: an agent keeps the application's instruction its turn read, and its later
   turns replay it where the turn read it** (RFC §10.1.1, HITL 5e89048c, 25b07f2a, RMK-1407).
   An instruction was the turn's input, then absent from every later turn's history: the

@@ -12,8 +12,9 @@ of the event; and it is bounded by the section's deadline (the event's
 ``process_timeout``). Not committed when that deadline passes, it is cut
 there, refused ``process_timeout``, nothing of it stored and nothing
 reported but the event's ``process_timeout``; so is a call nested in turn
-under its own section. A section that ends otherwise, its event's caller
-gone, leaves the call to go on, as roomkit-rs does.
+under its own section. A section cancelled before its deadline, its event's
+caller gone, holds its lock for the call until it ends or that deadline
+passes, where it is cut, nothing of it reported, as roomkit-rs does.
 """
 
 from __future__ import annotations
@@ -111,26 +112,59 @@ def nested_in(
 
 async def nested_calls_over(call: _Call | None) -> None:
     """Wait for the calls the tasks of *call*, a hook's body, nested under
-    its section; cancelled meanwhile, cut those its section's deadline
-    ended (:func:`cut_nested_calls`), then raise the cancellation."""
+    its section; cancelled meanwhile, settle them as the section ends
+    (:func:`nested_calls_after_a_cancel`), then raise the cancellation."""
     if call is None:
         return
     try:
         while call.nested:
             await asyncio.wait([nested.over for nested in call.nested])
     except asyncio.CancelledError:
-        cut_nested_calls(call)
+        await nested_calls_after_a_cancel(call)
         raise
 
 
-def cut_nested_calls(call: _Call | None) -> None:
+async def nested_calls_after_a_cancel(call: _Call | None) -> None:
+    """Settle the calls the tasks of *call* nested under its section, the
+    section cancelled: past its deadline, cut those not committed yet; before
+    it (its event's caller gone), wait for them, the section's lock still
+    held, up to that deadline, past which they are cut, nothing of them
+    reported, as roomkit-rs's operation runs them on under its lock within
+    the event's deadline.
+
+    The event's own ``process_timeout`` falls at that deadline too: both
+    timers can fire in one pass of the loop, and the wait then ends with a
+    cancellation rather than its timeout. Expired, it cuts them all the
+    same before that cancellation goes on up."""
+    if call is None or not call.nested:
+        return
+    deadline = next(iter(call.nested)).deadline
+    within = _current.get()
+    past = within is not None and within.cut_at_its_deadline
+    if past or (deadline is not None and asyncio.get_running_loop().time() >= deadline):
+        cut_nested_calls(call)
+        return
+    timeout = asyncio.timeout_at(deadline)
+    try:
+        async with timeout:
+            while call.nested:
+                await asyncio.wait([nested.over for nested in call.nested])
+    except TimeoutError:
+        cut_nested_calls(call, past_the_deadline=True)
+    except asyncio.CancelledError:
+        if timeout.expired():
+            cut_nested_calls(call, past_the_deadline=True)
+        raise
+
+
+def cut_nested_calls(call: _Call | None, *, past_the_deadline: bool = False) -> None:
     """Cut, as their section ends, the calls the tasks of *call* nested
     under it that are not committed yet, once the section's deadline
-    passed or the nested call the current code runs within was cut at
-    its own."""
+    passed (*past_the_deadline*, when its own timer said so) or the nested
+    call the current code runs within was cut at its own."""
     if call is None:
         return
     within = _current.get()
-    past_a_deadline = within is not None and within.cut_at_its_deadline
+    past_a_deadline = past_the_deadline or (within is not None and within.cut_at_its_deadline)
     for nested in list(call.nested):
         nested.cut(past_a_deadline)

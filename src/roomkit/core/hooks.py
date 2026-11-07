@@ -12,7 +12,7 @@ from typing import Any, ClassVar, Protocol
 
 from roomkit.core._changes import holds_change
 from roomkit.core._instructions import kept_metadata
-from roomkit.core._nested_calls import cut_nested_calls, nested_calls_over
+from roomkit.core._nested_calls import nested_calls_after_a_cancel, nested_calls_over
 from roomkit.core._reentrance import (
     ReentryBudget,
     after_delivery,
@@ -497,20 +497,24 @@ async def _hook_body(
     for once the body is over, however it ended, its own timeout included,
     before its outcome is handed on: it commits ahead of the event. The
     section's deadline passing meanwhile, or while the body runs, cuts the
-    nested calls not committed yet (:mod:`roomkit.core._nested_calls`); a
+    nested calls not committed yet; a cancellation before it waits for them
+    up to it (:mod:`roomkit.core._nested_calls`); a
     body that timed out before is reported then, *timed_out_then_cut*,
     ahead of what cut its section, as roomkit-rs hands on a hook's held
     timeout."""
     outcome: Any = None
     failed: BaseException | None = None
+    cancelled: asyncio.CancelledError | None = None
     with lent_while_it_runs() as lent, orders_lent_while_it_runs():
         try:
             outcome = await asyncio.wait_for(hook.fn(*args), timeout=hook.timeout)
-        except asyncio.CancelledError:
-            cut_nested_calls(lent)
-            raise
+        except asyncio.CancelledError as cancel:
+            cancelled = cancel
         except BaseException as error:
             failed = error
+    if cancelled is not None:
+        await nested_calls_after_a_cancel(lent)
+        raise cancelled
     try:
         await nested_calls_over(lent)
     except asyncio.CancelledError:

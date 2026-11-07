@@ -602,8 +602,8 @@ class TestAnAdoptedCallBeforeItsCommit:
             if _body(event) == "hello":
                 heads_up = kit.send_event("r1", "ws", TextContent(body="Heads up"))
                 started.append(asyncio.create_task(heads_up))  # never awaited
-                await entered.wait()
                 try:
+                    await entered.wait()
                     await asyncio.Event().wait()
                 finally:
                     cut.set()
@@ -697,9 +697,9 @@ class TestAnAdoptedCallBeforeItsCommit:
         caller = asyncio.create_task(kit.process_inbound(_message("hello")))
         await entered.wait()
         caller.cancel()
+        release.set()
         with contextlib.suppress(asyncio.CancelledError):
             await caller
-        release.set()
         after = await asyncio.wait_for(started[0], timeout=5)
         stored = [_body(event) for event in await _messages(kit)]
         assert (after, stored) == ("after #2", ["Heads up"])
@@ -823,6 +823,67 @@ class TestAnAdoptedCallBeforeItsCommit:
             False,
             ["process_timeout", "hook_timeout"],
         )
+        await kit.close()
+
+    @pytest.mark.wallclock
+    @pytest.mark.parametrize("body_returned", [False, True], ids=["in_the_body", "body_returned"])
+    async def test_a_call_a_locked_hook_s_task_nests_ends_by_the_event_s_deadline_past_its_caller(
+        self, body_returned: bool
+    ) -> None:
+        """A locked hook's task makes a call nested under the lock, whose own
+        locked hook never ends, and the event's caller stops waiting, while
+        the hook's body runs or once it returned: the section keeps the
+        room's lock for the call up to the event's ``process_timeout``,
+        which cuts it, nothing of it stored and nothing reported, neither
+        the event's ``process_timeout`` nor the call's own, which falls
+        later; a message sent then commits (HITL 2c9d64f7)."""
+        kit = await _room(RoomKit(process_timeout=0.05), SimpleChannel("ws"))
+        entered, returned = asyncio.Event(), asyncio.Event()
+        started: list[asyncio.Task[RoomEvent]] = []
+        ids: dict[str, str] = {}
+        reported: list[str | None] = []
+
+        @kit.on("process_timeout")
+        async def on_timeout(event: FrameworkEvent) -> None:
+            reported.append(event.event_id)
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST, name="slow")
+        async def slow(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            if _body(event) == "Heads up":
+                ids["Heads up"] = event.id
+                entered.set()
+                await asyncio.Event().wait()
+            return HookResult.allow()
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST, name="notifier")
+        async def notifier(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            if _body(event) == "hello":
+                ids["hello"] = event.id
+                # Its own deadline then falls well after the event's.
+                await asyncio.sleep(0.02)
+                heads_up = kit.send_event("r1", "ws", TextContent(body="Heads up"))
+                started.append(asyncio.create_task(heads_up))  # never awaited
+                await entered.wait()
+                returned.set()
+            return HookResult.allow()
+
+        caller = asyncio.create_task(kit.process_inbound(_message("hello")))
+        # Woken first, the test cancels the caller ahead of the body's next
+        # step; once the body returned, the section is waiting for the call.
+        await (returned if body_returned else entered).wait()
+        caller.cancel()
+        sent = await asyncio.gather(*started, return_exceptions=True)
+        with contextlib.suppress(asyncio.CancelledError):
+            await caller
+        other = await kit.process_inbound(_message("other"))
+        names = {event_id: body for body, event_id in ids.items()}
+        outcome = (
+            [type(error) for error in sent],
+            [_body(event) for event in await _messages(kit)],
+            other.blocked,
+            [names.get(event_id, event_id) for event_id in reported],
+        )
+        assert outcome == ([ProcessTimeoutError], ["other"], False, [])
         await kit.close()
 
     async def test_a_hook_that_times_out_while_its_entry_works_is_heard_after_it(self) -> None:
