@@ -1,0 +1,208 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "locks/an-adopted-call-carries-the-failed-release-of-what-a-call-nested-in-its-injected-event-s-section-injected",
+  "title": "A call an off-lock hook adopts answers once the event that a call nested in the section of its own injected event injected committed, and carries that event's failed release; the event that adopted it does not",
+  "rules": [
+    "§13.5 A release that fails",
+    "§9.5.1 Reentrance",
+    "§9.4"
+  ],
+  "notes": "Python: every injected pass opens a section with a queue of its own (_run_injected_pass), on which a call nested in it queues what its hooks inject (_reentrance.RoomWork.entry); the adopted call runs them before it returns (RMK-1516, the full review's probe p2).",
+  "setup": {
+    "kit": {
+      "lock_manager": {
+        "release_error": "lease expired"
+      }
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "adopts",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "ws",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "side"
+                  }
+                },
+                "expect": {
+                  "result": {
+                    "blocked": false,
+                    "event": {
+                      "content": {
+                        "body": "side"
+                      }
+                    },
+                    "error": {
+                      "$contains": "lease expired"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        ],
+        "needs_lock": false,
+        "timeout_ms": 20000
+      },
+      {
+        "name": "injects-note1",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "side"
+            },
+            "result": {
+              "action": "allow",
+              "injected_events": [
+                {
+                  "event": {
+                    "content": {
+                      "type": "text",
+                      "body": "note1"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "nests-deep",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "note1"
+            },
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "room-1",
+                "channel_id": "ws",
+                "content": {
+                  "type": "text",
+                  "body": "deep"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "injects-note2",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "deep"
+            },
+            "result": {
+              "action": "allow",
+              "injected_events": [
+                {
+                  "event": {
+                    "content": {
+                      "type": "text",
+                      "body": "note2"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "scan",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "note2"
+            },
+            "gate": "scan"
+          },
+          {
+            "when": {
+              "text": "hello"
+            },
+            "gate": "late"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "background": true,
+      "as": "h"
+    },
+    {
+      "wait_for": "scan"
+    },
+    {
+      "lock_releases": "fail"
+    },
+    {
+      "open": "scan"
+    },
+    {
+      "wait_for": "late"
+    },
+    {
+      "lock_releases": "succeed"
+    },
+    {
+      "open": "late"
+    },
+    {
+      "await": "h",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ]
+}

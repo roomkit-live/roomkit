@@ -1,0 +1,226 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "locks/an-adopted-message-held-for-its-sender-carries-the-failed-release-of-what-a-call-nested-in-its-challenge-s-section-injected",
+  "title": "A message an off-lock hook adopts, held for its sender, answers once the event that a call nested in its challenge's section injected committed, and carries that event's failed release; the event that adopted it does not",
+  "rules": [
+    "§13.5 A release that fails",
+    "§9.5.1 Reentrance",
+    "§9.4"
+  ],
+  "notes": "Python: the held call's challenge runs as its own cascade (_inject_off_lock), whose pass's section queues what a call nested in it injects (RMK-1516, the full review's probe p2b).",
+  "setup": {
+    "kit": {
+      "lock_manager": {
+        "release_error": "lease expired"
+      },
+      "identity_resolver": {
+        "answers": [
+          {
+            "when": {
+              "text": "side"
+            },
+            "repeat": true,
+            "result": {
+              "status": "ambiguous",
+              "candidates": [
+                {
+                  "id": "alice-id",
+                  "display_name": "Alice"
+                },
+                {
+                  "id": "bob-id",
+                  "display_name": "Bob"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "adopts",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "ws",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "side"
+                  }
+                },
+                "expect": {
+                  "result": {
+                    "blocked": true,
+                    "reason": "identity_challenge_sent",
+                    "error": {
+                      "$contains": "lease expired"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        ],
+        "needs_lock": false,
+        "timeout_ms": 20000
+      },
+      {
+        "name": "nests-deep",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "Who are you?"
+            },
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "room-1",
+                "channel_id": "ws",
+                "content": {
+                  "type": "text",
+                  "body": "deep"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "injects-note",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "deep"
+            },
+            "result": {
+              "action": "allow",
+              "injected_events": [
+                {
+                  "event": {
+                    "content": {
+                      "type": "text",
+                      "body": "note"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "scan",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "note"
+            },
+            "gate": "scan"
+          },
+          {
+            "when": {
+              "text": "hello"
+            },
+            "gate": "late"
+          }
+        ]
+      }
+    ],
+    "identity_hooks": [
+      {
+        "name": "ambiguous",
+        "trigger": "on_identity_ambiguous",
+        "reactions": [
+          {
+            "repeat": true,
+            "result": {
+              "status": "challenge_sent",
+              "message": "Identify yourself",
+              "inject": {
+                "event": {
+                  "content": {
+                    "type": "text",
+                    "body": "Who are you?"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "background": true,
+      "as": "h"
+    },
+    {
+      "wait_for": "scan"
+    },
+    {
+      "lock_releases": "fail"
+    },
+    {
+      "open": "scan"
+    },
+    {
+      "wait_for": "late"
+    },
+    {
+      "lock_releases": "succeed"
+    },
+    {
+      "open": "late"
+    },
+    {
+      "await": "h",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ]
+}
