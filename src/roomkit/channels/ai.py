@@ -130,9 +130,6 @@ _ContentPart = AITextPart | AIImagePart | AIToolCallPart | AIToolResultPart | AI
 
 logger = logging.getLogger("roomkit.channels.ai")
 
-# Largest tool result the usage memory keeps for later turns, in characters.
-_TOOL_MEMORY_RESULT_CHARS = 6000
-
 
 def _portable_schema(schema: dict[str, Any] | None) -> dict[str, Any] | None:
     """*schema*, checked against the portable subset now: one outside it fails
@@ -282,9 +279,6 @@ class AIChannel(
         # used tools each turn so a tool used once stays callable under Tool
         # Search, and replays the latest images they returned. See _tool_usage.
         self._tool_usage = ToolUsageMemory(recorded=self._in_tool_memory)
-        # A result later turns replay whole never exceeds what the eviction
-        # threshold lets the model see in the turn itself (~4 chars a token).
-        self._replayed_result_chars = min(_TOOL_MEMORY_RESULT_CHARS, 4 * evict_threshold_tokens)
         # Per-conversation record of the skills the model activated. Their bodies
         # ride the system prompt from the next turn on, so ``activate_skill``
         # answers with a short ACK instead of re-sending a multi-KB body every

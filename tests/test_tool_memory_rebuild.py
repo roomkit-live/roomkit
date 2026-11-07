@@ -146,12 +146,9 @@ async def test_a_call_id_repeated_across_turns_replays_both_calls(streaming: boo
     ]
     calls = [(p.id, p.arguments) for p in replayed if isinstance(p, AIToolCallPart)]
     results = [(p.tool_call_id, p.result) for p in replayed if isinstance(p, AIToolResultPart)]
-    assert [arguments for _, arguments in calls] == [{"q": "paris"}, {"q": "rome"}]
-    assert len({call_id for call_id, _ in calls}) == 2  # one id per call, as a chat API pairs them
-    assert results == [
-        (calls[0][0], "secret-of-ai1:paris"),
-        (calls[1][0], "secret-of-ai1:rome"),
-    ]
+    # Each under the id the model gave it, as its turn sent it (RMK-1370).
+    assert calls == [("c1", {"q": "paris"}), ("c1", {"q": "rome"})]
+    assert results == [("c1", "secret-of-ai1:paris"), ("c1", "secret-of-ai1:rome")]
     await kit.close()
 
 

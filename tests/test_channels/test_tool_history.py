@@ -15,13 +15,7 @@ from typing import Any
 import pytest
 
 from roomkit import HookResult, ToolCallEvent
-from roomkit.channels._tool_history import (
-    REPLAYED_CALLS,
-    WHOLE_RESULTS,
-    ToolRound,
-    tool_rounds,
-    with_tool_rounds,
-)
+from roomkit.channels._tool_history import ToolRound, tool_rounds, with_tool_rounds
 from roomkit.channels.ai import AIChannel
 from roomkit.core.framework import RoomKit
 from roomkit.models.context import RoomContext
@@ -156,6 +150,59 @@ async def test_an_earlier_round_reads_as_its_calls_then_their_results(streaming:
     assert "Tools you've already used here" not in str(second_turn.messages[-1].content)
 
 
+def _opening(previous: AIContext, later: AIContext, answer: str) -> tuple[Any, Any]:
+    """What *later* opens with, and what *previous* sent then its *answer*:
+    equal when *later* extends the request a provider caches a prefix of."""
+    sent = [*previous.messages, AIMessage(role="assistant", content=answer)]
+    return _shape(later.messages[: len(sent)]), _shape(sent)
+
+
+async def test_a_later_turn_s_request_extends_the_previous_turn_s(streaming: bool) -> None:
+    """Each turn's first request opens with what the previous turn's last
+    request sent, word for word, then its answer: every earlier round is
+    replayed as it was sent, whatever came after it (RFC §6.4)."""
+    turns = 4
+    responses = []
+    for turn in range(turns):
+        responses += [
+            _round((f"c{turn}a", "big", {}), (f"c{turn}b", "lookup", {"q": f"{turn}"})),
+            _round((f"c{turn}c", "lookup", {"q": f"again {turn}"})),
+            _answer(f"Answer {turn}."),
+        ]
+    provider = MockAIProvider(ai_responses=responses, streaming=streaming)
+
+    calls = await _turns(provider, *(f"question {turn}" for turn in range(turns)))
+
+    for turn in range(1, turns):
+        previous_last, first = calls[3 * turn - 1], calls[3 * turn]
+        opening, sent = _opening(previous_last, first, f"Answer {turn - 1}.")
+        assert opening == sent
+        assert first.messages[: len(previous_last.messages)] == previous_last.messages
+
+
+async def test_a_round_s_text_replays_with_its_calls_in_one_message(streaming: bool) -> None:
+    """A step whose model wrote text with its calls reads, in a later turn,
+    as the one assistant message the turn sent: its text, then its calls."""
+    provider = MockAIProvider(
+        ai_responses=[
+            AIResponse(
+                content="Let me look it up.",
+                finish_reason="tool_calls",
+                tool_calls=[AIToolCall(id="c1", name="lookup", arguments={"q": "a"})],
+            ),
+            _answer("Answer one."),
+            _answer("Answer two."),
+        ],
+        streaming=streaming,
+    )
+
+    calls = await _turns(provider, "first question", "second question")
+
+    opening, sent = _opening(calls[1], calls[2], "Answer one.")
+    assert opening == sent
+    assert calls[2].messages[: len(calls[1].messages)] == calls[1].messages
+
+
 async def test_a_turn_in_another_room_replays_nothing_of_this_one(streaming: bool) -> None:
     provider = MockAIProvider(
         ai_responses=[_round(("c1", "lookup", {"q": "a"})), _answer("One."), _answer("Two.")],
@@ -214,15 +261,9 @@ def _results(rounds: list[ToolRound]) -> list[Any]:
 
 
 def _rounds(
-    rows: list[RoomEvent], *, resolves: bool = False, keep: int = 6000, intents: bool = False
+    rows: list[RoomEvent], *, resolves: bool = False, intents: bool = False
 ) -> list[ToolRound]:
-    return tool_rounds(
-        rows,
-        replayed=lambda name: name != "find_tools",
-        resolves=lambda _: resolves,
-        keep_chars=keep,
-        intents=intents,
-    )
+    return tool_rounds(rows, resolves=lambda _: resolves, intents=intents)
 
 
 @pytest.mark.parametrize(
@@ -255,9 +296,10 @@ def test_a_round_replays_the_arguments_the_model_wrote(
     assert r.calls.content == [AIToolCallPart(id="c1", name="lookup", arguments=replayed)]
 
 
-def test_only_the_answers_a_tool_gave_are_replayed() -> None:
-    """Served, failed or blocked; never a refusal, a call nothing served or one
-    cancelled, nor a discovery tool of the channel's own."""
+def test_every_call_the_turn_ended_is_replayed_but_a_cancelled_one() -> None:
+    """Whatever its outcome or tool: the model read each of them in its turn,
+    a refusal and a discovery tool of the channel's own included (RMK-1370).
+    Not a call cancelled before it answered, whose result no model read."""
     rows = [
         *_call_rows(1, "c1", "ok"),
         *_call_rows(3, "c2", "boom", outcome="failed"),
@@ -270,8 +312,9 @@ def test_only_the_answers_a_tool_gave_are_replayed() -> None:
 
     rounds = _rounds(rows)
 
-    assert [p.tool_call_id for r in rounds for p in r.results.content] == ["c1", "c2", "c3"]  # type: ignore[union-attr]
-    assert [p.is_error for r in rounds for p in r.results.content] == [False, True, False]  # type: ignore[union-attr]
+    results = [p for r in rounds for p in r.results.content]
+    assert [p.tool_call_id for p in results] == ["c1", "c2", "c3", "c4", "c5", "c7"]  # type: ignore[union-attr]
+    assert [p.is_error for p in results] == [False, True, False, False, False, False]  # type: ignore[union-attr]
 
 
 def test_a_call_with_no_end_row_is_not_replayed() -> None:
@@ -281,6 +324,8 @@ def test_a_call_with_no_end_row_is_not_replayed() -> None:
 
 
 def test_calls_started_together_are_one_round_and_turns_their_own() -> None:
+    """Each call under the id the model gave it, as the turn sent it: an id a
+    later turn reused too (RMK-1370)."""
     rows = [
         _row(EventType.TOOL_CALL_START, 1, "c1"),
         _row(EventType.TOOL_CALL_START, 2, "c2"),
@@ -292,7 +337,7 @@ def test_calls_started_together_are_one_round_and_turns_their_own() -> None:
 
     rounds = _rounds(rows)
 
-    assert [[p.id for p in r.calls.content] for r in rounds] == [["c1", "c2"], ["c3"], ["c1_7"]]  # type: ignore[union-attr]
+    assert [[p.id for p in r.calls.content] for r in rounds] == [["c1", "c2"], ["c3"], ["c1"]]  # type: ignore[union-attr]
     assert [r.index for r in rounds] == [1, 5, 7]
     assert _results(rounds) == ["a", "b", "c", "d"]
 
@@ -309,7 +354,7 @@ def test_a_round_s_results_pair_to_its_calls_first_in_first_out() -> None:
 
     assert [(p.id, p.arguments) for p in rounds[0].calls.content] == [  # type: ignore[union-attr]
         ("c1", {"q": "first"}),
-        ("c1_2", {"q": "second"}),
+        ("c1", {"q": "second"}),
     ]
     assert _results(rounds) == ["a", "b"]
 
@@ -366,30 +411,18 @@ def test_another_turn_among_a_round_s_starts_leaves_its_results_paired() -> None
     assert [p.arguments for r in rounds for p in r.calls.content] == [  # type: ignore[union-attr]
         {"q": "first"},
         {"q": "theirs"},
+        {"q": "second"},
     ]
-    assert _results(rounds) == ["fine", "zed"]
+    assert _results(rounds) == ["fine", "zed", "refused"]
 
 
-def test_the_last_calls_are_replayed_the_most_recent_whole() -> None:
-    long = "x" * 200
-    rows = [row for i in range(REPLAYED_CALLS + 2) for row in _call_rows(2 * i + 1, f"c{i}", long)]
+def test_every_result_is_replayed_whole_however_many_calls_follow() -> None:
+    """No window from turn to turn: what a later turn reads of a round does
+    not change as calls come after it (RMK-1370)."""
+    long = "x" * 7000
+    rows = [row for i in range(12) for row in _call_rows(2 * i + 1, f"c{i}", long)]
 
-    results = _results(_rounds(rows))
-
-    assert len(results) == REPLAYED_CALLS
-    older, recent = results[:-WHOLE_RESULTS], results[-WHOLE_RESULTS:]
-    assert recent == [long] * WHOLE_RESULTS
-    assert all(r.startswith("x" * 120 + "… [the rest is not shown here") for r in older)
-
-
-@pytest.mark.parametrize("keep", [800, 6000])
-def test_a_long_result_is_cut_at_the_kept_size_and_says_so(keep: int) -> None:
-    rows = _call_rows(1, "c1", "y" * (keep + 500))
-
-    [result] = _results(_rounds(rows, keep=keep))
-
-    assert result.startswith("y" * keep + "\n")
-    assert f"[first {keep} of {keep + 500} characters; the rest is not shown here" in result
+    assert _results(_rounds(rows)) == [long] * 12
 
 
 _PLACEHOLDER = (

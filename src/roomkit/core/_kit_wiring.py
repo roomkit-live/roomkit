@@ -12,9 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 from roomkit.channels._video_hooks import room_vision_note
 from roomkit.core.visibility import binding_reaches_room
-from roomkit.models.enums import EventType
-from roomkit.models.store_filter import EventFilter
-from roomkit.turns._wiring_env import WiringEnv
+from roomkit.turns._wiring_env import WiringEnv, read_tool_rows
 from roomkit.turns.base import OwnerEvents
 
 if TYPE_CHECKING:
@@ -44,16 +42,12 @@ class KitWiringEnv(WiringEnv):
     async def context(self, room_id: str, *, carrying: RoomContext | None = None) -> RoomContext:
         return await self._kit._build_context(room_id, carrying=carrying)
 
-    async def tool_rows(self, room_id: str, channel_id: str, limit: int) -> list[RoomEvent]:
+    async def tool_rows(
+        self, room_id: str, channel_id: str, limit: int, *, after_index: int | None = None
+    ) -> list[RoomEvent]:
         with self._kit._resource_lease():
-            return await self._kit._store.get_timeline(
-                room_id,
-                event_filter=EventFilter(
-                    event_types=[EventType.TOOL_CALL_START, EventType.TOOL_CALL_END],
-                    source_channel_id=channel_id,
-                ),
-                limit=limit,
-                newest_first=True,  # most recent N, returned ascending
+            return await read_tool_rows(
+                self._kit._store, room_id, channel_id, limit, after_index=after_index
             )
 
     def realtime(self) -> RealtimeBackend | None:

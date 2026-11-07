@@ -160,12 +160,8 @@ async def test_a_host_selects_the_dialect_by_the_class_on_a_server_of_its_own(
     in_progress = requests[2]["messages"]
     assert _reasoning(in_progress) == [("Let me look.", "WHY."), (None, empty)]
     later = requests[3]["messages"]
-    assert _reasoning(later) == [
-        ("Let me look.", "absent"),
-        (None, empty),
-        (None, empty),
-        ("Sunny.", "absent"),
-    ]
+    # The round's text and its calls, one message as the turn sent it (RMK-1370).
+    assert _reasoning(later) == [("Let me look.", empty), (None, empty), ("Sunny.", "absent")]
     assert not any("<think>" in str(m["content"]) for m in in_progress + later)
 
 

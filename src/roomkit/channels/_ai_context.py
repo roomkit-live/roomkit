@@ -186,7 +186,6 @@ class AIContextMixin(_AIChannelContract):
     _memory: MemoryProvider
     _describe_empty_event: EmptyEventDescriber | None
     _eviction: ToolEviction
-    _replayed_result_chars: int
     _tool_usage: ToolUsageMemory
     _tool_usage_loader: ToolUsageLoader | None
     _tool_history_loader: ToolHistoryLoader | None
@@ -277,7 +276,7 @@ class AIContextMixin(_AIChannelContract):
 
         own_notes = await self._own_notes(loop_ctx, context, standalone=standalone)
         own_notes += discussion_notes(event)
-        rounds = await self._replayed_rounds(event, standalone)
+        rounds = await self._replayed_rounds(event, context, standalone)
         self._measure_turn(
             loop_ctx, context, system_prompt, own_notes, settings.get("max_tokens"), rounds=rounds
         )
@@ -558,6 +557,7 @@ class AIContextMixin(_AIChannelContract):
             before=_rounds_before(event),
             # An event that reads as nothing opens no history for a round.
             answered=_answered_index(event) if current_content else None,
+            said=self._own_turns(memory_result),
         )
         messages: list[AIMessage] = [*memory, *past]
 
@@ -579,6 +579,15 @@ class AIContextMixin(_AIChannelContract):
             messages.append(current)
         conversation = _conversation(messages, len(memory))
         return conversation, attribute_speakers, current_label
+
+    def _own_turns(self, memory_result: MemoryResult) -> dict[int, str]:
+        """The turn each of this channel's own events in the history belongs
+        to, by its index: the text a round's model wrote with its calls."""
+        return {
+            past.index: past.correlation_id
+            for past in memory_result.events
+            if past.source.channel_id == self.channel_id and past.correlation_id is not None
+        }
 
     def _past_turns(
         self,
@@ -680,32 +689,36 @@ class AIContextMixin(_AIChannelContract):
         plan = self._planner.plan_for(room_id)
         return [TaskPlanner.format_plan_prompt(plan)] if plan else []
 
-    async def _replayed_rounds(self, event: RoomEvent, standalone: bool) -> list[ToolRound]:
+    async def _replayed_rounds(
+        self, event: RoomEvent, context: RoomContext, standalone: bool
+    ) -> list[ToolRound]:
         """This channel's earlier rounds of tool calls in the room, which the
         turn's history replays at their place (RFC §6.4); none for a
         standalone turn, which reads nothing of the room (RFC §10.1.1).
 
         Read from the store every turn, the channel's own rows only: what a
         call asked and returned outlives the channel object, and a model reads
-        it the way the turn that made the call did.
+        it the way the turn that made the call did. Every row from the room's
+        context on, or from the event a discussion's turn answers: the history
+        the memory reads lies within it, and a round before it is never
+        replayed.
         """
         if standalone or self._tool_history_loader is None:
             return []
+        answered = _answered_index(event)
+        known = [past.index for past in context.recent_events]
+        known += [] if answered is None else [answered]
+        if not known:
+            return []
         try:
-            rows = await self._tool_history_loader(event.room_id)
+            rows = await self._tool_history_loader(event.room_id, min(known) - 1)
         except Exception:
             # A store that fails costs the turn its earlier calls, not the turn.
             logger.warning(
                 "Could not read room %s's tool calls for its turn", event.room_id, exc_info=True
             )
             return []
-        return tool_rounds(
-            rows,
-            replayed=self._in_tool_memory,
-            resolves=self._eviction.holds,
-            keep_chars=self._replayed_result_chars,
-            intents=self._tool_call_intents,
-        )
+        return tool_rounds(rows, resolves=self._eviction.holds, intents=self._tool_call_intents)
 
     async def _tasks_notes(
         self, loop_ctx: _ToolLoopContext, context: RoomContext, *, standalone: bool

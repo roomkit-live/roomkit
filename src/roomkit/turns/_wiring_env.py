@@ -29,6 +29,28 @@ HOOK_HISTORY = 50
 kit's floor for hooks does."""
 
 
+async def read_tool_rows(
+    store: ConversationStore,
+    room_id: str,
+    channel_id: str,
+    limit: int,
+    *,
+    after_index: int | None = None,
+) -> list[RoomEvent]:
+    """*channel_id*'s stored tool rows in the room, oldest first: its latest
+    *limit*, or its first *limit* after *after_index*."""
+    tools = EventFilter(
+        event_types=[EventType.TOOL_CALL_START, EventType.TOOL_CALL_END],
+        source_channel_id=channel_id,
+    )
+    if after_index is not None:
+        return await store.get_timeline(
+            room_id, event_filter=tools, limit=limit, after_index=after_index
+        )
+    # The most recent *limit*, returned ascending.
+    return await store.get_timeline(room_id, event_filter=tools, limit=limit, newest_first=True)
+
+
 class WiringEnv(ABC):
     """What an executor's wiring gives the channels it wires."""
 
@@ -49,8 +71,11 @@ class WiringEnv(ABC):
         be reused. Raises when it cannot be built."""
 
     @abstractmethod
-    async def tool_rows(self, room_id: str, channel_id: str, limit: int) -> list[RoomEvent]:
-        """The channel's latest stored tool rows in the room, oldest first."""
+    async def tool_rows(
+        self, room_id: str, channel_id: str, limit: int, *, after_index: int | None = None
+    ) -> list[RoomEvent]:
+        """The channel's stored tool rows in the room, oldest first: its
+        latest *limit*, or its first *limit* after *after_index*."""
 
     def realtime(self) -> RealtimeBackend | None:
         """Where a channel's publication made outside a turn goes, ``None``
@@ -117,15 +142,11 @@ class StoreWiringEnv(WiringEnv):
             author_register=register,
         )
 
-    async def tool_rows(self, room_id: str, channel_id: str, limit: int) -> list[RoomEvent]:
-        return await self._shared_store().get_timeline(
-            room_id,
-            event_filter=EventFilter(
-                event_types=[EventType.TOOL_CALL_START, EventType.TOOL_CALL_END],
-                source_channel_id=channel_id,
-            ),
-            limit=limit,
-            newest_first=True,  # most recent N, returned ascending
+    async def tool_rows(
+        self, room_id: str, channel_id: str, limit: int, *, after_index: int | None = None
+    ) -> list[RoomEvent]:
+        return await read_tool_rows(
+            self._shared_store(), room_id, channel_id, limit, after_index=after_index
         )
 
     def _shared_store(self) -> ConversationStore:

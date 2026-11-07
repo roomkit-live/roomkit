@@ -58,8 +58,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger("roomkit.turns")
 
 TOOL_MEMORY_CALLS = 30
-"""Calls a channel's stored tool rows are read for (the 8 the history replays,
-the 12 tools re-revealed), after the infra rows are filtered out."""
+"""Calls a channel's stored tool rows are read for to rebuild its tool memory
+(the 12 tools re-revealed), after the infra rows are filtered out."""
+
+_TOOL_ROWS_PAGE = 500
+"""Tool rows a turn's history reads from the store at a time."""
 
 
 def _standing_decision(event: SpeakDecisionEvent, result: SyncPipelineResult) -> SpeakDecision:
@@ -282,8 +285,10 @@ class TurnWiring:
         return _load
 
     def build_tool_history_loader(self, channel_id: str) -> ToolHistoryLoader:
-        """The reader of AI channel *channel_id*'s latest tool rows in a room,
-        for the turn's history (RFC §6.4).
+        """The reader of AI channel *channel_id*'s tool rows in a room after a
+        timeline index, for the turn's history (RFC §6.4): every one of them,
+        read page by page, since a later turn replays every round its history
+        holds.
 
         Only the channel's own rows, for the reason the usage loader gives;
         a deleted row is withheld, as from any history (RFC §7.5 rule 8).
@@ -292,9 +297,16 @@ class TurnWiring:
         """
         env = self.env
 
-        async def _load(room_id: str) -> list[RoomEvent]:
-            # A start and an end per call, with room for calls never replayed.
-            return withheld(await env.tool_rows(room_id, channel_id, TOOL_MEMORY_CALLS * 2))
+        async def _load(room_id: str, after_index: int) -> list[RoomEvent]:
+            rows: list[RoomEvent] = []
+            while True:
+                page = await env.tool_rows(
+                    room_id, channel_id, _TOOL_ROWS_PAGE, after_index=after_index
+                )
+                rows += page
+                if len(page) < _TOOL_ROWS_PAGE:
+                    return withheld(rows)
+                after_index = page[-1].index
 
         return _load
 

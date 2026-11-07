@@ -3,50 +3,44 @@
 A turn's rounds of tool calls are stored as the channel's TOOL_CALL_START and
 TOOL_CALL_END rows, between the turn's input and its answer. Later turns read
 them back at that place, the way the turn itself sent them: the assistant's
-calls, then their results. A model answers a follow-up from a result it reads
-there; a recall riding the participant's message instead reads as something
-the participant asked, and models answer it (RMK-1023).
+calls, the text the model wrote with them in the same message, then their
+results. A model answers a follow-up from a result it reads there; a recall
+riding the participant's message instead reads as something the participant
+asked, and models answer it (RMK-1023).
 
-A round replays what the model was given: the arguments it wrote (the start
-row's, never a BEFORE_TOOL_USE rewrite, which may hold the very value a hook
-kept from it), its intent back among them while the agent asks for one, and
-the result it read. An oversized result's placeholder stays
-while the room still stores the result it points to, as the turn could read it
-back. Which calls are replayed is the tool memory's rule: an answer the tool
-gave, served, failed or withheld by a hook, never a refusal, a call nothing
-served or one cancelled; never a discovery or housekeeping tool of the
-channel's own. Bounded: the last calls, the most recent results whole up to a
-size, the older ones as a preview.
+A round replays what the model was given, as it was given, so that a later
+turn's request extends the one before it and a provider's prompt cache keeps
+it (RMK-1370): the arguments it wrote (the start row's, never a BEFORE_TOOL_USE
+rewrite, which may hold the very value a hook kept from it), its intent back
+among them while the agent asks for one, and the result it read, whole. Every
+call the turn ended is replayed, whatever its tool or its outcome, but for a
+call cancelled before it answered, whose result no model read; only an
+oversized result's placeholder changes, once the room no longer stores the
+result it points to. Nothing else shortens a round from turn to turn: a
+compaction does, when a provider refuses the context as too long.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
 from roomkit.channels._tool_eviction import eviction_placeholder_size, is_eviction_placeholder
 from roomkit.models.enums import EventType, ToolCallOutcome
 from roomkit.models.event import RoomEvent, ToolCallContent
-from roomkit.providers.ai.base import AIMessage, AIToolCallPart, AIToolResultPart
+from roomkit.providers.ai.base import AIMessage, AITextPart, AIToolCallPart, AIToolResultPart
 from roomkit.providers.ai.tool_intent import with_intent
 from roomkit.tools._open_calls import OpenCalls
-from roomkit.tools._outcome import kept_in_tool_memory
+from roomkit.tools._outcome import OutcomeKind
 
-REPLAYED_CALLS = 8
-"""The calls a turn's history replays, the room's most recent."""
-
-WHOLE_RESULTS = 3
-"""The most recent replayed calls whose result is replayed whole, up to the
-channel's kept size; an older one is replayed as a preview."""
-
-_PREVIEW_CHARS = 120
 _NOT_SHOWN = "the rest is not shown here: call the tool again for it"
 
 
 @dataclass
 class _Call:
     index: int
+    turn: str | None
     tool_id: str
     name: str
     arguments: dict[str, Any]
@@ -60,10 +54,12 @@ class _Call:
 
 @dataclass(frozen=True)
 class ToolRound:
-    """One round of an earlier turn: the timeline index of its first call, and
-    the two messages it reads as."""
+    """One round of an earlier turn: the timeline index of its first call, the
+    turn it belongs to (its rows' correlation id), and the two messages it
+    reads as."""
 
     index: int
+    turn: str | None
     calls: AIMessage
     results: AIMessage
 
@@ -71,56 +67,49 @@ class ToolRound:
 def tool_rounds(
     rows: list[RoomEvent],
     *,
-    replayed: Callable[[str], bool],
     resolves: Callable[[str], bool],
-    keep_chars: int,
     intents: bool = False,
 ) -> list[ToolRound]:
     """*rows*, a channel's stored tool rows in a room oldest first, as the
-    rounds its history replays.
+    rounds its history replays: each call the turn ended, as it was sent, but
+    one cancelled before it answered.
 
-    *replayed* says whether a call to a tool is work the agent did, *resolves*
-    whether the room still stores the result an oversized result's placeholder
-    points to, *keep_chars* how much of a result is replayed whole, and
-    *intents* whether a call's intent goes back among its arguments.
+    *resolves* says whether the room still stores the result an oversized
+    result's placeholder points to, and *intents* whether a call's intent goes
+    back among its arguments.
     """
-    rounds = _rounds(rows)
-    kept = [call for calls in rounds for call in calls if _kept(call, replayed)]
-    kept = kept[-REPLAYED_CALLS:]
-    chosen = {id(call) for call in kept}
-    whole = {id(call) for call in kept[-WHOLE_RESULTS:]}
-    ids = _unique_ids(kept)
+    rounds = [[call for call in calls if _answered(call)] for calls in _rounds(rows)]
 
     def result(call: _Call) -> str:
-        return _shown_result(call, id(call) in whole, keep_chars, resolves)
+        return _shown_result(call, resolves)
 
     def arguments(call: _Call) -> dict[str, Any]:
         return with_intent(call.arguments, call.intent if intents else None)
 
-    shown = ([call for call in calls if id(call) in chosen] for calls in rounds)
-    return [_round(calls, ids, result, arguments) for calls in shown if calls]
+    return [_round(calls, result, arguments) for calls in rounds if calls]
 
 
 def _round(
     calls: list[_Call],
-    ids: dict[int, str],
     result: Callable[[_Call], str],
     arguments: Callable[[_Call], dict[str, Any]],
 ) -> ToolRound:
-    """*calls*, one round's, as the assistant's calls then their results."""
+    """*calls*, one round's, as the assistant's calls then their results,
+    each under the id the model gave it, as the turn sent it."""
     return ToolRound(
         index=calls[0].index,
+        turn=calls[0].turn,
         calls=AIMessage(
             role="assistant",
             content=[
-                AIToolCallPart(id=ids[id(c)], name=c.name, arguments=arguments(c)) for c in calls
+                AIToolCallPart(id=c.tool_id, name=c.name, arguments=arguments(c)) for c in calls
             ],
         ),
         results=AIMessage(
             role="tool",
             content=[
                 AIToolResultPart(
-                    tool_call_id=ids[id(c)],
+                    tool_call_id=c.tool_id,
                     name=c.name,
                     result=result(c),
                     is_error=c.is_error,
@@ -139,6 +128,7 @@ def with_tool_rounds(
     *,
     before: int | None,
     answered: int | None = None,
+    said: Mapping[int, str] | None = None,
 ) -> tuple[list[AIMessage], list[int | None]]:
     """*messages*, the history's turns at the timeline *indexes*, with each of
     *rounds* placed after the turns that came before it, and the indexes of
@@ -149,6 +139,11 @@ def with_tool_rounds(
     calls. Nor is one at or after *before*, the turn's own event. *answered*
     is what a round must come after to read after the event a discussion's turn
     reads at its place, which may open the history or be all of it.
+
+    *said* names the turn each of the channel's own texts in the history
+    belongs to, by its index: a round right after a text of its own turn is
+    the text the model wrote with its calls, and reads with them as the one
+    message the turn sent, the text first.
     """
     known = [index for index in indexes if index is not None]
     if not known and answered is None:
@@ -160,8 +155,33 @@ def with_tool_rounds(
     merged: list[tuple[int | None, AIMessage]] = list(zip(indexes, messages, strict=True))
     for r in placed:
         at = _position(merged, r.index)
+        if at and _spoken_with(merged[at - 1], r, said or {}):
+            index, text = merged[at - 1]
+            merged[at - 1 : at] = [(index, _with_calls(text, r.calls)), (r.index, r.results)]
+            continue
         merged[at:at] = [(r.index, r.calls), (r.index, r.results)]
     return [message for _, message in merged], [index for index, _ in merged]
+
+
+def _spoken_with(
+    turn: tuple[int | None, AIMessage], r: ToolRound, said: Mapping[int, str]
+) -> bool:
+    """Whether *turn* is the text the model wrote with *r*'s calls: the
+    channel's own text of the round's turn, right before the round."""
+    index, message = turn
+    return (
+        index is not None
+        and r.turn is not None
+        and said.get(index) == r.turn
+        and message.role == "assistant"
+        and isinstance(message.content, str)
+    )
+
+
+def _with_calls(text: AIMessage, calls: AIMessage) -> AIMessage:
+    """The one message a round's *text* and its *calls* were sent as."""
+    parts = calls.content if isinstance(calls.content, list) else []
+    return calls.model_copy(update={"content": [AITextPart(text=str(text.content)), *parts]})
 
 
 def _position(merged: list[tuple[int | None, AIMessage]], index: int) -> int:
@@ -191,7 +211,7 @@ def _rounds(rows: list[RoomEvent]) -> list[list[_Call]]:
         if row.type == EventType.TOOL_CALL_START:
             if not opened or turn != last_start:
                 rounds.append([])
-            call = _started(row.index, content)
+            call = _started(row.index, turn, content)
             rounds[-1].append(call)
             waiting.hold(turn, content.tool_id, call)
             last_start, opened = turn, True
@@ -209,27 +229,15 @@ def _rounds(rows: list[RoomEvent]) -> list[list[_Call]]:
     return rounds
 
 
-def _started(index: int, start: ToolCallContent) -> _Call:
-    """The call a start row at timeline *index* opens."""
-    return _Call(index, start.tool_id, start.tool_name, dict(start.arguments), start.intent)
+def _started(index: int, turn: str | None, start: ToolCallContent) -> _Call:
+    """The call a start row of *turn* at timeline *index* opens."""
+    return _Call(index, turn, start.tool_id, start.tool_name, dict(start.arguments), start.intent)
 
 
-def _kept(call: _Call, replayed: Callable[[str], bool]) -> bool:
-    return call.ended and kept_in_tool_memory(call.outcome) and replayed(call.name)
-
-
-def _unique_ids(calls: list[_Call]) -> dict[int, str]:
-    """Each call's id, one per call: a provider may reuse an id from one turn
-    to the next, and a chat API pairs a result with its call by id."""
-    ids: dict[int, str] = {}
-    seen: set[str] = set()
-    for call in calls:
-        tool_id = call.tool_id
-        if not tool_id or tool_id in seen:
-            tool_id = f"{tool_id or 'call'}_{call.index}"
-        seen.add(tool_id)
-        ids[id(call)] = tool_id
-    return ids
+def _answered(call: _Call) -> bool:
+    """Whether *call* ended with a result the model read: not one cancelled
+    before it answered, whose turn was cut or stopped first."""
+    return call.ended and call.outcome != OutcomeKind.CANCELLED
 
 
 def _result_text(result: Any) -> str:
@@ -254,21 +262,11 @@ def _part_text(part: Any) -> str | None:
     return text if isinstance(text, str) else None
 
 
-def _shown_result(
-    call: _Call, whole: bool, keep_chars: int, resolves: Callable[[str], bool]
-) -> str:
-    """What a replayed call's result reads as: whole up to *keep_chars* for
-    one of the most recent, a preview for an older one; a placeholder whose
-    result the room no longer stores reads as its size alone, never as an id
-    nothing resolves."""
+def _shown_result(call: _Call, resolves: Callable[[str], bool]) -> str:
+    """What a replayed call's result reads as: the result the model read, a
+    placeholder whose result the room no longer stores as its size alone,
+    never as an id nothing resolves."""
     text = call.result
-    if call.evicted:
-        return text if resolves(text) else f"{eviction_placeholder_size(text)}, {_NOT_SHOWN}."
-    if not whole:
-        flat = " ".join(text.split())
-        if len(flat) <= _PREVIEW_CHARS:
-            return flat
-        return f"{flat[:_PREVIEW_CHARS]}… [{_NOT_SHOWN}]"
-    if len(text) <= keep_chars:
-        return text
-    return f"{text[:keep_chars]}\n[first {keep_chars} of {len(text)} characters; {_NOT_SHOWN}]"
+    if call.evicted and not resolves(text):
+        return f"{eviction_placeholder_size(text)}, {_NOT_SHOWN}."
+    return text

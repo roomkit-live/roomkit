@@ -329,6 +329,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **BREAKING: a later turn replays each earlier round of tool calls as its turn sent
+  it** (RFC §6.4, HITL 093113a1, 3c7ef9a2, RMK-1370). A turn's history replayed the last 8
+  calls, the 3 most recent whole up to 6,000 characters and the older ones as a
+  120-character preview, without refusals nor the channel's own tools (`find_tools`,
+  `activate_skill`, `read_stored_result`), and a round's text apart from its calls: each
+  new call rewrote the history, and a server that caches a prompt's prefix reprocessed it
+  at every turn's first request (11 to 13 s at 16,000 tokens on a llama.cpp Qwen). Every
+  round the history holds now reads whole, each call its turn ended under the id the
+  model gave it, with the result it read, but one cancelled before it answered, and a
+  round's text and calls as the one assistant message the turn sent: a turn's first
+  request opens with the previous turn's last one, then its answer. The history no
+  longer bounds the rounds: the memory's window, the turn's footprint and a compaction,
+  once a provider refuses the context as too long, do.
+
 - **`CompactingMemory` and `SummarizingMemory` leave the turn its room in the window**
   (RFC §20, HITL 7dc490cd, RMK-450). They sized the history against the whole
   `max_context_tokens`: with a 32,000-token window, a 12,000-token system prompt, 8,000

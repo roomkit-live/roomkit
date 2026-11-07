@@ -88,10 +88,8 @@ async def _outcomes(kit: RoomKit) -> dict[str, str | None]:
 
 async def _replayed(kit: RoomKit, ai: AIChannel) -> list[str]:
     """The calls a later turn's history replays, read from the stored rows."""
-    rows = await kit.turn_executor.wiring.build_tool_history_loader(ai.channel_id)("r1")
-    rounds = tool_rounds(
-        rows, replayed=ai._in_tool_memory, resolves=lambda _: False, keep_chars=800
-    )
+    rows = await kit.turn_executor.wiring.build_tool_history_loader(ai.channel_id)("r1", -1)
+    rounds = tool_rounds(rows, resolves=lambda _: False)
     return [part.name for r in rounds for part in r.calls.content]  # type: ignore[union-attr]
 
 
@@ -118,10 +116,9 @@ async def test_each_end_row_states_how_its_call_ended(streaming: bool) -> None:
     }
 
 
-async def test_the_history_and_the_rebuilt_memory_keep_what_the_live_one_keeps(
-    streaming: bool,
-) -> None:
-    """Refusals stay out, served and failed calls are in."""
+async def test_the_rebuilt_memory_keeps_what_the_live_one_keeps(streaming: bool) -> None:
+    """Refusals stay out of the tool memory, served and failed calls are in;
+    the history replays every call the turn ended, as it was sent (RMK-1370)."""
     kit, ai = await _turn(
         streaming,
         _call("c1", "ok"),
@@ -134,5 +131,5 @@ async def test_the_history_and_the_rebuilt_memory_keep_what_the_live_one_keeps(
     rebuilt = ToolUsageMemory(recorded=ai._in_tool_memory)
     rebuilt.seed("r1", await kit._build_tool_usage_loader(ai.channel_id)("r1"))
 
-    assert await _replayed(kit, ai) == ["ok", "boom", "fails"]
+    assert await _replayed(kit, ai) == ["ok", "boom", "refuse", "ghost", "fails"]
     assert rebuilt.tool_names("r1") == ai._tool_usage.tool_names("r1") == {"ok", "boom", "fails"}

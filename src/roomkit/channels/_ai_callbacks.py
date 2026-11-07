@@ -41,9 +41,9 @@ ThoughtHook = Callable[["ThoughtEvent"], Awaitable[None]]
 ToolUsageLoader = Callable[[str], Awaitable[list[dict[str, Any]]]]
 """A room's stored tool calls, read to rebuild the channel's tool memory."""
 
-ToolHistoryLoader = Callable[[str], Awaitable[list["RoomEvent"]]]
-"""The channel's latest stored tool rows in a room, oldest first, read for the
-turn's history (RFC §6.4)."""
+ToolHistoryLoader = Callable[[str, int], Awaitable[list["RoomEvent"]]]
+"""The channel's stored tool rows in a room after a timeline index, oldest
+first, read for the turn's history (RFC §6.4)."""
 
 RoomTasksLoader = Callable[[str], Awaitable[list[dict[str, Any]]]]
 """A room's background tasks as the StatusBus lists them, read for the turn's
