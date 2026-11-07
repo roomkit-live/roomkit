@@ -95,10 +95,12 @@ def extract_tools(
 
 
 def _definition(schema: dict[str, Any]) -> AITool:
-    """The definition a tool schema describes, its search tags included."""
+    """The definition a tool schema describes, its search tags and whether it
+    changes state included."""
     return AITool(
         name=schema["name"],
         description=schema.get("description", ""),
         parameters=schema.get("parameters", {}),
         tags=list(schema.get("tags") or []),
+        changes_state=schema.get("changes_state", False),
     )

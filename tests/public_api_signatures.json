@@ -3424,7 +3424,7 @@
     "__init__": ["def", "*", "type='thinking'", "thinking", "signature=None", "redacted=None"]
   },
   "roomkit.providers.ai.AITool": {
-    "__init__": ["def", "*", "name", "description", "parameters=<factory>", "tags=<factory>", "defer_loading=False"]
+    "__init__": ["def", "*", "name", "description", "parameters=<factory>", "tags=<factory>", "defer_loading=False", "changes_state=False"]
   },
   "roomkit.providers.ai.AIToolCall": {
     "__init__": ["def", "*", "id", "name", "arguments=<factory>", "metadata=<factory>", "served=None", "partial=False", "garbled=False", "intent=None"]

@@ -2455,6 +2455,24 @@ the message reaches the model verbatim and the observers as `error_detail`, and
 the call is failed, not refused (`event.refused` is false). An MCP tool whose
 result says `isError` raises it.
 
+#### A tool that changes state (`changes_state`)
+
+Within a turn, a call repeated with identical arguments runs twice: the third
+is refused, and a model that keeps sending it is stopped (RFC §6.4). A tool
+whose call changes what later calls read (a file edited, a row written)
+declares it with `changes_state=True` on its definition, an `AITool` or a
+schema dict. Once a call of that tool succeeds, the turn's counts start again:
+a test rerun after each edit runs every time, and a tool's answer repeated
+around the edit is not noted as settled. The same change made again keeps its
+own count, so it is still refused at its third.
+
+```python
+tools=[
+    {"name": "run_tests", "description": "Run the test suite"},
+    {"name": "edit_file", "description": "Replace text in a file", "changes_state": True},
+]
+```
+
 ### A call's intent for the person (`tool_call_intents`)
 
 With `tool_call_intents=True`, the model writes, with each call, one short

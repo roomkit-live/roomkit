@@ -156,6 +156,16 @@ def _tool_name(tool: AITool) -> str:
     return tool.name
 
 
+def _repeat_key(name: str, arguments: dict[str, Any]) -> tuple[str, str] | None:
+    """What the anti-loop guard counts a call by: its tool and its arguments,
+    whatever the order of their keys; ``None`` for arguments that read as no
+    JSON, which it does not count (RFC §6.4)."""
+    try:
+        return (name, json.dumps(arguments or {}, sort_keys=True, default=str))
+    except (TypeError, ValueError):
+        return None
+
+
 def _partial_call_error(tc: Any) -> dict[str, Any]:
     """What the model reads for a call whose arguments do not read."""
     garbled = getattr(tc, "garbled", False)
@@ -698,6 +708,7 @@ class AIToolsMixin(_AIChannelContract):
         """A call past its gates, served and judged, as the model reads it."""
         self._record_call_arguments(tc, arguments, scope)
         outcome = await self._judged_call(tc, arguments, scope)
+        self._forget_repeats_on_change(tc.name, arguments, outcome, scope.declared_tools)
         self._settle_served_call(tc.id, served=not outcome.failed)
         kept = kept_in_tool_memory(outcome.kind)
         self._settle_recovery(tc.id, kept=kept)
@@ -947,15 +958,39 @@ class AIToolsMixin(_AIChannelContract):
         return (
             f"{result}\n\n[identical result: '{name}' has now returned exactly this "
             f"{count} times this turn, for different arguments. Varying the arguments "
-            f"is not finding anything new — this answer is settled. Use it and move "
-            f"on, or answer with what you have.]"
+            f"is not finding anything new — this answer is settled. Use it and move on.]"
         )
+
+    def _forget_repeats_on_change(
+        self,
+        name: str,
+        arguments: dict[str, Any],
+        outcome: ToolOutcome,
+        declared_tools: list[AITool] | None,
+    ) -> None:
+        """Start the turn's counts again once a tool that changes state
+        answered a call: what the calls before it read may read otherwise now
+        (a test rerun after an edit), on both axes. Its own call keeps its
+        count, so the same change made again and again is still a loop (RFC
+        §6.4)."""
+        if outcome.kind is not OutcomeKind.SERVED:
+            return
+        loop_ctx = self._get_loop_ctx()
+        known = loop_ctx.all_context_tools
+        tools = known if known is not None else declared_tools or []
+        if not any(tool.name == name and tool.changes_state for tool in tools):
+            return
+        key = _repeat_key(name, arguments)
+        own = loop_ctx.repeated_calls.get(key) if key is not None else None
+        loop_ctx.repeated_calls.clear()
+        loop_ctx.repeated_results.clear()
+        if key is not None and own is not None:
+            loop_ctx.repeated_calls[key] = own
 
     def _repeated_call_guard(self, name: str, arguments: dict[str, Any]) -> str | None:
         """Short-circuit a tool call repeated with identical arguments this turn."""
-        try:
-            key = (name, json.dumps(arguments or {}, sort_keys=True, default=str))
-        except (TypeError, ValueError):
+        key = _repeat_key(name, arguments)
+        if key is None:
             return None
         loop_ctx = self._get_loop_ctx()
         counts = loop_ctx.repeated_calls
@@ -980,8 +1015,7 @@ class AIToolsMixin(_AIChannelContract):
                 ),
                 "hint": (
                     "STOP repeating this call. Use the results you already "
-                    "have, try genuinely different arguments, or answer the "
-                    "user now with what you know."
+                    "have, or try genuinely different arguments."
                 ),
             }
         )

@@ -71,6 +71,10 @@ class AITool(BaseModel):
     # references it (``AIToolResultPart.references``). Only a channel whose
     # provider ``supports_deferred_tools`` sets it (RFC §6.4).
     defer_loading: bool = False
+    # A call that succeeds may change what later calls read (a file edited, a
+    # row written): the turn's repeat counts start again from it, so a test
+    # rerun after an edit is no loop (RFC §6.4, the anti-loop guard).
+    changes_state: bool = False
 
     @field_validator("name")
     @classmethod

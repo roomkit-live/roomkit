@@ -645,6 +645,7 @@ def scripted_agent(
                 description=tool.get("description", ""),
                 parameters=dict(tool.get("parameters", {})),
                 tags=list(tool.get("tags", [])),
+                changes_state=bool(tool.get("changes_state", False)),
             )
             for tool in tools
             if tool.get("declared", True)

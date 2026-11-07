@@ -12,12 +12,14 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from roomkit.channels.ai import AIChannel
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import ChannelCategory, ChannelType
 from roomkit.models.room import Room
-from roomkit.providers.ai.base import AIResponse, AIToolCall
+from roomkit.providers.ai.base import AIResponse, AITool, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
 from tests.conftest import make_event
 from tests.tool_loop_modes import respond
@@ -85,6 +87,97 @@ async def test_third_identical_call_is_refused(streaming: bool) -> None:
     third = _tool_results(provider.calls[3])[-1]
     assert "EXACT arguments" in third["error"]
     assert "STOP" in third["hint"]
+
+
+@pytest.mark.parametrize(("changes_state", "runs"), [(False, 2), (True, 3)])
+async def test_a_rerun_after_a_change_runs_only_when_the_tool_changes_state(
+    streaming: bool, changes_state: bool, runs: int
+) -> None:
+    """A test rerun after each edit, as an unattended coding turn does: an
+    edit declared as changing state starts the turn's counts again, so every
+    rerun runs; an edit that declares nothing leaves the third rerun refused
+    (RFC §6.4)."""
+    ran: list[dict] = []
+    edits: list[dict] = []
+
+    async def handler(name: str, arguments: dict) -> str:
+        (ran if name == "echo" else edits).append(arguments)
+        return json.dumps({"ok": True})
+
+    def edit(call_id: str, value: str) -> AIResponse:
+        return AIResponse(
+            content="",
+            finish_reason="tool_calls",
+            tool_calls=[AIToolCall(id=call_id, name="edit", arguments={"value": value})],
+        )
+
+    args = {"value": "same"}
+    provider = MockAIProvider(
+        ai_responses=[
+            _same_call_response("t1", args),
+            edit("e1", "fix-1"),
+            _same_call_response("t2", args),
+            edit("e2", "fix-2"),
+            _same_call_response("t3", args),
+            AIResponse(content="done", finish_reason="stop"),
+        ],
+        streaming=streaming,
+    )
+    edit_tool = AITool(
+        name="edit",
+        description="Edit a file.",
+        parameters=_ECHO_TOOL["parameters"],
+        changes_state=changes_state,
+    )
+    ch = AIChannel("ai1", provider=provider, tool_handler=handler, tools=[edit_tool])
+    await respond(
+        ch,
+        make_event(body="go", channel_id="sms1"),
+        _binding([_ECHO_TOOL]),
+        RoomContext(room=Room(id="r1")),
+    )
+
+    assert len(edits) == 2
+    assert len(ran) == runs
+    third = _tool_results(provider.calls[5])[-1]
+    assert ("error" in third) is not changes_state
+
+
+async def test_a_change_made_again_and_again_is_still_refused(streaming: bool) -> None:
+    """The change keeps its own count: the same write three times is a loop."""
+    writes: list[dict] = []
+
+    async def handler(name: str, arguments: dict) -> str:
+        writes.append(arguments)
+        return json.dumps({"ok": True})
+
+    def write(call_id: str) -> AIResponse:
+        return AIResponse(
+            content="",
+            finish_reason="tool_calls",
+            tool_calls=[AIToolCall(id=call_id, name="write", arguments={"value": "same"})],
+        )
+
+    provider = MockAIProvider(
+        ai_responses=[write("w1"), write("w2"), write("w3"), AIResponse(content="done")],
+        streaming=streaming,
+    )
+    write_tool = AITool(
+        name="write",
+        description="Write a file.",
+        parameters=_ECHO_TOOL["parameters"],
+        changes_state=True,
+    )
+    ch = AIChannel("ai1", provider=provider, tool_handler=handler, tools=[write_tool])
+    await respond(
+        ch,
+        make_event(body="go", channel_id="sms1"),
+        _binding([]),
+        RoomContext(room=Room(id="r1")),
+    )
+
+    assert len(writes) == 2
+    assert "EXACT arguments" in _tool_results(provider.calls[3])[-1]["error"]
 
 
 async def test_different_arguments_are_not_guarded(streaming: bool) -> None:

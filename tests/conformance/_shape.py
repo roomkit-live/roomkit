@@ -198,6 +198,7 @@ TOOL = {
     "description",
     "parameters",
     "tags",
+    "changes_state",
     "returns",
     "raises",
     "fails",
