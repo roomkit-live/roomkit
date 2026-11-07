@@ -1,0 +1,163 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-set-a-keyed-delivery-s-hook-sends-records-its-failure-after-the-section",
+  "title": "The record of the failed delivery set of an event a keyed delivery's locked hook sends into the room is written under the room's lock once the publication's section lets it go: a later hook of that section reads the event unrecorded",
+  "rules": [
+    "§5.13",
+    "§22.1",
+    "§9.5.1",
+    "§14.3",
+    "§13.5"
+  ],
+  "notes": "Python: the publication's section holds the room lock (core/_delivery_targets.py _keyed_publication, core/mixins/deliver.py); the event its locked hook sends commits ahead of the publication, and its delivery set runs in the room's lane, off the lock, where core/mixins/lane_execution.py _record_failed_deliveries takes self._lock_manager.locked(room_id) to record the set with a failure: it waits for the section, and a later hook of the section reads the event as committed. RMK-1522.",
+  "setup": {
+    "channels": [
+      {
+        "id": "human",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "crm",
+        "type": "webhook",
+        "category": "transport",
+        "deliver": [
+          {
+            "when": {
+              "text": "I want a loan"
+            },
+            "fail": "endpoint down"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "human"
+          },
+          {
+            "channel_id": "crm"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "inject",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "Publish"
+            },
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "human",
+                "content": {
+                  "type": "text",
+                  "body": "I want a loan"
+                },
+                "as": "sent"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "hold",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "Publish"
+            },
+            "gate": "held",
+            "do": [
+              {
+                "call": "store.get_event",
+                "event_id": "$sent",
+                "as": "read"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "Publish",
+      "idempotency_key": "k",
+      "background": true,
+      "as": "publication"
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "wait_for_lock": "room-1",
+      "waiters": 1
+    },
+    {
+      "open": "held"
+    },
+    {
+      "await": "publication",
+      "expect": {
+        "result": {
+          "status": "sent",
+          "event_id": "room-1#1",
+          "duplicate": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "I want a loan"
+          },
+          "delivery_results": {
+            "crm": {
+              "status": "failed"
+            }
+          }
+        },
+        {
+          "idempotency_key": "roomkit:publication:k",
+          "status": "delivered"
+        }
+      ]
+    },
+    "actions": {
+      "read": [
+        {
+          "result": {
+            "content": {
+              "type": "text",
+              "body": "I want a loan"
+            },
+            "delivery_results": {
+              "crm": {
+                "$absent": true
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

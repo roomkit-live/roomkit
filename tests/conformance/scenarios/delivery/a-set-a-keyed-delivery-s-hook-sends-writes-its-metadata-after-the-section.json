@@ -1,0 +1,165 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-set-a-keyed-delivery-s-hook-sends-writes-its-metadata-after-the-section",
+  "title": "The room metadata updates of the delivery set of an event a keyed delivery's locked hook sends into the room are written under the room's lock once the publication's section lets it go: a key a later hook of that section writes is then written over by the set's",
+  "rules": [
+    "§22.1",
+    "§9.5.1",
+    "§10.1 step 15",
+    "§13.5"
+  ],
+  "notes": "Python: the publication's section holds the room lock (core/_delivery_targets.py _keyed_publication, core/mixins/deliver.py); the event its locked hook sends commits ahead of the publication, and its delivery set runs in the room's lane, off the lock, where core/mixins/helpers.py _write_metadata_updates takes self._lock_manager.locked(room_id): it waits for the section, whose later hook writes its key first. RMK-1522, the case RMK-1511's review probed.",
+  "setup": {
+    "channels": [
+      {
+        "id": "human",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "crm",
+        "type": "webhook",
+        "category": "transport",
+        "deliver": [
+          {
+            "when": {
+              "text": "I want a loan"
+            },
+            "output": {
+              "metadata_updates": {
+                "stage": "qualified"
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "human"
+          },
+          {
+            "channel_id": "crm"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "inject",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "Publish"
+            },
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "human",
+                "content": {
+                  "type": "text",
+                  "body": "I want a loan"
+                },
+                "as": "sent"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "hold",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "Publish"
+            },
+            "gate": "held",
+            "do": [
+              {
+                "call": "update_room_metadata",
+                "room_id": "$room",
+                "metadata": {
+                  "stage": "callback"
+                },
+                "as": "meta"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "Publish",
+      "idempotency_key": "k",
+      "background": true,
+      "as": "publication"
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "wait_for_lock": "room-1",
+      "waiters": 1
+    },
+    {
+      "open": "held"
+    },
+    {
+      "await": "publication",
+      "expect": {
+        "result": {
+          "status": "sent",
+          "event_id": "room-1#1",
+          "duplicate": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "I want a loan"
+          }
+        },
+        {
+          "idempotency_key": "roomkit:publication:k",
+          "status": "delivered"
+        }
+      ]
+    },
+    "rooms": {
+      "room-1": {
+        "metadata": {
+          "stage": "qualified"
+        }
+      }
+    },
+    "actions": {
+      "meta": [
+        {
+          "result": {
+            "metadata": {
+              "stage": "callback"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
