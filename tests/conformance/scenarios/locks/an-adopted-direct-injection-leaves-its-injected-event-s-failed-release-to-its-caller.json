@@ -1,0 +1,155 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "locks/an-adopted-direct-injection-leaves-its-injected-event-s-failed-release-to-its-caller",
+  "title": "A direct injection an off-lock hook adopts, whose locked hook injects an event whose section's release fails, returns its event once that event committed; the failure is the error of the event that adopted it",
+  "rules": [
+    "§13.5 A release that fails",
+    "§9.5.1 Reentrance",
+    "§9.4"
+  ],
+  "notes": "Python: framework.py _inject awaits _finish_queued but collects no failed release of its own (a send_event returns its event): the event whose hook made it collects it (HITL b779fc14, RMK-1443). Written by the review of the lot.",
+  "setup": {
+    "kit": {
+      "lock_manager": {
+        "release_error": "lease expired"
+      }
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "adopts",
+        "trigger": "before_broadcast",
+        "needs_lock": false,
+        "timeout_ms": 20000,
+        "reactions": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "room-1",
+                "channel_id": "ws",
+                "content": {
+                  "type": "text",
+                  "body": "side"
+                },
+                "expect": {
+                  "result": {
+                    "content": {
+                      "body": "side"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "injects-note",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "side"
+            },
+            "result": {
+              "action": "allow",
+              "injected_events": [
+                {
+                  "event": {
+                    "content": {
+                      "type": "text",
+                      "body": "note"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "scan",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "note"
+            },
+            "gate": "scan"
+          },
+          {
+            "when": {
+              "text": "hello"
+            },
+            "gate": "late"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "background": true,
+      "as": "h"
+    },
+    {
+      "wait_for": "scan"
+    },
+    {
+      "lock_releases": "fail"
+    },
+    {
+      "open": "scan"
+    },
+    {
+      "wait_for": "late"
+    },
+    {
+      "lock_releases": "succeed"
+    },
+    {
+      "open": "late"
+    },
+    {
+      "await": "h",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "lease expired"
+          }
+        }
+      }
+    }
+  ]
+}

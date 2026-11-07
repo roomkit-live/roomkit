@@ -1,0 +1,183 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "locks/an-adopted-call-carries-the-failed-release-of-the-event-its-hook-injected",
+  "title": "A call an off-lock hook adopts, whose locked hook injects an event whose section's release fails, answers once that event committed and carries the failure as its error; the event that adopted it does not",
+  "rules": [
+    "§13.5 A release that fails",
+    "§9.5.1 Reentrance",
+    "§9.4"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/inbound.py, the adopted process_inbound commits what its hooks injected before it returns (_finish_queued, within its own collecting_release_failures), so its answer waits for those commits and their failed release is its result's error, not the event's that adopted it (HITL b779fc14, RMK-1443 F1).",
+  "setup": {
+    "kit": {
+      "lock_manager": {
+        "release_error": "lease expired"
+      }
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "adopts",
+        "trigger": "before_broadcast",
+        "needs_lock": false,
+        "timeout_ms": 5000,
+        "reactions": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "ws",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "side"
+                  }
+                },
+                "expect": {
+                  "result": {
+                    "blocked": false,
+                    "event": {
+                      "content": {
+                        "body": "side"
+                      }
+                    },
+                    "error": {
+                      "$contains": "lease expired"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "injects",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "side"
+            },
+            "result": {
+              "action": "allow",
+              "injected_events": [
+                {
+                  "event": {
+                    "content": {
+                      "type": "text",
+                      "body": "note"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "scan",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "note"
+            },
+            "gate": "scan"
+          },
+          {
+            "when": {
+              "text": "hello"
+            },
+            "gate": "late"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "background": true,
+      "as": "h"
+    },
+    {
+      "wait_for": "scan"
+    },
+    {
+      "lock_releases": "fail"
+    },
+    {
+      "open": "scan"
+    },
+    {
+      "wait_for": "late"
+    },
+    {
+      "lock_releases": "succeed"
+    },
+    {
+      "open": "late"
+    },
+    {
+      "await": "h",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "side"
+          }
+        },
+        {
+          "content": {
+            "body": "note"
+          }
+        },
+        {
+          "content": {
+            "body": "hello"
+          }
+        }
+      ]
+    }
+  }
+}

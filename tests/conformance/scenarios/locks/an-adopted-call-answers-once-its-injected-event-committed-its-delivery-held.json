@@ -1,0 +1,174 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "locks/an-adopted-call-answers-once-its-injected-event-committed-its-delivery-held",
+  "title": "A call an off-lock hook adopts, whose locked hook injects an event, answers once that event committed, its own delivery still held: the event that adopted it is not held behind that delivery",
+  "rules": [
+    "§9.5.1 Reentrance",
+    "§9.4"
+  ],
+  "notes": "Python: core/mixins/injected_events.py, the events a section's hooks injected commit once the section released the lock, apart from the room's delivery lane, and the adopted process_inbound returns once they did (_finish_queued, HITL b779fc14, RMK-1443). Written by the review of the lot.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "audit",
+        "type": "websocket",
+        "category": "transport",
+        "deliver": [
+          {
+            "when": {
+              "text": "side"
+            },
+            "gate": "slow"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "audit"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "adopts",
+        "trigger": "before_broadcast",
+        "needs_lock": false,
+        "timeout_ms": 20000,
+        "reactions": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "ws",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "side"
+                  }
+                },
+                "expect": {
+                  "result": {
+                    "blocked": false,
+                    "error": null
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "injects-note",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "side"
+            },
+            "result": {
+              "action": "allow",
+              "injected_events": [
+                {
+                  "event": {
+                    "content": {
+                      "type": "text",
+                      "body": "note"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "scan",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "gate": "late"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "background": true,
+      "as": "h"
+    },
+    {
+      "wait_for": "slow"
+    },
+    {
+      "wait_for": "late"
+    },
+    {
+      "open": "late"
+    },
+    {
+      "open": "slow"
+    },
+    {
+      "await": "h",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "side"
+          }
+        },
+        {
+          "content": {
+            "body": "note"
+          }
+        },
+        {
+          "content": {
+            "body": "hello"
+          }
+        }
+      ]
+    }
+  }
+}
