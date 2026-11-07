@@ -131,6 +131,37 @@ async def test_the_room_holds_the_agents_reply_and_its_own_copy_never_the_instru
     await kit.close()
 
 
+@pytest.mark.parametrize("streaming", [False, True])
+async def test_the_agents_copy_is_a_record_no_hook_reads_and_no_activity(streaming: bool):
+    """Written as a record no member receives (RFC §10.5): no hook reads or
+    rewrites it, it is none of the turn's response events, and a turn that
+    answers nothing leaves a paused room paused (RFC §10.1.1)."""
+    kit, speaker, _provider = await _kit(provider=MockAIProvider([""], streaming=streaming))
+    seen: list[EventType] = []
+
+    @kit.hook(HookTrigger.BEFORE_BROADCAST, name="gate")
+    async def gate(event: RoomEvent, ctx: RoomContext) -> HookResult:
+        seen.append(event.type)
+        return HookResult.allow()
+
+    await kit.pause_room(ROOM)
+    paused = await kit.get_room(ROOM)
+
+    result = await kit.process_inbound(_instruction(), room_id=ROOM)
+
+    stored = await _messages(kit)
+    assert [(e.type, e.content.body) for e in stored] == [
+        (EventType.INSTRUCTION_READ, INSTRUCTION)
+    ]
+    assert EventType.INSTRUCTION_READ not in seen
+    assert all(e.type != EventType.INSTRUCTION_READ for e in result.response_events)
+    room = await kit.get_room(ROOM)
+    assert room.status == paused.status
+    assert room.timers.last_activity_at == paused.timers.last_activity_at
+    assert speaker.delivered == []
+    await kit.close()
+
+
 async def test_the_model_reads_it_as_the_applications_direction_then_where_it_read_it():
     """A later turn replays it as the turn read it, before that turn's reply:
     the later request extends the instructed one (RFC §10.1.1)."""

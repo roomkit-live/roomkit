@@ -30,6 +30,7 @@ from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.models.response_metadata import ResponseMetadata
 from roomkit.models.room import Room
 from roomkit.models.streaming import (
+    InstructionReadMarker,
     LoopEndMarker,
     SegmentBreakMarker,
     ThinkingDeltaMarker,
@@ -142,6 +143,7 @@ async def _read_all(output: ChannelOutput) -> list[Any]:
     "item",
     [
         "a text delta",
+        InstructionReadMarker(text="Introduce yourself."),
         ThinkingDeltaMarker(thinking="hmm"),
         ToolCallStartMarker(tool_name="search", tool_id="c1", arguments={"q": "x"}),
         ToolCallStartMarker(

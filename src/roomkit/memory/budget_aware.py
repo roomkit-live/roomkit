@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from dataclasses import replace
 
-from roomkit.memory._turn_budget import turn_history_budget
+from roomkit.memory._turn_budget import history_event_costs, turn_history_budget
 from roomkit.memory._wrapper import _MemoryWrapper
 from roomkit.memory.base import MemoryProvider, MemoryResult
 from roomkit.memory.token_estimator import estimate_event_tokens
@@ -92,7 +92,9 @@ class BudgetAwareMemory(_MemoryWrapper):
         if not events:
             return events
 
-        event_costs = [estimate_event_tokens(e) for e in events]
+        # Each event with what the history replays with it: a turn is kept or
+        # cut whole, its rounds of tool calls with it (RFC §20).
+        event_costs = history_event_costs(events)
 
         # Keep from most recent, working backward
         total = 0

@@ -137,8 +137,9 @@ async def test_a_later_turn_is_measured_again_with_the_rounds_it_replays(
     streaming: bool,
 ) -> None:
     """The tools already used ride the next turn's history: the footprint
-    counts the rounds it replays, and a tool handler, whose loop is the
-    call's own, reads no footprint."""
+    measures the rounds it replays apart, each by its index and its turn, for
+    the memory to charge to the event it reads with, and a tool handler,
+    whose loop is the call's own, reads no footprint."""
     seen_in_handler: list[TurnFootprint | None] = []
 
     async def lookup(name: str, arguments: dict[str, Any]) -> str:
@@ -183,9 +184,14 @@ async def test_a_later_turn_is_measured_again_with_the_rounds_it_replays(
 
     replayed = [m for m in provider.calls[-1].messages if isinstance(m.content, list)]
     assert [m.role for m in replayed] == ["assistant", "tool"]
-    first, second = (f.input_tokens for f in (memory.footprints[0], memory.footprints[-1]))  # type: ignore[union-attr]
-    # The rest of the turn is the same as the first's: the difference is the round.
-    assert second - first == sum(estimate_message_tokens(m) for m in replayed)
+    first, second = memory.footprints[0], memory.footprints[-1]
+    assert first is not None and second is not None
+    # The rest of the turn is the same as the first's; the round is apart.
+    assert second.input_tokens == first.input_tokens
+    assert first.replayed == ()
+    [(_, turn, tokens)] = second.replayed
+    assert turn is not None
+    assert tokens == sum(estimate_message_tokens(m) for m in replayed)
     assert seen_in_handler == [None]
 
 

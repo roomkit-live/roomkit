@@ -2457,7 +2457,7 @@
     "wiring": ["property"]
   },
   "roomkit.TurnFootprint": {
-    "__init__": ["def", "input_tokens", "reply_tokens"]
+    "__init__": ["def", "input_tokens", "reply_tokens", "replayed=()"]
   },
   "roomkit.TurnHost": {
     "__init__": ["def", "call", "*", "between_turns=None", "errors=<roomkit.turns._error_codec.ErrorClasses object>"],

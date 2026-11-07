@@ -90,14 +90,21 @@ class TurnFootprint:
         input_tokens: The system prompt, the tools declared (Tool Search's
             collapse and the re-read tool included) and the notes the channel
             adds to the turn's input (the room's plan, the speaker
-            attribution), and the earlier rounds of tool calls the history
-            replays.
+            attribution).
         reply_tokens: The reply budget the turn requests; 0 when the channel
             sets none and the provider applies its own.
+        replayed: What the history replays of the channel's earlier turns
+            beside their messages, each round of tool calls and each
+            instruction they read as ``(index, turn, tokens)``: its timeline
+            index, the turn it belongs to (its rows' correlation id) and what
+            it costs. Not reserved up front: a memory charges each to the
+            history event it reads with and keeps or cuts it with that event
+            (``history_event_costs``).
     """
 
     input_tokens: int
     reply_tokens: int
+    replayed: tuple[tuple[int, str | None, int], ...] = ()
 
 
 @dataclass

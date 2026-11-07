@@ -2,8 +2,15 @@
 
 from __future__ import annotations
 
+from bisect import bisect_left
+from collections.abc import Sequence
+
 from roomkit.memory.base import MemoryResult
-from roomkit.memory.token_estimator import estimate_notes_tokens, history_budget
+from roomkit.memory.token_estimator import (
+    estimate_event_tokens,
+    estimate_notes_tokens,
+    history_budget,
+)
 from roomkit.models.event import RoomEvent
 from roomkit.tools.context import current_turn_footprint
 
@@ -38,3 +45,40 @@ def turn_history_budget(
         current_event=current_event,
         reply_tokens=footprint.reply_tokens if footprint is not None else 0,
     )
+
+
+def history_event_costs(events: Sequence[RoomEvent]) -> list[int]:
+    """What each of *events*, a history oldest first, costs the window with
+    what the turn's history replays with it (RFC §20): its own tokens, and
+    each earlier round of tool calls and instruction the AI channel measured
+    (``current_turn_footprint().replayed``), charged to the event it reads
+    with, so that a memory keeps or cuts a turn whole.
+
+    A replayed piece reads with its turn's first event after it (the turn's
+    answer, which an instruction and its rounds read before), else after the
+    last event before it; one charged to no event (its turn and its place
+    out of *events*) is not replayed, and costs nothing.
+    """
+    costs = [estimate_event_tokens(event) for event in events]
+    footprint = current_turn_footprint()
+    if footprint is None or not footprint.replayed or not events:
+        return costs
+    indexes = [event.index for event in events]
+    for index, turn, tokens in footprint.replayed:
+        at = _charged(events, indexes, index, turn)
+        if at is not None:
+            costs[at] += tokens
+    return costs
+
+
+def _charged(
+    events: Sequence[RoomEvent], indexes: list[int], index: int, turn: str | None
+) -> int | None:
+    """The position among *events* of the one a replayed piece at timeline
+    *index* of *turn* reads with, ``None`` for none."""
+    after = bisect_left(indexes, index)
+    if turn is not None:
+        for at in range(after, len(events)):
+            if events[at].correlation_id == turn:
+                return at
+    return after - 1 if after > 0 else None

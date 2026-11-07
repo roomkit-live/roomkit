@@ -1007,13 +1007,9 @@ class AIContextMixin(_AIChannelContract):
             input_tokens=estimate_tokens(system_prompt or "")
             + sum(estimate_tool_tokens(tool) for tool in declared)
             + estimate_tokens(notes)
-            + (estimate_message_tokens(AIMessage(role="user", content=images)) if images else 0)
-            + sum(
-                estimate_message_tokens(r.calls) + estimate_message_tokens(r.results)
-                for r in earlier.rounds
-            )
-            + sum(estimate_message_tokens(kept.message) for kept in earlier.instructions),
+            + (estimate_message_tokens(AIMessage(role="user", content=images)) if images else 0),
             reply_tokens=_reply_tokens(max_tokens),
+            replayed=_replayed_costs(earlier),
         )
 
     def _stamp_toolset(self, loop_ctx: _ToolLoopContext, tools: list[AITool]) -> None:
@@ -1240,6 +1236,21 @@ def _reply_tokens(max_tokens: object) -> int:
         return AIContext.model_validate({"max_tokens": max_tokens}).max_tokens or 0
     except ValidationError:
         return 0
+
+
+def _replayed_costs(earlier: EarlierTurns) -> tuple[tuple[int, str | None, int], ...]:
+    """What each round and instruction the history replays costs, by its
+    timeline index and its turn, for the memory to charge to the event it
+    reads with (RFC §20)."""
+    rounds = (
+        (r.index, r.turn, estimate_message_tokens(r.calls) + estimate_message_tokens(r.results))
+        for r in earlier.rounds
+    )
+    instructions = (
+        (kept.index, kept.turn, estimate_message_tokens(kept.message))
+        for kept in earlier.instructions
+    )
+    return (*rounds, *instructions)
 
 
 def _instruction_input(text: str) -> str | None:

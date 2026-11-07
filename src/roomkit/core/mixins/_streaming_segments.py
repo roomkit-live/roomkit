@@ -15,6 +15,7 @@ from roomkit.core._instructions import response_metadata
 from roomkit.core._observed import Observed, observed_once_over
 from roomkit.core._queued_injections import QueuedInjections
 from roomkit.core.event_router import stream_record
+from roomkit.core.exceptions import RoomClosedError
 from roomkit.core.mixins._stream_reach import reads_the_stream
 from roomkit.core.mixins.helpers import _refuses_writes, _source_block_reason
 from roomkit.core.mixins.inbound_locked import _Blocked, _Refused, within_answer_scope
@@ -566,13 +567,22 @@ class SegmentWriter:
         return [row for row in rows if row is not None]
 
     async def instruction_read(self, marker: InstructionReadMarker) -> RoomEvent | None:
-        """The instruction the turn read, as the channel's own row: stored
-        before anything else of the turn, delivered to no channel and handed
-        to no reader of the stream, its visibility the channel alone, so that
-        no other agent's history reads it (RFC §10.1.1)."""
+        """The instruction the turn read, as the channel's own row, stored
+        before anything else of the turn: a record no member receives (RFC
+        §10.5), as the instruction is none of the turn's answer (§10.1.1). It
+        takes the room's next index; no hook reads it, no channel is delivered
+        it, no reader of the stream is handed it, and it is no activity. Its
+        visibility is the channel alone, so no other agent's history reads it;
+        it is none of the turn's response events, and the turn's record never
+        lands on it."""
         row = self._build(EventType.INSTRUCTION_READ, TextContent(body=marker.text))
-        own = self._sr.source_channel_id
-        return await self._write(row.model_copy(update={"visibility": own}), exclude=None)
+        own = row.model_copy(update={"visibility": self._sr.source_channel_id})
+        await self._settle()
+        try:
+            await self._kit.commit_event(self._room_id, own)
+        except RoomClosedError:
+            logger.debug("Room %s refuses writes; the instruction read is not kept", self._room_id)
+        return None
 
     async def tool_start(self, marker: ToolCallStartMarker) -> RoomEvent | None:
         return await self._write(self._start_row(marker), exclude=set(self._streamed_to))

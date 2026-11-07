@@ -185,19 +185,26 @@ def with_tool_rounds(
 
     An instruction reads where its turn read it, before what the turn wrote:
     one after the history's first turn, or one whose turn the history holds,
-    which may then open the history (an instruction that opened the room).
+    which may then open the history (an instruction that opened the room),
+    the rounds of its turn read after it.
     """
     known = [index for index in indexes if index is not None]
     if not known and answered is None:
         return messages, indexes
     start = min([*known[:1], *([] if answered is None else [answered])])
-    placed = [r for r in rounds if r.index > start and (before is None or r.index < before)]
-    turns = {turn for turn in (*(said or {}).values(), *(r.turn for r in placed)) if turn}
+    within = [r for r in rounds if before is None or r.index < before]
+    held = {
+        turn
+        for turn in (*(said or {}).values(), *(r.turn for r in within if r.index > start))
+        if turn
+    }
     read = [
         kept
         for kept in instructions or []
-        if (before is None or kept.index < before) and (kept.index > start or kept.turn in turns)
+        if (before is None or kept.index < before) and (kept.index > start or kept.turn in held)
     ]
+    opened = {kept.turn for kept in read if kept.index < start and kept.turn}
+    placed = [r for r in within if r.index > start or r.turn in opened]
     if not placed and not read:
         return messages, indexes
     merged: list[tuple[int | None, AIMessage]] = list(zip(indexes, messages, strict=True))

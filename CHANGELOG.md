@@ -335,12 +335,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   next request no longer opened with the previous one, and a server that caches a
   prompt's prefix reprocessed everything after it. An `AIChannel` now stores, first in its
   answer, a row of its own, `EventType.INSTRUCTION_READ`, holding the instruction's text:
-  visible to it alone, delivered to no channel, never read by another agent's history,
-  and its later turns replay it, marked as the application's, before what that turn
-  wrote. The instruction itself is still never stored as the room's. A standalone
-  instruction is not kept. `get_timeline()` and `list_events()` return the row, and the
-  room's indexes and `event_count` count it; an instruction from before this version was
-  never kept and is not replayed. The row is counted in the turn's footprint, never in a
+  a record no member receives, as `commit_event()` writes one (no hook reads it, no
+  channel is delivered it, it is no activity and none of `InboundResult.response_events`),
+  visible to it alone, never read by another agent's history, and its later turns replay
+  it, marked as the application's, before what that turn wrote, the rounds of a turn
+  whose instruction opened the room included. The instruction itself is still never
+  stored as the room's. A standalone instruction is not kept. The text an application
+  puts in an instruction is now stored, a delegated task's hand-back (§23.3) among them:
+  `get_timeline()` and `list_events()` return the row, and the room's indexes and
+  `event_count` count it; an instruction from before this version was never kept and is
+  not replayed. The row is counted in the turn's footprint, never in a
   memory's window; an emergency compaction's summary quotes it as the application's. A
   turn's stream carries it to the owner: owner and executors run the same version.
 
@@ -356,7 +360,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   round's text and calls as the one assistant message the turn sent: a turn's first
   request opens with the previous turn's last one, then its answer. The history no
   longer bounds the rounds: the memory's window, the turn's footprint and a compaction,
-  once a provider refuses the context as too long, do.
+  once a provider refuses the context as too long, do. `BudgetAwareMemory`,
+  `CompactingMemory` and `SummarizingMemory` charge each replayed round to the event it
+  reads with and keep or cut a turn whole (`TurnFootprint.replayed`, no longer in
+  `input_tokens`): reserved up front, the rounds cut the very messages they followed, and
+  a 16,000-token window kept 2 questions of 12. An id a provider repeats from one turn to
+  the next is replayed as it was sent, no longer renamed `<id>_<index>`.
 
 - **`CompactingMemory` and `SummarizingMemory` leave the turn its room in the window**
   (RFC §20, HITL 7dc490cd, RMK-450). They sized the history against the whole

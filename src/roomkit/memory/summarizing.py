@@ -16,11 +16,10 @@ import logging
 from dataclasses import replace
 
 from roomkit.memory._summary import SummaryLines, is_summary, summary_message
-from roomkit.memory._turn_budget import turn_history_budget
+from roomkit.memory._turn_budget import history_event_costs, turn_history_budget
 from roomkit.memory._wrapper import _MemoryWrapper
 from roomkit.memory.base import MemoryProvider, MemoryResult
 from roomkit.memory.token_estimator import (
-    estimate_event_tokens,
     estimate_message_tokens,
     estimate_notes_tokens,
 )
@@ -179,7 +178,7 @@ class SummarizingMemory(_MemoryWrapper):
         """Summarize older events, keeping recent ones at full fidelity, and
         *inner*'s messages and notes as they are."""
         prior_messages = inner.messages
-        event_costs = [estimate_event_tokens(e) for e in events]
+        event_costs = history_event_costs(events)
 
         # Reserve space for the summary message in the kept-events budget
         event_budget = budget - self._summary_max_tokens
@@ -309,7 +308,8 @@ class SummarizingMemory(_MemoryWrapper):
 
     @staticmethod
     def _estimate_events_tokens(events: list[RoomEvent]) -> int:
-        return sum(estimate_event_tokens(e) for e in events)
+        """*events*' tokens, with what the history replays with them (RFC §20)."""
+        return sum(history_event_costs(events))
 
     async def clear(self, room_id: str) -> None:
         await super().clear(room_id)

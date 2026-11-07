@@ -9,10 +9,9 @@ from collections import OrderedDict
 from dataclasses import replace
 
 from roomkit.memory._summary import SummaryLines, summary_message
-from roomkit.memory._turn_budget import turn_history_budget
+from roomkit.memory._turn_budget import history_event_costs, turn_history_budget
 from roomkit.memory._wrapper import _MemoryWrapper
 from roomkit.memory.base import MemoryProvider, MemoryResult
-from roomkit.memory.token_estimator import estimate_event_tokens
 from roomkit.models.context import RoomContext
 from roomkit.models.event import RoomEvent
 from roomkit.providers.ai.base import AIContext, AIMessage, AIProvider
@@ -87,8 +86,9 @@ class CompactingMemory(_MemoryWrapper):
 
         events = inner_result.events
         # An image costs what the provider bills for its pixels, never its
-        # URL's or its base64's length (RMK-589).
-        event_costs = [estimate_event_tokens(e) for e in events]
+        # URL's or its base64's length (RMK-589); an event, what the history
+        # replays with it too (RFC §20).
+        event_costs = history_event_costs(events)
         total_cost = sum(event_costs)
 
         if total_cost <= budget:

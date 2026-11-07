@@ -4,8 +4,10 @@ An application sometimes needs an agent to speak because of something nobody
 in the room said: a handoff asking the new agent to introduce itself, a
 scheduled nudge. Sent as an ordinary inbound message, that direction is stored
 as a participant's words and read by the model as a user turn. Sent as an
-``INSTRUCTION``, it reaches only the agent it addresses, is never stored, and
-the pipeline records its fingerprint (never its text) on the agent's reply.
+``INSTRUCTION``, it reaches only the agent it addresses, is never stored as
+the room's, and the pipeline records its fingerprint (never its text) on the
+agent's reply. The agent keeps its own copy, an ``INSTRUCTION_READ`` row no
+channel is delivered, and its later turns read it where the turn read it.
 
 A ``standalone`` instruction goes further: the turn it opens reads nothing of
 the room, for a pass that must start from a blank page (a summary re-run that
@@ -13,7 +15,9 @@ would otherwise copy its previous answer).
 
 The example directs the agent three times (a greeting, then the same summary
 request without and with ``standalone``) and prints what the model was sent
-each time and what the room kept.
+each time and what the room kept: the summary's turn reads the greeting's
+instruction before the greeting, the standalone one reads nothing, and only
+the instructions that were not standalone are kept.
 
 Run with:
     uv run python examples/instruction_event.py
@@ -75,10 +79,12 @@ async def main() -> None:
 
     print("What the room holds:")
     for event in await kit.store.list_events(ROOM):
+        body = event.content.body  # type: ignore[union-attr]
         if event.type == EventType.MESSAGE:
-            body = event.content.body  # type: ignore[union-attr]
             print(f"  [{event.source.channel_id}] {body}")
             print(f"      instruction: {event.metadata.get('instruction')!r}")
+        elif event.type == EventType.INSTRUCTION_READ:
+            print(f"  [{event.source.channel_id}'s own copy, visible to it alone] {body}")
 
     await kit.close()
 

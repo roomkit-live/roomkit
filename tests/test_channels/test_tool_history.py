@@ -18,6 +18,7 @@ from roomkit import HookResult, ToolCallEvent
 from roomkit.channels._tool_history import ToolRound, tool_rounds, with_tool_rounds
 from roomkit.channels.ai import AIChannel
 from roomkit.core.framework import RoomKit
+from roomkit.memory import BudgetAwareMemory, SlidingWindowMemory
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import ChannelCategory, ChannelType, EventType, HookTrigger
@@ -232,6 +233,88 @@ async def test_a_later_turn_replays_an_instruction_at_its_place(streaming: bool)
     opening, sent = _opening(calls[2], calls[3], "Answer two.")
     assert opening == sent
     assert calls[3].messages[: len(calls[2].messages)] == calls[2].messages
+
+
+async def test_an_instruction_that_opened_the_room_replays_with_its_rounds(
+    streaming: bool,
+) -> None:
+    """The round of a turn its instruction opened reads after it, though both
+    come before the history's first message, the turn's answer (RFC §10.1.1)."""
+    provider = MockAIProvider(
+        ai_responses=[_round(("c1", "lookup", {"q": "a"})), _answer("One."), _answer("Two.")],
+        streaming=streaming,
+    )
+
+    calls = await _turns(provider, "Look it up.", "second question", instructed=frozenset({0}))
+
+    opening, sent = _opening(calls[1], calls[2], "One.")
+    assert opening == sent
+
+
+async def test_a_budget_memory_keeps_whole_turns_with_their_rounds(streaming: bool) -> None:
+    """Each round costs the history with the turn it reads in: the memory
+    keeps the latest turns whole, and opens on a question (RFC §20). Reserved
+    up front, every round cut the messages, and the rounds of the turns cut
+    went with them: two questions were left of twelve."""
+    turns = 12
+    responses = []
+    for turn in range(turns):
+        responses += [_round((f"c{turn}", "big", {})), _answer(f"Answer {turn}.")]
+    provider = MockAIProvider(ai_responses=responses, streaming=streaming)
+    memory = BudgetAwareMemory(SlidingWindowMemory(max_events=50), max_context_tokens=16000)
+
+    calls = await _turns(provider, *(f"question {t}" for t in range(turns)), memory=memory)
+
+    roles = [message.role for message in calls[-1].messages]  # the last request
+    asked = roles.count("user")
+    assert roles[0] == "user"
+    assert asked >= 6
+    assert roles.count("tool") == asked  # each turn with its round
+
+
+async def test_the_history_reads_every_row_page_by_page(
+    streaming: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every row of the agent's earlier turns, whatever the store's page."""
+    monkeypatch.setattr("roomkit.turns._wiring._HISTORY_ROWS_PAGE", 2)
+    provider = MockAIProvider(
+        ai_responses=[
+            _round(("c1", "lookup", {"q": "a"}), ("c2", "lookup", {"q": "b"})),
+            _answer("One."),
+            _answer("Two."),
+        ],
+        streaming=streaming,
+    )
+
+    calls = await _turns(provider, "first question", "second question")
+
+    opening, sent = _opening(calls[1], calls[2], "One.")
+    assert opening == sent
+
+
+async def test_a_context_narrower_than_the_room_reads_the_instruction_before_it(
+    streaming: bool,
+) -> None:
+    """The rows are read from the room's message before the context's first
+    event: the instruction and the round of the turn whose answer opens the
+    context read before it (RFC §10.1.1)."""
+    provider = MockAIProvider(
+        ai_responses=[
+            _answer("Zero."),
+            _round(("c1", "lookup", {"q": "a"})),
+            _answer("One."),
+            _answer("Two."),
+            _answer("Three."),
+        ],
+        streaming=streaming,
+    )
+
+    calls = await _turns(
+        provider, "q0", "Look it up.", "q2", "q3", instructed=frozenset({1}), max_context_events=4
+    )
+
+    instructed_turn = _shape(calls[2].messages)[2:]  # its instruction, its round
+    assert _shape(calls[-1].messages)[:4] == [*instructed_turn, ("assistant", "One.")]
 
 
 async def test_a_turn_in_another_room_replays_nothing_of_this_one(streaming: bool) -> None:
