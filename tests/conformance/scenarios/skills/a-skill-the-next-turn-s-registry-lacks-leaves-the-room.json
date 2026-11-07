@@ -7,7 +7,7 @@
     "§24.4",
     "Appendix A.9"
   ],
-  "notes": "Python: channels/_ai_context.py _given_turn_skills, _add_skills; channels/_ai_policy.py _turn_skills. channels/_skill_activation.py render_prompt. tests/test_channels/test_turn_skills.py::test_a_skill_the_next_turns_registry_lacks_leaves_the_room: Ada's turn, Bob's, Ada's again, in one room.",
+  "notes": "Python: channels/_ai_context.py _given_turn_skills, _add_skills; channels/_ai_policy.py _turn_skills. channels/_skill_activation.py render_prompt. tests/test_channels/test_turn_skills.py::test_a_skill_the_next_turns_registry_lacks_leaves_the_room: Ada's turn, Bob's, Ada's again, in one room. A later turn replays the activation round as its turn sent it, as any round (RMK-1370).",
   "setup": {
     "channels": [
       {
@@ -176,6 +176,13 @@
         },
         {
           "tool_results": [
+            {
+              "tool_call_id": "call-1",
+              "content": {
+                "$contains": "Rules for ada-procedure."
+              },
+              "is_error": false
+            },
             {
               "content": {
                 "$contains": "Rules for ada-procedure."

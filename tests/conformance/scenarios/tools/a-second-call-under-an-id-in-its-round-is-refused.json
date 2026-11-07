@@ -6,7 +6,7 @@
     "§9.3",
     "§12.4"
   ],
-  "notes": "Python: tools/_turn_calls.py TurnCalls.announce, channels/_ai_tools.py _serve_entry, _refuse_id_in_flight. tests/test_tool_report_doors.py::test_two_calls_under_one_id_are_two_calls_the_second_refused, tests/test_turn_calls_per_call.py: the scripted model hands both calls under c1, as a provider that does not number them apart would; a provider reading a wire gives the second an id of its own first (CallIds, a test in each implementation).",
+  "notes": "Python: tools/_turn_calls.py TurnCalls.announce, channels/_ai_tools.py _serve_entry, _refuse_id_in_flight. tests/test_tool_report_doors.py::test_two_calls_under_one_id_are_two_calls_the_second_refused, tests/test_turn_calls_per_call.py: the scripted model hands both calls under c1, as a provider that does not number them apart would; a provider reading a wire gives the second an id of its own first (CallIds, a test in each implementation). A later turn replays both, as the turn sent them (RMK-1370).",
   "setup": {
     "channels": [
       {
@@ -144,6 +144,11 @@
               "tool_call_id": "c1",
               "content": "fine",
               "is_error": false
+            },
+            {
+              "tool_call_id": "c1",
+              "content": "{\"error\": \"Tool call 'c1' has not had its result yet\"}",
+              "is_error": true
             }
           ]
         }

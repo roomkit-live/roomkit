@@ -7,7 +7,7 @@
     "§9.3",
     "§6.7"
   ],
-  "notes": "Python's ToolOutcome.as_part writes is_error for every outcome but served; a replayed round's result is an error when its end row's status is failed (_tool_history.py). A refusal is no answer and is not replayed (kept_in_tool_memory).",
+  "notes": "Python's ToolOutcome.as_part writes is_error for every outcome but served; a replayed round's result reads as its turn read it (_tool_history.py), the refusal included: a later turn replays every call its turn ended, as it was sent (RMK-1370).",
   "setup": {
     "channels": [
       {
@@ -203,6 +203,11 @@
             {
               "tool_call_id": "call-2",
               "content": "{\"error\": \"Tool 'cancel_order' failed (RuntimeError)\"}",
+              "is_error": true
+            },
+            {
+              "tool_call_id": "call-3",
+              "content": "Refunds need a manager.",
               "is_error": true
             }
           ]

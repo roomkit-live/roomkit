@@ -1,11 +1,11 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "discussion/an-instruction-gives-its-agent-a-turn-taking-it-as-input",
-  "title": "An instruction addressed to an agent is that agent's turn of its own, taking it as input; it is neither stored nor delivered",
+  "title": "An instruction addressed to an agent is that agent's turn of its own, taking it as input; it is neither stored as the room's nor delivered, and the agent keeps its own copy",
   "rules": [
     "§19.7.5 rule 7"
   ],
-  "notes": "Python: test_strategy_discussion.py test_an_instruction_gives_its_agent_a_turn_taking_it_as_input. Without the redirect the agent is never asked (lot 8b review, N7).",
+  "notes": "Python: test_strategy_discussion.py test_an_instruction_gives_its_agent_a_turn_taking_it_as_input. Without the redirect the agent is never asked (lot 8b review, N7). The agent keeps its own copy of each instruction its turn read, an instruction_read row visible to it alone, before what the turn wrote (RFC §10.1.1, HITL 25b07f2a, RMK-1407).",
   "setup": {
     "channels": [
       {
@@ -88,6 +88,16 @@
   "expect": {
     "timeline": {
       "r1": [
+        {
+          "type": "instruction_read",
+          "source": {
+            "channel_id": "a"
+          },
+          "visibility": "a",
+          "content": {
+            "body": "summarise the incident"
+          }
+        },
         {
           "source": {
             "channel_id": "a"

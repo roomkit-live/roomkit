@@ -6,7 +6,7 @@
     "§19.7.3",
     "§23.3"
   ],
-  "notes": "Python: tests/test_supervisor.py TestPerWorkerDelegation::test_no_wait_already_running; tests/orchestration/test_supervisor_strategy.py TestBackgroundDedup::test_pending_guard_blocks_re_delegation; tests/orchestration/test_supervisor_room_state.py test_a_worker_busy_in_one_room_is_free_in_another. orchestration/strategies/supervisor/_inject_per_worker.py _PerWorkerToolServer (its pending set by room and worker), _already_working. The two hand-backs' order is the runner's: their worker outputs and the supervisor's answers are alike.",
+  "notes": "Python: tests/test_supervisor.py TestPerWorkerDelegation::test_no_wait_already_running; tests/orchestration/test_supervisor_strategy.py TestBackgroundDedup::test_pending_guard_blocks_re_delegation; tests/orchestration/test_supervisor_room_state.py test_a_worker_busy_in_one_room_is_free_in_another. orchestration/strategies/supervisor/_inject_per_worker.py _PerWorkerToolServer (its pending set by room and worker), _already_working. The two hand-backs' order is the runner's: their worker outputs and the supervisor's answers are alike. The agent keeps its own copy of each instruction its turn read, an instruction_read row visible to it alone, before what the turn wrote (RFC §10.1.1, HITL 25b07f2a, RMK-1407).",
   "setup": {
     "channels": [
       {
@@ -289,6 +289,18 @@
           }
         },
         {
+          "type": "instruction_read",
+          "source": {
+            "channel_id": "sup"
+          },
+          "visibility": "sup",
+          "content": {
+            "body": {
+              "$contains": "<worker_output>\nThe facts.\n</worker_output>"
+            }
+          }
+        },
+        {
           "source": {
             "channel_id": "sup"
           },
@@ -327,6 +339,18 @@
           "content": {
             "type": "text",
             "body": "Started."
+          }
+        },
+        {
+          "type": "instruction_read",
+          "source": {
+            "channel_id": "sup"
+          },
+          "visibility": "sup",
+          "content": {
+            "body": {
+              "$contains": "<worker_output>\nThe facts.\n</worker_output>"
+            }
           }
         },
         {

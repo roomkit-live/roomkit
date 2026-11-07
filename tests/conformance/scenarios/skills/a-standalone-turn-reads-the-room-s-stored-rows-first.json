@@ -7,7 +7,7 @@
     "§10.6.3",
     "§24.4"
   ],
-  "notes": "HITL 30895156 option 1, RMK-1356. Python: channels/_ai_context.py _hydrate_room_memories runs before _add_skills on any turn, and channels/_ai_tools.py _record_activation adds to what it read. Read after it, the turn's own activation would mark the room read and the stored one would be lost.",
+  "notes": "HITL 30895156 option 1, RMK-1356. Python: channels/_ai_context.py _hydrate_room_memories runs before _add_skills on any turn, and channels/_ai_tools.py _record_activation adds to what it read. Read after it, the turn's own activation would mark the room read and the stored one would be lost. The next ordinary turn replays both activation rounds as their turns sent them, the standalone one's before its answer and without its instruction, which no turn keeps (RMK-1370).",
   "setup": {
     "channels": [
       {
@@ -261,7 +261,20 @@
         },
         {
           "system_prompt": "\n\n# Active skill instructions (binding rules)\n\n## Skill: x\nRules for x.\n\n## Skill: y\nRules for y.",
-          "tool_results": [],
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "name": "activate_skill",
+              "content": "{\"name\": \"x\", \"description\": \"The x procedure\", \"instructions\": \"Rules for x.\"}",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c2",
+              "name": "activate_skill",
+              "content": "{\"name\": \"y\", \"description\": \"The y procedure\", \"instructions\": \"Rules for y.\"}",
+              "is_error": false
+            }
+          ],
           "tools": {
             "activate_skill": 0,
             "find_tools": {
@@ -279,7 +292,39 @@
             },
             {
               "role": "assistant",
+              "text": "",
+              "round": [
+                {
+                  "call": "c1",
+                  "arguments": {
+                    "name": "x"
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool",
+              "text": ""
+            },
+            {
+              "role": "assistant",
               "text": "first"
+            },
+            {
+              "role": "assistant",
+              "text": "",
+              "round": [
+                {
+                  "call": "c2",
+                  "arguments": {
+                    "name": "y"
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool",
+              "text": ""
             },
             {
               "role": "assistant",

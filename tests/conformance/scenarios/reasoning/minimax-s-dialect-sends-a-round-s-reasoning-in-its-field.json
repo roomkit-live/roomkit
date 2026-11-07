@@ -5,7 +5,7 @@
   "rules": [
     "§6.4"
   ],
-  "notes": "Python: providers/minimax/ai.py MINIMAX_CHAT; tests/test_providers/test_minimax_kimi.py. MiniMax's API documentation asks for the reasoning_content of each message back in a tool loop, and says a round that did not think has none (https://platform.minimax.io/docs/guides/text-m2-function-call). Its chat templates, M2's and M3's, read that field; llama.cpp hands it to them (run on b11960), and vLLM too (read in its source).",
+  "notes": "Python: providers/minimax/ai.py MINIMAX_CHAT; tests/test_providers/test_minimax_kimi.py. MiniMax's API documentation asks for the reasoning_content of each message back in a tool loop, and says a round that did not think has none (https://platform.minimax.io/docs/guides/text-m2-function-call). Its chat templates, M2's and M3's, read that field; llama.cpp hands it to them (run on b11960), and vLLM too (read in its source). A later turn replays the round's text and its calls in one message, as the turn sent them, without the round's reasoning (RMK-1370).",
   "setup": {
     "channels": [
       {
@@ -197,19 +197,6 @@
             {
               "role": "assistant",
               "content": "Let me look.",
-              "reasoning_content": {
-                "$absent": true
-              },
-              "reasoning": {
-                "$absent": true
-              },
-              "reasoning_details": {
-                "$absent": true
-              }
-            },
-            {
-              "role": "assistant",
-              "content": null,
               "reasoning_content": {
                 "$absent": true
               },

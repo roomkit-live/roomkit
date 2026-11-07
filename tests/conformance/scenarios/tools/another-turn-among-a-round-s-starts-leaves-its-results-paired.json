@@ -1,12 +1,12 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "tools/another-turn-among-a-round-s-starts-leaves-its-results-paired",
-  "title": "Another turn's rows among a round's starts leave the round its turn's: the call that held the id reads its own result in a later turn",
+  "title": "Another turn's rows among a round's starts leave the round its turn's: each call under the held id reads its own result in a later turn",
   "rules": [
     "§6.4",
     "§12.4"
   ],
-  "notes": "Python: tools/_open_calls.py OpenCalls. Two messages at once: the turn with two calls under c1 usually has the other turn's start row between its two, which read as two rounds of the room and one of the turn. The results are asserted in no order, as the turns' order is the scheduler's. Row by row, in each implementation: test_another_turn_among_a_round_s_starts_leaves_its_results_paired.",
+  "notes": "Python: tools/_open_calls.py OpenCalls. Two messages at once: the turn with two calls under c1 usually has the other turn's start row between its two, which read as two rounds of the room and one of the turn. The results are asserted in no order, as the turns' order is the scheduler's. Row by row, in each implementation: test_another_turn_among_a_round_s_starts_leaves_its_results_paired. A later turn replays every call its turn ended, the refused one too (RMK-1370).",
   "setup": {
     "channels": [
       {
@@ -186,6 +186,12 @@
                 "name": "z",
                 "content": "zed",
                 "is_error": false
+              },
+              {
+                "tool_call_id": "c1",
+                "name": "other",
+                "content": "{\"error\": \"Tool call 'c1' has not had its result yet\"}",
+                "is_error": true
               }
             ]
           }

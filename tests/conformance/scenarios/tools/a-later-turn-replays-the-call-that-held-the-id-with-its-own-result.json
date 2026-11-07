@@ -1,12 +1,12 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "tools/a-later-turn-replays-the-call-that-held-the-id-with-its-own-result",
-  "title": "A later turn replays the call that held the id with its own arguments and its own result: a round's results pair to its calls first in, first out, and the second call under the id, refused, stays out",
+  "title": "A later turn replays the call that held the id with its own arguments and its own result: a round's results pair to its calls first in, first out, and the second call under the id reads its own refusal, as its turn sent it",
   "rules": [
     "§6.4",
     "§12.4"
   ],
-  "notes": "Python: channels/_tool_history.py _rounds. A provider that repeats an id breaks RFC §6.4's rule; the history still reads each call with its own result. Pairing the end row to the latest start under the id gave the next turn other(q=second) reading lookup's result, and lookup(q=first) gone.",
+  "notes": "Python: channels/_tool_history.py _rounds. A provider that repeats an id breaks RFC §6.4's rule; the history still reads each call with its own result. Pairing the end row to the latest start under the id gave the next turn other(q=second) reading lookup's result, and lookup(q=first) gone. A later turn replays every call its turn ended, under the id the model gave it (RMK-1370).",
   "setup": {
     "channels": [
       {
@@ -156,6 +156,12 @@
                   "arguments": {
                     "q": "first"
                   }
+                },
+                {
+                  "call": "c1",
+                  "arguments": {
+                    "q": "second"
+                  }
                 }
               ]
             },
@@ -177,6 +183,12 @@
               "name": "lookup",
               "content": "fine",
               "is_error": false
+            },
+            {
+              "tool_call_id": "c1",
+              "name": "other",
+              "content": "{\"error\": \"Tool call 'c1' has not had its result yet\"}",
+              "is_error": true
             }
           ]
         }

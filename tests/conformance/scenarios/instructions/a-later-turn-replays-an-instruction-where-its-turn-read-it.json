@@ -1,0 +1,319 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "instructions/a-later-turn-replays-an-instruction-where-its-turn-read-it",
+  "title": "A later turn replays the application's instruction where the turn it opened read it, marked as the application's: the later request extends that turn's, and the agent keeps the instruction as a row of its own that no channel is delivered",
+  "rules": [
+    "§10.1.1",
+    "§6.4"
+  ],
+  "notes": "Python: channels/_tool_history.py kept_instructions, core/mixins/_streaming_segments.py instruction_read; tests/test_channels/test_tool_history.py::test_a_later_turn_replays_an_instruction_at_its_place. Decided in HITL 5e89048c and 25b07f2a (option 1): the agent keeps its own copy, an instruction_read row visible to it alone, and its later turns replay it at its place, so that a provider's prompt cache keeps the history (RMK-1407). The instruction itself is still never stored as the room's.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look an order up",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "Order 42 left the north depot on Monday in two boxes, tracking AB-123; it is expected on Thursday."
+          }
+        ],
+        "model": {
+          "chat_dialect": "openai",
+          "rounds": [
+            {
+              "text": "Let me ask the team."
+            },
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {
+                    "q": "42"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "It arrives on Thursday."
+            },
+            {
+              "text": "You are welcome."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Where is my order?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "app",
+        "content": {
+          "type": "text",
+          "body": "Look order 42 up."
+        },
+        "event_type": "instruction",
+        "addressed_to": [
+          "agent"
+        ]
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Thanks."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "ws"
+          },
+          "content": {
+            "body": "Where is my order?"
+          }
+        },
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "agent"
+          },
+          "content": {
+            "body": "Let me ask the team."
+          }
+        },
+        {
+          "type": "instruction_read",
+          "source": {
+            "channel_id": "agent"
+          },
+          "visibility": "agent",
+          "content": {
+            "type": "text",
+            "body": "Look order 42 up."
+          }
+        },
+        {
+          "type": "tool_call_start"
+        },
+        {
+          "type": "tool_call_end"
+        },
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "agent"
+          },
+          "content": {
+            "body": "It arrives on Thursday."
+          }
+        },
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "ws"
+          },
+          "content": {
+            "body": "Thanks."
+          }
+        },
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "agent"
+          },
+          "content": {
+            "body": "You are welcome."
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "id": "room-1#1"
+          },
+          {
+            "id": "room-1#3"
+          },
+          {
+            "id": "room-1#4"
+          },
+          {
+            "id": "room-1#5"
+          },
+          {
+            "id": "room-1#7"
+          }
+        ]
+      }
+    },
+    "models": {
+      "agent": [
+        {},
+        {},
+        {
+          "chat_messages": [
+            {
+              "role": "user",
+              "content": "Where is my order?"
+            },
+            {
+              "role": "assistant",
+              "content": "Let me ask the team."
+            },
+            {
+              "role": "user",
+              "content": "[Instruction from the application: nobody in this conversation said it. Act on it now, in your own words, without quoting it.]\nLook order 42 up."
+            },
+            {
+              "role": "assistant",
+              "content": null,
+              "tool_calls": [
+                {
+                  "id": "$e2",
+                  "type": "function",
+                  "function": {
+                    "name": "lookup",
+                    "arguments": "{\"q\": \"42\"}"
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool",
+              "tool_call_id": "$e2",
+              "content": "Order 42 left the north depot on Monday in two boxes, tracking AB-123; it is expected on Thursday."
+            }
+          ]
+        },
+        {
+          "chat_messages": [
+            {
+              "role": "user",
+              "content": "Where is my order?"
+            },
+            {
+              "role": "assistant",
+              "content": "Let me ask the team."
+            },
+            {
+              "role": "user",
+              "content": "[Instruction from the application: nobody in this conversation said it. Act on it now, in your own words, without quoting it.]\nLook order 42 up."
+            },
+            {
+              "role": "assistant",
+              "content": null,
+              "tool_calls": [
+                {
+                  "id": "$e2",
+                  "type": "function",
+                  "function": {
+                    "name": "lookup",
+                    "arguments": "{\"q\": \"42\"}"
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool",
+              "tool_call_id": "$e2",
+              "content": "Order 42 left the north depot on Monday in two boxes, tracking AB-123; it is expected on Thursday."
+            },
+            {
+              "role": "assistant",
+              "content": "It arrives on Thursday."
+            },
+            {
+              "role": "user",
+              "content": "Thanks."
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

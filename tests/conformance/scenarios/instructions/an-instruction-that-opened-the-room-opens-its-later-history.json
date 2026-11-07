@@ -1,0 +1,127 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "instructions/an-instruction-that-opened-the-room-opens-its-later-history",
+  "title": "An instruction that opened the room, before any message, opens the history of the agent's later turns: its turn's request is extended",
+  "rules": [
+    "§10.1.1",
+    "§6.4"
+  ],
+  "notes": "Python: turns/_wiring.py build_tool_history_loader reads the agent's rows from the room's message before its context on, and channels/_tool_history.py with_tool_rounds places an instruction whose turn the history holds, even before its first message: a handoff's greeting, say (RMK-1407).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [],
+        "model": {
+          "chat_dialect": "openai",
+          "rounds": [
+            {
+              "text": "Hello, I am Paul."
+            },
+            {
+              "text": "Glad to help."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "app",
+        "content": {
+          "type": "text",
+          "body": "Introduce yourself."
+        },
+        "event_type": "instruction",
+        "addressed_to": [
+          "agent"
+        ]
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Hi Paul."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "chat_messages": [
+            {
+              "role": "user",
+              "content": "[Instruction from the application: nobody in this conversation said it. Act on it now, in your own words, without quoting it.]\nIntroduce yourself."
+            }
+          ]
+        },
+        {
+          "chat_messages": [
+            {
+              "role": "user",
+              "content": "[Instruction from the application: nobody in this conversation said it. Act on it now, in your own words, without quoting it.]\nIntroduce yourself."
+            },
+            {
+              "role": "assistant",
+              "content": "Hello, I am Paul."
+            },
+            {
+              "role": "user",
+              "content": "Hi Paul."
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

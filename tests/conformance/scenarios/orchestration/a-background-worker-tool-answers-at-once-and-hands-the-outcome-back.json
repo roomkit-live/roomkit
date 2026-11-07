@@ -6,7 +6,7 @@
     "§19.7.3",
     "§23.3"
   ],
-  "notes": "Python: tests/test_supervisor.py TestPerWorkerDelegation::test_no_wait_delegates_background; tests/orchestration/test_supervisor_inline.py TestWaitForResultFalse::test_async_delegation_returns_task_id; tests/orchestration/test_supervisor_strategy.py TestBackgroundDedup::test_pending_clears_after_completion (the worker freed before its outcome is handed back: the hand-back's turn delegates again); tests/orchestration/test_supervisor_text_background.py test_a_per_worker_background_task_is_the_task_runner_s (its answer). orchestration/strategies/supervisor/_inject_per_worker.py _delegate_in_background, _background_run, _worker_told, _worker_ended, _dispatched; orchestration/_background.py run_in_background; orchestration/_worker_run.py follow_worker; tasks/handback.py hand_back, result_text, RESULT_TURN_NOTE, CALLER_HANDS_BACK (the task runner hands nothing back itself). The turns' notes listing the room's tasks (RMK-1284) are left out.",
+  "notes": "Python: tests/test_supervisor.py TestPerWorkerDelegation::test_no_wait_delegates_background; tests/orchestration/test_supervisor_inline.py TestWaitForResultFalse::test_async_delegation_returns_task_id; tests/orchestration/test_supervisor_strategy.py TestBackgroundDedup::test_pending_clears_after_completion (the worker freed before its outcome is handed back: the hand-back's turn delegates again); tests/orchestration/test_supervisor_text_background.py test_a_per_worker_background_task_is_the_task_runner_s (its answer). orchestration/strategies/supervisor/_inject_per_worker.py _delegate_in_background, _background_run, _worker_told, _worker_ended, _dispatched; orchestration/_background.py run_in_background; orchestration/_worker_run.py follow_worker; tasks/handback.py hand_back, result_text, RESULT_TURN_NOTE, CALLER_HANDS_BACK (the task runner hands nothing back itself). The turns' notes listing the room's tasks (RMK-1284) are left out. The agent keeps its own copy of each instruction its turn read, an instruction_read row visible to it alone, before what the turn wrote (RFC §10.1.1, HITL 25b07f2a, RMK-1407). The supervisor's later turn reads the first hand-back where its turn read it.",
   "setup": {
     "channels": [
       {
@@ -255,6 +255,18 @@
           "responds_to": "r1#0"
         },
         {
+          "type": "instruction_read",
+          "source": {
+            "channel_id": "sup"
+          },
+          "visibility": "sup",
+          "content": {
+            "body": {
+              "$contains": "<worker_output>\nThe facts.\n</worker_output>"
+            }
+          }
+        },
+        {
           "type": "tool_call_start",
           "source": {
             "channel_id": "sup"
@@ -281,6 +293,18 @@
             "body": "Here are the facts."
           },
           "chain_depth": 2
+        },
+        {
+          "type": "instruction_read",
+          "source": {
+            "channel_id": "sup"
+          },
+          "visibility": "sup",
+          "content": {
+            "body": {
+              "$contains": "<worker_output>\nChecked.\n</worker_output>"
+            }
+          }
         },
         {
           "source": {
@@ -348,6 +372,12 @@
             {},
             {},
             {},
+            {
+              "role": "user",
+              "text": {
+                "$contains": "<worker_output>\nThe facts.\n</worker_output>"
+              }
+            },
             {},
             {},
             {

@@ -1,11 +1,11 @@
 {
   "$schema": "../../scenario.schema.json",
-  "id": "tool-search/a-later-turn-replays-no-discovery-round",
-  "title": "A later turn's history replays the rounds of the tools the agent used, not its searches",
+  "id": "tool-search/a-later-turn-replays-its-discovery-round",
+  "title": "A later turn's history replays every round its turn sent, the agent's search among them, as it was sent",
   "rules": [
     "§6.4"
   ],
-  "notes": "Python: tests/test_channels/test_tool_history.py::test_only_the_answers_a_tool_gave_are_replayed.",
+  "notes": "Python: channels/_tool_history.py tool_rounds; tests/test_channels/test_tool_history.py::test_every_call_the_turn_ended_is_replayed_but_a_cancelled_one. A discovery round left out rewrote the history from that round on, and the provider's prompt cache lost it (RMK-1370).",
   "setup": {
     "channels": [
       {
@@ -181,6 +181,13 @@
         {},
         {
           "tool_results": [
+            {
+              "tool_call_id": "s1",
+              "content": {
+                "$contains": "\"name\": \"send_sms\""
+              },
+              "is_error": false
+            },
             {
               "tool_call_id": "t1",
               "content": "{\"ok\": true}",

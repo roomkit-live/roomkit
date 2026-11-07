@@ -1,0 +1,187 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-round-s-text-replays-with-its-calls-in-one-message",
+  "title": "A round whose model wrote text with its calls reads, in a later turn, as the one assistant message its turn sent: the text, then the calls",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: channels/_tool_history.py with_tool_rounds; tests/test_channels/test_tool_history.py::test_a_round_s_text_replays_with_its_calls_in_one_message. The round's text is stored as the turn's first message, before the round's rows; replayed apart, it read as two assistant messages, the text and then the calls, and the later request no longer extended the turn's (RMK-1370).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look an order up",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "Order 42 left the north depot on Monday in two boxes, tracking AB-123; it is expected on Thursday, and the customer asked for a signature at delivery and a call an hour before."
+          }
+        ],
+        "model": {
+          "chat_dialect": "openai",
+          "rounds": [
+            {
+              "text": "Let me look it up.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {
+                    "q": "42"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "It arrives on Thursday."
+            },
+            {
+              "text": "You are welcome."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Where is my order?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Thanks."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "chat_messages": [
+            {
+              "role": "user",
+              "content": "Where is my order?"
+            },
+            {
+              "role": "assistant",
+              "content": "Let me look it up.",
+              "tool_calls": [
+                {
+                  "id": "$e1",
+                  "type": "function",
+                  "function": {
+                    "name": "lookup",
+                    "arguments": "{\"q\": \"42\"}"
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool",
+              "tool_call_id": "$e1",
+              "content": "Order 42 left the north depot on Monday in two boxes, tracking AB-123; it is expected on Thursday, and the customer asked for a signature at delivery and a call an hour before."
+            }
+          ]
+        },
+        {
+          "chat_messages": [
+            {
+              "role": "user",
+              "content": "Where is my order?"
+            },
+            {
+              "role": "assistant",
+              "content": "Let me look it up.",
+              "tool_calls": [
+                {
+                  "id": "$e1",
+                  "type": "function",
+                  "function": {
+                    "name": "lookup",
+                    "arguments": "{\"q\": \"42\"}"
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool",
+              "tool_call_id": "$e1",
+              "content": "Order 42 left the north depot on Monday in two boxes, tracking AB-123; it is expected on Thursday, and the customer asked for a signature at delivery and a call an hour before."
+            },
+            {
+              "role": "assistant",
+              "content": "It arrives on Thursday."
+            },
+            {
+              "role": "user",
+              "content": "Thanks."
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

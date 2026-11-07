@@ -5,7 +5,7 @@
   "rules": [
     "§6.4"
   ],
-  "notes": "A model may give a call the id an earlier round's call had (a server that numbers the calls of each response): Python's tool loop appends each round's results as they came and _tool_history replays each stored row, so a result of parts never stands for an earlier call of the same id.",
+  "notes": "A model may give a call the id an earlier round's call had (a server that numbers the calls of each response): Python's tool loop appends each round's results as they came and _tool_history replays each stored row, so a result of parts never stands for an earlier call of the same id, each under the id the model gave it, as its turn sent it (RMK-1370).",
   "setup": {
     "channels": [
       {
@@ -175,7 +175,7 @@
               "is_error": false
             },
             {
-              "tool_call_id": "c1_5",
+              "tool_call_id": "c1",
               "content": "here [non-text part]",
               "is_error": false
             },

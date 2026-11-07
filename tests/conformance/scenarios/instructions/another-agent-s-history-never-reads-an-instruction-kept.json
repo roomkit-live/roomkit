@@ -1,0 +1,136 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "instructions/another-agent-s-history-never-reads-an-instruction-kept",
+  "title": "The copy an agent keeps of its instruction is its own: the agent's later turn replays it, another agent of the room reads the answer and never the instruction",
+  "rules": [
+    "§10.1.1",
+    "§7.5 rule 8"
+  ],
+  "notes": "Python: core/mixins/_streaming_segments.py instruction_read writes the row visible to its agent alone, and a history reads only its own channel's rows (RMK-1407). a answers the instruction, b answers a and a answers b, as agents of a room ask each other (§19.3.1); the chain stops there.",
+  "setup": {
+    "kit": {
+      "max_chain_depth": 4
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "tools": [],
+        "model": {
+          "chat_dialect": "openai",
+          "rounds": [
+            {
+              "text": "Done, as asked."
+            },
+            {
+              "text": "Thanks, b."
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "tools": [],
+        "model": {
+          "chat_dialect": "openai",
+          "rounds": [
+            {
+              "text": "I saw a's answer."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "b",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "app",
+        "content": {
+          "type": "text",
+          "body": "Tell the room you are done."
+        },
+        "event_type": "instruction",
+        "addressed_to": [
+          "a"
+        ]
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "a": [
+        {
+          "chat_messages": [
+            {
+              "role": "user",
+              "content": "[Instruction from the application: nobody in this conversation said it. Act on it now, in your own words, without quoting it.]\nTell the room you are done."
+            }
+          ]
+        },
+        {
+          "chat_messages": [
+            {
+              "role": "user",
+              "content": "[Instruction from the application: nobody in this conversation said it. Act on it now, in your own words, without quoting it.]\nTell the room you are done."
+            },
+            {
+              "role": "assistant",
+              "content": "Done, as asked."
+            },
+            {
+              "role": "user",
+              "content": "I saw a's answer."
+            }
+          ]
+        }
+      ],
+      "b": [
+        {
+          "chat_messages": [
+            {
+              "role": "user",
+              "content": "Done, as asked."
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

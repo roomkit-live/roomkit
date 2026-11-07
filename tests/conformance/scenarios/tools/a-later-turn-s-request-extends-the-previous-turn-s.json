@@ -1,0 +1,618 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-later-turn-s-request-extends-the-previous-turn-s",
+  "title": "A later turn's first request opens with what the previous turn's last request sent, word for word, then its answer: every earlier round is replayed whole, however many calls came after it",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: channels/_tool_history.py tool_rounds; tests/test_channels/test_tool_history.py::test_a_later_turn_s_request_extends_the_previous_turn_s. A provider that caches a prompt's prefix keeps the whole history only while each request extends the one before it (RMK-1370). Nine calls of 150 to 180 characters each: a window of the last 8 calls, the 3 most recent whole and the older ones a 120-character preview, rewrote the history at each turn.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "order",
+            "description": "Look the order up",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "Order 42 left the north depot on Monday in two boxes, tracking AB-123; it is expected on Thursday, and the customer asked for a signature at delivery and a call an hour before."
+          },
+          {
+            "name": "parcel",
+            "description": "Look the parcel up",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "Parcel AB-123 is on the truck that left the north depot at 9:40; its next scan is at the east hub, and the driver's round ends at 18:00 with eleven stops left."
+          },
+          {
+            "name": "customer",
+            "description": "Look the customer up",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "Ada Lovelace, customer since 2019, prefers a call before any delivery, lives on the third floor without a lift, and asked for the parcel to be left with the concierge."
+          },
+          {
+            "name": "invoice",
+            "description": "Look the invoice up",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "Invoice 7781 for order 42: two items, 84.20 euros paid by card on Monday, a refund of 6.10 euros still pending for the late delivery of the previous order."
+          },
+          {
+            "name": "stock",
+            "description": "Look the stock up",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "Stock of the item in order 42: four left at the north depot, twelve at the east hub, none at the south depot; the next restock arrives on the 14th by train."
+          }
+        ],
+        "model": {
+          "chat_dialect": "openai",
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "order",
+                  "arguments": {
+                    "q": "42"
+                  }
+                },
+                {
+                  "id": "c2",
+                  "name": "parcel",
+                  "arguments": {
+                    "q": "42"
+                  }
+                },
+                {
+                  "id": "c3",
+                  "name": "customer",
+                  "arguments": {
+                    "q": "42"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Answer 1."
+            },
+            {
+              "calls": [
+                {
+                  "id": "c4",
+                  "name": "invoice",
+                  "arguments": {
+                    "q": "42"
+                  }
+                },
+                {
+                  "id": "c5",
+                  "name": "stock",
+                  "arguments": {
+                    "q": "42"
+                  }
+                },
+                {
+                  "id": "c6",
+                  "name": "order",
+                  "arguments": {
+                    "q": "42"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Answer 2."
+            },
+            {
+              "calls": [
+                {
+                  "id": "c7",
+                  "name": "parcel",
+                  "arguments": {
+                    "q": "42"
+                  }
+                },
+                {
+                  "id": "c8",
+                  "name": "customer",
+                  "arguments": {
+                    "q": "42"
+                  }
+                },
+                {
+                  "id": "c9",
+                  "name": "invoice",
+                  "arguments": {
+                    "q": "42"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Answer 3."
+            },
+            {
+              "text": "Answer 4."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Question 1?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Question 2?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Question 3?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Question 4?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {},
+        {},
+        {},
+        {
+          "chat_messages": [
+            {
+              "role": "user",
+              "content": "Question 1?"
+            },
+            {
+              "role": "assistant",
+              "content": null,
+              "tool_calls": [
+                {
+                  "id": "$e1",
+                  "type": "function",
+                  "function": {
+                    "name": "order",
+                    "arguments": "{\"q\": \"42\"}"
+                  }
+                },
+                {
+                  "id": "$e2",
+                  "type": "function",
+                  "function": {
+                    "name": "parcel",
+                    "arguments": "{\"q\": \"42\"}"
+                  }
+                },
+                {
+                  "id": "$e3",
+                  "type": "function",
+                  "function": {
+                    "name": "customer",
+                    "arguments": "{\"q\": \"42\"}"
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool",
+              "tool_call_id": "$e1",
+              "content": "Order 42 left the north depot on Monday in two boxes, tracking AB-123; it is expected on Thursday, and the customer asked for a signature at delivery and a call an hour before."
+            },
+            {
+              "role": "tool",
+              "tool_call_id": "$e2",
+              "content": "Parcel AB-123 is on the truck that left the north depot at 9:40; its next scan is at the east hub, and the driver's round ends at 18:00 with eleven stops left."
+            },
+            {
+              "role": "tool",
+              "tool_call_id": "$e3",
+              "content": "Ada Lovelace, customer since 2019, prefers a call before any delivery, lives on the third floor without a lift, and asked for the parcel to be left with the concierge."
+            },
+            {
+              "role": "assistant",
+              "content": "Answer 1."
+            },
+            {
+              "role": "user",
+              "content": "Question 2?"
+            },
+            {
+              "role": "assistant",
+              "content": null,
+              "tool_calls": [
+                {
+                  "id": "$e4",
+                  "type": "function",
+                  "function": {
+                    "name": "invoice",
+                    "arguments": "{\"q\": \"42\"}"
+                  }
+                },
+                {
+                  "id": "$e5",
+                  "type": "function",
+                  "function": {
+                    "name": "stock",
+                    "arguments": "{\"q\": \"42\"}"
+                  }
+                },
+                {
+                  "id": "$e6",
+                  "type": "function",
+                  "function": {
+                    "name": "order",
+                    "arguments": "{\"q\": \"42\"}"
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool",
+              "tool_call_id": "$e4",
+              "content": "Invoice 7781 for order 42: two items, 84.20 euros paid by card on Monday, a refund of 6.10 euros still pending for the late delivery of the previous order."
+            },
+            {
+              "role": "tool",
+              "tool_call_id": "$e5",
+              "content": "Stock of the item in order 42: four left at the north depot, twelve at the east hub, none at the south depot; the next restock arrives on the 14th by train."
+            },
+            {
+              "role": "tool",
+              "tool_call_id": "$e6",
+              "content": "Order 42 left the north depot on Monday in two boxes, tracking AB-123; it is expected on Thursday, and the customer asked for a signature at delivery and a call an hour before."
+            },
+            {
+              "role": "assistant",
+              "content": "Answer 2."
+            },
+            {
+              "role": "user",
+              "content": "Question 3?"
+            },
+            {
+              "role": "assistant",
+              "content": null,
+              "tool_calls": [
+                {
+                  "id": "$e7",
+                  "type": "function",
+                  "function": {
+                    "name": "parcel",
+                    "arguments": "{\"q\": \"42\"}"
+                  }
+                },
+                {
+                  "id": "$e8",
+                  "type": "function",
+                  "function": {
+                    "name": "customer",
+                    "arguments": "{\"q\": \"42\"}"
+                  }
+                },
+                {
+                  "id": "$e9",
+                  "type": "function",
+                  "function": {
+                    "name": "invoice",
+                    "arguments": "{\"q\": \"42\"}"
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool",
+              "tool_call_id": "$e7",
+              "content": "Parcel AB-123 is on the truck that left the north depot at 9:40; its next scan is at the east hub, and the driver's round ends at 18:00 with eleven stops left."
+            },
+            {
+              "role": "tool",
+              "tool_call_id": "$e8",
+              "content": "Ada Lovelace, customer since 2019, prefers a call before any delivery, lives on the third floor without a lift, and asked for the parcel to be left with the concierge."
+            },
+            {
+              "role": "tool",
+              "tool_call_id": "$e9",
+              "content": "Invoice 7781 for order 42: two items, 84.20 euros paid by card on Monday, a refund of 6.10 euros still pending for the late delivery of the previous order."
+            }
+          ]
+        },
+        {
+          "chat_messages": [
+            {
+              "role": "user",
+              "content": "Question 1?"
+            },
+            {
+              "role": "assistant",
+              "content": null,
+              "tool_calls": [
+                {
+                  "id": "$e1",
+                  "type": "function",
+                  "function": {
+                    "name": "order",
+                    "arguments": "{\"q\": \"42\"}"
+                  }
+                },
+                {
+                  "id": "$e2",
+                  "type": "function",
+                  "function": {
+                    "name": "parcel",
+                    "arguments": "{\"q\": \"42\"}"
+                  }
+                },
+                {
+                  "id": "$e3",
+                  "type": "function",
+                  "function": {
+                    "name": "customer",
+                    "arguments": "{\"q\": \"42\"}"
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool",
+              "tool_call_id": "$e1",
+              "content": "Order 42 left the north depot on Monday in two boxes, tracking AB-123; it is expected on Thursday, and the customer asked for a signature at delivery and a call an hour before."
+            },
+            {
+              "role": "tool",
+              "tool_call_id": "$e2",
+              "content": "Parcel AB-123 is on the truck that left the north depot at 9:40; its next scan is at the east hub, and the driver's round ends at 18:00 with eleven stops left."
+            },
+            {
+              "role": "tool",
+              "tool_call_id": "$e3",
+              "content": "Ada Lovelace, customer since 2019, prefers a call before any delivery, lives on the third floor without a lift, and asked for the parcel to be left with the concierge."
+            },
+            {
+              "role": "assistant",
+              "content": "Answer 1."
+            },
+            {
+              "role": "user",
+              "content": "Question 2?"
+            },
+            {
+              "role": "assistant",
+              "content": null,
+              "tool_calls": [
+                {
+                  "id": "$e4",
+                  "type": "function",
+                  "function": {
+                    "name": "invoice",
+                    "arguments": "{\"q\": \"42\"}"
+                  }
+                },
+                {
+                  "id": "$e5",
+                  "type": "function",
+                  "function": {
+                    "name": "stock",
+                    "arguments": "{\"q\": \"42\"}"
+                  }
+                },
+                {
+                  "id": "$e6",
+                  "type": "function",
+                  "function": {
+                    "name": "order",
+                    "arguments": "{\"q\": \"42\"}"
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool",
+              "tool_call_id": "$e4",
+              "content": "Invoice 7781 for order 42: two items, 84.20 euros paid by card on Monday, a refund of 6.10 euros still pending for the late delivery of the previous order."
+            },
+            {
+              "role": "tool",
+              "tool_call_id": "$e5",
+              "content": "Stock of the item in order 42: four left at the north depot, twelve at the east hub, none at the south depot; the next restock arrives on the 14th by train."
+            },
+            {
+              "role": "tool",
+              "tool_call_id": "$e6",
+              "content": "Order 42 left the north depot on Monday in two boxes, tracking AB-123; it is expected on Thursday, and the customer asked for a signature at delivery and a call an hour before."
+            },
+            {
+              "role": "assistant",
+              "content": "Answer 2."
+            },
+            {
+              "role": "user",
+              "content": "Question 3?"
+            },
+            {
+              "role": "assistant",
+              "content": null,
+              "tool_calls": [
+                {
+                  "id": "$e7",
+                  "type": "function",
+                  "function": {
+                    "name": "parcel",
+                    "arguments": "{\"q\": \"42\"}"
+                  }
+                },
+                {
+                  "id": "$e8",
+                  "type": "function",
+                  "function": {
+                    "name": "customer",
+                    "arguments": "{\"q\": \"42\"}"
+                  }
+                },
+                {
+                  "id": "$e9",
+                  "type": "function",
+                  "function": {
+                    "name": "invoice",
+                    "arguments": "{\"q\": \"42\"}"
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool",
+              "tool_call_id": "$e7",
+              "content": "Parcel AB-123 is on the truck that left the north depot at 9:40; its next scan is at the east hub, and the driver's round ends at 18:00 with eleven stops left."
+            },
+            {
+              "role": "tool",
+              "tool_call_id": "$e8",
+              "content": "Ada Lovelace, customer since 2019, prefers a call before any delivery, lives on the third floor without a lift, and asked for the parcel to be left with the concierge."
+            },
+            {
+              "role": "tool",
+              "tool_call_id": "$e9",
+              "content": "Invoice 7781 for order 42: two items, 84.20 euros paid by card on Monday, a refund of 6.10 euros still pending for the late delivery of the previous order."
+            },
+            {
+              "role": "assistant",
+              "content": "Answer 3."
+            },
+            {
+              "role": "user",
+              "content": "Question 4?"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

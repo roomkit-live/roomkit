@@ -1,7 +1,7 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "tools/a-refused-call-s-end-row-waits-for-the-holder-still-running",
-  "title": "A round's end rows come in its calls' order: the second call under an id, refused at once, ends after the first, which still runs, so a later turn reads the first with its own result",
+  "title": "A round's end rows come in its calls' order: the second call under an id, refused at once, ends after the first, which still runs, so a later turn reads each with its own result",
   "rules": [
     "§6.4",
     "§12.4"
@@ -195,6 +195,12 @@
               "name": "lookup",
               "content": "fine",
               "is_error": false
+            },
+            {
+              "tool_call_id": "c1",
+              "name": "other",
+              "content": "{\"error\": \"Tool call 'c1' has not had its result yet\"}",
+              "is_error": true
             }
           ]
         }

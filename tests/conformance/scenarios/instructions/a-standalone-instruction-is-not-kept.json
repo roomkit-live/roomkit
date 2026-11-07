@@ -1,0 +1,200 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "instructions/a-standalone-instruction-is-not-kept",
+  "title": "A standalone instruction's turn keeps no copy of it: its turn read nothing of the room, and no later turn replays it",
+  "rules": [
+    "§10.1.1 step 7",
+    "§6.4"
+  ],
+  "notes": "Python: channels/_instruction.py kept_instruction. HITL 25b07f2a: a standalone instruction is often a long text (a summary to run again), which would double the history (RMK-1407).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [],
+        "model": {
+          "chat_dialect": "openai",
+          "rounds": [
+            {
+              "text": "Noted."
+            },
+            {
+              "text": "A summary."
+            },
+            {
+              "text": "Sure."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Note this."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "app",
+        "content": {
+          "type": "text",
+          "body": "Summarize the room."
+        },
+        "event_type": "instruction",
+        "addressed_to": [
+          "agent"
+        ],
+        "standalone": true
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "And now?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "ws"
+          }
+        },
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "agent"
+          },
+          "content": {
+            "body": "Noted."
+          }
+        },
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "agent"
+          },
+          "content": {
+            "body": "A summary."
+          }
+        },
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "ws"
+          }
+        },
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "agent"
+          },
+          "content": {
+            "body": "Sure."
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {},
+        {
+          "chat_messages": [
+            {
+              "role": "user",
+              "content": "[Instruction from the application: nobody in this conversation said it. Act on it now, in your own words, without quoting it.]\nSummarize the room."
+            }
+          ]
+        },
+        {
+          "chat_messages": [
+            {
+              "role": "user",
+              "content": "Note this."
+            },
+            {
+              "role": "assistant",
+              "content": "Noted."
+            },
+            {
+              "role": "assistant",
+              "content": "A summary."
+            },
+            {
+              "role": "user",
+              "content": "And now?"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

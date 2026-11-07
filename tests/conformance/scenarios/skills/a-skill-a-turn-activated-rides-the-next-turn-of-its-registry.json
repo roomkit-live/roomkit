@@ -7,7 +7,7 @@
     "§24.4",
     "Appendix A.9"
   ],
-  "notes": "Python: channels/_ai_context.py _given_turn_skills, _add_skills; channels/_ai_policy.py _turn_skills. channels/_ai_tools.py _handle_activate_skill, channels/_skill_activation.py: the record is the channel's, per room (RFC §24.4), whichever registry each turn reads.",
+  "notes": "Python: channels/_ai_context.py _given_turn_skills, _add_skills; channels/_ai_policy.py _turn_skills. channels/_ai_tools.py _handle_activate_skill, channels/_skill_activation.py: the record is the channel's, per room (RFC §24.4), whichever registry each turn reads. A later turn replays the activation round as its turn sent it, as any round (RMK-1370).",
   "setup": {
     "channels": [
       {
@@ -137,6 +137,13 @@
         },
         {
           "tool_results": [
+            {
+              "tool_call_id": "call-1",
+              "content": {
+                "$contains": "Rules for ada-procedure."
+              },
+              "is_error": false
+            },
             {
               "tool_call_id": "call-2",
               "content": {

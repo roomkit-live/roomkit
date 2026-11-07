@@ -6,7 +6,7 @@
     "§19.7.3",
     "§23.3"
   ],
-  "notes": "Python: tests/orchestration/test_supervisor_text_background.py test_a_per_worker_background_task_is_the_task_runner_s (a task the runner cancels: told did not complete); tests/tasks/test_cancelled_delegation.py test_a_supervisors_worker_is_free_once_its_task_was_cancelled (the run's line ends not completed). orchestration/_worker_run.py follow_worker, _await_started (answer_within, then kit.task_runner.cancel past the timeout); _inject_per_worker.py _worker_told, _worker_ended. The worker's model waits at a gate no step opens.",
+  "notes": "Python: tests/orchestration/test_supervisor_text_background.py test_a_per_worker_background_task_is_the_task_runner_s (a task the runner cancels: told did not complete); tests/tasks/test_cancelled_delegation.py test_a_supervisors_worker_is_free_once_its_task_was_cancelled (the run's line ends not completed). orchestration/_worker_run.py follow_worker, _await_started (answer_within, then kit.task_runner.cancel past the timeout); _inject_per_worker.py _worker_told, _worker_ended. The worker's model waits at a gate no step opens. The agent keeps its own copy of each instruction its turn read, an instruction_read row visible to it alone, before what the turn wrote (RFC §10.1.1, HITL 25b07f2a, RMK-1407).",
   "setup": {
     "channels": [
       {
@@ -194,6 +194,18 @@
             "body": "On it."
           },
           "chain_depth": 1
+        },
+        {
+          "type": "instruction_read",
+          "source": {
+            "channel_id": "sup"
+          },
+          "visibility": "sup",
+          "content": {
+            "body": {
+              "$contains": "did not complete"
+            }
+          }
         },
         {
           "source": {
