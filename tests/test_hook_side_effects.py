@@ -365,57 +365,100 @@ class TestBroadcastMetadataUpdatesApplied:
         assert room.metadata.get("seen_hooknote") is True
 
 
+class _AnsweringUpdater(UpdatingChannel):
+    """An agent that answers ``done``, its output carrying room metadata
+    updates."""
+
+    def __init__(self, channel_id: str, updates: dict[str, Any]) -> None:
+        super().__init__(channel_id, updates, agent=True)
+
+    async def on_event(
+        self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
+    ) -> ChannelOutput:
+        answer = RoomEvent(
+            room_id=event.room_id,
+            source=EventSource(channel_id=self.channel_id, channel_type=ChannelType.AI),
+            content=TextContent(body="done"),
+        )
+        return ChannelOutput(
+            responded=True, response_events=[answer], metadata_updates=dict(self._updates)
+        )
+
+
+def _failing_writes(monkeypatch: pytest.MonkeyPatch, kit: RoomKit, failing: str) -> None:
+    """The kit's store fails the write *failing* names: the task ``t1``,
+    the observation ``o1``, or a metadata update holding ``stage``."""
+    store = kit.store
+    add_task, add_observation = store.add_task, store.add_observation
+    patch_room_metadata = store.patch_room_metadata
+
+    async def write_task(task: Task) -> Task:
+        if failing == "task" and task.id == "t1":
+            raise RuntimeError("store down")
+        return await add_task(task)
+
+    async def write_observation(observation: Observation) -> Observation:
+        if failing == "observation" and observation.id == "o1":
+            raise RuntimeError("store down")
+        return await add_observation(observation)
+
+    async def write_metadata(room_id: str, updates: dict[str, Any], **kwargs: Any) -> Any:
+        if failing == "metadata" and "stage" in updates:
+            raise RuntimeError("store down")
+        return await patch_room_metadata(room_id, updates, **kwargs)
+
+    monkeypatch.setattr(store, "add_task", write_task)
+    monkeypatch.setattr(store, "add_observation", write_observation)
+    monkeypatch.setattr(store, "patch_room_metadata", write_metadata)
+
+
+def _error_lines(caplog: pytest.LogCaptureFixture) -> list[str]:
+    return [
+        r.getMessage()
+        for r in caplog.records
+        if r.name.startswith("roomkit") and r.levelno >= logging.ERROR
+    ]
+
+
+# The CRM's updates, in the order it writes them: the line names them sorted.
+_CRM_UPDATES = {"stage": "qualified", "owner": "ana"}
+
+
 class TestSideEffectWriteFailures:
-    @pytest.mark.parametrize("failing", ["task", "observation", "metadata"])
+    @pytest.mark.parametrize(
+        ("failing", "blocks"),
+        [("task", False), ("observation", False), ("metadata", False), ("task", True)],
+        ids=["task", "observation", "metadata", "a-blocked-event-s-task"],
+    )
     async def test_a_failed_side_effect_write_is_logged_and_the_call_goes_on(
         self,
         kit: RoomKit,
         caplog: pytest.LogCaptureFixture,
         monkeypatch: pytest.MonkeyPatch,
         failing: str,
+        blocks: bool,
     ) -> None:
         """RFC §10.1 step 15, §15.2 (RMK-1498): a side effect the store fails
-        to write is one ERROR line, the others still written; the call goes
-        on, its error its turn's, and only a task stored fires
-        ON_TASK_CREATED."""
-        store = kit.store
-        add_task, add_observation = store.add_task, store.add_observation
-        patch_room_metadata = store.patch_room_metadata
-
-        async def write_task(task: Task) -> Task:
-            if failing == "task" and task.id == "t1":
-                raise RuntimeError("store down")
-            return await add_task(task)
-
-        async def write_observation(observation: Observation) -> Observation:
-            if failing == "observation" and observation.id == "o1":
-                raise RuntimeError("store down")
-            return await add_observation(observation)
-
-        async def write_metadata(room_id: str, updates: dict[str, Any], **kwargs: Any) -> Any:
-            if failing == "metadata" and "stage" in updates:
-                raise RuntimeError("store down")
-            return await patch_room_metadata(room_id, updates, **kwargs)
-
-        monkeypatch.setattr(store, "add_task", write_task)
-        monkeypatch.setattr(store, "add_observation", write_observation)
-        monkeypatch.setattr(store, "patch_room_metadata", write_metadata)
+        to write is one ERROR line, the others still written, a blocked
+        event's too; the call goes on, its error its turn's, and only a task
+        stored fires ON_TASK_CREATED."""
+        _failing_writes(monkeypatch, kit, failing)
         kit.register_channel(SimpleChannel("sms1"))
-        kit.register_channel(UpdatingChannel("crm", {"stage": "qualified"}))
+        kit.register_channel(UpdatingChannel("crm", _CRM_UPDATES))
         await kit.create_room(room_id="r1")
         await kit.attach_channel("r1", "sms1")
         await kit.attach_channel("r1", "crm")
 
         @kit.hook(HookTrigger.BEFORE_BROADCAST, name="triage")
         async def triage(event: RoomEvent, ctx: RoomContext) -> HookResult:
-            return HookResult(
-                action="allow",
-                tasks=[Task(id=f"t{i}", room_id="r1", title=f"Call back {i}") for i in (1, 2)],
-                observations=[
-                    Observation(id=f"o{i}", room_id="r1", channel_id="sms1", content=f"note {i}")
-                    for i in (1, 2)
-                ],
-            )
+            tasks = [Task(id=f"t{i}", room_id="r1", title=f"Call back {i}") for i in (1, 2)]
+            observations = [
+                Observation(id=f"o{i}", room_id="r1", channel_id="sms1", content=f"note {i}")
+                for i in (1, 2)
+            ]
+            if blocks:
+                return HookResult.block(reason="spam", tasks=tasks, observations=observations)
+            return HookResult(action="allow", tasks=tasks, observations=observations)
 
         created: list[str] = []
 
@@ -430,21 +473,56 @@ class TestSideEffectWriteFailures:
             result = await kit.process_inbound(message)
             await kit.hook_engine.drain_observers()
         room = await kit.get_room("r1")
-        tasks = sorted(task.id for task in await store.list_tasks("r1"))
-        observations = sorted(o.id for o in await store.list_observations("r1"))
+        tasks = sorted(task.id for task in await kit.store.list_tasks("r1"))
+        observations = sorted(o.id for o in await kit.store.list_observations("r1"))
         await kit.close()
 
-        lines = [
-            r.getMessage()
-            for r in caplog.records
-            if r.name.startswith("roomkit") and r.levelno >= logging.ERROR
-        ]
         expected = {
             "task": "Failed to persist task t1",
             "observation": "Failed to persist observation o1",
-            "metadata": "Failed to write the room metadata updates ['stage']",
+            "metadata": "Failed to write the room metadata updates ['owner', 'stage']",
         }
-        assert (result.error, result.blocked, lines) == (None, False, [expected[failing]])
+        assert (result.error, result.blocked, _error_lines(caplog)) == (
+            None,
+            blocks,
+            [expected[failing]],
+        )
         assert tasks == sorted(created) == (["t2"] if failing == "task" else ["t1", "t2"])
         assert observations == (["o2"] if failing == "observation" else ["o1", "o2"])
-        assert room.metadata.get("stage") == (None if failing == "metadata" else "qualified")
+        stage = None if failing == "metadata" or blocks else "qualified"
+        assert room.metadata.get("stage") == stage
+
+    @pytest.mark.parametrize("writer", ["a shared transport", "the agent"])
+    async def test_a_delegated_turn_s_failed_metadata_write_is_logged(
+        self,
+        kit: RoomKit,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+        writer: str,
+    ) -> None:
+        """RFC §23.3 step 5, §10.1 step 15 (RMK-1498): the metadata updates a
+        task's child room is given, by a transport shared into it or by the
+        agent's own output, are written as a room's are, a failure one ERROR
+        line, and the task still completes."""
+        _failing_writes(monkeypatch, kit, "metadata")
+        await kit.create_room(room_id="r1")
+        share: list[str] | None = None
+        if writer == "a shared transport":
+            kit.register_channel(UpdatingChannel("crm", _CRM_UPDATES))
+            kit.register_channel(Agent("worker", provider=MockAIProvider(responses=["done"])))
+            await kit.attach_channel("r1", "crm")
+            share = ["crm"]
+        else:
+            kit.register_channel(_AnsweringUpdater("worker", _CRM_UPDATES))
+
+        with caplog.at_level(logging.ERROR):
+            task = await kit.delegate("r1", "worker", "go", share_channels=share, wait=True)
+            result = await task.wait()
+        child = await kit.get_room(task.child_room_id)
+        await kit.close()
+
+        assert (result.status, _error_lines(caplog), child.metadata.get("stage")) == (
+            "completed",
+            ["Failed to write the room metadata updates ['owner', 'stage']"],
+            None,
+        )
