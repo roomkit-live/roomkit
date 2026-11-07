@@ -1277,7 +1277,13 @@ class TestAnEditOutsideItsTargetsWindow:
         history = reader.histories[-1]
         assert said.id not in [e.id for e in history]
         [edit] = [e for e in history if e.type == EventType.EDIT]
-        shown = str(edit.content)
-        assert ("5678" in shown) is not deleted
-        assert "1234" not in " ".join(str(e.content) for e in history)
+        # The texts the reader is handed, not the contents' repr, which holds
+        # the target's random id: an id can hold the digits.
+        assert isinstance(edit.content, EditContent)
+        assert isinstance(edit.content.new_content, TextContent)
+        assert ("5678" in edit.content.new_content.body) is not deleted
+        texts = [edit.content.new_content.body] + [
+            e.content.body for e in history if isinstance(e.content, TextContent)
+        ]
+        assert "1234" not in " ".join(texts)
         await kit.close()
