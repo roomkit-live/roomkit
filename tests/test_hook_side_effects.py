@@ -630,6 +630,54 @@ class TestDroppedSetSideEffects:
 
         assert (tasks, created) == (["t1"], ["t1"])
 
+    async def test_an_adopted_call_dropped_as_stale_reads_its_task_stored(
+        self, kit: RoomKit
+    ) -> None:
+        """RFC §10.1 step 15, §13.5 (RMK-1514): hello's off-lock hook has
+        another worker declare the room's next index lost, then makes a
+        deferred call, "Call me back", whose hook gives a task: the room's
+        lane drops its set as stale, and its handle, waited from that hook,
+        answers delivery_stale once the task is stored."""
+        kit.register_channel(SimpleChannel("sms1"))
+        kit.register_channel(SimpleChannel("ws1"))
+        await kit.create_room(room_id="r1")
+        await kit.attach_channel("r1", "sms1")
+        await kit.attach_channel("r1", "ws1")
+        seen: list[tuple[str | None, list[str]]] = []
+
+        def message(body: str) -> InboundMessage:
+            return InboundMessage(
+                channel_id="sms1", sender_id="user1", content=TextContent(body=body)
+            )
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST, name="adopts", needs_lock=False)
+        async def adopts(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            if getattr(event.content, "body", None) != "hello":
+                return HookResult.allow()
+            # Another worker's lane declares the next index lost.
+            room = await kit.get_room("r1")
+            latest = -1 if room.latest_index is None else room.latest_index
+            await kit.store.advance_delivered_index("r1", latest + 1, force=True)
+            side = await kit.process_inbound(
+                message("Call me back"), room_id="r1", defer_delivery=True
+            )
+            waited = await side.delivery.wait()
+            tasks = sorted(task.id for task in await kit.store.list_tasks("r1"))
+            seen.append((waited.cancellation_reason, tasks))
+            return HookResult.allow()
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST, name="triage", priority=1)
+        async def triage(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            if getattr(event.content, "body", None) != "Call me back":
+                return HookResult.allow()
+            task = Task(id="t1", room_id="r1", title="Call back")
+            return HookResult(action="allow", tasks=[task])
+
+        result = await kit.process_inbound(message("hello"), room_id="r1")
+        await kit.close()
+
+        assert (result.cancellation_reason, seen) == (None, [("delivery_stale", ["t1"])])
+
 
 class GatedChannel(SimpleChannel):
     """A transport whose delivery of *held* waits until the test opens it."""
