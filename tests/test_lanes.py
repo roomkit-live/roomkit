@@ -292,6 +292,9 @@ async def test_execution_failure_resolves_wait_and_records_error() -> None:
     enqueue_exec(registry, cascade, "e0", 0)
     await asyncio.wait_for(cascade.wait(), timeout=2.0)
     assert cascade.error is boom
+    # A plan that raised has no result: none of its aftermath runs, no side
+    # effect nor reentry (a rerun whose room's read failed stores nothing).
+    assert (host.post_effects, host.reentered) == ([], [])
     # The cursor still advanced: a failed delivery set is complete, not a hole.
     assert await cursor(store) == 0
     await registry.aclose()
