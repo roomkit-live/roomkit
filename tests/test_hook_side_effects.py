@@ -363,3 +363,88 @@ class TestBroadcastMetadataUpdatesApplied:
         )
         room = await kit.get_room("r1")
         assert room.metadata.get("seen_hooknote") is True
+
+
+class TestSideEffectWriteFailures:
+    @pytest.mark.parametrize("failing", ["task", "observation", "metadata"])
+    async def test_a_failed_side_effect_write_is_logged_and_the_call_goes_on(
+        self,
+        kit: RoomKit,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+        failing: str,
+    ) -> None:
+        """RFC §10.1 step 15, §15.2 (RMK-1498): a side effect the store fails
+        to write is one ERROR line, the others still written; the call goes
+        on, its error its turn's, and only a task stored fires
+        ON_TASK_CREATED."""
+        store = kit.store
+        add_task, add_observation = store.add_task, store.add_observation
+        patch_room_metadata = store.patch_room_metadata
+
+        async def write_task(task: Task) -> Task:
+            if failing == "task" and task.id == "t1":
+                raise RuntimeError("store down")
+            return await add_task(task)
+
+        async def write_observation(observation: Observation) -> Observation:
+            if failing == "observation" and observation.id == "o1":
+                raise RuntimeError("store down")
+            return await add_observation(observation)
+
+        async def write_metadata(room_id: str, updates: dict[str, Any], **kwargs: Any) -> Any:
+            if failing == "metadata" and "stage" in updates:
+                raise RuntimeError("store down")
+            return await patch_room_metadata(room_id, updates, **kwargs)
+
+        monkeypatch.setattr(store, "add_task", write_task)
+        monkeypatch.setattr(store, "add_observation", write_observation)
+        monkeypatch.setattr(store, "patch_room_metadata", write_metadata)
+        kit.register_channel(SimpleChannel("sms1"))
+        kit.register_channel(UpdatingChannel("crm", {"stage": "qualified"}))
+        await kit.create_room(room_id="r1")
+        await kit.attach_channel("r1", "sms1")
+        await kit.attach_channel("r1", "crm")
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST, name="triage")
+        async def triage(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            return HookResult(
+                action="allow",
+                tasks=[Task(id=f"t{i}", room_id="r1", title=f"Call back {i}") for i in (1, 2)],
+                observations=[
+                    Observation(id=f"o{i}", room_id="r1", channel_id="sms1", content=f"note {i}")
+                    for i in (1, 2)
+                ],
+            )
+
+        created: list[str] = []
+
+        @kit.hook(HookTrigger.ON_TASK_CREATED, execution=HookExecution.ASYNC, name="follow_up")
+        async def follow_up(event: RoomEvent, ctx: RoomContext) -> None:
+            created.append(event.metadata["task_id"])
+
+        with caplog.at_level(logging.ERROR):
+            message = InboundMessage(
+                channel_id="sms1", sender_id="user1", content=TextContent(body="hi")
+            )
+            result = await kit.process_inbound(message)
+            await kit.hook_engine.drain_observers()
+        room = await kit.get_room("r1")
+        tasks = sorted(task.id for task in await store.list_tasks("r1"))
+        observations = sorted(o.id for o in await store.list_observations("r1"))
+        await kit.close()
+
+        lines = [
+            r.getMessage()
+            for r in caplog.records
+            if r.name.startswith("roomkit") and r.levelno >= logging.ERROR
+        ]
+        expected = {
+            "task": "Failed to persist task t1",
+            "observation": "Failed to persist observation o1",
+            "metadata": "Failed to write the room metadata updates ['stage']",
+        }
+        assert (result.error, result.blocked, lines) == (None, False, [expected[failing]])
+        assert tasks == sorted(created) == (["t2"] if failing == "task" else ["t1", "t2"])
+        assert observations == (["o2"] if failing == "observation" else ["o1", "o2"])
+        assert room.metadata.get("stage") == (None if failing == "metadata" else "qualified")

@@ -37,7 +37,6 @@ from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.models.framework_event import FrameworkEvent
 from roomkit.models.hook import HookResult, InjectedEvent
 from roomkit.models.identity import IdentityResult
-from roomkit.models.task import Observation, Task
 
 
 class SimpleChannel(Channel):
@@ -1150,75 +1149,3 @@ class TestBroadcastPartialFailure:
         assert not result.blocked
         assert len(events) == 1
         assert events[0].data["failed"] >= 1
-
-
-class TestPersistSideEffectsErrorHandling:
-    async def test_first_task_failure_does_not_lose_second(self, kit: RoomKit) -> None:
-        """If the first task fails to persist, the second should still be saved."""
-        ch = SimpleChannel("sms1")
-        kit.register_channel(ch)
-        await kit.create_room(room_id="r1")
-        await kit.attach_channel("r1", "sms1")
-
-        task1 = Task(id="t1", room_id="r1", title="Task 1")
-        task2 = Task(id="t2", room_id="r1", title="Task 2")
-
-        original_add_task = kit.store.add_task
-        call_count = 0
-
-        async def failing_add_task(task: Task) -> Task:
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                raise RuntimeError("storage error")
-            return await original_add_task(task)
-
-        kit.store.add_task = failing_add_task  # type: ignore[assignment]
-
-        event = RoomEvent(
-            room_id="r1",
-            source=EventSource(channel_id="sms1", channel_type=ChannelType.SMS),
-            content=TextContent(body="test"),
-        )
-        context = await kit._build_context("r1")
-
-        await kit._persist_side_effects("r1", [task1, task2], [], event, context)
-
-        tasks = await kit.store.list_tasks("r1")
-        assert len(tasks) == 1
-        assert tasks[0].id == "t2"
-
-    async def test_observation_failure_does_not_stop_processing(self, kit: RoomKit) -> None:
-        """If an observation fails to persist, processing continues."""
-        ch = SimpleChannel("sms1")
-        kit.register_channel(ch)
-        await kit.create_room(room_id="r1")
-        await kit.attach_channel("r1", "sms1")
-
-        obs1 = Observation(id="o1", room_id="r1", channel_id="sms1", content="obs 1")
-        obs2 = Observation(id="o2", room_id="r1", channel_id="sms1", content="obs 2")
-
-        original_add_obs = kit.store.add_observation
-        call_count = 0
-
-        async def failing_add_obs(obs: Observation) -> Observation:
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                raise RuntimeError("storage error")
-            return await original_add_obs(obs)
-
-        kit.store.add_observation = failing_add_obs  # type: ignore[assignment]
-
-        event = RoomEvent(
-            room_id="r1",
-            source=EventSource(channel_id="sms1", channel_type=ChannelType.SMS),
-            content=TextContent(body="test"),
-        )
-        context = await kit._build_context("r1")
-
-        await kit._persist_side_effects("r1", [], [obs1, obs2], event, context)
-
-        observations = await kit.store.list_observations("r1")
-        assert len(observations) == 1
-        assert observations[0].id == "o2"
