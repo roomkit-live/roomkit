@@ -144,12 +144,12 @@
             },
             {
               "tool_call_id": "t3",
-              "content": "{\"cards\": [], \"total\": 0}\n\n[identical result: 'boards' has now returned exactly this 3 times this turn, for different arguments. Varying the arguments is not finding anything new — this answer is settled. Use it and move on, or answer with what you have.]",
+              "content": "{\"cards\": [], \"total\": 0}\n\n[identical result: 'boards' has now returned exactly this 3 times this turn, for different arguments. Varying the arguments is not finding anything new — this answer is settled. Use it and move on.]",
               "is_error": false
             },
             {
               "tool_call_id": "t4",
-              "content": "{\"cards\": [], \"total\": 0}\n\n[identical result: 'boards' has now returned exactly this 4 times this turn, for different arguments. Varying the arguments is not finding anything new — this answer is settled. Use it and move on, or answer with what you have.]",
+              "content": "{\"cards\": [], \"total\": 0}\n\n[identical result: 'boards' has now returned exactly this 4 times this turn, for different arguments. Varying the arguments is not finding anything new — this answer is settled. Use it and move on.]",
               "is_error": false
             }
           ]
@@ -227,7 +227,7 @@
             "row": {
               "content": {
                 "tool_name": "boards",
-                "result": "{\"cards\": [], \"total\": 0}\n\n[identical result: 'boards' has now returned exactly this 3 times this turn, for different arguments. Varying the arguments is not finding anything new — this answer is settled. Use it and move on, or answer with what you have.]"
+                "result": "{\"cards\": [], \"total\": 0}\n\n[identical result: 'boards' has now returned exactly this 3 times this turn, for different arguments. Varying the arguments is not finding anything new — this answer is settled. Use it and move on.]"
               }
             }
           },
@@ -243,7 +243,7 @@
             "row": {
               "content": {
                 "tool_name": "boards",
-                "result": "{\"cards\": [], \"total\": 0}\n\n[identical result: 'boards' has now returned exactly this 4 times this turn, for different arguments. Varying the arguments is not finding anything new — this answer is settled. Use it and move on, or answer with what you have.]"
+                "result": "{\"cards\": [], \"total\": 0}\n\n[identical result: 'boards' has now returned exactly this 4 times this turn, for different arguments. Varying the arguments is not finding anything new — this answer is settled. Use it and move on.]"
               }
             }
           },

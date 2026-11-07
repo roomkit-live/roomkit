@@ -1,0 +1,169 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-change-starts-the-identical-answer-count-again",
+  "title": "A tool's answer given twice, then a successful call of a tool that changes state, then the same answer again: the third is not noted, the change having started the count again",
+  "rules": [
+    "§6.4",
+    "§9.3"
+  ],
+  "notes": "Python: channels/_ai_tools.py _forget_repeats_on_change, _repeated_call_guard, _repeated_result_note; tests/test_tool_repeat_guard.py. RMK-1541 (HITL a3a67086, 3368d06c).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "boards",
+            "description": "Search boards.",
+            "fails": "board offline"
+          },
+          {
+            "name": "edit",
+            "description": "Edit a file.",
+            "returns": "edited",
+            "changes_state": true,
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ]
+            }
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "b1",
+                  "name": "boards",
+                  "arguments": {
+                    "search": "term-1"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "b2",
+                  "name": "boards",
+                  "arguments": {
+                    "search": "term-2"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "e1",
+                  "name": "edit",
+                  "arguments": {
+                    "value": "fix-1"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "b3",
+                  "name": "boards",
+                  "arguments": {
+                    "search": "term-3"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {},
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "b1",
+              "content": "board offline",
+              "is_error": true
+            },
+            {
+              "tool_call_id": "b2",
+              "content": "board offline",
+              "is_error": true
+            },
+            {
+              "tool_call_id": "e1",
+              "content": "edited",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "b3",
+              "content": "board offline",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

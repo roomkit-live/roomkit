@@ -192,25 +192,25 @@
         {
           "tool_call": {
             "tool_call_id": "t3",
-            "result": "{\"error\": \"You already called 'echo' with these EXACT arguments 2 time(s) this turn \\u2014 repeating it cannot yield anything new.\", \"hint\": \"STOP repeating this call. Use the results you already have, try genuinely different arguments, or answer the user now with what you know.\"}"
+            "result": "{\"error\": \"You already called 'echo' with these EXACT arguments 2 time(s) this turn \\u2014 repeating it cannot yield anything new.\", \"hint\": \"STOP repeating this call. Use the results you already have, or try genuinely different arguments.\"}"
           }
         },
         {
           "tool_call": {
             "tool_call_id": "t4",
-            "result": "{\"error\": \"You already called 'echo' with these EXACT arguments 3 time(s) this turn \\u2014 repeating it cannot yield anything new.\", \"hint\": \"STOP repeating this call. Use the results you already have, try genuinely different arguments, or answer the user now with what you know.\"}"
+            "result": "{\"error\": \"You already called 'echo' with these EXACT arguments 3 time(s) this turn \\u2014 repeating it cannot yield anything new.\", \"hint\": \"STOP repeating this call. Use the results you already have, or try genuinely different arguments.\"}"
           }
         },
         {
           "tool_call": {
             "tool_call_id": "t5",
-            "result": "{\"error\": \"You already called 'echo' with these EXACT arguments 4 time(s) this turn \\u2014 repeating it cannot yield anything new.\", \"hint\": \"STOP repeating this call. Use the results you already have, try genuinely different arguments, or answer the user now with what you know.\"}"
+            "result": "{\"error\": \"You already called 'echo' with these EXACT arguments 4 time(s) this turn \\u2014 repeating it cannot yield anything new.\", \"hint\": \"STOP repeating this call. Use the results you already have, or try genuinely different arguments.\"}"
           }
         },
         {
           "tool_call": {
             "tool_call_id": "t6",
-            "result": "{\"error\": \"You already called 'echo' with these EXACT arguments 5 time(s) this turn \\u2014 repeating it cannot yield anything new.\", \"hint\": \"STOP repeating this call. Use the results you already have, try genuinely different arguments, or answer the user now with what you know.\"}"
+            "result": "{\"error\": \"You already called 'echo' with these EXACT arguments 5 time(s) this turn \\u2014 repeating it cannot yield anything new.\", \"hint\": \"STOP repeating this call. Use the results you already have, or try genuinely different arguments.\"}"
           }
         }
       ]
@@ -240,22 +240,22 @@
             },
             {
               "tool_call_id": "t3",
-              "content": "{\"error\": \"You already called 'echo' with these EXACT arguments 2 time(s) this turn \\u2014 repeating it cannot yield anything new.\", \"hint\": \"STOP repeating this call. Use the results you already have, try genuinely different arguments, or answer the user now with what you know.\"}",
+              "content": "{\"error\": \"You already called 'echo' with these EXACT arguments 2 time(s) this turn \\u2014 repeating it cannot yield anything new.\", \"hint\": \"STOP repeating this call. Use the results you already have, or try genuinely different arguments.\"}",
               "is_error": true
             },
             {
               "tool_call_id": "t4",
-              "content": "{\"error\": \"You already called 'echo' with these EXACT arguments 3 time(s) this turn \\u2014 repeating it cannot yield anything new.\", \"hint\": \"STOP repeating this call. Use the results you already have, try genuinely different arguments, or answer the user now with what you know.\"}",
+              "content": "{\"error\": \"You already called 'echo' with these EXACT arguments 3 time(s) this turn \\u2014 repeating it cannot yield anything new.\", \"hint\": \"STOP repeating this call. Use the results you already have, or try genuinely different arguments.\"}",
               "is_error": true
             },
             {
               "tool_call_id": "t5",
-              "content": "{\"error\": \"You already called 'echo' with these EXACT arguments 4 time(s) this turn \\u2014 repeating it cannot yield anything new.\", \"hint\": \"STOP repeating this call. Use the results you already have, try genuinely different arguments, or answer the user now with what you know.\"}",
+              "content": "{\"error\": \"You already called 'echo' with these EXACT arguments 4 time(s) this turn \\u2014 repeating it cannot yield anything new.\", \"hint\": \"STOP repeating this call. Use the results you already have, or try genuinely different arguments.\"}",
               "is_error": true
             },
             {
               "tool_call_id": "t6",
-              "content": "{\"error\": \"You already called 'echo' with these EXACT arguments 5 time(s) this turn \\u2014 repeating it cannot yield anything new.\", \"hint\": \"STOP repeating this call. Use the results you already have, try genuinely different arguments, or answer the user now with what you know.\"}",
+              "content": "{\"error\": \"You already called 'echo' with these EXACT arguments 5 time(s) this turn \\u2014 repeating it cannot yield anything new.\", \"hint\": \"STOP repeating this call. Use the results you already have, or try genuinely different arguments.\"}",
               "is_error": true
             }
           ],

@@ -1,0 +1,147 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-change-made-again-is-still-refused-at-its-third",
+  "title": "A tool that changes state, called three times with identical arguments, is refused at its third: its own call keeps its count when it starts the others again",
+  "rules": [
+    "§6.4",
+    "§9.3"
+  ],
+  "notes": "Python: channels/_ai_tools.py _forget_repeats_on_change, _repeated_call_guard, _repeated_result_note; tests/test_tool_repeat_guard.py. RMK-1541 (HITL a3a67086, 3368d06c).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "write",
+            "description": "Write a file.",
+            "returns": "written",
+            "changes_state": true,
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ]
+            }
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "w1",
+                  "name": "write",
+                  "arguments": {
+                    "value": "same"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "w2",
+                  "name": "write",
+                  "arguments": {
+                    "value": "same"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "w3",
+                  "name": "write",
+                  "arguments": {
+                    "value": "same"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "w1",
+              "content": "written",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "w2",
+              "content": "written",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "w3",
+              "content": "{\"error\": \"You already called 'write' with these EXACT arguments 2 time(s) this turn \\u2014 repeating it cannot yield anything new.\", \"hint\": \"STOP repeating this call. Use the results you already have, or try genuinely different arguments.\"}",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

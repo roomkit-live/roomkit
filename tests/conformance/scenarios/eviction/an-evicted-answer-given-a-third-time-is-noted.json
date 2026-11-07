@@ -125,7 +125,7 @@
             {},
             {
               "tool_call_id": "c3",
-              "content": "Result too large (320 tokens). Full output saved as 'evicted_c3'. Use read_stored_result to read it with pagination.\n\nPreview:\nrow 001\nrow 002\nrow 003\nrow 004\nrow 005\n\n[... 150 lines omitted ...]\n\nrow 156\nrow 157\nrow 158\nrow 159\nrow 160\n\n[identical result: 'lookup' has now returned exactly this 3 times this turn, for different arguments. Varying the arguments is not finding anything new — this answer is settled. Use it and move on, or answer with what you have.]"
+              "content": "Result too large (320 tokens). Full output saved as 'evicted_c3'. Use read_stored_result to read it with pagination.\n\nPreview:\nrow 001\nrow 002\nrow 003\nrow 004\nrow 005\n\n[... 150 lines omitted ...]\n\nrow 156\nrow 157\nrow 158\nrow 159\nrow 160\n\n[identical result: 'lookup' has now returned exactly this 3 times this turn, for different arguments. Varying the arguments is not finding anything new — this answer is settled. Use it and move on.]"
             }
           ]
         }

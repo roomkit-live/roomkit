@@ -125,7 +125,7 @@
             },
             {
               "tool_call_id": "t3",
-              "content": "{\"error\": \"You already called 'echo' with these EXACT arguments 2 time(s) this turn \\u2014 repeating it cannot yield anything new.\", \"hint\": \"STOP repeating this call. Use the results you already have, try genuinely different arguments, or answer the user now with what you know.\"}",
+              "content": "{\"error\": \"You already called 'echo' with these EXACT arguments 2 time(s) this turn \\u2014 repeating it cannot yield anything new.\", \"hint\": \"STOP repeating this call. Use the results you already have, or try genuinely different arguments.\"}",
               "is_error": true
             }
           ]

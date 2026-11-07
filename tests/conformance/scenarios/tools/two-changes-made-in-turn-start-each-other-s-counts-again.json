@@ -1,0 +1,198 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/two-changes-made-in-turn-start-each-other-s-counts-again",
+  "title": "Two calls of a tool that changes state, made in turn, each three times with the same arguments, all run: each change starts the other's count again, its own kept",
+  "rules": [
+    "§6.4",
+    "§9.3"
+  ],
+  "notes": "Python: channels/_ai_tools.py _forget_repeats_on_change, _repeated_call_guard, _repeated_result_note; tests/test_tool_repeat_guard.py. RMK-1541 (HITL a3a67086, 3368d06c, a634216e).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "edit",
+            "description": "Edit a file.",
+            "returns": "edited",
+            "changes_state": true,
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ]
+            }
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "e0",
+                  "name": "edit",
+                  "arguments": {
+                    "value": "a"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "e1",
+                  "name": "edit",
+                  "arguments": {
+                    "value": "b"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "e2",
+                  "name": "edit",
+                  "arguments": {
+                    "value": "a"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "e3",
+                  "name": "edit",
+                  "arguments": {
+                    "value": "b"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "e4",
+                  "name": "edit",
+                  "arguments": {
+                    "value": "a"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "e5",
+                  "name": "edit",
+                  "arguments": {
+                    "value": "b"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "e0",
+              "content": "edited",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "e1",
+              "content": "edited",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "e2",
+              "content": "edited",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "e3",
+              "content": "edited",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "e4",
+              "content": "edited",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "e5",
+              "content": "edited",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

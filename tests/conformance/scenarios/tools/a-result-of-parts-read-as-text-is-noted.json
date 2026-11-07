@@ -126,7 +126,7 @@
             },
             {
               "tool_call_id": "t3",
-              "content": "nothing\n\n[identical result: 'boards' has now returned exactly this 3 times this turn, for different arguments. Varying the arguments is not finding anything new — this answer is settled. Use it and move on, or answer with what you have.]"
+              "content": "nothing\n\n[identical result: 'boards' has now returned exactly this 3 times this turn, for different arguments. Varying the arguments is not finding anything new — this answer is settled. Use it and move on.]"
             }
           ]
         }

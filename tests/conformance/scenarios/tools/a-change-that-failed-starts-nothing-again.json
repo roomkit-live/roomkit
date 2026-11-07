@@ -1,0 +1,197 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-change-that-failed-starts-nothing-again",
+  "title": "A call of a tool that changes state which fails starts no count again: a call repeated around it is still refused at its third",
+  "rules": [
+    "§6.4",
+    "§9.3"
+  ],
+  "notes": "Python: channels/_ai_tools.py _forget_repeats_on_change, _repeated_call_guard, _repeated_result_note; tests/test_tool_repeat_guard.py. RMK-1541 (HITL a3a67086, 3368d06c).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "echo",
+            "description": "Echo a value back.",
+            "returns": "ok",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ]
+            }
+          },
+          {
+            "name": "edit",
+            "description": "Edit a file.",
+            "fails": "old_text was not found",
+            "changes_state": true,
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value"
+              ]
+            }
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "t1",
+                  "name": "echo",
+                  "arguments": {
+                    "value": "same"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "e1",
+                  "name": "edit",
+                  "arguments": {
+                    "value": "fix-1"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t2",
+                  "name": "echo",
+                  "arguments": {
+                    "value": "same"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "e2",
+                  "name": "edit",
+                  "arguments": {
+                    "value": "fix-2"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "t3",
+                  "name": "echo",
+                  "arguments": {
+                    "value": "same"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {},
+        {},
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "t1",
+              "content": "ok",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "e1",
+              "content": "old_text was not found",
+              "is_error": true
+            },
+            {
+              "tool_call_id": "t2",
+              "content": "ok",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "e2",
+              "content": "old_text was not found",
+              "is_error": true
+            },
+            {
+              "tool_call_id": "t3",
+              "content": "{\"error\": \"You already called 'echo' with these EXACT arguments 2 time(s) this turn \\u2014 repeating it cannot yield anything new.\", \"hint\": \"STOP repeating this call. Use the results you already have, or try genuinely different arguments.\"}",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
