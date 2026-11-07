@@ -1,0 +1,164 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-deferred-event-s-wait-after-the-close-reads-its-own-end",
+  "title": "A deferred event whose own delivery was over when the kit's close cut its unwaited adopted call's stream: a wait on its handle made after the close reads that end, not kit_closed",
+  "rules": [
+    "§9.5.1 Reentrance",
+    "§10.1",
+    "§12.10.4"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true,
+        "deliver_stream": [
+          {
+            "hold_after": "A1",
+            "hold_gate": "reading"
+          }
+        ]
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "A1"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "adopts",
+        "trigger": "before_broadcast",
+        "needs_lock": false,
+        "timeout_ms": 5000,
+        "reactions": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "ws",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "side"
+                  }
+                },
+                "defer_delivery": true,
+                "as": "side"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        },
+        "addressed_to": [
+          "ws"
+        ]
+      },
+      "defer_delivery": true,
+      "background": true,
+      "as": "h"
+    },
+    {
+      "wait_for": "reading"
+    },
+    {
+      "await": "h",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "content": {
+              "body": "hello"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "ping"
+        },
+        "addressed_to": [
+          "ws"
+        ]
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "call": "close",
+      "background": true,
+      "as": "closing"
+    },
+    {
+      "open": "reading"
+    },
+    {
+      "await": "closing"
+    },
+    {
+      "call": "delivery.wait",
+      "of": "h",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "content": {
+              "body": "hello"
+            }
+          },
+          "cancellation_reason": null
+        }
+      }
+    }
+  ]
+}
