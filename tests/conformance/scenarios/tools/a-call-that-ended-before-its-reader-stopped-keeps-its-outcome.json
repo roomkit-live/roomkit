@@ -1,0 +1,185 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-call-that-ended-before-its-reader-stopped-keeps-its-outcome",
+  "title": "A streaming target that stops reading between a round's end rows leaves the call that had ended by then closed with its own outcome, not cancelled",
+  "rules": [
+    "§10.6.4",
+    "§12.2 step 13s",
+    "§12.4"
+  ],
+  "notes": "Python: turns/_executor_changes.py ChannelChanges.report sends each call's end the channel set on its start (ToolCallStartMarker.ended) before the next item, and core/mixins/_response_reader.py closes the calls still open at a reader's stop with that end; tests/test_turns_backend.py::test_a_call_that_ended_before_a_close_keeps_its_end (RMK-1509).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true,
+        "deliver_stream": [
+          {
+            "stop_after_rows": 3
+          }
+        ]
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "fine"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {
+                    "q": "first"
+                  }
+                },
+                {
+                  "id": "c2",
+                  "name": "lookup",
+                  "arguments": {
+                    "q": "second"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "never"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "type": "message"
+        },
+        {
+          "type": "tool_call_start",
+          "content": {
+            "tool_id": "c1",
+            "tool_name": "lookup",
+            "arguments": {
+              "q": "first"
+            }
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "content": {
+            "tool_id": "c2",
+            "tool_name": "lookup",
+            "arguments": {
+              "q": "second"
+            }
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "c1",
+            "tool_name": "lookup",
+            "arguments": {
+              "q": "first"
+            },
+            "outcome": "served"
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "c2",
+            "tool_name": "lookup",
+            "arguments": {
+              "q": "second"
+            },
+            "outcome": "served"
+          }
+        }
+      ]
+    },
+    "streamed": {
+      "room-1": {
+        "ws": [
+          {
+            "row": {
+              "type": "tool_call_start",
+              "content": {
+                "tool_id": "c1"
+              }
+            }
+          },
+          {
+            "row": {
+              "type": "tool_call_start",
+              "content": {
+                "tool_id": "c2"
+              }
+            }
+          },
+          {
+            "row": {
+              "type": "tool_call_end",
+              "content": {
+                "tool_id": "c1"
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}
