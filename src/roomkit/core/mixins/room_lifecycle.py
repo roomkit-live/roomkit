@@ -31,6 +31,7 @@ from roomkit.models.room import Room, RoomTimers
 if TYPE_CHECKING:
     from roomkit.channels.base import Channel
     from roomkit.core.locks import RoomLockManager
+    from roomkit.models.identity import Identity
     from roomkit.orchestration.base import Orchestration
     from roomkit.recorder._room_recorder_manager import RoomRecorderManager
     from roomkit.recorder.base import RoomRecorderBinding
@@ -603,11 +604,7 @@ class RoomLifecycleMixin(HelpersMixin):
                     f"Participant {participant_id} not found in room {room_id}"
                 )
 
-            identity = await self._store.get_identity(identity_id)
-            if identity is None or (
-                organization_id is not None and identity.organization_id != organization_id
-            ):
-                raise IdentityNotFoundError(f"Identity {identity_id} not found")
+            identity = await self._identity_to_resolve(identity_id, organization_id)
 
             # Update participant fields
             participant = participant.model_copy(
@@ -655,6 +652,26 @@ class RoomLifecycleMixin(HelpersMixin):
             )
 
             return participant
+
+    async def _identity_to_resolve(
+        self, identity_id: str, organization_id: str | None
+    ) -> Identity:
+        """The identity a participant is resolved to. A caller naming an organization
+        reads ``IdentityNotFoundError`` for another organization's identity, and for a
+        record the model cannot read, which proves no organization: the store's fixed
+        error would tell that the id exists (RFC §17.2, HITL 3f36d6c8)."""
+        try:
+            identity = await self._store.get_identity(identity_id)
+        except ValueError:
+            if organization_id is None:
+                raise
+            identity = None
+        # Raised outside the handler: the store's error is not even its context.
+        if identity is None or (
+            organization_id is not None and identity.organization_id != organization_id
+        ):
+            raise IdentityNotFoundError(f"Identity {identity_id} not found")
+        return identity
 
 
 def _active_again(room: Room, now: datetime) -> dict[str, Any]:

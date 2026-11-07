@@ -770,7 +770,9 @@ async def test_a_row_with_an_empty_id_serves_no_read(
 
 
 async def _read_by_id(store: Any, door: str) -> object:
-    """Reach the identity i1's row by its id through *door*, for globex, its organization."""
+    """Reach the identity i1's row by its id through *door*, for globex, its organization;
+    the kit's resolve_participant names no organization, as a caller naming one learns
+    nothing of the row (HITL 3f36d6c8)."""
     if door == "get_identity":
         return await store.get_identity("i1")
     if door == "link_address":
@@ -781,7 +783,7 @@ async def _read_by_id(store: Any, door: str) -> object:
     await store.add_participant(Participant(id="p1", room_id="r1", channel_id="sms"))
     kit = RoomKit(store=store)
     try:
-        return await kit.resolve_participant("r1", "p1", "i1", organization_id="globex")
+        return await kit.resolve_participant("r1", "p1", "i1")
     finally:
         await kit.close()
 

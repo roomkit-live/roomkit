@@ -16,7 +16,13 @@ from pathlib import Path
 
 import pytest
 
-from roomkit import AddressLinkedError, ParticipantNotFoundError, RoomKit, RoomNotFoundError
+from roomkit import (
+    AddressLinkedError,
+    IdentityNotFoundError,
+    ParticipantNotFoundError,
+    RoomKit,
+    RoomNotFoundError,
+)
 from roomkit.core.exceptions import IdempotencyKeyTakenError
 from roomkit.core.mixins.verification import HELD_KEY
 from roomkit.models.channel import ChannelBinding
@@ -939,7 +945,9 @@ async def test_a_record_the_model_cannot_read_serves_no_read(
 
 
 async def _read_by_id(store: SQLiteStore, door: str) -> object:
-    """Reach the identity i1's record by its id through *door*, for acme."""
+    """Reach the identity i1's record by its id through *door*, for acme; the kit's
+    resolve_participant names no organization, as a caller naming one learns nothing of
+    the record (test_resolve_participant_for_an_organization_finds_no_unreadable_identity)."""
     if door == "get_identity":
         return await store.get_identity("i1")
     if door == "create_identity":
@@ -952,7 +960,7 @@ async def _read_by_id(store: SQLiteStore, door: str) -> object:
     try:
         await store.create_room(Room(id="r1", organization_id="acme"))
         await store.add_participant(Participant(id="p1", room_id="r1", channel_id="sms"))
-        return await kit.resolve_participant("r1", "p1", "i1", organization_id="acme")
+        return await kit.resolve_participant("r1", "p1", "i1")
     finally:
         await kit.close()
 
@@ -1005,6 +1013,32 @@ async def test_resolve_participant_checks_the_room_and_the_participant_first(
             await kit.resolve_participant("r1", "p1", "i1", organization_id="acme")
     finally:
         await kit.close()
+
+
+@pytest.mark.parametrize("organization_id", ["globex", "acme"])
+async def test_resolve_participant_for_an_organization_finds_no_unreadable_identity(
+    tmp_path: Path, organization_id: str
+) -> None:
+    """HITL 3f36d6c8: a caller naming an organization reads IdentityNotFoundError for a
+    record the model cannot read, which proves no organization, even its own: the
+    store's fixed error would tell another organization that the id exists (RFC §17.2).
+    Nothing is written."""
+    path = tmp_path / "older.db"
+    store = SQLiteStore(path)
+    await store.create_identity(Identity(id="i1", organization_id="globex"))
+    _spoil_the_record(path, _UNREADABLE_RECORDS[2])
+    await store.create_room(Room(id="r1", organization_id=organization_id))
+    participant = Participant(id="p1", room_id="r1", channel_id="sms")
+    await store.add_participant(participant)
+    kit = RoomKit(store=store)
+    try:
+        with pytest.raises(IdentityNotFoundError) as refused:
+            await kit.resolve_participant("r1", "p1", "i1", organization_id=organization_id)
+        assert await store.get_participant("r1", "p1") == participant
+    finally:
+        await kit.close()
+    assert str(refused.value) == "Identity i1 not found"
+    assert refused.value.__context__ is None
 
 
 async def test_an_unlink_removes_the_identity_s_rows_in_every_scope(tmp_path: Path) -> None:

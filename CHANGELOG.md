@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   underscore too (`See </serverinstructions_>.`).
 
 - `PostgresStore` quotes no identity row the model cannot read, as `SQLiteStore` (HITL 70fef50d, RMK-1431): `get_identity` raises `ValueError("Identity <id> has a record the model cannot read")`, where a JSONB column of another shape raised a `ValidationError`, or a `JSONDecodeError`, quoting it; `link_address` and `unlink_address` read the whole row and refuse such a one so, where they took it, some written back broken or failing with an `AttributeError`; `resolve_identity` returns `None` and logs a warning naming the id alone.
+- `RoomKit.resolve_participant` with an `organization_id` raises `IdentityNotFoundError` for an identity record the model cannot read, which proves no organization (RFC §17.2, HITL 3f36d6c8, RMK-1504): it raised the store's `ValueError("Identity <id> has a record the model cannot read")`, which told a caller of another organization that the id exists. Without an organization the fixed error stays.
 - **BREAKING: a message never commits into a room whose binding, made while the room was
   created for it, names someone else** (HITL 9a2e6d19, ef0ef858, RMK-1396). While Alice's
   first message waited in its room's `ON_ROOM_CREATED` hooks, Bob's could be recorded on
