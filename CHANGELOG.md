@@ -551,6 +551,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A delivery set keeps its aftermath when the room's cursor write fails** (RFC §10.1
+  step 15, §13.5, HITL b7ba30c9, RMK-1515). The store failed the room's delivery cursor
+  write once, after an event's delivery set ran: the lane's round raised and dropped every
+  set it had run as a cut one. The transport had the message, but the task its hook gave
+  was never stored, neither `ON_TASK_CREATED` nor `AFTER_BROADCAST` fired, the call read
+  `cancellation_reason='lane_cancelled'`, and the room's next message waited for
+  `delivery_gap_timeout` (30 s), which then skipped the index as lost. The failure is now
+  logged (`The delivery cursor of room r1 could not be moved to index 2; its delivery goes
+  on`) and the round goes on: each set it ran keeps its aftermath, the lane reads the
+  cursor as past the index, so the next message is delivered at once and nothing is
+  skipped, and the write is made again at its next round, as roomkit-rs does.
+
 - **A held message's release logs its agent's failed turn at its level** (RFC §15.2,
   §11.7.6, HITL 36e60a22, RMK-1500). Once an identity verification is approved, the
   room's agents answer the released message; when the agent's turn failed (a missing

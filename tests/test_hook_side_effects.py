@@ -580,84 +580,198 @@ class TestDroppedSetSideEffects:
         assert (result.cancellation_reason, tasks, created) == ("delivery_stale", ["t1"], ["t1"])
 
 
+class GatedChannel(SimpleChannel):
+    """A transport whose delivery of *held* waits until the test opens it."""
+
+    def __init__(self, channel_id: str, held: str) -> None:
+        super().__init__(channel_id)
+        self.held = held
+        self.reached = asyncio.Event()
+        self.opened = asyncio.Event()
+
+    async def deliver(
+        self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
+    ) -> ChannelOutput:
+        if isinstance(event.content, TextContent) and event.content.body == self.held:
+            self.reached.set()
+            await self.opened.wait()
+        return await super().deliver(event, binding, context)
+
+
+async def _kit_noting_what_follows(
+    monkeypatch: pytest.MonkeyPatch, ws1: SimpleChannel
+) -> tuple[RoomKit, list[str], list[tuple[int, int]]]:
+    """A kit with room r1 binding sms1 and *ws1*: a BEFORE_BROADCAST hook
+    gives task t1 for "Call me back", t2 for "Call me later"; what each
+    stored task's ON_TASK_CREATED, each event's AFTER_BROADCAST and each
+    delivery_skipped report is noted."""
+    kit = RoomKit(delivery_gap_timeout=0.01)
+    # The lane's backoff between two looks at a hole, which no kit option
+    # sets: short, so that a gap timeout would be reached in milliseconds.
+    kit._lanes._config.gap_backoff_initial = 0.002
+    kit._lanes._config.gap_backoff_max = 0.01
+    kit.register_channel(SimpleChannel("sms1"))
+    kit.register_channel(ws1)
+    await kit.create_room(room_id="r1")
+    await kit.attach_channel("r1", "sms1")
+    await kit.attach_channel("r1", "ws1")
+    tasks = {"Call me back": "t1", "Call me later": "t2"}
+
+    @kit.hook(HookTrigger.BEFORE_BROADCAST, name="triage")
+    async def triage(event: RoomEvent, ctx: RoomContext) -> HookResult:
+        body = event.content.body if isinstance(event.content, TextContent) else ""
+        if body not in tasks:
+            return HookResult(action="allow")
+        task = Task(id=tasks[body], room_id="r1", title="Call the customer back")
+        return HookResult(action="allow", tasks=[task])
+
+    later: list[str] = []
+
+    @kit.hook(HookTrigger.ON_TASK_CREATED, execution=HookExecution.ASYNC, name="follow_up")
+    async def follow_up(event: RoomEvent, ctx: RoomContext) -> None:
+        later.append(f"task_created {event.metadata['task_id']}")
+
+    @kit.hook(HookTrigger.AFTER_BROADCAST, execution=HookExecution.ASYNC, name="audit")
+    async def audit(event: RoomEvent, ctx: RoomContext) -> None:
+        assert isinstance(event.content, TextContent)
+        later.append(f"after_broadcast {event.content.body}")
+
+    skipped: list[tuple[int, int]] = []
+
+    @kit.on("delivery_skipped")
+    async def on_skipped(event: Any) -> None:
+        skipped.append((event.data["from_index"], event.data["to_index"]))
+
+    return kit, later, skipped
+
+
 class TestARoundThatFailsMidway:
     async def test_a_set_whose_cursor_write_fails_once_it_ran(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """RMK-1515, today's behaviour: the store fails the room's delivery
-        cursor write once, after the event's delivery set ran. The lane's
-        round raises (lanes._claimed_round), and its finally drops the entry
-        it ran as a cut one (_process_ready, ran=True): the transport was
-        delivered to, but the set's aftermath never runs. The task the
-        event's hook gave is not stored, ON_TASK_CREATED and AFTER_BROADCAST
-        never fire, and the call reads its delivery cancelled. The cursor
-        stays below the index: the room's next message waits for the gap
-        timeout, which skips the index as lost."""
-        kit = RoomKit(delivery_gap_timeout=0.01)
-        # The lane's backoff between two looks at a hole, which no kit option
-        # sets: short, so that the gap timeout is reached in milliseconds.
-        kit._lanes._config.gap_backoff_initial = 0.002
-        kit._lanes._config.gap_backoff_max = 0.01
+        """RMK-1515, as roomkit-rs (HITL b7ba30c9): the store fails the
+        room's delivery cursor write once, after the event's delivery set ran.
+        The failure is logged and the lane's delivery goes on: the set keeps
+        its aftermath (the task the event's hook gave is stored,
+        ON_TASK_CREATED and AFTER_BROADCAST fire, nothing is cancelled), the
+        lane reads the cursor as past the index, so that the room's next
+        message is delivered at once and no index is skipped, and the write
+        is made again at the next round: the cursor catches up with both."""
+        ws1 = SimpleChannel("ws1")
+        kit, later, skipped = await _kit_noting_what_follows(monkeypatch, ws1)
         advance = kit.store.advance_delivered_index
 
         async def failing_once(room_id: str, index: int, **kwargs: Any) -> bool:
             monkeypatch.setattr(kit.store, "advance_delivered_index", advance)
             raise RuntimeError("store down")
 
-        ws1 = SimpleChannel("ws1")
-        kit.register_channel(SimpleChannel("sms1"))
-        kit.register_channel(ws1)
-        await kit.create_room(room_id="r1")
-        await kit.attach_channel("r1", "sms1")
-        await kit.attach_channel("r1", "ws1")
-
-        @kit.hook(HookTrigger.BEFORE_BROADCAST, name="triage")
-        async def triage(event: RoomEvent, ctx: RoomContext) -> HookResult:
-            if not isinstance(event.content, TextContent) or event.content.body != "Call me back":
-                return HookResult(action="allow")
-            task = Task(id="t1", room_id="r1", title="Call the customer back")
-            return HookResult(action="allow", tasks=[task])
-
-        later: list[str] = []
-
-        @kit.hook(HookTrigger.ON_TASK_CREATED, execution=HookExecution.ASYNC, name="follow_up")
-        async def follow_up(event: RoomEvent, ctx: RoomContext) -> None:
-            later.append(f"task_created {event.metadata['task_id']}")
-
-        @kit.hook(HookTrigger.AFTER_BROADCAST, execution=HookExecution.ASYNC, name="audit")
-        async def audit(event: RoomEvent, ctx: RoomContext) -> None:
-            assert isinstance(event.content, TextContent)
-            later.append(f"after_broadcast {event.content.body}")
-
-        skipped: list[tuple[int, int]] = []
-
-        @kit.on("delivery_skipped")
-        async def on_skipped(event: Any) -> None:
-            skipped.append((event.data["from_index"], event.data["to_index"]))
-
         # The room's records are accounted for: the next cursor write is the
         # lane's, once the message's set ran.
         monkeypatch.setattr(kit.store, "advance_delivered_index", failing_once)
-        first = await kit.process_inbound(
-            InboundMessage(
-                channel_id="sms1", sender_id="user1", content=TextContent(body="Call me back")
+        with caplog.at_level(logging.WARNING, logger="roomkit.lanes"):
+            first = await kit.process_inbound(
+                InboundMessage(
+                    channel_id="sms1", sender_id="user1", content=TextContent(body="Call me back")
+                )
             )
-        )
         tasks = [task.id for task in await kit.store.list_tasks("r1")]
         await kit.hook_engine.drain_observers()
-        after_first = (len(ws1.delivered), list(later))
+        after_first = sorted(later)
         second = await kit.process_inbound(
             InboundMessage(channel_id="sms1", sender_id="user1", content=TextContent(body="Hi"))
         )
         await kit.hook_engine.drain_observers()
+        cursor = await kit.store.get_delivered_index("r1")
+        room = await kit.store.get_room("r1")
         await kit.close()
 
-        assert first.event is not None
-        assert (first.cancellation_reason, tasks, after_first) == ("lane_cancelled", [], (1, []))
-        index = first.event.index
-        assert (second.cancellation_reason, len(ws1.delivered), skipped, later) == (
+        assert first.event is not None and room is not None
+        assert (first.cancellation_reason, tasks, after_first) == (
+            None,
+            ["t1"],
+            ["after_broadcast Call me back", "task_created t1"],
+        )
+        assert (second.cancellation_reason, len(ws1.delivered), skipped, cursor) == (
             None,
             2,
-            [(index, index)],
-            ["after_broadcast Hi"],
+            [],
+            room.latest_index,
         )
+        warned = [r.getMessage() for r in caplog.records if "could not be moved" in r.getMessage()]
+        assert warned == [
+            f"The delivery cursor of room r1 could not be moved to index {first.event.index}; "
+            "its delivery goes on"
+        ]
+
+    async def test_two_sets_whose_second_cursor_write_fails_both_keep_their_aftermath(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """RMK-1515, the review's case: one lane round runs two sets, the
+        second placed while the first's delivery waits, and only the second's
+        cursor write fails. Both sets keep their aftermath, neither is
+        cancelled, and the cursor catches up with both at the next round."""
+        ws1 = GatedChannel("ws1", held="Call me back")
+        kit, later, skipped = await _kit_noting_what_follows(monkeypatch, ws1)
+        advance = kit.store.advance_delivered_index
+        writes: list[tuple[int, str]] = []
+
+        async def failing_second(room_id: str, index: int, **kwargs: Any) -> bool:
+            if len(writes) == 1:
+                writes.append((index, "failed"))
+                monkeypatch.setattr(kit.store, "advance_delivered_index", advance)
+                raise RuntimeError("store down")
+            writes.append((index, "ok"))
+            return await advance(room_id, index, **kwargs)
+
+        monkeypatch.setattr(kit.store, "advance_delivered_index", failing_second)
+        first = asyncio.create_task(
+            kit.process_inbound(
+                InboundMessage(
+                    channel_id="sms1", sender_id="user1", content=TextContent(body="Call me back")
+                )
+            )
+        )
+        await asyncio.wait_for(ws1.reached.wait(), 5)
+        second = asyncio.create_task(
+            kit.process_inbound(
+                InboundMessage(
+                    channel_id="sms1", sender_id="user1", content=TextContent(body="Call me later")
+                )
+            )
+        )
+        # The second message is placed behind the first's set: both run in
+        # the round the first's delivery holds.
+        lane = kit._lanes.lane("r1")
+
+        async def placed() -> None:
+            while not lane._indexed:
+                await asyncio.sleep(0)
+
+        await asyncio.wait_for(placed(), 5)
+        ws1.opened.set()
+        results = await asyncio.wait_for(asyncio.gather(first, second), 5)
+        tasks = sorted(task.id for task in await kit.store.list_tasks("r1"))
+        await kit.hook_engine.drain_observers()
+        third = await kit.process_inbound(
+            InboundMessage(channel_id="sms1", sender_id="user1", content=TextContent(body="Hi"))
+        )
+        await kit.hook_engine.drain_observers()
+        cursor = await kit.store.get_delivered_index("r1")
+        room = await kit.store.get_room("r1")
+        await kit.close()
+
+        assert results[0].event is not None and results[1].event is not None and room is not None
+        indexes = (results[0].event.index, results[1].event.index)
+        assert writes[:2] == [(indexes[0], "ok"), (indexes[1], "failed")]
+        assert [r.cancellation_reason for r in (*results, third)] == [None, None, None]
+        assert (tasks, sorted(later)) == (
+            ["t1", "t2"],
+            [
+                "after_broadcast Call me back",
+                "after_broadcast Call me later",
+                "after_broadcast Hi",
+                "task_created t1",
+                "task_created t2",
+            ],
+        )
+        assert (len(ws1.delivered), skipped, cursor) == (3, [], room.latest_index)
