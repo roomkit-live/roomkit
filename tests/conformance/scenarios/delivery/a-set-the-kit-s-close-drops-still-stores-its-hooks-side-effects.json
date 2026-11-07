@@ -1,0 +1,178 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-set-the-kit-s-close-drops-still-stores-its-hooks-side-effects",
+  "title": "A delivery set the kit's close drops before it ran still stores the task its event's hook gave by the time its call's handle answers, and its ON_TASK_CREATED fires",
+  "rules": [
+    "§10.1 step 15",
+    "§10.1 step 18",
+    "§12.10.4"
+  ],
+  "notes": "Python: src/roomkit/core/lanes.py (RoomDeliveryLane.seal, _drop_entry, DeliveryCascade.keep_write), src/roomkit/core/mixins/lane_execution.py (_store_dropped_side_effects); RMK-1499, decided in HITL ee915769: a task a hook decided is not lost with a delivery the room's lane drops. The second message's set waits in the lane behind the first's, held at its transport; the close drops it, its deferred call reads kit_closed, and its hook's task is stored, read while the close is still in its grace (a store the close closes is read no more), as after a set that ran.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "deliver": [
+          {
+            "when": {
+              "text": "Is my card blocked?"
+            },
+            "gate": "ws-holds"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "triage",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "Please call me back"
+            },
+            "result": {
+              "action": "allow",
+              "tasks": [
+                {
+                  "title": "Call the customer back"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "follow_up",
+        "trigger": "on_task_created",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Is my card blocked?"
+        }
+      },
+      "background": true,
+      "as": "first"
+    },
+    {
+      "wait_for": "ws-holds"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Please call me back"
+        }
+      },
+      "defer_delivery": true,
+      "as": "second",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "content": {
+              "body": "Please call me back"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "close",
+      "background": true,
+      "as": "closing"
+    },
+    {
+      "call": "delivery.wait",
+      "of": "second",
+      "expect": {
+        "result": {
+          "cancellation_reason": "kit_closed"
+        }
+      }
+    },
+    {
+      "call": "store.list_tasks",
+      "room_id": "room-1",
+      "expect": {
+        "result": [
+          {
+            "title": "Call the customer back",
+            "status": "pending"
+          }
+        ]
+      }
+    },
+    {
+      "open": "ws-holds"
+    },
+    {
+      "await": "closing"
+    },
+    {
+      "await": "first"
+    }
+  ],
+  "expect": {
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "body": "Is my card blocked?"
+            }
+          }
+        ]
+      }
+    },
+    "hooks": {
+      "follow_up": [
+        {
+          "trigger": "on_task_created",
+          "room_id": "room-1",
+          "event": {
+            "type": "task_created",
+            "content": {
+              "body": "Please call me back"
+            },
+            "metadata": {
+              "task_title": "Call the customer back"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
