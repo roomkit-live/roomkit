@@ -184,12 +184,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **A tool that changes state starts the turn's repeat counts again** (RFC §6.4, HITL
-  a3a67086, 3368d06c, 3b16cc44, RMK-1541). The anti-loop guard refused the third identical
+  a3a67086, 3368d06c, 3b16cc44, a634216e, RMK-1541). The anti-loop guard refused the third identical
   call of a turn, so a test rerun after each edit was refused, and its words asked the model
   to answer with what it had. `AITool(changes_state=True)` (or `"changes_state": True` in a
   schema dict) declares a tool whose call changes what later calls read: once such a call
   succeeds, the turn's counts of identical calls and identical answers start again, its own
-  call's count kept. The refusal now ends "Use the results you already have, or try
+  call's count kept, so the same change is refused at its third when no other came
+  between. The refusal now ends "Use the results you already have, or try
   genuinely different arguments.", the identical-answer note "Use it and move on."
 
 - **`current_tool_chain_depth()` reads the turn's chain depth** (RFC §21.4, RMK-1495).

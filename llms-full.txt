@@ -2464,7 +2464,8 @@ declares it with `changes_state=True` on its definition, an `AITool` or a
 schema dict. Once a call of that tool succeeds, the turn's counts start again:
 a test rerun after each edit runs every time, and a tool's answer repeated
 around the edit is not noted as settled. The same change made again keeps its
-own count, so it is still refused at its third.
+own count, so it is still refused at its third when no other change came between;
+two changes made in turn start each other's counts again.
 
 ```python
 tools=[
