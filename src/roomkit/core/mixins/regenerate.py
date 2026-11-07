@@ -314,7 +314,8 @@ class RegenerateMixin(HelpersMixin):
         DELETE withdrew or an edit or a delete row (RFC §10.3), or its source
         binding is gone or cannot write. Otherwise the same path, refusals and
         result as a regenerate. *named* is the delivery whose key names the
-        run, until it is over (RFC §10.1).
+        run, until it is over (RFC §10.1). Its caller, a release, reads no
+        result: a failed turn is logged at its own level (RFC §15.2).
         """
         cascade = self._cascades.new(room_id, reentry_budget=self._max_chain_depth * 10)
         if named is not None:
@@ -348,7 +349,9 @@ class RegenerateMixin(HelpersMixin):
                 ):
                     return None
                 plan = self._enqueue_regeneration(room_id, trigger, source, context, cascade)
-            return await self._finish_regeneration(room_id, trigger, plan, cascade)
+            return await self._finish_regeneration(
+                room_id, trigger, plan, cascade, caller_logs=False
+            )
         except BaseException:
             await cascade.abandon("caller_cancelled")
             raise
@@ -500,16 +503,26 @@ class RegenerateMixin(HelpersMixin):
         return plan
 
     async def _finish_regeneration(
-        self, room_id: str, trigger: RoomEvent, plan: DeliveryPlan, cascade: DeliveryCascade
+        self,
+        room_id: str,
+        trigger: RoomEvent,
+        plan: DeliveryPlan,
+        cascade: DeliveryCascade,
+        *,
+        caller_logs: bool = True,
     ) -> InboundResult:
         """The regeneration's result once its cascade ends: the trigger, the
         new answers and what they ended with (RFC §10.1 step 18), or the
-        refusal of a room that closed while it waited in the lane."""
+        refusal of a room that closed while it waited in the lane.
+        ``caller_logs`` is ``_finish_cascade``'s: whether the caller receives
+        a stream's failure and logs it."""
         # The lane delivers the new answers — their commit passes, their
         # AFTER_BROADCAST hooks, what the other agents answer to them (RFC
         # §8.3) — then the streams the regeneration started are read here,
         # outside the lock (TTS delivery can take seconds).
-        stream_error, stream_meta = await self._finish_cascade(cascade, room_id, caller_logs=True)
+        stream_error, stream_meta = await self._finish_cascade(
+            cascade, room_id, caller_logs=caller_logs
+        )
         if plan.refusal is not None:
             return plan.refusal
         # A failed release of the planning lock is met before the cascade's

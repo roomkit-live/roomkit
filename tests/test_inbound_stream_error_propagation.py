@@ -22,11 +22,15 @@ import pytest
 from roomkit.channels.ai import AIChannel
 from roomkit.core.framework import RoomKit
 from roomkit.core.hooks import HookRegistration
+from roomkit.core.mixins import verification as verification_mixin
+from roomkit.identity.mock import MockIdentityResolver
 from roomkit.models.channel import ChannelBinding, ChannelOutput
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage, InboundResult
 from roomkit.models.enums import ChannelCategory, HookExecution, HookTrigger
 from roomkit.models.event import RoomEvent, TextContent
+from roomkit.models.identity import Identity
+from roomkit.models.verification import VerificationPolicy
 from roomkit.orchestration.strategies import Discussion
 from roomkit.providers.ai.base import (
     AIContext,
@@ -307,6 +311,40 @@ async def test_a_send_event_caller_that_never_gets_the_failure_sees_it_logged(
     records = _roomkit_records(caplog, logging.WARNING)
     assert [r.levelno for r in records] == [logging.ERROR]
     assert records[0].exc_info is None
+
+
+@pytest.mark.parametrize("streams", [True, False])
+async def test_a_verification_release_s_failed_turn_is_logged_at_its_level(
+    caplog, monkeypatch: pytest.MonkeyPatch, streams: bool
+) -> None:
+    """A held message's release reads no result (RFC §11.7.6, RMK-1500): the
+    failed turn of the agent it runs is logged at the failure's own level, as
+    a send_event's, not the DEBUG kept for a caller that receives the error."""
+    monkeypatch.setattr(verification_mixin, "_SCRYPT_N", 2**4)
+    exc = ProviderError("model gone", provider="mock", status_code=404)
+    kit = RoomKit(
+        identity_resolver=MockIdentityResolver(mapping={"+15550000001": Identity(id="id-alice")}),
+        verification_policy=VerificationPolicy(),
+    )
+    kit.register_channel(SimpleChannel("sms1"))
+    kit.register_channel(AIChannel("ai1", provider=_raising_provider(streams, exc)))
+    await kit.create_room(room_id="r1")
+    await kit.attach_channel("r1", "sms1")
+    await kit.attach_channel("r1", "ai1", category=ChannelCategory.INTELLIGENCE)
+    held = await kit.process_inbound(
+        InboundMessage(channel_id="sms1", sender_id="+15550000001", content=TextContent(body="go"))
+    )
+    request, secret = await kit.request_verification(
+        "id-alice", room_id="r1", channel_id="sms1", window_start=held.event.created_at
+    )
+    with caplog.at_level(logging.DEBUG):
+        await kit.complete_verification(request.id, secret)
+        await kit.close()
+
+    records = _roomkit_records(caplog, logging.WARNING)
+    assert [r.levelno for r in records] == [logging.ERROR]
+    assert records[0].exc_info is None
+    assert "stream consumption (no targets)" in records[0].getMessage()
 
 
 @pytest.mark.parametrize("streams", [True, False])

@@ -551,6 +551,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A held message's release logs its agent's failed turn at its level** (RFC §15.2,
+  §11.7.6, HITL 36e60a22, RMK-1500). Once an identity verification is approved, the
+  room's agents answer the released message; when the agent's turn failed (a missing
+  model, a 404), its line dropped to DEBUG, as for a caller that receives the error, but
+  nothing reads the release's result. The line is now at the failure's own level, ERROR
+  for a 404 or a 5xx, as a `send_event`'s: `stream consumption (no targets) of ai1 for
+  room r1 failed (provider=mock, status=404): ...`.
+
 - **A task a hook decided is kept when the room's lane drops its delivery** (RFC §10.1
   step 15, HITL ee915769, RMK-1499). An event's `BEFORE_BROADCAST` hooks gave a task
   ("call the customer back"), then its delivery set never ran: the kit closed with the set
