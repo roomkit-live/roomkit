@@ -287,8 +287,9 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         each ``THINKING_END`` must carry its own block. ``published`` is how
         many of ``thinking_chunks`` earlier windows already sent; the caller
         keeps the returned value and hands it back at the next close. The list
-        itself is never truncated — the tool loop replays it whole into the
-        assistant message it sends back to the model.
+        is never truncated within a try: only a try that showed reasoning
+        alone before it failed has its list replaced, the round reporting the
+        reasoning of the try that answered (RFC §6.4).
         """
         await coalescer.flush()
         await self._publish_thinking_event(

@@ -6,6 +6,7 @@ import asyncio
 import logging
 from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from contextlib import aclosing
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from roomkit.channels._ai_policy import declared_for
@@ -20,6 +21,7 @@ from roomkit.providers.ai.base import (
     AITextPart,
     ProviderError,
     StreamEvent,
+    StreamThinkingDelta,
     StreamToolCallDelta,
     is_context_overflow_message,
 )
@@ -46,14 +48,54 @@ def _gains(summarized: list[AIMessage], rounds: list[AIMessage], kept: list[AIMe
     return bool(summarized) or any(new is not old for new, old in zip(rounds, kept, strict=False))
 
 
+@dataclass(frozen=True)
 class _StreamRetryBoundary:
     """Separate two provider attempts of one model round.
 
-    Composition deltas are not persisted and therefore remain retryable, but
-    they are visible on the realtime bus. The streaming consumer uses this
-    marker to close the abandoned composition and reset its counters before
-    the replacement attempt starts.
+    Composition deltas and reasoning are not persisted and therefore remain
+    retryable, but they are visible: on the realtime bus, and reasoning to the
+    channel rendering the stream. The streaming consumer uses this marker to
+    close the abandoned composition and reset its counters before the
+    replacement attempt starts; ``abandoned`` when the attempt handed nothing
+    else, so its reasoning goes with it (RFC §6.4).
     """
+
+    abandoned: bool = False
+
+
+class _Shown:
+    """What one attempt of a generation showed before it failed.
+
+    A composition delta and a piece of reasoning are projections: neither is
+    delivered as text nor persisted, so an attempt that showed only those can
+    be replayed, by a retry, a compacted replay or the fallback, without
+    duplicating anything the room holds (RFC §6.4). Counting a composition
+    delta as handed would cost every tool round its retry budget, since a
+    call's fragments arrive long before the call; counting reasoning would
+    refuse a retry to every model that reasons before it answers.
+    """
+
+    def __init__(self) -> None:
+        self.emitted = False
+        self._composition = False
+        self._reasoning = False
+
+    def note(self, event: StreamEvent) -> None:
+        """Take in one event the attempt yielded."""
+        if isinstance(event, StreamToolCallDelta):
+            self._composition = True
+        elif isinstance(event, StreamThinkingDelta):
+            self._reasoning = True
+        else:
+            self.emitted = True
+
+    def boundary(self) -> _StreamRetryBoundary | None:
+        """The marker that closes what the failed attempt showed: its
+        composition, and its reasoning when it handed nothing else."""
+        abandoned = self._reasoning and not self.emitted
+        if not (self._composition or abandoned):
+            return None
+        return _StreamRetryBoundary(abandoned=abandoned)
 
 
 async def _noted(
@@ -96,9 +138,12 @@ class AIResilienceMixin(_AIChannelContract):
         gate every recovery below:
 
         * **Whether anything already left for the consumer.** A stream that
-          has yielded cannot be re-entered — by retry, compaction or fallback
-          alike — without duplicating delivered output in the room and in the
-          persisted message, so a mid-stream failure propagates as-is.
+          has yielded text, a call or its end cannot be re-entered — by retry,
+          compaction or fallback alike — without duplicating delivered output
+          in the room and in the persisted message, so a mid-stream failure
+          propagates as-is. Reasoning and a call's fragments are shown, never
+          held by the room: a stream that yielded only those is re-entered,
+          after a boundary that closes what it showed (RFC §6.4).
         * **Whether the refusal is a context overflow.** Replaying the same
           context is a deterministic refusal, so neither the retry budget nor
           the fallback provider get it; the compacted replay runs first, once
@@ -111,30 +156,19 @@ class AIResilienceMixin(_AIChannelContract):
 
         attempt = 0
         while attempt <= policy.max_retries:
-            emitted = False
-            projected_composition = False
+            shown = _Shown()
             stream = self._structured_stream(self._provider, context, received)
             try:
                 async for event in stream:
-                    # A composition delta is a projection: it is neither
-                    # delivered as text nor persisted, so a stream that has
-                    # only produced those can still be replayed without
-                    # duplicating anything — which is the whole test this
-                    # flag exists to make. Arming it on one would silently
-                    # cost every tool round its retry budget, since a call's
-                    # fragments now arrive long before the call itself.
-                    if not isinstance(event, StreamToolCallDelta):
-                        emitted = True
-                    else:
-                        projected_composition = True
+                    shown.note(event)
                     yield event
                 return  # Stream completed successfully
             except ProviderError as exc:
-                if projected_composition:
+                if (boundary := shown.boundary()) is not None:
                     # Close this visible attempt before a retry/fallback starts
                     # or before its terminal failure reaches the caller.
-                    yield _StreamRetryBoundary()
-                if emitted:
+                    yield boundary
+                if shown.emitted:
                     raise
                 if not compacted and self._is_context_overflow(exc):
                     # One compacted replay, then ordinary retry semantics: an
@@ -163,8 +197,8 @@ class AIResilienceMixin(_AIChannelContract):
                 await asyncio.sleep(delay)
                 attempt += 1
             except Exception:
-                if projected_composition:
-                    yield _StreamRetryBoundary()
+                if (boundary := shown.boundary()) is not None:
+                    yield boundary
                 raise
             finally:
                 await _aclose_stream(stream)
@@ -199,25 +233,21 @@ class AIResilienceMixin(_AIChannelContract):
         fallback = self._fallback_provider
         assert fallback is not None  # the caller checked
         stream = self._structured_stream(fallback, declared_for(fallback, context), received)
-        emitted = False
-        projected_composition = False
+        shown = _Shown()
         try:
             async for event in stream:
-                if isinstance(event, StreamToolCallDelta):
-                    projected_composition = True
-                else:
-                    emitted = True
+                shown.note(event)
                 yield event
         except ProviderError as fallback_exc:
-            if projected_composition:
-                yield _StreamRetryBoundary()
-            if emitted:
+            if (boundary := shown.boundary()) is not None:
+                yield boundary
+            if shown.emitted:
                 raise
             logger.error("Fallback provider also failed: %s", fallback_exc)
             raise primary_error from fallback_exc
         except Exception:
-            if projected_composition:
-                yield _StreamRetryBoundary()
+            if (boundary := shown.boundary()) is not None:
+                yield boundary
             raise
         finally:
             await _aclose_stream(stream)

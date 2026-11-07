@@ -341,6 +341,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A generation cut after reasoning alone is tried again** (RFC §6.4, HITL ea119829,
+  RMK-1542). A model that reasons before it answers streams its reasoning first, and a
+  stream cut there (a lost connection, a 503) counted as an answer under way: the turn
+  failed with no retry and no fallback. Reasoning is no part of the answer the room holds,
+  so until the first text, call or end, a failure worth another try is tried again under
+  `retry_policy`, then the `fallback_provider` is asked, as before anything was handed; a
+  fallback that reasoned before it failed leaves the primary's error. A streaming reader
+  and the thinking subscribers have read the abandoned reasoning, its window closed at the
+  failure; the round replays and reports only the reasoning of the try that answered.
+
 - **A call a locked hook's task nests under the lock holds the hook's section** (RFC
   §9.5.1, HITL 57923782, RMK-1482). A task a locked hook started and did not await could
   send into the room under the hook's lock, and the event committed once the hook returned,

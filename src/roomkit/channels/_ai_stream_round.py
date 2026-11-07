@@ -139,7 +139,8 @@ class _StreamRound:
 
     The turn chooses whether another round can run. This component only
     projects provider events and keeps the raw and delivered transcripts.
-    A retry boundary starts a new composition attempt within the same round.
+    A retry boundary starts a new composition attempt within the same round,
+    and drops the reasoning of a try abandoned whole.
     """
 
     index: int
@@ -177,6 +178,17 @@ class _StreamRound:
             self.index,
             published=state.thinking_published,
         )
+
+    async def _drop_reasoning(self) -> None:
+        """Close the window of an attempt that showed reasoning alone and
+        leave its reasoning out of the round: its subscribers and the channel
+        rendering the stream read it, the round replays and reports only the
+        reasoning of the attempt that answers (RFC §6.4)."""
+        await self._end_thinking()
+        state = self.state
+        state.thinking_chunks = []
+        state.thinking_published = 0
+        state.transcript = RoundTranscript()
 
     async def _add_thinking(self, event: StreamThinkingDelta) -> None:
         state = self.state
@@ -254,6 +266,8 @@ class _StreamRound:
                     if self.room_id:
                         await self._composition.close()
                         self._composition = self.new_composition()
+                    if event.abandoned:
+                        await self._drop_reasoning()
                 elif isinstance(event, StreamThinkingDelta):
                     await self._add_thinking(event)
                     if event.thinking:
