@@ -989,6 +989,10 @@ class RoomDeliveryLane:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
+                # A cut's cancellation a failing claim release replaced
+                # stays a cut: nothing of its sets' aftermath runs.
+                if self._cut:
+                    raise
                 # A store or claim failure once the round's sets ran (a
                 # cursor read, the claim's release) leaves them run: their
                 # aftermath follows, as roomkit-rs's does (RMK-1515), and the
@@ -1073,7 +1077,10 @@ class RoomDeliveryLane:
                     delivered = refreshed
                     progressed = True
                     continue
-                if force_skip and not progressed:
+                # A lane owing a cursor write skips nothing: the skip could
+                # pass an index another process holds, where roomkit-rs's
+                # never passes one its own process has not written.
+                if force_skip and not progressed and self._owed_cursor is None:
                     target = self._skip_target(delivered)
                     if target > delivered and await self._host._store.advance_delivered_index(
                         self.room_id, target, force=True

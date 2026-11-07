@@ -57,6 +57,7 @@ class FakeHost:
         self.reentered: list[str] = []
         self.dropped: list[str] = []
         self.framework_events: list[tuple[str, dict[str, Any] | None]] = []
+        self.cut_reports: list[str] = []
         self.execute_gate: asyncio.Event | None = None
         self.executing = asyncio.Event()  # set once a plan entered execution
         self.execute_raises: Exception | None = None
@@ -89,6 +90,9 @@ class FakeHost:
         self.reentered.append(plan.event.id)
         if self.on_reentry is not None:
             await self.on_reentry(room_id, plan, cascade)
+
+    def _report_cut(self, plan: DeliveryPlan, result: Any, cascade: Any) -> None:
+        self.cut_reports.append(plan.event.id)
 
     async def _emit_framework_event(
         self,
@@ -708,6 +712,102 @@ async def test_a_lane_owing_a_cursor_write_skips_no_index_another_process_holds(
 
     assert (failed, host_a.framework_events, host_b.executed, held.cancelled) == (
         [0],
+        [],
+        ["b1"],
+        None,
+    )
+    assert (host_a.executed, delivered) == (["a0", "a2"], 2)
+
+
+class _ClaimReleaseFailingOnCut(InMemoryLockManager):
+    """A claim lock manager whose release raises when a cancellation unwinds
+    through it, as an advisory unlock in a ``finally`` on a dropped
+    connection: the failure replaces the cancellation."""
+
+    @contextlib.asynccontextmanager
+    async def locked(self, room_id: str) -> AsyncIterator[None]:  # type: ignore[override]
+        try:
+            async with InMemoryLockManager.locked(self, room_id):
+                yield
+        except asyncio.CancelledError:
+            raise RuntimeError("unlock failed: connection lost") from None
+
+
+@pytest.mark.asyncio
+async def test_a_cut_round_whose_claim_release_fails_runs_no_aftermath() -> None:
+    """RMK-1515: the kit's close cuts a round while its second set runs, and
+    the claim's release fails as the cut unwinds through it. The round stays
+    a cut one (RFC §12.10.4): the set that ran reports what it delivered,
+    both are cancelled, and nothing of their aftermath runs, though a store
+    or claim failure after a set ran leaves that set as it ran."""
+    store = InMemoryStore()
+    await store.create_room(Room(id=ROOM))
+    host = FakeHost(store)
+    entered = asyncio.Event()
+
+    async def on_execute(plan: DeliveryPlan) -> None:
+        if plan.event.id == "e1":
+            entered.set()
+            await asyncio.Event().wait()
+
+    host.on_execute = on_execute
+    registry = RoomLaneRegistry(host, _ClaimReleaseFailingOnCut(), fast_config())
+    first = DeliveryCascade(ROOM, reentry_budget=10)
+    second = DeliveryCascade(ROOM, reentry_budget=10)
+    enqueue_exec(registry, first, "e0", 0)
+    enqueue_exec(registry, second, "e1", 1)
+    await asyncio.wait_for(entered.wait(), timeout=2.0)
+    registry.seal("kit_closed")
+    registry.cut(set())
+    lane_task = registry._lanes[ROOM].task
+    assert lane_task is not None
+    await asyncio.wait({lane_task}, timeout=2.0)
+    await registry.aclose()
+
+    assert (host.executed, host.post_effects, host.reentered, host.cut_reports) == (
+        ["e0"],
+        [],
+        [],
+        ["e0"],
+    )
+    assert (first.cancelled, second.cancelled) == ("kit_closed", "kit_closed")
+
+
+@pytest.mark.asyncio
+async def test_a_lane_whose_owed_write_fails_again_skips_no_index_another_process_holds() -> None:
+    """RMK-1515: as the test above, but the owed write fails again in the
+    round whose gap clock ran out. The lane, still owing it, skips nothing:
+    B's set runs."""
+    store = InMemoryStore()
+    await store.create_room(Room(id=ROOM))
+    locks = InMemoryLockManager()
+    host_a, host_b = FakeHost(store), FakeHost(store)
+    fast = {"gap_backoff_initial": 0.005, "gap_backoff_max": 0.005}
+    registry_a = RoomLaneRegistry(host_a, locks, fast_config(gap_timeout=0.03, **fast))
+    registry_b = RoomLaneRegistry(host_b, locks, fast_config(gap_timeout=0.3, **fast))
+    advance = store.advance_delivered_index
+    failed: list[int] = []
+
+    async def failing_twice(room_id: str, index: int, **kwargs: Any) -> bool:
+        if len(failed) < 2 and not kwargs.get("force"):
+            failed.append(index)
+            raise RuntimeError("store down")
+        return await advance(room_id, index, **kwargs)
+
+    store.advance_delivered_index = failing_twice  # type: ignore[method-assign]
+    first = DeliveryCascade(ROOM, reentry_budget=10)
+    enqueue_exec(registry_a, first, "a0", 0)
+    await asyncio.wait_for(first.wait(), timeout=2.0)
+    held, own = DeliveryCascade(ROOM, reentry_budget=10), DeliveryCascade(ROOM, reentry_budget=10)
+    enqueue_exec(registry_b, held, "b1", 1)
+    enqueue_exec(registry_a, own, "a2", 2)
+    await asyncio.wait_for(asyncio.gather(held.wait(), own.wait()), timeout=3.0)
+    delivered = await cursor(store)
+    await registry_a.aclose()
+    await registry_b.aclose()
+
+    assert (failed, host_a.framework_events, host_b.executed, held.cancelled) == (
+        [0, 0],
         [],
         ["b1"],
         None,
