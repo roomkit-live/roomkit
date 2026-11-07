@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
@@ -102,3 +104,47 @@ async def test_init_refuses_a_language_the_database_lacks() -> None:
         await source.init(min_size=1, max_size=2)
     # The pool it created is closed with the refusal.
     assert source._pool is None
+
+
+@pytest.mark.skipif(not os.environ.get("POSTGRES_DSN"), reason="POSTGRES_DSN not set")
+async def test_a_cancelled_index_writes_nothing() -> None:
+    """An index its caller cuts while a lock holds the document is cancelled on the
+    server, as asyncpg cancels it: once the lock goes, the document is as it was
+    (RMK-1398). Named as its Rust twin in roomkit-rs
+    crates/roomkit-postgres/tests/knowledge.rs."""
+    import asyncpg
+
+    dsn = os.environ["POSTGRES_DSN"]
+    source = PostgresKnowledgeSource(dsn=dsn)
+    await source.init(min_size=1, max_size=1)
+    holder = await asyncpg.connect(dsn)
+    doc_id = uuid4().hex
+    try:
+        await source.index("Refund before", {"id": doc_id})
+        async with holder.transaction():
+            await holder.execute(
+                "SELECT 1 FROM knowledge_documents WHERE id = $1 FOR UPDATE", doc_id
+            )
+            index = asyncio.create_task(source.index("Refund cancelled", {"id": doc_id}))
+            # Cut once the server shows the write waiting: one cut before proves nothing.
+            await _until_blocked_by(holder)
+            index.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await index
+        content = await holder.fetchval(
+            "SELECT content FROM knowledge_documents WHERE id = $1", doc_id
+        )
+        assert content == "Refund before"
+    finally:
+        await holder.execute("DELETE FROM knowledge_documents WHERE id = $1", doc_id)
+        await holder.close()
+        await source.close()
+
+
+async def _until_blocked_by(holder: Any) -> None:
+    """Return once a session waits on a lock *holder*'s transaction holds."""
+    deadline = asyncio.get_running_loop().time() + 2
+    blocked = "SELECT count(*) FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))"
+    async with asyncio.timeout_at(deadline):
+        while not await holder.fetchval(blocked, holder.get_server_pid()):
+            await asyncio.sleep(0.005)

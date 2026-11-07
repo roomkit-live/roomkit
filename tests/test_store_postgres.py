@@ -2321,6 +2321,50 @@ async def _until_blocked_by(holder: Any) -> None:
             await asyncio.sleep(0.005)
 
 
+@pytest.mark.parametrize("pool_kind", ["owned", "handed in"])
+async def test_a_cancelled_update_writes_nothing(pool_kind: str) -> None:
+    """A write its caller cuts while a lock holds it is cancelled on the server, as
+    asyncpg cancels it, on the store's own pool as on one handed in: once the lock
+    goes, nothing is written, and the store's one connection served the next call
+    meanwhile (RMK-1398). Named as its Rust twin in roomkit-rs
+    crates/roomkit-postgres/tests/store_ops.rs."""
+    import asyncpg
+
+    from roomkit.store.postgres import PostgresStore
+
+    owner = None
+    if pool_kind == "handed in":
+        # A pool with the store's codecs: another store's.
+        owner = PostgresStore(dsn=POSTGRES_DSN)
+        await owner.init(min_size=1, max_size=1)
+    store = PostgresStore(dsn=POSTGRES_DSN, pool=owner._pool if owner else None)
+    await store.init(min_size=1, max_size=1)
+    holder = await asyncpg.connect(POSTGRES_DSN)
+    try:
+        await store.create_room(Room(id="cut-r1"))
+        async with holder.transaction():
+            await holder.execute("SELECT 1 FROM rooms WHERE id = 'cut-r1' FOR UPDATE")
+            update = asyncio.create_task(
+                store.update_room(Room(id="cut-r1", metadata={"cut": True}))
+            )
+            # Cut once the server shows the write waiting: one cut before proves nothing.
+            await _until_blocked_by(holder)
+            update.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await update
+            assert await asyncio.wait_for(store.get_room("cut-r2"), 2) is None
+        room = await store.get_room("cut-r1")
+        assert room is not None
+        assert room.metadata == {}
+    finally:
+        await holder.close()
+        async with store._pool.acquire() as conn:
+            await conn.execute("DELETE FROM rooms WHERE id = 'cut-r1'")
+        await store.close()
+        if owner is not None:
+            await owner.close()
+
+
 @pytest.mark.parametrize("adding", ["add_event", "add_event_auto_index"])
 async def test_an_add_waiting_on_a_commit_holds_nothing_the_commit_needs(
     store, adding: str
