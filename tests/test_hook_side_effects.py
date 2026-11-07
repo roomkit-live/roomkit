@@ -594,6 +594,10 @@ class TestARoundThatFailsMidway:
         stays below the index: the room's next message waits for the gap
         timeout, which skips the index as lost."""
         kit = RoomKit(delivery_gap_timeout=0.01)
+        # The lane's backoff between two looks at a hole, which no kit option
+        # sets: short, so that the gap timeout is reached in milliseconds.
+        kit._lanes._config.gap_backoff_initial = 0.002
+        kit._lanes._config.gap_backoff_max = 0.01
         advance = kit.store.advance_delivered_index
 
         async def failing_once(room_id: str, index: int, **kwargs: Any) -> bool:
