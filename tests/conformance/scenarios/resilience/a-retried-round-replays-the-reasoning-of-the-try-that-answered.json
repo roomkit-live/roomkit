@@ -1,0 +1,134 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "resilience/a-retried-round-replays-the-reasoning-of-the-try-that-answered",
+  "title": "A round tried again after reasoning alone replays, in its next request, the reasoning of the try that answered, none of the try its provider refused",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: channels/_ai_resilience.py _generate_stream_with_retry, _fallback_stream (reasoning alone is not handed: it arms no `emitted`), channels/_ai_stream_round.py (a retry boundary drops the abandoned attempt's reasoning); tests/test_channels/test_ai_retry.py. RMK-1542 (HITL ea119829).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "retry_policy": {
+          "max_retries": 2,
+          "base_delay_ms": 1
+        },
+        "model": {
+          "chat_dialect": "deepseek",
+          "rounds": [
+            {
+              "thinking": [
+                "Dropped."
+              ],
+              "refuses": {
+                "status": 503,
+                "message": "busy",
+                "retryable": true
+              }
+            },
+            {
+              "stream": [
+                {
+                  "thinking": "Kept."
+                },
+                {
+                  "call": {
+                    "id": "c1",
+                    "name": "lookup"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Found."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up.",
+            "returns": "found"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {
+          "chat_messages": [
+            {
+              "role": "user",
+              "content": "hi"
+            },
+            {
+              "role": "assistant",
+              "content": null,
+              "reasoning_content": "Kept.",
+              "tool_calls": [
+                {
+                  "type": "function",
+                  "function": {
+                    "name": "lookup",
+                    "arguments": "{}"
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool",
+              "content": "found"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

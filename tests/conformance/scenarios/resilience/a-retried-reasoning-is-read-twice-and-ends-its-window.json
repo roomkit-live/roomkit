@@ -1,0 +1,175 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "resilience/a-retried-reasoning-is-read-twice-and-ends-its-window",
+  "title": "A generation tried again after reasoning alone: a streaming reader and the room's thinking subscribers have read the first try's reasoning, its window closed at the refusal, then the second try's in a window of its own; the turn reports the second try's alone",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: channels/_ai_resilience.py _generate_stream_with_retry, _fallback_stream (reasoning alone is not handed: it arms no `emitted`), channels/_ai_stream_round.py (a retry boundary drops the abandoned attempt's reasoning); tests/test_channels/test_ai_retry.py. RMK-1542 (HITL ea119829).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "retry_policy": {
+          "max_retries": 2,
+          "base_delay_ms": 1
+        },
+        "model": {
+          "rounds": [
+            {
+              "thinking": [
+                "Let me think."
+              ],
+              "refuses": {
+                "status": 503,
+                "message": "busy",
+                "retryable": true
+              }
+            },
+            {
+              "thinking": [
+                "Again."
+              ],
+              "text": "Asked again."
+            }
+          ]
+        },
+        "thinking_coalesce_ms": 0,
+        "publish_thinking_text": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "answered",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "streamed": {
+      "room-1": {
+        "ws": [
+          {
+            "thinking": "Let me think."
+          },
+          {
+            "thinking": "Again."
+          },
+          {
+            "text": "Asked again."
+          },
+          {
+            "row": {
+              "index": 1,
+              "type": "message",
+              "content": {
+                "body": "Asked again."
+              }
+            }
+          }
+        ]
+      }
+    },
+    "thinking_events": {
+      "room-1": [
+        {
+          "type": "thinking_start",
+          "thinking": "",
+          "thinking_length": 0,
+          "round": 0,
+          "channel_id": "agent"
+        },
+        {
+          "type": "thinking_delta",
+          "thinking": "Let me think.",
+          "thinking_length": 13,
+          "round": 0,
+          "channel_id": "agent"
+        },
+        {
+          "type": "thinking_end",
+          "thinking": "Let me think.",
+          "thinking_length": 13,
+          "round": 0,
+          "channel_id": "agent"
+        },
+        {
+          "type": "thinking_start",
+          "thinking": "",
+          "thinking_length": 0,
+          "round": 0,
+          "channel_id": "agent"
+        },
+        {
+          "type": "thinking_delta",
+          "thinking": "Again.",
+          "thinking_length": 6,
+          "round": 0,
+          "channel_id": "agent"
+        },
+        {
+          "type": "thinking_end",
+          "thinking": "Again.",
+          "thinking_length": 6,
+          "round": 0,
+          "channel_id": "agent"
+        }
+      ]
+    },
+    "hooks": {
+      "answered": [
+        {
+          "trigger": "on_ai_response",
+          "response": {
+            "response_content": "Asked again.",
+            "thinking": "Again."
+          }
+        }
+      ]
+    }
+  }
+}

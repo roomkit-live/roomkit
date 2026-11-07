@@ -1,11 +1,11 @@
 {
   "$schema": "../../scenario.schema.json",
-  "id": "resilience/a-generation-that-reasoned-before-its-refusal-is-not-tried-again",
-  "title": "A generation that streamed reasoning before its provider refused it handed something: it is not tried again, nor asked of the fallback, and the turn fails with the refusal",
+  "id": "resilience/a-generation-that-only-reasoned-before-its-refusal-is-tried-again",
+  "title": "A generation that streamed reasoning alone before its provider refused it, worth another try, is tried again: reasoning is no part of its answer, the room holding none of it, and the turn answers from the second try",
   "rules": [
     "§6.4"
   ],
-  "notes": "Python: channels/_ai_resilience.py (a stream under way is not tried again); tests/test_vision_openai.py and RMK-1234 item 1: a reasoning chunk counts as a stream under way.",
+  "notes": "Python: channels/_ai_resilience.py _generate_stream_with_retry, _fallback_stream (reasoning alone is not handed: it arms no `emitted`), channels/_ai_stream_round.py (a retry boundary drops the abandoned attempt's reasoning); tests/test_channels/test_ai_retry.py. RMK-1542 (HITL ea119829).",
   "setup": {
     "channels": [
       {
@@ -75,7 +75,7 @@
       },
       "expect": {
         "result": {
-          "error": "busy"
+          "error": null
         }
       }
     },
@@ -86,9 +86,25 @@
   "expect": {
     "models": {
       "agent": [
+        {},
         {}
       ],
       "agent/fallback": []
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message"
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "content": {
+            "body": "Asked again."
+          }
+        }
+      ]
     }
   }
 }
