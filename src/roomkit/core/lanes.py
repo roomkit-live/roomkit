@@ -587,9 +587,27 @@ class CursorEntry:
     inline-delivered commit): advances the cursor at its turn, executes
     nothing. Every committed index MUST reach its lane as exactly one entry —
     a missing one is a permanent hole the gap policy will eventually skip.
+
+    ``parent_span_id`` / ``parent_span_ctx`` are the span of the call that
+    committed it, as a plan's: the cursor write at its turn stays in that
+    call's trace.
     """
 
     index: int
+    parent_span_id: str | None = None
+    parent_span_ctx: Any = None
+
+
+def _in_trace_of(entry: ExecEntry | CursorEntry | None) -> contextlib.AbstractContextManager[None]:
+    """The span of the call that placed *entry*, made current: the lane's
+    cursor reads and writes for an entry sit in that call's trace, as every
+    other store span of its message (RMK-1401). With no entry, the lane's own
+    context, which holds no span."""
+    if entry is None:
+        return contextlib.nullcontext()
+    if isinstance(entry, ExecEntry):
+        return restored_span(entry.plan.parent_span_id, telemetry_ctx=entry.plan.parent_span_ctx)
+    return restored_span(entry.parent_span_id, telemetry_ctx=entry.parent_span_ctx)
 
 
 def _keep_side_effects(host: LaneHost, entry: ExecEntry) -> None:
@@ -1028,6 +1046,17 @@ class RoomDeliveryLane:
         if result is not None:
             self._host._report_cut(entry.plan, result, entry.cascade)
 
+    def _next(self) -> ExecEntry | CursorEntry | None:
+        """The entry this lane runs first once the cursor allows it (see
+        :func:`_turn`): the cursor reads and writes made for it are in its
+        trace."""
+        heads: list[ExecEntry | CursorEntry] = []
+        if self._unindexed:
+            heads.append(self._unindexed[0])
+        if self._indexed:
+            heads.append(self._indexed[min(self._indexed)])
+        return min(heads, key=_turn, default=None)
+
     def _has_turn(self, delivered: int) -> bool:
         """Whether the cursor allows any of this lane's entries to run."""
         if delivered + 1 in self._indexed:
@@ -1049,7 +1078,8 @@ class RoomDeliveryLane:
     async def _claimed_round(self, executed: list[_Executed], *, force_skip: bool) -> bool:
         async with self._claims.locked(delivery_claim_key(self.room_id)):
             owed = self._owed_cursor
-            delivered = await self._write_owed_cursor()
+            with _in_trace_of(self._next()):
+                delivered = await self._write_owed_cursor()
             # A debt written moves the cursor as a delivery does: a skip
             # waits for the next round, which measures the gap again.
             progressed = owed is not None and self._owed_cursor is None
@@ -1064,7 +1094,8 @@ class RoomDeliveryLane:
                 if nxt is not None:
                     if isinstance(nxt, ExecEntry):
                         await self._execute_owned(nxt, executed)
-                    await self._advance_cursor(delivered + 1)
+                    with _in_trace_of(nxt):
+                        await self._advance_cursor(delivered + 1)
                     delivered += 1
                     progressed = True
                     continue
@@ -1082,9 +1113,7 @@ class RoomDeliveryLane:
                 # never passes one its own process has not written.
                 if force_skip and not progressed and self._owed_cursor is None:
                     target = self._skip_target(delivered)
-                    if target > delivered and await self._host._store.advance_delivered_index(
-                        self.room_id, target, force=True
-                    ):
+                    if target > delivered and await self._skip_to(target):
                         logger.warning(
                             "Delivery gap skipped for room %s: indexes %d..%d declared lost",
                             self.room_id,
@@ -1102,10 +1131,20 @@ class RoomDeliveryLane:
                 break
         return progressed
 
+    async def _skip_to(self, target: int) -> bool:
+        """Moves the room's cursor past a hole to *target*, in the trace of
+        the entry the skip lets run."""
+        with _in_trace_of(self._next()):
+            return await self._host._store.advance_delivered_index(
+                self.room_id, target, force=True
+            )
+
     async def _read_cursor(self) -> int:
         """The room's cursor, past the indexes this lane delivered whose
-        cursor write it still owes."""
-        stored = await self._host._store.get_delivered_index(self.room_id)
+        cursor write it still owes, read in the trace of the entry it runs
+        next."""
+        with _in_trace_of(self._next()):
+            stored = await self._host._store.get_delivered_index(self.room_id)
         if self._owed_cursor is None:
             return stored
         return max(stored, self._owed_cursor)
@@ -1317,9 +1356,17 @@ class RoomLaneRegistry:
             return
         self.lane(room_id).enqueue(entry)
 
-    def note_committed(self, room_id: str, index: int) -> None:
-        """Record a committed index with no delivery set (cursor no-op)."""
-        self.enqueue(room_id, CursorEntry(index))
+    def note_committed(
+        self,
+        room_id: str,
+        index: int,
+        *,
+        parent_span_id: str | None = None,
+        parent_span_ctx: Any = None,
+    ) -> None:
+        """Record a committed index with no delivery set (cursor no-op), the
+        span of the call that committed it carried with it."""
+        self.enqueue(room_id, CursorEntry(index, parent_span_id, parent_span_ctx))
 
     def _try_retire(self, lane: RoomDeliveryLane) -> bool:
         """Idle-timeout retirement; no await between the check and the drop."""

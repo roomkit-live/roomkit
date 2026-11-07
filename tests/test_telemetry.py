@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 import pytest
@@ -23,9 +25,11 @@ from roomkit.models.enums import (
     HookTrigger,
 )
 from roomkit.models.event import EventSource, RoomEvent, TextContent
+from roomkit.models.framework_event import FrameworkEvent
 from roomkit.models.hook import HookResult, InjectedEvent
 from roomkit.providers.ai.base import AIContext, AIProvider, AIResponse, AITool, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
+from roomkit.store.memory import InMemoryStore
 from roomkit.telemetry import (
     Attr,
     ConsoleTelemetryProvider,
@@ -35,7 +39,7 @@ from roomkit.telemetry import (
     SpanKind,
     TelemetryConfig,
 )
-from roomkit.telemetry.context import get_current_telemetry_ctx
+from roomkit.telemetry.context import get_current_span, get_current_telemetry_ctx
 from roomkit.voice.backends.mock import MockVoiceBackend
 from roomkit.voice.pipeline.config import AudioPipelineConfig
 from roomkit.voice.pipeline.vad.base import VADEvent, VADEventType
@@ -1059,12 +1063,159 @@ class TestSensitiveData:
         assert Attr.DELIVERY_ERROR not in span.attributes
 
 
+class _CursorSpans(InMemoryStore):
+    """An in-memory store that opens a ``store.<operation>`` span over each
+    cursor read and write, under the span current when it is called, as
+    PostgresStore's ``_query_span`` does."""
+
+    _telemetry: MockTelemetryProvider | None = None
+
+    @contextmanager
+    def _span(self, operation: str) -> Iterator[None]:
+        assert self._telemetry is not None
+        span_id = self._telemetry.start_span(
+            SpanKind.STORE_QUERY, f"store.{operation}", parent_id=get_current_span()
+        )
+        try:
+            yield
+        finally:
+            self._telemetry.end_span(span_id)
+
+    async def get_delivered_index(self, room_id: str) -> int:
+        with self._span("get_delivered_index"):
+            return await super().get_delivered_index(room_id)
+
+    async def advance_delivered_index(
+        self, room_id: str, index: int, *, force: bool = False
+    ) -> bool:
+        with self._span("advance_delivered_index"):
+            return await super().advance_delivered_index(room_id, index, force=force)
+
+
+_CURSOR_SPANS = {"store.get_delivered_index", "store.advance_delivered_index"}
+
+
+async def _cursor_spans_kit(
+    *channels: Channel, **options: Any
+) -> tuple[RoomKit, MockTelemetryProvider, str]:
+    """A kit on a :class:`_CursorSpans` store, with a room *channels* attach
+    to, its provider holding no span of that setup."""
+    mock = MockTelemetryProvider()
+    kit = RoomKit(store=_CursorSpans(), telemetry=mock, **options)
+    room = await kit.create_room()
+    for channel in channels:
+        kit.register_channel(channel)
+        await kit.attach_channel(room.id, channel.channel_id)
+    mock.reset()
+    return kit, mock, room.id
+
+
+class _HeldChannel(SimpleChannel):
+    """A channel whose deliveries wait for ``release``."""
+
+    def __init__(self, channel_id: str) -> None:
+        super().__init__(channel_id)
+        self.entered = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def deliver(
+        self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
+    ) -> ChannelOutput:
+        self.entered.set()
+        await self.release.wait()
+        return ChannelOutput.empty()
+
+
 class TestStoreQuerySpan:
     def test_store_telemetry_wired(self) -> None:
         """Framework sets _telemetry on the store."""
         mock = MockTelemetryProvider()
         kit = RoomKit(telemetry=mock)
         assert kit._store._telemetry is mock  # type: ignore[attr-defined]
+
+    async def test_the_lane_s_cursor_spans_sit_under_their_message(self) -> None:
+        """The delivery lane reads and moves the room's cursor in the trace of
+        the message it delivers, under its ``framework.inbound``, as every other
+        store span of the message (RMK-1401)."""
+        kit, mock, room_id = await _cursor_spans_kit(SimpleChannel("ch1"), SimpleChannel("ch2"))
+        for body in ("first", "second"):
+            message = InboundMessage(
+                channel_id="ch1", sender_id="u", content=TextContent(body=body)
+            )
+            await kit.process_inbound(message, room_id=room_id)
+        await kit.close()
+
+        inbounds = [s.id for s in mock.spans if s.name == "framework.inbound"]
+        cursor = [s for s in mock.spans if s.name in _CURSOR_SPANS]
+        assert len(inbounds) == 2
+        assert {
+            inbound: {s.name for s in cursor if s.parent_id == inbound} for inbound in inbounds
+        } == {inbound: _CURSOR_SPANS for inbound in inbounds}
+        assert {s.parent_id for s in cursor} == set(inbounds)
+
+    async def test_a_blocked_message_s_cursor_spans_sit_under_a_message(self) -> None:
+        """A message a hook blocks while the lane delivers another: the lane
+        moves the cursor past both indexes in the messages' traces, none in a
+        trace of its own (RMK-1401)."""
+        held = _HeldChannel("ch2")
+        kit, mock, room_id = await _cursor_spans_kit(SimpleChannel("ch1"), held)
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST)
+        async def block(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            if event.content.body == "blocked":  # type: ignore[union-attr]
+                return HookResult.block("blocked")
+            return HookResult.allow()
+
+        def message(body: str) -> InboundMessage:
+            return InboundMessage(channel_id="ch1", sender_id="u", content=TextContent(body=body))
+
+        first = asyncio.create_task(kit.process_inbound(message("first"), room_id=room_id))
+        await asyncio.wait_for(held.entered.wait(), 5)
+        blocked = await kit.process_inbound(message("blocked"), room_id=room_id)
+        assert blocked.blocked and blocked.event is not None
+        held.release.set()
+        await first
+        spans = list(mock.spans)
+        assert await kit.store.get_delivered_index(room_id) == blocked.event.index
+        await kit.close()
+
+        inbounds = {s.id for s in spans if s.name == "framework.inbound"}
+        cursor = [s for s in spans if s.name in _CURSOR_SPANS]
+        assert len(inbounds) == 2
+        assert {s.parent_id for s in cursor} <= inbounds
+
+    async def test_a_skip_s_cursor_spans_sit_under_the_message_it_lets_through(self) -> None:
+        """A hole no lane runs: the reads that wait on it and the skip past it
+        are in the trace of the message the skip lets through (RMK-1401)."""
+        kit, mock, room_id = await _cursor_spans_kit(
+            SimpleChannel("ch1"), SimpleChannel("ch2"), delivery_gap_timeout=0.02
+        )
+        # The lane reads the cursor again after 50 to 250 ms: a test's pace.
+        kit._lanes._config.gap_backoff_initial = 0.002
+        kit._lanes._config.gap_backoff_max = 0.01
+        lost = RoomEvent(
+            room_id=room_id,
+            source=EventSource(channel_id="ch1", channel_type=ChannelType.SMS),
+            content=TextContent(body="lost"),
+        )
+        await kit.store.commit_event(room_id, lost)
+        skipped: list[dict[str, Any]] = []
+
+        @kit.on("delivery_skipped")
+        async def capture(event: FrameworkEvent) -> None:
+            skipped.append(event.data)
+
+        message = InboundMessage(
+            channel_id="ch1", sender_id="u", content=TextContent(body="after")
+        )
+        await kit.process_inbound(message, room_id=room_id)
+        await kit.close()
+
+        assert len(skipped) == 1
+        (inbound,) = [s.id for s in mock.spans if s.name == "framework.inbound"]
+        cursor = [s for s in mock.spans if s.name in _CURSOR_SPANS]
+        assert {s.name for s in cursor} == _CURSOR_SPANS
+        assert {s.parent_id for s in cursor} == {inbound}
 
 
 # ---------------------------------------------------------------------------

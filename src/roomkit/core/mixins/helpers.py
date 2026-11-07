@@ -55,6 +55,7 @@ from roomkit.models.tool_call import (
     ToolCallEvent,
     ToolCallVerdict,
 )
+from roomkit.telemetry.context import get_current_span
 from roomkit.tools.external import BeforeToolDecision
 
 _RECENT_EVENTS_LIMIT = 2_000
@@ -129,6 +130,7 @@ if TYPE_CHECKING:
         ToolCallObserver,
     )
     from roomkit.store.base import ConversationStore
+    from roomkit.telemetry.base import TelemetryProvider
     from roomkit.tools.external import BeforeToolCallback
 
 logger = logging.getLogger("roomkit.framework")
@@ -197,6 +199,7 @@ class HelpersMixin:
     _process_timeout: float  # the pre-commit bound (RFC §13.6) — set by RoomKit.__init__
     _lock_manager: RoomLockManager  # the per-room lock — set by RoomKit.__init__
     _closed: bool  # set once close() starts — set by RoomKit.__init__
+    _telemetry: TelemetryProvider  # the kit's provider — set by RoomKit.__init__
     turn_executor: Any  # RoomKit's own TurnExecutor, whose wiring the turn triggers run on
     get_room: Any  # RoomLifecycleMixin's, the room read with the caller's scope (RFC §17.2)
 
@@ -470,11 +473,15 @@ class HelpersMixin:
         (greeting, child rooms, streamed segments) where the cursor already
         sits at ``index - 1``. When it does not (a lane is in flight for the
         room), the index becomes a cursor entry the lane advances at its
-        turn.
+        turn, in the trace of the call that committed it.
         """
         if await self._store.advance_delivered_index(room_id, index):
             return
-        self._lanes.note_committed(room_id, index)
+        parent_id = get_current_span()
+        parent_ctx = self._telemetry.get_span_context(parent_id) if parent_id is not None else None
+        self._lanes.note_committed(
+            room_id, index, parent_span_id=parent_id, parent_span_ctx=parent_ctx
+        )
 
     # -- Error surfacing --
 
