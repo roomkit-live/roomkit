@@ -17,6 +17,7 @@ from pydantic import ValidationError
 
 from roomkit import AIChannel, HookResult, HookTrigger, RoomKit
 from roomkit.channels.base import Channel
+from roomkit.core.exceptions import KitClosedError, RoomClosedError, RoomNotFoundError
 from roomkit.memory import BudgetAwareMemory, MemoryProvider, MemoryResult, SlidingWindowMemory
 from roomkit.models.channel import ChannelBinding, ChannelOutput
 from roomkit.models.context import RoomContext
@@ -159,6 +160,30 @@ async def test_the_agents_copy_is_a_record_no_hook_reads_and_no_activity(streami
     assert room.status == paused.status
     assert room.timers.last_activity_at == paused.timers.last_activity_at
     assert speaker.delivered == []
+    await kit.close()
+
+
+@pytest.mark.parametrize("refusal", [KitClosedError, RoomNotFoundError, RoomClosedError])
+async def test_a_copy_the_kit_cannot_write_costs_the_turn_nothing(
+    refusal: type[Exception], monkeypatch: pytest.MonkeyPatch
+):
+    """A kit closing, a room gone or closed while the copy waits for the
+    room: the copy is not kept, and the turn goes on as its other rows do."""
+    kit, speaker, _provider = await _kit()
+    commit = kit.commit_event
+
+    async def refusing(room_id: str, event: RoomEvent, **kwargs: Any) -> RoomEvent:
+        if event.type == EventType.INSTRUCTION_READ:
+            raise refusal("refused")
+        return await commit(room_id, event, **kwargs)
+
+    monkeypatch.setattr(kit, "commit_event", refusing)
+
+    result = await kit.process_inbound(_instruction(), room_id=ROOM)
+
+    assert result.error is None
+    assert [e.type for e in await _messages(kit)] == [EventType.MESSAGE]
+    assert speaker.delivered == ["Bonjour, je suis Paul."]
     await kit.close()
 
 

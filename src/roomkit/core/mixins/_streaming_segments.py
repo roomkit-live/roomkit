@@ -15,7 +15,7 @@ from roomkit.core._instructions import response_metadata
 from roomkit.core._observed import Observed, observed_once_over
 from roomkit.core._queued_injections import QueuedInjections
 from roomkit.core.event_router import stream_record
-from roomkit.core.exceptions import RoomClosedError
+from roomkit.core.exceptions import KitClosedError, RoomClosedError, RoomNotFoundError
 from roomkit.core.mixins._stream_reach import reads_the_stream
 from roomkit.core.mixins.helpers import _refuses_writes, _source_block_reason
 from roomkit.core.mixins.inbound_locked import _Blocked, _Refused, within_answer_scope
@@ -580,8 +580,10 @@ class SegmentWriter:
         await self._settle()
         try:
             await self._kit.commit_event(self._room_id, own)
-        except RoomClosedError:
-            logger.debug("Room %s refuses writes; the instruction read is not kept", self._room_id)
+        except (RoomClosedError, RoomNotFoundError, KitClosedError):
+            # As a row the room refuses: not kept, and the turn goes on, its
+            # next row meeting the same refusal its own way.
+            logger.debug("Room %s took no write; the instruction read is not kept", self._room_id)
         return None
 
     async def tool_start(self, marker: ToolCallStartMarker) -> RoomEvent | None:

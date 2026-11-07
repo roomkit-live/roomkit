@@ -3461,9 +3461,14 @@ is in it. Before it reads its memory, the AI channel measures that rest as the
 first round sends it and exposes it for the turn as `current_turn_footprint()`,
 a `TurnFootprint` (RFC §20): `input_tokens` (the system prompt with an
 `Agent`'s identity, the tools declared under Tool Search and the tool policy,
-the room's plan, the earlier tool calls and instructions the history replays, the speaker
-attribution) and `reply_tokens` (the turn's `max_tokens`, 0 when the provider applies its
-own). It is `None` in a tool handler and outside an AI channel's turn.
+the room's plan, the speaker attribution), `reply_tokens` (the turn's
+`max_tokens`, 0 when the provider applies its own) and `replayed`, each earlier
+round of tool calls and instruction the history replays as `(index, turn,
+tokens)`. `BudgetAwareMemory`, `CompactingMemory` and `SummarizingMemory`
+charge each to the event it reads with (its turn's first event after it, else
+the event before it) and keep or cut a turn whole, its rounds with it; a memory
+of your own that reserves `input_tokens` counts the rounds only if it reads
+`replayed` too. It is `None` in a tool handler and outside an AI channel's turn.
 
 `BudgetAwareMemory` reserves the larger of its `reserved_tokens` and the
 measured input: `reserved_tokens` is a floor on that input, not an addition, so

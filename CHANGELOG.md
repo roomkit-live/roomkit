@@ -363,8 +363,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   once a provider refuses the context as too long, do. `BudgetAwareMemory`,
   `CompactingMemory` and `SummarizingMemory` charge each replayed round to the event it
   reads with and keep or cut a turn whole (`TurnFootprint.replayed`, no longer in
-  `input_tokens`): reserved up front, the rounds cut the very messages they followed, and
-  a 16,000-token window kept 2 questions of 12. An id a provider repeats from one turn to
+  `input_tokens`, which a memory of one's own reserving it now reads without the rounds):
+  reserved up front, the rounds cut the very messages they followed, and a 16,000-token
+  window kept 2 questions of 12. An id a provider repeats from one turn to
   the next is replayed as it was sent, no longer renamed `<id>_<index>`.
 
 - **`CompactingMemory` and `SummarizingMemory` leave the turn its room in the window**
