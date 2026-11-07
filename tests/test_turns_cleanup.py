@@ -726,3 +726,75 @@ async def test_an_adopted_call_s_handle_waits_for_the_end_of_a_stream_it_never_r
     await kit.close()
 
     assert cancelled == ["timed out" if stuck else "caller_cancelled"]
+
+
+class _ReadingTarget(SimpleChannel):
+    """A streaming target that reads its stream, told at its first item."""
+
+    def __init__(self, channel_id: str) -> None:
+        super().__init__(channel_id)
+        self.reading = asyncio.Event()
+
+    @property
+    def supports_streaming_delivery(self) -> bool:
+        return True
+
+    async def deliver_stream(
+        self, stream: AsyncIterator[Any], event: Any, binding: Any, context: Any
+    ) -> Any:
+        async for _ in stream:
+            self.reading.set()
+        return ChannelOutput.empty()
+
+
+@pytest.mark.usefixtures("close_grace", "cut_unwind")
+@pytest.mark.parametrize("stuck", [True, False], ids=["executor stuck", "its executor ends it"])
+async def test_an_adopted_call_whose_read_turn_s_end_is_owed_times_out(
+    stuck: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A deferred call an off-lock hook's body makes is adopted beside the
+    event with a cascade of its own: cut by its handle while its target reads
+    its agent's stream, its executor deaf to the cut, the turn is over for its
+    owner at its cancel bound without its executor's end, and the cancel
+    raises TimeoutError well within its own timeout, as any deferred call's
+    does (RFC §9.5.1, §10.1, §10.6.8). Its executor ending the turn, the
+    cancel returns."""
+    if stuck:
+        _deaf_to_its_end(monkeypatch)
+    kit = RoomKit()
+    # The owner gives a cut turn's end up at its cancel bound, 50 ms here.
+    monkeypatch.setattr(kit._turns, "_timeouts", QUICK)
+    target = _ReadingTarget("ws")
+    kit.register_channel(SimpleChannel("tx"))
+    kit.register_channel(target)
+    kit.register_channel(ScriptedChannel(_unending))
+    await kit.create_room(room_id="r")
+    await kit.attach_channel("r", "tx")
+    await kit.attach_channel("r", "ws")
+    await kit.attach_channel("r", "agent", category=ChannelCategory.INTELLIGENCE)
+    cancelled: list[str | None] = []
+
+    @kit.hook(HookTrigger.BEFORE_BROADCAST, needs_lock=False, name="adopts")
+    async def adopts(event: Any, ctx: Any) -> HookResult:
+        if event.content != TextContent(body="Go."):
+            return HookResult.allow()
+        side = await kit.process_inbound(
+            InboundMessage(channel_id="tx", sender_id="u", content=TextContent(body="side")),
+            room_id="r",
+            defer_delivery=True,
+        )
+        assert side.delivery is not None
+        await asyncio.wait_for(target.reading.wait(), 2.0)
+        try:
+            ended = await side.delivery.cancel(timeout=2.0)
+            cancelled.append(ended.cancellation_reason)
+        except TimeoutError as error:
+            cancelled.append(str(error))
+        # Nothing more to deliver: the test is the side call's.
+        return HookResult.block("adopted")
+
+    await asyncio.wait_for(kit.process_inbound(_message(), room_id="r"), 5.0)
+    await kit.close()
+
+    owed = "Delivery cleanup incomplete for room r: the turns of ['agent'] did not end"
+    assert cancelled == [f"{owed} on their executor" if stuck else "caller_cancelled"]
