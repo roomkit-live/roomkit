@@ -579,6 +579,57 @@ class TestDroppedSetSideEffects:
 
         assert (result.cancellation_reason, tasks, created) == ("delivery_stale", ["t1"], ["t1"])
 
+    async def test_a_dropped_set_s_task_is_stored_while_its_call_outlasts_the_close_s_grace(
+        self, kit: RoomKit, close_grace: float, cut_unwind: float
+    ) -> None:
+        """RFC §10.1 step 15, §12.10.4 (RMK-1514): hello's off-lock hook makes
+        two deferred calls into its room, "Hold on", whose transport never
+        answers, then "Call me back", whose hook gives a task and whose set
+        waits in the room's lane behind the first. The kit's close drops that
+        set and stores its task within its grace, though the set ahead of it
+        outlasts the grace and is cut; the task's ON_TASK_CREATED fires."""
+        ws1 = GatedChannel("ws1", "Hold on")
+        kit.register_channel(SimpleChannel("sms1"))
+        kit.register_channel(ws1)
+        await kit.create_room(room_id="r1")
+        await kit.attach_channel("r1", "sms1")
+        await kit.attach_channel("r1", "ws1")
+        made = asyncio.Event()
+
+        def message(body: str) -> InboundMessage:
+            return InboundMessage(
+                channel_id="sms1", sender_id="user1", content=TextContent(body=body)
+            )
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST, name="adopts", needs_lock=False)
+        async def adopts(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            if getattr(event.content, "body", None) == "hello":
+                for body in ("Hold on", "Call me back"):
+                    await kit.process_inbound(message(body), room_id="r1", defer_delivery=True)
+                made.set()
+            return HookResult.allow()
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST, name="triage", priority=1)
+        async def triage(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            if getattr(event.content, "body", None) != "Call me back":
+                return HookResult.allow()
+            task = Task(id="t1", room_id="r1", title="Call the customer back")
+            return HookResult(action="allow", tasks=[task])
+
+        created: list[str] = []
+
+        @kit.hook(HookTrigger.ON_TASK_CREATED, execution=HookExecution.ASYNC, name="follow_up")
+        async def follow_up(event: RoomEvent, ctx: RoomContext) -> None:
+            created.append(event.metadata["task_id"])
+
+        hello = asyncio.create_task(kit.process_inbound(message("hello"), room_id="r1"))
+        await asyncio.wait_for(asyncio.gather(ws1.reached.wait(), made.wait()), 5)
+        await kit.close()
+        await asyncio.wait_for(asyncio.gather(hello, return_exceptions=True), 5)
+        tasks = [task.id for task in await kit.store.list_tasks("r1")]
+
+        assert (tasks, created) == (["t1"], ["t1"])
+
 
 class GatedChannel(SimpleChannel):
     """A transport whose delivery of *held* waits until the test opens it."""
