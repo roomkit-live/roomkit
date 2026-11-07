@@ -1,0 +1,159 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-set-s-metadata-updates-wait-for-the-room-s-lock",
+  "title": "A delivery set's room metadata updates are written under the room's lock: while another call holds it, the set waits, and a key that call writes there is then written over by the set's",
+  "rules": [
+    "§10.1 step 15",
+    "§13.5"
+  ],
+  "notes": "Python: core/mixins/helpers.py _write_metadata_updates writes a set's merged updates with patch_room_metadata inside self._lock_manager.locked(room_id), after the set's tasks and observations; the set runs in the room's lane, off the lock. The second message's before_broadcast hook holds the lock while the first message's set writes: the set waits for it, and writes once the second message's locked region is over, so the hook's own write of the key under the lock comes first.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "crm",
+        "type": "webhook",
+        "category": "transport",
+        "deliver": [
+          {
+            "when": {
+              "text": "I want a loan"
+            },
+            "gate": "crm",
+            "output": {
+              "metadata_updates": {
+                "stage": "qualified"
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "crm"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "hold",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "Call me"
+            },
+            "gate": "held",
+            "do": [
+              {
+                "call": "update_room_metadata",
+                "room_id": "$room",
+                "metadata": {
+                  "stage": "callback"
+                },
+                "as": "meta"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "I want a loan"
+        }
+      },
+      "background": true,
+      "as": "loan"
+    },
+    {
+      "wait_for": "crm"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Call me"
+        }
+      },
+      "background": true,
+      "as": "call"
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "open": "crm"
+    },
+    {
+      "wait_for_lock": "room-1",
+      "waiters": 1
+    },
+    {
+      "open": "held"
+    },
+    {
+      "await": "call",
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "await": "loan",
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "room-1": {
+        "metadata": {
+          "stage": "qualified"
+        }
+      }
+    },
+    "actions": {
+      "meta": [
+        {
+          "result": {
+            "metadata": {
+              "stage": "callback"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
