@@ -47,6 +47,16 @@ class _Comparison:
     def _room(self, alias: str) -> str:
         return self.rooms.get(alias, alias)
 
+    def _created(self) -> list[Any]:
+        """The records of the rooms the run created and the scenario does not
+        name, in the order of their ``room_created``: ``$created`` in
+        ``rooms`` (README, "Normalization")."""
+        minted = sorted(
+            (alias for alias in self.rooms if alias.startswith("$r")),
+            key=lambda alias: int(alias[2:]),
+        )
+        return [self.observed.rooms.get(self.rooms[alias], MISSING) for alias in minted]
+
     def _check(self, expected: Any, actual: Any, path: str) -> None:
         self.found.extend(mismatches(expected, self.normalizer.value(actual), path))
 
@@ -56,9 +66,12 @@ class _Comparison:
             kept = [event for event in events if not is_lifecycle_record(event)]
             self._check(expected, kept, f"timeline.{alias}")
         for alias, expected in self.expect.get("rooms", {}).items():
-            self._check(
-                expected, self.observed.rooms.get(self._room(alias), MISSING), f"rooms.{alias}"
+            actual = (
+                self._created()
+                if alias == "$created"
+                else self.observed.rooms.get(self._room(alias), MISSING)
             )
+            self._check(expected, actual, f"rooms.{alias}")
         for alias, channels in self.expect.get("bindings", {}).items():
             held = self.observed.bindings.get(self._room(alias), {})
             for channel_id, expected in channels.items():

@@ -482,6 +482,9 @@ class Harness:
         if "call" in step:
             if step.get("background"):
                 self._background[step["as"]] = asyncio.create_task(self.invoke(step, {}))
+                # The call runs to its first wait before the next step (README,
+                # "Steps"): the loop runs its first step before this one goes on.
+                await asyncio.sleep(0)
                 return
             outcome = await self.invoke(step, {})
             self._step_outcomes.append(outcome)
