@@ -422,8 +422,8 @@ async def _locked_addresses(
     if row is None or (row["organization_id"] or "") != (organization_id or ""):
         raise IdentityNotFoundError(f"Identity {identity_id} not found")
     # A row the model cannot read is refused, the id alone, as SQLiteStore refuses it;
-    # to a caller naming an organization, as not found: the fixed error would tell
-    # that the id exists (RFC §17.2, HITL 7cb63f4f).
+    # to a caller naming an organization, as not found, as SQLiteStore answers it
+    # (HITL 7cb63f4f): the column above already refused another organization's.
     try:
         return _row_to_identity(row).channel_addresses
     except ValueError:

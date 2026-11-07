@@ -945,9 +945,9 @@ async def test_a_record_the_model_cannot_read_serves_no_read(
 
 
 async def _read_by_id(store: SQLiteStore, door: str) -> object:
-    """Reach the identity i1's record by its id through *door*, for acme; the kit's
-    resolve_participant, link_address and unlink_address name no organization, as a caller
-    naming one learns nothing of the record
+    """Reach the identity i1's record by its id through *door*, create_identity for acme;
+    the kit's resolve_participant and the store's link_address and unlink_address name no
+    organization, as a caller naming one learns nothing of the record
     (test_resolve_participant_for_an_organization_finds_no_unreadable_identity,
     test_link_and_unlink_for_an_organization_find_no_unreadable_identity)."""
     if door == "get_identity":
@@ -1054,17 +1054,21 @@ async def test_link_and_unlink_for_an_organization_find_no_unreadable_identity(
     Nothing is written."""
     path = tmp_path / "older.db"
     store = SQLiteStore(path)
-    await store.create_identity(Identity(id="i1", organization_id="globex"))
+    identity = Identity(id="i1", organization_id="globex", channel_addresses={"sms": ["+1555"]})
+    await store.create_identity(identity)
     record = _UNREADABLE_RECORDS[2]
     _spoil_the_record(path, record)
+    # A link of an address no row holds, an unlink of the one it holds: a write before
+    # the refusal would show in the rows.
+    address = "+2" if door == "link_address" else "+1555"
     try:
         with pytest.raises(IdentityNotFoundError) as refused:
-            await getattr(store, door)("i1", "sms", "+2", organization_id=organization_id)
+            await getattr(store, door)("i1", "sms", address, organization_id=organization_id)
     finally:
         await store.close()
     assert str(refused.value) == "Identity i1 not found"
     assert refused.value.__context__ is None
-    assert _address_rows(path) == []
+    assert _address_rows(path) == [("+1555", "i1", "globex")]
     conn = sqlite3.connect(path)
     assert conn.execute("SELECT data FROM identities WHERE id = 'i1'").fetchone() == (record,)
     conn.close()
