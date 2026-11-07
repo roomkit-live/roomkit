@@ -678,6 +678,69 @@ class TestDroppedSetSideEffects:
 
         assert (result.cancellation_reason, seen) == (None, [("delivery_stale", ["t1"])])
 
+    async def test_a_set_placed_first_in_an_idle_lane_runs_at_the_close(
+        self, kit: RoomKit, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """RFC §12.10.4 (RMK-1514): hello's off-lock hook makes a deferred
+        call, "first", whose hook gives a task, then, once "first" delivered
+        and its task's write started, "second", placed first in the idle
+        lane. The kit's close starts while that write waits: "second"'s set
+        runs from its placement, delivered within the grace, as the lane
+        drops only what waits behind another place."""
+        reached = asyncio.Event()
+        opened = asyncio.Event()
+        add_task = kit.store.add_task
+
+        async def held_add_task(task: Task) -> Task:
+            if task.id == "tA":
+                reached.set()
+                await opened.wait()
+            return await add_task(task)
+
+        monkeypatch.setattr(kit.store, "add_task", held_add_task)
+        ws1 = SimpleChannel("ws1")
+        kit.register_channel(SimpleChannel("sms1"))
+        kit.register_channel(ws1)
+        await kit.create_room(room_id="r1")
+        await kit.attach_channel("r1", "sms1")
+        await kit.attach_channel("r1", "ws1")
+        made = asyncio.Event()
+
+        def message(body: str) -> InboundMessage:
+            return InboundMessage(
+                channel_id="sms1", sender_id="user1", content=TextContent(body=body)
+            )
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST, name="adopts", needs_lock=False)
+        async def adopts(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            if getattr(event.content, "body", None) == "hello":
+                await kit.process_inbound(message("first"), room_id="r1", defer_delivery=True)
+                await reached.wait()
+                await kit.process_inbound(message("second"), room_id="r1", defer_delivery=True)
+                made.set()
+            return HookResult.allow()
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST, name="triage", priority=1)
+        async def triage(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            if getattr(event.content, "body", None) != "first":
+                return HookResult.allow()
+            return HookResult(action="allow", tasks=[Task(id="tA", room_id="r1", title="A")])
+
+        hello = asyncio.create_task(kit.process_inbound(message("hello"), room_id="r1"))
+        await asyncio.wait_for(made.wait(), 5)
+        close = asyncio.create_task(kit.close())
+        # The close starts, then the task's write goes on.
+        for _ in range(20):
+            await asyncio.sleep(0)
+        opened.set()
+        await asyncio.wait_for(close, 30)
+        await asyncio.wait_for(asyncio.gather(hello, return_exceptions=True), 5)
+
+        assert [getattr(event.content, "body", None) for event in ws1.delivered] == [
+            "first",
+            "second",
+        ]
+
 
 class GatedChannel(SimpleChannel):
     """A transport whose delivery of *held* waits until the test opens it."""
