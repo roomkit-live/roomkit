@@ -1,0 +1,157 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-call-the-close-finds-under-way-returns-kit-closed-while-its-adopted-call-s-stream-is-read",
+  "title": "A call under way as the kit's close starts reads kit_closed, though it returns while the call its hook adopted still reads its answer's stream",
+  "rules": [
+    "§12.10.4",
+    "§9.5.1 Reentrance"
+  ],
+  "notes": "Python: the event's caller returns once its own work is over, the close's cancellation_reason on its result (RMK-1512). Written by the light review of RMK-1512's fix pass: roomkit-rs's early answer, sent before the run's end, dropped kit_closed.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true,
+        "deliver_stream": [
+          {
+            "hold_after": "A1",
+            "hold_gate": "reading"
+          }
+        ]
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "A1"
+            }
+          ]
+        }
+      },
+      {
+        "id": "bot",
+        "type": "ai",
+        "on_event": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "B1"
+                }
+              }
+            ],
+            "gate": "bot-runs"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "bot",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "adopts",
+        "trigger": "before_broadcast",
+        "needs_lock": false,
+        "timeout_ms": 5000,
+        "reactions": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "ws",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "side"
+                  },
+                  "addressed_to": [
+                    "agent"
+                  ]
+                },
+                "defer_delivery": true,
+                "as": "side"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        },
+        "addressed_to": [
+          "bot"
+        ],
+        "delivery_key": "k"
+      },
+      "background": true,
+      "as": "h"
+    },
+    {
+      "wait_for": "bot-runs"
+    },
+    {
+      "call": "close",
+      "background": true,
+      "as": "closing"
+    },
+    {
+      "await": "h",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "content": {
+              "body": "hello"
+            }
+          },
+          "cancellation_reason": "kit_closed"
+        }
+      }
+    },
+    {
+      "open": "reading"
+    },
+    {
+      "await": "closing"
+    }
+  ]
+}

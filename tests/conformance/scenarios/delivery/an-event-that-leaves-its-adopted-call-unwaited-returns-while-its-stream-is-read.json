@@ -1,0 +1,158 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/an-event-that-leaves-its-adopted-call-unwaited-returns-while-its-stream-is-read",
+  "title": "An event whose off-lock hook made a deferred call into its room and left it unwaited returns once delivered, while the answer to that call is still read",
+  "rules": [
+    "§9.5.1 Reentrance",
+    "§10.1"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true,
+        "deliver_stream": [
+          {
+            "hold_after": "A1",
+            "hold_gate": "reading"
+          }
+        ]
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "A1"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "adopts",
+        "trigger": "before_broadcast",
+        "needs_lock": false,
+        "timeout_ms": 5000,
+        "reactions": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "ws",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "side"
+                  }
+                },
+                "defer_delivery": true,
+                "as": "side"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        },
+        "addressed_to": [
+          "ws"
+        ]
+      },
+      "background": true,
+      "as": "h"
+    },
+    {
+      "wait_for": "reading"
+    },
+    {
+      "await": "h",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "content": {
+              "body": "hello"
+            }
+          }
+        }
+      }
+    },
+    {
+      "open": "reading"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "delivery.wait",
+      "of": "side",
+      "expect": {
+        "result": {
+          "response_events": [
+            {
+              "content": {
+                "body": "A1"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "side"
+          }
+        },
+        {
+          "content": {
+            "body": "hello"
+          }
+        },
+        {
+          "content": {
+            "body": "A1"
+          }
+        }
+      ]
+    }
+  }
+}

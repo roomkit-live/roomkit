@@ -1,0 +1,174 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-cancelled-event-returns-cancelled-while-its-adopted-call-s-stream-is-read",
+  "title": "probe P1",
+  "rules": [
+    "§9.5.1 Reentrance",
+    "§10.1"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true,
+        "deliver_stream": [
+          {
+            "hold_after": "A1",
+            "hold_gate": "reading"
+          }
+        ]
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "A1"
+            }
+          ]
+        }
+      },
+      {
+        "id": "bot",
+        "type": "ai",
+        "on_event": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "B1"
+                }
+              }
+            ],
+            "gate": "bot-runs"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "bot",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "adopts",
+        "trigger": "before_broadcast",
+        "needs_lock": false,
+        "timeout_ms": 5000,
+        "reactions": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "ws",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "side"
+                  },
+                  "addressed_to": [
+                    "agent"
+                  ]
+                },
+                "defer_delivery": true,
+                "as": "side"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        },
+        "addressed_to": [
+          "bot"
+        ],
+        "delivery_key": "k"
+      },
+      "background": true,
+      "as": "h"
+    },
+    {
+      "wait_for": "bot-runs"
+    },
+    {
+      "call": "cancel_delivery",
+      "key": "k",
+      "reason": "stopped",
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "await": "h",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "content": {
+              "body": "hello"
+            }
+          },
+          "cancellation_reason": "stopped"
+        }
+      }
+    },
+    {
+      "open": "reading"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "delivery.wait",
+      "of": "side",
+      "expect": {
+        "result": {
+          "response_events": [
+            {
+              "content": {
+                "body": "A1"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
