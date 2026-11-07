@@ -95,6 +95,16 @@ def test_a_tool_round_sends_its_text_and_its_calls_and_no_reasoning() -> None:
     }
 
 
+def test_a_replayed_call_s_arguments_on_the_chat_wire() -> None:
+    """A replayed call's arguments as the chat wire writes them: json.dumps'
+    default form, a space after each separator and every character past
+    ASCII escaped, the keys in their order. roomkit-rs writes the same,
+    under a test of the same name (HITL 9f5e61ba, RMK-1508)."""
+    call = AIToolCallPart(id="c1", name="lookup", arguments={"q": "café", "n": 42})
+    [rendered] = _render(OPENAI_CHAT, AIMessage(role="assistant", content=[call]))
+    assert rendered["tool_calls"][0]["function"]["arguments"] == '{"q": "caf\\u00e9", "n": 42}'
+
+
 def test_a_round_of_reasoning_and_calls_alone_has_no_content() -> None:
     [rendered] = _render(OPENAI_CHAT, _round(_THOUGHT))
     assert rendered["content"] is None
