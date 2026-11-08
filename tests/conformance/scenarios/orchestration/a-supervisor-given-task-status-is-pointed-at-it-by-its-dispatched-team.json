@@ -1,0 +1,133 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-supervisor-given-task-status-is-pointed-at-it-by-its-dispatched-team",
+  "title": "A background team's dispatched answer points the supervisor at task_status when it was given task_status, and names no tool otherwise",
+  "rules": [
+    "§19.7.3",
+    "§23.4"
+  ],
+  "notes": "Python: tests/test_task_status.py::test_the_supervisor_names_task_status_only_to_an_agent_that_has_it; orchestration/strategies/supervisor/_inject_strategy.py _follow_hint (the turn's allowed tool names). Without task_status: orchestration/a-supervisor-s-team-tool-in-the-background-answers-at-once-and-hands-the-results-back.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "delegate_workers",
+                  "arguments": {
+                    "task": "Find the facts."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "On it."
+            },
+            {
+              "text": "Here are the facts."
+            }
+          ]
+        }
+      },
+      {
+        "id": "researcher",
+        "type": "ai",
+        "agent": {
+          "role": "Researcher"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "The facts."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "researcher"
+          ],
+          "strategy": "parallel",
+          "async_delivery": true
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "setup_task_tools",
+      "agent_id": "sup"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Find it."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "sup": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "{\"status\": \"dispatched\", \"workers\": [\"researcher\"], \"message\": \"Workers are running in the background. Use task_status to follow progress. Their combined results will be handed to you when they are done.\"}",
+              "is_error": false
+            }
+          ]
+        },
+        {}
+      ]
+    }
+  }
+}

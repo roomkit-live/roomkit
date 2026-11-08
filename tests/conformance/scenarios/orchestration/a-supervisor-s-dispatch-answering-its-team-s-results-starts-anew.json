@@ -1,0 +1,210 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-supervisor-s-dispatch-answering-its-team-s-results-starts-anew",
+  "title": "The room is freed and the dispatched answer forgotten before the team's results are handed back: the supervisor's dispatch in answer to them runs the team again, dispatched, never the first run's answer served from the room's window",
+  "rules": [
+    "§19.7.3",
+    "§23.3"
+  ],
+  "notes": "Python: tests/orchestration/test_supervisor_text_background.py::test_a_dispatch_answering_an_outcome_starts_anew[team-tool]; tests/orchestration/test_supervisor_background_redispatch.py::test_a_dispatch_answering_results_runs_rather_than_reading_the_last_one; _StrategyToolServer._start_team's _clear (the room freed and its dedup entry evicted before the hand-back).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "delegate_workers",
+                  "arguments": {
+                    "task": "Find the facts."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "On it."
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "delegate_workers",
+                  "arguments": {
+                    "task": "Check them."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Checking."
+            },
+            {
+              "text": "They check out."
+            }
+          ]
+        }
+      },
+      {
+        "id": "researcher",
+        "type": "ai",
+        "agent": {
+          "role": "Researcher"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "The facts."
+            },
+            {
+              "text": "Checked."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "researcher"
+          ],
+          "strategy": "parallel",
+          "async_delivery": true
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Find it."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "status.recent",
+      "agent_id": "orchestration",
+      "expect": {
+        "result": [
+          {
+            "action": "pipeline",
+            "status": "completed",
+            "detail": "1 worker(s) completed"
+          },
+          {
+            "action": "pipeline",
+            "status": "completed",
+            "detail": "1 worker(s) completed"
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "sup": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "{\"status\": \"dispatched\", \"workers\": [\"researcher\"], \"message\": \"Workers are running in the background. Their combined results will be handed to you when they are done.\"}"
+            }
+          ]
+        },
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1"
+            },
+            {
+              "tool_call_id": "c2",
+              "content": "{\"status\": \"dispatched\", \"workers\": [\"researcher\"], \"message\": \"Workers are running in the background. Their combined results will be handed to you when they are done.\"}"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {
+              "role": "user",
+              "text": {
+                "$contains": "<worker_output>\nChecked.\n</worker_output>"
+              }
+            }
+          ]
+        }
+      ],
+      "researcher": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Find the facts."
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Check them."
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

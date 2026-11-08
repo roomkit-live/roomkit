@@ -1,0 +1,122 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/an-async-auto-delegating-supervisor-without-a-voice-channel-delegates-nothing",
+  "title": "A Supervisor with auto_delegate and async_delivery serves a realtime voice session: in a kit with no realtime voice channel the supervisor is not attached to the room, no router asks for it, and a message reaches no agent",
+  "rules": [
+    "§19.7.3"
+  ],
+  "notes": "Python: tests/test_supervisor.py TestSupervisorConstructor::test_agents_empty_in_voice_auto_delegate_async_delivery, TestSupervisorInstall::test_no_router_hook_in_voice_auto_delegate_async_delivery; orchestration/strategies/supervisor/core.py agents (none in voice auto-delegation), install (no router), orchestration/_installs.py set_up_for_voice_room (no realtime channel: a warning, nothing set up).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Never."
+            }
+          ]
+        }
+      },
+      {
+        "id": "researcher",
+        "type": "ai",
+        "agent": {
+          "role": "Researcher"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Never."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "researcher"
+          ],
+          "strategy": "parallel",
+          "auto_delegate": true,
+          "async_delivery": true
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Find it."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "sms"
+          },
+          "content": {
+            "type": "text",
+            "body": "Find it."
+          }
+        }
+      ]
+    },
+    "bindings": {
+      "r1": {
+        "sup": null
+      }
+    },
+    "models": {
+      "sup": [],
+      "researcher": []
+    }
+  }
+}
