@@ -100,6 +100,7 @@ async def _turn(
     tools: list[AITool] = (SHELL, SHELL_CLOSED),  # type: ignore[assignment]
     intents: bool = True,
     required: bool = False,
+    only: list[str] | None = None,
     deny: bool = False,
     failing: bool = False,
 ) -> _Seen:
@@ -125,6 +126,7 @@ async def _turn(
             tool_handler=handler,
             tool_call_intents=intents,
             tool_call_intents_required=required,
+            tool_call_intents_only=only,
         )
     )
     await kit.create_room(room_id="r1")
@@ -220,6 +222,26 @@ async def test_a_required_intent_is_asked_and_a_call_without_one_still_runs(
     assert SHELL.parameters["required"] == ["command"]
     assert seen.received == [("shell", COMMAND), ("shell", COMMAND)]
     assert [e.intent for e in seen.before] == [INTENT, None]
+
+
+async def test_only_the_tools_named_ask_for_an_intent(streaming: bool) -> None:
+    """``tool_call_intents_only`` shows the property, required or not, on the
+    tools it names alone; a call to another that carries it anyway runs, its
+    intent taken out before its closed schema reads it."""
+    seen = await _turn(
+        streaming,
+        _calling(("c1", "shell_closed", _with(INTENT))),
+        required=True,
+        only=["shell"],
+    )
+
+    tools = {t.name: t.parameters for t in seen.provider.calls[0].tools}
+    assert "_roomkit_intent" in tools["shell"]["properties"]
+    assert tools["shell"]["required"] == ["command", "_roomkit_intent"]
+    assert "_roomkit_intent" not in tools["shell_closed"]["properties"]
+    assert tools["shell_closed"]["required"] == ["command"]
+    assert seen.received == [("shell_closed", COMMAND)]
+    assert [e.intent for e in seen.before] == [INTENT]
 
 
 async def test_a_requirement_without_intents_changes_no_schema(streaming: bool) -> None:

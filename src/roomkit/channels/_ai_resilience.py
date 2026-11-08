@@ -131,6 +131,7 @@ class AIResilienceMixin(_AIChannelContract):
     _memory: MemoryProvider
     _tool_call_intents: bool
     _tool_call_intents_required: bool
+    _tool_call_intents_only: frozenset[str] | None
     channel_id: str
 
     async def _generate_stream_with_retry(
@@ -280,13 +281,18 @@ class AIResilienceMixin(_AIChannelContract):
 
     def _shown_to_model(self, context: AIContext) -> AIContext:
         """*context* as the request shows it: with ``tool_call_intents`` on,
-        each tool's schema with the reserved intent property (RFC §6.4),
-        listed as required with ``tool_call_intents_required``. A copy: the
+        each tool's schema, or those ``tool_call_intents_only`` names, with
+        the reserved intent property (RFC §6.4), listed as required with
+        ``tool_call_intents_required``. A copy: the
         turn's own tools, which its calls are checked against, stay as their
         tools declared them; the messages are the same list."""
         if not self._tool_call_intents or not context.tools:
             return context
-        shown = presented_tools(context.tools, required=self._tool_call_intents_required)
+        shown = presented_tools(
+            context.tools,
+            required=self._tool_call_intents_required,
+            only=self._tool_call_intents_only,
+        )
         return context.model_copy(update={"tools": shown})
 
     @staticmethod

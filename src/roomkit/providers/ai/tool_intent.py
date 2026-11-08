@@ -2,7 +2,8 @@
 the person what the call does (RFC §6.4).
 
 An agent with ``tool_call_intents`` on shows the model each of its tools'
-schemas with one property more, :data:`INTENT_PROPERTY`, optional unless
+schemas, or those ``tool_call_intents_only`` names, with one property more,
+:data:`INTENT_PROPERTY`, optional unless
 ``tool_call_intents_required`` lists it as required. The tool
 loop takes that property out of a call's arguments before anything reads
 them, and carries its value, normalized, as the call's ``intent``: the tool
@@ -18,7 +19,7 @@ from __future__ import annotations
 
 import logging
 import unicodedata
-from collections.abc import Container, Iterable
+from collections.abc import Collection, Container, Iterable
 from functools import cache
 from typing import Any
 
@@ -63,12 +64,22 @@ def normalized_intent(value: Any) -> str | None:
     return text[:INTENT_MAX_CHARS].rstrip() or None
 
 
-def presented_tools(tools: list[AITool], *, required: bool = False) -> list[AITool]:
+def presented_tools(
+    tools: list[AITool],
+    *,
+    required: bool = False,
+    only: Collection[str] | None = None,
+) -> list[AITool]:
     """*tools* as an agent with intents shows them to its model: each schema
     with the reserved property, listed in its ``required`` when *required*;
-    one that cannot take it as it is. Required or not, a call that carries no
-    intent runs: the requirement asks the model, it refuses no call."""
-    return [_presented(tool, required) for tool in tools]
+    one that cannot take it as it is. With *only*, the tools it does not name
+    are shown as they are: their calls speak for themselves. Required or not,
+    a call that carries no intent runs: the requirement asks the model, it
+    refuses no call."""
+    return [
+        tool if only is not None and tool.name not in only else _presented(tool, required)
+        for tool in tools
+    ]
 
 
 def _presented(tool: AITool, required: bool) -> AITool:

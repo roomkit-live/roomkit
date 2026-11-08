@@ -184,6 +184,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **An agent can ask for a call's intent on some tools only** (RFC §6.4).
+  `AIChannel(tool_call_intents_only=[...])` shows the reserved `_roomkit_intent`
+  property on the tools it names and leaves the others' schemas as they are, for
+  a host whose other tools speak for themselves: it costs every request nearly
+  200 characters per tool. A call that carries the property anyway still has it
+  taken out. `None`, the default, asks every tool as before.
+
 - **A turn's history is compacted between two of its tool rounds** (RFC §6.4, §20.1, HITL
   cb3751f9, RMK-1533). A memory was read at a turn's start only, so a long tool turn
   passed its compaction threshold and fell back on the emergency compaction once the

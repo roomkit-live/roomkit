@@ -218,6 +218,7 @@ class AIChannel(
         steer_room_turns: bool = False,
         tool_call_intents: bool = False,
         tool_call_intents_required: bool = False,
+        tool_call_intents_only: list[str] | None = None,
     ) -> None:
         super().__init__(channel_id)
         # Whether the agent speaks on an event (RFC §6.4): none, it answers every one.
@@ -307,6 +308,7 @@ class AIChannel(
             human_input_handler,
             tool_call_intents,
             tool_call_intents_required,
+            tool_call_intents_only,
         )
 
         # Active tool loops for steering (loop_id -> context)
@@ -412,13 +414,18 @@ class AIChannel(
         human_input_handler: HumanInputToolHandler | None,
         tool_call_intents: bool,
         tool_call_intents_required: bool,
+        tool_call_intents_only: list[str] | None,
     ) -> None:
         """The tools this channel declares and the handlers that serve them."""
         # Whether its model writes each call's intent, for the person, in a
         # property its tools' schemas are shown with (RFC §6.4), and whether
         # those schemas list it as required: a call without one still runs.
+        # With a list of names, only those tools ask for it; None asks all.
         self._tool_call_intents = tool_call_intents
         self._tool_call_intents_required = tool_call_intents_required
+        self._tool_call_intents_only = (
+            None if tool_call_intents_only is None else frozenset(tool_call_intents_only)
+        )
         # The person's tools, which the channel serves itself, before the
         # host's handler, under their own timeout (RFC §9.3, §21.6).
         self._human_input = ChannelHumanInput(human_input_handler, self.channel_type)
