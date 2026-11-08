@@ -1,0 +1,260 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/an-auto-delegating-supervisor-whose-worker-raises-after-a-streamed-first-pass-fails-its-generation",
+  "title": "An auto-delegating Supervisor whose worker raises (its channel no longer registered) once its streamed first pass handed on a task fails its turn as a raised one: ON_ERROR once, generation, with no correlation id; the supervisor's delivery failed, reported and recorded on the message; the caller reads the error; no second pass runs",
+  "rules": [
+    "§19.7.3",
+    "§9.2",
+    "§5.13",
+    "§10.1"
+  ],
+  "notes": "Python: orchestration/strategies/supervisor/delegate.py _two_pass_delegate (_run_workers raises within the supervisor's on_event), core/mixins/delegation.py delegate (ChannelNotRegisteredError), core/mixins/lane_execution.py (the root pass's failed delivery, _record_failed_deliveries). RMK-1287.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "text": "Acme"
+            },
+            {
+              "text": "Never."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "look up",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found"
+          }
+        ]
+      },
+      {
+        "id": "analyst",
+        "type": "ai",
+        "agent": {
+          "role": "Analyst"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Numbers."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "analyst"
+          ],
+          "strategy": "parallel",
+          "auto_delegate": true
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "errors",
+        "trigger": "on_error",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "unregister_channel",
+      "channel_id": "analyst"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Look into Acme."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "analyst"
+          },
+          "delivery_results": {
+            "sup": {
+              "channel_id": "sup",
+              "status": "failed",
+              "error": {
+                "code": "ChannelNotRegisteredError",
+                "message": {
+                  "$contains": "analyst"
+                },
+                "retryable": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "sms"
+          },
+          "delivery_results": {
+            "sup": {
+              "status": "failed",
+              "error": {
+                "code": "ChannelNotRegisteredError"
+              }
+            }
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "source": {
+            "channel_id": "sup"
+          },
+          "content": {
+            "tool_id": "c1"
+          },
+          "chain_depth": 1,
+          "responds_to": "r1#0",
+          "correlation_id": {
+            "$as": "first"
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "source": {
+            "channel_id": "sup"
+          },
+          "content": {
+            "tool_id": "c1"
+          },
+          "chain_depth": 1,
+          "responds_to": "r1#0",
+          "correlation_id": {
+            "$as": "first"
+          }
+        }
+      ]
+    },
+    "models": {
+      "sup": [
+        "$any",
+        "$any"
+      ]
+    },
+    "hooks": {
+      "errors": [
+        {
+          "trigger": "on_error",
+          "room_id": "r1",
+          "event": {
+            "type": "message",
+            "source": {
+              "channel_id": "sup",
+              "direction": "inbound"
+            },
+            "content": {
+              "body": {
+                "$contains": "analyst"
+              }
+            },
+            "chain_depth": 1,
+            "responds_to": "r1#0",
+            "correlation_id": {
+              "$absent": true
+            },
+            "metadata": {
+              "error_category": "generation"
+            }
+          }
+        }
+      ]
+    },
+    "framework_events": {
+      "r1": [
+        "room_channel_attached",
+        {
+          "$unordered": [
+            {
+              "event": "broadcast_partial_failure",
+              "event_id": "r1#0",
+              "failed": 1,
+              "total": 1,
+              "errors": {
+                "sup": {
+                  "$contains": "analyst"
+                }
+              }
+            },
+            {
+              "event": "delivery_failed",
+              "event_id": "r1#0",
+              "channel_id": "sup",
+              "error": {
+                "$contains": "analyst"
+              }
+            },
+            {
+              "event": "event_processed",
+              "event_id": "r1#0"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

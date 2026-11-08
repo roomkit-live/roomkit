@@ -1,0 +1,230 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/an-auto-delegating-supervisor-s-two-passes-carry-a-correlation-id-each",
+  "title": "An auto-delegating Supervisor's first pass and its answer from the workers' results are two turns: the first pass's tool rows carry one correlation id, the second pass's rows and its answer another",
+  "rules": [
+    "§19.7.3",
+    "§10.6.1",
+    "§9.2"
+  ],
+  "notes": "Python: orchestration/strategies/supervisor/delegate.py _pass1_task (a correlation id of its own for the rows persist_tool_calls stores), _two_pass_delegate (the second pass is the room turn's stream, read with the kit's correlation id). RMK-1287.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "text": "Acme"
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "text": "Acme, in short."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "look up",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found"
+          }
+        ]
+      },
+      {
+        "id": "analyst",
+        "type": "ai",
+        "agent": {
+          "role": "Analyst"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Numbers."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "analyst"
+          ],
+          "strategy": "parallel",
+          "auto_delegate": true
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "errors",
+        "trigger": "on_error",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Look into Acme."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "sms"
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "source": {
+            "channel_id": "sup"
+          },
+          "content": {
+            "tool_id": "c1"
+          },
+          "chain_depth": 1,
+          "responds_to": "r1#0",
+          "correlation_id": {
+            "$as": "first"
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "source": {
+            "channel_id": "sup"
+          },
+          "content": {
+            "tool_id": "c1",
+            "outcome": "served"
+          },
+          "chain_depth": 1,
+          "responds_to": "r1#0",
+          "correlation_id": {
+            "$as": "first"
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "source": {
+            "channel_id": "sup"
+          },
+          "content": {
+            "tool_id": "c2"
+          },
+          "chain_depth": 1,
+          "responds_to": "r1#0",
+          "correlation_id": {
+            "$as": "second"
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "source": {
+            "channel_id": "sup"
+          },
+          "content": {
+            "tool_id": "c2",
+            "outcome": "served"
+          },
+          "chain_depth": 1,
+          "responds_to": "r1#0",
+          "correlation_id": {
+            "$as": "second"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "sup"
+          },
+          "content": {
+            "type": "text",
+            "body": "Acme, in short."
+          },
+          "chain_depth": 1,
+          "responds_to": "r1#0",
+          "correlation_id": {
+            "$as": "second"
+          }
+        }
+      ]
+    },
+    "models": {
+      "analyst": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Acme"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

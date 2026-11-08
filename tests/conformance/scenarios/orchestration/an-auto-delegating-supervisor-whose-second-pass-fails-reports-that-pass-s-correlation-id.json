@@ -1,0 +1,231 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/an-auto-delegating-supervisor-whose-second-pass-fails-reports-that-pass-s-correlation-id",
+  "title": "The second pass of an auto-delegating Supervisor that fails after a tool round fires ON_ERROR once, as a streamed turn's, with the correlation id of the rows that pass wrote, not the first pass's",
+  "rules": [
+    "§19.7.3",
+    "§9.2"
+  ],
+  "notes": "Python: orchestration/strategies/supervisor/delegate.py _two_pass_delegate (the second pass is the room turn's stream), core/mixins/inbound_streaming.py _report_stream_failure (the stream's correlation id). RMK-1287.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "text": "Acme"
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "fails": "boom"
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "look up",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found"
+          }
+        ]
+      },
+      {
+        "id": "analyst",
+        "type": "ai",
+        "agent": {
+          "role": "Analyst"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Numbers."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "analyst"
+          ],
+          "strategy": "parallel",
+          "auto_delegate": true
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "errors",
+        "trigger": "on_error",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Look into Acme."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "boom"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "sms"
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "source": {
+            "channel_id": "sup"
+          },
+          "content": {
+            "tool_id": "c1"
+          },
+          "chain_depth": 1,
+          "responds_to": "r1#0",
+          "correlation_id": {
+            "$as": "first"
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "source": {
+            "channel_id": "sup"
+          },
+          "content": {
+            "tool_id": "c1"
+          },
+          "chain_depth": 1,
+          "responds_to": "r1#0",
+          "correlation_id": {
+            "$as": "first"
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "source": {
+            "channel_id": "sup"
+          },
+          "content": {
+            "tool_id": "c2"
+          },
+          "chain_depth": 1,
+          "responds_to": "r1#0",
+          "correlation_id": {
+            "$as": "second"
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "source": {
+            "channel_id": "sup"
+          },
+          "content": {
+            "tool_id": "c2"
+          },
+          "chain_depth": 1,
+          "responds_to": "r1#0",
+          "correlation_id": {
+            "$as": "second"
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "errors": [
+        {
+          "trigger": "on_error",
+          "room_id": "r1",
+          "event": {
+            "type": "message",
+            "source": {
+              "channel_id": "sup",
+              "direction": "inbound"
+            },
+            "content": {
+              "body": {
+                "$contains": "boom"
+              }
+            },
+            "chain_depth": 1,
+            "responds_to": "r1#0",
+            "correlation_id": {
+              "$as": "second"
+            },
+            "metadata": {
+              "error_category": "streaming"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
