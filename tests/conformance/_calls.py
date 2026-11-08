@@ -33,6 +33,7 @@ from roomkit.core.exceptions import (
 from roomkit.models.delivery import DeliveryOutcome, DeliveryStatus, InboundMessage, InboundResult
 from roomkit.models.enums import (
     Access,
+    AgentResponsePolicy,
     ChannelCategory,
     ChannelType,
     EventDirection,
@@ -375,6 +376,18 @@ async def _check_timers(kit: RoomKit, harness: Harness, spec: Mapping[str, Any])
     return await kit.check_room_timers(spec["room_id"], **_org(spec))
 
 
+async def _set_room_timers(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
+    timers = read(lambda: RoomTimers.model_validate(spec["timers"]))
+    return await kit.set_room_timers(spec["room_id"], timers, **_org(spec))
+
+
+async def _set_agent_response_policy(
+    kit: RoomKit, harness: Harness, spec: Mapping[str, Any]
+) -> Any:
+    policy = read(lambda: AgentResponsePolicy(spec["policy"]))
+    return await kit.set_agent_response_policy(spec["room_id"], policy, **_org(spec))
+
+
 async def _register_channel(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
     register_channel(kit, harness, spec["channel"])
 
@@ -535,6 +548,8 @@ CALLS: dict[str, Call] = {
     "regenerate_target": _regenerate_target,
     "archive_room": _archive_room,
     "check_timers": _check_timers,
+    "set_room_timers": _set_room_timers,
+    "set_agent_response_policy": _set_agent_response_policy,
     "register_channel": _register_channel,
     "unregister_channel": _unregister_channel,
     "register_hook": _register_hook,

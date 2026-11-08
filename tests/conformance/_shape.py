@@ -73,8 +73,10 @@ KIT = {
     "orchestration",
     "delivery_gap_timeout_ms",
     "lock_manager",
+    "inbound_rate_limit",
 }
 LOCK_MANAGER = {"release_error"}
+RATE_LIMIT = {"max_per_second", "max_per_minute", "max_per_hour"}
 DELIVERY_BACKEND = {
     "retry_delay_ms",
     "max_retry_delay_ms",
@@ -396,6 +398,8 @@ CALLS: dict[str, set[str]] = {
     "send_greeting": {"room_id", "channel_id", "agent_id", "greeting"},
     "archive_room": {"room_id"},
     "check_timers": {"room_id"},
+    "set_room_timers": {"room_id", "timers"},
+    "set_agent_response_policy": {"room_id", "policy"},
     "register_channel": {"channel"},
     "unregister_channel": {"channel_id"},
     "register_hook": {"hook"},
@@ -446,6 +450,9 @@ def unknown_members(scenario: Mapping[str, Any]) -> list[str]:
         _members(backend, DELIVERY_BACKEND, "setup.kit.delivery_backend", found)
     if "lock_manager" in setup.get("kit", {}):
         _members(setup["kit"]["lock_manager"], LOCK_MANAGER, "setup.kit.lock_manager", found)
+    if "inbound_rate_limit" in setup.get("kit", {}):
+        limit = setup["kit"]["inbound_rate_limit"]
+        _members(limit, RATE_LIMIT, "setup.kit.inbound_rate_limit", found)
     readers = {"media_resolver": MEDIA_RESOLVER, "attached_media": ATTACHED_MEDIA}
     for reader, members in readers.items():
         if reader in setup.get("kit", {}):

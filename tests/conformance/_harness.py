@@ -16,7 +16,7 @@ from typing import Any
 from pydantic_core import to_jsonable_python
 
 from roomkit import RoomKit, ThinkingEvent, current_turn_host
-from roomkit.models.channel import ChannelBinding
+from roomkit.models.channel import ChannelBinding, RateLimit
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import DeliveryHandle, DeliveryStatus
 from roomkit.models.event import RoomEvent
@@ -208,6 +208,8 @@ class Harness:
             kwargs["max_chain_depth"] = kit_setup["max_chain_depth"]
         if "process_timeout_ms" in kit_setup:
             kwargs["process_timeout"] = kit_setup["process_timeout_ms"] / 1000
+        if "inbound_rate_limit" in kit_setup:
+            kwargs["inbound_rate_limit"] = RateLimit(**kit_setup["inbound_rate_limit"])
         if store is not None:
             kwargs["store"] = store
         if "router" in kit_setup:
