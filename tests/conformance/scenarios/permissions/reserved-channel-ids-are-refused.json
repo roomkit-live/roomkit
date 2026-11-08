@@ -1,7 +1,7 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "permissions/reserved-channel-ids-are-refused",
-  "title": "A channel whose id is a visibility keyword, or holds a comma, is refused when it is registered",
+  "title": "Visibility keywords, commas, empty ids and surrounding whitespace are refused as channel ids",
   "rules": [
     "§7.3",
     "§7.3 Grammar"
@@ -11,6 +11,28 @@
       "call": "register_channel",
       "channel": {
         "id": "all",
+        "type": "websocket",
+        "category": "transport"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "register_channel",
+      "channel": {
+        "id": "none",
+        "type": "websocket",
+        "category": "transport"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "register_channel",
+      "channel": {
+        "id": "internal",
         "type": "websocket",
         "category": "transport"
       },
@@ -32,7 +54,73 @@
     {
       "call": "register_channel",
       "channel": {
+        "id": "intelligence",
+        "type": "websocket",
+        "category": "transport"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "register_channel",
+      "channel": {
         "id": "sms,ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "register_channel",
+      "channel": {
+        "id": " ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "register_channel",
+      "channel": {
+        "id": "ws ",
+        "type": "websocket",
+        "category": "transport"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "register_channel",
+      "channel": {
+        "id": "\tws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "register_channel",
+      "channel": {
+        "id": "ws\n",
+        "type": "websocket",
+        "category": "transport"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "register_channel",
+      "channel": {
+        "id": "",
         "type": "websocket",
         "category": "transport"
       },

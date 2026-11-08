@@ -1,0 +1,218 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "permissions/an-agent-recalls-accepted-whispers-but-not-refused-answers",
+  "title": "An agent retains its own accepted whisper but a refused answer never enters its next model context",
+  "rules": [
+    "§7.3",
+    "§7.5 rule 8"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "source",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "text": "WHISPER"
+            },
+            {
+              "text": "REFUSED"
+            },
+            {
+              "text": "END"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "source"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "visibility": "source"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "first"
+        }
+      }
+    },
+    {
+      "call": "set_access",
+      "room_id": "room-1",
+      "channel_id": "agent",
+      "access": "read_only"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "second"
+        }
+      }
+    },
+    {
+      "call": "set_access",
+      "room_id": "room-1",
+      "channel_id": "agent",
+      "access": "read_write"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "third"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "first"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "first"
+            },
+            {
+              "role": "assistant",
+              "text": "WHISPER"
+            },
+            {
+              "role": "user",
+              "text": "second"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "first"
+            },
+            {
+              "role": "assistant",
+              "text": "WHISPER"
+            },
+            {
+              "role": "user",
+              "text": "second"
+            },
+            {
+              "role": "user",
+              "text": "third"
+            }
+          ]
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "first"
+          },
+          "visibility": "all"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "WHISPER"
+          },
+          "visibility": "source",
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "second"
+          },
+          "visibility": "all"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "REFUSED"
+          },
+          "visibility": "source",
+          "status": "blocked"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "third"
+          },
+          "visibility": "all"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "END"
+          },
+          "visibility": "source",
+          "status": "delivered"
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "source": [
+          {
+            "content": {
+              "type": "text",
+              "body": "WHISPER"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "END"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,1681 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "permissions/visibility-intersections-on-inbound-and-injection",
+  "title": "Committed visibility intersects event and binding scopes for inbound messages and direct injections, including empty and unknown-id intersections",
+  "rules": [
+    "§7.3",
+    "§7.5 rule 8"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "source",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ws1",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ws2",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ai1",
+        "type": "ai",
+        "category": "intelligence"
+      },
+      {
+        "id": "ai2",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "case-0",
+        "bindings": [
+          {
+            "channel_id": "source",
+            "visibility": "all"
+          },
+          {
+            "channel_id": "ws1"
+          },
+          {
+            "channel_id": "ws2"
+          },
+          {
+            "channel_id": "ai1",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "ai2",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "case-1",
+        "bindings": [
+          {
+            "channel_id": "source",
+            "visibility": "ws1"
+          },
+          {
+            "channel_id": "ws1"
+          },
+          {
+            "channel_id": "ws2"
+          },
+          {
+            "channel_id": "ai1",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "ai2",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "case-2",
+        "bindings": [
+          {
+            "channel_id": "source",
+            "visibility": "all"
+          },
+          {
+            "channel_id": "ws1"
+          },
+          {
+            "channel_id": "ws2"
+          },
+          {
+            "channel_id": "ai1",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "ai2",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "case-3",
+        "bindings": [
+          {
+            "channel_id": "source",
+            "visibility": "none"
+          },
+          {
+            "channel_id": "ws1"
+          },
+          {
+            "channel_id": "ws2"
+          },
+          {
+            "channel_id": "ai1",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "ai2",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "case-4",
+        "bindings": [
+          {
+            "channel_id": "source",
+            "visibility": "transport"
+          },
+          {
+            "channel_id": "ws1"
+          },
+          {
+            "channel_id": "ws2"
+          },
+          {
+            "channel_id": "ai1",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "ai2",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "case-5",
+        "bindings": [
+          {
+            "channel_id": "source",
+            "visibility": "intelligence"
+          },
+          {
+            "channel_id": "ws1"
+          },
+          {
+            "channel_id": "ws2"
+          },
+          {
+            "channel_id": "ai1",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "ai2",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "case-6",
+        "bindings": [
+          {
+            "channel_id": "source",
+            "visibility": "transport"
+          },
+          {
+            "channel_id": "ws1"
+          },
+          {
+            "channel_id": "ws2"
+          },
+          {
+            "channel_id": "ai1",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "ai2",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "case-7",
+        "bindings": [
+          {
+            "channel_id": "source",
+            "visibility": "intelligence"
+          },
+          {
+            "channel_id": "ws1"
+          },
+          {
+            "channel_id": "ws2"
+          },
+          {
+            "channel_id": "ai1",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "ai2",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "case-8",
+        "bindings": [
+          {
+            "channel_id": "source",
+            "visibility": "ws1,ws2"
+          },
+          {
+            "channel_id": "ws1"
+          },
+          {
+            "channel_id": "ws2"
+          },
+          {
+            "channel_id": "ai1",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "ai2",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "case-9",
+        "bindings": [
+          {
+            "channel_id": "source",
+            "visibility": "ws1"
+          },
+          {
+            "channel_id": "ws1"
+          },
+          {
+            "channel_id": "ws2"
+          },
+          {
+            "channel_id": "ai1",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "ai2",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "case-10",
+        "bindings": [
+          {
+            "channel_id": "source",
+            "visibility": "transport"
+          },
+          {
+            "channel_id": "ws1"
+          },
+          {
+            "channel_id": "ws2"
+          },
+          {
+            "channel_id": "ai1",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "ai2",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "case-11",
+        "bindings": [
+          {
+            "channel_id": "source",
+            "visibility": "ai1,missing,ws2"
+          },
+          {
+            "channel_id": "ws1"
+          },
+          {
+            "channel_id": "ws2"
+          },
+          {
+            "channel_id": "ai1",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "ai2",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "case-12",
+        "bindings": [
+          {
+            "channel_id": "source",
+            "visibility": "intelligence"
+          },
+          {
+            "channel_id": "ws1"
+          },
+          {
+            "channel_id": "ws2"
+          },
+          {
+            "channel_id": "ai1",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "ai2",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "case-13",
+        "bindings": [
+          {
+            "channel_id": "source",
+            "visibility": "ai1,missing,ws2"
+          },
+          {
+            "channel_id": "ws1"
+          },
+          {
+            "channel_id": "ws2"
+          },
+          {
+            "channel_id": "ai1",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "ai2",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "case-14",
+        "bindings": [
+          {
+            "channel_id": "source",
+            "visibility": "transport"
+          },
+          {
+            "channel_id": "ws1"
+          },
+          {
+            "channel_id": "ws2"
+          },
+          {
+            "channel_id": "ai1",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "ai2",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "case-15",
+        "bindings": [
+          {
+            "channel_id": "source",
+            "visibility": "missing"
+          },
+          {
+            "channel_id": "ws1"
+          },
+          {
+            "channel_id": "ws2"
+          },
+          {
+            "channel_id": "ai1",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "ai2",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "case-16",
+        "bindings": [
+          {
+            "channel_id": "source",
+            "visibility": "missing,ws1"
+          },
+          {
+            "channel_id": "ws1"
+          },
+          {
+            "channel_id": "ws2"
+          },
+          {
+            "channel_id": "ai1",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "ai2",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "case-17",
+        "bindings": [
+          {
+            "channel_id": "source",
+            "visibility": "all"
+          },
+          {
+            "channel_id": "ws1"
+          },
+          {
+            "channel_id": "ws2"
+          },
+          {
+            "channel_id": "ai1",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "ai2",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "case-18",
+        "bindings": [
+          {
+            "channel_id": "source",
+            "visibility": "none"
+          },
+          {
+            "channel_id": "ws1"
+          },
+          {
+            "channel_id": "ws2"
+          },
+          {
+            "channel_id": "ai1",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "ai2",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "case-19",
+        "bindings": [
+          {
+            "channel_id": "source",
+            "visibility": "intelligence"
+          },
+          {
+            "channel_id": "ws1"
+          },
+          {
+            "channel_id": "ws2"
+          },
+          {
+            "channel_id": "ai1",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "ai2",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "case-0",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "inbound"
+        },
+        "visibility": "ws1"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "case-0",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "injection"
+      },
+      "visibility": "ws1"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "case-1",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "inbound"
+        },
+        "visibility": "all"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "case-1",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "injection"
+      },
+      "visibility": "all"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "case-2",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "inbound"
+        },
+        "visibility": "none"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "case-2",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "injection"
+      },
+      "visibility": "none"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "case-3",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "inbound"
+        },
+        "visibility": "all"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "case-3",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "injection"
+      },
+      "visibility": "all"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "case-4",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "inbound"
+        },
+        "visibility": "transport"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "case-4",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "injection"
+      },
+      "visibility": "transport"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "case-5",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "inbound"
+        },
+        "visibility": "intelligence"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "case-5",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "injection"
+      },
+      "visibility": "intelligence"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "case-6",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "inbound"
+        },
+        "visibility": "intelligence"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "case-6",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "injection"
+      },
+      "visibility": "intelligence"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "case-7",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "inbound"
+        },
+        "visibility": "transport"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "case-7",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "injection"
+      },
+      "visibility": "transport"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "case-8",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "inbound"
+        },
+        "visibility": "ai1,ws2"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "case-8",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "injection"
+      },
+      "visibility": "ai1,ws2"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "case-9",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "inbound"
+        },
+        "visibility": "ws2"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "case-9",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "injection"
+      },
+      "visibility": "ws2"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "case-10",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "inbound"
+        },
+        "visibility": "ai1,missing,ws2"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "case-10",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "injection"
+      },
+      "visibility": "ai1,missing,ws2"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "case-11",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "inbound"
+        },
+        "visibility": "transport"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "case-11",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "injection"
+      },
+      "visibility": "transport"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "case-12",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "inbound"
+        },
+        "visibility": "ai1,missing,ws2"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "case-12",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "injection"
+      },
+      "visibility": "ai1,missing,ws2"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "case-13",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "inbound"
+        },
+        "visibility": "intelligence"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "case-13",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "injection"
+      },
+      "visibility": "intelligence"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "case-14",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "inbound"
+        },
+        "visibility": "missing"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "case-14",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "injection"
+      },
+      "visibility": "missing"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "case-15",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "inbound"
+        },
+        "visibility": "intelligence"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "case-15",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "injection"
+      },
+      "visibility": "intelligence"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "case-16",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "inbound"
+        },
+        "visibility": "missing,ws2"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "case-16",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "injection"
+      },
+      "visibility": "missing,ws2"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "case-17",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "inbound"
+        },
+        "visibility": "missing"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "case-17",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "injection"
+      },
+      "visibility": "missing"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "case-18",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "inbound"
+        },
+        "visibility": "ws1"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "case-18",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "injection"
+      },
+      "visibility": "ws1"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "case-19",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "inbound"
+        },
+        "visibility": "none"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "case-19",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "injection"
+      },
+      "visibility": "none"
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "case-0": [
+        {
+          "content": {
+            "type": "text",
+            "body": "inbound"
+          },
+          "visibility": "ws1",
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "injection"
+          },
+          "visibility": "ws1",
+          "status": "delivered"
+        }
+      ],
+      "case-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "inbound"
+          },
+          "visibility": "ws1",
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "injection"
+          },
+          "visibility": "ws1",
+          "status": "delivered"
+        }
+      ],
+      "case-2": [
+        {
+          "content": {
+            "type": "text",
+            "body": "inbound"
+          },
+          "visibility": "none",
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "injection"
+          },
+          "visibility": "none",
+          "status": "delivered"
+        }
+      ],
+      "case-3": [
+        {
+          "content": {
+            "type": "text",
+            "body": "inbound"
+          },
+          "visibility": "none",
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "injection"
+          },
+          "visibility": "none",
+          "status": "delivered"
+        }
+      ],
+      "case-4": [
+        {
+          "content": {
+            "type": "text",
+            "body": "inbound"
+          },
+          "visibility": "transport",
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "injection"
+          },
+          "visibility": "transport",
+          "status": "delivered"
+        }
+      ],
+      "case-5": [
+        {
+          "content": {
+            "type": "text",
+            "body": "inbound"
+          },
+          "visibility": "intelligence",
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "injection"
+          },
+          "visibility": "intelligence",
+          "status": "delivered"
+        }
+      ],
+      "case-6": [
+        {
+          "content": {
+            "type": "text",
+            "body": "inbound"
+          },
+          "visibility": "none",
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "injection"
+          },
+          "visibility": "none",
+          "status": "delivered"
+        }
+      ],
+      "case-7": [
+        {
+          "content": {
+            "type": "text",
+            "body": "inbound"
+          },
+          "visibility": "none",
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "injection"
+          },
+          "visibility": "none",
+          "status": "delivered"
+        }
+      ],
+      "case-8": [
+        {
+          "content": {
+            "type": "text",
+            "body": "inbound"
+          },
+          "visibility": "ws2",
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "injection"
+          },
+          "visibility": "ws2",
+          "status": "delivered"
+        }
+      ],
+      "case-9": [
+        {
+          "content": {
+            "type": "text",
+            "body": "inbound"
+          },
+          "visibility": "none",
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "injection"
+          },
+          "visibility": "none",
+          "status": "delivered"
+        }
+      ],
+      "case-10": [
+        {
+          "content": {
+            "type": "text",
+            "body": "inbound"
+          },
+          "visibility": "ws2",
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "injection"
+          },
+          "visibility": "ws2",
+          "status": "delivered"
+        }
+      ],
+      "case-11": [
+        {
+          "content": {
+            "type": "text",
+            "body": "inbound"
+          },
+          "visibility": "ws2",
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "injection"
+          },
+          "visibility": "ws2",
+          "status": "delivered"
+        }
+      ],
+      "case-12": [
+        {
+          "content": {
+            "type": "text",
+            "body": "inbound"
+          },
+          "visibility": "ai1",
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "injection"
+          },
+          "visibility": "ai1",
+          "status": "delivered"
+        }
+      ],
+      "case-13": [
+        {
+          "content": {
+            "type": "text",
+            "body": "inbound"
+          },
+          "visibility": "ai1",
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "injection"
+          },
+          "visibility": "ai1",
+          "status": "delivered"
+        }
+      ],
+      "case-14": [
+        {
+          "content": {
+            "type": "text",
+            "body": "inbound"
+          },
+          "visibility": "none",
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "injection"
+          },
+          "visibility": "none",
+          "status": "delivered"
+        }
+      ],
+      "case-15": [
+        {
+          "content": {
+            "type": "text",
+            "body": "inbound"
+          },
+          "visibility": "none",
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "injection"
+          },
+          "visibility": "none",
+          "status": "delivered"
+        }
+      ],
+      "case-16": [
+        {
+          "content": {
+            "type": "text",
+            "body": "inbound"
+          },
+          "visibility": "missing",
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "injection"
+          },
+          "visibility": "missing",
+          "status": "delivered"
+        }
+      ],
+      "case-17": [
+        {
+          "content": {
+            "type": "text",
+            "body": "inbound"
+          },
+          "visibility": "missing",
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "injection"
+          },
+          "visibility": "missing",
+          "status": "delivered"
+        }
+      ],
+      "case-18": [
+        {
+          "content": {
+            "type": "text",
+            "body": "inbound"
+          },
+          "visibility": "none",
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "injection"
+          },
+          "visibility": "none",
+          "status": "delivered"
+        }
+      ],
+      "case-19": [
+        {
+          "content": {
+            "type": "text",
+            "body": "inbound"
+          },
+          "visibility": "none",
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "injection"
+          },
+          "visibility": "none",
+          "status": "delivered"
+        }
+      ]
+    },
+    "deliveries": {
+      "case-0": {
+        "source": [],
+        "ws1": [
+          {
+            "content": {
+              "type": "text",
+              "body": "inbound"
+            },
+            "visibility": "ws1",
+            "status": "delivered"
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "injection"
+            },
+            "visibility": "ws1",
+            "status": "delivered"
+          }
+        ],
+        "ws2": []
+      },
+      "case-1": {
+        "source": [],
+        "ws1": [
+          {
+            "content": {
+              "type": "text",
+              "body": "inbound"
+            },
+            "visibility": "ws1",
+            "status": "delivered"
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "injection"
+            },
+            "visibility": "ws1",
+            "status": "delivered"
+          }
+        ],
+        "ws2": []
+      },
+      "case-2": {
+        "source": [],
+        "ws1": [],
+        "ws2": []
+      },
+      "case-3": {
+        "source": [],
+        "ws1": [],
+        "ws2": []
+      },
+      "case-4": {
+        "source": [],
+        "ws1": [
+          {
+            "content": {
+              "type": "text",
+              "body": "inbound"
+            },
+            "visibility": "transport",
+            "status": "delivered"
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "injection"
+            },
+            "visibility": "transport",
+            "status": "delivered"
+          }
+        ],
+        "ws2": [
+          {
+            "content": {
+              "type": "text",
+              "body": "inbound"
+            },
+            "visibility": "transport",
+            "status": "delivered"
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "injection"
+            },
+            "visibility": "transport",
+            "status": "delivered"
+          }
+        ]
+      },
+      "case-5": {
+        "source": [],
+        "ws1": [],
+        "ws2": []
+      },
+      "case-6": {
+        "source": [],
+        "ws1": [],
+        "ws2": []
+      },
+      "case-7": {
+        "source": [],
+        "ws1": [],
+        "ws2": []
+      },
+      "case-8": {
+        "source": [],
+        "ws1": [],
+        "ws2": [
+          {
+            "content": {
+              "type": "text",
+              "body": "inbound"
+            },
+            "visibility": "ws2",
+            "status": "delivered"
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "injection"
+            },
+            "visibility": "ws2",
+            "status": "delivered"
+          }
+        ]
+      },
+      "case-9": {
+        "source": [],
+        "ws1": [],
+        "ws2": []
+      },
+      "case-10": {
+        "source": [],
+        "ws1": [],
+        "ws2": [
+          {
+            "content": {
+              "type": "text",
+              "body": "inbound"
+            },
+            "visibility": "ws2",
+            "status": "delivered"
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "injection"
+            },
+            "visibility": "ws2",
+            "status": "delivered"
+          }
+        ]
+      },
+      "case-11": {
+        "source": [],
+        "ws1": [],
+        "ws2": [
+          {
+            "content": {
+              "type": "text",
+              "body": "inbound"
+            },
+            "visibility": "ws2",
+            "status": "delivered"
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "injection"
+            },
+            "visibility": "ws2",
+            "status": "delivered"
+          }
+        ]
+      },
+      "case-12": {
+        "source": [],
+        "ws1": [],
+        "ws2": []
+      },
+      "case-13": {
+        "source": [],
+        "ws1": [],
+        "ws2": []
+      },
+      "case-14": {
+        "source": [],
+        "ws1": [],
+        "ws2": []
+      },
+      "case-15": {
+        "source": [],
+        "ws1": [],
+        "ws2": []
+      },
+      "case-16": {
+        "source": [],
+        "ws1": [],
+        "ws2": []
+      },
+      "case-17": {
+        "source": [],
+        "ws1": [],
+        "ws2": []
+      },
+      "case-18": {
+        "source": [],
+        "ws1": [],
+        "ws2": []
+      },
+      "case-19": {
+        "source": [],
+        "ws1": [],
+        "ws2": []
+      }
+    },
+    "turns": {
+      "case-0": {
+        "ai1": [],
+        "ai2": []
+      },
+      "case-1": {
+        "ai1": [],
+        "ai2": []
+      },
+      "case-2": {
+        "ai1": [],
+        "ai2": []
+      },
+      "case-3": {
+        "ai1": [],
+        "ai2": []
+      },
+      "case-4": {
+        "ai1": [],
+        "ai2": []
+      },
+      "case-5": {
+        "ai1": [
+          {
+            "content": {
+              "type": "text",
+              "body": "inbound"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "injection"
+            }
+          }
+        ],
+        "ai2": [
+          {
+            "content": {
+              "type": "text",
+              "body": "inbound"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "injection"
+            }
+          }
+        ]
+      },
+      "case-6": {
+        "ai1": [],
+        "ai2": []
+      },
+      "case-7": {
+        "ai1": [],
+        "ai2": []
+      },
+      "case-8": {
+        "ai1": [],
+        "ai2": []
+      },
+      "case-9": {
+        "ai1": [],
+        "ai2": []
+      },
+      "case-10": {
+        "ai1": [],
+        "ai2": []
+      },
+      "case-11": {
+        "ai1": [],
+        "ai2": []
+      },
+      "case-12": {
+        "ai1": [
+          {
+            "content": {
+              "type": "text",
+              "body": "inbound"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "injection"
+            }
+          }
+        ],
+        "ai2": []
+      },
+      "case-13": {
+        "ai1": [
+          {
+            "content": {
+              "type": "text",
+              "body": "inbound"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "injection"
+            }
+          }
+        ],
+        "ai2": []
+      },
+      "case-14": {
+        "ai1": [],
+        "ai2": []
+      },
+      "case-15": {
+        "ai1": [],
+        "ai2": []
+      },
+      "case-16": {
+        "ai1": [],
+        "ai2": []
+      },
+      "case-17": {
+        "ai1": [],
+        "ai2": []
+      },
+      "case-18": {
+        "ai1": [],
+        "ai2": []
+      },
+      "case-19": {
+        "ai1": [],
+        "ai2": []
+      }
+    }
+  }
+}

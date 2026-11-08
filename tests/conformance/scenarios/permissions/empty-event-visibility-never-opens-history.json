@@ -1,0 +1,185 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "permissions/empty-event-visibility-never-opens-history",
+  "title": "An empty visibility from an outside-pipeline record or a hook restricts delivery and later model history",
+  "rules": [
+    "§7.3",
+    "§7.5 rule 8"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "source",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "observer",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "text": "answer"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "source"
+          },
+          {
+            "channel_id": "observer"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "empty",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "HOOK-EMPTY"
+            },
+            "result": {
+              "action": "modify",
+              "event": {
+                "visibility": ""
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "commit_event",
+      "room_id": "room-1",
+      "event": {
+        "source": {
+          "channel_id": "source",
+          "channel_type": "websocket"
+        },
+        "content": {
+          "type": "text",
+          "body": "STORED-EMPTY"
+        },
+        "visibility": "",
+        "status": "delivered"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "HOOK-EMPTY"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "VISIBLE"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "VISIBLE"
+            }
+          ]
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "STORED-EMPTY"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "HOOK-EMPTY"
+          },
+          "visibility": "none"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "VISIBLE"
+          },
+          "visibility": "all"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "answer"
+          },
+          "visibility": "all"
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "source": [
+          {
+            "content": {
+              "type": "text",
+              "body": "answer"
+            }
+          }
+        ],
+        "observer": [
+          {
+            "content": {
+              "type": "text",
+              "body": "VISIBLE"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "answer"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "notes": "The stored-event reader may canonicalize an empty value to none when it builds its model. The proof checks retained host-visible content and no delivery or later model access, without requiring an invalid lexical representation to survive deserialization."
+}

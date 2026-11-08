@@ -1,0 +1,488 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "permissions/hidden-messages-stay-out-of-later-model-contexts",
+  "title": "A hidden message never enters a later model context, whether a category, none or an explicit list on the event or binding hid it",
+  "rules": [
+    "§7.3",
+    "§7.5 rule 8"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws1",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ws2",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "text": "ok"
+            },
+            {
+              "text": "ok"
+            },
+            {
+              "text": "ok"
+            },
+            {
+              "text": "ok"
+            },
+            {
+              "text": "ok"
+            },
+            {
+              "text": "ok"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "case-0",
+        "bindings": [
+          {
+            "channel_id": "ws1"
+          },
+          {
+            "channel_id": "ws2"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "case-1",
+        "bindings": [
+          {
+            "channel_id": "ws1",
+            "visibility": "transport"
+          },
+          {
+            "channel_id": "ws2"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "case-2",
+        "bindings": [
+          {
+            "channel_id": "ws1"
+          },
+          {
+            "channel_id": "ws2"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "case-3",
+        "bindings": [
+          {
+            "channel_id": "ws1",
+            "visibility": "none"
+          },
+          {
+            "channel_id": "ws2"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "case-4",
+        "bindings": [
+          {
+            "channel_id": "ws1"
+          },
+          {
+            "channel_id": "ws2"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "case-5",
+        "bindings": [
+          {
+            "channel_id": "ws1",
+            "visibility": "ws2"
+          },
+          {
+            "channel_id": "ws2"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "case-0",
+      "message": {
+        "channel_id": "ws1",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "HIDDEN"
+        },
+        "visibility": "transport"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "case-0",
+      "message": {
+        "channel_id": "ws2",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "visible"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "case-1",
+      "message": {
+        "channel_id": "ws1",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "HIDDEN"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "case-1",
+      "message": {
+        "channel_id": "ws2",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "visible"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "case-2",
+      "message": {
+        "channel_id": "ws1",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "HIDDEN"
+        },
+        "visibility": "none"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "case-2",
+      "message": {
+        "channel_id": "ws2",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "visible"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "case-3",
+      "message": {
+        "channel_id": "ws1",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "HIDDEN"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "case-3",
+      "message": {
+        "channel_id": "ws2",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "visible"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "case-4",
+      "message": {
+        "channel_id": "ws1",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "HIDDEN"
+        },
+        "visibility": "ws2"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "case-4",
+      "message": {
+        "channel_id": "ws2",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "visible"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "case-5",
+      "message": {
+        "channel_id": "ws1",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "HIDDEN"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "case-5",
+      "message": {
+        "channel_id": "ws2",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "visible"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "case-0": [
+        {
+          "content": {
+            "type": "text",
+            "body": "HIDDEN"
+          },
+          "visibility": "transport"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "visible"
+          },
+          "visibility": "all"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "ok"
+          },
+          "visibility": "all"
+        }
+      ],
+      "case-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "HIDDEN"
+          },
+          "visibility": "transport"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "visible"
+          },
+          "visibility": "all"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "ok"
+          },
+          "visibility": "all"
+        }
+      ],
+      "case-2": [
+        {
+          "content": {
+            "type": "text",
+            "body": "HIDDEN"
+          },
+          "visibility": "none"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "visible"
+          },
+          "visibility": "all"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "ok"
+          },
+          "visibility": "all"
+        }
+      ],
+      "case-3": [
+        {
+          "content": {
+            "type": "text",
+            "body": "HIDDEN"
+          },
+          "visibility": "none"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "visible"
+          },
+          "visibility": "all"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "ok"
+          },
+          "visibility": "all"
+        }
+      ],
+      "case-4": [
+        {
+          "content": {
+            "type": "text",
+            "body": "HIDDEN"
+          },
+          "visibility": "ws2"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "visible"
+          },
+          "visibility": "all"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "ok"
+          },
+          "visibility": "all"
+        }
+      ],
+      "case-5": [
+        {
+          "content": {
+            "type": "text",
+            "body": "HIDDEN"
+          },
+          "visibility": "ws2"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "visible"
+          },
+          "visibility": "all"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "ok"
+          },
+          "visibility": "all"
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "visible"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "visible"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "visible"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "visible"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "visible"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "visible"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

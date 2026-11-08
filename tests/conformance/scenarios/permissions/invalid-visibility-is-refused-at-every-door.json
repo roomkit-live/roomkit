@@ -1,0 +1,850 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "permissions/invalid-visibility-is-refused-at-every-door",
+  "title": "Malformed visibility and answer scopes are rejected at all six public doors without observable side effects",
+  "rules": [
+    "§7.3",
+    "§7.5 rule 8"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "source",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "pending",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "observer",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "source"
+          },
+          {
+            "channel_id": "observer"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "before",
+        "trigger": "before_broadcast"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "pending",
+      "visibility": "",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "set_visibility",
+      "room_id": "room-1",
+      "channel_id": "source",
+      "visibility": "",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "invalid"
+        },
+        "visibility": ""
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "invalid"
+        },
+        "response_visibility": ""
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "invalid"
+      },
+      "visibility": "",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "invalid"
+      },
+      "response_visibility": "",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "pending",
+      "visibility": "  ",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "set_visibility",
+      "room_id": "room-1",
+      "channel_id": "source",
+      "visibility": "  ",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "invalid"
+        },
+        "visibility": "  "
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "invalid"
+        },
+        "response_visibility": "  "
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "invalid"
+      },
+      "visibility": "  ",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "invalid"
+      },
+      "response_visibility": "  ",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "pending",
+      "visibility": "source,,observer",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "set_visibility",
+      "room_id": "room-1",
+      "channel_id": "source",
+      "visibility": "source,,observer",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "invalid"
+        },
+        "visibility": "source,,observer"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "invalid"
+        },
+        "response_visibility": "source,,observer"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "invalid"
+      },
+      "visibility": "source,,observer",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "invalid"
+      },
+      "response_visibility": "source,,observer",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "pending",
+      "visibility": "source,",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "set_visibility",
+      "room_id": "room-1",
+      "channel_id": "source",
+      "visibility": "source,",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "invalid"
+        },
+        "visibility": "source,"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "invalid"
+        },
+        "response_visibility": "source,"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "invalid"
+      },
+      "visibility": "source,",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "invalid"
+      },
+      "response_visibility": "source,",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "pending",
+      "visibility": ",source",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "set_visibility",
+      "room_id": "room-1",
+      "channel_id": "source",
+      "visibility": ",source",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "invalid"
+        },
+        "visibility": ",source"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "invalid"
+        },
+        "response_visibility": ",source"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "invalid"
+      },
+      "visibility": ",source",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "invalid"
+      },
+      "response_visibility": ",source",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "pending",
+      "visibility": "all,source",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "set_visibility",
+      "room_id": "room-1",
+      "channel_id": "source",
+      "visibility": "all,source",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "invalid"
+        },
+        "visibility": "all,source"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "invalid"
+        },
+        "response_visibility": "all,source"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "invalid"
+      },
+      "visibility": "all,source",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "invalid"
+      },
+      "response_visibility": "all,source",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "pending",
+      "visibility": "none,source",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "set_visibility",
+      "room_id": "room-1",
+      "channel_id": "source",
+      "visibility": "none,source",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "invalid"
+        },
+        "visibility": "none,source"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "invalid"
+        },
+        "response_visibility": "none,source"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "invalid"
+      },
+      "visibility": "none,source",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "invalid"
+      },
+      "response_visibility": "none,source",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "pending",
+      "visibility": "internal,source",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "set_visibility",
+      "room_id": "room-1",
+      "channel_id": "source",
+      "visibility": "internal,source",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "invalid"
+        },
+        "visibility": "internal,source"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "invalid"
+        },
+        "response_visibility": "internal,source"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "invalid"
+      },
+      "visibility": "internal,source",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "invalid"
+      },
+      "response_visibility": "internal,source",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "pending",
+      "visibility": "transport,source",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "set_visibility",
+      "room_id": "room-1",
+      "channel_id": "source",
+      "visibility": "transport,source",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "invalid"
+        },
+        "visibility": "transport,source"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "invalid"
+        },
+        "response_visibility": "transport,source"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "invalid"
+      },
+      "visibility": "transport,source",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "invalid"
+      },
+      "response_visibility": "transport,source",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "pending",
+      "visibility": "intelligence,source",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "set_visibility",
+      "room_id": "room-1",
+      "channel_id": "source",
+      "visibility": "intelligence,source",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "invalid"
+        },
+        "visibility": "intelligence,source"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "invalid"
+        },
+        "response_visibility": "intelligence,source"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "invalid"
+      },
+      "visibility": "intelligence,source",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "invalid"
+      },
+      "response_visibility": "intelligence,source",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": []
+    },
+    "bindings": {
+      "room-1": {
+        "source": {
+          "visibility": "all"
+        },
+        "pending": null
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "source": [],
+        "pending": [],
+        "observer": [],
+        "agent": []
+      }
+    },
+    "turns": {
+      "room-1": {
+        "agent": []
+      }
+    },
+    "hooks": {
+      "before": []
+    },
+    "framework_events": {
+      "room-1": []
+    }
+  }
+}

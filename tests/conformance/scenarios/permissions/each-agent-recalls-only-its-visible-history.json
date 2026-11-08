@@ -1,0 +1,272 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "permissions/each-agent-recalls-only-its-visible-history",
+  "title": "Each agent sees its own private user history and accepted whispers, without another agent private history or whispers",
+  "rules": [
+    "§7.3",
+    "§7.5 rule 8"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "source",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "observer",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent-a",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "text": "A1"
+            },
+            {
+              "text": "A2"
+            }
+          ]
+        }
+      },
+      {
+        "id": "agent-b",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "text": "B1"
+            },
+            {
+              "text": "B2"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "source"
+          },
+          {
+            "channel_id": "observer"
+          },
+          {
+            "channel_id": "agent-a",
+            "category": "intelligence",
+            "visibility": "source"
+          },
+          {
+            "channel_id": "agent-b",
+            "category": "intelligence",
+            "visibility": "source"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "PRIVATE-A"
+        },
+        "visibility": "agent-a"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "PRIVATE-B"
+        },
+        "visibility": "agent-b"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "PUBLIC"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent-a": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "PRIVATE-A"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "PRIVATE-A"
+            },
+            {
+              "role": "assistant",
+              "text": "A1"
+            },
+            {
+              "role": "user",
+              "text": "PUBLIC"
+            }
+          ]
+        }
+      ],
+      "agent-b": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "PRIVATE-B"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "PRIVATE-B"
+            },
+            {
+              "role": "assistant",
+              "text": "B1"
+            },
+            {
+              "role": "user",
+              "text": "PUBLIC"
+            }
+          ]
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": {
+        "$unordered": [
+          {
+            "content": {
+              "type": "text",
+              "body": "PRIVATE-A"
+            },
+            "visibility": "agent-a"
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "PRIVATE-B"
+            },
+            "visibility": "agent-b"
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "PUBLIC"
+            },
+            "visibility": "all"
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "A1"
+            },
+            "visibility": "source"
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "A2"
+            },
+            "visibility": "source"
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "B1"
+            },
+            "visibility": "source"
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "B2"
+            },
+            "visibility": "source"
+          }
+        ]
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "source": {
+          "$unordered": [
+            {
+              "content": {
+                "type": "text",
+                "body": "A1"
+              },
+              "visibility": "source"
+            },
+            {
+              "content": {
+                "type": "text",
+                "body": "A2"
+              },
+              "visibility": "source"
+            },
+            {
+              "content": {
+                "type": "text",
+                "body": "B1"
+              },
+              "visibility": "source"
+            },
+            {
+              "content": {
+                "type": "text",
+                "body": "B2"
+              },
+              "visibility": "source"
+            }
+          ]
+        },
+        "observer": [
+          {
+            "content": {
+              "type": "text",
+              "body": "PUBLIC"
+            },
+            "visibility": "all"
+          }
+        ]
+      }
+    }
+  }
+}

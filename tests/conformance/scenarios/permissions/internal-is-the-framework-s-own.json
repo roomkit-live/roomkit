@@ -1,7 +1,7 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "permissions/internal-is-the-framework-s-own",
-  "title": "The visibility `internal` is refused before anything is written, on an attach, a message and an injection",
+  "title": "Internal visibility is refused at all six public doors without changing bindings or recording an event",
   "rules": [
     "§7.3 Who writes `internal`"
   ],
@@ -26,6 +26,12 @@
             "channel_id": "sms"
           }
         ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "before",
+        "trigger": "before_broadcast"
       }
     ]
   },
@@ -80,6 +86,107 @@
       "expect": {
         "error": "invalid_argument"
       }
+    },
+    {
+      "call": "set_visibility",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "visibility": "internal",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "x"
+        },
+        "response_visibility": "internal"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "visibility": " internal ",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "content": {
+        "type": "text",
+        "body": "x"
+      },
+      "visibility": " internal ",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "content": {
+        "type": "text",
+        "body": "x"
+      },
+      "response_visibility": " internal ",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "x"
+        },
+        "visibility": " internal "
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "set_visibility",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "visibility": " internal ",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "x"
+        },
+        "response_visibility": " internal "
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
     }
   ],
   "expect": {
@@ -88,11 +195,23 @@
     },
     "bindings": {
       "room-1": {
-        "ws": null
+        "ws": null,
+        "sms": {
+          "visibility": "all"
+        }
       }
     },
     "framework_events": {
       "room-1": []
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [],
+        "ws": []
+      }
+    },
+    "hooks": {
+      "before": []
     }
   }
 }

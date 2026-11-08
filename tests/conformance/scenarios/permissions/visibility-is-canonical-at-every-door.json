@@ -1,0 +1,1290 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "permissions/visibility-is-canonical-at-every-door",
+  "title": "All six public doors trim visibility, preserve lowercase keywords, sort and deduplicate ids by code point, and allow unmatched ids",
+  "rules": [
+    "§7.3",
+    "§7.5 rule 8"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "source",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "Z",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "é",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "中",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "All",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "unbound",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "case-0",
+        "bindings": [
+          {
+            "channel_id": "Z"
+          },
+          {
+            "channel_id": "a"
+          },
+          {
+            "channel_id": "é"
+          },
+          {
+            "channel_id": "中"
+          },
+          {
+            "channel_id": "All"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "case-1",
+        "bindings": [
+          {
+            "channel_id": "Z"
+          },
+          {
+            "channel_id": "a"
+          },
+          {
+            "channel_id": "é"
+          },
+          {
+            "channel_id": "中"
+          },
+          {
+            "channel_id": "All"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "case-2",
+        "bindings": [
+          {
+            "channel_id": "Z"
+          },
+          {
+            "channel_id": "a"
+          },
+          {
+            "channel_id": "é"
+          },
+          {
+            "channel_id": "中"
+          },
+          {
+            "channel_id": "All"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "case-3",
+        "bindings": [
+          {
+            "channel_id": "Z"
+          },
+          {
+            "channel_id": "a"
+          },
+          {
+            "channel_id": "é"
+          },
+          {
+            "channel_id": "中"
+          },
+          {
+            "channel_id": "All"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "case-4",
+        "bindings": [
+          {
+            "channel_id": "Z"
+          },
+          {
+            "channel_id": "a"
+          },
+          {
+            "channel_id": "é"
+          },
+          {
+            "channel_id": "中"
+          },
+          {
+            "channel_id": "All"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "case-5",
+        "bindings": [
+          {
+            "channel_id": "Z"
+          },
+          {
+            "channel_id": "a"
+          },
+          {
+            "channel_id": "é"
+          },
+          {
+            "channel_id": "中"
+          },
+          {
+            "channel_id": "All"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "case-6",
+        "bindings": [
+          {
+            "channel_id": "Z"
+          },
+          {
+            "channel_id": "a"
+          },
+          {
+            "channel_id": "é"
+          },
+          {
+            "channel_id": "中"
+          },
+          {
+            "channel_id": "All"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "case-7",
+        "bindings": [
+          {
+            "channel_id": "Z"
+          },
+          {
+            "channel_id": "a"
+          },
+          {
+            "channel_id": "é"
+          },
+          {
+            "channel_id": "中"
+          },
+          {
+            "channel_id": "All"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "attach_channel",
+      "room_id": "case-0",
+      "channel_id": "source",
+      "visibility": " all ",
+      "expect": {
+        "result": {
+          "visibility": "all"
+        }
+      }
+    },
+    {
+      "call": "set_visibility",
+      "room_id": "case-0",
+      "channel_id": "source",
+      "visibility": "none"
+    },
+    {
+      "call": "set_visibility",
+      "room_id": "case-0",
+      "channel_id": "source",
+      "visibility": " all ",
+      "expect": {
+        "result": {
+          "visibility": "all"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "case-0",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "inbound"
+        },
+        "visibility": " all ",
+        "response_visibility": " all "
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "case-0",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "injection"
+      },
+      "visibility": " all ",
+      "response_visibility": " all "
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "case-1",
+      "channel_id": "source",
+      "visibility": " none ",
+      "expect": {
+        "result": {
+          "visibility": "none"
+        }
+      }
+    },
+    {
+      "call": "set_visibility",
+      "room_id": "case-1",
+      "channel_id": "source",
+      "visibility": "all"
+    },
+    {
+      "call": "set_visibility",
+      "room_id": "case-1",
+      "channel_id": "source",
+      "visibility": " none ",
+      "expect": {
+        "result": {
+          "visibility": "none"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "case-1",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "inbound"
+        },
+        "visibility": " none ",
+        "response_visibility": " none "
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "case-1",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "injection"
+      },
+      "visibility": " none ",
+      "response_visibility": " none "
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "case-2",
+      "channel_id": "source",
+      "visibility": " transport ",
+      "expect": {
+        "result": {
+          "visibility": "transport"
+        }
+      }
+    },
+    {
+      "call": "set_visibility",
+      "room_id": "case-2",
+      "channel_id": "source",
+      "visibility": "none"
+    },
+    {
+      "call": "set_visibility",
+      "room_id": "case-2",
+      "channel_id": "source",
+      "visibility": " transport ",
+      "expect": {
+        "result": {
+          "visibility": "transport"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "case-2",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "inbound"
+        },
+        "visibility": " transport ",
+        "response_visibility": " transport "
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "case-2",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "injection"
+      },
+      "visibility": " transport ",
+      "response_visibility": " transport "
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "case-3",
+      "channel_id": "source",
+      "visibility": " intelligence ",
+      "expect": {
+        "result": {
+          "visibility": "intelligence"
+        }
+      }
+    },
+    {
+      "call": "set_visibility",
+      "room_id": "case-3",
+      "channel_id": "source",
+      "visibility": "none"
+    },
+    {
+      "call": "set_visibility",
+      "room_id": "case-3",
+      "channel_id": "source",
+      "visibility": " intelligence ",
+      "expect": {
+        "result": {
+          "visibility": "intelligence"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "case-3",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "inbound"
+        },
+        "visibility": " intelligence ",
+        "response_visibility": " intelligence "
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "case-3",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "injection"
+      },
+      "visibility": " intelligence ",
+      "response_visibility": " intelligence "
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "case-4",
+      "channel_id": "source",
+      "visibility": " 中 , é, Z, a,a, missing ",
+      "expect": {
+        "result": {
+          "visibility": "Z,a,missing,é,中"
+        }
+      }
+    },
+    {
+      "call": "set_visibility",
+      "room_id": "case-4",
+      "channel_id": "source",
+      "visibility": "none"
+    },
+    {
+      "call": "set_visibility",
+      "room_id": "case-4",
+      "channel_id": "source",
+      "visibility": " 中 , é, Z, a,a, missing ",
+      "expect": {
+        "result": {
+          "visibility": "Z,a,missing,é,中"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "case-4",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "inbound"
+        },
+        "visibility": " 中 , é, Z, a,a, missing ",
+        "response_visibility": " 中 , é, Z, a,a, missing "
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "case-4",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "injection"
+      },
+      "visibility": " 中 , é, Z, a,a, missing ",
+      "response_visibility": " 中 , é, Z, a,a, missing "
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "case-5",
+      "channel_id": "source",
+      "visibility": " All ",
+      "expect": {
+        "result": {
+          "visibility": "All"
+        }
+      }
+    },
+    {
+      "call": "set_visibility",
+      "room_id": "case-5",
+      "channel_id": "source",
+      "visibility": "none"
+    },
+    {
+      "call": "set_visibility",
+      "room_id": "case-5",
+      "channel_id": "source",
+      "visibility": " All ",
+      "expect": {
+        "result": {
+          "visibility": "All"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "case-5",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "inbound"
+        },
+        "visibility": " All ",
+        "response_visibility": " All "
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "case-5",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "injection"
+      },
+      "visibility": " All ",
+      "response_visibility": " All "
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "case-6",
+      "channel_id": "source",
+      "visibility": " missing ",
+      "expect": {
+        "result": {
+          "visibility": "missing"
+        }
+      }
+    },
+    {
+      "call": "set_visibility",
+      "room_id": "case-6",
+      "channel_id": "source",
+      "visibility": "none"
+    },
+    {
+      "call": "set_visibility",
+      "room_id": "case-6",
+      "channel_id": "source",
+      "visibility": " missing ",
+      "expect": {
+        "result": {
+          "visibility": "missing"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "case-6",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "inbound"
+        },
+        "visibility": " missing ",
+        "response_visibility": " missing "
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "case-6",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "injection"
+      },
+      "visibility": " missing ",
+      "response_visibility": " missing "
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "case-7",
+      "channel_id": "source",
+      "visibility": " unbound ",
+      "expect": {
+        "result": {
+          "visibility": "unbound"
+        }
+      }
+    },
+    {
+      "call": "set_visibility",
+      "room_id": "case-7",
+      "channel_id": "source",
+      "visibility": "none"
+    },
+    {
+      "call": "set_visibility",
+      "room_id": "case-7",
+      "channel_id": "source",
+      "visibility": " unbound ",
+      "expect": {
+        "result": {
+          "visibility": "unbound"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "case-7",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "inbound"
+        },
+        "visibility": " unbound ",
+        "response_visibility": " unbound "
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "case-7",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "injection"
+      },
+      "visibility": " unbound ",
+      "response_visibility": " unbound "
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "case-0": [
+        {
+          "content": {
+            "type": "text",
+            "body": "inbound"
+          },
+          "visibility": "all",
+          "response_visibility": "all",
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "injection"
+          },
+          "visibility": "all",
+          "response_visibility": "all",
+          "status": "delivered"
+        }
+      ],
+      "case-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "inbound"
+          },
+          "visibility": "none",
+          "response_visibility": "none",
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "injection"
+          },
+          "visibility": "none",
+          "response_visibility": "none",
+          "status": "delivered"
+        }
+      ],
+      "case-2": [
+        {
+          "content": {
+            "type": "text",
+            "body": "inbound"
+          },
+          "visibility": "transport",
+          "response_visibility": "transport",
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "injection"
+          },
+          "visibility": "transport",
+          "response_visibility": "transport",
+          "status": "delivered"
+        }
+      ],
+      "case-3": [
+        {
+          "content": {
+            "type": "text",
+            "body": "inbound"
+          },
+          "visibility": "intelligence",
+          "response_visibility": "intelligence",
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "injection"
+          },
+          "visibility": "intelligence",
+          "response_visibility": "intelligence",
+          "status": "delivered"
+        }
+      ],
+      "case-4": [
+        {
+          "content": {
+            "type": "text",
+            "body": "inbound"
+          },
+          "visibility": "Z,a,missing,é,中",
+          "response_visibility": "Z,a,missing,é,中",
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "injection"
+          },
+          "visibility": "Z,a,missing,é,中",
+          "response_visibility": "Z,a,missing,é,中",
+          "status": "delivered"
+        }
+      ],
+      "case-5": [
+        {
+          "content": {
+            "type": "text",
+            "body": "inbound"
+          },
+          "visibility": "All",
+          "response_visibility": "All",
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "injection"
+          },
+          "visibility": "All",
+          "response_visibility": "All",
+          "status": "delivered"
+        }
+      ],
+      "case-6": [
+        {
+          "content": {
+            "type": "text",
+            "body": "inbound"
+          },
+          "visibility": "missing",
+          "response_visibility": "missing",
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "injection"
+          },
+          "visibility": "missing",
+          "response_visibility": "missing",
+          "status": "delivered"
+        }
+      ],
+      "case-7": [
+        {
+          "content": {
+            "type": "text",
+            "body": "inbound"
+          },
+          "visibility": "unbound",
+          "response_visibility": "unbound",
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "injection"
+          },
+          "visibility": "unbound",
+          "response_visibility": "unbound",
+          "status": "delivered"
+        }
+      ]
+    },
+    "bindings": {
+      "case-0": {
+        "source": {
+          "visibility": "all"
+        }
+      },
+      "case-1": {
+        "source": {
+          "visibility": "none"
+        }
+      },
+      "case-2": {
+        "source": {
+          "visibility": "transport"
+        }
+      },
+      "case-3": {
+        "source": {
+          "visibility": "intelligence"
+        }
+      },
+      "case-4": {
+        "source": {
+          "visibility": "Z,a,missing,é,中"
+        }
+      },
+      "case-5": {
+        "source": {
+          "visibility": "All"
+        }
+      },
+      "case-6": {
+        "source": {
+          "visibility": "missing"
+        }
+      },
+      "case-7": {
+        "source": {
+          "visibility": "unbound"
+        }
+      }
+    },
+    "deliveries": {
+      "case-0": {
+        "source": [],
+        "Z": [
+          {
+            "content": {
+              "type": "text",
+              "body": "inbound"
+            },
+            "visibility": "all",
+            "response_visibility": "all",
+            "status": "delivered"
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "injection"
+            },
+            "visibility": "all",
+            "response_visibility": "all",
+            "status": "delivered"
+          }
+        ],
+        "a": [
+          {
+            "content": {
+              "type": "text",
+              "body": "inbound"
+            },
+            "visibility": "all",
+            "response_visibility": "all",
+            "status": "delivered"
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "injection"
+            },
+            "visibility": "all",
+            "response_visibility": "all",
+            "status": "delivered"
+          }
+        ],
+        "é": [
+          {
+            "content": {
+              "type": "text",
+              "body": "inbound"
+            },
+            "visibility": "all",
+            "response_visibility": "all",
+            "status": "delivered"
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "injection"
+            },
+            "visibility": "all",
+            "response_visibility": "all",
+            "status": "delivered"
+          }
+        ],
+        "中": [
+          {
+            "content": {
+              "type": "text",
+              "body": "inbound"
+            },
+            "visibility": "all",
+            "response_visibility": "all",
+            "status": "delivered"
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "injection"
+            },
+            "visibility": "all",
+            "response_visibility": "all",
+            "status": "delivered"
+          }
+        ],
+        "All": [
+          {
+            "content": {
+              "type": "text",
+              "body": "inbound"
+            },
+            "visibility": "all",
+            "response_visibility": "all",
+            "status": "delivered"
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "injection"
+            },
+            "visibility": "all",
+            "response_visibility": "all",
+            "status": "delivered"
+          }
+        ],
+        "unbound": []
+      },
+      "case-1": {
+        "source": [],
+        "Z": [],
+        "a": [],
+        "é": [],
+        "中": [],
+        "All": [],
+        "unbound": []
+      },
+      "case-2": {
+        "source": [],
+        "Z": [
+          {
+            "content": {
+              "type": "text",
+              "body": "inbound"
+            },
+            "visibility": "transport",
+            "response_visibility": "transport",
+            "status": "delivered"
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "injection"
+            },
+            "visibility": "transport",
+            "response_visibility": "transport",
+            "status": "delivered"
+          }
+        ],
+        "a": [
+          {
+            "content": {
+              "type": "text",
+              "body": "inbound"
+            },
+            "visibility": "transport",
+            "response_visibility": "transport",
+            "status": "delivered"
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "injection"
+            },
+            "visibility": "transport",
+            "response_visibility": "transport",
+            "status": "delivered"
+          }
+        ],
+        "é": [
+          {
+            "content": {
+              "type": "text",
+              "body": "inbound"
+            },
+            "visibility": "transport",
+            "response_visibility": "transport",
+            "status": "delivered"
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "injection"
+            },
+            "visibility": "transport",
+            "response_visibility": "transport",
+            "status": "delivered"
+          }
+        ],
+        "中": [
+          {
+            "content": {
+              "type": "text",
+              "body": "inbound"
+            },
+            "visibility": "transport",
+            "response_visibility": "transport",
+            "status": "delivered"
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "injection"
+            },
+            "visibility": "transport",
+            "response_visibility": "transport",
+            "status": "delivered"
+          }
+        ],
+        "All": [
+          {
+            "content": {
+              "type": "text",
+              "body": "inbound"
+            },
+            "visibility": "transport",
+            "response_visibility": "transport",
+            "status": "delivered"
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "injection"
+            },
+            "visibility": "transport",
+            "response_visibility": "transport",
+            "status": "delivered"
+          }
+        ],
+        "unbound": []
+      },
+      "case-3": {
+        "source": [],
+        "Z": [],
+        "a": [],
+        "é": [],
+        "中": [],
+        "All": [],
+        "unbound": []
+      },
+      "case-4": {
+        "source": [],
+        "Z": [
+          {
+            "content": {
+              "type": "text",
+              "body": "inbound"
+            },
+            "visibility": "Z,a,missing,é,中",
+            "response_visibility": "Z,a,missing,é,中",
+            "status": "delivered"
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "injection"
+            },
+            "visibility": "Z,a,missing,é,中",
+            "response_visibility": "Z,a,missing,é,中",
+            "status": "delivered"
+          }
+        ],
+        "a": [
+          {
+            "content": {
+              "type": "text",
+              "body": "inbound"
+            },
+            "visibility": "Z,a,missing,é,中",
+            "response_visibility": "Z,a,missing,é,中",
+            "status": "delivered"
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "injection"
+            },
+            "visibility": "Z,a,missing,é,中",
+            "response_visibility": "Z,a,missing,é,中",
+            "status": "delivered"
+          }
+        ],
+        "é": [
+          {
+            "content": {
+              "type": "text",
+              "body": "inbound"
+            },
+            "visibility": "Z,a,missing,é,中",
+            "response_visibility": "Z,a,missing,é,中",
+            "status": "delivered"
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "injection"
+            },
+            "visibility": "Z,a,missing,é,中",
+            "response_visibility": "Z,a,missing,é,中",
+            "status": "delivered"
+          }
+        ],
+        "中": [
+          {
+            "content": {
+              "type": "text",
+              "body": "inbound"
+            },
+            "visibility": "Z,a,missing,é,中",
+            "response_visibility": "Z,a,missing,é,中",
+            "status": "delivered"
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "injection"
+            },
+            "visibility": "Z,a,missing,é,中",
+            "response_visibility": "Z,a,missing,é,中",
+            "status": "delivered"
+          }
+        ],
+        "All": [],
+        "unbound": []
+      },
+      "case-5": {
+        "source": [],
+        "Z": [],
+        "a": [],
+        "é": [],
+        "中": [],
+        "All": [
+          {
+            "content": {
+              "type": "text",
+              "body": "inbound"
+            },
+            "visibility": "All",
+            "response_visibility": "All",
+            "status": "delivered"
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "injection"
+            },
+            "visibility": "All",
+            "response_visibility": "All",
+            "status": "delivered"
+          }
+        ],
+        "unbound": []
+      },
+      "case-6": {
+        "source": [],
+        "Z": [],
+        "a": [],
+        "é": [],
+        "中": [],
+        "All": [],
+        "unbound": []
+      },
+      "case-7": {
+        "source": [],
+        "Z": [],
+        "a": [],
+        "é": [],
+        "中": [],
+        "All": [],
+        "unbound": []
+      }
+    },
+    "turns": {
+      "case-0": {
+        "agent": [
+          {
+            "content": {
+              "type": "text",
+              "body": "inbound"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "injection"
+            }
+          }
+        ]
+      },
+      "case-1": {
+        "agent": []
+      },
+      "case-2": {
+        "agent": []
+      },
+      "case-3": {
+        "agent": [
+          {
+            "content": {
+              "type": "text",
+              "body": "inbound"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "injection"
+            }
+          }
+        ]
+      },
+      "case-4": {
+        "agent": []
+      },
+      "case-5": {
+        "agent": []
+      },
+      "case-6": {
+        "agent": []
+      },
+      "case-7": {
+        "agent": []
+      }
+    }
+  }
+}

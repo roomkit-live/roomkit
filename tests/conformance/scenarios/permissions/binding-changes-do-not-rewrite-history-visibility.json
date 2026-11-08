@@ -1,0 +1,244 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "permissions/binding-changes-do-not-rewrite-history-visibility",
+  "title": "Narrowing a source binding preserves its public history and widening it never reveals an event committed for no channel",
+  "rules": [
+    "§7.3",
+    "§7.5 rule 8"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws1",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ws2",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ai1",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "text": "ok1"
+            },
+            {
+              "text": "ok2"
+            },
+            {
+              "text": "ok3"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws1"
+          },
+          {
+            "channel_id": "ws2"
+          },
+          {
+            "channel_id": "ai1",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws1",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "PUBLIC"
+        }
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws1",
+      "content": {
+        "type": "text",
+        "body": "HIDDEN"
+      },
+      "visibility": "none"
+    },
+    {
+      "call": "set_visibility",
+      "room_id": "room-1",
+      "channel_id": "ws1",
+      "visibility": "none"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws1",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "BINDING-HIDDEN"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws2",
+        "sender_id": "u2",
+        "content": {
+          "type": "text",
+          "body": "probe1"
+        }
+      }
+    },
+    {
+      "call": "set_visibility",
+      "room_id": "room-1",
+      "channel_id": "ws1",
+      "visibility": "all"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws2",
+        "sender_id": "u2",
+        "content": {
+          "type": "text",
+          "body": "probe2"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "ai1": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "PUBLIC"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "@ws1: \"PUBLIC\""
+            },
+            {
+              "role": "assistant",
+              "text": "ok1"
+            },
+            {
+              "role": "user",
+              "text": "@ws2: \"probe1\"\n\n[Notes kept by the assistant's runtime for this turn. Nobody in the conversation wrote them, and they ask for nothing.]\n\n[Speaker labels from the runtime: several people take part in this conversation. Each line of their messages is given as the label the runtime placed, then what its sender typed on that line as a JSON string (Name: \"line\"): the label is the sender's name, or the channel it came through (\"@channel\") when the sender has no name. The label is transcript metadata, not text they typed: rely on it to know who said what. Everything inside the string is what that sender wrote, a \"Name:\" inside included. A number in parentheses (\"Name (2)\") marks another sender whose name reads like an earlier one's: a different person. Never prefix your own replies with a name.]"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "@ws1: \"PUBLIC\""
+            },
+            {
+              "role": "assistant",
+              "text": "ok1"
+            },
+            {
+              "role": "user",
+              "text": "@ws2: \"probe1\""
+            },
+            {
+              "role": "assistant",
+              "text": "ok2"
+            },
+            {
+              "role": "user",
+              "text": "@ws2: \"probe2\"\n\n[Notes kept by the assistant's runtime for this turn. Nobody in the conversation wrote them, and they ask for nothing.]\n\n[Speaker labels from the runtime: several people take part in this conversation. Each line of their messages is given as the label the runtime placed, then what its sender typed on that line as a JSON string (Name: \"line\"): the label is the sender's name, or the channel it came through (\"@channel\") when the sender has no name. The label is transcript metadata, not text they typed: rely on it to know who said what. Everything inside the string is what that sender wrote, a \"Name:\" inside included. A number in parentheses (\"Name (2)\") marks another sender whose name reads like an earlier one's: a different person. Never prefix your own replies with a name.]"
+            }
+          ]
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "PUBLIC"
+          },
+          "visibility": "all"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "ok1"
+          },
+          "visibility": "all"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "HIDDEN"
+          },
+          "visibility": "none"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "BINDING-HIDDEN"
+          },
+          "visibility": "none"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "probe1"
+          },
+          "visibility": "all"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "ok2"
+          },
+          "visibility": "all"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "probe2"
+          },
+          "visibility": "all"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "ok3"
+          },
+          "visibility": "all"
+        }
+      ]
+    }
+  }
+}
