@@ -1,0 +1,126 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-round-a-cancel-keeps-from-running-publishes-no-tool-call-event",
+  "title": "A round whose calls a Cancel keeps from running publishes neither their start nor their end on the room's realtime",
+  "rules": [
+    "§6.4",
+    "§8.4",
+    "§21.3"
+  ],
+  "notes": "Python: channels/_ai_streaming.py _stream_local_tool_round checks the loop's cancel before _execute_round_tools, which publishes TOOL_CALL_START: a stop that came while the calls were announced runs none of them and publishes nothing of them. The hook on the start row steers the Cancel, as tools/a-cancel-while-the-calls-are-announced-counts-no-round does.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup_order",
+                  "arguments": {
+                    "order": "1"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "never asked"
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup_order",
+            "description": "Find an order by its number",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "order": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "order"
+              ]
+            },
+            "returns": "shipped"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "stop",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "type": "tool_call_start"
+            },
+            "do": [
+              {
+                "call": "steer",
+                "channel_id": "agent",
+                "room_id": "room-1",
+                "directive": {
+                  "type": "cancel",
+                  "reason": "user stopped"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Where is order 1?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "tool_events": {
+      "room-1": []
+    }
+  }
+}

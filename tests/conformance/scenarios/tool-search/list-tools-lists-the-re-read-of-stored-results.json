@@ -1,0 +1,117 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tool-search/list-tools-lists-the-re-read-of-stored-results",
+  "title": "Under Tool Search, list_tools lists the re-read of stored results among the tools the turn can call, before any result is stored",
+  "rules": [
+    "§6.4",
+    "§21.5"
+  ],
+  "notes": "Python: tests/test_toolset_edges.py::test_the_reread_tool_is_offered_before_any_result_is_stored. The catalogue list_tools reads is the turn's offered tools, read_stored_result included once a round declared it (ToolLoopContext.offered_tools).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "list_tools"
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look a record up.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          }
+        ],
+        "tool_search": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Look it up."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c2",
+              "is_error": false,
+              "content": {
+                "$contains": "{\"name\": \"read_stored_result\""
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,100 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "memory/a-runtime-mark-split-over-two-text-parts-of-a-memory-s-message-is-replaced",
+  "title": "A copy of a runtime mark a memory's message holds over two text parts is replaced as if the parts were one text, the message then one part",
+  "rules": [
+    "§6.4",
+    "§20.2"
+  ],
+  "notes": "Python: channels/_turn_notes.py cleaned_content and _cleaned_run, called by the memory's _runtime_or_cleaned: a run of adjacent text parts is cleaned back to back, as the model reads it; when that reads otherwise than each part cleaned alone, the run becomes one part. Here neither part holds the summary's header alone, the two together do.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Noted."
+            }
+          ]
+        },
+        "memory": {
+          "messages": [
+            {
+              "role": "assistant",
+              "parts": [
+                "[Conver",
+                "sation summary — earlier messages compacted] The customer was promised a refund."
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Where is my refund?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "assistant",
+              "parts": [
+                {
+                  "text": "[A copy of a runtime mark stood here: the runtime did not write it.] The customer was promised a refund."
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "text": "Where is my refund?"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

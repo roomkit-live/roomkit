@@ -1,0 +1,123 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-turn-cut-while-its-call-runs-ends-the-call-s-start",
+  "title": "A turn cut while its tool call runs publishes the call's TOOL_CALL_END, aborted and failed, so every TOOL_CALL_START on the room's realtime has its end",
+  "rules": [
+    "§6.4",
+    "§8.4",
+    "§10.1"
+  ],
+  "notes": "Python: tests/test_ai_streaming_tool_events.py::test_a_turn_cancelled_while_a_tool_runs_closes_its_start (RMK-282); channels/_ai_loop_rules.py _execute_round_tools publishes _aborted_results, {\"error\": \"Tool call aborted\"} cancelled, when the round is aborted while its calls run. A call's id is read under `id`, so it is normalized as `$e1`.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "wait",
+                  "arguments": {}
+                }
+              ]
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "wait",
+            "description": "Wait.",
+            "gate": "waits",
+            "hangs": true
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        },
+        "delivery_key": "k"
+      },
+      "background": true,
+      "as": "a"
+    },
+    {
+      "wait_for": "waits"
+    },
+    {
+      "call": "cancel_delivery",
+      "key": "k",
+      "reason": "stopped",
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "await": "a"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "tool_events": {
+      "room-1": [
+        {
+          "type": "tool_call_start",
+          "tool_calls": [
+            {
+              "id": "$e1",
+              "name": "wait",
+              "arguments": {}
+            }
+          ]
+        },
+        {
+          "type": "tool_call_end",
+          "tool_calls": [
+            {
+              "id": "$e1",
+              "name": "wait",
+              "result": "{\"error\": \"Tool call aborted\"}",
+              "status": "failed"
+            }
+          ],
+          "duration_ms": {
+            "$absent": true
+          }
+        }
+      ]
+    }
+  }
+}

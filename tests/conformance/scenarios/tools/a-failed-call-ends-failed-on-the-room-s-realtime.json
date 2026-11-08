@@ -1,0 +1,108 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-failed-call-ends-failed-on-the-room-s-realtime",
+  "title": "A call whose tool fails ends with the status failed on the room's realtime, so a live surface tells it from a served one without reading its preview",
+  "rules": [
+    "§6.4",
+    "§8.4"
+  ],
+  "notes": "Python: tests/test_ai_streaming_tool_events.py::test_a_failed_call_ends_failed_on_the_bus (RMK-305); channels/_ai_events.py _ended_calls: status 'failed' when the result part is_error. A call's id is read under `id`, so it is normalized as `$e1`.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "Sorry."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look a record up.",
+            "parameters": {
+              "type": "object"
+            },
+            "raises": {
+              "kind": "runtime",
+              "message": "backend down"
+            }
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Look it up."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "tool_events": {
+      "room-1": [
+        {
+          "type": "tool_call_start"
+        },
+        {
+          "type": "tool_call_end",
+          "tool_calls": [
+            {
+              "id": "$e1",
+              "name": "lookup",
+              "status": "failed"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

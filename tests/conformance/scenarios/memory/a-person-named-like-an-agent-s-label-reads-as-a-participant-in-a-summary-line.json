@@ -1,0 +1,152 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "memory/a-person-named-like-an-agent-s-label-reads-as-a-participant-in-a-summary-line",
+  "title": "A summarizing memory's summarizer reads a person whose name is one of the labels a model reads as its own turns (You, assistant, user) with \"(a participant)\" after the name",
+  "rules": [
+    "§6.4",
+    "§20.3"
+  ],
+  "notes": "Python: memory/_summary.py SummaryLines reads channels/_speaker.py turn_speakers, whose _ranked adds ' (a participant)' to a name whose skeleton is one of the labels a model reads as its own turns or a one-to-one user's (RMK-1435). The summarizing memory and its numbers are memory/a-summary-stands-for-the-older-turns's; the first sender is named You, the second Alice. Only the summarizer's request is compared.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Answer 1."
+            },
+            {
+              "text": "Answer 2."
+            },
+            {
+              "text": "Answer 3."
+            }
+          ]
+        },
+        "memory": {
+          "summarizing": {
+            "max_context_tokens": 830,
+            "min_events": 2
+          },
+          "summarizer": {
+            "rounds": [
+              {
+                "text": "The first sender asked a question."
+              }
+            ]
+          }
+        },
+        "max_tokens": 250
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Question 1: word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+        },
+        "metadata": {
+          "sender_name": "You"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "bob",
+        "content": {
+          "type": "text",
+          "body": "Question 2: word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+        },
+        "metadata": {
+          "sender_name": "Alice"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Question 3: word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+        },
+        "metadata": {
+          "sender_name": "You"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent/summarizer": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Summarize this conversation concisely. Focus on: decisions made, key findings, tool results, errors encountered, and current task state. Be specific about names, error messages, and action outcomes.\n\nYou (a participant): “Question 1: word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word”\n[assistant]: “Answer 1.”"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

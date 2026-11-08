@@ -1,0 +1,79 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skills/a-channel-that-runs-no-scripts-says-so-in-its-preamble",
+  "title": "A channel that runs no skill script ends the skills' preamble with a note that script execution is not available, before the manifest",
+  "rules": [
+    "§24.3",
+    "§6.4"
+  ],
+  "notes": "Python: channels/_ai_context.py _add_skills: SKILLS_PREAMBLE, then SKILLS_NO_SCRIPTS_NOTE when the channel has no script executor or its policy denies run_skill_script, then a blank line and the manifest (channels/_skill_constants.py).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "skills": [
+          {
+            "name": "shared",
+            "description": "The shared procedure",
+            "instructions": "Rules for shared."
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "text": "first"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "system_prompt": {
+            "$contains": "\n\nYou have access to Agent Skills — specialized knowledge packages. Use the activate_skill tool to load a skill's full instructions before using it. Available skills are listed below. Note: Script execution is not available in this environment.\n\n<"
+          }
+        }
+      ]
+    }
+  }
+}

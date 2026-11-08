@@ -1,0 +1,129 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-round-of-calls-publishes-its-start-and-its-end",
+  "title": "A round of tool calls publishes TOOL_CALL_START with each call's id, tool and arguments before it runs them, and TOOL_CALL_END with each call's result and status once they ended, the round's duration with it",
+  "rules": [
+    "§6.4",
+    "§8.4"
+  ],
+  "notes": "Python: tests/test_ai_streaming_tool_events.py::test_streaming_tool_loop_publishes_tool_events and test_non_streaming_tool_loop_publishes_tool_events; channels/_ai_loop_rules.py _execute_round_tools (START), channels/_ai_streaming.py (END, duration_ms), channels/_ai_events.py _publish_tool_event, _started_calls, _ended_calls. Each event's user_id and channel_id are the agent's. A call's id is read under `id`, so it is normalized as `$e1`.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {
+                    "q": "x"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look a record up.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "{\"found\": 1}"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Look it up."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "tool_events": {
+      "room-1": [
+        {
+          "type": "tool_call_start",
+          "tool_calls": [
+            {
+              "id": "$e1",
+              "name": "lookup",
+              "arguments": {
+                "q": "x"
+              }
+            }
+          ],
+          "round": 0,
+          "channel_id": "agent"
+        },
+        {
+          "type": "tool_call_end",
+          "tool_calls": [
+            {
+              "id": "$e1",
+              "name": "lookup",
+              "result": "{\"found\": 1}",
+              "status": "completed"
+            }
+          ],
+          "round": 0,
+          "channel_id": "agent",
+          "duration_ms": {
+            "$present": true
+          }
+        }
+      ]
+    }
+  }
+}

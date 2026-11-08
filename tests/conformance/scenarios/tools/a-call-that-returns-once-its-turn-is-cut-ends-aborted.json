@@ -1,0 +1,129 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-call-that-returns-once-its-turn-is-cut-ends-aborted",
+  "title": "A call whose tool answers once its turn is cut ends aborted and failed on the room's realtime, as its stored end row reads it, not with the answer that came too late",
+  "rules": [
+    "§6.4",
+    "§8.4",
+    "§10.1"
+  ],
+  "notes": "Python: channels/_ai_loop_rules.py _execute_round_tools publishes _aborted_results ({\"error\": \"Tool call aborted\"}, cancelled) when the round is aborted while its calls run; channels/_ai_streaming.py publishes the round's TOOL_CALL_END only once the reader took its end markers. RFC §6.4: the ephemeral TOOL_CALL_END carries each call's status as the stored TOOL_CALL_END does. The gate opens right after the cut, so the call answers while its turn ends. A call's id, read under `id`, is normalized as `$e1`.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "wait",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "never asked"
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "wait",
+            "description": "Wait.",
+            "gate": "waits",
+            "returns": "late"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        },
+        "delivery_key": "k"
+      },
+      "background": true,
+      "as": "a"
+    },
+    {
+      "wait_for": "waits"
+    },
+    {
+      "call": "cancel_delivery",
+      "key": "k",
+      "reason": "stopped",
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "open": "waits"
+    },
+    {
+      "await": "a"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "tool_events": {
+      "room-1": [
+        {
+          "type": "tool_call_start",
+          "tool_calls": [
+            {
+              "id": "$e1",
+              "name": "wait",
+              "arguments": {}
+            }
+          ]
+        },
+        {
+          "type": "tool_call_end",
+          "tool_calls": [
+            {
+              "id": "$e1",
+              "name": "wait",
+              "result": "{\"error\": \"Tool call aborted\"}",
+              "status": "failed"
+            }
+          ],
+          "duration_ms": {
+            "$absent": true
+          }
+        }
+      ]
+    }
+  }
+}
