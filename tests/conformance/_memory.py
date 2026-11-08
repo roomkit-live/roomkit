@@ -23,12 +23,21 @@ from roomkit.memory import (
 )
 from roomkit.models.context import RoomContext
 from roomkit.models.event import RoomEvent
-from roomkit.providers.ai.base import AIMessage, AIProvider
+from roomkit.providers.ai.base import AIMessage, AIProvider, AITextPart
 from roomkit.tools import current_response_metadata
 
 Compacted = Callable[[str, list[AIMessage], dict[str, int]], None]
 """What a scripted memory tells of each compaction it is asked: the room, the
 history and the usage it was handed."""
+
+
+def _built(message: Mapping[str, Any]) -> AIMessage:
+    """A message the scenario says the memory built: its text, or its text
+    parts in order."""
+    if "parts" in message:
+        parts = [AITextPart(text=text) for text in message["parts"]]
+        return AIMessage(role=message["role"], content=parts)
+    return AIMessage(role=message["role"], content=message["text"])
 
 
 class ScriptedMemory(MemoryProvider):
@@ -49,10 +58,7 @@ class ScriptedMemory(MemoryProvider):
         self._compacted = compacted
         self._compacts = list(spec.get("compacts", []))
         self._window = SlidingWindowMemory(max_events=spec.get("max_events", max_events))
-        self._messages = [
-            AIMessage(role=message["role"], content=message["text"])
-            for message in spec.get("messages", [])
-        ]
+        self._messages = [_built(message) for message in spec.get("messages", [])]
         self._notes = list(spec.get("notes", []))
         self._speakers = list(spec.get("speakers", []))
         self._writes_record = dict(spec.get("writes_record", {}))

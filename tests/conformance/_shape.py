@@ -249,7 +249,7 @@ MEMORY = {
     "summarizer",
     "retrieval",
 }
-MEMORY_MESSAGE = {"role", "text"}
+MEMORY_MESSAGE = {"role", "text", "parts"}
 MEMORY_COMPACTION = {"messages", "keep", "fails"}
 BUDGET_AWARE = {"max_context_tokens", "safety_margin_ratio", "min_events", "reserved_tokens"}
 COMPACTING = {"max_context_tokens", "summary_ratio", "safety_margin_ratio", "min_events"}
