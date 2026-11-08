@@ -1,0 +1,345 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "memory/a-memory-compacts-the-history-between-two-tool-rounds",
+  "title": "After each tool round the agent ran, its memory is handed the history before the turn's input and the round's usage; the history it returns is what the next requests send, the turn's input kept whole, a user text it ends on joined to the input, which the next compaction finds again with no history before it",
+  "rules": [
+    "§6.4",
+    "§20.1"
+  ],
+  "notes": "Python's MemoryProvider.compact (HITL cb3751f9, RMK-1533), called by the AI channel after AFTER_TOOL_ROUND, before the next round's request (channels/_ai_resilience.py _compact_after_round). The first compaction hands back a summary then the history's last message, the assistant's answer, which the input follows as it is; the second a summary alone, a user text joined to the input, so the third is handed no history: the input, the summary joined to it, is still the turn's.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Answer 1."
+            },
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {
+                    "q": "one"
+                  }
+                }
+              ],
+              "usage": {
+                "input_tokens": 900,
+                "output_tokens": 10
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "lookup",
+                  "arguments": {
+                    "q": "two"
+                  }
+                }
+              ],
+              "usage": {
+                "input_tokens": 950,
+                "output_tokens": 12
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c3",
+                  "name": "lookup",
+                  "arguments": {
+                    "q": "three"
+                  }
+                }
+              ],
+              "usage": {
+                "input_tokens": 960,
+                "output_tokens": 14
+              }
+            },
+            {
+              "text": "Answer 2."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "q"
+              ]
+            },
+            "returns": "found"
+          }
+        ],
+        "memory": {
+          "compacts": [
+            {
+              "messages": [
+                {
+                  "role": "user",
+                  "text": "Summary."
+                }
+              ],
+              "keep": 1
+            },
+            {
+              "messages": [
+                {
+                  "role": "user",
+                  "text": "Summary 2."
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Question 1."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Question 2."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "compacted": {
+      "room-1": {
+        "agent": [
+          {
+            "history": [
+              {
+                "role": "user",
+                "text": "Question 1."
+              },
+              {
+                "role": "assistant",
+                "text": "Answer 1."
+              }
+            ],
+            "usage": {
+              "input_tokens": 900,
+              "output_tokens": 10
+            }
+          },
+          {
+            "history": [
+              {
+                "role": "user",
+                "text": "Summary."
+              },
+              {
+                "role": "assistant",
+                "text": "Answer 1."
+              }
+            ],
+            "usage": {
+              "input_tokens": 950,
+              "output_tokens": 12
+            }
+          },
+          {
+            "history": [],
+            "usage": {
+              "input_tokens": 960,
+              "output_tokens": 14
+            }
+          }
+        ]
+      }
+    },
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Question 1."
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Question 1."
+            },
+            {
+              "role": "assistant",
+              "text": "Answer 1."
+            },
+            {
+              "role": "user",
+              "text": "Question 2."
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Summary."
+            },
+            {
+              "role": "assistant",
+              "text": "Answer 1."
+            },
+            {
+              "role": "user",
+              "text": "Question 2."
+            },
+            {
+              "role": "assistant",
+              "round": [
+                {
+                  "call": "c1",
+                  "arguments": {
+                    "q": "one"
+                  },
+                  "metadata": {}
+                }
+              ]
+            },
+            {
+              "role": "tool"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Summary 2.\n\nQuestion 2."
+            },
+            {
+              "role": "assistant"
+            },
+            {
+              "role": "tool"
+            },
+            {
+              "role": "assistant",
+              "round": [
+                {
+                  "call": "c2",
+                  "arguments": {
+                    "q": "two"
+                  },
+                  "metadata": {}
+                }
+              ]
+            },
+            {
+              "role": "tool"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Summary 2.\n\nQuestion 2."
+            },
+            {
+              "role": "assistant"
+            },
+            {
+              "role": "tool"
+            },
+            {
+              "role": "assistant"
+            },
+            {
+              "role": "tool"
+            },
+            {
+              "role": "assistant",
+              "round": [
+                {
+                  "call": "c3",
+                  "arguments": {
+                    "q": "three"
+                  },
+                  "metadata": {}
+                }
+              ]
+            },
+            {
+              "role": "tool"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

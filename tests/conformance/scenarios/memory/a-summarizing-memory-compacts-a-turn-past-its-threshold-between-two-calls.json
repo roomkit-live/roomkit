@@ -1,0 +1,255 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "memory/a-summarizing-memory-compacts-a-turn-past-its-threshold-between-two-calls",
+  "title": "A summarizing memory compacts a turn whose round measures past tier2_ratio of its max_context_tokens before the next call: its model summarizes the older messages of the history, the latest kept whole, and the next request sends the summary in their place, with no emergency compaction",
+  "rules": [
+    "§20.3",
+    "§6.4",
+    "§20.1"
+  ],
+  "notes": "Python's SummarizingMemory.compact (HITL cb3751f9, RMK-1533): the round's counters (830 tokens) pass 80% of the 1,000-token window by 30; with the summary's 50 tokens, the history (four messages, each estimated as 4 tokens for its role and len // 4 + 1 for its text) gives back 80, so the latest two messages that fit what is left (min_events 2) are kept and the first two summarized, each read on one line after its role, quoted. The summary's message joins the user message after it. At each turn's start the history is far under the memory's tiers, so its read summarizes nothing. The memory it wraps is not asked to compact.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Answer 1: word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+            },
+            {
+              "text": "Answer 2: word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+            },
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {
+                    "q": "one"
+                  }
+                }
+              ],
+              "usage": {
+                "input_tokens": 820,
+                "output_tokens": 10
+              }
+            },
+            {
+              "text": "Answer 3."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "q"
+              ]
+            },
+            "returns": "found"
+          }
+        ],
+        "memory": {
+          "summarizing": {
+            "max_context_tokens": 1000,
+            "tier2_ratio": 0.8,
+            "summary_max_tokens": 50,
+            "min_events": 2
+          },
+          "summarizer": {
+            "rounds": [
+              {
+                "text": "Alice asked a first question."
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Question 1: word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Question 2: word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Question 3: word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "compacted": {
+      "room-1": {
+        "agent": []
+      }
+    },
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Question 1: word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Question 1: word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+            },
+            {
+              "role": "assistant",
+              "text": "Answer 1: word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+            },
+            {
+              "role": "user",
+              "text": "Question 2: word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Question 1: word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+            },
+            {
+              "role": "assistant",
+              "text": "Answer 1: word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+            },
+            {
+              "role": "user",
+              "text": "Question 2: word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+            },
+            {
+              "role": "assistant",
+              "text": "Answer 2: word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+            },
+            {
+              "role": "user",
+              "text": "Question 3: word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "[Conversation summary — earlier messages compacted]\n<conversation_summary>\nAlice asked a first question.\n</conversation_summary>\n\nQuestion 2: word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+            },
+            {
+              "role": "assistant",
+              "text": "Answer 2: word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+            },
+            {
+              "role": "user",
+              "text": "Question 3: word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+            },
+            {
+              "role": "assistant"
+            },
+            {
+              "role": "tool"
+            }
+          ]
+        }
+      ],
+      "agent/summarizer": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Summarize this conversation concisely. Focus on: decisions made, key findings, tool results, errors encountered, and current task state. Be specific about names, error messages, and action outcomes.\n\n[user]: “Question 1: word word word word word word word word word word word word word word word word word word word word word word word word word word word word”\n[assistant]: “Answer 1: word word word word word word word word word word word word word word word word word word word word word word word word word word word word”"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

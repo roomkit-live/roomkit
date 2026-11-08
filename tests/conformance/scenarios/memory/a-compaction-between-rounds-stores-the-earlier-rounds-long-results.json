@@ -1,0 +1,176 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "memory/a-compaction-between-rounds-stores-the-earlier-rounds-long-results",
+  "title": "A history the memory returns between two tool rounds stores the long results of the turn's earlier rounds for read_stored_result, a preview in their place, as the emergency compaction does, and sends the last round's, which the model has not read yet, whole",
+  "rules": [
+    "§6.4",
+    "§20.1",
+    "§21.5"
+  ],
+  "notes": "Python's _compact_after_round stores, with with_results_stored (channels/_compaction.py), each result longer than 2,000 characters of the rounds between the turn's input and its last round, a preview of 1,000 characters in its place. Here the memory hands back nothing after the first round, then an empty history after the second: the first round's result (2,899 characters) is stored, the second's goes whole.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {
+                    "q": "one"
+                  }
+                }
+              ],
+              "usage": {
+                "input_tokens": 900,
+                "output_tokens": 10
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "lookup",
+                  "arguments": {
+                    "q": "two"
+                  }
+                }
+              ],
+              "usage": {
+                "input_tokens": 900,
+                "output_tokens": 10
+              }
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "q"
+              ]
+            },
+            "returns": "row 000 xxxxxxxxxxxxxxxxxxxx\nrow 001 xxxxxxxxxxxxxxxxxxxx\nrow 002 xxxxxxxxxxxxxxxxxxxx\nrow 003 xxxxxxxxxxxxxxxxxxxx\nrow 004 xxxxxxxxxxxxxxxxxxxx\nrow 005 xxxxxxxxxxxxxxxxxxxx\nrow 006 xxxxxxxxxxxxxxxxxxxx\nrow 007 xxxxxxxxxxxxxxxxxxxx\nrow 008 xxxxxxxxxxxxxxxxxxxx\nrow 009 xxxxxxxxxxxxxxxxxxxx\nrow 010 xxxxxxxxxxxxxxxxxxxx\nrow 011 xxxxxxxxxxxxxxxxxxxx\nrow 012 xxxxxxxxxxxxxxxxxxxx\nrow 013 xxxxxxxxxxxxxxxxxxxx\nrow 014 xxxxxxxxxxxxxxxxxxxx\nrow 015 xxxxxxxxxxxxxxxxxxxx\nrow 016 xxxxxxxxxxxxxxxxxxxx\nrow 017 xxxxxxxxxxxxxxxxxxxx\nrow 018 xxxxxxxxxxxxxxxxxxxx\nrow 019 xxxxxxxxxxxxxxxxxxxx\nrow 020 xxxxxxxxxxxxxxxxxxxx\nrow 021 xxxxxxxxxxxxxxxxxxxx\nrow 022 xxxxxxxxxxxxxxxxxxxx\nrow 023 xxxxxxxxxxxxxxxxxxxx\nrow 024 xxxxxxxxxxxxxxxxxxxx\nrow 025 xxxxxxxxxxxxxxxxxxxx\nrow 026 xxxxxxxxxxxxxxxxxxxx\nrow 027 xxxxxxxxxxxxxxxxxxxx\nrow 028 xxxxxxxxxxxxxxxxxxxx\nrow 029 xxxxxxxxxxxxxxxxxxxx\nrow 030 xxxxxxxxxxxxxxxxxxxx\nrow 031 xxxxxxxxxxxxxxxxxxxx\nrow 032 xxxxxxxxxxxxxxxxxxxx\nrow 033 xxxxxxxxxxxxxxxxxxxx\nrow 034 xxxxxxxxxxxxxxxxxxxx\nrow 035 xxxxxxxxxxxxxxxxxxxx\nrow 036 xxxxxxxxxxxxxxxxxxxx\nrow 037 xxxxxxxxxxxxxxxxxxxx\nrow 038 xxxxxxxxxxxxxxxxxxxx\nrow 039 xxxxxxxxxxxxxxxxxxxx\nrow 040 xxxxxxxxxxxxxxxxxxxx\nrow 041 xxxxxxxxxxxxxxxxxxxx\nrow 042 xxxxxxxxxxxxxxxxxxxx\nrow 043 xxxxxxxxxxxxxxxxxxxx\nrow 044 xxxxxxxxxxxxxxxxxxxx\nrow 045 xxxxxxxxxxxxxxxxxxxx\nrow 046 xxxxxxxxxxxxxxxxxxxx\nrow 047 xxxxxxxxxxxxxxxxxxxx\nrow 048 xxxxxxxxxxxxxxxxxxxx\nrow 049 xxxxxxxxxxxxxxxxxxxx\nrow 050 xxxxxxxxxxxxxxxxxxxx\nrow 051 xxxxxxxxxxxxxxxxxxxx\nrow 052 xxxxxxxxxxxxxxxxxxxx\nrow 053 xxxxxxxxxxxxxxxxxxxx\nrow 054 xxxxxxxxxxxxxxxxxxxx\nrow 055 xxxxxxxxxxxxxxxxxxxx\nrow 056 xxxxxxxxxxxxxxxxxxxx\nrow 057 xxxxxxxxxxxxxxxxxxxx\nrow 058 xxxxxxxxxxxxxxxxxxxx\nrow 059 xxxxxxxxxxxxxxxxxxxx\nrow 060 xxxxxxxxxxxxxxxxxxxx\nrow 061 xxxxxxxxxxxxxxxxxxxx\nrow 062 xxxxxxxxxxxxxxxxxxxx\nrow 063 xxxxxxxxxxxxxxxxxxxx\nrow 064 xxxxxxxxxxxxxxxxxxxx\nrow 065 xxxxxxxxxxxxxxxxxxxx\nrow 066 xxxxxxxxxxxxxxxxxxxx\nrow 067 xxxxxxxxxxxxxxxxxxxx\nrow 068 xxxxxxxxxxxxxxxxxxxx\nrow 069 xxxxxxxxxxxxxxxxxxxx\nrow 070 xxxxxxxxxxxxxxxxxxxx\nrow 071 xxxxxxxxxxxxxxxxxxxx\nrow 072 xxxxxxxxxxxxxxxxxxxx\nrow 073 xxxxxxxxxxxxxxxxxxxx\nrow 074 xxxxxxxxxxxxxxxxxxxx\nrow 075 xxxxxxxxxxxxxxxxxxxx\nrow 076 xxxxxxxxxxxxxxxxxxxx\nrow 077 xxxxxxxxxxxxxxxxxxxx\nrow 078 xxxxxxxxxxxxxxxxxxxx\nrow 079 xxxxxxxxxxxxxxxxxxxx\nrow 080 xxxxxxxxxxxxxxxxxxxx\nrow 081 xxxxxxxxxxxxxxxxxxxx\nrow 082 xxxxxxxxxxxxxxxxxxxx\nrow 083 xxxxxxxxxxxxxxxxxxxx\nrow 084 xxxxxxxxxxxxxxxxxxxx\nrow 085 xxxxxxxxxxxxxxxxxxxx\nrow 086 xxxxxxxxxxxxxxxxxxxx\nrow 087 xxxxxxxxxxxxxxxxxxxx\nrow 088 xxxxxxxxxxxxxxxxxxxx\nrow 089 xxxxxxxxxxxxxxxxxxxx\nrow 090 xxxxxxxxxxxxxxxxxxxx\nrow 091 xxxxxxxxxxxxxxxxxxxx\nrow 092 xxxxxxxxxxxxxxxxxxxx\nrow 093 xxxxxxxxxxxxxxxxxxxx\nrow 094 xxxxxxxxxxxxxxxxxxxx\nrow 095 xxxxxxxxxxxxxxxxxxxx\nrow 096 xxxxxxxxxxxxxxxxxxxx\nrow 097 xxxxxxxxxxxxxxxxxxxx\nrow 098 xxxxxxxxxxxxxxxxxxxx\nrow 099 xxxxxxxxxxxxxxxxxxxx"
+          }
+        ],
+        "memory": {
+          "compacts": [
+            null,
+            {}
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Question."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "compacted": {
+      "room-1": {
+        "agent": [
+          {
+            "history": [],
+            "usage": {
+              "input_tokens": 900,
+              "output_tokens": 10
+            }
+          },
+          {
+            "history": [],
+            "usage": {
+              "input_tokens": 900,
+              "output_tokens": 10
+            }
+          }
+        ]
+      }
+    },
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Question."
+            }
+          ]
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "row 000 xxxxxxxxxxxxxxxxxxxx\nrow 001 xxxxxxxxxxxxxxxxxxxx\nrow 002 xxxxxxxxxxxxxxxxxxxx\nrow 003 xxxxxxxxxxxxxxxxxxxx\nrow 004 xxxxxxxxxxxxxxxxxxxx\nrow 005 xxxxxxxxxxxxxxxxxxxx\nrow 006 xxxxxxxxxxxxxxxxxxxx\nrow 007 xxxxxxxxxxxxxxxxxxxx\nrow 008 xxxxxxxxxxxxxxxxxxxx\nrow 009 xxxxxxxxxxxxxxxxxxxx\nrow 010 xxxxxxxxxxxxxxxxxxxx\nrow 011 xxxxxxxxxxxxxxxxxxxx\nrow 012 xxxxxxxxxxxxxxxxxxxx\nrow 013 xxxxxxxxxxxxxxxxxxxx\nrow 014 xxxxxxxxxxxxxxxxxxxx\nrow 015 xxxxxxxxxxxxxxxxxxxx\nrow 016 xxxxxxxxxxxxxxxxxxxx\nrow 017 xxxxxxxxxxxxxxxxxxxx\nrow 018 xxxxxxxxxxxxxxxxxxxx\nrow 019 xxxxxxxxxxxxxxxxxxxx\nrow 020 xxxxxxxxxxxxxxxxxxxx\nrow 021 xxxxxxxxxxxxxxxxxxxx\nrow 022 xxxxxxxxxxxxxxxxxxxx\nrow 023 xxxxxxxxxxxxxxxxxxxx\nrow 024 xxxxxxxxxxxxxxxxxxxx\nrow 025 xxxxxxxxxxxxxxxxxxxx\nrow 026 xxxxxxxxxxxxxxxxxxxx\nrow 027 xxxxxxxxxxxxxxxxxxxx\nrow 028 xxxxxxxxxxxxxxxxxxxx\nrow 029 xxxxxxxxxxxxxxxxxxxx\nrow 030 xxxxxxxxxxxxxxxxxxxx\nrow 031 xxxxxxxxxxxxxxxxxxxx\nrow 032 xxxxxxxxxxxxxxxxxxxx\nrow 033 xxxxxxxxxxxxxxxxxxxx\nrow 034 xxxxxxxxxxxxxxxxxxxx\nrow 035 xxxxxxxxxxxxxxxxxxxx\nrow 036 xxxxxxxxxxxxxxxxxxxx\nrow 037 xxxxxxxxxxxxxxxxxxxx\nrow 038 xxxxxxxxxxxxxxxxxxxx\nrow 039 xxxxxxxxxxxxxxxxxxxx\nrow 040 xxxxxxxxxxxxxxxxxxxx\nrow 041 xxxxxxxxxxxxxxxxxxxx\nrow 042 xxxxxxxxxxxxxxxxxxxx\nrow 043 xxxxxxxxxxxxxxxxxxxx\nrow 044 xxxxxxxxxxxxxxxxxxxx\nrow 045 xxxxxxxxxxxxxxxxxxxx\nrow 046 xxxxxxxxxxxxxxxxxxxx\nrow 047 xxxxxxxxxxxxxxxxxxxx\nrow 048 xxxxxxxxxxxxxxxxxxxx\nrow 049 xxxxxxxxxxxxxxxxxxxx\nrow 050 xxxxxxxxxxxxxxxxxxxx\nrow 051 xxxxxxxxxxxxxxxxxxxx\nrow 052 xxxxxxxxxxxxxxxxxxxx\nrow 053 xxxxxxxxxxxxxxxxxxxx\nrow 054 xxxxxxxxxxxxxxxxxxxx\nrow 055 xxxxxxxxxxxxxxxxxxxx\nrow 056 xxxxxxxxxxxxxxxxxxxx\nrow 057 xxxxxxxxxxxxxxxxxxxx\nrow 058 xxxxxxxxxxxxxxxxxxxx\nrow 059 xxxxxxxxxxxxxxxxxxxx\nrow 060 xxxxxxxxxxxxxxxxxxxx\nrow 061 xxxxxxxxxxxxxxxxxxxx\nrow 062 xxxxxxxxxxxxxxxxxxxx\nrow 063 xxxxxxxxxxxxxxxxxxxx\nrow 064 xxxxxxxxxxxxxxxxxxxx\nrow 065 xxxxxxxxxxxxxxxxxxxx\nrow 066 xxxxxxxxxxxxxxxxxxxx\nrow 067 xxxxxxxxxxxxxxxxxxxx\nrow 068 xxxxxxxxxxxxxxxxxxxx\nrow 069 xxxxxxxxxxxxxxxxxxxx\nrow 070 xxxxxxxxxxxxxxxxxxxx\nrow 071 xxxxxxxxxxxxxxxxxxxx\nrow 072 xxxxxxxxxxxxxxxxxxxx\nrow 073 xxxxxxxxxxxxxxxxxxxx\nrow 074 xxxxxxxxxxxxxxxxxxxx\nrow 075 xxxxxxxxxxxxxxxxxxxx\nrow 076 xxxxxxxxxxxxxxxxxxxx\nrow 077 xxxxxxxxxxxxxxxxxxxx\nrow 078 xxxxxxxxxxxxxxxxxxxx\nrow 079 xxxxxxxxxxxxxxxxxxxx\nrow 080 xxxxxxxxxxxxxxxxxxxx\nrow 081 xxxxxxxxxxxxxxxxxxxx\nrow 082 xxxxxxxxxxxxxxxxxxxx\nrow 083 xxxxxxxxxxxxxxxxxxxx\nrow 084 xxxxxxxxxxxxxxxxxxxx\nrow 085 xxxxxxxxxxxxxxxxxxxx\nrow 086 xxxxxxxxxxxxxxxxxxxx\nrow 087 xxxxxxxxxxxxxxxxxxxx\nrow 088 xxxxxxxxxxxxxxxxxxxx\nrow 089 xxxxxxxxxxxxxxxxxxxx\nrow 090 xxxxxxxxxxxxxxxxxxxx\nrow 091 xxxxxxxxxxxxxxxxxxxx\nrow 092 xxxxxxxxxxxxxxxxxxxx\nrow 093 xxxxxxxxxxxxxxxxxxxx\nrow 094 xxxxxxxxxxxxxxxxxxxx\nrow 095 xxxxxxxxxxxxxxxxxxxx\nrow 096 xxxxxxxxxxxxxxxxxxxx\nrow 097 xxxxxxxxxxxxxxxxxxxx\nrow 098 xxxxxxxxxxxxxxxxxxxx\nrow 099 xxxxxxxxxxxxxxxxxxxx"
+            }
+          ]
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "Result too large (725 tokens). Full output saved as 'evicted_c1'. Use read_stored_result to read it with pagination.\n\nPreview:\nrow 000 xxxxxxxxxxxxxxxxxxxx\nrow 001 xxxxxxxxxxxxxxxxxxxx\nrow 002 xxxxxxxxxxxxxxxxxxxx\nrow 003 xxxxxxxxxxxxxxxxxxxx\nrow 004 xxxxxxxxxxxxxxxxxxxx\n\n[... 90 lines omitted ...]\n\nrow 095 xxxxxxxxxxxxxxxxxxxx\nrow 096 xxxxxxxxxxxxxxxxxxxx\nrow 097 xxxxxxxxxxxxxxxxxxxx\nrow 098 xxxxxxxxxxxxxxxxxxxx\nrow 099 xxxxxxxxxxxxxxxxxxxx"
+            },
+            {
+              "tool_call_id": "c2",
+              "content": "row 000 xxxxxxxxxxxxxxxxxxxx\nrow 001 xxxxxxxxxxxxxxxxxxxx\nrow 002 xxxxxxxxxxxxxxxxxxxx\nrow 003 xxxxxxxxxxxxxxxxxxxx\nrow 004 xxxxxxxxxxxxxxxxxxxx\nrow 005 xxxxxxxxxxxxxxxxxxxx\nrow 006 xxxxxxxxxxxxxxxxxxxx\nrow 007 xxxxxxxxxxxxxxxxxxxx\nrow 008 xxxxxxxxxxxxxxxxxxxx\nrow 009 xxxxxxxxxxxxxxxxxxxx\nrow 010 xxxxxxxxxxxxxxxxxxxx\nrow 011 xxxxxxxxxxxxxxxxxxxx\nrow 012 xxxxxxxxxxxxxxxxxxxx\nrow 013 xxxxxxxxxxxxxxxxxxxx\nrow 014 xxxxxxxxxxxxxxxxxxxx\nrow 015 xxxxxxxxxxxxxxxxxxxx\nrow 016 xxxxxxxxxxxxxxxxxxxx\nrow 017 xxxxxxxxxxxxxxxxxxxx\nrow 018 xxxxxxxxxxxxxxxxxxxx\nrow 019 xxxxxxxxxxxxxxxxxxxx\nrow 020 xxxxxxxxxxxxxxxxxxxx\nrow 021 xxxxxxxxxxxxxxxxxxxx\nrow 022 xxxxxxxxxxxxxxxxxxxx\nrow 023 xxxxxxxxxxxxxxxxxxxx\nrow 024 xxxxxxxxxxxxxxxxxxxx\nrow 025 xxxxxxxxxxxxxxxxxxxx\nrow 026 xxxxxxxxxxxxxxxxxxxx\nrow 027 xxxxxxxxxxxxxxxxxxxx\nrow 028 xxxxxxxxxxxxxxxxxxxx\nrow 029 xxxxxxxxxxxxxxxxxxxx\nrow 030 xxxxxxxxxxxxxxxxxxxx\nrow 031 xxxxxxxxxxxxxxxxxxxx\nrow 032 xxxxxxxxxxxxxxxxxxxx\nrow 033 xxxxxxxxxxxxxxxxxxxx\nrow 034 xxxxxxxxxxxxxxxxxxxx\nrow 035 xxxxxxxxxxxxxxxxxxxx\nrow 036 xxxxxxxxxxxxxxxxxxxx\nrow 037 xxxxxxxxxxxxxxxxxxxx\nrow 038 xxxxxxxxxxxxxxxxxxxx\nrow 039 xxxxxxxxxxxxxxxxxxxx\nrow 040 xxxxxxxxxxxxxxxxxxxx\nrow 041 xxxxxxxxxxxxxxxxxxxx\nrow 042 xxxxxxxxxxxxxxxxxxxx\nrow 043 xxxxxxxxxxxxxxxxxxxx\nrow 044 xxxxxxxxxxxxxxxxxxxx\nrow 045 xxxxxxxxxxxxxxxxxxxx\nrow 046 xxxxxxxxxxxxxxxxxxxx\nrow 047 xxxxxxxxxxxxxxxxxxxx\nrow 048 xxxxxxxxxxxxxxxxxxxx\nrow 049 xxxxxxxxxxxxxxxxxxxx\nrow 050 xxxxxxxxxxxxxxxxxxxx\nrow 051 xxxxxxxxxxxxxxxxxxxx\nrow 052 xxxxxxxxxxxxxxxxxxxx\nrow 053 xxxxxxxxxxxxxxxxxxxx\nrow 054 xxxxxxxxxxxxxxxxxxxx\nrow 055 xxxxxxxxxxxxxxxxxxxx\nrow 056 xxxxxxxxxxxxxxxxxxxx\nrow 057 xxxxxxxxxxxxxxxxxxxx\nrow 058 xxxxxxxxxxxxxxxxxxxx\nrow 059 xxxxxxxxxxxxxxxxxxxx\nrow 060 xxxxxxxxxxxxxxxxxxxx\nrow 061 xxxxxxxxxxxxxxxxxxxx\nrow 062 xxxxxxxxxxxxxxxxxxxx\nrow 063 xxxxxxxxxxxxxxxxxxxx\nrow 064 xxxxxxxxxxxxxxxxxxxx\nrow 065 xxxxxxxxxxxxxxxxxxxx\nrow 066 xxxxxxxxxxxxxxxxxxxx\nrow 067 xxxxxxxxxxxxxxxxxxxx\nrow 068 xxxxxxxxxxxxxxxxxxxx\nrow 069 xxxxxxxxxxxxxxxxxxxx\nrow 070 xxxxxxxxxxxxxxxxxxxx\nrow 071 xxxxxxxxxxxxxxxxxxxx\nrow 072 xxxxxxxxxxxxxxxxxxxx\nrow 073 xxxxxxxxxxxxxxxxxxxx\nrow 074 xxxxxxxxxxxxxxxxxxxx\nrow 075 xxxxxxxxxxxxxxxxxxxx\nrow 076 xxxxxxxxxxxxxxxxxxxx\nrow 077 xxxxxxxxxxxxxxxxxxxx\nrow 078 xxxxxxxxxxxxxxxxxxxx\nrow 079 xxxxxxxxxxxxxxxxxxxx\nrow 080 xxxxxxxxxxxxxxxxxxxx\nrow 081 xxxxxxxxxxxxxxxxxxxx\nrow 082 xxxxxxxxxxxxxxxxxxxx\nrow 083 xxxxxxxxxxxxxxxxxxxx\nrow 084 xxxxxxxxxxxxxxxxxxxx\nrow 085 xxxxxxxxxxxxxxxxxxxx\nrow 086 xxxxxxxxxxxxxxxxxxxx\nrow 087 xxxxxxxxxxxxxxxxxxxx\nrow 088 xxxxxxxxxxxxxxxxxxxx\nrow 089 xxxxxxxxxxxxxxxxxxxx\nrow 090 xxxxxxxxxxxxxxxxxxxx\nrow 091 xxxxxxxxxxxxxxxxxxxx\nrow 092 xxxxxxxxxxxxxxxxxxxx\nrow 093 xxxxxxxxxxxxxxxxxxxx\nrow 094 xxxxxxxxxxxxxxxxxxxx\nrow 095 xxxxxxxxxxxxxxxxxxxx\nrow 096 xxxxxxxxxxxxxxxxxxxx\nrow 097 xxxxxxxxxxxxxxxxxxxx\nrow 098 xxxxxxxxxxxxxxxxxxxx\nrow 099 xxxxxxxxxxxxxxxxxxxx"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

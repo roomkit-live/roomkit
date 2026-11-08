@@ -1,0 +1,259 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "memory/a-summary-set-before-an-assistant-turn-is-one-of-the-messages-at-the-next-compaction",
+  "title": "A summary the channel sets before an assistant's message stands as a user message of its own, its text alone: the next compaction reads it as one of the history's messages, a line of its own, not as a prior summary",
+  "rules": [
+    "§20.3",
+    "§20.2",
+    "§6.4"
+  ],
+  "notes": "Python's with_leading_text (channels/_user_text.py), which _after_memory calls: a user text a memory's messages end on, before no user message, becomes AIMessage(role='user', content=text), the summary's provenance left out. The first compaction (850 measured, 50 past the threshold of 800) keeps the history's last message, Answer 2, so the summary stands before it; the second reads that summary as a [user] line.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Answer 1: word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+            },
+            {
+              "text": "Answer 2: word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+            },
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {
+                    "q": "one"
+                  }
+                }
+              ],
+              "usage": {
+                "input_tokens": 840,
+                "output_tokens": 10
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "lookup",
+                  "arguments": {
+                    "q": "two"
+                  }
+                }
+              ],
+              "usage": {
+                "input_tokens": 840,
+                "output_tokens": 10
+              }
+            },
+            {
+              "text": "Answer 3."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "q"
+              ]
+            },
+            "returns": "found"
+          }
+        ],
+        "memory": {
+          "summarizing": {
+            "max_context_tokens": 1000,
+            "tier2_ratio": 0.8,
+            "summary_max_tokens": 50,
+            "min_events": 1
+          },
+          "summarizer": {
+            "rounds": [
+              {
+                "text": "S1."
+              },
+              {
+                "text": "S2."
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Question 1: word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Question 2: word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Question 3: word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "[Conversation summary — earlier messages compacted]\n<conversation_summary>\nS1.\n</conversation_summary>"
+            },
+            {
+              "role": "assistant",
+              "text": "Answer 2: word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+            },
+            {
+              "role": "user",
+              "text": "Question 3: word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+            },
+            {
+              "role": "assistant"
+            },
+            {
+              "role": "tool"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "[Conversation summary — earlier messages compacted]\n<conversation_summary>\nS2.\n</conversation_summary>"
+            },
+            {
+              "role": "assistant",
+              "text": "Answer 2: word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+            },
+            {
+              "role": "user",
+              "text": "Question 3: word word word word word word word word word word word word word word word word word word word word word word word word word word word word"
+            },
+            {
+              "role": "assistant"
+            },
+            {
+              "role": "tool"
+            },
+            {
+              "role": "assistant"
+            },
+            {
+              "role": "tool"
+            }
+          ]
+        }
+      ],
+      "agent/summarizer": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Summarize this conversation concisely. Focus on: decisions made, key findings, tool results, errors encountered, and current task state. Be specific about names, error messages, and action outcomes.\n\n[user]: “Question 1: word word word word word word word word word word word word word word word word word word word word word word word word word word word word”\n[assistant]: “Answer 1: word word word word word word word word word word word word word word word word word word word word word word word word word word word word”\n[user]: “Question 2: word word word word word word word word word word word word word word word word word word word word word word word word word word word word”"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Summarize this conversation concisely. Focus on: decisions made, key findings, tool results, errors encountered, and current task state. Be specific about names, error messages, and action outcomes.\n\n[user]: “[Conversation summary — earlier messages compacted] <conversation_summary> S1. </conversation_summary>”"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

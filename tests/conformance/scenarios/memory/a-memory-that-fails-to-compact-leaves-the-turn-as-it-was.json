@@ -1,0 +1,205 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "memory/a-memory-that-fails-to-compact-leaves-the-turn-as-it-was",
+  "title": "A memory whose compaction between two tool rounds fails leaves the turn as it was: the turn goes on, its rounds sent whole",
+  "rules": [
+    "§6.4",
+    "§20.1"
+  ],
+  "notes": "Python's _compact_after_round logs the memory's error at warning (tests/test_channels/test_ai_compaction_between_rounds.py::test_a_memory_that_fails_to_compact_leaves_the_turn_as_it_was reads the log) and changes nothing.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Answer 1."
+            },
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {
+                    "q": "one"
+                  }
+                }
+              ],
+              "usage": {
+                "input_tokens": 900,
+                "output_tokens": 10
+              }
+            },
+            {
+              "text": "Answer 2."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "q"
+              ]
+            },
+            "returns": "found"
+          }
+        ],
+        "memory": {
+          "compacts": [
+            {
+              "fails": "summarizer down"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Question 1."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Question 2."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "compacted": {
+      "room-1": {
+        "agent": [
+          {
+            "history": [
+              {
+                "role": "user",
+                "text": "Question 1."
+              },
+              {
+                "role": "assistant",
+                "text": "Answer 1."
+              }
+            ],
+            "usage": {
+              "input_tokens": 900,
+              "output_tokens": 10
+            }
+          }
+        ]
+      }
+    },
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Question 1."
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Question 1."
+            },
+            {
+              "role": "assistant",
+              "text": "Answer 1."
+            },
+            {
+              "role": "user",
+              "text": "Question 2."
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Question 1."
+            },
+            {
+              "role": "assistant",
+              "text": "Answer 1."
+            },
+            {
+              "role": "user",
+              "text": "Question 2."
+            },
+            {
+              "role": "assistant"
+            },
+            {
+              "role": "tool"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
