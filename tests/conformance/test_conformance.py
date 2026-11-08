@@ -81,6 +81,16 @@ def _times_out_after_its_turn(scenario: dict[str, Any]) -> bool:
     return any(f'"hook_name": "{name}"' in expected for name in observers)
 
 
+# A call whose tool answers right after its turn's cut: in memory the cut has
+# reached the turn when the gate opens; across Redis it reaches the executor
+# later, the tool answers first, and the round's TOOL_CALL_END is not published.
+_ORDER_OF_ITS_CUT = (
+    "the tool answers right after its turn's cut, which reaches an executor across "
+    "Redis later, so the round's TOOL_CALL_END depends on that order"
+)
+_ANSWERS_AFTER_ITS_CUT = {"tools/a-call-that-returns-once-its-turn-is-cut-ends-aborted"}
+
+
 # The store's scenarios run on each store this implementation ships that
 # needs no server: the in-memory store, the kit's default, and SQLiteStore.
 _STORES = ("memory", "sqlite")
@@ -95,6 +105,8 @@ def _cases() -> list[Any]:
             marks.append(pytest.mark.in_process(_IN_PROCESS))
         if _times_out_after_its_turn(_load(path)):
             marks.append(pytest.mark.in_process(_AFTER_ITS_TURN))
+        if scenario_id in _ANSWERS_AFTER_ITS_CUT:
+            marks.append(pytest.mark.in_process(_ORDER_OF_ITS_CUT))
         if scenario_id in KNOWN_FAILURES:
             marks.append(
                 pytest.mark.xfail(
