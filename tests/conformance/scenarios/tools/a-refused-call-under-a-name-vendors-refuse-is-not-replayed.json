@@ -1,0 +1,174 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-refused-call-under-a-name-vendors-refuse-is-not-replayed",
+  "title": "A call the model invented under a name vendors refuse is not replayed; one under a name they take is",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: channels/_tool_history.py _answered. Sent back, such a name makes every later request of the room a 400.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look an order up",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "returns": "Found."
+          }
+        ],
+        "model": {
+          "chat_dialect": "openai",
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "multi_tool_use.parallel",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "Nothing ran."
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "no_such_tool",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "Still nothing."
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "First question."
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Second question."
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Third question."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {},
+        {},
+        {
+          "chat_messages": [
+            {
+              "role": "user",
+              "content": "First question."
+            },
+            {
+              "role": "assistant",
+              "content": "Nothing ran."
+            },
+            {
+              "role": "user",
+              "content": "Second question."
+            },
+            {
+              "role": "assistant",
+              "tool_calls": [
+                {
+                  "type": "function",
+                  "function": {
+                    "name": "no_such_tool"
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool"
+            },
+            {
+              "role": "assistant",
+              "content": "Still nothing."
+            },
+            {
+              "role": "user",
+              "content": "Third question."
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
