@@ -74,9 +74,11 @@ KIT = {
     "delivery_gap_timeout_ms",
     "lock_manager",
     "inbound_rate_limit",
+    "persistence_policy",
 }
 LOCK_MANAGER = {"release_error"}
 RATE_LIMIT = {"max_per_second", "max_per_minute", "max_per_hour"}
+PERSISTENCE_POLICY = {"persist_types", "exclude_types"}
 DELIVERY_BACKEND = {
     "retry_delay_ms",
     "max_retry_delay_ms",
@@ -454,6 +456,9 @@ def unknown_members(scenario: Mapping[str, Any]) -> list[str]:
     if "inbound_rate_limit" in setup.get("kit", {}):
         limit = setup["kit"]["inbound_rate_limit"]
         _members(limit, RATE_LIMIT, "setup.kit.inbound_rate_limit", found)
+    if "persistence_policy" in setup.get("kit", {}):
+        policy = setup["kit"]["persistence_policy"]
+        _members(policy, PERSISTENCE_POLICY, "setup.kit.persistence_policy", found)
     readers = {"media_resolver": MEDIA_RESOLVER, "attached_media": ATTACHED_MEDIA}
     for reader, members in readers.items():
         if reader in setup.get("kit", {}):

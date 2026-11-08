@@ -22,7 +22,7 @@ from roomkit.models.delivery import DeliveryHandle, DeliveryStatus
 from roomkit.models.event import RoomEvent
 from roomkit.models.framework_event import FrameworkEvent
 from roomkit.models.pending_input import PendingInputEvent
-from roomkit.models.store_filter import EventFilter
+from roomkit.models.store_filter import EventFilter, PersistencePolicy
 from roomkit.models.task import Observation
 from roomkit.models.tool_call import (
     AIGenerationEvent,
@@ -210,6 +210,8 @@ class Harness:
             kwargs["process_timeout"] = kit_setup["process_timeout_ms"] / 1000
         if "inbound_rate_limit" in kit_setup:
             kwargs["inbound_rate_limit"] = RateLimit(**kit_setup["inbound_rate_limit"])
+        if "persistence_policy" in kit_setup:
+            kwargs["persistence_policy"] = PersistencePolicy(**kit_setup["persistence_policy"])
         if store is not None:
             kwargs["store"] = store
         if "router" in kit_setup:
