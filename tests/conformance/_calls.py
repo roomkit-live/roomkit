@@ -417,6 +417,7 @@ def register_channel(
                     "ingested", room_id, channel_id, event
                 ),
                 harness.models if process else None,
+                harness.record_compacted,
             )
         )
         harness.models.update(models)

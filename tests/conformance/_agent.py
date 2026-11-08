@@ -39,6 +39,7 @@ from roomkit.providers.ai import (
     chat_messages,
 )
 from roomkit.providers.ai.base import (
+    AIMessage,
     ProviderError,
     StreamDone,
     StreamEvent,
@@ -62,7 +63,7 @@ from roomkit.tasks import CancelTaskTool, TaskStatusTool
 from roomkit.tools import current_response_metadata
 from roomkit.tools.human_input import HumanInputToolHandler
 from roomkit.tools.policy import ToolPolicy
-from tests.conformance._memory import scripted_memory
+from tests.conformance._memory import Compacted, scripted_memory
 
 if TYPE_CHECKING:
     from roomkit.channels._turn_config import ConfigProvider
@@ -373,6 +374,11 @@ def messages(context: AIContext) -> list[dict[str, Any]]:
     """The messages a request carries, in order: each one's role, its text
     parts joined, empty for a message that has none, and its text and image
     parts in order, None for a text content."""
+    return message_records(context.messages)
+
+
+def message_records(messages: list[AIMessage]) -> list[dict[str, Any]]:
+    """*messages* as ``models`` reads a request's (:func:`messages`)."""
     return [
         {
             "role": message.role,
@@ -380,7 +386,7 @@ def messages(context: AIContext) -> list[dict[str, Any]]:
             "parts": _parts_of(message.content),
             "round": _round_of(message.content),
         }
-        for message in context.messages
+        for message in messages
     ]
 
 
@@ -516,6 +522,7 @@ def scripted_agent(
     auditors: Auditors | None = None,
     ingested: Callable[[str, str, RoomEvent], None] | None = None,
     shared: Mapping[str, ScriptedModel] | None = None,
+    compacted: Callable[[str, str, dict[str, Any]], None] | None = None,
 ) -> tuple[AIChannel, dict[str, ScriptedModel]]:
     """The AI channel of a scripted agent, and its models by the name
     ``expect.models`` gives them: its own under its id, its memory's
@@ -624,7 +631,11 @@ def scripted_agent(
             )
             models[f"{spec['id']}/summarizer"] = summarizer
         kwargs["memory"] = scripted_memory(
-            memory, spec.get("max_context_events", 50), summarizer, _told(ingested, spec["id"])
+            memory,
+            spec.get("max_context_events", 50),
+            summarizer,
+            _told(ingested, spec["id"]),
+            _told_compacted(compacted, spec["id"]),
         )
     if "human_input" in spec:
         kwargs["human_input_handler"] = _human_input(spec["human_input"])
@@ -664,6 +675,20 @@ def _told(
     if ingested is None:
         return None
     return lambda room_id, event: ingested(room_id, channel_id, event)
+
+
+def _told_compacted(
+    compacted: Callable[[str, str, dict[str, Any]], None] | None, channel_id: str
+) -> Compacted | None:
+    """What a scripted memory of *channel_id* tells each compaction it is
+    asked: the history as ``models`` reads a request's messages."""
+    if compacted is None:
+        return None
+
+    def told(room_id: str, history: list[AIMessage], usage: dict[str, int]) -> None:
+        compacted(room_id, channel_id, {"history": message_records(history), "usage": usage})
+
+    return told
 
 
 def _audited(handler: Any, spec: Mapping[str, Any], auditors: Auditors | None) -> Any:

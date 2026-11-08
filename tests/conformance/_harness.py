@@ -287,6 +287,14 @@ class Harness:
         per_room = self.observed.streamed.setdefault(room_id, {})
         per_room.setdefault(channel_id, []).append(item)
 
+    def record_compacted(self, room_id: str, channel_id: str, item: dict[str, Any]) -> None:
+        """One compaction between two tool rounds a scripted memory was asked:
+        ``{history, usage}``."""
+        if not self._recording:
+            return
+        per_room = self.observed.compacted.setdefault(room_id, {})
+        per_room.setdefault(channel_id, []).append(item)
+
     def record_room_callback(
         self, room_id: str, channel_id: str, call: str, binding: ChannelBinding | None
     ) -> None:

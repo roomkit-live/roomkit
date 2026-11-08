@@ -116,7 +116,8 @@ class _Comparison:
             self._check(self.expect["hook_order"], order, "hook_order")
 
     def channel_calls(self) -> None:
-        for kind in ("deliveries", "contexts", "streamed", "turns", "ingested", "room_callbacks"):
+        kinds = ("deliveries", "contexts", "streamed", "turns", "ingested", "compacted")
+        for kind in (*kinds, "room_callbacks"):
             recorded = getattr(self.observed, kind)
             for alias, channels in self.expect.get(kind, {}).items():
                 per_room = recorded.get(self._room(alias), {})

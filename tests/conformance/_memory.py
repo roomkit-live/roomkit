@@ -26,19 +26,28 @@ from roomkit.models.event import RoomEvent
 from roomkit.providers.ai.base import AIMessage, AIProvider
 from roomkit.tools import current_response_metadata
 
+Compacted = Callable[[str, list[AIMessage], dict[str, int]], None]
+"""What a scripted memory tells of each compaction it is asked: the room, the
+history and the usage it was handed."""
+
 
 class ScriptedMemory(MemoryProvider):
     """The room's latest events, as :class:`SlidingWindowMemory` reads them,
     and what the scenario says the memory built, retrieved and names; each
-    event it is handed goes to *ingested* (``expect.ingested``)."""
+    event it is handed goes to *ingested* (``expect.ingested``). Each
+    compaction between two tool rounds answers the scenario's next
+    ``compacts`` item, and goes to *compacted* (``expect.compacted``)."""
 
     def __init__(
         self,
         spec: Mapping[str, Any],
         max_events: int,
         ingested: Callable[[str, RoomEvent], None] | None = None,
+        compacted: Compacted | None = None,
     ) -> None:
         self._ingested = ingested
+        self._compacted = compacted
+        self._compacts = list(spec.get("compacts", []))
         self._window = SlidingWindowMemory(max_events=spec.get("max_events", max_events))
         self._messages = [
             AIMessage(role=message["role"], content=message["text"])
@@ -57,6 +66,25 @@ class ScriptedMemory(MemoryProvider):
     ) -> None:
         if self._ingested is not None:
             self._ingested(room_id, event)
+
+    async def compact(
+        self,
+        room_id: str,
+        history: list[AIMessage],
+        *,
+        usage: dict[str, int],
+        channel_id: str | None = None,
+    ) -> list[AIMessage] | None:
+        if self._compacted is not None:
+            self._compacted(room_id, history, dict(usage))
+        answer = self._compacts.pop(0) if self._compacts else None
+        if answer is None:
+            return None
+        if "fails" in answer:
+            raise RuntimeError(answer["fails"])
+        built = [AIMessage(role=m["role"], content=m["text"]) for m in answer.get("messages", [])]
+        keep = answer.get("keep", 0)
+        return [*built, *(history[-keep:] if keep else [])]
 
     async def retrieve(
         self,
@@ -85,12 +113,14 @@ def scripted_memory(
     max_events: int,
     summarizer: AIProvider | None,
     ingested: Callable[[str, RoomEvent], None] | None = None,
+    compacted: Compacted | None = None,
 ) -> MemoryProvider:
     """The memory *spec* describes, its wrappers from the innermost; *max_events*
     is its window by default, the agent's ``max_context_events``, *summarizer*
-    the model a compacting or summarizing memory summarizes with, and
-    *ingested* told each event the memory is handed."""
-    memory: MemoryProvider = ScriptedMemory(spec, max_events, ingested)
+    the model a compacting or summarizing memory summarizes with,
+    *ingested* told each event the memory is handed, and *compacted* each
+    compaction it is asked."""
+    memory: MemoryProvider = ScriptedMemory(spec, max_events, ingested, compacted)
     if (budget := spec.get("budget_aware")) is not None:
         memory = BudgetAwareMemory(
             memory,

@@ -241,6 +241,7 @@ MEMORY = {
     "messages",
     "notes",
     "speakers",
+    "compacts",
     "budget_aware",
     "writes_record",
     "compacting",
@@ -249,6 +250,7 @@ MEMORY = {
     "retrieval",
 }
 MEMORY_MESSAGE = {"role", "text"}
+MEMORY_COMPACTION = {"messages", "keep", "fails"}
 BUDGET_AWARE = {"max_context_tokens", "safety_margin_ratio", "min_events", "reserved_tokens"}
 COMPACTING = {"max_context_tokens", "summary_ratio", "safety_margin_ratio", "min_events"}
 RETRIEVAL = {"sources", "max_results", "min_query_length"}
@@ -326,6 +328,7 @@ EXPECT = {
     "contexts",
     "turns",
     "ingested",
+    "compacted",
     "dispatch_turns",
     "observations",
     "tasks",
@@ -608,6 +611,12 @@ def _memory(memory: Mapping[str, Any], path: str, found: list[str]) -> None:
     _members(memory, MEMORY, path, found)
     for index, message in enumerate(memory.get("messages", [])):
         _members(message, MEMORY_MESSAGE, f"{path}.messages[{index}]", found)
+    for index, answer in enumerate(memory.get("compacts", [])):
+        if answer is None:
+            continue
+        _members(answer, MEMORY_COMPACTION, f"{path}.compacts[{index}]", found)
+        for at, message in enumerate(answer.get("messages", [])):
+            _members(message, MEMORY_MESSAGE, f"{path}.compacts[{index}].messages[{at}]", found)
     if "budget_aware" in memory:
         _members(memory["budget_aware"], BUDGET_AWARE, f"{path}.budget_aware", found)
     if "compacting" in memory:
