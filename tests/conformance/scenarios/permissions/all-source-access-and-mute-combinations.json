@@ -1,0 +1,1087 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "permissions/all-source-access-and-mute-combinations",
+  "title": "Source access and mute gate inbound and direct injection, with an audited refusal and no target activity",
+  "rules": [
+    "§7.1",
+    "§7.2",
+    "§7.5 rule 1",
+    "§7.5 rule 2",
+    "§7.5 rule 3",
+    "§7.5 rule 5"
+  ],
+  "notes": "Python: tests/test_rfc_conformance.py::TestSourceWritePermission::test_non_writable_source_event_blocked; tests/test_conformance_level0.py::TestPermissionEnforcement::test_non_writable_source_is_blocked; tests/test_router.py::TestAccessFiltering, TestMuteBlocking, TestSideEffects, TestOnEventVsDeliver. Every access is crossed with both mute values; the source reaction is a sentinel for a forbidden self-read. This scenario does not cover response reentry, streaming changes or visibility.",
+  "setup": {
+    "channels": [
+      {
+        "id": "source",
+        "type": "websocket",
+        "category": "transport",
+        "on_event": [
+          {
+            "repeat": true,
+            "output": {
+              "observations": [
+                {
+                  "category": "permission-read",
+                  "content": "source read"
+                }
+              ],
+              "tasks": [
+                {
+                  "title": "source task"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "id": "reader",
+        "type": "websocket",
+        "category": "transport",
+        "on_event": [
+          {
+            "repeat": true,
+            "output": {
+              "observations": [
+                {
+                  "category": "permission-read",
+                  "content": "reader read"
+                }
+              ],
+              "tasks": [
+                {
+                  "title": "reader task"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "repeat": true,
+            "output": {
+              "observations": [
+                {
+                  "category": "permission-read",
+                  "content": "agent read"
+                }
+              ],
+              "tasks": [
+                {
+                  "title": "agent task"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "read_write-unmuted",
+        "bindings": [
+          {
+            "channel_id": "source",
+            "access": "read_write",
+            "muted": false
+          },
+          {
+            "channel_id": "reader"
+          },
+          {
+            "channel_id": "agent"
+          }
+        ]
+      },
+      {
+        "id": "read_write-muted",
+        "bindings": [
+          {
+            "channel_id": "source",
+            "access": "read_write",
+            "muted": true
+          },
+          {
+            "channel_id": "reader"
+          },
+          {
+            "channel_id": "agent"
+          }
+        ]
+      },
+      {
+        "id": "read_only-unmuted",
+        "bindings": [
+          {
+            "channel_id": "source",
+            "access": "read_only",
+            "muted": false
+          },
+          {
+            "channel_id": "reader"
+          },
+          {
+            "channel_id": "agent"
+          }
+        ]
+      },
+      {
+        "id": "read_only-muted",
+        "bindings": [
+          {
+            "channel_id": "source",
+            "access": "read_only",
+            "muted": true
+          },
+          {
+            "channel_id": "reader"
+          },
+          {
+            "channel_id": "agent"
+          }
+        ]
+      },
+      {
+        "id": "write_only-unmuted",
+        "bindings": [
+          {
+            "channel_id": "source",
+            "access": "write_only",
+            "muted": false
+          },
+          {
+            "channel_id": "reader"
+          },
+          {
+            "channel_id": "agent"
+          }
+        ]
+      },
+      {
+        "id": "write_only-muted",
+        "bindings": [
+          {
+            "channel_id": "source",
+            "access": "write_only",
+            "muted": true
+          },
+          {
+            "channel_id": "reader"
+          },
+          {
+            "channel_id": "agent"
+          }
+        ]
+      },
+      {
+        "id": "none-unmuted",
+        "bindings": [
+          {
+            "channel_id": "source",
+            "access": "none",
+            "muted": false
+          },
+          {
+            "channel_id": "reader"
+          },
+          {
+            "channel_id": "agent"
+          }
+        ]
+      },
+      {
+        "id": "none-muted",
+        "bindings": [
+          {
+            "channel_id": "source",
+            "access": "none",
+            "muted": true
+          },
+          {
+            "channel_id": "reader"
+          },
+          {
+            "channel_id": "agent"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "read_write-unmuted",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "process_inbound"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "reason": null,
+          "event": {
+            "id": "read_write-unmuted#0",
+            "content": {
+              "type": "text",
+              "body": "process_inbound"
+            },
+            "status": "delivered",
+            "blocked_by": null,
+            "visibility": "all",
+            "source": {
+              "channel_id": "source"
+            }
+          },
+          "response_events": []
+        }
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "read_write-unmuted",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "send_event"
+      },
+      "expect": {
+        "result": {
+          "id": "read_write-unmuted#1",
+          "content": {
+            "type": "text",
+            "body": "send_event"
+          },
+          "status": "delivered",
+          "blocked_by": null,
+          "visibility": "all",
+          "source": {
+            "channel_id": "source"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "read_write-muted",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "process_inbound"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "source_muted",
+          "event": {
+            "id": "read_write-muted#0",
+            "content": {
+              "type": "text",
+              "body": "process_inbound"
+            },
+            "status": "blocked",
+            "blocked_by": "source_muted",
+            "visibility": "all",
+            "source": {
+              "channel_id": "source"
+            }
+          },
+          "response_events": []
+        }
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "read_write-muted",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "send_event"
+      },
+      "expect": {
+        "result": {
+          "id": "read_write-muted#1",
+          "content": {
+            "type": "text",
+            "body": "send_event"
+          },
+          "status": "blocked",
+          "blocked_by": "source_muted",
+          "visibility": "all",
+          "source": {
+            "channel_id": "source"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "read_only-unmuted",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "process_inbound"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "source_read_only",
+          "event": {
+            "id": "read_only-unmuted#0",
+            "content": {
+              "type": "text",
+              "body": "process_inbound"
+            },
+            "status": "blocked",
+            "blocked_by": "source_read_only",
+            "visibility": "all",
+            "source": {
+              "channel_id": "source"
+            }
+          },
+          "response_events": []
+        }
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "read_only-unmuted",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "send_event"
+      },
+      "expect": {
+        "result": {
+          "id": "read_only-unmuted#1",
+          "content": {
+            "type": "text",
+            "body": "send_event"
+          },
+          "status": "blocked",
+          "blocked_by": "source_read_only",
+          "visibility": "all",
+          "source": {
+            "channel_id": "source"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "read_only-muted",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "process_inbound"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "source_read_only",
+          "event": {
+            "id": "read_only-muted#0",
+            "content": {
+              "type": "text",
+              "body": "process_inbound"
+            },
+            "status": "blocked",
+            "blocked_by": "source_read_only",
+            "visibility": "all",
+            "source": {
+              "channel_id": "source"
+            }
+          },
+          "response_events": []
+        }
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "read_only-muted",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "send_event"
+      },
+      "expect": {
+        "result": {
+          "id": "read_only-muted#1",
+          "content": {
+            "type": "text",
+            "body": "send_event"
+          },
+          "status": "blocked",
+          "blocked_by": "source_read_only",
+          "visibility": "all",
+          "source": {
+            "channel_id": "source"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "write_only-unmuted",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "process_inbound"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "reason": null,
+          "event": {
+            "id": "write_only-unmuted#0",
+            "content": {
+              "type": "text",
+              "body": "process_inbound"
+            },
+            "status": "delivered",
+            "blocked_by": null,
+            "visibility": "all",
+            "source": {
+              "channel_id": "source"
+            }
+          },
+          "response_events": []
+        }
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "write_only-unmuted",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "send_event"
+      },
+      "expect": {
+        "result": {
+          "id": "write_only-unmuted#1",
+          "content": {
+            "type": "text",
+            "body": "send_event"
+          },
+          "status": "delivered",
+          "blocked_by": null,
+          "visibility": "all",
+          "source": {
+            "channel_id": "source"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "write_only-muted",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "process_inbound"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "source_muted",
+          "event": {
+            "id": "write_only-muted#0",
+            "content": {
+              "type": "text",
+              "body": "process_inbound"
+            },
+            "status": "blocked",
+            "blocked_by": "source_muted",
+            "visibility": "all",
+            "source": {
+              "channel_id": "source"
+            }
+          },
+          "response_events": []
+        }
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "write_only-muted",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "send_event"
+      },
+      "expect": {
+        "result": {
+          "id": "write_only-muted#1",
+          "content": {
+            "type": "text",
+            "body": "send_event"
+          },
+          "status": "blocked",
+          "blocked_by": "source_muted",
+          "visibility": "all",
+          "source": {
+            "channel_id": "source"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "none-unmuted",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "process_inbound"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "source_read_only",
+          "event": {
+            "id": "none-unmuted#0",
+            "content": {
+              "type": "text",
+              "body": "process_inbound"
+            },
+            "status": "blocked",
+            "blocked_by": "source_read_only",
+            "visibility": "all",
+            "source": {
+              "channel_id": "source"
+            }
+          },
+          "response_events": []
+        }
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "none-unmuted",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "send_event"
+      },
+      "expect": {
+        "result": {
+          "id": "none-unmuted#1",
+          "content": {
+            "type": "text",
+            "body": "send_event"
+          },
+          "status": "blocked",
+          "blocked_by": "source_read_only",
+          "visibility": "all",
+          "source": {
+            "channel_id": "source"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "none-muted",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "process_inbound"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "source_read_only",
+          "event": {
+            "id": "none-muted#0",
+            "content": {
+              "type": "text",
+              "body": "process_inbound"
+            },
+            "status": "blocked",
+            "blocked_by": "source_read_only",
+            "visibility": "all",
+            "source": {
+              "channel_id": "source"
+            }
+          },
+          "response_events": []
+        }
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "none-muted",
+      "channel_id": "source",
+      "content": {
+        "type": "text",
+        "body": "send_event"
+      },
+      "expect": {
+        "result": {
+          "id": "none-muted#1",
+          "content": {
+            "type": "text",
+            "body": "send_event"
+          },
+          "status": "blocked",
+          "blocked_by": "source_read_only",
+          "visibility": "all",
+          "source": {
+            "channel_id": "source"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "read_write-unmuted": [
+        {
+          "id": "read_write-unmuted#0",
+          "content": {
+            "type": "text",
+            "body": "process_inbound"
+          },
+          "status": "delivered",
+          "blocked_by": null,
+          "visibility": "all",
+          "source": {
+            "channel_id": "source"
+          }
+        },
+        {
+          "id": "read_write-unmuted#1",
+          "content": {
+            "type": "text",
+            "body": "send_event"
+          },
+          "status": "delivered",
+          "blocked_by": null,
+          "visibility": "all",
+          "source": {
+            "channel_id": "source"
+          }
+        }
+      ],
+      "read_write-muted": [
+        {
+          "id": "read_write-muted#0",
+          "content": {
+            "type": "text",
+            "body": "process_inbound"
+          },
+          "status": "blocked",
+          "blocked_by": "source_muted",
+          "visibility": "all",
+          "source": {
+            "channel_id": "source"
+          }
+        },
+        {
+          "id": "read_write-muted#1",
+          "content": {
+            "type": "text",
+            "body": "send_event"
+          },
+          "status": "blocked",
+          "blocked_by": "source_muted",
+          "visibility": "all",
+          "source": {
+            "channel_id": "source"
+          }
+        }
+      ],
+      "read_only-unmuted": [
+        {
+          "id": "read_only-unmuted#0",
+          "content": {
+            "type": "text",
+            "body": "process_inbound"
+          },
+          "status": "blocked",
+          "blocked_by": "source_read_only",
+          "visibility": "all",
+          "source": {
+            "channel_id": "source"
+          }
+        },
+        {
+          "id": "read_only-unmuted#1",
+          "content": {
+            "type": "text",
+            "body": "send_event"
+          },
+          "status": "blocked",
+          "blocked_by": "source_read_only",
+          "visibility": "all",
+          "source": {
+            "channel_id": "source"
+          }
+        }
+      ],
+      "read_only-muted": [
+        {
+          "id": "read_only-muted#0",
+          "content": {
+            "type": "text",
+            "body": "process_inbound"
+          },
+          "status": "blocked",
+          "blocked_by": "source_read_only",
+          "visibility": "all",
+          "source": {
+            "channel_id": "source"
+          }
+        },
+        {
+          "id": "read_only-muted#1",
+          "content": {
+            "type": "text",
+            "body": "send_event"
+          },
+          "status": "blocked",
+          "blocked_by": "source_read_only",
+          "visibility": "all",
+          "source": {
+            "channel_id": "source"
+          }
+        }
+      ],
+      "write_only-unmuted": [
+        {
+          "id": "write_only-unmuted#0",
+          "content": {
+            "type": "text",
+            "body": "process_inbound"
+          },
+          "status": "delivered",
+          "blocked_by": null,
+          "visibility": "all",
+          "source": {
+            "channel_id": "source"
+          }
+        },
+        {
+          "id": "write_only-unmuted#1",
+          "content": {
+            "type": "text",
+            "body": "send_event"
+          },
+          "status": "delivered",
+          "blocked_by": null,
+          "visibility": "all",
+          "source": {
+            "channel_id": "source"
+          }
+        }
+      ],
+      "write_only-muted": [
+        {
+          "id": "write_only-muted#0",
+          "content": {
+            "type": "text",
+            "body": "process_inbound"
+          },
+          "status": "blocked",
+          "blocked_by": "source_muted",
+          "visibility": "all",
+          "source": {
+            "channel_id": "source"
+          }
+        },
+        {
+          "id": "write_only-muted#1",
+          "content": {
+            "type": "text",
+            "body": "send_event"
+          },
+          "status": "blocked",
+          "blocked_by": "source_muted",
+          "visibility": "all",
+          "source": {
+            "channel_id": "source"
+          }
+        }
+      ],
+      "none-unmuted": [
+        {
+          "id": "none-unmuted#0",
+          "content": {
+            "type": "text",
+            "body": "process_inbound"
+          },
+          "status": "blocked",
+          "blocked_by": "source_read_only",
+          "visibility": "all",
+          "source": {
+            "channel_id": "source"
+          }
+        },
+        {
+          "id": "none-unmuted#1",
+          "content": {
+            "type": "text",
+            "body": "send_event"
+          },
+          "status": "blocked",
+          "blocked_by": "source_read_only",
+          "visibility": "all",
+          "source": {
+            "channel_id": "source"
+          }
+        }
+      ],
+      "none-muted": [
+        {
+          "id": "none-muted#0",
+          "content": {
+            "type": "text",
+            "body": "process_inbound"
+          },
+          "status": "blocked",
+          "blocked_by": "source_read_only",
+          "visibility": "all",
+          "source": {
+            "channel_id": "source"
+          }
+        },
+        {
+          "id": "none-muted#1",
+          "content": {
+            "type": "text",
+            "body": "send_event"
+          },
+          "status": "blocked",
+          "blocked_by": "source_read_only",
+          "visibility": "all",
+          "source": {
+            "channel_id": "source"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "read_write-unmuted": {
+        "source": [],
+        "reader": [
+          {
+            "id": "read_write-unmuted#0"
+          },
+          {
+            "id": "read_write-unmuted#1"
+          }
+        ],
+        "agent": []
+      },
+      "read_write-muted": {
+        "source": [],
+        "reader": [],
+        "agent": []
+      },
+      "read_only-unmuted": {
+        "source": [],
+        "reader": [],
+        "agent": []
+      },
+      "read_only-muted": {
+        "source": [],
+        "reader": [],
+        "agent": []
+      },
+      "write_only-unmuted": {
+        "source": [],
+        "reader": [
+          {
+            "id": "write_only-unmuted#0"
+          },
+          {
+            "id": "write_only-unmuted#1"
+          }
+        ],
+        "agent": []
+      },
+      "write_only-muted": {
+        "source": [],
+        "reader": [],
+        "agent": []
+      },
+      "none-unmuted": {
+        "source": [],
+        "reader": [],
+        "agent": []
+      },
+      "none-muted": {
+        "source": [],
+        "reader": [],
+        "agent": []
+      }
+    },
+    "turns": {
+      "read_write-unmuted": {
+        "agent": [
+          {
+            "id": "read_write-unmuted#0"
+          },
+          {
+            "id": "read_write-unmuted#1"
+          }
+        ]
+      },
+      "read_write-muted": {
+        "agent": []
+      },
+      "read_only-unmuted": {
+        "agent": []
+      },
+      "read_only-muted": {
+        "agent": []
+      },
+      "write_only-unmuted": {
+        "agent": [
+          {
+            "id": "write_only-unmuted#0"
+          },
+          {
+            "id": "write_only-unmuted#1"
+          }
+        ]
+      },
+      "write_only-muted": {
+        "agent": []
+      },
+      "none-unmuted": {
+        "agent": []
+      },
+      "none-muted": {
+        "agent": []
+      }
+    },
+    "tasks": {
+      "read_write-unmuted": {
+        "$unordered": [
+          {
+            "title": "reader task"
+          },
+          {
+            "title": "agent task"
+          },
+          {
+            "title": "reader task"
+          },
+          {
+            "title": "agent task"
+          }
+        ]
+      },
+      "read_write-muted": [],
+      "read_only-unmuted": [],
+      "read_only-muted": [],
+      "write_only-unmuted": {
+        "$unordered": [
+          {
+            "title": "reader task"
+          },
+          {
+            "title": "agent task"
+          },
+          {
+            "title": "reader task"
+          },
+          {
+            "title": "agent task"
+          }
+        ]
+      },
+      "write_only-muted": [],
+      "none-unmuted": [],
+      "none-muted": []
+    },
+    "observations": {
+      "read_write-unmuted": {
+        "$unordered": [
+          {
+            "channel_id": "reader",
+            "category": "permission-read",
+            "content": "reader read"
+          },
+          {
+            "channel_id": "agent",
+            "category": "permission-read",
+            "content": "agent read"
+          },
+          {
+            "channel_id": "reader",
+            "category": "permission-read",
+            "content": "reader read"
+          },
+          {
+            "channel_id": "agent",
+            "category": "permission-read",
+            "content": "agent read"
+          }
+        ]
+      },
+      "read_write-muted": [],
+      "read_only-unmuted": [],
+      "read_only-muted": [],
+      "write_only-unmuted": {
+        "$unordered": [
+          {
+            "channel_id": "reader",
+            "category": "permission-read",
+            "content": "reader read"
+          },
+          {
+            "channel_id": "agent",
+            "category": "permission-read",
+            "content": "agent read"
+          },
+          {
+            "channel_id": "reader",
+            "category": "permission-read",
+            "content": "reader read"
+          },
+          {
+            "channel_id": "agent",
+            "category": "permission-read",
+            "content": "agent read"
+          }
+        ]
+      },
+      "write_only-muted": [],
+      "none-unmuted": [],
+      "none-muted": []
+    }
+  }
+}
