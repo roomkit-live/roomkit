@@ -30,7 +30,7 @@ from roomkit.models.response_metadata import (
     merge_caller_record,
     merge_channel_record,
 )
-from roomkit.models.streaming import ThinkingDeltaMarker, UsageMarker
+from roomkit.models.streaming import LoopEndMarker, ThinkingDeltaMarker, UsageMarker
 from roomkit.providers.utils import _aclose_stream
 
 if TYPE_CHECKING:
@@ -312,7 +312,9 @@ class InboundStreamingMixin(HelpersMixin):
         channel: Channel,
         binding: ChannelBinding,
         placeholder: RoomEvent,
-        segments: AsyncIterator[str | ThinkingDeltaMarker | UsageMarker | RoomEvent],
+        segments: AsyncIterator[
+            str | ThinkingDeltaMarker | UsageMarker | RoomEvent | LoopEndMarker
+        ],
         sr: StreamingResponse,
         writer: SegmentWriter,
         reader: ResponseReader,
@@ -357,7 +359,9 @@ class InboundStreamingMixin(HelpersMixin):
         channel: Channel,
         binding: ChannelBinding,
         placeholder: RoomEvent,
-        segments: AsyncIterator[str | ThinkingDeltaMarker | UsageMarker | RoomEvent],
+        segments: AsyncIterator[
+            str | ThinkingDeltaMarker | UsageMarker | RoomEvent | LoopEndMarker
+        ],
         sr: StreamingResponse,
         writer: SegmentWriter,
         context: RoomContext,

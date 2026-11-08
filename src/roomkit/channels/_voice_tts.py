@@ -22,6 +22,7 @@ from roomkit.channels._voice_unheard import UnheardTurns
 from roomkit.core._reentrance import within_turn
 from roomkit.models.enums import EventType, HookTrigger, Visibility
 from roomkit.models.streaming import (
+    LoopEndMarker,
     SegmentBreakMarker,
     ThinkingDeltaMarker,
     ToolCallStartMarker,
@@ -452,7 +453,9 @@ class VoiceTTSMixin:
 
     async def deliver_stream(
         self,
-        text_stream: AsyncIterator[str | ThinkingDeltaMarker | UsageMarker | RoomEvent],
+        text_stream: AsyncIterator[
+            str | ThinkingDeltaMarker | UsageMarker | RoomEvent | LoopEndMarker
+        ],
         event: RoomEvent,
         binding: ChannelBinding,
         context: RoomContext,
@@ -1545,7 +1548,10 @@ class _ResponseText:
                     continue
                 if past_budget(delta):
                     return
-                if not isinstance(delta, ThinkingDeltaMarker | UsageMarker) and self._segments[-1]:
+                if (
+                    not isinstance(delta, ThinkingDeltaMarker | UsageMarker | LoopEndMarker)
+                    and self._segments[-1]
+                ):
                     self._segments.append([])
                     yield SegmentBreakMarker()
                     # The sentence the break let out may be the budget's last.

@@ -342,6 +342,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A streaming channel is handed the turn's end last** (RFC §6.4, HITL 577ecd24,
+  RMK-1537). A turn that ends on a tool call (cut at its round limit while the model only
+  calls tools) writes its record on the call's end row once its stream ended, so the
+  channel rendering the stream read rows that said nothing of how the turn ended, and a
+  terminal showed it completed. `deliver_stream` is now handed the turn's `LoopEndMarker`
+  as the stream's last item, before the response's failure when it fails; the default,
+  CLI, WebSocket and voice channels skip it.
+
 - **A generation cut after reasoning alone is tried again** (RFC §6.4, HITL ea119829,
   RMK-1542). A model that reasons before it answers streams its reasoning first, and a
   stream cut there (a lost connection, a 503) counted as an answer under way: the turn

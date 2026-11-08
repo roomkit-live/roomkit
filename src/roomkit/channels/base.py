@@ -26,7 +26,7 @@ from roomkit.models.enums import (
     ChannelType,
 )
 from roomkit.models.event import RoomEvent, TextContent
-from roomkit.models.streaming import ThinkingDeltaMarker, UsageMarker
+from roomkit.models.streaming import LoopEndMarker, ThinkingDeltaMarker, UsageMarker
 
 if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
@@ -411,7 +411,9 @@ class Channel(ABC):
 
     async def deliver_stream(
         self,
-        text_stream: AsyncIterator[str | ThinkingDeltaMarker | UsageMarker | RoomEvent],
+        text_stream: AsyncIterator[
+            str | ThinkingDeltaMarker | UsageMarker | RoomEvent | LoopEndMarker
+        ],
         event: RoomEvent,
         binding: ChannelBinding,
         context: RoomContext,
@@ -422,7 +424,10 @@ class Channel(ABC):
         :class:`~roomkit.models.ThinkingDeltaMarker` for each chunk of the
         model's reasoning, a :class:`~roomkit.models.UsageMarker` after each
         generation, and each row of the response once the store holds it (a
-        text segment, a tool call's start or end), in order.
+        text segment, a tool call's start or end), in order; then, last, a
+        :class:`~roomkit.models.LoopEndMarker` saying how the turn's loop
+        ended, before the response's failure when it fails (RFC §6.4), which
+        an AI channel's response carries and a text-only one does not.
 
         Default: accumulate text, deliver as complete event. A response that
         fails is not delivered again to the channel that streamed it (RFC

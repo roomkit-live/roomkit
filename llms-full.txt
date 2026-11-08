@@ -3080,8 +3080,7 @@ class ObservingAIChannel(AIChannel):
                     logger.warning(
                         "agent stopped: %s after %d rounds", delta.reason, delta.rounds
                     )
-                continue          # keep the terminal marker out of the stream
-            yield delta
+            yield delta           # the turn's record and the channels read it too
 ```
 
 `reason` is one of `completed`, `max_rounds`, `timeout`, `budget_exceeded`,
@@ -3144,14 +3143,16 @@ if reply.metadata["loop_end_reason"] != "completed":
 ```
 
 The framework's inbound streaming path hands a channel's `deliver_stream` an
-`AsyncIterator[str | ThinkingDeltaMarker | UsageMarker | RoomEvent]`: the text
-deltas, a `ThinkingDeltaMarker` (from `roomkit.models`) per chunk of reasoning, a
-`UsageMarker` after each generation (what it used, its model and provider, so a
-screen can follow a long turn; a channel that does not show it skips it), and
-each row of the response once stored (a text segment, a tool call's start or end),
-but **not** the terminal marker — it would reach a renderer as noise. Overriding `deliver_stream` on a
-WebSocket or CLI channel will therefore not see it; wrap the AI channel's own
-`response_stream` instead.
+`AsyncIterator[str | ThinkingDeltaMarker | UsageMarker | RoomEvent | LoopEndMarker]`:
+the text deltas, a `ThinkingDeltaMarker` (from `roomkit.models`) per chunk of
+reasoning, a `UsageMarker` after each generation (what it used, its model and
+provider, so a screen can follow a long turn; a channel that does not show it
+skips it), each row of the response once stored (a text segment, a tool call's
+start or end), and last the turn's `LoopEndMarker`, before the response's failure
+when it fails. A turn whose last row is a tool call's end has its record written
+on that row once the stream ended, so the row the channel was handed carries none:
+the marker is how the channel rendering the turn learns how it ended (RFC §6.4).
+A channel that renders text alone skips it, as it skips the other markers.
 
 A round the loop tries again without a call, a continuation the channel's
 policy asked for or a call the provider could not parse, ends on a

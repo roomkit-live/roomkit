@@ -239,6 +239,9 @@ class SegmentWriter:
         # The turn's record (``loop_end_reason``, ``ai_usage``), once its
         # ``LoopEndMarker`` is read; ``_record_owed`` while no row carries it.
         self._turn_record: dict[str, Any] | None = None
+        # The loop's end as its marker told it, handed to the channel
+        # rendering the stream as the stream's last item (RFC §6.4).
+        self._end_marker: LoopEndMarker | None = None
         self._record_owed = False
         # A turn whose text is kept out of the room hands its record on: it
         # rides none of its rows (RFC §19.7.3).
@@ -285,8 +288,10 @@ class SegmentWriter:
         carries it; a turn with no final text has it written on the message it
         already wrote, or on its last row when it wrote none, by
         :meth:`write_owed_record` (RFC §6.4). It rides the stream too, where a
-        reader of the turn finds how it ended.
+        reader of the turn finds how it ended, and the channel rendering the
+        stream is handed the marker last (:meth:`stream`).
         """
+        self._end_marker = marker
         self._turn_record = _ended_record(marker)
         self._record_owed = True
         self._sr.turn_record = self._turn_record
@@ -418,15 +423,18 @@ class SegmentWriter:
 
     async def stream(
         self, reader: ResponseReader
-    ) -> AsyncGenerator[str | ThinkingDeltaMarker | UsageMarker | RoomEvent, None]:
+    ) -> AsyncGenerator[str | ThinkingDeltaMarker | UsageMarker | RoomEvent | LoopEndMarker, None]:
         """The response as the channel rendering it reads it, its last text row included.
 
-        Yields what :meth:`read` yields, then the row of the text it ends on.
-        A response that fails ends the same way, then raises: the channel was
+        Yields what :meth:`read` yields, then the row of the text it ends on,
+        then the loop's end, its marker, when the loop told one and the
+        channel still reads: whichever row carries the turn's record, the
+        channel learns how the turn ended from its own stream (RFC §6.4). A
+        response that fails ends the same way, then raises: the channel was
         handed every delta of that text, so the row reaches it here, as a
         completed response's does, and its delivery excludes it (RFC §12.2
-        step 13s). Its open calls are the caller's to close (:meth:`end_failed`),
-        outside a read the channel may cancel.
+        step 13s). Its open calls are the caller's to close
+        (:meth:`end_failed`), outside a read the channel may cancel.
         """
         try:
             async with aclosing(self.read(reader)) as items:
@@ -436,6 +444,8 @@ class SegmentWriter:
             self.failure = exc
             if (row := await self.flush_text()) is not None and row.id in self._streamed_rows:
                 yield row
+            if self._end_marker is not None and not self._stopping:
+                yield self._end_marker
             raise
         if self._stopping:
             # The room no longer lets the channel read the response: its
@@ -445,6 +455,8 @@ class SegmentWriter:
         self.read_to_end = True
         if (row := await self.flush_text()) is not None and row.id in self._streamed_rows:
             yield row
+        if self._end_marker is not None and not self._stopping:
+            yield self._end_marker
 
     async def read_rest(self, reader: ResponseReader) -> None:
         """Read on a response the room stopped letting its channel read

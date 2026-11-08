@@ -113,11 +113,9 @@ class ObservingAIChannel(AIChannel):
     so the reason's limit is named without reading the channel.
 
     The marker is read here, at the source, by wrapping
-    ``ChannelOutput.response_stream``. That is the consumption point: the
-    framework's inbound streaming path forwards text and the tool-call and
-    thinking markers to downstream channels, but **not** the terminal
-    marker, which would reach a renderer as noise. Swallowing it here (the
-    ``continue`` below) keeps the downstream stream text-only.
+    ``ChannelOutput.response_stream``, and handed on: the framework writes the
+    turn's record from it, and hands it to the channel rendering the stream as
+    its last item (RFC §6.4), which a channel that renders text alone skips.
     """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -143,7 +141,6 @@ class ObservingAIChannel(AIChannel):
                     f"  [loop] stopped: reason={delta.reason!r} rounds={delta.rounds} "
                     f"(cap {delta.max_rounds} rounds, deadline {delta.timeout_seconds}s)"
                 )
-                continue
             yield delta
 
 
