@@ -6,7 +6,7 @@
     "§23.4",
     "§19.7.5 rule 4"
   ],
-  "notes": "Python: tasks/background.py start_background_task (worker_brief with agent_handle(room.metadata, agent_id)) and background_tool_server (identifier(agent_handle(...), 'agent')). The channel dev has the handle ops.",
+  "notes": "Python: tasks/background.py start_background_task (worker_brief with agent_handle(room.metadata, agent_id)) and background_tool_server (identifier(agent_handle(...), 'agent')). The channel dev has the handle ops. Both tasks post their results as the agent's message, so that no hand-back turn of the agent is waited for.",
   "setup": {
     "channels": [
       {
@@ -32,9 +32,6 @@
             },
             {
               "text": "On it."
-            },
-            {
-              "text": "Shared."
             }
           ]
         }
@@ -87,7 +84,8 @@
     {
       "call": "setup_background",
       "agent_id": "dev",
-      "worker": "helper"
+      "worker": "helper",
+      "hand_back": "post"
     },
     {
       "call": "process_inbound",
@@ -132,12 +130,11 @@
             {
               "tool_call_id": "c1",
               "content": {
-                "$contains": "its result comes back to ops as a turn of its own"
+                "$contains": "its result is posted as ops's message"
               }
             }
           ]
-        },
-        {}
+        }
       ]
     }
   }
