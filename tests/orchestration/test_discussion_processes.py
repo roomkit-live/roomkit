@@ -252,6 +252,27 @@ async def test_two_processes_never_give_two_turns_at_once() -> None:
     await cluster.close()
 
 
+@pytest.mark.wallclock
+async def test_a_turn_longer_than_the_lease_keeps_it() -> None:
+    # The process giving a turn renews its lease while the turn runs, so no
+    # other process gives a turn meanwhile (rule 16).
+    cluster = _Cluster()
+    # Past the lease of 0.6 s.
+    a = await cluster.process(install=True, create=True, delay=0.8)
+    b = await cluster.process(install=True, delay=0.8)
+    await _say(a, "@investigator what do the logs say?")
+    await _turn_started(cluster)
+
+    await _say(b, "@sre and the metrics?")
+
+    async def both() -> bool:
+        return sorted(await cluster.answers()) == ["investigator", "sre"]
+
+    await _until(both)
+    assert cluster.overlap() == 1
+    await cluster.close()
+
+
 async def test_a_process_that_stopped_hands_the_room_over_once_its_lease_expires(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
