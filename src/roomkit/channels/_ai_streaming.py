@@ -546,8 +546,9 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
     ) -> AsyncGenerator[StreamDelta, None]:
         """Execute a round's announced calls, yield each call's end marker
         (set on its start marker as it finished, with the arguments it ran
-        with), then hand the round to AFTER_TOOL_ROUND; *answered* are the
-        round's calls the provider served, read beside them."""
+        with), then hand the round to AFTER_TOOL_ROUND, then the turn's
+        history to the memory to compact; *answered* are the round's calls
+        the provider served, read beside them."""
         results, duration_ms = await self._execute_round_tools(
             context,
             calls,
@@ -575,6 +576,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                 for_calls=calls,
             )
         await self._after_tool_round(context, calls, results, answered, turn, index)
+        await self._compact_after_round(context, turn.room_id, turn.last_usage)
 
     async def _after_tool_round(
         self,

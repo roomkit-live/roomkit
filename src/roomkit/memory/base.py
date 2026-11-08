@@ -54,7 +54,8 @@ class MemoryProvider(ABC):
     (simple last-N events) as the default.
 
     Lifecycle methods ``ingest``, ``clear``, and ``close`` are concrete
-    no-ops so that simple implementations only need to override ``retrieve``.
+    no-ops, and ``compact`` changes nothing by default, so that simple
+    implementations only need to override ``retrieve``.
     """
 
     @property
@@ -98,6 +99,43 @@ class MemoryProvider(ABC):
             in the AI context.
         """
         ...
+
+    async def compact(
+        self,
+        room_id: str,
+        history: list[AIMessage],
+        *,
+        usage: dict[str, int],
+        channel_id: str | None = None,
+    ) -> list[AIMessage] | None:
+        """Compact a turn's history between two of its tool rounds (optional).
+
+        The AI channel calls it after each tool round it ran, before the next
+        round's request (RFC §6.4, §20.1): *history* is what the turn sends
+        before its input, as the model reads it, and *usage* what the round's
+        generation measured (``input_tokens``, ``output_tokens`` and the
+        cache counters, disjoint, as the provider reported them; empty when
+        it reported none).
+
+        Return ``None`` to leave the turn as it is, the default. A list
+        stands for *history* in the next requests: the channel keeps the
+        turn's input whole, joins a user text the list ends on to it, and
+        stores the long results of the turn's earlier rounds for
+        ``read_stored_result``, the last round's left whole. A message of
+        the list that is not one of *history*'s has a copy of a runtime mark
+        replaced, unless a memory of the runtime built it (a summary).
+        An error is logged, and the turn goes on as it was.
+
+        Args:
+            room_id: The room of the turn.
+            history: The messages before the turn's input.
+            usage: The token counters of the round's generation.
+            channel_id: The AI channel whose turn it is.
+
+        Returns:
+            The history to send in place of *history*, or ``None``.
+        """
+        return None
 
     async def ingest(  # noqa: B027
         self,

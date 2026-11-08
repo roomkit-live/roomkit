@@ -15,7 +15,7 @@ import hashlib
 import logging
 from dataclasses import replace
 
-from roomkit.memory._summary import SummaryLines, is_summary, summary_message
+from roomkit.memory._summary import SummaryLines, is_summary, message_lines, summary_message
 from roomkit.memory._turn_budget import history_event_costs, turn_history_budget
 from roomkit.memory._wrapper import _MemoryWrapper
 from roomkit.memory.base import MemoryProvider, MemoryResult
@@ -25,7 +25,7 @@ from roomkit.memory.token_estimator import (
 )
 from roomkit.models.context import RoomContext
 from roomkit.models.event import RoomEvent, TextContent
-from roomkit.providers.ai.base import AIContext, AIMessage, AIProvider
+from roomkit.providers.ai.base import BILLED_USAGE_COUNTERS, AIContext, AIMessage, AIProvider
 
 logger = logging.getLogger("roomkit.memory.summarizing")
 
@@ -125,6 +125,41 @@ class SummarizingMemory(_MemoryWrapper):
 
         return self._enforce_budget(replace(inner_result, events=events), budget)
 
+    async def compact(
+        self,
+        room_id: str,
+        history: list[AIMessage],
+        *,
+        usage: dict[str, int],
+        channel_id: str | None = None,
+    ) -> list[AIMessage] | None:
+        """Tier 2 between two tool rounds, on the size the round's generation
+        measured (RFC §20.3).
+
+        Past ``tier2_ratio`` of ``max_context_tokens``, what *usage* counts
+        (the round's request and its reply), the older messages of *history*
+        are summarized by the memory's provider, a prior summary among them
+        carried into the new one, and the latest are kept whole: those that
+        fit what the history must give back to come under the threshold, the
+        summary's ``summary_max_tokens`` paid for, ``min_events`` of them at
+        least, a call's results never kept without their call. Tier 1 does
+        not run between rounds. A generation that reported no usage compacts
+        nothing, and the memory this one wraps is not asked."""
+        measured = sum(int(usage.get(counter) or 0) for counter in BILLED_USAGE_COUNTERS)
+        threshold = int(self._max_context_tokens * self._tier2_ratio)
+        if measured <= threshold or len(history) <= self._min_events:
+            return None
+        costs = [estimate_message_tokens(message) for message in history]
+        kept_budget = sum(costs) - (measured - threshold) - self._summary_max_tokens
+        keep_from = _with_its_call(history, _kept_within(costs, kept_budget, self._min_events))
+        if keep_from == 0:
+            return None
+        summarized = history[:keep_from]
+        prior_summary = self._extract_prior_summary(summarized)
+        texts = message_lines([message for message in summarized if not is_summary(message)])
+        summary = await self._summary(room_id, texts, prior_summary, len(summarized))
+        return [summary_message(summary), *history[keep_from:]]
+
     def _history_budget(self, current_event: RoomEvent) -> int:
         """What the history may take of the window in *current_event*'s turn:
         ``max_context_tokens`` less the input the AI channel measured, the
@@ -203,7 +238,7 @@ class SummarizingMemory(_MemoryWrapper):
 
         # Extract any prior summary text for chaining
         prior_summary = self._extract_prior_summary(prior_messages)
-        summary = await self._get_or_create_summary(room_id, trimmed, prior_summary, lines)
+        summary = await self._summary(room_id, lines(trimmed), prior_summary, len(trimmed))
 
         # Preserve non-summary prior messages from the inner provider
         non_summary = [m for m in prior_messages if not is_summary(m)]
@@ -214,18 +249,14 @@ class SummarizingMemory(_MemoryWrapper):
             speakers=sorted({*inner.speakers, *lines.named(trimmed)}),
         )
 
-    async def _get_or_create_summary(
-        self,
-        room_id: str,
-        events: list[RoomEvent],
-        prior_summary: str | None,
-        lines: SummaryLines,
+    async def _summary(
+        self, room_id: str, event_texts: list[str], prior_summary: str | None, count: int
     ) -> str:
-        """Generate or retrieve a cached summary for the given events."""
+        """Generate or retrieve a cached summary of *count* turns read as
+        *event_texts*, the lines the summarizer reads."""
         # Content-derived cache key to avoid cross-room and temporal collisions:
         # the lines as the summarizer reads them, which name the turns' authors
         # for the agent the summary is for.
-        event_texts = lines(events)
         cache_key = hashlib.md5(
             "\n".join([room_id, *event_texts]).encode(), usedforsecurity=False
         ).hexdigest()
@@ -266,9 +297,7 @@ class SummarizingMemory(_MemoryWrapper):
             summary = response.content.strip() or "[Summary generation failed]"
         except Exception as exc:
             logger.warning("Failed to generate summary: %s", exc)
-            summary = (
-                f"[Earlier conversation with {len(events)} messages \u2014 summary unavailable]"
-            )
+            summary = f"[Earlier conversation with {count} messages \u2014 summary unavailable]"
 
         self._summary_cache[cache_key] = (now, summary)
         return summary
@@ -322,3 +351,26 @@ class SummarizingMemory(_MemoryWrapper):
     async def close(self) -> None:
         await super().close()
         await self._provider.close()
+
+
+def _kept_within(costs: list[int], budget: int, min_kept: int) -> int:
+    """Where the kept items start: the latest whose *costs* fit *budget*,
+    *min_kept* of them at least; ``0`` when they all fit. Unlike tier 2 in
+    :meth:`SummarizingMemory.retrieve`, no budget is enforced after it, so
+    the item that passes the budget is not kept."""
+    running = 0
+    start = len(costs)
+    for i in range(len(costs) - 1, -1, -1):
+        running += costs[i]
+        if running > budget and len(costs) - i > min_kept:
+            break
+        start = i
+    return start
+
+
+def _with_its_call(history: list[AIMessage], index: int) -> int:
+    """*index*, moved back past the tool results there to the call they
+    answer, which the kept messages then start with."""
+    while 0 < index < len(history) and history[index].role == "tool":
+        index -= 1
+    return index

@@ -7,10 +7,15 @@ import logging
 from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from contextlib import aclosing
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from roomkit.channels._ai_policy import declared_for
-from roomkit.channels._compaction import compaction_cut, summary_text, with_results_stored
+from roomkit.channels._compaction import (
+    compaction_cut,
+    summary_text,
+    with_compacted_history,
+    with_results_stored,
+)
 from roomkit.channels._user_text import with_leading_text
 from roomkit.models.channel import RetryPolicy
 from roomkit.providers.ai.base import (
@@ -31,6 +36,7 @@ from roomkit.providers.utils import _aclose_stream
 
 if TYPE_CHECKING:
     from roomkit.channels._tool_eviction import ToolEviction
+    from roomkit.memory.base import MemoryProvider
     from roomkit.providers.ai.base import AIMessage
 
 
@@ -122,8 +128,10 @@ class AIResilienceMixin(_AIChannelContract):
     _provider: AIProvider
     _fallback_provider: AIProvider | None
     _eviction: ToolEviction
+    _memory: MemoryProvider
     _tool_call_intents: bool
     _tool_call_intents_required: bool
+    channel_id: str
 
     async def _generate_stream_with_retry(
         self,
@@ -329,6 +337,47 @@ class AIResilienceMixin(_AIChannelContract):
             loop_ctx.turn_input = compacted[0]
         context.messages[:] = compacted
         return context
+
+    async def _compact_after_round(
+        self, context: AIContext, room_id: str | None, usage: dict[str, Any] | None
+    ) -> None:
+        """Between two tool rounds, hand the memory the history before the
+        turn's input and what the round's generation measured, and put in
+        place the history it returns (RFC §6.4, §20.1), as
+        :func:`with_compacted_history` places it. A memory that returns
+        ``None`` changes nothing, and one that fails is logged. Mutates
+        ``context.messages`` in place, as :meth:`_compact_context` does.
+        """
+        loop_ctx = self._get_loop_ctx()
+        kept = loop_ctx.answered_input or loop_ctx.turn_input
+        at = next((i for i, message in enumerate(context.messages) if message is kept), None)
+        if at is None or room_id is None or usage is None:
+            return
+        history = context.messages[:at]
+        compacted = await self._compacted_history(room_id, history, usage)
+        if compacted is None:
+            return
+        self._show_summarized_references([m for m in history if m not in compacted])
+        messages = with_compacted_history(context.messages, at, compacted, self._eviction)
+        moved = messages[len(messages) - (len(context.messages) - at)]
+        if loop_ctx.turn_input is kept:
+            loop_ctx.turn_input = moved
+        if loop_ctx.answered_input is kept:
+            loop_ctx.answered_input = moved
+        context.messages[:] = messages
+
+    async def _compacted_history(
+        self, room_id: str, history: list[AIMessage], usage: dict[str, Any]
+    ) -> list[AIMessage] | None:
+        """What the memory returns for *history* between two tool rounds;
+        ``None`` when it fails, logged."""
+        try:
+            return await self._memory.compact(
+                room_id, list(history), usage=dict(usage), channel_id=self.channel_id
+            )
+        except Exception:
+            logger.warning("Memory compaction between two tool rounds failed", exc_info=True)
+            return None
 
     def _maybe_truncate_result(
         self, result: str | list[AITextPart | AIImagePart], tool_call_id: str = ""

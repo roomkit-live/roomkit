@@ -1,4 +1,5 @@
-"""What an emergency compaction makes of a turn's messages (RFC §6.4).
+"""What an emergency compaction makes of a turn's messages (RFC §6.4), and
+where a history a memory returns between two tool rounds goes (RFC §20.1).
 
 A provider that refuses a turn's context as too long gets one compacted
 replay. The turn's input and its notes stay whole. When the input falls in
@@ -14,6 +15,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from roomkit._text import quoted
+from roomkit.channels._ai_context import _after_memory, _runtime_or_cleaned
 from roomkit.channels._instruction import INSTRUCTION_MARKER
 from roomkit.channels._runtime_record import COMPACTION_HEADER as SUMMARY_HEADER
 from roomkit.channels._speaker import SPEAKER_KEY, said_by, with_said
@@ -151,3 +153,40 @@ def _stored(part: _ContentPart, eviction: ToolEviction) -> _ContentPart:
         return part
     parts = eviction.evict_parts(result, part.tool_call_id, _STORED_PREVIEW_CHARS)
     return part.model_copy(update={"result": parts})
+
+
+def with_compacted_history(
+    messages: list[AIMessage], at: int, compacted: list[AIMessage], eviction: ToolEviction
+) -> list[AIMessage]:
+    """*messages* with *compacted*, the history a memory returned between two
+    tool rounds, in place of the messages before the turn's input at *at*.
+
+    The input stays whole, and the long results of the turn's earlier rounds
+    are stored for re-reading, as an emergency compaction stores them; the
+    last round's, which the model has not read yet, stay whole. A message of
+    *compacted* that is not one of the history's is text from outside, a copy
+    of a runtime mark in it replaced unless a memory of the runtime built it,
+    and a user text the messages the memory wrote ahead of the history's own
+    end on joins the user message after them, as a memory's messages do at
+    the turn's start (RFC §6.4).
+    """
+    history = messages[:at]
+    last = _last_round(messages, at)
+    rest = [
+        messages[at],
+        *with_results_stored(messages[at + 1 : last], eviction),
+        *messages[last:],
+    ]
+    placed = [m if m in history else _runtime_or_cleaned(m) for m in compacted]
+    built = next((i for i, m in enumerate(compacted) if m in history), len(compacted))
+    return _after_memory(placed[:built], [*placed[built:], *rest])
+
+
+def _last_round(messages: list[AIMessage], at: int) -> int:
+    """Where the turn's last round starts among *messages*, its input at *at*:
+    its assistant message, which holds the calls whose results the model has
+    not read yet."""
+    return next(
+        (i for i in range(len(messages) - 1, at, -1) if messages[i].role == "assistant"),
+        len(messages),
+    )

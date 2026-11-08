@@ -3535,6 +3535,44 @@ ai = AIChannel(
 - **Tier 1** (~50% of what the turn leaves of the window): Truncates large text bodies in older events to 2000 chars. No LLM call — cheap and fast.
 - **Tier 2** (~85% of it): Calls the summary provider to summarize older events into a concise paragraph. Keeps recent events at full fidelity. Supports chained summaries (prior summary is incorporated into the new one).
 
+### Compaction between two tool rounds
+
+A memory is read at a turn's start. A long tool turn can then outgrow the
+window round after round, until the provider refuses it and the emergency
+compaction above summarizes it. To keep the turn under its window, the AI
+channel hands its memory the history after each tool round it ran (RFC §6.4,
+§20.1):
+
+```python
+from roomkit.memory import SlidingWindowMemory
+
+
+class MyMemory(SlidingWindowMemory):
+    async def compact(self, room_id, history, *, usage, channel_id=None):
+        # history: the messages before the turn's input, as the model read them
+        # usage: the round's token counters ("input_tokens", "output_tokens", ...)
+        if sum(usage.values()) < 100_000:
+            return None  # nothing changes
+        return [await my_summary(history[:-4]), *history[-4:]]
+```
+
+`compact` returns `None` by default. A history it returns is what the next
+requests send in place of the old one: the turn's input stays whole (a user
+text the history ends on joins it), and the long results of the turn's earlier
+rounds are stored for `read_stored_result`, the last round's left whole. A
+message of the returned history that was not in `history` has a copy of a
+runtime mark replaced, unless a memory of the runtime built it (the summary
+`SummarizingMemory` writes). A memory that raises is logged, and the turn goes on as
+it was. The memory decorators (`BudgetAwareMemory`, `CompactingMemory`,
+`RetrievalMemory`) hand the call to the memory they wrap.
+
+`SummarizingMemory` compacts past `tier2_ratio` of its `max_context_tokens`,
+counting every token counter of the round (its request and its reply): it
+summarizes the older messages and keeps the latest whole, as many as fit what
+the history must give back to come under the threshold once the summary's
+`summary_max_tokens` is paid for, `min_events` of them at least, a call's
+results never kept without their call. Tier 1 does not run between rounds.
+
 ### Knowledge Retrieval (RAG)
 
 Enrich AI context with external knowledge sources using `RetrievalMemory`:

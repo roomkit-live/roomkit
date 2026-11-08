@@ -126,6 +126,10 @@ class _AIChannelContract:
         self, context: AIContext, loop_ctx: _ToolLoopContext
     ) -> tuple[AIContext, bool]: ...
 
+    async def _compact_after_round(
+        self, context: AIContext, room_id: str | None, usage: dict[str, Any] | None
+    ) -> None: ...
+
     def _generate_stream_with_retry(
         self,
         context: AIContext,

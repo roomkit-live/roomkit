@@ -2,16 +2,23 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import AsyncMock
 
-from roomkit.memory._summary import summary_message
+from roomkit.memory._summary import is_summary, summary_message
 from roomkit.memory.base import MemoryProvider, MemoryResult
 from roomkit.memory.summarizing import SummarizingMemory
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import ChannelType
 from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.models.room import Room
-from roomkit.providers.ai.base import AIMessage, AIResponse
+from roomkit.providers.ai.base import (
+    AIMessage,
+    AIResponse,
+    AITextPart,
+    AIToolCallPart,
+    AIToolResultPart,
+)
 from roomkit.providers.ai.mock import MockAIProvider
 
 # -- Helpers ------------------------------------------------------------------
@@ -477,6 +484,120 @@ class TestTier2NoSummarization:
 
         assert len(ai_provider.calls) == 0
         assert len(result.events) == 4
+
+
+# -- Tests: Compaction Between Two Tool Rounds --------------------------------
+
+
+def _turns(count: int, chars: int = 400) -> list[AIMessage]:
+    """*count* turns, a user's then the assistant's, each 106 tokens at 400 chars."""
+    return [
+        AIMessage(role="user" if n % 2 == 0 else "assistant", content=f"t{n}" + "w" * (chars - 2))
+        for n in range(count)
+    ]
+
+
+def _compacting(summary: str = "Summary.", **options: Any) -> SummarizingMemory:
+    settings: dict[str, Any] = {"tier2_ratio": 0.80, "summary_max_tokens": 100, "min_events": 2}
+    return SummarizingMemory(
+        StubInnerMemory(),
+        MockAIProvider(responses=[summary]),
+        1000,
+        **{**settings, **options},
+    )
+
+
+class TestCompactBetweenRounds:
+    """``compact``: tier 2 on the measured size of the round (RFC §20.3)."""
+
+    async def test_a_round_under_the_threshold_compacts_nothing(self) -> None:
+        sm = _compacting()
+        usage = {"input_tokens": 790, "output_tokens": 10}
+        assert await sm.compact("room-1", _turns(8), usage=usage) is None
+
+    async def test_a_round_that_reported_no_usage_compacts_nothing(self) -> None:
+        assert await _compacting().compact("room-1", _turns(8), usage={}) is None
+
+    async def test_every_counter_of_the_round_counts(self) -> None:
+        """The counters are disjoint: cached tokens are part of the request."""
+        usage = {"input_tokens": 100, "cache_read_input_tokens": 700, "output_tokens": 10}
+        assert await _compacting().compact("room-1", _turns(8), usage=usage) is not None
+
+    async def test_past_the_threshold_the_older_messages_are_summarized(self) -> None:
+        """810 measured pass the threshold of 800 by 10: with the summary's
+        100, the history gives back 110 of its 848, so the latest six turns,
+        636 tokens, stay whole and the first two are summarized."""
+        history = _turns(8)
+        sm = _compacting()
+        compacted = await sm.compact(
+            "room-1", history, usage={"input_tokens": 800, "output_tokens": 10}
+        )
+        assert compacted is not None
+        assert is_summary(compacted[0])
+        assert "Summary." in compacted[0].content
+        assert compacted[1:] == history[2:]
+        prompt = sm._provider.calls[0].messages[0].content
+        assert prompt.endswith(
+            f"[user]: “{history[0].content}”\n[assistant]: “{history[1].content}”"
+        )
+
+    async def test_min_events_are_kept_however_far_past(self) -> None:
+        history = _turns(8)
+        compacted = await _compacting().compact("room-1", history, usage={"input_tokens": 5000})
+        assert compacted is not None
+        assert compacted[1:] == history[-2:]
+
+    async def test_a_kept_result_keeps_its_call(self) -> None:
+        """A cut that would keep a call's results without it keeps the call."""
+        call = AIMessage(
+            role="assistant",
+            content=[AIToolCallPart(id="c1", name="lookup", arguments={"q": "x"})],
+        )
+        result = AIMessage(
+            role="tool",
+            content=[AIToolResultPart(tool_call_id="c1", name="lookup", result="found")],
+        )
+        history = [*_turns(6), call, result]
+        compacted = await _compacting(min_events=1).compact(
+            "room-1", history, usage={"input_tokens": 5000}
+        )
+        assert compacted is not None
+        assert compacted[1:] == [call, result]
+
+    async def test_calls_and_results_are_read_by_the_summarizer(self) -> None:
+        call = AIMessage(
+            role="assistant",
+            content=[
+                AITextPart(text="Looking."),
+                AIToolCallPart(id="c1", name="lookup", arguments={"q": "x"}),
+            ],
+        )
+        result = AIMessage(
+            role="tool",
+            content=[AIToolResultPart(tool_call_id="c1", name="lookup", result="found it")],
+        )
+        sm = _compacting(min_events=1)
+        await sm.compact("room-1", [call, result, *_turns(4)], usage={"input_tokens": 5000})
+        prompt = sm._provider.calls[0].messages[0].content
+        assert "[assistant]: “Looking.”\n[assistant] calls lookup: “{'q': 'x'}”" in prompt
+        assert "\n[tool] lookup: “found it”\n" in prompt
+
+    async def test_a_prior_summary_is_carried_into_the_new_one(self) -> None:
+        history = [summary_message("Prior context."), *_turns(8)]
+        sm = _compacting()
+        compacted = await sm.compact("room-1", history, usage={"input_tokens": 5000})
+        assert compacted is not None
+        assert sum(is_summary(m) for m in compacted) == 1
+        prompt = sm._provider.calls[0].messages[0].content
+        assert "Prior context." in prompt
+        # Carried as the prior summary, never read again as one of the lines.
+        assert "[user]: “[Conversation summary" not in prompt
+
+    async def test_the_wrapped_memory_is_not_asked(self) -> None:
+        inner = AsyncMock(spec=MemoryProvider)
+        sm = SummarizingMemory(inner, MockAIProvider(), 1000)
+        await sm.compact("room-1", _turns(8), usage={"input_tokens": 10})
+        inner.compact.assert_not_called()
 
 
 # -- Tests: Helper Methods ---------------------------------------------------

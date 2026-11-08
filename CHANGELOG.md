@@ -184,6 +184,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A turn's history is compacted between two of its tool rounds** (RFC §6.4, §20.1, HITL
+  cb3751f9, RMK-1533). A memory was read at a turn's start only, so a long tool turn
+  passed its compaction threshold and fell back on the emergency compaction once the
+  provider refused it. After each tool round, the AI channel now hands its memory the
+  history before the turn's input and the round's measured usage
+  (`MemoryProvider.compact(room_id, history, *, usage, channel_id=None)`, `None` by
+  default: nothing changes); a history it returns is what the next requests send, the
+  turn's input whole and the earlier rounds' long results stored for
+  `read_stored_result`. `SummarizingMemory` compacts past `tier2_ratio` of its
+  `max_context_tokens`, the round's measured request and reply counted, by summarizing
+  the older messages; the memory decorators hand the call to the memory they wrap.
 - **A tool that changes state starts the turn's repeat counts again** (RFC §6.4, HITL
   a3a67086, 3368d06c, 3b16cc44, a634216e, RMK-1541). The anti-loop guard refused the third identical
   call of a turn, so a test rerun after each edit was refused, and its words asked the model

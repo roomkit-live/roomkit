@@ -137,3 +137,9 @@ class TestMemoryProviderDefaults:
     async def test_close_is_noop(self) -> None:
         mem = SlidingWindowMemory()
         await mem.close()  # should not raise
+
+    async def test_compact_changes_nothing(self) -> None:
+        history = [AIMessage(role="user", content="hello")]
+        assert (
+            await SlidingWindowMemory().compact("r1", history, usage={"input_tokens": 9}) is None
+        )

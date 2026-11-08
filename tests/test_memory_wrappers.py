@@ -13,6 +13,8 @@ from roomkit.memory.mock import MockMemoryProvider
 from roomkit.memory.retrieval import RetrievalMemory
 from roomkit.memory.sliding_window import SlidingWindowMemory
 from roomkit.memory.summarizing import SummarizingMemory
+from roomkit.orchestration import HandoffMemoryProvider
+from roomkit.providers.ai.base import AIMessage
 from roomkit.providers.ai.mock import MockAIProvider
 from tests.conftest import make_event
 
@@ -50,3 +52,42 @@ def test_nested_wrappers_preserve_history_window(
 ) -> None:
     memory = wrap(wrap(SlidingWindowMemory(50)))
     assert memory.recent_events_window == 50
+
+
+class _Compacts(MockMemoryProvider):
+    """A memory that compacts every history to its last message."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.compactions: list[tuple[str, list[AIMessage], dict[str, int], str | None]] = []
+
+    async def compact(
+        self,
+        room_id: str,
+        history: list[AIMessage],
+        *,
+        usage: dict[str, int],
+        channel_id: str | None = None,
+    ) -> list[AIMessage] | None:
+        self.compactions.append((room_id, history, usage, channel_id))
+        return history[-1:]
+
+
+@pytest.mark.parametrize("kind", ["budget", "compacting", "retrieval", "handoff"])
+async def test_compaction_reaches_inner(kind: str) -> None:
+    """A decorator hands a compaction between two rounds to the memory it
+    wraps; the summarizing memory compacts with its own tier instead."""
+    inner = _Compacts()
+    memory: MemoryProvider
+    if kind == "budget":
+        memory = BudgetAwareMemory(inner, 1000)
+    elif kind == "compacting":
+        memory = CompactingMemory(inner, MockAIProvider(), 1000)
+    elif kind == "retrieval":
+        memory = RetrievalMemory([], inner)
+    else:
+        memory = HandoffMemoryProvider(inner)
+    history = [AIMessage(role="user", content="a"), AIMessage(role="assistant", content="b")]
+    usage = {"input_tokens": 5}
+    assert await memory.compact("r1", history, usage=usage, channel_id="ai") == history[-1:]
+    assert inner.compactions == [("r1", history, usage, "ai")]

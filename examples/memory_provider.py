@@ -1,10 +1,11 @@
 """Memory provider example — custom AI context construction.
 
 Demonstrates how to use a MemoryProvider to control what conversation
-history is included in AI context.  Shows two approaches:
+history is included in AI context.  Shows three approaches:
 
 1. Default SlidingWindowMemory (last N events)
 2. Custom provider that injects a conversation summary
+3. A provider that compacts the history between two tool rounds
 
 Run with:
     uv run python examples/memory_provider.py
@@ -13,6 +14,7 @@ Run with:
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 
 from roomkit import (
     AIChannel,
@@ -26,7 +28,8 @@ from roomkit import (
     TextContent,
     WebSocketChannel,
 )
-from roomkit.providers.ai import AIMessage, MockAIProvider
+from roomkit.memory import SlidingWindowMemory
+from roomkit.providers.ai import AIMessage, AIResponse, AIToolCall, MockAIProvider
 
 # --- Custom memory provider --------------------------------------------------
 
@@ -65,6 +68,87 @@ class SummaryMemory(MemoryProvider):
         recent = history[-self._recent_count :]
 
         return MemoryResult(messages=[summary_msg], events=recent)
+
+
+class CompactingBetweenRounds(SlidingWindowMemory):
+    """Reads the room's latest events, and keeps a long tool turn within its
+    window: past *ceiling* tokens measured by a round, the history before
+    the turn's input is replaced by a one-line summary.
+
+    A real implementation would have a model write the summary, or use
+    :class:`~roomkit.memory.SummarizingMemory`, which does so past its
+    ``tier2_ratio``.
+    """
+
+    def __init__(self, ceiling: int) -> None:
+        super().__init__(max_events=50)
+        self._ceiling = ceiling
+
+    async def compact(
+        self,
+        room_id: str,
+        history: list[AIMessage],
+        *,
+        usage: dict[str, int],
+        channel_id: str | None = None,
+    ) -> list[AIMessage] | None:
+        if sum(usage.values()) <= self._ceiling or not history:
+            return None  # the turn goes on as it is
+        return [AIMessage(role="user", content=f"[Summary of {len(history)} messages]")]
+
+
+async def run_compaction() -> None:
+    print("\n=== Compaction between two tool rounds ===")
+
+    def lookup(call_id: str) -> AIResponse:
+        return AIResponse(
+            content="",
+            finish_reason="tool_calls",
+            tool_calls=[AIToolCall(id=call_id, name="lookup", arguments={"q": call_id})],
+            usage={"input_tokens": 7000, "output_tokens": 10},
+        )
+
+    provider = MockAIProvider(
+        ai_responses=[
+            AIResponse(content="Hi!"),
+            lookup("c1"),
+            AIResponse(content="Found it."),
+        ]
+    )
+
+    async def tools(name: str, arguments: dict[str, Any]) -> str:
+        return "order 42: shipped"
+
+    ai = AIChannel(
+        "ai-compact",
+        provider=provider,
+        tool_handler=tools,
+        memory=CompactingBetweenRounds(ceiling=6000),
+    )
+    kit = RoomKit()
+    ws = WebSocketChannel("ws3")
+    ws.register_connection("user", lambda _conn, _event: asyncio.sleep(0), room_id="room3")
+    kit.register_channel(ws)
+    kit.register_channel(ai)
+    await kit.create_room(room_id="room3")
+    await kit.attach_channel("room3", "ws3")
+    await kit.attach_channel(
+        "room3",
+        "ai-compact",
+        category=ChannelCategory.INTELLIGENCE,
+        metadata={"tools": [{"name": "lookup", "description": "Find an order."}]},
+    )
+
+    for body in ("Hello!", "Where is order 42?"):
+        await kit.process_inbound(
+            InboundMessage(channel_id="ws3", sender_id="user", content=TextContent(body=body))
+        )
+
+    # The second turn's first round measured 7,010 tokens, past the ceiling:
+    # its next request opens with the summary, joined to the turn's input.
+    last = provider.calls[-1].messages
+    print(f"  The last request opens with: {last[0].content!r}")
+    await kit.close()
 
 
 # --- Main --------------------------------------------------------------------
@@ -152,6 +236,9 @@ async def main() -> None:
     print(f"  Context had {len(ctx.messages)} message(s):")
     for message in ctx.messages:
         print(f"    {message.role}: {message.content!r}")
+
+    # --- 3. Compaction between two tool rounds -------------------------------
+    await run_compaction()
 
     # --- Cleanup -------------------------------------------------------------
     await ai.close()

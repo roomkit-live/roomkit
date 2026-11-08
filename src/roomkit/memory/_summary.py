@@ -4,6 +4,7 @@ shared by :class:`~roomkit.memory.summarizing.SummarizingMemory` and
 
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from dataclasses import dataclass
 
@@ -25,7 +26,13 @@ from roomkit.memory.token_estimator import extract_event_text
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import ChannelType, EventType
 from roomkit.models.event import RoomEvent
-from roomkit.providers.ai.base import AIMessage
+from roomkit.providers.ai.base import (
+    AIImagePart,
+    AIMessage,
+    AITextPart,
+    AIToolCallPart,
+    AIToolResultPart,
+)
 
 EVENT_TEXT_LIMIT = 2000
 """Characters of one event the summarizer reads."""
@@ -97,6 +104,37 @@ class SummaryLines:
             return f"{label}: {text}"
         role = "assistant" if event.source.channel_type == ChannelType.AI else "user"
         return f"[{role}]: {text}"
+
+
+def message_lines(messages: Sequence[AIMessage]) -> list[str]:
+    """The lines a summarizer reads for *messages*, a turn's history as the
+    model read it (RFC §6.4): each text quoted on one line after its role, a
+    call after the tool it names, its arguments quoted, a result after its
+    tool's name, an image named; a blank text and reasoning left out."""
+    return [line for message in messages for line in _message_lines(message)]
+
+
+def _message_lines(message: AIMessage) -> list[str]:
+    if isinstance(message.content, str):
+        return _text_line(message.role, message.content)
+    return [line for part in message.content for line in _part_lines(message.role, part)]
+
+
+def _text_line(role: str, text: str) -> list[str]:
+    return [f"[{role}]: {quoted(text, EVENT_TEXT_LIMIT)}"] if text.strip() else []
+
+
+def _part_lines(role: str, part: object) -> list[str]:
+    if isinstance(part, AITextPart):
+        return _text_line(role, part.text)
+    if isinstance(part, AIImagePart):
+        return [f"[{role}]: [image]"]
+    if isinstance(part, AIToolCallPart):
+        arguments = quoted(json.dumps(part.arguments), EVENT_TEXT_LIMIT)
+        return [f"[{role}] calls {part.name}: {arguments}"]
+    if isinstance(part, AIToolResultPart):
+        return [f"[tool] {part.name}: {quoted(part.as_text(), EVENT_TEXT_LIMIT)}"]
+    return []
 
 
 _SUMMARY_KIND = "summary"
