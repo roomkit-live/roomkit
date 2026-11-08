@@ -1,0 +1,156 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/an-instruction-reaching-a-process-whose-install-another-replaced-is-dropped",
+  "title": "An instruction reaching a process whose installed discussion another process replaced is told dropped and not kept: that process gives no turn",
+  "rules": [
+    "§19.7.5 rule 16",
+    "§19.7.5 rule 7"
+  ],
+  "notes": "Python: test_discussion_processes.py test_an_instruction_or_a_result_reaching_a_process_that_gives_no_turn_is_not_kept, its instruction half (rule 19's posted result comes with the posts of task results, RMK-1233). _room.py queue_instruction: a process whose discussion is not the one the room stores tells it dropped, queues nothing.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        }
+      },
+      {
+        "id": "c",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a",
+            "b",
+            "c"
+          ]
+        }
+      },
+      {
+        "id": "kept",
+        "discussion": {
+          "agents": [
+            "a",
+            "b"
+          ]
+        }
+      }
+    ],
+    "processes": [
+      {
+        "id": "p2"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "follow",
+        "trigger": "on_speak_queue",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "kept",
+      "kit": "p2"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "summarise"
+        },
+        "event_type": "instruction",
+        "addressed_to": [
+          "a"
+        ]
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "speak_queue",
+      "kit": "p2",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "speaking": null,
+          "queue": []
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": []
+    },
+    "hooks": {
+      "follow": [
+        {
+          "trigger": "on_speak_queue",
+          "room_id": "r1",
+          "speak_queue": {
+            "change": "instruction_dropped",
+            "channel_ids": [
+              "a"
+            ],
+            "event_id": {
+              "$present": true
+            }
+          }
+        }
+      ]
+    },
+    "models": {
+      "a": []
+    }
+  }
+}

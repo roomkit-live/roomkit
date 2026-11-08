@@ -1,0 +1,163 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/an-install-right-after-another-process-uninstalled-is-the-room-s-strategy",
+  "title": "A process that installs a discussion right after another process uninstalled the one it installed holds the new strategy: it is current, the room's strategy, and gives the turns",
+  "rules": [
+    "§19.7.5 rule 16",
+    "§19.7"
+  ],
+  "notes": "Python: core/mixins/discussion.py _install_discussion leaves the discussion another process uninstalled (_leave_uninstalled drops that discussion's own record, _drop_record(room_id, discussion.strategy)) and starts the new one, whose install is recorded; whether the run's kit's driver read the uninstall first or not. From the full review of the replaced configuration lot (RMK-1233).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "a here"
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        }
+      },
+      {
+        "id": "c",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a",
+            "b",
+            "c"
+          ]
+        }
+      },
+      {
+        "id": "d2",
+        "discussion": {
+          "agents": [
+            "a",
+            "b",
+            "c"
+          ],
+          "rules": "Keep it short."
+        }
+      }
+    ],
+    "processes": [
+      {
+        "id": "p2"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "uninstall_strategy",
+      "kit": "p2",
+      "room_id": "r1",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d2"
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": "d2"
+      }
+    },
+    {
+      "call": "room_strategy_is_current",
+      "room_id": "r1",
+      "kind": "Discussion",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@a hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "@a hello"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "body": "a here"
+          }
+        }
+      ]
+    }
+  }
+}

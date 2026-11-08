@@ -1,0 +1,251 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/what-a-process-held-when-another-install-replaced-its-own-is-not-kept",
+  "title": "A process whose installed discussion another process replaces while its turn runs gives no turn once that turn ends: it gives up the instruction it held, told dropped, and no process gives that turn",
+  "rules": [
+    "§19.7.5 rule 16",
+    "§19.7.5 rule 7",
+    "§19.7.5 rule 6"
+  ],
+  "notes": "Python: test_discussion_processes.py test_what_a_process_held_when_another_install_replaced_its_own_is_not_kept, its instruction half (the posted result comes with the posts of task results, RMK-1233); _driver.py _gives_turns and _room.py give_up. The turn running when p2's install lands runs to its end; then the run's kit gives up the lease and the instruction only it holds the text of.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "gate": "held",
+              "text": "a here"
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        }
+      },
+      {
+        "id": "c",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a",
+            "b",
+            "c"
+          ]
+        }
+      },
+      {
+        "id": "kept",
+        "discussion": {
+          "agents": [
+            "a",
+            "b"
+          ]
+        }
+      }
+    ],
+    "processes": [
+      {
+        "id": "p2"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "follow",
+        "trigger": "on_speak_queue",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@a take your time"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "summarise"
+        },
+        "event_type": "instruction",
+        "addressed_to": [
+          "b"
+        ]
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "kept",
+      "kit": "p2"
+    },
+    {
+      "open": "held"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "speak_queue",
+      "kit": "p2",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "speaking": null,
+          "queue": []
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "@a take your time"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "body": "a here"
+          }
+        }
+      ]
+    },
+    "models": {
+      "b": []
+    },
+    "hooks": {
+      "follow": [
+        {
+          "trigger": "on_speak_queue",
+          "room_id": "r1",
+          "speak_queue": {
+            "change": "queued",
+            "channel_ids": [
+              "a"
+            ],
+            "event_id": "r1#0"
+          }
+        },
+        {
+          "trigger": "on_speak_queue",
+          "room_id": "r1",
+          "speak_queue": {
+            "change": "turn_given",
+            "channel_ids": [
+              "a"
+            ],
+            "event_id": "r1#0"
+          }
+        },
+        {
+          "trigger": "on_speak_queue",
+          "room_id": "r1",
+          "speak_queue": {
+            "change": "queued",
+            "channel_ids": [
+              "b"
+            ],
+            "event_id": {
+              "$present": true
+            }
+          }
+        },
+        {
+          "trigger": "on_speak_queue",
+          "room_id": "r1",
+          "speak_queue": {
+            "change": "turn_ended",
+            "channel_ids": [
+              "a"
+            ]
+          }
+        },
+        {
+          "trigger": "on_speak_queue",
+          "room_id": "r1",
+          "speak_queue": {
+            "change": "instruction_dropped",
+            "channel_ids": [
+              "b"
+            ],
+            "event_id": {
+              "$present": true
+            },
+            "queue": {
+              "queue": []
+            }
+          }
+        }
+      ]
+    }
+  }
+}
