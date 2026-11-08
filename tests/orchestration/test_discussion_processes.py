@@ -253,13 +253,13 @@ async def test_two_processes_never_give_two_turns_at_once() -> None:
 
 
 @pytest.mark.wallclock
-async def test_a_turn_longer_than_the_lease_keeps_it() -> None:
+async def test_a_turn_longer_than_the_lease_keeps_it(monkeypatch: pytest.MonkeyPatch) -> None:
     # The process giving a turn renews its lease while the turn runs, so no
     # other process gives a turn meanwhile (rule 16).
+    lease = _shorter_lease(monkeypatch)
     cluster = _Cluster()
-    # Past the lease of 0.6 s.
-    a = await cluster.process(install=True, create=True, delay=0.8)
-    b = await cluster.process(install=True, delay=0.8)
+    a = await cluster.process(install=True, create=True, delay=1.6 * lease)
+    b = await cluster.process(install=True, delay=1.6 * lease)
     await _say(a, "@investigator what do the logs say?")
     await _turn_started(cluster)
 
