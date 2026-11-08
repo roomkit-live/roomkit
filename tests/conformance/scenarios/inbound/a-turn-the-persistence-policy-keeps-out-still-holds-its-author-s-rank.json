@@ -1,0 +1,149 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-turn-the-persistence-policy-keeps-out-still-holds-its-author-s-rank",
+  "title": "A turn the persistence policy keeps out of the timeline still takes its author record and joins the room's register of authors: a later sender whose name reads alike ranks after it, never holding the rank a reader saw it hold",
+  "rules": [
+    "§10.1 step 12",
+    "§14.3"
+  ],
+  "notes": "Python: core/mixins/lane_execution.py _commit_to_lane (an event the policy excludes is delivered with its author record, _with_author), core/_authors.py with_author (the register written first, set_private_state).",
+  "setup": {
+    "kit": {
+      "persistence_policy": {
+        "persist_types": [
+          "message"
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "+1"
+        },
+        "event_type": "reaction",
+        "metadata": {
+          "sender_name": "Alice"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "+15559876543",
+        "content": {
+          "type": "text",
+          "body": "Hi, I'm Alice too"
+        },
+        "metadata": {
+          "sender_name": "ALICE"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "Alice again"
+        },
+        "metadata": {
+          "sender_name": "Alice"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "Hi, I'm Alice too"
+          },
+          "metadata": {
+            "author": {
+              "name": "ALICE",
+              "rank": 2
+            }
+          }
+        },
+        {
+          "content": {
+            "body": "Alice again"
+          },
+          "metadata": {
+            "author": {
+              "name": "Alice",
+              "rank": 1
+            }
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "type": "reaction",
+            "metadata": {
+              "author": {
+                "name": "Alice",
+                "rank": 1
+              }
+            }
+          },
+          {
+            "content": {
+              "body": "Alice again"
+            },
+            "metadata": {
+              "author": {
+                "name": "Alice",
+                "rank": 1
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,113 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-message-the-persistence-policy-keeps-out-gives-no-turn",
+  "title": "In a room held by a discussion, a message the persistence policy keeps out of the timeline is delivered to the room's transports and gives no agent a turn",
+  "rules": [
+    "§19.7.5 rule 8",
+    "§14.3"
+  ],
+  "notes": "Python: core/mixins/lane_execution.py _commit_to_lane (an event the policy excludes returns before _queue_for_discussion).",
+  "setup": {
+    "kit": {
+      "persistence_policy": {
+        "exclude_types": [
+          "message"
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "web",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "a answers"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          },
+          {
+            "channel_id": "web"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@a what is the error rate?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": []
+    },
+    "deliveries": {
+      "r1": {
+        "web": [
+          {
+            "content": {
+              "type": "text",
+              "body": "@a what is the error rate?"
+            }
+          }
+        ]
+      }
+    },
+    "models": {
+      "a": []
+    }
+  }
+}

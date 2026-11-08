@@ -1,0 +1,202 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/the-persistence-policy-delivers-an-event-it-keeps-out-of-the-timeline",
+  "title": "A kit whose persistence policy keeps messages out delivers a message, a direct injection and an agent's answer to the room's channels as any event, AFTER_BROADCAST firing, and stores none of them: the room's counters do not move and the call's answers hold none",
+  "rules": [
+    "§14.3",
+    "§10.1 step 12",
+    "§8.1"
+  ],
+  "notes": "Python: tests/test_commit_atomicity.py::test_policy_excluded_event_does_not_advance_latest_index; core/mixins/lane_execution.py _commit_to_lane (an event the policy excludes is delivered, its plan laned index-less behind the room's latest index, nothing committed), _commit_reentry (an answer not stored is none of the call's response events). The channels' lifecycle records are stored: the policy names messages only.",
+  "setup": {
+    "kit": {
+      "persistence_policy": {
+        "exclude_types": [
+          "message"
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "bot",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "hi"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "ack"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "bot",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "after",
+        "trigger": "after_broadcast",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "type": "message",
+            "status": "delivered",
+            "content": {
+              "type": "text",
+              "body": "hi"
+            }
+          },
+          "response_events": []
+        }
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "back"
+      },
+      "expect": {
+        "result": {
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "back"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": []
+    },
+    "rooms": {
+      "room-1": {
+        "event_count": 0,
+        "latest_index": null
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [
+          {
+            "content": {
+              "type": "text",
+              "body": "ack"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "back"
+            }
+          }
+        ],
+        "ws": [
+          {
+            "content": {
+              "type": "text",
+              "body": "hi"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "ack"
+            }
+          }
+        ]
+      }
+    },
+    "hooks": {
+      "after": [
+        {
+          "trigger": "after_broadcast",
+          "room_id": "room-1",
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "hi"
+            }
+          }
+        },
+        {
+          "trigger": "after_broadcast",
+          "room_id": "room-1",
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "ack"
+            }
+          }
+        },
+        {
+          "trigger": "after_broadcast",
+          "room_id": "room-1",
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "back"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

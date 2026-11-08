@@ -1,0 +1,140 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/the-persistence-policy-stores-the-types-it-names-but-those-it-excludes",
+  "title": "A persistence policy stores only the types it names, never one it also excludes: a system event it keeps out is delivered, then the room's first stored message takes index 0 and is delivered after it",
+  "rules": [
+    "§14.3",
+    "§8.1",
+    "§10.2"
+  ],
+  "notes": "Python: tests/test_latest_index.py::TestAnEmptyRoom::test_delivers_its_first_stored_message_after_an_unstored_event and test_takes_its_first_event_s_index_as_latest; tests/test_store_activity.py::TestPersistencePolicy::test_exclude_overrides_persist (models/store_filter.py PersistencePolicy.should_persist: excluded first, then the types named). The channels' lifecycle records are not stored either: the policy names no lifecycle type.",
+  "setup": {
+    "kit": {
+      "persistence_policy": {
+        "persist_types": [
+          "message",
+          "system"
+        ],
+        "exclude_types": [
+          "system"
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "a",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "b",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "a"
+          },
+          {
+            "channel_id": "b"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "a",
+        "sender_id": "u",
+        "content": {
+          "type": "text",
+          "body": "sys"
+        },
+        "event_type": "system"
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "type": "system",
+            "status": "delivered"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "a",
+        "sender_id": "u",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "id": "room-1#0",
+            "index": 0
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "id": "room-1#0",
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "hello"
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "room-1": {
+        "event_count": 1,
+        "latest_index": 0
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "b": [
+          {
+            "type": "system",
+            "content": {
+              "type": "text",
+              "body": "sys"
+            }
+          },
+          {
+            "id": "room-1#0",
+            "content": {
+              "type": "text",
+              "body": "hello"
+            }
+          }
+        ]
+      }
+    },
+    "lifecycle": {
+      "room-1": []
+    }
+  }
+}

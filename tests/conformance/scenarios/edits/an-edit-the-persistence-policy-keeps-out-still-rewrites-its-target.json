@@ -1,0 +1,152 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "edits/an-edit-the-persistence-policy-keeps-out-still-rewrites-its-target",
+  "title": "An edit the persistence policy keeps out of the timeline is delivered and stores no row of its own, but still rewrites its target, firing ON_EVENT_UPDATED with the target as changed",
+  "rules": [
+    "§10.3 State updates",
+    "§14.3",
+    "§10.3 Mutation triggers"
+  ],
+  "notes": "Python: core/mixins/lane_execution.py _commit_to_lane and core/mixins/helpers.py _write_unstored_change: an edit the policy excludes writes its target alone (the store's write_change_target), its mutation trigger firing once it is written.",
+  "setup": {
+    "kit": {
+      "persistence_policy": {
+        "exclude_types": [
+          "edit"
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "wa",
+        "type": "whatsapp",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "wa"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "updated",
+        "trigger": "on_event_updated",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Original"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "+15551234567",
+        "event_type": "edit",
+        "content": {
+          "type": "edit",
+          "target_event_id": "room-1#0",
+          "new_content": {
+            "type": "text",
+            "body": "Changed"
+          },
+          "edit_source": "sender"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "type": "edit",
+            "status": "delivered"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "id": "room-1#0",
+          "content": {
+            "type": "text",
+            "body": "Changed"
+          },
+          "metadata": {
+            "edited": true
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "room-1": {
+        "event_count": 1,
+        "latest_index": 0
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "id": "room-1#0",
+            "content": {
+              "type": "text",
+              "body": "Original"
+            }
+          },
+          {
+            "type": "edit"
+          }
+        ]
+      }
+    },
+    "hooks": {
+      "updated": [
+        {
+          "trigger": "on_event_updated",
+          "room_id": "room-1",
+          "event": {
+            "id": "room-1#0",
+            "content": {
+              "type": "text",
+              "body": "Changed"
+            },
+            "metadata": {
+              "edited": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

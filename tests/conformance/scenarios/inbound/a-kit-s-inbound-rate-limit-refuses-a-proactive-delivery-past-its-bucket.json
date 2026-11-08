@@ -1,0 +1,95 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-kit-s-inbound-rate-limit-refuses-a-proactive-delivery-past-its-bucket",
+  "title": "A proactive delivery is an inbound message of the channel it names: past that channel's bucket of the kit's inbound rate limit, it is refused rate_limited, nothing stored, not queued",
+  "rules": [
+    "§10.1",
+    "§22.1"
+  ],
+  "notes": "Python: core/mixins/inbound.py process_inbound (the inbound limit, before the channel is read), which deliver's publication goes through (core/delivery.py). §13.3's queueing is a binding's outbound limit, not this one.",
+  "setup": {
+    "kit": {
+      "inbound_rate_limit": {
+        "max_per_minute": 1
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "first",
+      "channel_id": "sms",
+      "expect": {
+        "result": {
+          "status": "sent"
+        }
+      }
+    },
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "second",
+      "channel_id": "sms",
+      "expect": {
+        "result": {
+          "status": "blocked",
+          "reason": "rate_limited",
+          "event_id": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "first"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "type": "text",
+              "body": "first"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

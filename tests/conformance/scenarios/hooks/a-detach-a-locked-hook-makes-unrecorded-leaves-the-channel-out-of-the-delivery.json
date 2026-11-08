@@ -1,0 +1,116 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/a-detach-a-locked-hook-makes-unrecorded-leaves-the-channel-out-of-the-delivery",
+  "title": "A channel a BEFORE_BROADCAST hook detaches while the persistence policy keeps the detach's record out of the timeline is not delivered the event: its delivery set is planned against the bindings as the hook left them",
+  "rules": [
+    "§10.1 step 12",
+    "§10.1 step 9",
+    "§14.3"
+  ],
+  "notes": "Python: tests/test_reentry_room_reads.py::test_a_channel_its_locked_hook_detached_is_not_delivered_the_event. The policy stores messages only: no lifecycle record tells the pass the room changed.",
+  "setup": {
+    "kit": {
+      "persistence_policy": {
+        "persist_types": [
+          "message"
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "sms1",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws1",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms1"
+          },
+          {
+            "channel_id": "ws1"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "cut",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "private"
+            },
+            "do": [
+              {
+                "call": "detach_channel",
+                "room_id": "room-1",
+                "channel_id": "ws1"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms1",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "private"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "id": "room-1#0",
+          "content": {
+            "type": "text",
+            "body": "private"
+          }
+        }
+      ]
+    },
+    "bindings": {
+      "room-1": {
+        "sms1": {
+          "channel_id": "sms1"
+        },
+        "ws1": null
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "ws1": []
+      }
+    },
+    "lifecycle": {
+      "room-1": []
+    }
+  }
+}

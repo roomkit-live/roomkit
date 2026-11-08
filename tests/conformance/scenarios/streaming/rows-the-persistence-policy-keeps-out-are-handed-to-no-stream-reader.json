@@ -1,0 +1,170 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/rows-the-persistence-policy-keeps-out-are-handed-to-no-stream-reader",
+  "title": "Tool-call rows the persistence policy keeps out of the timeline are delivered to the room's other transports and never handed to the channel reading the stream, which reads the text and the stored message rows",
+  "rules": [
+    "§12.2 step 14s",
+    "§14.3"
+  ],
+  "notes": "Python: core/mixins/_streaming_segments.py _write_now and _hand_to_target (a row is handed to the stream's reader, and counted among the turn's rows, only once stored).",
+  "setup": {
+    "kit": {
+      "persistence_policy": {
+        "exclude_types": [
+          "tool_call_start",
+          "tool_call_end"
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "web",
+        "type": "webhook",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up.",
+            "returns": "found"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "Looking."
+              ],
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message",
+          "content": {
+            "body": "hi"
+          }
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "content": {
+            "body": "Looking."
+          }
+        },
+        {
+          "index": 2,
+          "type": "message",
+          "content": {
+            "body": "Done."
+          }
+        }
+      ]
+    },
+    "streamed": {
+      "room-1": {
+        "ws": [
+          {
+            "text": "Looking."
+          },
+          {
+            "row": {
+              "index": 1,
+              "type": "message"
+            }
+          },
+          {
+            "text": "Done."
+          },
+          {
+            "row": {
+              "index": 2,
+              "type": "message"
+            }
+          }
+        ]
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "web": [
+          {
+            "index": 0
+          },
+          {
+            "index": 1,
+            "type": "message"
+          },
+          {
+            "type": "tool_call_start"
+          },
+          {
+            "type": "tool_call_end"
+          },
+          {
+            "index": 2,
+            "type": "message"
+          }
+        ]
+      }
+    }
+  }
+}

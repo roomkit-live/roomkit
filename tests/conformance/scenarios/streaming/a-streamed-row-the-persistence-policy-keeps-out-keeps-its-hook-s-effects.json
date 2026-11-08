@@ -1,0 +1,178 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-streamed-row-the-persistence-policy-keeps-out-keeps-its-hook-s-effects",
+  "title": "A streamed answer the persistence policy keeps out of the timeline is delivered and not stored, and the task, the observation and the injected event its BEFORE_BROADCAST hook gives land all the same, the injected event stored whatever the policy",
+  "rules": [
+    "§12.2 step 13s",
+    "§9.4",
+    "§14.3"
+  ],
+  "notes": "Python: tests/test_streaming_before_broadcast.py::test_stream_hook_effects_without_persistence_or_source_binding[detached=False] (its [detached=True] case is streaming/a-streamed-row-of-a-detached-agent-keeps-its-hook-s-effects); core/mixins/_streaming_segments.py (a row committed policy-aware), core/mixins/injected_events.py (a hook's injected event committed whatever the policy).",
+  "setup": {
+    "kit": {
+      "persistence_policy": {
+        "exclude_types": [
+          "message"
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "sms1",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "audit",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ai1",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "Found."
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms1"
+          },
+          {
+            "channel_id": "audit"
+          },
+          {
+            "channel_id": "ai1",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "side_effects",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "Found."
+            },
+            "result": {
+              "action": "allow",
+              "tasks": [
+                {
+                  "title": "Follow up"
+                }
+              ],
+              "observations": [
+                {
+                  "category": "audit",
+                  "content": "Observed"
+                }
+              ],
+              "injected_events": [
+                {
+                  "target_channel_ids": [
+                    "audit"
+                  ],
+                  "event": {
+                    "content": {
+                      "type": "text",
+                      "body": "notice"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms1",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "id": "room-1#0",
+          "source": {
+            "channel_id": "system"
+          },
+          "content": {
+            "type": "text",
+            "body": "notice"
+          },
+          "status": "delivered"
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "audit": [
+          {
+            "content": {
+              "type": "text",
+              "body": "go"
+            }
+          },
+          {
+            "source": {
+              "channel_id": "ai1"
+            },
+            "content": {
+              "type": "text",
+              "body": "Found."
+            }
+          },
+          {
+            "id": "room-1#0",
+            "content": {
+              "type": "text",
+              "body": "notice"
+            }
+          }
+        ]
+      }
+    },
+    "tasks": {
+      "room-1": [
+        {
+          "title": "Follow up"
+        }
+      ]
+    },
+    "observations": {
+      "room-1": [
+        {
+          "content": "Observed"
+        }
+      ]
+    }
+  }
+}

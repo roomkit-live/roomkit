@@ -1,0 +1,170 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "edits/a-delete-the-persistence-policy-keeps-out-still-marks-its-target-and-edits",
+  "title": "A delete the persistence policy keeps out of the timeline is delivered and stores no row of its own, but still marks its target deleted, and the target's edits with it, firing ON_EVENT_DELETED",
+  "rules": [
+    "§10.3 State updates",
+    "§14.3",
+    "§10.3 Mutation triggers"
+  ],
+  "notes": "Python: tests/test_edit_delete_authorization.py::TestAnEditOutsideItsTargetsWindow::test_an_edit_is_withheld_with_the_message_it_corrected[deleted, the delete unstored]; core/mixins/helpers.py _write_unstored_change (the store's write_change_target: the target alone, a delete marking its edits deleted).",
+  "setup": {
+    "kit": {
+      "persistence_policy": {
+        "exclude_types": [
+          "delete"
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "wa",
+        "type": "whatsapp",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "wa"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "deleted",
+        "trigger": "on_event_deleted",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "my pin is 1234"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "alice",
+        "event_type": "edit",
+        "content": {
+          "type": "edit",
+          "target_event_id": "room-1#0",
+          "new_content": {
+            "type": "text",
+            "body": "my pin is 5678"
+          },
+          "edit_source": "sender"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "alice",
+        "event_type": "delete",
+        "content": {
+          "type": "delete",
+          "target_event_id": "room-1#0",
+          "delete_type": "sender"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "type": "delete",
+            "status": "delivered"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "id": "room-1#0",
+          "content": {
+            "type": "text",
+            "body": "my pin is 5678"
+          },
+          "metadata": {
+            "edited": true,
+            "deleted": true
+          }
+        },
+        {
+          "id": "room-1#1",
+          "type": "edit",
+          "metadata": {
+            "deleted": true
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "room-1": {
+        "event_count": 2,
+        "latest_index": 1
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "id": "room-1#0"
+          },
+          {
+            "id": "room-1#1",
+            "type": "edit"
+          },
+          {
+            "type": "delete"
+          }
+        ]
+      }
+    },
+    "hooks": {
+      "deleted": [
+        {
+          "trigger": "on_event_deleted",
+          "room_id": "room-1",
+          "event": {
+            "id": "room-1#0",
+            "metadata": {
+              "deleted": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}
