@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from tests.conformance._match import MISSING, framework_mismatches, mismatches
+from tests.conformance._match import MISSING, Names, framework_mismatches, mismatches
 from tests.conformance._normalize import Normalizer, Observed, is_lifecycle_record
 
 # A call's outcome, checked against what its step or its action expects.
@@ -20,12 +20,14 @@ Check = tuple[str, Mapping[str, Any] | None, dict[str, Any]]
 def compare(expect: Mapping[str, Any], observed: Observed, checks: list[Check]) -> list[str]:
     """Every mismatch between what the run produced and what it should have."""
     normalizer = Normalizer(observed)
+    # What the ``$as`` of the steps and of ``expect`` named (README, "Matching").
+    names = Names()
     found: list[str] = []
     for path, expected, outcome in checks:
-        found.extend(outcome_mismatches(expected, outcome, normalizer, path))
+        found.extend(outcome_mismatches(expected, outcome, normalizer, path, names))
     found.extend(_lifecycle_never_delivered(observed))
     found.extend(_indexes_increase(observed))
-    comparison = _Comparison(normalizer, observed, expect)
+    comparison = _Comparison(normalizer, observed, expect, names)
     comparison.records()
     comparison.hooks()
     comparison.channel_calls()
@@ -37,8 +39,15 @@ def compare(expect: Mapping[str, Any], observed: Observed, checks: list[Check]) 
 class _Comparison:
     """The comparison of a run's records, the rooms named by their aliases."""
 
-    def __init__(self, normalizer: Normalizer, observed: Observed, expect: Mapping[str, Any]):
+    def __init__(
+        self,
+        normalizer: Normalizer,
+        observed: Observed,
+        expect: Mapping[str, Any],
+        names: Names,
+    ):
         self.normalizer = normalizer
+        self.names = names
         self.observed = observed
         self.expect = expect
         self.rooms = {normalizer.room(room_id): room_id for room_id in observed.timelines}
@@ -58,7 +67,7 @@ class _Comparison:
         return [self.observed.rooms.get(self.rooms[alias], MISSING) for alias in minted]
 
     def _check(self, expected: Any, actual: Any, path: str) -> None:
-        self.found.extend(mismatches(expected, self.normalizer.value(actual), path))
+        self.found.extend(mismatches(expected, self.normalizer.value(actual), path, self.names))
 
     def records(self) -> None:
         for alias, expected in self.expect.get("timeline", {}).items():
@@ -88,13 +97,15 @@ class _Comparison:
             grouped.setdefault(event.get("room_id", "*"), []).append(event)
         for alias, events in self.expect.get("framework_events", {}).items():
             actual = grouped.get(alias, [])
-            self.found.extend(framework_mismatches(events, actual, f"framework_events.{alias}"))
+            path = f"framework_events.{alias}"
+            self.found.extend(framework_mismatches(events, actual, path, self.names))
         ai_grouped: dict[str, list[Any]] = {}
         for event in self.normalizer.value(self.observed.ai_events):
             ai_grouped.setdefault(event.get("room_id", "*"), []).append(event)
         for alias, events in self.expect.get("ai_events", {}).items():
             actual = ai_grouped.get(alias, [])
-            self.found.extend(framework_mismatches(events, actual, f"ai_events.{alias}"))
+            path = f"ai_events.{alias}"
+            self.found.extend(framework_mismatches(events, actual, path, self.names))
 
     def hooks(self) -> None:
         for name, expected in self.expect.get("hooks", {}).items():
@@ -140,7 +151,7 @@ class _Comparison:
         for label, expected in self.expect.get("actions", {}).items():
             outcomes = self.observed.actions.get(label, [])
             path = f"actions.{label}"
-            self.found.extend(_outcomes_of(expected, outcomes, self.normalizer, path))
+            self.found.extend(_outcomes_of(expected, outcomes, self.normalizer, path, self.names))
 
 
 def outcome_mismatches(
@@ -148,8 +159,10 @@ def outcome_mismatches(
     outcome: dict[str, Any],
     normalizer: Normalizer,
     path: str,
+    names: Names | None = None,
 ) -> list[str]:
     """How a call's outcome differs from what is expected of it."""
+    names = names if names is not None else Names()
     error = outcome["error"]
     expected = expected or {}
     if "error" in expected:
@@ -157,18 +170,22 @@ def outcome_mismatches(
         want = want if isinstance(want, dict) else {"name": want}
         if error is None:
             return [f"{path}: expected the error {want}, the call returned {outcome['result']!r}"]
-        return mismatches(want, error, f"{path}.error")
+        return mismatches(want, error, f"{path}.error", names)
     if error is not None:
         return [f"{path}: unexpected error {error}"]
     if "result" in expected:
         return mismatches(
-            expected["result"], normalizer.value(outcome["result"]), f"{path}.result"
+            expected["result"], normalizer.value(outcome["result"]), f"{path}.result", names
         )
     return []
 
 
 def _outcomes_of(
-    expected: Any, outcomes: list[dict[str, Any]], normalizer: Normalizer, path: str
+    expected: Any,
+    outcomes: list[dict[str, Any]],
+    normalizer: Normalizer,
+    path: str,
+    names: Names,
 ) -> list[str]:
     """A label's outcomes, in order, or in any order under ``$unordered``."""
     unordered = isinstance(expected, dict)
@@ -178,13 +195,17 @@ def _outcomes_of(
     if not unordered:
         found: list[str] = []
         for position, (want, got) in enumerate(zip(wanted, outcomes, strict=True)):
-            found.extend(outcome_mismatches(want, got, normalizer, f"{path}[{position}]"))
+            found.extend(outcome_mismatches(want, got, normalizer, f"{path}[{position}]", names))
         return found
     remaining = list(outcomes)
     for want in wanted:
-        match = next(
-            (got for got in remaining if not outcome_mismatches(want, got, normalizer, path)), None
-        )
+        match = None
+        for got in remaining:
+            trial = names.copy()
+            if not outcome_mismatches(want, got, normalizer, path, trial):
+                match = got
+                names.take(trial)
+                break
         if match is None:
             return [f"{path}: no outcome matches {want!r}"]
         remaining.remove(match)
