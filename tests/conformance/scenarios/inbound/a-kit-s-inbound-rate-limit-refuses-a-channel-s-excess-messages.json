@@ -1,0 +1,124 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "inbound/a-kit-s-inbound-rate-limit-refuses-a-channel-s-excess-messages",
+  "title": "A kit built with an inbound rate limit refuses a channel's message past its bucket, blocked with reason rate_limited, before anything is written; each channel has its own bucket",
+  "rules": [
+    "§10.1",
+    "§14.1"
+  ],
+  "notes": "Python: tests/test_inbound_rate_limit.py (test_excess_messages_blocked_with_rate_limited_reason, test_per_channel_isolation, test_messages_within_limit_pass); core/mixins/inbound.py process_inbound (the check before the channel is read, InboundResult(blocked=True, reason='rate_limited')), core/rate_limiter.py TokenBucketRateLimiter (a bucket per channel id, full at first, holding at least one token, refilled at the limit's rate). One message a minute: the second within the minute is refused.",
+  "setup": {
+    "kit": {
+      "inbound_rate_limit": {
+        "max_per_minute": 1
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "first"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "second"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "rate_limited",
+          "event": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "user-1",
+        "content": {
+          "type": "text",
+          "body": "on another channel"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "source": {
+            "channel_id": "sms"
+          },
+          "content": {
+            "type": "text",
+            "body": "first"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ws"
+          },
+          "content": {
+            "type": "text",
+            "body": "on another channel"
+          }
+        }
+      ]
+    }
+  }
+}
