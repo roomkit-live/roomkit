@@ -52,6 +52,7 @@ SUPERVISOR = {
     "refine_instruction",
     "delegation_message",
     "wait_for_result",
+    "async_delivery",
 }
 
 
@@ -105,6 +106,7 @@ def _supervisor(spec: Mapping[str, Any]) -> Supervisor:
         "refine_instruction",
         "delegation_message",
         "wait_for_result",
+        "async_delivery",
     )
     options: dict[str, Any] = {key: spec[key] for key in named if key in spec}
     if "task_timeout_ms" in spec:
