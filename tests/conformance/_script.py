@@ -458,6 +458,7 @@ def hook_handler(spec: Mapping[str, Any], harness: Harness) -> HookHandler:
     conversation router's hook instead for a hook with a ``router``."""
     if "router" in spec:
         return router_hook(spec["router"])
+    _validate_invalid_returns(spec)
     reactions = Reactions(spec.get("reactions"))
     name = spec["name"]
 
@@ -478,9 +479,36 @@ def hook_handler(spec: Mapping[str, Any], harness: Harness) -> HookHandler:
             await perform(harness, reaction, scope)
         finally:
             HOOKED.reset(hooked)
-        return hook_result(reaction.get("result"), payload, room_id)
+        return _scripted_hook_result(reaction, payload, room_id)
 
     return handler
+
+
+def _validate_invalid_returns(spec: Mapping[str, Any]) -> None:
+    """Malformed templates fail registration, outside the hook's error boundary."""
+    for reaction in spec.get("reactions", []):
+        if "invalid_result" in reaction:
+            _scripted_hook_result(reaction, None, "fixture")
+
+
+def _scripted_hook_result(
+    reaction: Mapping[str, Any], payload: Any, room_id: str
+) -> HookResult | None:
+    """Build a valid fixture before deliberately removing its result or payload."""
+    if "invalid_result" not in reaction:
+        return hook_result(reaction.get("result"), payload, room_id)
+    invalid = reaction["invalid_result"]
+    for member in ("tasks", "observations", "injected_events"):
+        if member in invalid and not isinstance(invalid[member], list):
+            raise ValueError(f"invalid_result.{member} must be an array")
+    kind = invalid["kind"]
+    if kind == "no_result":
+        return None
+    if kind != "missing_payload":
+        raise ValueError(f"Unknown invalid hook result: {kind}")
+    effects = {key: value for key, value in invalid.items() if key != "kind"}
+    valid = hook_result({"action": "allow", **effects}, payload, room_id)
+    return valid.model_copy(update={"action": "modify", "event": None})
 
 
 def _write_record(reaction: Mapping[str, Any], payload: Any) -> None:

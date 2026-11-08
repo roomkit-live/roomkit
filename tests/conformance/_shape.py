@@ -300,6 +300,7 @@ REACTION = {
     "respond",
     "output",
     "result",
+    "invalid_result",
     "stop_after",
     "stop_after_rows",
     "hold_after",
@@ -309,6 +310,7 @@ REACTION = {
     "refuse",
     "after_turn",
 }
+INVALID_RESULT = {"kind", "tasks", "observations", "injected_events"}
 REFUSE = {"error", "code", "retryable", "provider_message_id"}
 WHEN = {"room_id", "text", "type", "source_channel_id", "chain_depth"}
 OUTPUT = {"tasks", "observations", "metadata_updates", "response_metadata", "error"}
@@ -651,7 +653,14 @@ def _model(model: Mapping[str, Any], path: str, found: list[str]) -> None:
 def _hook(hook: Mapping[str, Any], path: str, found: list[str], members: set[str] = HOOK) -> None:
     _members(hook, members, path, found)
     for index, reaction in enumerate(hook.get("reactions", [])):
-        _reaction(reaction, f"{path}.reactions[{index}]", found)
+        _reaction(
+            reaction,
+            f"{path}.reactions[{index}]",
+            found,
+            invalid_return=hook.get("trigger") == "before_broadcast"
+            and hook.get("execution", "sync") == "sync"
+            and "router" not in hook,
+        )
     if "router" in hook:
         _router(hook["router"], f"{path}.router", found)
 
@@ -665,8 +674,12 @@ def _router(router: Mapping[str, Any], path: str, found: list[str]) -> None:
         )
 
 
-def _reaction(reaction: Mapping[str, Any], path: str, found: list[str]) -> None:
+def _reaction(
+    reaction: Mapping[str, Any], path: str, found: list[str], *, invalid_return: bool = False
+) -> None:
     _members(reaction, REACTION, path, found)
+    if "invalid_result" in reaction:
+        _invalid_return(reaction, path, found, permitted=invalid_return)
     _members(reaction.get("when", {}), WHEN, f"{path}.when", found)
     _members(reaction.get("output", {}), OUTPUT, f"{path}.output", found)
     _members(reaction.get("refuse", {}), REFUSE, f"{path}.refuse", found)
@@ -677,6 +690,28 @@ def _reaction(reaction: Mapping[str, Any], path: str, found: list[str]) -> None:
     for member in ("do", "after_turn"):
         for index, action in enumerate(reaction.get(member, [])):
             _call(action, {"as", "expect"}, f"{path}.{member}[{index}]", found)
+
+
+def _invalid_return(
+    reaction: Mapping[str, Any], path: str, found: list[str], *, permitted: bool
+) -> None:
+    value = reaction["invalid_result"]
+    at = f"{path}.invalid_result"
+    _members(value, INVALID_RESULT, at, found)
+    if not isinstance(value, Mapping):
+        return
+    if not permitted or any(key in reaction for key in ("result", "fail")):
+        found.append(f"{at}: requires a SYNC BEFORE_BROADCAST hook without result or fail")
+    if value.get("kind") not in ("no_result", "missing_payload"):
+        found.append(f"{at}: unknown or missing kind")
+    if value.get("kind") == "no_result" and set(value) != {"kind"}:
+        found.append(f"{at}: no_result cannot carry side effects")
+    for member in ("tasks", "observations", "injected_events"):
+        if member in value and not isinstance(value[member], list):
+            found.append(f"{at}.{member}: not an array")
+            return
+    for index, item in enumerate(value.get("injected_events", [])):
+        _members(item, INJECTED, f"{at}.injected_events[{index}]", found)
 
 
 def _step(step: Mapping[str, Any], path: str, found: list[str]) -> None:

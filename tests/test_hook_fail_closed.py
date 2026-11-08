@@ -12,8 +12,10 @@ from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import EventStatus, HookExecution, HookTrigger
 from roomkit.models.event import RoomEvent, TextContent
-from roomkit.models.hook import HookResult
+from roomkit.models.hook import HookResult, InjectedEvent
 from roomkit.models.room import Room
+from roomkit.models.store_filter import EventFilter
+from roomkit.models.task import Observation, Task
 from tests.conftest import make_event
 from tests.test_framework import SimpleChannel
 
@@ -102,7 +104,62 @@ class TestEngine:
         assert result.blocked_by is None
 
 
+async def _wrong_payload_with_effects(event: RoomEvent, ctx: RoomContext) -> HookResult:
+    return HookResult(
+        action="modify",
+        event="not an event",
+        tasks=[Task(id="t1", room_id="r1", title="Review")],
+        observations=[Observation(id="o1", room_id="r1", channel_id="sms1", content="Scan")],
+        injected_events=[InjectedEvent(event=event, target_channel_ids=["ws1"])],
+    )
+
+
 class TestInbound:
+    @pytest.mark.parametrize("fail_closed", [False, True])
+    async def test_a_wrong_payload_keeps_effects_but_never_reaches_the_room(
+        self, fail_closed: bool
+    ) -> None:
+        """RFC §9.3: Python permits a wrong payload type; Rust's callback is typed."""
+        kit = RoomKit()
+        sender, peer = SimpleChannel("sms1"), SimpleChannel("ws1")
+        for channel in (sender, peer):
+            kit.register_channel(channel)
+        await kit.create_room(room_id="r1")
+        for channel in (sender, peer):
+            await kit.attach_channel("r1", channel.channel_id)
+        seen: list[RoomEvent] = []
+
+        async def later(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            seen.append(event)
+            return HookResult.allow()
+
+        kit.hook(HookTrigger.BEFORE_BROADCAST, name="wrong", fail_closed=fail_closed)(
+            _wrong_payload_with_effects
+        )
+        kit.hook(HookTrigger.BEFORE_BROADCAST, name="later", priority=1)(later)
+        try:
+            result = await kit.process_inbound(
+                InboundMessage(channel_id="sms1", sender_id="u1", content=TextContent(body="hi")),
+                room_id="r1",
+            )
+            assert result.blocked is fail_closed
+            assert result.reason == ("hook_invalid_result:wrong" if fail_closed else None)
+            assert [event.content for event in seen] == (
+                [] if fail_closed else [TextContent(body="hi")]
+            )
+            assert len(peer.delivered) == (0 if fail_closed else 1)
+            assert [task.id for task in await kit.store.list_tasks("r1")] == ["t1"]
+            assert [item.id for item in await kit.store.list_observations("r1")] == ["o1"]
+            events = await kit.store.list_events(
+                "r1", event_filter=EventFilter(include_blocked=True)
+            )
+            messages = [event for event in events if isinstance(event.content, TextContent)]
+            assert len(messages) == 1
+            assert messages[0].content == TextContent(body="hi")
+            assert messages[0].blocked_by == ("wrong" if fail_closed else None)
+        finally:
+            await kit.close()
+
     async def test_timed_out_check_blocks_the_message(self) -> None:
         kit = RoomKit()
         sender, peer = SimpleChannel("sms1"), SimpleChannel("ws1")
