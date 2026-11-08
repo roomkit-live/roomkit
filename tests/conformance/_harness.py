@@ -140,6 +140,13 @@ _THINKING_EVENTS = {
     EphemeralEventType.THINKING_DELTA,
     EphemeralEventType.THINKING_END,
 }
+_TOOL_EVENTS = {
+    EphemeralEventType.TOOL_CALL_START,
+    EphemeralEventType.TOOL_CALL_END,
+    EphemeralEventType.TOOL_CALL_DELTA,
+}
+_EPHEMERALS = ("thinking_events", "tool_events")
+"""The expectations a room's subscribers' ephemeral events are recorded for."""
 
 
 class _TextRecorder(InMemoryRealtime):
@@ -411,22 +418,26 @@ class Harness:
     # -- the run ----------------------------------------------------------
 
     async def _subscribe_thinking(self, room_id: str) -> None:
-        """Records the room's thinking events, for a scenario that expects them."""
-        if "thinking_events" not in self.scenario.get("expect", {}):
+        """Records the room's thinking and tool call events, for a scenario
+        that expects them."""
+        expect = self.scenario.get("expect", {})
+        if not any(kind in expect for kind in _EPHEMERALS):
             return
 
         async def record(event: EphemeralEvent) -> None:
             if event.type in _THINKING_EVENTS:
-                data = event.data
-                self.observed.thinking_events.setdefault(room_id, []).append(
-                    {"type": event.type.value, **data}
-                )
+                recorded = self.observed.thinking_events
+            elif event.type in _TOOL_EVENTS:
+                recorded = self.observed.tool_events
+            else:
+                return
+            recorded.setdefault(room_id, []).append({"type": event.type.value, **event.data})
 
         await self.kit.realtime.subscribe_to_room(room_id, record)
 
     async def _thinking_read(self) -> None:
         """Lets the realtime backend's own tasks hand what it was published."""
-        if "thinking_events" in self.scenario.get("expect", {}):
+        if any(kind in self.scenario.get("expect", {}) for kind in _EPHEMERALS):
             for _ in range(20):
                 await asyncio.sleep(0)
 

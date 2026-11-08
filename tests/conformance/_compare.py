@@ -145,7 +145,14 @@ class _Comparison:
                 self._check(self.expect[kind], getattr(self.observed, kind), kind)
 
     def side_effects(self) -> None:
-        for kind in ("observations", "tasks", "participants", "thinking_events", "text_events"):
+        for kind in (
+            "observations",
+            "tasks",
+            "participants",
+            "thinking_events",
+            "text_events",
+            "tool_events",
+        ):
             recorded = getattr(self.observed, kind)
             for alias, expected in self.expect.get(kind, {}).items():
                 self._check(expected, recorded.get(self._room(alias), []), f"{kind}.{alias}")
