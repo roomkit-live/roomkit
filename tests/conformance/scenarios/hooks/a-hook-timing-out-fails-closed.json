@@ -1,0 +1,158 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/a-hook-timing-out-fails-closed",
+  "title": "A hook timing out fails closed",
+  "rules": [
+    "§9.3",
+    "§7.5 rule 3",
+    "§10.1 step 10",
+    "§8.2"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "pii",
+        "trigger": "before_broadcast",
+        "fail_closed": true,
+        "reactions": [
+          {
+            "gate": "never"
+          }
+        ],
+        "priority": 0,
+        "timeout_ms": 10
+      },
+      {
+        "name": "later",
+        "trigger": "before_broadcast",
+        "priority": 1
+      },
+      {
+        "name": "after",
+        "trigger": "after_broadcast",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "hook_timeout:pii",
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "Hello"
+            },
+            "status": "blocked",
+            "blocked_by": "pii"
+          }
+        }
+      }
+    },
+    {
+      "open": "never"
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello"
+          },
+          "status": "blocked",
+          "blocked_by": "pii"
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [],
+        "ws": []
+      }
+    },
+    "hooks": {
+      "pii": [
+        {
+          "room_id": "room-1",
+          "event": {
+            "content": {
+              "body": "Hello"
+            }
+          }
+        }
+      ],
+      "later": [],
+      "after": []
+    },
+    "framework_events": {
+      "room-1": [
+        {
+          "$unordered": [
+            {
+              "event": "hook_timeout",
+              "hook_name": "pii",
+              "trigger": "before_broadcast",
+              "timeout": 0.01
+            },
+            {
+              "event": "hook_error",
+              "hook": "pii",
+              "event_id": "room-1#0"
+            }
+          ]
+        },
+        {
+          "event": "event_blocked",
+          "blocked_by": "pii",
+          "reason": "hook_timeout:pii"
+        }
+      ]
+    },
+    "tasks": {
+      "room-1": []
+    },
+    "observations": {
+      "room-1": []
+    }
+  },
+  "notes": "Python: tests/test_hook_fail_closed.py::TestEngine. Checks the policy, named reason, chain continuation, AFTER_BROADCAST and deliveries; no side effects are returned by this hook."
+}

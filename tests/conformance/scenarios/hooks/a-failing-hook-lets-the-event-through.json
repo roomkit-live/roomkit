@@ -42,7 +42,18 @@
           {
             "fail": "the scanner is down"
           }
-        ]
+        ],
+        "priority": 0
+      },
+      {
+        "name": "later",
+        "trigger": "before_broadcast",
+        "priority": 1
+      },
+      {
+        "name": "after",
+        "trigger": "after_broadcast",
+        "execution": "async"
       }
     ]
   },
@@ -75,9 +86,12 @@
     },
     "deliveries": {
       "room-1": {
+        "sms": [],
         "ws": [
           {
-            "id": "room-1#0"
+            "content": {
+              "body": "Hello"
+            }
           }
         ]
       }
@@ -102,6 +116,45 @@
           ]
         }
       ]
+    },
+    "hooks": {
+      "broken": [
+        {
+          "room_id": "room-1",
+          "event": {
+            "content": {
+              "body": "Hello"
+            }
+          }
+        }
+      ],
+      "later": [
+        {
+          "room_id": "room-1",
+          "event": {
+            "content": {
+              "body": "Hello"
+            }
+          }
+        }
+      ],
+      "after": [
+        {
+          "room_id": "room-1",
+          "event": {
+            "content": {
+              "body": "Hello"
+            }
+          }
+        }
+      ]
+    },
+    "tasks": {
+      "room-1": []
+    },
+    "observations": {
+      "room-1": []
     }
-  }
+  },
+  "notes": "Python: tests/test_hook_fail_closed.py::TestEngine. Also checks chain continuation, AFTER_BROADCAST and deliveries, rather than only the return value."
 }

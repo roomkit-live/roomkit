@@ -30,6 +30,29 @@
             "channel_id": "ws"
           }
         ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "later",
+        "trigger": "before_broadcast",
+        "priority": 1
+      },
+      {
+        "name": "after",
+        "trigger": "after_broadcast",
+        "execution": "async"
       }
     ]
   },
@@ -65,6 +88,23 @@
           "reason": "hook_error:pii"
         }
       }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
     }
   ],
   "expect": {
@@ -74,7 +114,49 @@
           "status": "blocked",
           "blocked_by": "pii"
         }
+      ],
+      "room-2": [
+        {
+          "status": "delivered",
+          "content": {
+            "body": "Hello"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [],
+        "ws": []
+      },
+      "room-2": {
+        "sms": [],
+        "ws": [
+          {
+            "content": {
+              "body": "Hello"
+            }
+          }
+        ]
+      }
+    },
+    "hooks": {
+      "pii": [
+        {
+          "room_id": "room-1"
+        }
+      ],
+      "later": [
+        {
+          "room_id": "room-2"
+        }
+      ],
+      "after": [
+        {
+          "room_id": "room-2"
+        }
       ]
     }
-  }
+  },
+  "notes": "Python: tests/test_hook_fail_closed.py::TestInbound::test_room_hook_accepts_fail_closed. The second room proves the registration is scoped."
 }

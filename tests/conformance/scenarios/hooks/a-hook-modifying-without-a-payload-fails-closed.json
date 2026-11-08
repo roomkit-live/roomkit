@@ -1,0 +1,187 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/a-hook-modifying-without-a-payload-fails-closed",
+  "title": "A hook modifying without a payload fails closed",
+  "rules": [
+    "§9.3",
+    "§7.5 rule 3",
+    "§10.1 step 10",
+    "§8.2"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "pii",
+        "trigger": "before_broadcast",
+        "fail_closed": true,
+        "reactions": [
+          {
+            "invalid_result": {
+              "kind": "missing_payload",
+              "tasks": [
+                {
+                  "title": "Review the message"
+                }
+              ],
+              "observations": [
+                {
+                  "content": "The scan needs review"
+                }
+              ],
+              "injected_events": [
+                {
+                  "event": {
+                    "content": {
+                      "type": "text",
+                      "body": "Must not appear"
+                    }
+                  },
+                  "target_channel_ids": [
+                    "ws"
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "priority": 0
+      },
+      {
+        "name": "later",
+        "trigger": "before_broadcast",
+        "priority": 1
+      },
+      {
+        "name": "after",
+        "trigger": "after_broadcast",
+        "execution": "async"
+      },
+      {
+        "name": "tasks",
+        "trigger": "on_task_created",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "hook_invalid_result:pii",
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "Hello"
+            },
+            "status": "blocked",
+            "blocked_by": "pii"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello"
+          },
+          "status": "blocked",
+          "blocked_by": "pii"
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [],
+        "ws": []
+      }
+    },
+    "hooks": {
+      "pii": [
+        {
+          "room_id": "room-1",
+          "event": {
+            "content": {
+              "body": "Hello"
+            }
+          }
+        }
+      ],
+      "later": [],
+      "after": [],
+      "tasks": [
+        {
+          "trigger": "on_task_created"
+        }
+      ]
+    },
+    "framework_events": {
+      "room-1": [
+        {
+          "event": "hook_error",
+          "hook": "pii",
+          "event_id": "room-1#0"
+        },
+        {
+          "event": "event_blocked",
+          "blocked_by": "pii",
+          "reason": "hook_invalid_result:pii"
+        }
+      ]
+    },
+    "tasks": {
+      "room-1": [
+        {
+          "title": "Review the message"
+        }
+      ]
+    },
+    "observations": {
+      "room-1": [
+        {
+          "content": "The scan needs review"
+        }
+      ]
+    }
+  },
+  "notes": "Python: tests/test_hook_fail_closed.py::TestEngine::test_fail_closed_hook_blocks_with_named_reason, tests/test_hook_fail_closed.py::TestEngine::test_default_hook_stays_fail_open; tests/test_hook_rules.py::TestAnUnusableResult. The unchecked missing payload also proves tasks and observations survive while injections do not."
+}

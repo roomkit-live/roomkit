@@ -1,0 +1,176 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/a-hook-returning-no-result-fails-open",
+  "title": "A hook returning no result fails open",
+  "rules": [
+    "§9.3",
+    "§7.5 rule 3",
+    "§10.1 step 10",
+    "§8.2"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "pii",
+        "trigger": "before_broadcast",
+        "fail_closed": false,
+        "reactions": [
+          {
+            "invalid_result": {
+              "kind": "no_result"
+            }
+          }
+        ],
+        "priority": 0
+      },
+      {
+        "name": "later",
+        "trigger": "before_broadcast",
+        "priority": 1
+      },
+      {
+        "name": "after",
+        "trigger": "after_broadcast",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "reason": null,
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "Hello"
+            },
+            "status": "delivered",
+            "blocked_by": null
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello"
+          },
+          "status": "delivered",
+          "blocked_by": null
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [],
+        "ws": [
+          {
+            "content": {
+              "body": "Hello"
+            }
+          }
+        ]
+      }
+    },
+    "hooks": {
+      "pii": [
+        {
+          "room_id": "room-1",
+          "event": {
+            "content": {
+              "body": "Hello"
+            }
+          }
+        }
+      ],
+      "later": [
+        {
+          "room_id": "room-1",
+          "event": {
+            "content": {
+              "body": "Hello"
+            }
+          }
+        }
+      ],
+      "after": [
+        {
+          "room_id": "room-1",
+          "event": {
+            "content": {
+              "body": "Hello"
+            }
+          }
+        }
+      ]
+    },
+    "framework_events": {
+      "room-1": [
+        {
+          "event": "hook_error",
+          "hook": "pii",
+          "event_id": "room-1#0"
+        },
+        {
+          "$unordered": [
+            {
+              "event": "delivery_succeeded",
+              "channel_id": "ws"
+            },
+            {
+              "event": "event_processed"
+            }
+          ]
+        }
+      ]
+    },
+    "tasks": {
+      "room-1": []
+    },
+    "observations": {
+      "room-1": []
+    }
+  },
+  "notes": "Python: tests/test_hook_fail_closed.py::TestEngine. Checks the policy, named reason, chain continuation, AFTER_BROADCAST and deliveries; no side effects are returned by this hook."
+}
