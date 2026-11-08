@@ -2488,13 +2488,17 @@ async def show(event: ToolCallEvent, ctx) -> None:
     print(event.name, event.intent)  # shell Je recherche les fichiers texte du projet.
 ```
 
-- Each tool's schema is shown to the model with one optional string property
-  more, `_roomkit_intent`. The tool's own schema is unchanged; validation and
+- Each tool's schema, unless `tool_call_intents_only` leaves it out, is shown to
+  the model with one optional string property more, `_roomkit_intent`. The tool's own schema is unchanged; validation and
   hooks read it.
 - `tool_call_intents_required=True` lists the property in each shown schema's
   `required` too, for a model that leaves optional properties out. It asks the
   model and refuses no call: one that comes without an intent still runs, its
   `intent` `None`.
+- `tool_call_intents_only=["shell"]` shows the property on the tools it names
+  only, for a host whose other tools speak for themselves; the others' schemas
+  are unchanged. A call that carries the property anyway still has it taken
+  out.
 - The loop takes the property out of the call's arguments before anything
   reads them: the handler, `BEFORE_TOOL_USE` and the policy see the tool's
   arguments only, and a closed schema (`additionalProperties: false`) does not
