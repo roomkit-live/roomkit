@@ -22,6 +22,7 @@ from tests.test_providers.test_openai_image import _usage as openai_usage
 @pytest.mark.parametrize(
     ("model", "quality"),
     [
+        ("gpt-image-2.6-flare", "max"),
         ("gpt-image-2.5-flare", "max"),
         ("gpt-image-2.5-sunburst-2026-09-08", "xhigh"),
     ],
