@@ -7,1009 +7,460 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Security
-
-- A `delegate_task` call's task is set apart in `<task>`, under `Your task, as the delegating agent wrote it:`, once a block follows it in its worker's brief (RFC §6.4, HITL 90c4e28a, RMK-1418): a task its model wrote could imitate the block after it, such as the room's conversation with a line in someone else's name. A task with no block after it is still the worker's instruction as written. The task of a `work_in_background` call or of `start_task` is set apart the same way, under `Your task, as it was asked:`, before the runtime's text and the room's conversation that follow it (HITL 3737a1a2).
-- **A tag's separator in another form no longer closes its block** (RFC §6.4, HITL
-  6004cc75, eb4462f6, RMK-1320). `fence` read a tag name's letters in every form but its
-  separator only as written: an MCP server's instructions, a tool's result or a worker's
-  output holding `</server‐instructions>` (U+2010), `</tool result>` or `</toolresult>`
-  kept it as written, which a model can read as the block's end. Where a name holds a
-  separator between two letters, any run of dashes (Unicode 16.0's Dash_Punctuation, U+FE31
-  aside, which reads as `l`; the minus sign; what reads as a dash or a minus, such as
-  U+2043 or U+30FC), underscores (the double low line among them) and spaces in any of
-  their forms, or none, is now read as it, for any tag `roomkit.tools.fence` is given; a
-  character that reads as several letters is read across a separator left out
-  (`</previouﬆasks>`). A name is cut where no multi-letter look-alike spans, and each part
-  holds every spelling of its letters up to 64, past which it takes its runs from the left,
-  as the whole name did past 64, leaving 144 of the 400 spellings of a name such as
-  `conversation_summary_instructions` as written. An honest mention of such a form gets the
-  underscore too (`See </serverinstructions_>.`).
-
-- `PostgresStore` quotes no identity row the model cannot read, as `SQLiteStore` (HITL 70fef50d, RMK-1431): `get_identity` raises `ValueError("Identity <id> has a record the model cannot read")`, where a JSONB column of another shape raised a `ValidationError`, or a `JSONDecodeError`, quoting it; `link_address` and `unlink_address` read the whole row and refuse such a one so, where they took it, some written back broken or failing with an `AttributeError`; `resolve_identity` returns `None` and logs a warning naming the id alone.
-- `RoomKit.resolve_participant` with an `organization_id` raises `IdentityNotFoundError` for an identity record the model cannot read, which proves no organization (RFC §17.2, HITL 3f36d6c8, RMK-1504): it raised the store's `ValueError("Identity <id> has a record the model cannot read")`, which told a caller of another organization that the id exists. Without an organization the fixed error stays.
-- `SQLiteStore`'s and `PostgresStore`'s `link_address` and `unlink_address` with an `organization_id` raise `IdentityNotFoundError` for an identity record the model cannot read, as `resolve_participant` does (RFC §17.2, HITL 7cb63f4f, RMK-1530): `SQLiteStore` raised its `ValueError("Identity <id> has a record the model cannot read")`, which told a caller of another organization that the id exists; `PostgresStore`, where only a caller of the identity's own organization read it, now answers the same. Without an organization the fixed error stays.
-- `SQLiteStore.create_identity` of an identity naming an organization raises `IdentityNotFoundError` over a stored record of its id the model cannot read, as `link_address` and `unlink_address` do (RFC §17.2, HITL cc6072ea, RMK-1538): it raised the store's `ValueError("Identity <id> has a record the model cannot read")`, which told a caller of another organization that the record under that id cannot be read, where a readable record of another organization reads `IdentityNotFoundError`; nothing is written. An identity of no organization keeps the fixed error.
-- **BREAKING: a message never commits into a room whose binding, made while the room was
-  created for it, names someone else** (HITL 9a2e6d19, ef0ef858, RMK-1396). While Alice's
-  first message waited in its room's `ON_ROOM_CREATED` hooks, Bob's could be recorded on
-  that room's binding (a custom router answering one missing id, or the default router's
-  step 3 once a hook attached the channel); Alice's then went on in Bob's conversation,
-  her agent reading his words and its answer going to his number. Once its hooks are over
-  the room is held to the check of any routed room: Alice is routed once more and gets a
-  room of her own. A hook's binding naming no one now records the sender; one naming
-  someone else sends the message on too, and when no room opened for a message is still
-  its own, `process_inbound` returns `blocked=True, reason="room_taken"` with nothing
-  stored. A room
-  left by the message that created it starts no session for it. A room the caller names
-  is unchanged.
-
-- **BREAKING: a value under a channel's declared recipient key names its conversation**
-  (HITL e7dc9966, RMK-1129). A `Channel` subclass declaring `recipient_key` and keeping
-  the base `recipient_address`, which answers `None`, read no recipient at step 3 or under
-  the lock: a stranger writing on it entered the room of the number under the key, read
-  its history through the agent, and the answer went to that number. Routing now reads
-  `recipient_address`, then the value under the key: the stranger gets a room of their
-  own, an attach or a metadata update names that number as the correspondent, and it finds
-  the room. A delivery status reads it the same way. A flow of several senders into such a
-  room declares its binding `group`.
-
-- **BREAKING: a message routed under the name `system` is refused** (HITL e80070ae,
-  6200e78d, RMK-1339). Under the room lock the name alone spared a message step 3's
-  conditions: on a channel whose senders choose their id (`parse_http_webhook`, the
-  WebSocket and SSE sources), a custom router's answer put it in another correspondent's
-  conversation. `process_inbound` now returns `blocked=True, reason="reserved_sender"`
-  with nothing written, no room opened and no router asked. What the framework writes
-  names its room and is not routed; a host writing under that name passes `room_id`.
-
-- **BREAKING: a routed message with no address enters a room only through a `group`
-  binding, and the room it opens admits no other sender** (HITL 8ea30e4a, 474148bb,
-  RMK-1339). It entered a room the host prepared, or opened one naming no one, and
-  either way the next sender passed step 3 and their agent read what it left. The
-  binding step 2 makes for such a message now names `system`, which no sender is, until
-  the integrator gives it a recipient. Two such messages no longer share a room: a flow
-  of them into one room declares its binding `group` or passes `room_id`. A blank sender
-  id has no address either (HITL cdec52d7), as an empty one, where it was a sender of
-  that name. On a chat channel the chat wins over an empty or blank sender (HITL
-  67dc3147): a Telegram channel post is its chat's. A custom router is told `None` for
-  a message with no address, where it was told the raw id (HITL 710a6c27).
-
-- **`SQLiteStore`'s reads by id quote no unreadable record** (HITL 47b7dfc6, RMK-1410).
-  `get_identity`, `create_identity`, `link_address`, `unlink_address` and the kit's
-  `resolve_participant`, given the id of an identity whose record the model cannot read,
-  raised a `ValidationError` quoting that record, maybe another organization's, to a
-  caller of any organization. They now raise `ValueError("Identity <id> has a record the
-  model cannot read")`, the id alone.
-
-- **`SQLiteStore.resolve_identity` quotes no unreadable record** (HITL 4ee4d298). An
-  address row whose identity's record the model cannot read, which no API writes, raised
-  a `ValidationError` quoting that record, maybe another organization's, to a caller
-  of any organization. It now resolves to nobody, with a warning naming the id alone.
-
-- **A discussion's stored key is the framework's** (RFC §19.7.5 rule 16, HITL 9247da98,
-  RMK-1337). `create_room(metadata=)`, `update_room_metadata`, a hook's body, a channel's
-  `metadata_updates` and a turn's `TurnHost` drop `_discussion` and `_speak_queue` with a
-  warning, as they do a `roomkit:` key: a forged one no longer holds the room with nobody
-  answering, nor stops an installed discussion's turns. A stored handle counts only for a
-  channel the discussion lists as an agent and only if it can name one, so a sender is no
-  longer labelled as an agent. `_conversation_state` joins them (RFC §19.2):
-  `save_conversation_state` writes it, and one named to the kit no longer moves the room to
-  another agent, holds it, or, malformed, fails its router and its turns; a host that
-  seeded a state through `create_room(metadata=)` calls `save_conversation_state` instead.
-  A stored discussion `Discussion()` would refuse (no agents,
-  two alike, `max_turns` 0, a blank token, a handle that cannot name an agent...) or that does
-  not read as it writes (`max_depth` "5") reads as none, with a warning, and the room answers;
-  its handles then label nobody. A person whose name reads like a handle
-  (`аlice` with a Cyrillic `а`, beside the agent `alice`) or like `all` is addressed by no
-  name: an agent writing it no longer waits for that person, believing it asked the agents.
-
-- **An address held by a row no read serves is free** (HITL 2bd8fc23, RMK-1376).
-  `PostgresStore` and `SQLiteStore` refused an address for any row filed under it,
-  including one whose identity is of another organization, which an older release
-  could write (`link_address` before 0.108.0; `SQLiteStore.create_identity` over
-  another organization's id up to 0.111.0). Since RMK-1336 no read serves it, so the
-  organization could neither resolve the address nor take it, and the refusal told it
-  the address existed. `create_identity` and `link_address` now take such a row over;
-  an address an identity of the organization holds stays refused. Nothing moves at
-  startup.
-
-- **A span's error no longer quotes its text** (RFC §15.7, RMK-1301).
-  `PostgresStore`'s `store.*` spans and `TelemetryProvider.span()`'s block wrote
-  `str(exc)` into `error_message`, which a driver's error can fill with a row's
-  values, `record_sensitive_data` off. They read the error's class now, its
-  text only when `TelemetryConfig.record_sensitive_data` asks for it.
-
-- **An identity resolves in its own organization only** (HITL 0f96a597, RMK-1336).
-  `PostgresStore` and `SQLiteStore` read an address row without comparing its
-  organization with its identity's, so a row the move to per-organization
-  addresses left unscoped served an identity of an organization to a caller naming
-  none, and not to its own. `resolve_identity` now compares them, and such a row
-  moves to its identity's organization, once, at the first `init()` or open (schema
-  version row 5 on Postgres, file version 14 on SQLite), yielding to a row that
-  organization already holds for the address. One the identity no longer declares, a
-  link since revoked, is removed, not restored; `unlink_address` removes the
-  identity's rows for the address in every scope. A file at version 14 is refused by
-  roomkit 0.111.0 and earlier.
-
-- **`create_identity` never crosses an organization** (HITL b5e932a6, RMK-1277).
-  On the memory and SQLite stores, an id another organization holds was
-  overwritten and moved to the caller's organization, and a replaced identity kept
-  resolving at the addresses it no longer held. It now replaces an identity within
-  its organization only, refusing `IdentityNotFoundError` for another's, as
-  `link_address` does, and a replacement removes what it no longer holds. Every
-  store does the same; `PostgresStore`'s replacement arrives with it.
-
-- **BREAKING: a model's reasoning text is private by default on a room's
-  realtime channel** (RMK-1052). `THINKING_DELTA` and `THINKING_END` carried up
-  to 1000 characters of the reasoning to every subscriber, with no visibility
-  gate, and the reasoning repeats what the model read: the system prompt, tool
-  results, other participants' words. They now carry `thinking_length`, `round`
-  and `channel_id`; `AIChannel(publish_thinking_text=True)` and
-  `ACPChannel(publish_thinking_text=True)` opt in to the text. The
-  `ON_AI_THINKING` hook and a streaming channel's `ThinkingDeltaMarker` do not
-  change.
-
-- **`check_all_timers` goes on past a room that fails** (HITL f85e4849,
-  RMK-1281). A room deleted since it was listed, a store's failure on one
-  room or a room id the lock refuses raised out of the sweep, and the rooms
-  after it went unchecked. Such a room is now logged and passed over, as in
-  roomkit-rs, and only `KitClosedError` stops the sweep.
-
-- **A span holds no address and no error text by default** (HITL a5171c2d,
-  RMK-1213). A sender's address (`sender_id` on `framework.inbound` and
-  `framework.route`), a recipient's (`delivery.recipient`), a provider's
-  error (`delivery.error`) and each error's text (`error_message`, which
-  OpenTelemetry copies into the status and the exception event) went to the
-  exporter, often outside the application's production data. An `error_message`
-  now reads the class's name (`ValueError`), and the others are left out;
-  `TelemetryConfig(record_sensitive_data=True)` records them as before.
-  **BREAKING** for whoever reads those fields: `RoomKit(telemetry=provider)`
-  is private too.
-
-- **`ConsoleTelemetryProvider` writes out what could forge a log line**
-  (RMK-1213). A span's attributes, its error, its name, and a metric's name
-  and attributes were interpolated as they were, and a sender's text or a
-  model's tool name may reach them: a line break started a log line of its
-  own. Each value is now its `repr`, and a name or a key has its line breaks
-  and control characters written out.
-
-- **A sender's forged runtime mark is replaced in more forms** (HITL 5d5e8776, RMK-1233). The note on who takes part passed under a bracket other than `[`, as `【People taking part besides you…】`, and a combining mark outside the Latin range hid any mark from the check (`[Hand\u05b0off: a -> b]`), so a model read a sender's text as the runtime's. Prose such as `(people taking part besides you)` is replaced with them; `(handoff on Monday)` stays.
-- **A sender cannot silence a room's agents with `_orchestration_internal`.** The mark that keeps the orchestration's own record from asking any agent was read from any event; it is now dropped, with a warning, from what arrives through `process_inbound`, a channel's parse included, as `_routed_to` and `_always_process` are (RMK-1233).
-- **A served skill's approval to run code is its source's alone** (RMK-1282).
-  `ServedExecutionGate` kept an approval by conversation, entry name and
-  fingerprint, so once a turn could give its own registry, the same entry
-  served by another registry's server in the same room ran on the first
-  server's approval, its own `approve_execution` never asked. An approval now
-  also names the source that gave it.
+## [0.112.0] — 2026-11-08
 
 ### Added
 
-- **An agent can ask for a call's intent on some tools only** (RFC §6.4).
-  `AIChannel(tool_call_intents_only=[...])` shows the reserved `_roomkit_intent`
-  property on the tools it names and leaves the others' schemas as they are, for
-  a host whose other tools speak for themselves: it costs every request nearly
-  200 characters per tool. A call that carries the property anyway still has it
-  taken out. `None`, the default, asks every tool as before.
+- **Rime speech: `RimeSTTProvider`, `RimeTTSProvider` and `RimeRealtimeProvider`.** Rime's
+  streaming STT, its Coda and Mist v3 synthesis and its Prism speech-to-speech, behind the
+  existing provider contracts, with `RimeSTTConfig`, `RimeTTSConfig`, `RimeRealtimeConfig`,
+  `RimeSTTError` and `RimeTTSError`, from `roomkit.voice.stt`, `roomkit.voice.tts` and
+  `roomkit.voice.realtime` (`pip install roomkit[rime]`). Runnable:
+  `examples/voice_rime.py`, `examples/realtime_voice_local_rime.py`.
 
-- **A turn's history is compacted between two of its tool rounds** (RFC §6.4, §20.1, HITL
-  cb3751f9, RMK-1533). A memory was read at a turn's start only, so a long tool turn
-  passed its compaction threshold and fell back on the emergency compaction once the
-  provider refused it. After each tool round, the AI channel now hands its memory the
-  history before the turn's input and the round's measured usage
-  (`MemoryProvider.compact(room_id, history, *, usage, channel_id=None)`, `None` by
-  default: nothing changes); a history it returns is what the next requests send, the
-  turn's input whole and the earlier rounds' long results stored for
-  `read_stored_result`. `SummarizingMemory` compacts past `tier2_ratio` of its
-  `max_context_tokens`, the round's measured request and reply counted, by summarizing
-  the older messages; the memory decorators hand the call to the memory they wrap.
-- **A tool that changes state starts the turn's repeat counts again** (RFC §6.4, HITL
-  a3a67086, 3368d06c, 3b16cc44, a634216e, RMK-1541). The anti-loop guard refused the third identical
-  call of a turn, so a test rerun after each edit was refused, and its words asked the model
-  to answer with what it had. `AITool(changes_state=True)` (or `"changes_state": True` in a
-  schema dict) declares a tool whose call changes what later calls read: once such a call
-  succeeds, the turn's counts of identical calls and identical answers start again, its own
-  call's count kept, so the same change is refused at its third when no other came
-  between. The refusal now ends "Use the results you already have, or try
-  genuinely different arguments.", the identical-answer note "Use it and move on."
+- **GPT Image 2.6 Sunburst and Flare** in `OpenAIImageProvider`'s catalog, with GPT Image 2.5's
+  options and prices. Their SVG and GIF outputs are not offered yet.
 
-- **`current_tool_chain_depth()` reads the turn's chain depth** (RFC §21.4, RMK-1495).
-  The body of an asynchronous hook can hand its work to another context (a task
-  outside the turn, another process); what that work sends continues the turn's
-  chain when it runs under the turn's depth and actor (`tool_turn_context`), and
-  the depth was readable by RoomKit alone. `roomkit.tools.current_tool_chain_depth()`
-  answers it, as `current_tool_actor_id()` answers the actor: the depth of the
-  response the turn produces, the turn over or not; 0 outside a turn.
+- **MiniMax and Kimi, whose reasoning goes back to them** (RMK-1409). `MiniMaxAIProvider` and
+  `KimiAIProvider`, from `roomkit.providers.minimax` and `roomkit.providers.kimi`
+  (`pip install roomkit[minimax]`, `roomkit[kimi]`), on the vendor's API or behind a `base_url`
+  (vLLM, llama.cpp, OpenRouter). A round's reasoning goes in `reasoning_content` for as long as
+  a turn lasts; a round with none sends nothing on MiniMax and a single space on Kimi, which
+  requires the field (`ChatDialect.round_thinking_placeholder`). Read from the vendors' pages,
+  not checked on their wires.
 
-- **A verb the host declares can be served after its turn** (RFC §10.6.5,
-  RMK-1493). Work a turn begins can outlive it (an asynchronous hook writing a
-  card once the answer is out), and a verb declared with `kit.declare_host_verb`
-  was served during its turn only. `kit.declare_host_verb(name, verb,
-  between_turns=True)` serves it after the turn too, for the turn's room and
-  channel, with no actor nor tool call, as work that starts fresh (RFC §8.3).
-  After its turn, a host sends the verbs the host declared to the owner, which
-  serves those declared so and refuses the others with a `ValueError` naming
-  the verb; RoomKit's own verbs keep their rule.
+- **A turn's history is compacted between two of its tool rounds** (RFC §6.4, §20.1, RMK-1533).
+  A memory was read at a turn's start only, so a long tool turn passed its compaction threshold
+  and fell back on the emergency compaction once the provider refused it. After each tool round,
+  the AI channel now calls `MemoryProvider.compact(room_id, history, *, usage, channel_id=None)`,
+  `None` by default: nothing changes. A history it returns is what the next requests send, the
+  turn's input whole and the earlier rounds' long results stored for `read_stored_result`.
+  `SummarizingMemory` compacts past `tier2_ratio` of its `max_context_tokens`, the round's
+  measured request and reply counted; the memory decorators hand the call to the memory they wrap.
 
-- **`kit.release_channel` has a declared channel built anew** (RFC §10.6.3,
-  RMK-1477). An executor built a declared channel once and kept it until it
-  closed, so a host that changed what the channel is built from (its model, its
-  provider) had no way to have it rebuilt. `await kit.release_channel(channel_id)`
-  sends a `channel_released` control to the executors that may run the
-  channel's turns, in this process or another: one holding a build lets it go,
-  builds it anew for the next turn, and closes the old one once the turns
-  running on it end, never cutting them for this. An owner and its executors
-  across Redis upgrade together: an older executor refuses the new message.
+- **A tool that changes state starts the turn's repeat counts again** (RFC §6.4, RMK-1541). The
+  anti-loop guard refused the third identical call of a turn, so a test rerun after each edit was
+  refused, and its words asked the model to give up. `AITool(changes_state=True)` (or
+  `"changes_state": True` in a schema dict) declares a tool whose call changes what later calls
+  read: once such a call succeeds, the turn's counts of identical calls and identical answers
+  start again, its own call's count kept, so the same change is still refused at its third when
+  no other came between. The refusal now ends "Use the results you already have, or try genuinely
+  different arguments.", the identical-answer note "Use it and move on."
 
-- **A host declares verbs of its own for its turns' `TurnHost`** (RFC §10.6.5,
-  RMK-1470). A host tool that needs what only the room owner's process holds (a
-  person's live connection, a service the owner runs) could not run on an
-  executor of another process: the host's verbs were RoomKit's fixed set.
-  `kit.declare_host_verb(name, verb)` serves an `async (arguments) -> result` of
-  the owner's process, and code on the executor runs it with
-  `current_turn_host().call(name, arguments)`, its arguments and result data. It
-  runs on the owner under what the turn gave the call, which the accessors of
-  `roomkit.tools.context` read (the turn's room, actor, requester, chain depth,
-  tool call), and during its turn only; a name RoomKit's verbs or another
-  declared verb hold is refused. `DeclaredVerb` (from `roomkit.turns`) types it.
+- **`AIChannel(steer_room_turns=True)`: write to an agent while it works** (RFC §6.4, §21.3,
+  RMK-1160, RMK-1253). A person's second message during an agent's turn started a second turn
+  beside the first. With `steer_room_turns`, the host sends it as any message: it is stored,
+  passes the hooks and the permissions, and is handed to the turn running in the room, which
+  reads it before its next round, under its speaker's label when several people speak. No second
+  turn starts: the room's turns run one after the other (`serialize_room_turns`, which it
+  implies). `ChannelDeclaration` takes `steers_room_turns`, and `register_channel` refuses a
+  channel that steers its turns but does not serialize them. Runnable:
+  `examples/agent_steered_turn.py`.
 
-- **`AIChannelTurnConfig.tool_timeouts` bounds a turn's calls with its tools**
-  (RFC §21.6, RMK-1469). A channel's per-tool bounds are fixed when it is built, yet the
-  tools a turn declares come from its configuration: a tool a person's turn
-  declares that the channel was never built with (their own server's, whose
-  handler keeps a bound of its own) was cut at the channel's default. A turn's
-  configuration now gives the bounds of its calls beside the tools and the
-  handler, above the channel's, for that turn only; a bound that is not
-  positive fails the turn before its model is asked. `ToolTimeouts.overridden`
-  merges a map over a channel's bounds.
+- **A host declares verbs of its own for its turns' `TurnHost`** (RFC §10.6.5, RMK-1470,
+  RMK-1493). A host tool that needs what only the room owner's process holds could not run on an
+  executor of another process. `kit.declare_host_verb(name, verb)` serves an
+  `async (arguments) -> result` of the owner's process, and code on the executor runs it with
+  `current_turn_host().call(name, arguments)`, under what the turn gave the call, and during its
+  turn only; `between_turns=True` also serves it after the turn, for the turn's room and channel.
+  A name RoomKit's verbs or another declared verb hold is refused. `DeclaredVerb` (from
+  `roomkit.turns`) types it.
 
-- **`RoomKit.input_request` reads a turn's open human-input request**
-  (RMK-1467). A door that answers a request (`answer_input`) must tell who it
-  was put to, and on an executor of another process the request was the
-  executor's alone: the owner kept its id and its tool. The executor now sends
-  the request's room, channel, tool call and the actor of its turn with it, and
-  `kit.input_request(request_id, organization_id=...)` returns it as
-  `ON_USER_INPUT_REQUIRED` read it (a `PendingInputEvent`), `None` once it is no
-  longer open or in another organization's room.
+- **`kit.release_channel` has a declared channel built anew** (RFC §10.6.3, RMK-1477).
+  `await kit.release_channel(channel_id)` tells the executors that may run the channel's turns,
+  in this process or another, to build it anew for the next turn and close the old one once the
+  turns running on it end, never cutting them for this. An owner and its executors across Redis
+  upgrade together: an older executor refuses the new message.
 
-- **`ProviderError(..., before_request=False)`** and its `before_request` attribute (HITL
-  d91b8137, RMK-1436): the provider refused before sending any request. An unsupported
-  `ResponseSchemaError`, OpenAI's refusal of a model Chat Completions does not serve or of
-  tools for one that takes none there, a tool name a vendor refuses (`ToolNameRule`) and a
-  tool Gemini cannot declare set it. A turn's error record carries it among the error's
-  attributes.
+- **`RoomKit.input_request` reads a turn's open human-input request** (RMK-1467).
+  `kit.input_request(request_id, organization_id=...)` returns the request as
+  `ON_USER_INPUT_REQUIRED` read it (a `PendingInputEvent`), on an executor of another process
+  too, and `None` once it is no longer open or in another organization's room.
+
+- **`AIChannelTurnConfig.skills` gives a turn its own skill registry** (RMK-1282). A channel
+  serves an agent in every room and is built once, so its registry could not hold the skills of
+  the person a turn is for. A config provider now returns `skills` with the turn's settings; the
+  turn's manifest, its activation, reference and script tools and its skill gating read it in
+  place of the channel's, and a concurrent turn never reads another's. `None` keeps the channel's
+  registry. The channel must be built with a registry (an empty one will do). A served skill's
+  approval to run code is its source's alone: the same entry served by another registry's server
+  asks again.
+
+- **`AIChannelTurnConfig.tool_timeouts` bounds a turn's calls with its tools** (RFC §21.6,
+  RMK-1469). A tool a turn declares that the channel was never built with was cut at the
+  channel's default. A turn's configuration now gives the bounds of its calls, above the
+  channel's, for that turn only; a bound that is not positive fails the turn before its model is
+  asked.
+
+- **A call's intent, on some tools or required** (RFC §6.4, RMK-1067).
+  `AIChannel(tool_call_intents_only=[...])` shows the reserved `_roomkit_intent` property on the
+  tools it names and leaves the others' schemas as they are, for a host whose other tools speak
+  for themselves: it costs every request nearly 200 characters per tool. With
+  `tool_call_intents_required=True`, every schema the model is shown lists it in its `required`;
+  a call that still comes without one runs, with no intent. Both options work with
+  `tool_call_intents=True`.
+
+- **Each generation of a turn tells what it used, and a cut turn keeps it** (RMK-1333, RMK-1056,
+  RMK-1344). The loop yields a `UsageMarker` (from `roomkit.models`) after each generation, which
+  a streaming channel can show and every other reader skips, across the turn backend too. A turn's
+  last message carries `ai_last_usage`, `ai_usage_complete`, `ai_model` and `ai_provider`; a turn
+  that wrote no message carries its record on its last row. A turn cut once it began records what
+  the markers told, its end `cancelled`; `ai_usage_complete` is then false. An owner and its
+  executors across Redis upgrade together: an older owner refuses the new item.
+
+- **`current_tool_chain_depth()` reads the turn's chain depth** (RFC §21.4, RMK-1495), from
+  `roomkit.tools`, as `current_tool_actor_id()` reads the actor: the depth of the response the
+  turn produces, the turn over or not; 0 outside a turn.
+
+- **`ProviderError(..., before_request=False)`** (RMK-1436): the provider refused before sending
+  any request. An unsupported `ResponseSchemaError`, OpenAI's refusal of a model Chat Completions
+  does not serve or of tools for one that takes none there, a tool name a vendor refuses and a
+  tool Gemini cannot declare set it.
 
 - **A host can let `delegate_task` hand the conversation over** (RFC §23.4, RMK-1363).
   `DelegateHandler(max_conversation=N)`, 0 by default, gives the tool a `conversation` argument
-  held to N, the messages both the calling agent and the notified channel may read; none when
-  an intelligence channel is shared into the child room, which stops the previous tasks too. A
-  call asking for it always runs.
+  held to N, the messages both the calling agent and the notified channel may read; none when an
+  intelligence channel is shared into the child room.
 
-- **MiniMax and Kimi, whose reasoning goes back to them** (HITL 2c2b7153, RMK-1409).
-  `MiniMaxAIProvider` and `KimiAIProvider`, from `roomkit.providers.minimax` and
-  `roomkit.providers.kimi` (`pip install roomkit[minimax]`, `roomkit[kimi]`), on the vendor's API or behind a `base_url` (vLLM, llama.cpp,
-  OpenRouter): the class is the choice, and a generic provider still sends no
-  reasoning. A round's reasoning goes in `reasoning_content` for as long as a turn lasts; a round
-  with none sends nothing on MiniMax and a single space on Kimi, which requires the field
-  (`ChatDialect.round_thinking_placeholder`). Read from the vendors' pages, not
-  checked on their wires.
+- **`OpenAIConfig(max_tokens=None)` sends no output cap** (RMK-1177). Every Chat Completions
+  request carried `max_tokens` at 1024, and a channel or a turn could replace the value, not drop
+  it: a tool call that writes a file past 1024 tokens came back cut, and a reasoning model could
+  spend the cap before it answered. The default stays 1024.
 
-- **Each generation of a turn tells what it used, and a cut turn keeps it**
-  (RMK-1333). The loop yields a `UsageMarker` (from `roomkit.models`) after each
-  generation, in its order among the text and the rows, which a streaming
-  channel can show and every other reader skips, across the turn backend too. A
-  turn cut once it began records what the markers told as a finished turn does,
-  its end `cancelled`; a generation in flight is not counted, and
-  `ai_usage_complete` is then false; cut before anything told, the record names
-  only its end. An owner and its executors across Redis
-  upgrade together: an older owner refuses the new item.
-
-- **A turn's record keeps its last generation, its model and its provider**
-  (RMK-1056). Beside `ai_usage` and `loop_end_reason`, the turn's last message
-  carries `ai_last_usage`, `ai_usage_complete`, `ai_model` and `ai_provider`,
-  as roomkit-rs writes them, from four new fields of `LoopEndMarker`.
-
-- **`AIChannelTurnConfig.skills` gives a turn its own skill registry**
-  (RMK-1282). A channel serves an agent in every room and is built once, so
-  its registry could not hold the skills that belong to the person a turn is
-  for: a host built it with whoever attached the agent last, and every turn
-  read that person's skills. A config provider now returns `skills` with the
-  turn's settings; the turn's manifest, its activation, reference and script
-  tools and its skill gating read it in place of the channel's, which is never
-  replaced, and a concurrent turn never reads another's. `None` keeps the
-  channel's registry. The channel must be built with a registry (an empty one
-  will do): one built without serves no skill tools and ignores a turn's, with
-  a warning.
-
-- **`OpenAIConfig(max_tokens=None)` sends no output cap** (RMK-1177). Every
-  Chat Completions request of the OpenAI provider and the configs built on it
-  carried `max_tokens` (or `max_completion_tokens`) at 1024, and a channel or
-  a turn could replace the value, not drop it. A coding agent's tool call
-  that writes a file past 1024 tokens came back cut (`finish_reason=length`),
-  and a reasoning model could spend the cap before it answered. With
-  `max_tokens=None` the request carries no cap and the endpoint decides; the
-  default stays 1024, and a cap that differs per model is still set on the
-  config or with `AIChannel(max_tokens=...)`.
-
-- **`AIChannel(steer_room_turns=True)`: write to an agent while it works**
-  (RFC §6.4, §21.3, RMK-1160). A person's second message during an agent's
-  turn started a second turn beside the first, which did not read the answer
-  under way; `kit.steer(InjectMessage(...))` reached the turn but left the
-  room's history without the message. With `steer_room_turns`, the host sends
-  the message as any message: it is stored, passes the hooks and the
-  permissions, and is handed to the turn running in the room, which reads it
-  before its next round, under its speaker's label when several people speak.
-  No second turn starts; the room's turns run one after the other
-  (`serialize_room_turns`, which it implies). `ChannelDeclaration` takes
-  `steers_room_turns`, `Channel` has the property, and any channel that
-  steers its room turns takes them one at a time: its
-  `serializes_room_turns` defaults to it, and the kit holding a channel by a
-  declaration that steers them serializes them; `register_channel` refuses a
-  channel that says it steers them but does not serialize them, with
-  `ValueError` (RMK-1253). Runnable: `examples/agent_steered_turn.py`.
-
-- **`AIChannel(tool_call_intents_required=True)` lists a call's intent as
-  required** (RFC §6.4, RMK-1067). A model that leaves optional properties
-  out wrote no intent with its calls, whatever `tool_call_intents` asked.
-  With both on, every schema the model is shown lists `_roomkit_intent` in
-  its `required`; a call that still comes without one runs, with no intent.
-  roomkit-rs has it as `AiChannelOptions::tool_call_intents_required`.
-
-- **`ThreadSummary` is public, from `roomkit` and `roomkit.models`**
-  (RMK-1113). `ConversationStore.get_thread_summaries()` returns it, and a
-  caller could name it only through an internal module.
+- **`ThreadSummary` is public**, from `roomkit` and `roomkit.models` (RMK-1113):
+  `ConversationStore.get_thread_summaries()` returns it.
 
 ### Changed
 
-- **A streaming channel is handed the turn's end last** (RFC §6.4, HITL 577ecd24,
-  RMK-1537). A turn that ends on a tool call (cut at its round limit while the model only
-  calls tools) writes its record on the call's end row once its stream ended, so the
-  channel rendering the stream read rows that said nothing of how the turn ended, and a
-  terminal showed it completed. `deliver_stream` is now handed the turn's `LoopEndMarker`
-  as the stream's last item, before the response's failure when it fails; the default,
-  CLI, WebSocket and voice channels skip it.
-
-- **A generation cut after reasoning alone is tried again** (RFC §6.4, HITL ea119829,
-  RMK-1542). A model that reasons before it answers streams its reasoning first, and a
-  stream cut there (a lost connection, a 503) counted as an answer under way: the turn
-  failed with no retry and no fallback. Reasoning is no part of the answer the room holds,
-  so until the first text, call or end, a failure worth another try is tried again under
-  `retry_policy`, then the `fallback_provider` is asked, as before anything was handed; a
-  fallback that reasoned before it failed leaves the primary's error. A streaming reader
-  and the thinking subscribers have read the abandoned reasoning, its window closed at the
-  failure; the round replays and reports only the reasoning of the try that answered.
-
-- **A call a locked hook's task nests under the lock holds the hook's section** (RFC
-  §9.5.1, HITL 57923782, RMK-1482). A task a locked hook started and did not await could
-  send into the room under the hook's lock, and the event committed once the hook returned,
-  the call working on under a lock its section had let go. The hook's section now waits for
-  such a call, however the body ended, its own timeout included: it commits ahead of the
-  event, and one not committed when the event's `process_timeout` passes is refused with it,
-  nothing of either stored, the event's `process_timeout` the one reported (`send_event()`
-  raises `ProcessTimeoutError`, `process_inbound()` returns `blocked=True,
-  reason="process_timeout"`); the event's caller gone, it goes on under the lock up to the
-  event's deadline, where it is cut, nothing of it reported (HITL 2c9d64f7). A call the task
-  makes once the body returned is a new arrival, as roomkit-rs.
-- **BREAKING: an agent keeps the application's instruction its turn read, and its later
-  turns replay it where the turn read it** (RFC §10.1.1, HITL 5e89048c, 25b07f2a, RMK-1407).
-  An instruction was the turn's input, then absent from every later turn's history: the
-  next request no longer opened with the previous one, and a server that caches a
-  prompt's prefix reprocessed everything after it. An `AIChannel` now stores, first in its
-  answer, a row of its own, `EventType.INSTRUCTION_READ`, holding the instruction's text:
-  a record no member receives, as `commit_event()` writes one (no hook reads it, no
-  channel is delivered it, it is no activity and none of `InboundResult.response_events`),
-  visible to it alone, never read by another agent's history, and its later turns replay
-  it, marked as the application's, before what that turn wrote, the rounds of a turn
-  whose instruction opened the room included. The instruction itself is still never
-  stored as the room's. A standalone instruction is not kept. The text an application
-  puts in an instruction is now stored, a delegated task's hand-back (§23.3) among them:
-  `get_timeline()` and `list_events()` return the row, and the room's indexes and
-  `event_count` count it; an instruction from before this version was never kept and is
-  not replayed. The row is counted in the turn's footprint, never in a
-  memory's window; an emergency compaction's summary quotes it as the application's. A
-  turn's stream carries it to the owner: owner and executors run the same version.
-
-- **BREAKING: a later turn replays each earlier round of tool calls as its turn sent
-  it** (RFC §6.4, HITL 093113a1, 3c7ef9a2, RMK-1370). A turn's history replayed the last 8
-  calls, the 3 most recent whole up to 6,000 characters and the older ones as a
-  120-character preview, without refusals nor the channel's own tools (`find_tools`,
-  `activate_skill`, `read_stored_result`), and a round's text apart from its calls: each
-  new call rewrote the history, and a server that caches a prompt's prefix reprocessed it
-  at every turn's first request (11 to 13 s at 16,000 tokens on a llama.cpp Qwen). Every
-  round the history holds now reads whole, each call its turn ended under the id the
-  model gave it, with the result it read, but one cancelled before it answered, and a
-  round's text and calls as the one assistant message the turn sent: a turn's first
-  request opens with the previous turn's last one, then its answer. The history no
-  longer bounds the rounds: the memory's window, the turn's footprint and a compaction,
-  once a provider refuses the context as too long, do. `BudgetAwareMemory`,
-  `CompactingMemory` and `SummarizingMemory` charge each replayed round to the event it
-  reads with and keep or cut a turn whole (`TurnFootprint.replayed`, no longer in
-  `input_tokens`, which a memory of one's own reserving it now reads without the rounds):
-  reserved up front, the rounds cut the very messages they followed, and a 16,000-token
-  window kept 2 questions of 12. An id a provider repeats from one turn to
-  the next is replayed as it was sent, no longer renamed `<id>_<index>`.
-
-- **`CompactingMemory` and `SummarizingMemory` leave the turn its room in the window**
-  (RFC §20, HITL 7dc490cd, RMK-450). They sized the history against the whole
-  `max_context_tokens`: with a 32,000-token window, a 12,000-token system prompt, 8,000
-  tokens of tools and a 6,000-token reply, the model was sent 44,155 tokens through
-  `CompactingMemory` and 47,197 through `SummarizingMemory`. Both now read the turn's
-  footprint (`current_turn_footprint()`), as `BudgetAwareMemory` does, and the request
-  and its reply fit the window, unless the latest events a memory always keeps do
-  not. `CompactingMemory` keeps the events that fit the window less the measured
-  input, the current event, the messages and notes of the memory it wraps and the reply
-  (the larger of its safety margin and the turn's `max_tokens`), the summary's share then
-  taken out. `SummarizingMemory`'s `tier1_ratio` and `tier2_ratio` are fractions of the
-  window less the measured input, the turn's `max_tokens` and the current event, and its
-  last cut keeps the history within that. `max_context_tokens` is the model's window: a
-  host that passed a budget for the history there keeps less history, and passes the
-  window.
-
-- **BREAKING: a usage counter an OpenAI-compatible server leaves out stays unknown** (RFC
-  §6.4, HITL e2e71208, 6ae64eef, RMK-1441). A Chat Completions usage without
-  `prompt_tokens` or `completion_tokens` reported it as 0, and the turn's record said
-  `ai_usage_complete` true: a budget read a free generation. `{"completion_tokens": 7}` now
-  reads `{"output_tokens": 7}` and the record is incomplete, as roomkit-rs reads it. A cache
-  read is bounded by the prompt, and dropped without one. A `cache_write_tokens` the usage
-  reports beside its details that is not a whole number is ignored, where it raised
-  `TypeError`. DeepSeek's reader leaves an omitted completion, and an input it cannot
-  derive, out too; xAI's adds its reasoning only to an output count it has.
-
-- **BREAKING: a model's reasoning no longer goes back on Chat Completions** (RFC §6.4,
-  RMK-1369). `ChatDialect()` sent it as a `<think>` block in the content, which a generic
-  server reads as text the model said: on a real Qwen, each step of a turn lost its prompt
-  cache, 137,000 tokens processed in 116 s where 46,000 take 43 s. OpenAI's Chat Completions,
-  Azure, LiteLLM, Meta, Mistral, OpenRouter, Qwen, vLLM, llama.cpp and xAI now send a round's
-  text and calls alone. `ChatDialect.drops_thinking` is gone with it: drop the argument. A
-  vendor reading reasoning in a field of its own keeps it through
-  `ChatDialect(thinking_field=...)`, as DeepSeek and Cerebras do. An answer of reasoning alone
-  goes back as an empty text. A `<think>` in a model's output is still read out of its text,
-  and the reasoning still reaches `AIThinkingPart`, the hooks and `publish_thinking_text`.
-
-- **BREAKING: a handoff to a human holds the room for them** (RMK-1233).
-  `ConversationState.human_hold`, false by default: while true the router asks
-  no agent, whichever rule or default would, and no supervisor, and the message
-  still reaches the room's transports; an address naming an agent still asks it
-  and the supervisor beside it. `ON_HANDOFF` names the human, the signal a host
-  audits the hold by. A handoff to an agent is refused during the hold, by the tool
-  and by `handler.handle`; only the host's transition to an agent takes it off,
-  through `save_conversation_state`. A host that counted on an agent taking the
-  conversation back must now hand it back.
-- A `ConversationPipeline`'s or a router's install refused for an agent whose
-  handoff is set up already, named twice, or whose tools hold the handoff's name
-  leaves no hook and no tool behind; the error is the same (RMK-1233).
-- **BREAKING: `Pipeline` no longer takes `routing=`** (RMK-1233). It kept the
-  keyword hints and nothing read them, though its docstring said they reached
-  the agents' prompts. `Pipeline(agents=[a, b])` works as before; a call still
-  passing `routing=` raises `TypeError`.
-- `Pipeline(agents=[])` is refused at its install with `ValueError("Pipeline
-  needs at least one agent")`, where it raised `IndexError` (RMK-1233).
-- `ConversationPipeline.install` reads every agent before it installs anything,
-  as `ConversationRouter.install` does: one that takes no owner tools refuses
-  the install and leaves no hook or tool behind (RMK-1233).
-- A handoff's target is an agent of the room, a human or a known one: a
-  transport the room binds is "not found", where it became the active agent and
-  no agent answered. Under allowed transitions and a phase map, a target is led
-  only to a phase it holds, a human or a known target the map does not name
-  excepted: `{target: "c", next_phase: "b"}` no longer skips a stage of a
-  pipeline, realtime included, nor reaches an agent in no stage, and answers
-  `Agent c does not hold phase 'b'`. The caller holds the room's phase by the
-  same rule; one the map does not name also passes as the room's active agent,
-  or its default agent while none is active. In a text turn, an agent calling
-  twice no longer skips a stage (RMK-1233; a realtime session still does,
-  RMK-1318).
-- **Two senders with no name on one channel read as two speakers** (RFC
-  §6.4, RMK-1221). An event the application sent from a channel with no
-  participant and a message a nameless sender sent through it both read
-  `@ws`, and speakers were counted by label, so a room where only they spoke
-  was not labelled: the model read one person. The second nameless source of
-  a channel now reads `@ws (2)`, in the order they first speak in the turns
-  read, and every reader (the AI channel's conversation, a steered message,
-  an ACP agent's request, a delegated task's requester, a summary's lines)
-  counts speakers by source: one sender whose name changed is one speaker.
-  A steered message counts no longer the agent's own replies nor the
-  application's instructions, so a one-to-one room the agent answered reads
-  it unlabelled, and in a discussion `@ws` names neither of two nameless
-  senders of ws. roomkit-rs reads them the same.
-
-- **An edit or a delete opens no agent turn** (RFC §10.3, RMK-1226). An
-  edit or a delete reached `AIChannel.on_event()` as any event and opened a
-  turn: the model answered `[Message deleted]`, or `Correction: ...`, a
-  `Loop` or an auto-delegating `Supervisor` ran its producer, reviewers or
-  workers on that text, an `ACPChannel` prompted its agent with it, and with
-  `steer_room_turns` the running turn read it as a message, a generation
-  paid for each change, though a change is no message a turn may answer.
-  The agent now answers the next message, in the room the change left. The
-  speak policy is not asked about a change, so `ON_SPEAK_DECISION` does not
-  fire for it, and the thinker does not run; the memory still ingests it,
-  and a hook on `ON_EVENT_UPDATED` or `ON_EVENT_DELETED` still reacts to it.
-  roomkit-rs opens no turn on a change either.
-
-- **BREAKING — an agent takes a turn on a message or an instruction only**
-  (RFC §6.4, RMK-1257). Any other event an application sent opened a turn:
-  `send_event(event_type=EventType.SYSTEM, ...)` with "The order shipped", a
-  reaction or a participant's arrival made the model answer it, a
-  generation paid per notice, and a `Loop`, an auto-delegating
-  `Supervisor`, an `ACPChannel` and a steered turn took it as a message.
-  Such an event is still stored and handed to the memory, though the
-  conversation a turn reads does not show it, and answered by no turn, nor
-  recorded as an agent not asked past the depth limit (nor is an edit or a
-  delete any more). The `session_started` notice a voice session's
-  `process_inbound()` sends no longer makes an agent speak first: an agent greets with `Agent(greeting=...)`, or a hook
-  on `ON_SESSION_STARTED` delivers it an instruction. To have an agent react
-  to a notice, send it an instruction (`kit.deliver(..., instruction=True)`).
-  roomkit-rs answers the same two types.
-
-- **BREAKING — an edit, a delete or a notice no longer makes a realtime
-  voice agent speak** (RFC §6.4, §10.3, RMK-1258). A `RealtimeVoiceChannel`
-  (and its audio-video subclass) or a `ConferenceChannel` with a realtime
-  model injected such an event into the session as any broadcast message:
-  after a delete the speech-to-speech model read `@ws: “[Message deleted]”`
-  and answered aloud; a reaction made either speak, and a
-  `send_event(event_type=EventType.SYSTEM, ...)` the realtime voice
-  channel. It is now injected silently, as an agent takes a turn on a
-  message or an instruction only: the session learns the correction, the
-  deletion or the notice, and the model answers the next message. To have
-  a realtime agent speak about a notice, deliver it an instruction
+- **BREAKING: an agent takes a turn on a message or an instruction only** (RFC §6.4, §10.3,
+  RMK-1226, RMK-1257, RMK-1258). An edit, a delete, a reaction, a participant's arrival or a
+  `send_event(event_type=EventType.SYSTEM, ...)` opened a turn: the model answered `[Message
+  deleted]`, a generation paid per notice, and a `Loop`, an auto-delegating `Supervisor`, an
+  `ACPChannel` and a steered turn took it as a message. Such an event is still stored and handed
+  to the memory, and answered by no turn. A `RealtimeVoiceChannel` or a `ConferenceChannel` with a
+  realtime model injects it silently: the session learns it, and the model answers the next
+  message. The `session_started` notice a voice session's `process_inbound()` sends no longer
+  makes an agent speak first. Migrate: greet with `Agent(greeting=...)` or a hook on
+  `ON_SESSION_STARTED`, and to have an agent react to a notice, send it an instruction
   (`kit.deliver(..., instruction=True)`).
 
-- **`MCPToolProvider.call_tool()` notes what is not text, and reads a text
-  resource as its text** (RFC §21.2, RMK-1251). An image the server
-  returned came back as its object's printing, base64 included (`type='image'
-  data='iVBOR…' mimeType='image/png' annotations=None meta=None`), and an
-  embedded text resource or a resource link as its pydantic printing, in
-  `call_tool()`'s string and, for the resource and the link, in what the
-  tool handler hands the model. An image, audio and a blob resource now read
-  `[image content (image/png) not shown to the model]`, as the handler
-  already noted them; a text resource reads as its text, and a resource link
-  as `[resource_link content (text/plain) not shown to the model]`, and a
-  kind of content the bridge does not know as `[other content (unknown) not
-  shown to the model]`. A note keeps only the characters a media type has
-  of the type the server named.
-  The bytes are still read with `call_tool_result()`. roomkit-rs reads them
-  the same.
+- **BREAKING: an agent keeps the application's instruction its turn read, and its later turns
+  replay it where the turn read it** (RFC §10.1.1, RMK-1407). An instruction was absent from every
+  later turn's history, so the next request no longer opened with the previous one and a server
+  that caches a prompt's prefix reprocessed everything after it. An `AIChannel` now stores, first
+  in its answer, a row of its own, `EventType.INSTRUCTION_READ`, visible to it alone: no hook reads
+  it and no channel is delivered it. The text an application puts in an instruction is therefore
+  now stored, and `get_timeline()`, `list_events()`, the room's indexes and `event_count` count the
+  row. An instruction from before this version is not replayed. Owner and executors run the same
+  version.
 
-- **BREAKING — a sender the identity step leaves pending gets a record of its
-  own** (RFC §11.2, RMK-1138). Its record took the id the channel gave: on a
-  channel whose senders choose it, a sender naming itself `alice-id` held
-  Alice's id, the identity resolved later on SMS completed that record, and
-  the impostor's next WebSocket message passed for her. The record is now
-  `pending-` and 16 hex digits of the SHA-256 of the channel and the address
-  (`pending-915e25f899c26f82` for `+15551234567` on `sms`), the event is
-  sent under it, and the identity gets its own record. The address still
-  names the record on its channel: routing finds the sender's room by it,
-  and once an advisor calls `resolve_participant(room_id, "pending-…",
-  identity_id)` the sender is not resolved again. A caller that looked a
-  pending participant up by its address takes its id from the event,
-  `event.source.participant_id`. A pending record a member the host added
-  keeps its id. Records an earlier release left pending under an id their
-  channel gave keep it: a room's participant whose id is an identity's
-  (`store.get_identity(participant.id)`) may be such a squat, PENDING, or
-  IDENTIFIED once that identity was resolved on another channel, the
-  squatting channel then still in its `connected_via`.
+- **BREAKING: a later turn replays each earlier round of tool calls as its turn sent it** (RFC
+  §6.4, RMK-1370, RMK-1373, RMK-1316). A turn's history replayed the last 8 calls, most of them as
+  120-character previews, without refusals nor the channel's own tools: each new call rewrote the
+  history, and a server that caches a prompt's prefix reprocessed it at every turn's first request
+  (11 to 13 s at 16,000 tokens on a llama.cpp Qwen). Every round the history holds now reads whole,
+  each call with its own arguments and the result it read, under the id the model gave it, but one
+  cancelled before it answered and one refused under a name vendors do not take. The history no longer bounds the rounds: the memory's window, the
+  turn's footprint and a compaction do. `BudgetAwareMemory`, `CompactingMemory` and
+  `SummarizingMemory` charge each replayed round to the event it reads with
+  (`TurnFootprint.replayed`, no longer in `input_tokens`).
 
-- **An inbound commit no longer reads its room again for the author's
-  record** (RMK-1032). A message's record of its author was made from the
-  room, its participants and its register read again just before the
-  commit, though the pipeline had read them under the same room lock, after
-  the hooks that ran there. It is now made from that context: one message
-  with one agent answer makes 16 store calls instead of 19, 404 to 434
-  messages/s through `SQLiteStore` over 50 rooms.
+- **BREAKING: a model's reasoning no longer goes back on Chat Completions** (RFC §6.4, RMK-1369).
+  `ChatDialect()` sent it as a `<think>` block in the content, which a generic server reads as text
+  the model said: on a real Qwen, each step of a turn lost its prompt cache, 137,000 tokens
+  processed in 116 s where 46,000 take 43 s. OpenAI's Chat Completions, Azure, LiteLLM, Meta,
+  Mistral, OpenRouter, Qwen, vLLM, llama.cpp and xAI now send a round's text and calls alone.
+  `ChatDialect.drops_thinking` is gone: drop the argument. A vendor reading reasoning in a field of
+  its own keeps it through `ChatDialect(thinking_field=...)`, as DeepSeek and Cerebras do.
 
-- **BREAKING — `MCPToolProvider.from_url()` refuses at construction what its
-  transport cannot send as given** (RFC §21.2, RMK-1068). A URL's credentials
-  went out as Basic authentication and into the log line of every
-  connection; a header the transport writes itself (a forged
-  `Mcp-Session-Id`, a second `Content-Type`) contradicted it, and a value
-  holding a line break reached the wire. It now raises `ValueError` for a URL
-  that is not HTTP(S), names no host, or carries credentials or a fragment,
-  and for a header named `Accept`, `Content-Type`, `Content-Length`, `Host`,
-  `Connection`, `Transfer-Encoding`, `Last-Event-ID`, `Upgrade`, `TE`,
-  `Trailer`, `Proxy-Authorization` or `mcp-*`, an invalid name, more than 32
-  headers, or a value over 8192 bytes or outside visible ASCII, as
-  roomkit-rs does. Migrate: pass a credential as a header,
-  `headers={"Authorization": "Bearer ..."}`, not in the URL.
+- **BREAKING: a usage counter an OpenAI-compatible server leaves out stays unknown** (RFC §6.4,
+  RMK-1441). A usage without `prompt_tokens` or `completion_tokens` reported it as 0 and the turn's
+  record said complete: a budget read a free generation. `{"completion_tokens": 7}` now reads
+  `{"output_tokens": 7}` and the record is incomplete.
+
+- **BREAKING: a handoff to a human holds the room for them** (RMK-1233).
+  `ConversationState.human_hold`, false by default: while true the router asks no agent and no
+  supervisor, and the message still reaches the room's transports; an address naming an agent
+  still asks it. A handoff to an agent is refused during the hold; only the host's transition to an
+  agent takes it off, through `save_conversation_state`. A host that counted on an agent taking
+  the conversation back must now hand it back.
+
+- **BREAKING: `Pipeline` no longer takes `routing=`** (RMK-1233). It kept the keyword hints and
+  nothing read them; a call still passing it raises `TypeError`. `Pipeline(agents=[])` is refused
+  at its install with `ValueError("Pipeline needs at least one agent")`, where it raised
+  `IndexError`. A `ConversationPipeline`'s or a router's install reads every agent first: one
+  refused leaves no hook and no tool behind.
+
+- **BREAKING: a sender the identity step leaves pending gets a record of its own** (RFC §11.2,
+  RMK-1138). Its record took the id the channel gave: on a channel whose senders choose it, a
+  sender naming itself `alice-id` held Alice's id and passed for her. The record is now `pending-`
+  and 16 hex digits of the SHA-256 of the channel and the address, and the identity gets its own
+  record. A caller that looked a pending participant up by its address takes its id from the event,
+  `event.source.participant_id`. Records an earlier release left pending keep their id.
+
+- **BREAKING: `MCPToolProvider.from_url()` refuses at construction what its transport cannot send
+  as given** (RFC §21.2, RMK-1068). A URL's credentials went out as Basic authentication and into
+  every connection's log line; a header the transport writes itself contradicted it, and a value
+  holding a line break reached the wire. It now raises `ValueError` for a URL that is not HTTP(S),
+  names no host, or carries credentials or a fragment, and for a header the transport writes
+  (`Accept`, `Content-Type`, `Host`, `mcp-*`...), an invalid name, more than 32 headers, or a value
+  over 8192 bytes or outside visible ASCII. Migrate: `headers={"Authorization": "Bearer ..."}`.
+
+- **BREAKING: `update_task()` of a task the store lacks raises `TaskNotFoundError`** (RFC §14.3,
+  RMK-1113). The three stores answered it three ways. Each now refuses it, nothing written;
+  `add_task()` creates a task.
+
+- **A streaming channel is handed the turn's end last** (RFC §6.4, RMK-1537). A turn that ends on a
+  tool call writes its record once its stream ended, so the channel rendering the stream read
+  nothing of how the turn ended, and a terminal showed it completed. `deliver_stream` is now handed
+  the turn's `LoopEndMarker` as the stream's last item, before the response's failure when it
+  fails; the default, CLI, WebSocket and voice channels skip it. A wrapper that filters
+  `deliver_stream`'s items must pass it on.
+
+- **A generation cut after reasoning alone is tried again** (RFC §6.4, RMK-1542). A stream cut
+  during a model's reasoning counted as an answer under way: the turn failed with no retry and no
+  fallback. Until the first text, call or end, a failure worth another try is now tried again under
+  `retry_policy`, then the `fallback_provider` is asked. Readers have seen the abandoned reasoning;
+  the round replays and reports only the reasoning of the try that answered.
+
+- **A call a locked hook's task nests under the lock holds the hook's section** (RFC §9.5.1,
+  RMK-1482). A task a locked hook started and did not await could send into the room under the
+  hook's lock, working on under a lock its section had let go. The hook's section now waits for
+  such a call: it commits ahead of the event, and one not committed by the event's
+  `process_timeout` is refused with it, nothing of either stored. If the event's caller left, the
+  call goes on under the lock up to the event's deadline, where it is cut, nothing of it reported.
+
+- **BREAKING: `CompactingMemory` and `SummarizingMemory` leave the turn its room in the window**
+  (RFC §20, RMK-450). They sized the history against the whole `max_context_tokens`: with a 32,000-token
+  window, a 12,000-token system prompt, 8,000 tokens of tools and a 6,000-token reply, the model
+  was sent 44,155 tokens. Both now read the turn's footprint, as `BudgetAwareMemory` does.
+  `max_context_tokens` is the model's window. A host that passed a budget for the history there
+  keeps less history, and once the prompt and tools exceed the value, every turn pays a summarizer
+  call and the history collapses to the last event. Migrate: pass the model's window.
+
+- **A handoff's target is an agent of the room, a human or a known one** (RMK-1233). A transport
+  the room binds is "not found", where it became the active agent and no agent answered. Under
+  allowed transitions and a phase map, a target is led only to a phase it holds:
+  `{target: "c", next_phase: "b"}` no longer skips a stage of a pipeline, and answers `Agent c does
+  not hold phase 'b'`. The caller must hold the room's phase by the same rule, or be its active or default agent.
+
+- **Two senders with no name on one channel read as two speakers** (RFC §6.4, RMK-1221). The second
+  nameless source of a channel now reads `@ws (2)`, in the order they first speak, and every reader
+  counts speakers by source: one sender whose name changed is one speaker.
+
+- **`MCPToolProvider.call_tool()` notes what is not text, and reads a text resource as its text**
+  (RFC §21.2, RMK-1251). An image came back as its object's printing, base64 included. An image,
+  audio and a blob resource now read `[image content (image/png) not shown to the model]`, and a
+  text resource reads as its text. The bytes are still read with `call_tool_result()`.
+
+- **Fewer store calls and a faster SQLite commit** (RMK-1032, RMK-1031). One message with one agent
+  answer makes 16 store calls instead of 19. A SQLite commit no longer scans the whole search index
+  (12 ms a commit at 60,000 events): the schema moves to version 13, and opening a version 12 file
+  renumbers its search rows once.
 
 ### Fixed
 
-- **The delivery cursor's store spans stay in their messages' trace** (RFC §15.7, HITL
-  e228ab14, RMK-1401). On a store that opens `store.*` spans (`PostgresStore`), the
-  `store.get_delivered_index` and `store.advance_delivered_index` spans of the delivery
-  lane were root spans, a trace apart from the message's: they are now children of the
-  `framework.inbound` of a message `process_inbound` brought in, a skip past a hole
-  included, never roots, as roomkit-rs's.
+- **A delivery set keeps its aftermath when its delivery does not end as planned** (RFC §10.1 step
+  15, §13.5, RMK-1499, RMK-1515). A store that failed the room's delivery cursor write made the
+  lane drop every set it had run: the task a hook gave was never stored, `ON_TASK_CREATED` and
+  `AFTER_BROADCAST` never fired, and the room's next message waited `delivery_gap_timeout` (30 s).
+  The failure is now logged and the round goes on, and the write is made again at its next round. A
+  set the lane drops before it ran (the kit closing, or `delivery_stale`) stores what its hooks gave
+  before the call that made it returns.
 
-- **A delivery set keeps its aftermath when the room's cursor write fails** (RFC §10.1
-  step 15, §13.5, HITL b7ba30c9, RMK-1515). The store failed the room's delivery cursor
-  write once, after an event's delivery set ran: the lane's round raised and dropped every
-  set it had run as a cut one. The transport had the message, but the task its hook gave
-  was never stored, neither `ON_TASK_CREATED` nor `AFTER_BROADCAST` fired, the call read
-  `cancellation_reason='lane_cancelled'`, and the room's next message waited for
-  `delivery_gap_timeout` (30 s), which then skipped the index as lost. The failure is now
-  logged (`The delivery cursor of room r1 could not be moved to index 2; its delivery goes
-  on`) and the round goes on: each set it ran keeps its aftermath, the lane reads the
-  cursor as past the index, so the next message is delivered at once and nothing is
-  skipped, and the write is made again at its next round, as roomkit-rs does. Any other
-  store or claim failure once a set ran (a cursor read, the delivery claim's release)
-  leaves its aftermath to run too; until the write is made, another process's lane waits
-  on that index as on any hole.
+- **Spans stay in their message's trace** (RFC §10.6.9, §15.7, RMK-1301, RMK-1401). A hook's
+  injected event and the delivery lane's `store.get_delivered_index` and
+  `store.advance_delivered_index` were root spans, traces apart from the message's; they are now
+  children of its span. What a tool or a hook of a turn asks of the kit reads the broadcast as its
+  span in every process.
 
-- **A held message's release logs its agent's failed turn at its level** (RFC §15.2,
-  §11.7.6, HITL 36e60a22, RMK-1500). Once an identity verification is approved, the
-  room's agents answer the released message; when the agent's turn failed (a missing
-  model, a 404), its line dropped to DEBUG, as for a caller that receives the error, but
-  nothing reads the release's result. The line is now at the failure's own level, ERROR
-  for a 404 or a 5xx, as a `send_event`'s: `stream consumption (no targets) of ai1 for
-  room r1 failed (provider=mock, status=404): ...`.
+- **`delegate_task` does what it told the model** (RFC §6.4, §23.4, RMK-1209, RMK-1363). Its
+  `context` and `previous_tasks` reach the worker, quoted as data and bounded, where the worker read
+  `task` alone. A call naming an agent outside the listed targets is answered with an error and
+  starts nothing. An argument of the wrong type is refused instead of failing with
+  `AttributeError`. A worker's `<conversation>` reads its messages for the block's tags before JSON
+  escapes them, and `CompletedTaskCache.get` and `put` take `context=`.
 
-- **A task a hook decided is kept when the room's lane drops its delivery** (RFC §10.1
-  step 15, HITL ee915769, RMK-1499). An event's `BEFORE_BROADCAST` hooks gave a task
-  ("call the customer back"), then its delivery set never ran: the kit closed with the set
-  queued behind another, or another worker declared its index lost (`delivery_stale`). The
-  task was never stored and `ON_TASK_CREATED` never fired. What the hooks gave is now
-  stored as after a set that ran, its tasks' `ON_TASK_CREATED` fired, before the call that
-  made the set returns.
+- **A `<think>` the answer writes stays in the answer** (RFC §6.7, RMK-1327). On Chat Completions,
+  a `<think>` anywhere in the text began reasoning, and everything after it was lost from the
+  answer. Only a block that opens the generation is reasoning now, and one per generation.
 
-- **A `<think>` the answer writes stays in the answer** (RFC §6.7, HITL 9cf6483f,
-  241215eb, RMK-1327). On Chat Completions (OpenAI and the servers behind its provider,
-  Mistral's text answers, PolarGrid, the OpenAI vision describer), a `<think>` anywhere in
-  the text began reasoning: `The parser reads the <think> tag. Everything after is lost.`
-  was stored, delivered and sent back as `The parser reads the `, the rest read as
-  reasoning. Only a block that opens the generation, after nothing but spaces (U+0020),
-  tabs, line feeds and carriage returns, is reasoning now, and one per generation (each
-  round of a tool loop is one): the rest of the text, a later `<think>` included, is the
-  answer.
+- **An author's image is refused only when the provider refused it** (RFC §6.4, RMK-1220,
+  RMK-1436). A refusal before any request, and a 400 after the provider began to answer, marked the
+  person's images refused for the rest of the room. They now go on the next turn as sent.
 
-- **A refusal before any request refuses no author image** (RFC §6.4, HITL fb46b635,
-  d91b8137, RMK-1436). A response schema the model does not take, a model OpenAI's Chat
-  Completions does not serve, a tool name the vendor refuses: the turn failed before
-  anything was sent, yet the person's images read as refused by the model's provider for
-  the rest of the room. They now go on the next turn as sent.
+- **A binding naming the sender by their identity gets their address as its recipient** (RMK-1129).
+  A room the host opened naming an identity and no recipient took its correspondent's message and
+  refused the answer `no_recipient`.
 
-- **A binding naming the sender by their identity gets their address as its recipient**
-  (HITL b75a9c93, RMK-1129). A room the host opened naming an identity and no recipient
-  took its correspondent's message and refused the answer `no_recipient`: the record
-  wrote an address only on a binding naming the sender by it. It now writes the address
-  the message came from, as roomkit-rs does; a recipient the binding holds is kept.
+- **A discussion keeps to its rules** (RFC §19.7.5, RMK-1233, RMK-1338). A turn is announced and run
+  once its queue is stored; a turn stopped past its own `max_depth` announces that limit; a round of
+  tool calls right after the event a turn answers is replayed; an instruction to a discussion stored
+  over is blocked `discussion_over` from the room's first call in a process.
 
-- A discussion announces and runs a turn once its queue is stored (HITL 671c4655, RMK-1233): a
-  store that refused the write told a hook one `TURN_GIVEN` per try, for a turn never given, and
-  each try entered the room's lane.
-- **`delegate_task`'s `context` reaches the worker** (RFC §23.4, RMK-1363). The tool told the
-  model it passes context to the agent, and the guide that `previous_tasks` tells it what was
-  done; the worker's model read `task` alone. Both now reach it quoted as data and bounded,
-  through `brief`, with `task` as written; `kit.delegate(context=)` stays host metadata no
-  model reads. An agent hands over its own previous tasks only. A `context` that is no object
-  no longer fails the call or its task, and `CompletedTaskCache.get` and `put` take `context=`:
-  a repeat answered from the cache is the same agent's, with the same task and the same
-  `context`. A channel that may not read is handed no conversation by `kit.delegate` either. A
-  `task` that is no text, or a `share_channels` that is no list, is refused, and an `agent` that
-  is no text names no channel: they started a task that failed, or raised `AttributeError`.
+- **A skill reads back as what ran** (RFC §24.4, RMK-1356, RMK-1400, RMK-1406). A room the agent
+  served anew activated the skill the model named rather than the one a hook rewrote the call to, or
+  a refused call's under a held id; a standalone turn's activation of a skill already active now
+  delivers the body.
 
-- **The tool's targets hold the model** (RFC §23.4, RMK-1363). `build_delegate_tool` said it
-  restricts the AI to the listed agents; a call naming another ran. It is now answered with an
-  error and starts nothing, on `setup_delegation` and `setup_realtime_delegation`.
+- **`PostgresStore`'s writes take a room's locks in one order** (RMK-1365, RMK-1394). `add_event`,
+  `delete_event`, `write_change_target` and the boot's rewrites took locks in another order than
+  `commit_event` and `delete_room`, and the server killed one of each pair with
+  `DeadlockDetectedError`. Each now holds the room first, `FOR NO KEY UPDATE`.
 
-- **A closing tag no longer hides in JSON** (RFC §6.4, RMK-1363). A worker's `<conversation>`
-  read its messages for the block's tags once JSON had written a line break or a slash as an
-  escape; it reads them first now. U+2028 and U+2029 between a tag's letters are neutralised in
+- **`PostgresStore` keeps what the other stores keep** (RMK-1277). A participant's `candidates` and
+  an identity's `phone`, `external_id` and `external_ids` were lost silently, `create_identity`
+  under a held id raised where the other stores replace, and a `confidence` of 0.42 read
+  0.41999998688697815 (now `DOUBLE PRECISION`). The columns are additive.
+
+- **A greeting behaves as any call** (RFC §12.10.4, RMK-503, RMK-1264). The kit's close cuts one that
+  waits for the room's lock, and `send_greeting` raises `KitClosedError` there. One made from a hook
+  or a delivery keeps the budget and the depth of that work, so a hook greeting on every answer no
+  longer drives the model without end. A greeting read by another agent no longer refuses the first
+  message.
+
+- **The close and a cut report what happened** (RFC §6.7, RMK-1359). A call the close cut no longer
+  says `nothing of it is stored` when it may have written. A turn cut from outside gives its caller
+  what it wrote, and a value a tool writes under `turns` no longer lands on the stored message.
+
+- **A binding's settings are read as a turn reads them** (RFC §6.4, §6.7, Appendix A.9, RMK-1237,
+  RMK-1255). `"off"` or `0` in `enable_thinking` turn the budget off. `max_tokens: "100"` no longer
+  fails a budget-aware memory's turn. A `system_prompt` that is no text fails the turn with a
+  validation error rather than a `TypeError`, or lifting the channel's prompt unseen.
+
+- **A streamed turn stores no blank text segment** (RMK-1300). A reasoning model writing a line break
+  before its call left a `MESSAGE` of `"\n\n"` in the room, delivered to every channel, an empty SMS
+  included.
+
+- **Tool search and MCP listings hold steady** (RMK-1053). One `find_tools` query reveals the same
+  tools from one process to the next, a channel's memory of rooms with no tool rows keeps its bound,
+  and an MCP tool whose tags were no list of texts no longer fails the server's whole listing.
+
+- **A binding changed during a stream holds from its next row** (RFC §7.2, §7.5, RMK-1170, RMK-1280,
+  RMK-1283, RMK-1286). A stream's rows were planned with the bindings of its start. Each row now reads
+  the room under its lock at its commit: a row after a `mute()`, a `set_access()` or a
+  `detach_channel()` of the agent is stored BLOCKED, and once the room no longer lets the target read
+  the answer, the target reads nothing more of the stream. The cost is that read and that lock per
+  row.
+
+- **A parallel team's first error cuts the other workers** (RFC §19.7.3, §19.7.4, RMK-1279). A
+  `Supervisor(strategy="parallel")` or a `Loop`'s parallel reviews answered with the error at once and
+  left the others running; they are now cut and awaited first.
+
+- **A room id takes no delivery claim and no verification lock** (RFC §13.5, RMK-1281). A section of
+  the room `__delivery__:r1` held r1's deliveries. Each kind of lock now has its own key space, and a
+  room id holding such a key raises `ValueError`. Processes sharing a Postgres lock manager take the
+  new keys only once all of them run this version. `check_all_timers` also goes on past a room that
+  fails, and only `KitClosedError` stops the sweep.
+
+- **A sender's routing stamps are dropped** (RFC §19.4, RMK-1233). A message arriving with
+  `_routed_to` or `_always_process` in its metadata chose the agent that answered it; the kit now drops
+  both before the `BEFORE_BROADCAST` hooks run, and only a list in `_always_process` names agents.
+
+- **An MCP tool's result the model sees an image of is bounded** (RFC §21.2, RMK-1249). A server
+  answering 30 screenshots of 1 MB put 40 MB of base64 in the request. Its texts now hold within
+  100,000 characters, and at most four images within 5 MiB reach the model.
+
+- **`MCPToolProvider.from_url()` bounds its connection at 60 s, as `from_command()`** (RFC §21.2,
+  RMK-1108). `connect_timeout=60.0`; a server that took the connection and never answered held
+  `async with provider:` for ever.
+
+- **`uninstall_strategy` during an install waits for it** (RFC §19.7, RMK-1247), and a strategy's live
+  agent under a transport's id is refused with `ValueError` (RMK-1233).
+
+- **A provider that fails after a round of calls ends the turn `error`, whatever it raises** (RFC §6.4,
+  RMK-1199). Only a `ProviderError` did: anything else left a turn that fired no `ON_AI_RESPONSE`.
+
+- **A held message's release logs its agent's failed turn at its level** (RFC §11.7.6, §15.2,
+  RMK-1500): ERROR for a 404 or a 5xx, where the line dropped to DEBUG though nothing reads the
+  release's result.
+
+- **An answer accepted as `HumanInputHandler.wait()`'s deadline passes is returned** (RFC §9.3,
+  RMK-1201). The request was marked `TIMED_OUT` and the person's answer lost.
+
+- **A member added again without an identity keeps their identification** (RFC §5.5, RMK-1141).
+
+- **A message steered while the model answers is read** (RFC §21.3, RMK-1160). An `InjectMessage` that
+  reached a turn during its final generation was counted by `steer()` and never read.
+
+- **A resolver's `REJECTED` holds the message when no identity hook answers** (RFC §11.2, RMK-1151).
+  It was stored and delivered as an unknown sender's; it is now refused, nothing stored.
+
+- **A parsed event stays where it was received** (RFC §10.1 step 4, RMK-1123). A channel whose
+  `handle_inbound()` named another channel or room, or set `responds_to`, had the message stored there.
+  The event now takes the receiving channel and the routed room, with a warning, and answers nothing.
+
+### Security
+
+- **BREAKING: a message never commits into a room whose binding, made while the room was created for
+  it, names someone else** (RMK-1396). While Alice's first message waited in its room's
+  `ON_ROOM_CREATED` hooks, Bob's could be recorded on that room's binding; her agent then read his
+  words and its answer went to his number. Alice is now routed once more and gets a room of her own.
+  When no room opened for a message is still its own, `process_inbound` returns `blocked=True,
+  reason="room_taken"` with nothing stored.
+
+- **BREAKING: a value under a channel's declared recipient key names its conversation** (RMK-1129). A
+  `Channel` subclass declaring `recipient_key` and keeping the base `recipient_address` read no
+  recipient: a stranger writing on it entered the room of the number under the key and read its
+  history through the agent. A flow of several senders into such a room declares its binding `group`.
+
+- **BREAKING: routing no longer takes a message on its name, or with no address** (RMK-1339). A message
+  routed under the name `system` returns `blocked=True, reason="reserved_sender"` with nothing written.
+  A routed message with no address enters a room only through a `group` binding, and the room it opens
+  admits no other sender: a flow of them into one room declares its binding `group` or passes
+  `room_id`. A blank sender id has no address either, and a custom router is told `None` for a message
+  with no address, where it was told the raw id.
+
+- **BREAKING: a model's reasoning text is private by default on a room's realtime channel** (RMK-1052).
+  `THINKING_DELTA` and `THINKING_END` carried up to 1000 characters of the reasoning to every subscriber.
+  They now carry `thinking_length`, `round` and `channel_id`; `AIChannel(publish_thinking_text=True)`
+  and `ACPChannel(publish_thinking_text=True)` opt in to the text.
+
+- **BREAKING: a span holds no address and no error text by default** (RFC §15.7, RMK-1213, RMK-1301). A
+  sender's and a recipient's address, a provider's error and each error's text went to the exporter, as
+  did `PostgresStore`'s `store.*` errors, which can quote a row's values. An `error_message` now reads
+  the error's class, and the others are left out; `TelemetryConfig(record_sensitive_data=True)` records
+  them as before. `ConsoleTelemetryProvider` writes each value as its `repr`, so a sender's text can no
+  longer forge a log line.
+
+- **An unreadable identity record is never quoted, nor shows that an id exists** (RFC §17.2, RMK-1410,
+  RMK-1431, RMK-1504, RMK-1530, RMK-1538). `get_identity` and the kit's `resolve_participant`, given an
+  identity whose record the model cannot read, raised a `ValidationError` quoting it, maybe another
+  organization's, to any caller. Every store's reads by id now raise `ValueError("Identity <id> has a
+  record the model cannot read")`, the id alone, and `resolve_identity` resolves it to nobody with a
+  warning. A caller naming an organization (`resolve_participant`, `link_address`, `unlink_address`,
+  `SQLiteStore.create_identity`) reads `IdentityNotFoundError`.
+
+- **An identity resolves, and is replaced, in its own organization only** (RMK-1277, RMK-1336, RMK-1376).
+  An address row the move to per-organization addresses left unscoped served an identity to a caller
+  naming none. `resolve_identity` now compares the organizations and such a row moves once, at the first
+  `init()` or open (schema version 5 row on Postgres, file version 14 on SQLite, which 0.111.0 and
+  earlier refuse). An address held by a row no read serves is free to take. `create_identity` of an id
+  another organization holds raises `IdentityNotFoundError`, and a replacement removes what it no longer
+  holds, on every store.
+
+- **A tag's separator in another form no longer closes its block** (RFC §6.4, RMK-1320). An MCP server's
+  instructions, a tool's result or a worker's output holding `</server‐instructions>` (U+2010) or
+  `</tool result>` kept it as written, which a model can read as the block's end. Any run of dashes,
+  underscores and spaces between two letters of a tag's name, or none, now reads as the separator, for
+  any tag `roomkit.tools.fence` is given. U+2028 and U+2029 between a tag's letters are neutralised in
   every block.
 
-- **A turn that wrote no message records on its last row** (RMK-1344). The turn's
-  record rides its last message, else its last row, the call's end, so that a resume
-  and an exit summary find a first turn cut while its call runs. A strategy's first
-  pass hands its record on and writes it on none of its rows.
-- **A skill a hook rewrote reads back as what ran** (RFC §24.4, HITL 2ddedc88, RMK-1406).
-  A room the agent served anew activated the skill the model named, whose rules it never
-  received, and lost the one `BEFORE_TOOL_USE` rewrote the call to. The stored end row says.
-- **A skill read back under a held id is the one that ran** (RFC §24.4, HITL 9763c3cd, RMK-1400).
-  A room the agent served anew read the skill a refused call named, for two calls of a
-  round under one id, and lost the rules the first call had loaded.
-- **A replay gives each call its own result** (RFC §6.4, RMK-1373). Two calls of a
-  round under one id were paired to their end rows by the latest start, so a later
-  turn read the refused call with the served call's result, and the served call
-  gone. A round's results now pair to its calls first in, first out per id.
-- **A standalone turn's activation of a skill active in the room delivers the body** (RFC §24.4, RMK-1356). Its prompt carries no active skill, so the acknowledgement left the model holding no rules.
+- **A task followed by other text is set apart in `<task>`** (RFC §6.4, RMK-1418). A `work_in_background`
+  or `start_task` task its model wrote could imitate the runtime's text and the room's conversation
+  after it, with a line in someone else's name. It now reads under `Your task, as it was asked:`, and a
+  `delegate_task` task once a block follows it under `Your task, as the delegating agent wrote it:`.
 
-- **`PostgresStore`'s writes of an event take a room's locks in one order** (HITL
-  a8c2f7bd, 0affbb3b, RMK-1365). `commit_event` holds the room, then its sequence;
-  `add_event` and `add_event_auto_index` held the sequence, then the room through
-  the event's foreign key. Called together on one room, each waited on the other,
-  and the server killed one with `DeadlockDetectedError`. They now hold the room
-  first, `FOR NO KEY UPDATE`, one more statement: for its few statements an add also
-  waits on `update_room`, `patch_room_metadata` and `advance_delivered_index`, and
-  they on it. A missing room is refused as before.
-- **`PostgresStore` takes a room's locks in one order on its other writes** (RMK-1394).
-  `delete_event` and `write_change_target` took the message, then its edits, while
-  `delete_room` takes the room, then its events in the order it finds them; the
-  repair of `dedupe_event_indices` and the boot that rewrites versions 3 and 4 took
-  events, then rooms, against a commit with a target; an add whose room was deleted
-  and created again meanwhile took the new sequence holding nothing. The server killed
-  one of each pair with `DeadlockDetectedError`. Each now holds the room first, `FOR NO
-  KEY UPDATE`: `delete_event` and `write_change_target` take one more statement and
-  wait, for theirs, on the room's other writes, and they on them; an add holds it in
-  the statement that takes the sequence, one statement fewer. A missing room is refused
-  as before. Left open: a room id created again under live writes, with no sequence yet
-  for a moment, can still have one of them killed: an add, a commit, a deletion (HITL
-  d49b8b14: kept). On a room a kit serves, an index `add_event` takes at or past the
-  room's next, or any `add_event_auto_index` takes, opens a hole the next delivery
-  waits `delivery_gap_timeout` to skip, as their docs now say (HITL ab765c3d).
+- **A discussion's stored keys are the framework's** (RFC §19.2, §19.7.5, RMK-1337). `create_room(metadata=)`,
+  `update_room_metadata`, a hook's body, a channel's `metadata_updates` and a turn's `TurnHost` drop
+  `_discussion`, `_speak_queue` and `_conversation_state` with a warning: a forged one no longer holds the
+  room with nobody answering. A host that seeded a state through `create_room(metadata=)` calls
+  `save_conversation_state` instead. A stored discussion `Discussion()` would refuse reads as none, with a
+  warning, and the room answers.
 
-- **A hook's injected event stays in its message's trace** (RMK-1301).
-  Its `framework.broadcast` was a root span, a trace apart from the call's: it is
-  now a child of the call's span, as any other event's.
-
-- A discussion keeps to RFC §19.7.5 where it strayed (HITL 0d726397, RMK-1338): a turn stopped
-  past its own `max_depth` announces that limit in `chain_depth_exceeded`, not the kit's; a round
-  of tool calls right after the event a turn answers is replayed, not lost; an instruction to a
-  discussion stored over, or its regeneration, is blocked `discussion_over` from the room's first
-  call in a process.
-- A round whose reasoning came in blocks replays two calls made under one id each
-  with its own arguments, where the second overwrote the first (RMK-1316).
-- **`PostgresStore` keeps what the other stores keep** (HITL f01854e2,
-  RMK-1277). It had no column for a participant's `candidates`, nor for an
-  identity's `phone`, `external_id` and `external_ids`, and lost them silently;
-  `create_identity` under a held id raised where the other stores replace; and a
-  `confidence` written 0.42 read 0.41999998688697815 (now `DOUBLE PRECISION`, a
-  stored value widened through its digits, once). The columns are additive.
-
-- A call the kit's close cut no longer says `nothing of it is stored` when it may have written: a room change that writes before its first context reads only that it did not end; only its event's fate is told (RMK-1359).
-- **The kit's close cuts a greeting that waits for the room's lock** (RMK-1264,
-  HITL 8a258410). It went on through the close and was stored, where the RFC
-  (§12.10.4) cuts a call waiting for its room's lock, nothing of it stored. A
-  text session's `send_greeting` now raises `KitClosedError` there, as
-  `send_event` does, and is cut as any call until its commit; its delivery goes
-  on after it. The voice paths are unchanged.
-- **A greeting from the room's own work stops at the limit** (RMK-1264, HITL
-  1db22649). `send_greeting` from a hook's body or a delivery took a budget of
-  its own at depth 0, so a hook greeting on every answer drove the model without
-  end. It now keeps the budget and the depth of the work it is made in, as
-  `send_event` does, and past the budget is stored `BLOCKED`
-  (`reentry_loop_cap`); a top-level call keeps a budget of its own.
-- **A turn cut from outside gives its caller what it wrote** (RFC §6.7, HITL
-  84991349). `handle.cancel()` or the kit's close left `turns` alone in the
-  result; what a tool had written on the record now reaches it, as for a turn
-  that failed.
-
-- **A value a turn writes under `turns` stays off its messages** (RFC §6.7). A
-  tool's `record["turns"] = 3` landed on the stored `MESSAGE`; `turns` is the
-  framework's key, and the caller's copy was already right.
-
-- **A binding's `enable_thinking` is read before it is compared** (RFC §6.7,
-  Appendix A.9). `"off"`, `"no"` or `0` now turn off a budget a less specific
-  level set, as `false` does, where they left the model reasoning and billing on
-  the channel's budget.
-
-- **A streamed turn stores no blank text segment** (RMK-1300). A reasoning model
-  writing a line break before its call left a `MESSAGE` of `"\n\n"` in the room,
-  delivered to every channel, an empty SMS included. The stream's reader still
-  reads the deltas, a turn's end goes to its last message, `ON_AI_RESPONSE`'s
-  segments skip the blank stretch, a buffering channel's `deliver_stream` delivers
-  no text for it, and a delegated turn that says only that fails its task as an
-  empty answer does.
-
-- **One `find_tools` query reveals the same tools from one process to the next**
-  (HITL ceb81513, RMK-1053). A tool at exactly half of the best score was kept or
-  cut on the last bit of a sum taken in a set's order, which changes per process.
-  The words now add up in sorted order, as in roomkit-rs.
-- **A channel's memory of rooms with no tool rows keeps its bound** (HITL
-  d8f31c25, RMK-1053). Reading a new room's stored rows added a record without
-  `_MAX_ROOMS`, so a channel answering without a tool in many rooms grew until a
-  tool call somewhere trimmed it. A room dropped reads its rows again on its next
-  turn; what it had found but never called is forgotten, as for any room dropped.
-- **A tag a server wrote badly costs it no tool** (HITL e0bb4999, RMK-1053).
-  An MCP tool whose FastMCP tags were no list of texts failed the server's whole
-  listing; what is no text is now left out and the tool stays, as in roomkit-rs.
-- **A greeting read by another agent no longer refuses the first message**
-  (RMK-503, HITL eb6ce4e1). An auto-greeting agent held the greeting gate on a
-  text session, and the greeting's delivery to another intelligence channel
-  waited on that same gate: the message was refused `process_timeout`. The gate
-  now stays on the voice paths; two auto-greeting agents go through too.
-- **A turn's work runs under the broadcast's span in every process** (RFC
-  §10.6.9, §15.7, HITL f9ab2401). In the process that owned it, what a tool or
-  a hook of a turn asked of the kit sat under `framework.inbound`, beside the
-  broadcast, and under the broadcast in another process. It now reads the
-  broadcast as its span everywhere: `framework.send_event` called from a tool
-  is a child of `framework.broadcast`. No id or attribute changes.
-
-- **A binding changed during a stream holds from its next row** (RMK-1280,
-  RMK-1283). A streamed answer's rows were planned with the bindings of the
-  stream's start: a transport made write-only or detached mid-stream was still
-  delivered the rows after, and the streaming target, checked only at the
-  start, read the text of an agent muted, made read-only or detached since,
-  though its rows were stored BLOCKED, and of a room closed since. Each row now
-  reads the room's bindings under its lock at its commit, its agent's right to
-  write and the room's status included, and once the room no longer lets the
-  target read the answer, the target reads nothing more of the stream and the
-  rest is delivered as each row's plan says, as roomkit-rs does. Each row now
-  reads the room's context under its lock at its commit, as any event does, so
-  a delivery reads the room's latest events, one another channel committed
-  during the stream included, where it read the stream's first window with
-  every row since (RMK-1286), and a room timer due meanwhile applies there,
-  which may pause or close the room mid-answer. The cost is that read and that
-  lock per row.
-
-- **A streamed answer stored after its agent is muted, made read-only or
-  detached is withheld**
-  (RFC §7.2, §7.5 rule 2, RMK-1170). The rows a stream committed after a
-  `mute()`, a `set_access()` that takes the agent's writing away or a
-  `detach_channel()` of the agent were stored and delivered unless a
-  `BEFORE_BROADCAST` hook ran; each row now reads its agent's binding at
-  its commit, hook or not, and is stored BLOCKED `source_muted`,
-  `source_read_only` or `source_unbound`, as roomkit-rs does.
-
-- **A parallel team's first error cuts the other workers** (RFC §19.7.3,
-  §19.7.4, RMK-1279). A `Supervisor(strategy="parallel")` one of whose
-  delegations raised, and a `Loop` one of whose parallel reviews raised,
-  answered with that error at once and left the other workers running,
-  unread, in their child rooms. They are now cut, and awaited to their end,
-  before the error is raised.
-
-- **A room id takes no delivery claim and no verification lock** (RFC
-  §13.5, RMK-1281). The kit kept a room's delivery claim
-  (`__delivery__:<room_id>`) and an identity's verification lock
-  (`verification:<org>:<identity>`) among its rooms' keys: a section of the
-  room `__delivery__:r1` held r1's deliveries, and one of the room
-  `verification:org-a:alice` alice's verification. An `InMemoryLockManager`
-  now keeps each kind in a map of its own, shared by the kits sharing it;
-  any other manager, a subclass whose `locked()` is its own included, gets
-  those keys led by a NUL character (`\x00__delivery__:r1`). Whatever the
-  manager, a room id holding one takes no room lock: `create_room`, and any
-  call taking the lock of a room the kit did not make (one written to the
-  store straight), raise `ValueError`. A room's own lock keeps its id:
-  `kit.lock_manager.locked(room_id)` is unchanged.
-  Code running under a delivery lane's claim no longer counts as holding a
-  room lock, so a `Queued` delivery made from it waits its turn. Processes
-  sharing a Postgres lock manager take the new claim and verification keys
-  only once all of them run this version.
-
-- **A sender's routing stamps are dropped** (RFC §19.4, RMK-1233). A
-  message that arrived with `_routed_to` or `_always_process` in its
-  metadata chose the agent that answered it, or added one to its address:
-  the kit now drops both before an event's `BEFORE_BROADCAST` hooks run,
-  with a warning, so only a hook, the conversation router among them,
-  writes them.
-- **A supervisor stamp that is no list asks no one more** (RFC §19.4,
-  RMK-1233). `_always_process` written as a `str` solicited every agent
-  whose id it contains, a `dict` its keys, and `None` failed the broadcast
-  with a `TypeError`; only a list names agents now, as roomkit-rs reads it.
-
-- **A binding's max tokens in text runs a budget-aware memory's turn**
-  (RFC §6.4, Appendix A.9, RMK-1255). A room binding an agent with
-  `metadata={"max_tokens": "100"}` and a `BudgetAwareMemory` failed its turn
-  with `TypeError: unsupported operand type(s) for -: 'int' and 'str'`, its
-  model never asked: the turn's measure took the text raw. The measure now
-  reads the value as the turn does, 100, and the memory reserves it; a value
-  the turn refuses fails it with pydantic's `ValidationError`, as with any
-  other memory. roomkit-rs read 100 already.
-
-- **An MCP tool's result the model sees an image of is bounded** (RFC §21.2,
-  RMK-1249). `MCPToolProvider.as_tool_handler()` handed such a result's parts
-  to the model whole: a server answering 30 screenshots of 1 MB put 40 MB of
-  base64 in the model's request, and a text of any length rode beside them.
-  Its texts now hold within 100,000 characters in all, the text past the
-  bound cut with a note saying how long it was, when the note fits, and the
-  texts after it left out, and at most four of its images within 5 MiB of data URL in all reach
-  the model; each image past either reads `[image content (image/png) not
-  shown to the model]`, a note that counts as a text. roomkit-rs holds the
-  same bounds.
-
-- **`uninstall_strategy` during an install waits for it** (RFC §19.7,
-  RMK-1247). Called while an install ran, it answered `True`, then the
-  install recorded itself again: the room kept the strategy and its agents.
-  It now waits for the install's end, then takes it back whole; code
-  holding the room's lock (a hook, the install itself) gets `False` at
-  once rather than wait for an install that needs that lock.
-- **A strategy's live agent under a transport's id is refused** (RMK-1233).
-  `install_strategy` and `create_room(orchestration=...)` kept the channel the
-  kit held under a live agent's id and attached it as an intelligence channel,
-  so a transport registered under that id took the agent's turns; they raise
-  `ValueError("Channel 'ana' is not an intelligence channel")`, as for an
-  agent named by its id, and attach nothing.
-
-- **A binding's system prompt that is no text fails the turn with a
-  validation error** (RFC §6.4, Appendix A.9, RMK-1237). A room binding an
-  agent with `metadata={"system_prompt": 5}` failed its turn with an
-  accidental `TypeError` (`unsupported operand type(s) for +`), and one with
-  `0`, `False`, `[]` or `{}` lifted the channel's prompt unseen. The prompt
-  is now read as `AIContext` reads a text, as the turn's temperature and max
-  tokens are: any other value fails the turn with pydantic's
-  `ValidationError`, every setting it refuses named.
-
-- **A call streamed before a refusal leaves the author's images sent**
-  (RFC §6.4, RMK-1220). A turn's first request carrying an author image
-  whose provider streamed a tool call, then failed with a 400 not retried,
-  marked the image refused in the room: later turns read `[Image refused by
-  the model's provider: …]` in its place, though the provider had begun to
-  answer. Only what reached the turn's reader counted as streamed, and a
-  call the loop serves reaches none, nor does text a response schema holds
-  until checked. Any event the provider hands now counts, as in
-  roomkit-rs: the image is sent again on the next turn.
-
-- **A provider that fails after a round of calls, whatever it raises, ends
-  the turn `error`** (RFC §6.4, RMK-1199). Only a `ProviderError` did: a
-  provider raising anything else (an SDK's own error, a dropped connection)
-  in a round after the calls left a turn that fired no `ON_AI_RESPONSE` and
-  wrote no `loop_end_reason` on its last message. Such a turn now reaches its
-  end as for a `ProviderError`: the hook reports it, `error`, its segments
-  the rounds' words the room has, the failed round's included, then the
-  error is raised as before.
-
-- **An answer accepted as `HumanInputHandler.wait()`'s deadline passes is
-  returned** (RFC §9.3, RMK-1201). `resolve()` could return `True` in the
-  turn of the loop where the deadline expired, and `wait()` still marked the
-  request `TIMED_OUT` and raised `TimeoutError`: the person's answer was
-  lost. `wait()` now returns it, the request `RESOLVED`.
-
-- **A member added again without an identity keeps their identification**
-  (RFC §5.5). `add_member()` after `remove_member()` of an IDENTIFIED member
-  made them PENDING while their record kept its `identity_id`, so
-  `is_member()` answered `True` for a sender the inbound pipeline resolved
-  again. The re-join now keeps the identification and the identity the
-  record had; one naming an identity identifies them as it.
-
-- **A message steered while the model answers is read** (RFC §21.3,
-  RMK-1160). An `InjectMessage` that reached a turn during its final
-  generation was counted by `steer()` and never read: the loop ended without
-  reading its queue again. Once the model has answered, the loop now reads it:
-  with a message, the same turn asks the model again, the answer then the
-  message; with none, the loop is reached no more, so what `steer()` counts
-  is read.
-
-- **A resolver's `REJECTED` holds the message when no identity hook answers**
-  (RFC §11.2, RMK-1151). `IdentityResult(status=REJECTED, message="not
-  allowed")` went to the `ON_IDENTITY_UNKNOWN` identity hooks and, none
-  answering, the message was stored and delivered as an unknown sender's.
-  It is now refused, `InboundResult(blocked=True, reason="not allowed")`
-  (`"identity_rejected"` with no message), nothing of it stored; a hook's
-  `resolved()`, `pending()`, `challenge()` or `reject()` still decides.
-
-- **The first message of a sender the identity step identifies is named
-  after them** (RFC §10.1 step 12, RMK-1139). Since the commit names an
-  event's author from the context its lock read, the participant record the
-  identity step writes under that lock was missing from it: the message
-  that made Alice join carried no `metadata.author`, her next ones did.
-
-- **`MCPToolProvider.from_url()` bounds its connection at 60 s, as
-  `from_command()`** (RFC §21.2, RMK-1108). A server that took the connection
-  and never answered held `async with provider:` for ever: only a server
-  RoomKit starts was bounded. Entering now waits `connect_timeout` seconds at
-  most (`from_url(..., connect_timeout=60.0)`) for the handshake and the
-  listing, then closes the connection, deletes its session and raises
-  `TimeoutError`; a slower server takes a larger `connect_timeout`.
-
-- **A parsed event is sourced from the channel that received it** (RFC
-  §10.1 step 4, RMK-1123). A channel whose `handle_inbound()` named another
-  channel as the event's source had the message stored as that channel's,
-  read under its binding and delivered back to the channel it came in on.
-  The event is now sourced from the receiving channel, with a warning; the
-  rest of its source stands, its direction included. Scenario
-  `inbound/a-parse-naming-another-channel-is-sourced-from-its-own`.
-
-- **A parsed event is stored in the room its message was routed to, and
-  answers nothing** (RFC §10.1 step 4, RMK-1123). A channel whose
-  `handle_inbound()` named another room had the message stored in that
-  room's timeline and delivered to its channels; one that set
-  `responds_to` had it stored as the response to that event. The event now
-  takes the routed room, with a warning, and answers nothing: only the
-  runtime writes the instruction a response answers. Scenarios
-  `inbound/a-parse-naming-another-room-is-stored-in-the-routed-one` and
-  `inbound/a-parse-writing-responds-to-answers-nothing`.
-
-- **BREAKING — `update_task()` of a task the store lacks raises `TaskNotFoundError`**
-  (RFC 14.3, RMK-1113). The three stores answered it three ways:
-  `InMemoryStore` kept the task where `get_task()` found it and no room's
-  `list_tasks()` did, `SQLiteStore` created it, and `PostgresStore` wrote
-  nothing and returned it. Each now refuses it, nothing written, as an
-  update of a room, an event or a participant the store lacks already is;
-  `add_task()` creates a task.
-
-- **A SQLite commit no longer scans the whole search index** (RMK-1031).
-  Each commit, edit and delete reached an event's row in `events_fts` by
-  `event_id`, which FTS5 does not index: the cost grew with every event the
-  file held, 12 ms a commit at 60,000 events. A search row now takes its
-  event row's rowid. The schema moves to version 13; opening a version 12
-  file renumbers its search rows once, dropping any that names no stored
-  event. A file at version 13 is refused by roomkit 0.111.0 and earlier.
+- **A sender's forged runtime marks are read in more forms** (RMK-1233). The note on who takes part passed
+  under another bracket, a combining mark hid any mark from the check, and `_orchestration_internal` in a
+  sender's metadata silenced a room's agents; the marks are replaced and the key is dropped with a warning.
 
 ## [0.111.0] — 2026-11-01
 
@@ -20859,7 +20310,8 @@ See entries `0.7.0a1` through `0.7.0a18` below.
 - `STTProvider.transcribe()` returns `TranscriptionResult` (Phase 3.1)
 - Framework event names enriched with payloads (Phase 4)
 
-[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.111.0...HEAD
+[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.112.0...HEAD
+[0.112.0]: https://github.com/roomkit-live/roomkit/compare/v0.111.0...v0.112.0
 [0.111.0]: https://github.com/roomkit-live/roomkit/compare/v0.110.0...v0.111.0
 [0.110.0]: https://github.com/roomkit-live/roomkit/compare/v0.109.0...v0.110.0
 [0.109.0]: https://github.com/roomkit-live/roomkit/compare/v0.108.0...v0.109.0
