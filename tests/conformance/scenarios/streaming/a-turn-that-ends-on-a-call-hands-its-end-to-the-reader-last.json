@@ -1,0 +1,147 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-turn-that-ends-on-a-call-hands-its-end-to-the-reader-last",
+  "title": "A turn whose last row is a call's end, cut at its round limit, writes its record on that row once its stream ended, and hands the reader of the stream the turn's end last: the row it was handed carries no record, the end that follows says how the turn ended",
+  "rules": [
+    "§6.4",
+    "§12.2 step 13s"
+  ],
+  "notes": "Python: core/mixins/_streaming_segments.py SegmentWriter.stream (the marker last), end_turn, write_owed_record; core/mixins/inbound_streaming.py _handle_streaming_response. RMK-1537 (HITL 577ecd24).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true,
+        "reads_loop_end": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "max_tool_rounds": 1,
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up.",
+            "returns": "found"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "lookup",
+                  "arguments": {
+                    "again": true
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message",
+          "content": {
+            "body": "hi"
+          }
+        },
+        {
+          "index": 1,
+          "type": "tool_call_start",
+          "content": {
+            "tool_id": "c1"
+          }
+        },
+        {
+          "index": 2,
+          "type": "tool_call_end",
+          "content": {
+            "tool_id": "c1",
+            "status": "completed"
+          },
+          "metadata": {
+            "loop_end_reason": "max_rounds"
+          }
+        }
+      ]
+    },
+    "streamed": {
+      "room-1": {
+        "ws": [
+          {
+            "row": {
+              "index": 1,
+              "type": "tool_call_start"
+            }
+          },
+          {
+            "row": {
+              "index": 2,
+              "type": "tool_call_end",
+              "metadata": {
+                "loop_end_reason": {
+                  "$absent": true
+                }
+              }
+            }
+          },
+          {
+            "loop_end": {
+              "reason": "max_rounds",
+              "rounds": 1
+            }
+          }
+        ]
+      }
+    }
+  }
+}

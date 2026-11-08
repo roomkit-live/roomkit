@@ -1,0 +1,122 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-reader-stopped-at-the-last-row-is-handed-no-end",
+  "title": "A streaming channel the room stops letting read at the commit of the turn's last text row is handed neither that row nor the turn's end: only the text it read",
+  "rules": [
+    "§6.4",
+    "§7.5 rule 1"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "web",
+        "type": "webhook",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true,
+        "reads_loop_end": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "moderator",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "source_channel_id": "agent"
+            },
+            "do": [
+              {
+                "call": "set_access",
+                "room_id": "$room",
+                "channel_id": "ws",
+                "access": "write_only",
+                "as": "change"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "web",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message"
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "content": {
+            "body": "Done."
+          },
+          "metadata": {
+            "loop_end_reason": "completed"
+          }
+        }
+      ]
+    },
+    "streamed": {
+      "room-1": {
+        "ws": [
+          {
+            "text": "Done."
+          }
+        ]
+      }
+    }
+  },
+  "notes": "Python: core/mixins/_streaming_segments.py SegmentWriter.stream hands the marker only while the channel still reads (_stopping). From the review of RMK-1537."
+}

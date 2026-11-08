@@ -1,0 +1,107 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-streamed-answer-hands-its-end-after-its-last-row",
+  "title": "A streamed answer hands the reader of the stream its last row, which carries the turn's record, then the turn's end",
+  "rules": [
+    "§6.4",
+    "§12.2 step 13s"
+  ],
+  "notes": "Python: core/mixins/_streaming_segments.py SegmentWriter.stream (the marker last), end_turn, write_owed_record; core/mixins/inbound_streaming.py _handle_streaming_response. RMK-1537 (HITL 577ecd24).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true,
+        "reads_loop_end": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message"
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "content": {
+            "body": "Done."
+          },
+          "metadata": {
+            "loop_end_reason": "completed"
+          }
+        }
+      ]
+    },
+    "streamed": {
+      "room-1": {
+        "ws": [
+          {
+            "text": "Done."
+          },
+          {
+            "row": {
+              "index": 1,
+              "type": "message",
+              "metadata": {
+                "loop_end_reason": "completed"
+              }
+            }
+          },
+          {
+            "loop_end": {
+              "reason": "completed",
+              "rounds": 0
+            }
+          }
+        ]
+      }
+    }
+  }
+}
