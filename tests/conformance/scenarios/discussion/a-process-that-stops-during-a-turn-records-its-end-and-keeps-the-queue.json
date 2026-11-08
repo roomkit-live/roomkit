@@ -1,0 +1,164 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-process-that-stops-during-a-turn-records-its-end-and-keeps-the-queue",
+  "title": "A process that stops while its turn runs cuts that turn, records its end and keeps the queue: the agents still owed a turn get it from the process that installs the discussion next",
+  "rules": [
+    "§19.7.5 rule 16",
+    "§19.7.5 rule 6"
+  ],
+  "notes": "Python: test_discussion_processes.py test_a_process_that_stops_during_a_turn_records_its_end_and_keeps_the_queue; _room.py stop, _driver.py stop and _abandon_orphan or _run's cancel, then _ended. The run's kit gives a's turn, held at its gate, and closes: the turn is cut, its end recorded (last_speaker a), the lease given up, b still queued. p2 installs the discussion and gives b's turn; a's is not given again.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "gate": "a-thinking",
+              "text": "a too late"
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "b here"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a",
+            "b"
+          ]
+        }
+      }
+    ],
+    "processes": [
+      {
+        "id": "p2"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@a and @b, what happened?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "wait_for": "a-thinking"
+    },
+    {
+      "call": "close"
+    },
+    {
+      "call": "store.get_room",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "metadata": {
+            "_speak_queue": {
+              "speaking": null,
+              "last_speaker": "a",
+              "lease_holder": null,
+              "entries": [
+                {
+                  "agent": "b"
+                }
+              ]
+            },
+            "_discussion": {
+              "$present": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d",
+      "kit": "p2"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "kit": "p2",
+      "expect": {
+        "result": {
+          "speaking": null,
+          "queue": []
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "@a and @b, what happened?"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "b"
+          },
+          "content": {
+            "body": "b here"
+          }
+        }
+      ]
+    }
+  }
+}
