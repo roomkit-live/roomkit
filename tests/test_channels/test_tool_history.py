@@ -159,6 +159,34 @@ async def test_an_earlier_round_reads_as_its_calls_then_their_results(streaming:
     assert "Tools you've already used here" not in str(second_turn.messages[-1].content)
 
 
+@pytest.mark.parametrize(
+    ("name", "replayed"),
+    [("multi_tool_use.parallel", False), ("", False), ("no_such_tool", True)],
+    ids=["dotted", "empty", "well_formed"],
+)
+async def test_a_refused_call_is_replayed_only_under_a_name_vendors_take(
+    name: str, replayed: bool, streaming: bool
+) -> None:
+    """A call the model invented under a name no vendor takes is refused like
+    any other, but sent back it would make every later request of the room a
+    400 (RFC §6.4)."""
+    provider = MockAIProvider(
+        ai_responses=[_round(("c1", name, {})), _answer("Answer one."), _answer("Answer two.")],
+        streaming=streaming,
+    )
+
+    calls = await _turns(provider, "first question", "second question")
+
+    sent = [
+        part.name
+        for message in calls[-1].messages
+        if isinstance(message.content, list)
+        for part in message.content
+        if isinstance(part, AIToolCallPart)
+    ]
+    assert sent == ([name] if replayed else [])
+
+
 def _opening(previous: AIContext, later: AIContext, answer: str) -> tuple[Any, Any]:
     """What *later* opens with, and what *previous* sent then its *answer*:
     equal when *later* extends the request a provider caches a prefix of."""

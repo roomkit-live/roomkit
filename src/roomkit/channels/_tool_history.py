@@ -14,7 +14,9 @@ it (RMK-1370): the arguments it wrote (the start row's, never a BEFORE_TOOL_USE
 rewrite, which may hold the very value a hook kept from it), its intent back
 among them while the agent asks for one, and the result it read, whole. Every
 call the turn ended is replayed, whatever its tool or its outcome, but for a
-call cancelled before it answered, whose result no model read; only an
+call cancelled before it answered, whose result no model read, and for a
+refused call under a name vendors do not take, which only a model's invented
+call carries and which would fail every later request; only an
 oversized result's placeholder changes, once the room no longer stores the
 result it points to. Nothing else shortens a round from turn to turn: a
 compaction does, when a provider refuses the context as too long.
@@ -22,6 +24,7 @@ compaction does, when a provider refuses the context as too long.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -292,10 +295,21 @@ def _started(index: int, turn: str | None, start: ToolCallContent) -> _Call:
     return _Call(index, turn, start.tool_id, start.tool_name, dict(start.arguments), start.intent)
 
 
+_SENDABLE_NAME = re.compile(r"[A-Za-z0-9_-]{1,128}")
+"""The tool names OpenAI and Anthropic take in a request's earlier calls."""
+
+
 def _answered(call: _Call) -> bool:
-    """Whether *call* ended with a result the model read: not one cancelled
-    before it answered, whose turn was cut or stopped first."""
-    return call.ended and call.outcome != OutcomeKind.CANCELLED
+    """Whether *call* goes back in a later request: it ended with a result the
+    model read, not cancelled before it answered, whose turn was cut or stopped
+    first, and not refused under a name vendors do not take. Only a call the
+    model invented carries such a name (a declared tool's is checked before the
+    request), and sent back it would make every later request of the room a 400.
+    """
+    if not call.ended or call.outcome == OutcomeKind.CANCELLED:
+        return False
+    refused = call.outcome is None or call.outcome == OutcomeKind.REFUSED
+    return not refused or _SENDABLE_NAME.fullmatch(call.name) is not None
 
 
 def _result_text(result: Any) -> str:
