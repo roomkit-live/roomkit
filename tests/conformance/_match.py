@@ -99,7 +99,7 @@ def _same_scalar(expected: Any, actual: Any) -> bool:
 def _object(expected: dict[str, Any], actual: Any, path: str, names: Names) -> list[str]:
     if "$unordered" in expected:
         return _unordered(expected["$unordered"], actual, path, names)
-    if "$as" in expected:
+    if isinstance(expected.get("$as"), str):
         return names.match(expected["$as"], actual, path)
     if expected.get("$absent") is True:
         return (
