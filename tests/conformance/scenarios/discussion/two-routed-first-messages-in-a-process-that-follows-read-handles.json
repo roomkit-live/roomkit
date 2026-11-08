@@ -1,0 +1,143 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/two-routed-first-messages-in-a-process-that-follows-read-handles",
+  "title": "Two messages a process that follows the discussion takes at once, neither naming its room, both read the agents' handles: each naming one agent is addressed to it alone",
+  "rules": [
+    "§19.7.5 rule 16",
+    "§19.7.5 rule 4",
+    "§10.4"
+  ],
+  "notes": "From the full review of RMK-1476: a run that took its hooks before another run of the same process joined the discussion reads the room's hooks once its own context read finds the discussion held. Python joins in _build_context and reads its hook engine at each firing (asyncio.gather of the two calls: both addressed to Counsel). everyone names Jev, so a message read without the handles would ask Jev. Counsel answers once or twice, as the driver's look meets the two asks merged or apart: only the addresses and Jev's silence are asserted.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent:3f2a1b2c-0d4e-4f5a-8b6c-7d8e9f0a1b2c",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        },
+        "agent": {
+          "name": "Jev",
+          "description": "reads the contract"
+        }
+      },
+      {
+        "id": "agent:9b1c2d3e-4f5a-6b7c-8d9e-0f1a2b3c4d5e",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Counsel here"
+            },
+            {
+              "text": "Counsel again"
+            }
+          ]
+        },
+        "agent": {
+          "name": "Counsel",
+          "description": "checks the law"
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "agent:3f2a1b2c-0d4e-4f5a-8b6c-7d8e9f0a1b2c",
+            "agent:9b1c2d3e-4f5a-6b7c-8d9e-0f1a2b3c4d5e"
+          ],
+          "everyone": [
+            "agent:3f2a1b2c-0d4e-4f5a-8b6c-7d8e9f0a1b2c"
+          ]
+        }
+      }
+    ],
+    "processes": [
+      {
+        "id": "p2"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "concurrent": [
+        {
+          "call": "process_inbound",
+          "kit": "p2",
+          "message": {
+            "channel_id": "ops",
+            "sender_id": "oncall",
+            "content": {
+              "type": "text",
+              "body": "@Counsel is clause 4 lawful?"
+            }
+          },
+          "expect": {
+            "result": {
+              "blocked": false,
+              "error": null,
+              "event": {
+                "addressed_to": [
+                  "agent:9b1c2d3e-4f5a-6b7c-8d9e-0f1a2b3c4d5e"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "call": "process_inbound",
+          "kit": "p2",
+          "message": {
+            "channel_id": "ops",
+            "sender_id": "oncall",
+            "content": {
+              "type": "text",
+              "body": "@Counsel and clause 5?"
+            }
+          },
+          "expect": {
+            "result": {
+              "blocked": false,
+              "error": null,
+              "event": {
+                "addressed_to": [
+                  "agent:9b1c2d3e-4f5a-6b7c-8d9e-0f1a2b3c4d5e"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent:3f2a1b2c-0d4e-4f5a-8b6c-7d8e9f0a1b2c": []
+    }
+  }
+}

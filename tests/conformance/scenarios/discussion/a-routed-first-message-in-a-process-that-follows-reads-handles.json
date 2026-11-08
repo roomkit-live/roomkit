@@ -1,0 +1,132 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-routed-first-message-in-a-process-that-follows-reads-handles",
+  "title": "A process that follows the discussion reads the agents' handles for the first message it takes with no room named, which its router sends to the room: a person's message naming one is addressed to that agent alone",
+  "rules": [
+    "§19.7.5 rule 16",
+    "§19.7.5 rule 4",
+    "§10.4"
+  ],
+  "notes": "Python: test_discussion_handles.py test_a_process_that_follows_the_discussion_reads_handles, the message routed instead of naming its room (RMK-1476, HITL c2f6fe5e). p2 never read the room: its default router finds r1 by ops' binding, and the context it builds joins the discussion before the message's BEFORE_BROADCAST hooks run, the names hook among them. everyone names Jev, so a message read without the handles would ask Jev.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent:3f2a1b2c-0d4e-4f5a-8b6c-7d8e9f0a1b2c",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Jev here"
+            }
+          ]
+        },
+        "agent": {
+          "name": "Jev",
+          "description": "reads the contract"
+        }
+      },
+      {
+        "id": "agent:9b1c2d3e-4f5a-6b7c-8d9e-0f1a2b3c4d5e",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Counsel here"
+            }
+          ]
+        },
+        "agent": {
+          "name": "Counsel",
+          "description": "checks the law"
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "agent:3f2a1b2c-0d4e-4f5a-8b6c-7d8e9f0a1b2c",
+            "agent:9b1c2d3e-4f5a-6b7c-8d9e-0f1a2b3c4d5e"
+          ],
+          "everyone": [
+            "agent:3f2a1b2c-0d4e-4f5a-8b6c-7d8e9f0a1b2c"
+          ]
+        }
+      }
+    ],
+    "processes": [
+      {
+        "id": "p2"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@Counsel is clause 4 lawful?"
+        }
+      },
+      "kit": "p2",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "@Counsel is clause 4 lawful?"
+          },
+          "addressed_to": [
+            "agent:9b1c2d3e-4f5a-6b7c-8d9e-0f1a2b3c4d5e"
+          ]
+        },
+        {
+          "source": {
+            "channel_id": "agent:9b1c2d3e-4f5a-6b7c-8d9e-0f1a2b3c4d5e"
+          },
+          "content": {
+            "body": "Counsel here"
+          }
+        }
+      ]
+    }
+  }
+}
