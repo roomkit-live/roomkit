@@ -245,6 +245,36 @@ class TestParseSkillMetadata:
         assert meta.extra_metadata["custom_key"] == "custom_val"
 
     @pytest.mark.parametrize(
+        ("key", "value"),
+        [
+            ("allowed-tools", "Bash(git:*) Read"),
+            ("disable-model-invocation", '"true"'),
+            ("user-invocable", '"false"'),
+            ("context", "fork"),
+            ("agent", "Explore"),
+        ],
+    )
+    def test_an_agent_skills_key_is_kept_as_extra_metadata(
+        self, tmp_path: Path, key: str, value: str
+    ) -> None:
+        """A key of the Agent Skills format that RoomKit does not read, such
+        as Claude Code's ``allowed-tools`` (hyphenated, unlike the
+        ``allowed_tools`` that gates), loads the skill and is kept as written
+        (RFC §24.2)."""
+        skill_dir = tmp_path / "agent-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            f"---\nname: agent-skill\ndescription: Has a foreign key\n{key}: {value}\n---\nBody",
+            encoding="utf-8",
+        )
+        registry = SkillRegistry()
+        assert registry.discover(tmp_path) == 1
+        meta = registry.get_metadata("agent-skill")
+        assert meta is not None
+        assert meta.extra_metadata == {key: value.strip('"')}
+        assert meta.gated_tool_names == []
+
+    @pytest.mark.parametrize(
         ("frontmatter", "reason"),
         [
             ("name: refunds\n---\nBody", "must start with"),
