@@ -6,7 +6,7 @@
     "§19.3.1",
     "§17.2"
   ],
-  "notes": "Python: tests/test_addressing.py::TestRoomResponsePolicy (test_a_room_s_policy_can_be_switched_once_it_has_several_agents, test_setting_the_policy_it_already_has_is_a_no_op, test_setting_the_policy_on_a_missing_room_raises); core/mixins/room_lifecycle.py set_agent_response_policy, which writes the room's agent_response_policy under its lock and returns the room, unchanged when it holds the policy already. The first message asks a1; its answer asks a2, whose answer asks a1 again, which answers nothing more (addressing/an-address-names-the-agents-asked). Under ADDRESSED_ONLY, a1's answer to the second message asks a2 no more: a2, which answers a1 whenever asked, has no second turn.",
+  "notes": "Python: tests/test_addressing.py::TestAgentResponsePolicy (test_the_policy_can_be_switched_on_a_live_room, test_setting_the_policy_it_already_has_is_a_no_op, test_setting_the_policy_on_a_missing_room_raises); core/mixins/room_lifecycle.py set_agent_response_policy, which writes the room's agent_response_policy under its lock and returns the room, unchanged when it holds the policy already. The first message asks a1; its answer asks a2, whose answer asks a1 again, which answers nothing more (addressing/an-address-names-the-agents-asked). Under ADDRESSED_ONLY, a1's answer to the second message asks a2 no more: a2, which answers a1 whenever asked, has no second turn.",
   "setup": {
     "channels": [
       {

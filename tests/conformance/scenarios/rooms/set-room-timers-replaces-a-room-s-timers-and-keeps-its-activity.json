@@ -1,12 +1,12 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "rooms/set-room-timers-replaces-a-room-s-timers-and-keeps-its-activity",
-  "title": "set_room_timers replaces a room's timers: a room with no activity keeps none, its inactivity counting from its creation; one with activity keeps it unless the call names another; a room missing or another organization's is refused",
+  "title": "set_room_timers replaces a room's timers, applying none that fell due: a room with no activity keeps none, its inactivity counting from its creation; one with activity keeps it unless the call names another; a room missing or another organization's is refused",
   "rules": [
     "§5.1",
     "§17.2"
   ],
-  "notes": "Python: tests/test_resilience.py::TestRoomTimers (test_set_room_timers_on_a_room_with_no_activity_records_none, test_set_room_timers_preserves_existing_activity, test_set_room_timers_respects_explicit_activity); tests/test_room_org_scoping.py; core/mixins/room_lifecycle.py set_room_timers, which reads the room with the caller's organization under the room's lock and writes it back with the new timers, last_activity_at the call's when set, else the room's. The instants read @1 (11:00, the seeded activity) and @2 (11:30, the one the call names), the run's earliest.",
+  "notes": "Python: tests/test_resilience.py::TestRoomTimers (test_set_room_timers_on_a_room_with_no_activity_records_none, test_set_room_timers_preserves_existing_activity, test_set_room_timers_respects_explicit_activity); tests/test_room_org_scoping.py; core/mixins/room_lifecycle.py set_room_timers, which reads the room with the caller's organization under the room's lock and writes it back with the new timers, last_activity_at the call's when set, else the room's. The instants read @1 (11:00, the seeded activity) and @2 (11:30, the one the call names), the run's earliest. The room `due`, past its inactivity bound since 11:00, stays active: the call applies no due timer before it writes, as Python's reads the room with get_room.",
   "setup": {
     "channels": [],
     "rooms": [
@@ -17,6 +17,13 @@
       {
         "id": "live",
         "timers": {
+          "last_activity_at": "2026-01-01T11:00:00Z"
+        }
+      },
+      {
+        "id": "due",
+        "timers": {
+          "inactive_after_seconds": 60,
           "last_activity_at": "2026-01-01T11:00:00Z"
         }
       }
@@ -76,6 +83,23 @@
     },
     {
       "call": "set_room_timers",
+      "room_id": "due",
+      "timers": {
+        "closed_after_seconds": 7200
+      },
+      "expect": {
+        "result": {
+          "status": "active",
+          "timers": {
+            "inactive_after_seconds": null,
+            "closed_after_seconds": 7200,
+            "last_activity_at": "@1"
+          }
+        }
+      }
+    },
+    {
+      "call": "set_room_timers",
       "room_id": "fresh",
       "timers": {
         "inactive_after_seconds": 60
@@ -111,6 +135,9 @@
           "closed_after_seconds": null,
           "last_activity_at": "@2"
         }
+      },
+      "due": {
+        "status": "active"
       }
     }
   }
