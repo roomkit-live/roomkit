@@ -60,6 +60,7 @@ TASK_ARGUMENTS: dict[str, set[str]] = {
         "brief",
         "conversation",
         "hand_back",
+        "max_result_chars",
         "require_structured_result",
         "max_result_retries",
     },

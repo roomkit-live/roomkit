@@ -24,7 +24,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("roomkit.tasks")
 
-#: The share of one worker's output a hand-back carries.
+#: The share of one worker's output a hand-back carries, unless the delegation
+#: says otherwise (``max_result_chars``).
 MAX_RESULT_CHARS = 4000
 
 _NOT_DELIVERED = ("blocked", "unavailable", "failed")
@@ -53,11 +54,17 @@ back itself (a strategy's background run waits for it): the task runner
 delivers it to no one."""
 
 
-def bounded(output: str) -> str:
-    """*output*, cut to the share a hand-back carries."""
-    if len(output) <= MAX_RESULT_CHARS:
+def bounded(output: str, limit: int = MAX_RESULT_CHARS) -> str:
+    """*output*, cut to the *limit* characters a hand-back carries."""
+    if len(output) <= limit:
         return output
-    return output[:MAX_RESULT_CHARS] + "\n[...truncated]"
+    return output[:limit] + "\n[...truncated]"
+
+
+def check_max_result_chars(limit: int) -> None:
+    """Refuse a *limit* on a hand-back that is no count of characters."""
+    if type(limit) is not int or limit < 1:
+        raise ValueError("max_result_chars must be an integer, 1 or more")
 
 
 def result_text(header: str, body: str) -> str:

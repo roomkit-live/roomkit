@@ -1840,7 +1840,7 @@
     "connect_websocket": ["async def", "channel_id", "connection_id", "send_fn", "*", "room_id", "stream_send_fn=None", "organization_id=None"],
     "create_room": ["async def", "room_id=None", "metadata=None", "recorders=None", "orchestration=<object object>", "organization_id=None", "timers=None", "agent_response_policy=None"],
     "declare_host_verb": ["def", "name", "verb", "*", "between_turns=False"],
-    "delegate": ["async def", "room_id", "agent_id", "task", "*", "wait=False", "context=None", "share_channels=None", "notify=None", "on_complete=None", "require_structured_result=False", "max_result_retries=3", "result_tool=None", "post_status=True", "brief=None", "conversation=0", "hand_back='relay'", "organization_id=None"],
+    "delegate": ["async def", "room_id", "agent_id", "task", "*", "wait=False", "context=None", "share_channels=None", "notify=None", "on_complete=None", "require_structured_result=False", "max_result_retries=3", "result_tool=None", "post_status=True", "brief=None", "conversation=0", "hand_back='relay'", "max_result_chars=4000", "organization_id=None"],
     "delete_event": ["async def", "room_id", "event_id", "*", "cascade_replies=True", "organization_id=None"],
     "deliver": ["async def", "room_id", "content", "*", "channel_id=None", "strategy=None", "metadata=None", "addressed_to=None", "idempotency_key=None", "session_id=None", "chain_depth=0", "instruction=False", "organization_id=None"],
     "delivery_backend": ["property"],
@@ -2812,7 +2812,7 @@
   },
   "roomkit.core.mixins.DelegationMixin": {
     "cancel_task": ["async def", "task_id", "*", "organization_id=None"],
-    "delegate": ["async def", "room_id", "agent_id", "task", "*", "wait=False", "context=None", "share_channels=None", "notify=None", "on_complete=None", "require_structured_result=False", "max_result_retries=3", "result_tool=None", "post_status=True", "brief=None", "conversation=0", "hand_back='relay'", "organization_id=None"],
+    "delegate": ["async def", "room_id", "agent_id", "task", "*", "wait=False", "context=None", "share_channels=None", "notify=None", "on_complete=None", "require_structured_result=False", "max_result_retries=3", "result_tool=None", "post_status=True", "brief=None", "conversation=0", "hand_back='relay'", "max_result_chars=4000", "organization_id=None"],
     "submit_feedback": ["async def", "room_id", "rating", "*", "event_id=None", "channel_id=None", "comment=''", "dimension='overall'", "metadata=None", "organization_id=None"]
   },
   "roomkit.core.mixins.DeliverMixin": {
@@ -5342,7 +5342,7 @@
     "recent_context": ["def", "room_id", "limit=5"]
   },
   "roomkit.tasks.DelegateHandler": {
-    "__init__": ["def", "kit", "*", "notify=None", "default_share_channels=None", "delivery_strategy=None", "cache=None", "serialize_per_room=False", "max_conversation=0"],
+    "__init__": ["def", "kit", "*", "notify=None", "default_share_channels=None", "delivery_strategy=None", "cache=None", "serialize_per_room=False", "max_conversation=0", "max_result_chars=4000"],
     "handle": ["async def", "room_id", "calling_agent_id", "arguments"]
   },
   "roomkit.tasks.DelegatedTask": {

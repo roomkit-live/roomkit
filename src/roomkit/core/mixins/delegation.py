@@ -48,7 +48,14 @@ from roomkit.models.response_metadata import TurnEntries
 from roomkit.tasks._child_status import record_task_end
 from roomkit.tasks._room_tasks import AGENT_REACH, RoomTaskRecord, TaskCancel, TaskReach
 from roomkit.tasks.brief import conversation_block, worker_description
-from roomkit.tasks.handback import CALLER_HANDS_BACK, bounded, hand_back, result_text
+from roomkit.tasks.handback import (
+    CALLER_HANDS_BACK,
+    MAX_RESULT_CHARS,
+    bounded,
+    check_max_result_chars,
+    hand_back,
+    result_text,
+)
 from roomkit.tasks.models import (
     DelegatedTask,
     DelegatedTaskResult,
@@ -275,13 +282,16 @@ def _hand_back_metadata(result: DelegatedTaskResult, task: str) -> dict[str, Any
 
 
 def _delegation_result_text(
-    result: DelegatedTaskResult, task: str = "", worker: str | None = None
+    result: DelegatedTaskResult,
+    task: str = "",
+    worker: str | None = None,
+    max_result_chars: int = MAX_RESULT_CHARS,
 ) -> str:
     """What the notified agent receives of a finished background delegation: its
     outcome, what was asked (*task*, so a result back after the conversation moved
-    on is said for what was asked), then the worker's output. *worker* names the
-    worker as the room addresses it (a discussion agent's handle); None, its
-    channel id."""
+    on is said for what was asked), then the worker's output, up to
+    *max_result_chars*. *worker* names the worker as the room addresses it (a
+    discussion agent's handle); None, its channel id."""
     # A failed task's error is an exception's message: for the logs and
     # ON_TASK_COMPLETED, never for a model (RFC §9.3).
     outcome = {TaskStatus.COMPLETED: "completed", TaskStatus.CANCELLED: "cancelled"}.get(
@@ -292,7 +302,7 @@ def _delegation_result_text(
     named = identifier(worker or result.agent_id, "worker")
     return result_text(
         f"[Background task from {named} {outcome}.{asked} Share the outcome with the user.]",
-        bounded(task_work(result) or "No output"),
+        bounded(task_work(result) or "No output", max_result_chars),
     )
 
 
@@ -346,6 +356,7 @@ class DelegationMixin(HelpersMixin):
         brief: str | None = None,
         conversation: int = 0,
         hand_back: str = "relay",
+        max_result_chars: int = MAX_RESULT_CHARS,
         organization_id: str | None = None,
     ) -> DelegatedTask:
         """Delegate a task to an agent in a child room.
@@ -397,6 +408,9 @@ class DelegationMixin(HelpersMixin):
                 agent, without a turn of its model. ``"post"`` needs *notify*
                 (or *agent_id*) to name an intelligence channel attached to
                 the room, and a background task.
+            max_result_chars: How much of the worker's output a relayed result
+                carries: past it, the output is cut and says so (RFC §23.3
+                step 8). A posted result is not cut.
             organization_id: The organization the caller acts for (RFC
                 §17.2): the parent room is read with it before anything is
                 created or run.
@@ -411,13 +425,15 @@ class DelegationMixin(HelpersMixin):
                 another organization's.
             ChannelNotRegisteredError: If the agent channel isn't registered.
             ValueError: An unknown *hand_back*, a ``"post"`` the notified
-                channel cannot take, or a negative *conversation*.
+                channel cannot take, a negative *conversation*, or a
+                *max_result_chars* below 1 or no integer.
         """
         from roomkit.telemetry.context import get_current_span
         from roomkit.telemetry.noop import NoopTelemetryProvider
 
         # Validate: nothing starts on a closing kit (RFC §19.7.3).
         check_open(self, "delegation")
+        check_max_result_chars(max_result_chars)
         parent_room = await self.get_room(room_id, organization_id=organization_id)
         if agent_id not in self._channels:
             raise ChannelNotRegisteredError(f"Agent channel '{agent_id}' not registered")
@@ -482,7 +498,9 @@ class DelegationMixin(HelpersMixin):
                     result_tool=result_tool,
                 )
             # A task its runner refused never started: the except below ends it.
-            return await self._run_background(handle, context, notify, on_complete, span)
+            return await self._run_background(
+                handle, context, notify, on_complete, span, max_result_chars
+            )
         except BaseException as exc:
             if not started:
                 cut = self._end_cut(handle, exc, context, on_complete, span, start)
@@ -818,6 +836,7 @@ class DelegationMixin(HelpersMixin):
         notify: str | None,
         on_complete: Any | None,
         span: _DelegationSpan,
+        max_result_chars: int,
     ) -> DelegatedTask:
         """Submit the task to the background task runner."""
         notify_channel = notify or handle.agent_id
@@ -846,7 +865,12 @@ class DelegationMixin(HelpersMixin):
                     await self._post_held(result, notify_channel, chain_depth, handle.task)
                 else:
                     await self._hand_back_held(
-                        result, notify_channel, chain_depth, session_id, handle.task
+                        result,
+                        notify_channel,
+                        chain_depth,
+                        session_id,
+                        handle.task,
+                        max_result_chars,
                     )
             if on_complete:
                 await on_complete(result)
@@ -1012,13 +1036,14 @@ class DelegationMixin(HelpersMixin):
         chain_depth: int,
         session_id: str | None,
         task: str = "",
+        max_result_chars: int = MAX_RESULT_CHARS,
     ) -> None:
         """Hand a background delegation's result back in a task the kit holds,
         so its ``close()`` cuts it as it cuts a strategy's hand-back: the turn
         it started is cancelled and the cut logged, and the task's end goes
         on (RFC §23.3 step 8)."""
         delivery = self._deliver_delegation_result(
-            result, notify_channel_id, chain_depth, session_id, task
+            result, notify_channel_id, chain_depth, session_id, task, max_result_chars
         )
         if await await_interruptible(hold_task(self, delivery)):
             _tasks_logger.info(
@@ -1057,6 +1082,7 @@ class DelegationMixin(HelpersMixin):
         chain_depth: int,
         session_id: str | None = None,
         task: str = "",
+        max_result_chars: int = MAX_RESULT_CHARS,
     ) -> None:
         """Hand a background delegation's result back to its room, at *chain_depth*.
 
@@ -1078,7 +1104,7 @@ class DelegationMixin(HelpersMixin):
                 self,  # ty: ignore[invalid-argument-type]
                 result.parent_room_id,
                 notify_channel_id,
-                _delegation_result_text(result, task, worker),
+                _delegation_result_text(result, task, worker, max_result_chars),
                 chain_depth,
                 session_id=session_id,
                 metadata=_hand_back_metadata(result, task),

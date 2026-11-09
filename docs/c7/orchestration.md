@@ -725,6 +725,8 @@ told instead, when it says more; `conversation=N` hands the worker the room's
 last N messages the notified channel may read, quoted as data;
 `hand_back="post"` publishes the result as the notified agent's message,
 with no turn of its model, instead of relaying it (`"relay"`, the default).
+`max_result_chars=` (4,000 by default) is how much of the worker's output a
+relayed result carries: past it, the output is cut and says so.
 `context=` is host metadata, the child room's `task_context`: no model reads it,
 so a requester's email stays away from the vendor; on a `delegate_task` call below,
 a model wrote it, so a hook reading it reads a model's text.
@@ -738,6 +740,8 @@ built with `build_delegate_tool(targets)` refuses a call naming another worker.
 `max_conversation=N` (0 by default: no such argument) gives the tool a
 `conversation` argument, held to N whatever the call asks, that hands over the
 room's last messages both the calling agent and the notified channel may read.
+`max_result_chars=N` (4,000 by default) is how much of a worker's output each of
+its results carries back to the agent.
 An intelligence channel shared into the child room stops the previous tasks and
 the conversation, not `context`.
 `DelegateHandler(cache=CompletedTaskCache())` answers a repeat, the same agent's

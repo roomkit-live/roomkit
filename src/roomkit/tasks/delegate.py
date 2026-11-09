@@ -21,6 +21,7 @@ from roomkit.orchestration._call_room import RoomToolServe, in_call_room
 from roomkit.providers.ai.base import AITool
 from roomkit.tasks.brief import context_block, previous_tasks_block, task_brief
 from roomkit.tasks.cache import CompletedTaskCache
+from roomkit.tasks.handback import MAX_RESULT_CHARS, check_max_result_chars
 from roomkit.tasks.models import DelegatedTask, TaskStatus
 
 if TYPE_CHECKING:
@@ -218,9 +219,14 @@ class DelegateHandler:
             it whatever it asks. 0, the default: none, and no such argument: the
             worker may be another vendor's, and the model chooses it, so the
             host opens this.
+        max_result_chars: How much of the worker's output its result carries
+            back to the agent: past it, the output is cut and says so (RFC
+            §23.3 step 8).
 
     Raises:
-        ValueError: A *max_conversation* that is no count: negative or no integer.
+        ValueError: A *max_conversation* that is no count: negative or no
+            integer. A *max_result_chars* that is no count: below 1 or no
+            integer.
     """
 
     def __init__(
@@ -233,9 +239,11 @@ class DelegateHandler:
         cache: CompletedTaskCache | None = None,
         serialize_per_room: bool = False,
         max_conversation: int = 0,
+        max_result_chars: int = MAX_RESULT_CHARS,
     ) -> None:
         if type(max_conversation) is not int or max_conversation < 0:
             raise ValueError("max_conversation must be an integer, 0 or more")
+        check_max_result_chars(max_result_chars)
         self._kit = kit
         self._notify = notify
         self._default_share_channels = default_share_channels or []
@@ -245,6 +253,7 @@ class DelegateHandler:
         self._cache = cache
         self._serialize_per_room = serialize_per_room
         self._max_conversation = max_conversation
+        self._max_result_chars = max_result_chars
         # A room's lock, and how many delegations hold it or wait for it: the
         # last one out drops it, so a room no longer delegating keeps nothing.
         self._room_locks: dict[str, asyncio.Lock] = {}
@@ -366,6 +375,7 @@ class DelegateHandler:
             brief=task_brief(
                 task_text, context_block(passed), previous_tasks_block(recent), conversation
             ),
+            max_result_chars=self._max_result_chars,
         )
 
         result = {

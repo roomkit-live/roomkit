@@ -26,7 +26,13 @@ if TYPE_CHECKING:
 async def _delegate_handler(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None:
     options = {
         name: spec[name]
-        for name in ("notify", "default_share_channels", "serialize_per_room", "max_conversation")
+        for name in (
+            "notify",
+            "default_share_channels",
+            "serialize_per_room",
+            "max_conversation",
+            "max_result_chars",
+        )
         if name in spec
     }
     cache = CompletedTaskCache() if spec.get("cache") else None
@@ -63,6 +69,7 @@ DELEGATE_TOOL_ARGUMENTS: dict[str, set[str]] = {
         "cache",
         "serialize_per_room",
         "max_conversation",
+        "max_result_chars",
     },
     "setup_delegation": {"agent_id", "handler", "targets"},
     "delegate.handle": {"handler", "room_id", "calling_agent_id", "arguments"},
