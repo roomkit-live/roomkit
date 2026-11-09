@@ -7,7 +7,7 @@
     "§8.1",
     "§14.3"
   ],
-  "notes": "Python: tests/test_store_sqlite.py::TestSQLiteStore::test_two_connections_allocate_one_monotonic_sequence (shared scenario supplements the two-connection test). RMK-1609.",
+  "notes": "Python: tests/test_store_sqlite.py::TestPersistence::test_two_connections_allocate_one_monotonic_sequence (shared scenario supplements the two-connection test). RMK-1609.",
   "steps": [
     {
       "call": "store.create_room",

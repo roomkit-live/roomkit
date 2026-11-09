@@ -114,7 +114,8 @@
             "ai_usage": {
               "output_tokens": 5
             }
-          }
+          },
+          "status": "delivered"
         },
         {
           "index": 2,

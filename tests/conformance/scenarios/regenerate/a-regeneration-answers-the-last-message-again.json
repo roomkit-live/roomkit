@@ -101,7 +101,8 @@
           "content": {
             "body": "First answer"
           },
-          "index": 1
+          "index": 1,
+          "status": "delivered"
         },
         {
           "content": {
@@ -110,7 +111,8 @@
           "source": {
             "channel_id": "agent"
           },
-          "index": 2
+          "index": 2,
+          "status": "delivered"
         }
       ]
     },
