@@ -1,0 +1,125 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/an-injection-is-transcoded-for-its-target",
+  "title": "An injected rich event is retained as rich content and delivered as plain text to a text-only transport",
+  "rules": [
+    "§9.4 Injected events"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "capabilities": {
+          "rich_text": false
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "notify",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "result": {
+              "action": "allow",
+              "injected_events": [
+                {
+                  "event": {
+                    "content": {
+                      "type": "rich",
+                      "body": "**ready**",
+                      "plain_text": "ready"
+                    }
+                  },
+                  "target_channel_ids": [
+                    "ws"
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          },
+          "index": 0
+        },
+        {
+          "content": {
+            "type": "rich",
+            "body": "**ready**",
+            "plain_text": "ready"
+          },
+          "index": 1,
+          "status": "delivered",
+          "visibility": "ws",
+          "chain_depth": 0
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [],
+        "ws": [
+          {
+            "content": {
+              "type": "text",
+              "body": "hello"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "ready"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

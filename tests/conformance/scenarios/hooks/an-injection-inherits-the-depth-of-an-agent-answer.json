@@ -1,0 +1,161 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/an-injection-inherits-the-depth-of-an-agent-answer",
+  "title": "An injection caused by an agent answer inherits that answer depth",
+  "rules": [
+    "§9.4 Injected events"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "AI reply"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "notify",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "AI reply"
+            },
+            "result": {
+              "action": "allow",
+              "injected_events": [
+                {
+                  "event": {
+                    "content": {
+                      "type": "text",
+                      "body": "notice"
+                    }
+                  },
+                  "target_channel_ids": [
+                    "ws"
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          },
+          "index": 0,
+          "chain_depth": 0
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "AI reply"
+          },
+          "index": 1,
+          "chain_depth": 1
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "notice"
+          },
+          "index": 2,
+          "chain_depth": 1,
+          "visibility": "ws"
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [
+          {
+            "content": {
+              "type": "text",
+              "body": "AI reply"
+            }
+          }
+        ],
+        "ws": [
+          {
+            "content": {
+              "type": "text",
+              "body": "hello"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "AI reply"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "notice"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

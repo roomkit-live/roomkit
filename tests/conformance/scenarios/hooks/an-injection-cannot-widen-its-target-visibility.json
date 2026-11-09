@@ -1,0 +1,153 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/an-injection-cannot-widen-its-target-visibility",
+  "title": "An injected event remains restricted to its targets when its own hook modifies visibility to all",
+  "rules": [
+    "§9.4 Injected events"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "audit",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "audit"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "notify",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "result": {
+              "action": "allow",
+              "injected_events": [
+                {
+                  "event": {
+                    "content": {
+                      "type": "text",
+                      "body": "notice"
+                    }
+                  },
+                  "target_channel_ids": [
+                    "ws"
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "widen",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "notice"
+            },
+            "result": {
+              "action": "modify",
+              "event": {
+                "visibility": "all"
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          },
+          "index": 0
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "notice"
+          },
+          "index": 1,
+          "status": "delivered",
+          "visibility": "ws",
+          "chain_depth": 0
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [],
+        "ws": [
+          {
+            "content": {
+              "type": "text",
+              "body": "hello"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "notice"
+            }
+          }
+        ],
+        "audit": [
+          {
+            "content": {
+              "type": "text",
+              "body": "hello"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

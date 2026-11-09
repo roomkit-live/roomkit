@@ -1,0 +1,144 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/an-injection-never-delivers-to-its-own-source",
+  "title": "An injection excludes its own source even when the source is among its targets",
+  "rules": [
+    "§9.4 Injected events"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "audit",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "audit"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "notify",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "result": {
+              "action": "allow",
+              "injected_events": [
+                {
+                  "event": {
+                    "content": {
+                      "type": "text",
+                      "body": "notice"
+                    },
+                    "source": {
+                      "channel_id": "ws",
+                      "channel_type": "websocket"
+                    }
+                  },
+                  "target_channel_ids": [
+                    "ws",
+                    "audit"
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          },
+          "index": 0
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "notice"
+          },
+          "index": 1,
+          "status": "delivered",
+          "visibility": "audit,ws",
+          "chain_depth": 0,
+          "source": {
+            "channel_id": "ws"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [],
+        "ws": [
+          {
+            "content": {
+              "type": "text",
+              "body": "hello"
+            }
+          }
+        ],
+        "audit": [
+          {
+            "content": {
+              "type": "text",
+              "body": "hello"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "notice"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

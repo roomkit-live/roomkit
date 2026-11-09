@@ -81,6 +81,11 @@
             }
           }
         ]
+      },
+      {
+        "name": "seen",
+        "trigger": "after_broadcast",
+        "execution": "async"
       }
     ]
   },
@@ -141,6 +146,26 @@
       "room-1": {
         "ai": []
       }
+    },
+    "hooks": {
+      "seen": [
+        {
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "Hello"
+            }
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "notice"
+            }
+          }
+        }
+      ]
     }
   }
 }

@@ -178,7 +178,8 @@
           },
           "source": {
             "channel_id": "system"
-          }
+          },
+          "visibility": "sms"
         },
         {
           "index": 1,
@@ -187,7 +188,8 @@
           },
           "source": {
             "channel_id": "system"
-          }
+          },
+          "visibility": "sms"
         },
         {
           "index": 2,
@@ -196,7 +198,8 @@
           },
           "source": {
             "channel_id": "system"
-          }
+          },
+          "visibility": "sms"
         }
       ]
     },

@@ -1,0 +1,153 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/an-injection-from-a-direct-injection-waits-for-the-outer-pass",
+  "title": "A direct injection commits inside the held section; its hook injection waits until the outer cause commits",
+  "rules": [
+    "§9.4 Injected events"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "direct",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "aside"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "notify",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "aside"
+            },
+            "result": {
+              "action": "allow",
+              "injected_events": [
+                {
+                  "event": {
+                    "content": {
+                      "type": "text",
+                      "body": "notice"
+                    }
+                  },
+                  "target_channel_ids": [
+                    "ws"
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "aside"
+          },
+          "index": 0
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          },
+          "index": 1
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "notice"
+          },
+          "index": 2,
+          "visibility": "ws"
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [],
+        "ws": [
+          {
+            "content": {
+              "type": "text",
+              "body": "aside"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "hello"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "notice"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

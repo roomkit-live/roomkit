@@ -1,0 +1,275 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/injections-use-the-reentry-budget-without-increasing-chain-depth",
+  "title": "Recursive hook injections retain chain depth but stop at the reentry loop cap",
+  "rules": [
+    "§9.4 Injected events"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "notify",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "repeat": true,
+            "result": {
+              "action": "allow",
+              "injected_events": [
+                {
+                  "event": {
+                    "content": {
+                      "type": "text",
+                      "body": "notice"
+                    }
+                  },
+                  "target_channel_ids": [
+                    "ws"
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ],
+    "kit": {
+      "max_chain_depth": 1
+    }
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          },
+          "index": 0
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "notice"
+          },
+          "index": 1,
+          "chain_depth": 0,
+          "status": "delivered",
+          "blocked_by": null
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "notice"
+          },
+          "index": 2,
+          "chain_depth": 0,
+          "status": "delivered",
+          "blocked_by": null
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "notice"
+          },
+          "index": 3,
+          "chain_depth": 0,
+          "status": "delivered",
+          "blocked_by": null
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "notice"
+          },
+          "index": 4,
+          "chain_depth": 0,
+          "status": "delivered",
+          "blocked_by": null
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "notice"
+          },
+          "index": 5,
+          "chain_depth": 0,
+          "status": "delivered",
+          "blocked_by": null
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "notice"
+          },
+          "index": 6,
+          "chain_depth": 0,
+          "status": "delivered",
+          "blocked_by": null
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "notice"
+          },
+          "index": 7,
+          "chain_depth": 0,
+          "status": "delivered",
+          "blocked_by": null
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "notice"
+          },
+          "index": 8,
+          "chain_depth": 0,
+          "status": "delivered",
+          "blocked_by": null
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "notice"
+          },
+          "index": 9,
+          "chain_depth": 0,
+          "status": "delivered",
+          "blocked_by": null
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "notice"
+          },
+          "index": 10,
+          "chain_depth": 0,
+          "status": "delivered",
+          "blocked_by": null
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "notice"
+          },
+          "index": 11,
+          "chain_depth": 0,
+          "status": "blocked",
+          "blocked_by": "reentry_loop_cap"
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [],
+        "ws": [
+          {
+            "content": {
+              "type": "text",
+              "body": "hello"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "notice"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "notice"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "notice"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "notice"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "notice"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "notice"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "notice"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "notice"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "notice"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "notice"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

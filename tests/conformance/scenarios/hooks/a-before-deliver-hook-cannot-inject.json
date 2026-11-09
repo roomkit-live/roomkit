@@ -1,0 +1,98 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/a-before-deliver-hook-cannot-inject",
+  "title": "An injection returned by BEFORE_DELIVER is dropped and creates no timeline event or delivery",
+  "rules": [
+    "§9.4 Injected events"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "notify",
+        "trigger": "before_deliver",
+        "reactions": [
+          {
+            "result": {
+              "action": "allow",
+              "injected_events": [
+                {
+                  "event": {
+                    "content": {
+                      "type": "text",
+                      "body": "notice"
+                    }
+                  },
+                  "target_channel_ids": [
+                    "ws"
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "content": "hello",
+      "channel_id": "sms"
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "type": "text",
+            "body": "hello"
+          },
+          "source": {
+            "channel_id": "sms"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [],
+        "ws": [
+          {
+            "content": {
+              "type": "text",
+              "body": "hello"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

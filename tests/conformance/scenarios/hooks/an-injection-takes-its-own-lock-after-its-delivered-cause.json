@@ -1,0 +1,163 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/an-injection-takes-its-own-lock-after-its-delivered-cause",
+  "title": "A queued message commits between the cause and its hook injection, after the cause releases the room lock",
+  "rules": [
+    "§9.4 Injected events"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "notify",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "result": {
+              "action": "allow",
+              "injected_events": [
+                {
+                  "event": {
+                    "content": {
+                      "type": "text",
+                      "body": "notice"
+                    }
+                  },
+                  "target_channel_ids": [
+                    "ws"
+                  ]
+                }
+              ]
+            },
+            "gate": "cause"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "background": true,
+      "as": "cause"
+    },
+    {
+      "wait_for": "cause"
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "content": {
+        "type": "text",
+        "body": "later"
+      },
+      "background": true,
+      "as": "later"
+    },
+    {
+      "wait_for_lock": "room-1",
+      "waiters": 1
+    },
+    {
+      "open": "cause"
+    },
+    {
+      "await": "cause"
+    },
+    {
+      "await": "later"
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          },
+          "index": 0,
+          "status": "delivered",
+          "blocked_by": null
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "later"
+          },
+          "index": 1
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "notice"
+          },
+          "index": 2,
+          "visibility": "ws"
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [],
+        "ws": [
+          {
+            "content": {
+              "type": "text",
+              "body": "hello"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "later"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "notice"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -56,6 +56,11 @@
             }
           }
         ]
+      },
+      {
+        "name": "seen",
+        "trigger": "after_broadcast",
+        "execution": "async"
       }
     ]
   },
@@ -69,6 +74,18 @@
         "content": {
           "type": "text",
           "body": "Hello"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u",
+        "content": {
+          "type": "text",
+          "body": "later"
         }
       }
     }
@@ -88,6 +105,13 @@
             "body": "audit note"
           },
           "visibility": "none"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "later"
+          },
+          "index": 2
         }
       ]
     },
@@ -99,10 +123,44 @@
               "type": "text",
               "body": "Hello"
             }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "later"
+            }
           }
         ],
         "sms": []
       }
+    },
+    "hooks": {
+      "seen": [
+        {
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "Hello"
+            }
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "audit note"
+            }
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "later"
+            }
+          }
+        }
+      ]
     }
   }
 }
