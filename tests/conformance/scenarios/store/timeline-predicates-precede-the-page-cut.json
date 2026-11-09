@@ -301,6 +301,40 @@
           }
         ]
       }
+    },
+    {
+      "call": "store.get_timeline",
+      "room_id": "room-1",
+      "event_filter": {
+        "visibility": "transport"
+      },
+      "limit": 1,
+      "newest_first": false,
+      "expect": {
+        "result": [
+          {
+            "index": 2,
+            "visibility": "transport"
+          }
+        ]
+      }
+    },
+    {
+      "call": "store.get_timeline",
+      "room_id": "room-1",
+      "event_filter": {
+        "visibility": "transport"
+      },
+      "limit": 1,
+      "newest_first": true,
+      "expect": {
+        "result": [
+          {
+            "index": 2,
+            "visibility": "transport"
+          }
+        ]
+      }
     }
   ]
 }
