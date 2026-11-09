@@ -460,12 +460,13 @@ class Harness:
         )
 
     async def _set_room_status(self, room: Mapping[str, Any]) -> None:
-        if room.get("status") == "paused":
-            await self.kit.pause_room(room["id"])
-        if room.get("status") in ("closed", "archived"):
-            await self.kit.close_room(room["id"])
-        if room.get("status") == "archived":
-            await self.kit.archive_room(room["id"])
+        transitions = {
+            "paused": (self.kit.pause_room,),
+            "closed": (self.kit.close_room,),
+            "archived": (self.kit.close_room, self.kit.archive_room),
+        }
+        for transition in transitions.get(room.get("status", "active"), ()):
+            await transition(room["id"])
 
     async def _setup(self) -> None:
         setup = self.scenario.get("setup", {})
