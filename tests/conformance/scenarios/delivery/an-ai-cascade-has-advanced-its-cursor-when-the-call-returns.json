@@ -1,0 +1,126 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/an-ai-cascade-has-advanced-its-cursor-when-the-call-returns",
+  "title": "An inbound call returns its delivered agent response with the room cursor caught up",
+  "rules": [
+    "§10.1 step 18",
+    "§10.2",
+    "§13.5 Delivery lanes across processes",
+    "§5.1"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Hello back"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "cancellation_reason": null,
+          "event": {
+            "index": 0
+          },
+          "response_events": [
+            {
+              "index": 1,
+              "source": {
+                "channel_id": "agent"
+              },
+              "content": {
+                "body": "Hello back"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "get_room",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "event_count": 2,
+          "latest_index": 1,
+          "delivered_index": 1
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "source": {
+            "channel_id": "sms"
+          },
+          "content": {
+            "body": "Hello"
+          }
+        },
+        {
+          "index": 1,
+          "source": {
+            "channel_id": "agent"
+          },
+          "content": {
+            "body": "Hello back"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [
+          {
+            "index": 1,
+            "content": {
+              "body": "Hello back"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "notes": "Python: tests/test_lanes_multiworker.py::test_ai_chain_completes_before_return_and_cursor_catches_up. The room read is the next step after process_inbound, with no explicit idle wait. Native tests also check the cursor directly in the caller before the harness can schedule another task."
+}
