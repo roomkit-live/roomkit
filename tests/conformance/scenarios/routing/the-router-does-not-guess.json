@@ -12,6 +12,11 @@
         "id": "sms",
         "type": "sms",
         "category": "transport"
+      },
+      {
+        "id": "sink",
+        "type": "sms",
+        "category": "transport"
       }
     ],
     "rooms": [
@@ -20,6 +25,9 @@
         "bindings": [
           {
             "channel_id": "sms"
+          },
+          {
+            "channel_id": "sink"
           }
         ]
       },
@@ -28,12 +36,24 @@
         "bindings": [
           {
             "channel_id": "sms"
+          },
+          {
+            "channel_id": "sink"
           }
         ]
       }
     ]
   },
   "steps": [
+    {
+      "call": "default_router.route",
+      "channel_id": "sms",
+      "channel_type": "sms",
+      "participant_id": "+15551234567",
+      "expect": {
+        "result": null
+      }
+    },
     {
       "call": "process_inbound",
       "message": {
@@ -65,6 +85,36 @@
           }
         }
       ]
+    },
+    "deliveries": {
+      "room-a": {
+        "sink": []
+      },
+      "room-b": {
+        "sink": []
+      }
+    },
+    "bindings": {
+      "room-a": {
+        "sms": {
+          "participant_id": null
+        }
+      },
+      "room-b": {
+        "sms": {
+          "participant_id": null
+        }
+      }
+    },
+    "rooms": {
+      "$created": {
+        "$unordered": [
+          {
+            "organization_id": null,
+            "event_count": 1
+          }
+        ]
+      }
     }
   }
 }

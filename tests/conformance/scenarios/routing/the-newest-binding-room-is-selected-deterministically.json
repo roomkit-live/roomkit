@@ -1,0 +1,216 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/the-newest-binding-room-is-selected-deterministically",
+  "title": "The newest binding room wins across address and identity, paused and active, with greatest id breaking a timestamp tie",
+  "rules": [
+    "§10.1 step 2",
+    "§10.4",
+    "§17.2"
+  ],
+  "notes": "Python: tests/test_shared_channel_routing.py::TestEitherNameFindsTheNewestRoom; TestAPausedConversation::test_the_newest_room_wins_whatever_its_status; tests/test_inbound_routing_ambiguity.py::TestDeterminism. Explicit timestamps separate creation age from insertion order. Closed, archived and foreign rooms are newer decoys. Participant status does not change whose conversation it is (RFC §10.4 step 1).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      }
+    ],
+    "identities": [
+      {
+        "id": "id-alice",
+        "organization_id": "acme",
+        "channel_addresses": {
+          "sms": [
+            "alice"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-a",
+        "created_at": "2026-01-01T00:00:02Z",
+        "status": "paused",
+        "organization_id": "acme"
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-a",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "participant_id": "id-alice"
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-B",
+        "created_at": "2026-01-01T00:00:02Z",
+        "status": "active",
+        "organization_id": "acme"
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-B",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "participant_id": "alice"
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-z",
+        "created_at": "2026-01-01T00:00:01Z",
+        "status": "active",
+        "organization_id": "acme"
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-z",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "participant_id": "alice"
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "closed",
+        "created_at": "2026-01-01T00:00:04Z",
+        "status": "closed",
+        "organization_id": "acme"
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "closed",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "participant_id": "alice"
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "archived",
+        "created_at": "2026-01-01T00:00:05Z",
+        "status": "archived",
+        "organization_id": "acme"
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "archived",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "participant_id": "alice"
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "foreign",
+        "created_at": "2026-01-01T00:00:06Z",
+        "status": "active",
+        "organization_id": "globex"
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "foreign",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "participant_id": "alice"
+      }
+    },
+    {
+      "call": "default_router.route",
+      "channel_id": "sms",
+      "channel_type": "sms",
+      "participant_id": "alice",
+      "identity_id": "id-alice",
+      "organization_id": "acme",
+      "expect": {
+        "result": "room-a"
+      }
+    },
+    {
+      "call": "default_router.route",
+      "channel_id": "sms",
+      "channel_type": "sms",
+      "participant_id": "alice",
+      "identity_id": "id-alice",
+      "organization_id": "acme",
+      "expect": {
+        "result": "room-a"
+      }
+    },
+    {
+      "call": "default_router.route",
+      "channel_id": "sms",
+      "channel_type": "sms",
+      "participant_id": "alice",
+      "identity_id": "id-alice",
+      "organization_id": "acme",
+      "expect": {
+        "result": "room-a"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "room-a"
+          }
+        }
+      },
+      "organization_id": "acme"
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "room-a": {
+        "status": "active",
+        "event_count": 1
+      }
+    },
+    "timeline": {
+      "room-B": [],
+      "room-z": [],
+      "closed": [],
+      "archived": [],
+      "foreign": [],
+      "room-a": [
+        {
+          "content": {
+            "body": "hello"
+          }
+        }
+      ]
+    }
+  }
+}

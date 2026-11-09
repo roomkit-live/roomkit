@@ -1,0 +1,84 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-custom-router-receives-the-chat-address",
+  "title": "A custom router receives the conversation address, not the author, and the complete metadata",
+  "rules": [
+    "§10.1 step 2",
+    "§10.4",
+    "§17.2"
+  ],
+  "notes": "Complements routing/a-message-is-routed-by-the-channel-s-conversation: observes the custom strategy input itself, while the stored event still names its author.",
+  "setup": {
+    "kit": {
+      "router": {
+        "room_id": null
+      }
+    },
+    "channels": [
+      {
+        "id": "chat",
+        "type": "websocket",
+        "category": "transport",
+        "addresses": {
+          "conversation_key": "chat_id"
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "chat",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        },
+        "metadata": {
+          "chat_id": "team",
+          "ticket": "case-17"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "router_calls": [
+      {
+        "channel_id": "chat",
+        "channel_type": "websocket",
+        "participant_id": "team",
+        "channel_data": {
+          "chat_id": "team",
+          "ticket": "case-17"
+        },
+        "organization_id": null,
+        "identity_id": null
+      }
+    ],
+    "bindings": {
+      "$r1": {
+        "chat": {
+          "participant_id": "team"
+        }
+      }
+    },
+    "timeline": {
+      "$r1": [
+        {
+          "source": {
+            "participant_id": "alice"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,126 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/an-explicit-room-bypasses-the-custom-router",
+  "title": "An explicit room bypasses the router, attaches the channel at its defaults and stores and delivers only there",
+  "rules": [
+    "§10.1 step 2",
+    "§10.4",
+    "§17.2"
+  ],
+  "notes": "Python: tests/test_inbound_routing.py::TestInboundRoutingIntegration::test_custom_router_used; tests/test_shared_channel_routing.py::TestWhatTheBindingRetains::test_a_message_routed_by_room_id_retains_no_one; tests/test_room_org_scoping.py::TestScopedInbound::test_a_matching_organization_still_auto_attaches_the_channel. The explicit room is deliberately different from the custom answer.",
+  "setup": {
+    "kit": {
+      "router": {
+        "room_id": "other"
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sink",
+        "type": "sms",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "chosen",
+        "organization_id": "acme",
+        "bindings": [
+          {
+            "channel_id": "sink"
+          }
+        ]
+      },
+      {
+        "id": "other",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "sink"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "chosen"
+          }
+        }
+      },
+      "room_id": "chosen",
+      "organization_id": "acme"
+    }
+  ],
+  "expect": {
+    "router_calls": [],
+    "rooms": {
+      "$created": {
+        "$unordered": []
+      },
+      "chosen": {
+        "event_count": 1,
+        "latest_index": 0
+      }
+    },
+    "bindings": {
+      "chosen": {
+        "sms": {
+          "participant_id": null,
+          "access": "read_write",
+          "muted": false,
+          "visibility": "all"
+        }
+      },
+      "other": {
+        "sms": {
+          "participant_id": null
+        }
+      }
+    },
+    "timeline": {
+      "chosen": [
+        {
+          "content": {
+            "body": "hello"
+          }
+        }
+      ],
+      "other": []
+    },
+    "deliveries": {
+      "chosen": {
+        "sink": [
+          {
+            "content": {
+              "body": "hello"
+            }
+          }
+        ]
+      },
+      "other": {
+        "sink": []
+      }
+    }
+  }
+}

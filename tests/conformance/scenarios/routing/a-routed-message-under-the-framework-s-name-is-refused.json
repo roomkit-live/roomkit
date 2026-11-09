@@ -89,6 +89,7 @@
     },
     "hooks": {
       "created": []
-    }
+    },
+    "router_calls": []
   }
 }

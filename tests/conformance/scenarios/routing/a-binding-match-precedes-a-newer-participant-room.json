@@ -1,0 +1,109 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-binding-match-precedes-a-newer-participant-room",
+  "title": "A binding match wins before the participant lookup even when that participant room is newer",
+  "rules": [
+    "§10.1 step 2",
+    "§10.4",
+    "§17.2"
+  ],
+  "notes": "Complements tests/test_inbound_routing_ambiguity.py::TestParticipantRuleWins: RFC §10.4 step 1 tries bindings before participants, and status does not exclude a participant record.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "binding-room",
+        "created_at": "2026-01-01T00:00:01Z"
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "binding-room",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "participant_id": "alice"
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "member-room",
+        "created_at": "2026-01-01T00:00:02Z"
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "member-room",
+        "channel_id": "sms",
+        "channel_type": "sms"
+      }
+    },
+    {
+      "call": "store.add_participant",
+      "participant": {
+        "id": "alice",
+        "room_id": "member-room",
+        "channel_id": "sms",
+        "status": "banned"
+      }
+    },
+    {
+      "call": "default_router.route",
+      "channel_id": "sms",
+      "channel_type": "sms",
+      "participant_id": "alice",
+      "expect": {
+        "result": "binding-room"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "binding-room"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "binding-room": [
+        {
+          "content": {
+            "body": "hello"
+          }
+        }
+      ],
+      "member-room": []
+    },
+    "bindings": {
+      "member-room": {
+        "sms": {
+          "participant_id": null
+        }
+      }
+    }
+  }
+}

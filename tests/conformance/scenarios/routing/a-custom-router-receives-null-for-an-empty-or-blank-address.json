@@ -1,0 +1,129 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-custom-router-receives-null-for-an-empty-or-blank-address",
+  "title": "A custom router is told null for empty and blank addresses, and the sender for an ordinary address",
+  "rules": [
+    "§10.1 step 2",
+    "§10.4",
+    "§17.2"
+  ],
+  "notes": "Python: tests/test_shared_channel_routing.py::TestAMessageWithNoAddress::test_a_router_is_told_no_address_as_none. The count is exact and every request has a fresh room.",
+  "setup": {
+    "kit": {
+      "router": {
+        "room_id": null
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "  ",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r2"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "bob",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r3"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "router_calls": [
+      {
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "participant_id": null,
+        "channel_data": {},
+        "organization_id": null,
+        "identity_id": null
+      },
+      {
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "participant_id": null,
+        "channel_data": {},
+        "organization_id": null,
+        "identity_id": null
+      },
+      {
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "participant_id": "bob",
+        "channel_data": {},
+        "organization_id": null,
+        "identity_id": null
+      }
+    ],
+    "bindings": {
+      "$r1": {
+        "sms": {
+          "participant_id": "system"
+        }
+      },
+      "$r2": {
+        "sms": {
+          "participant_id": "system"
+        }
+      },
+      "$r3": {
+        "sms": {
+          "participant_id": "bob"
+        }
+      }
+    }
+  }
+}

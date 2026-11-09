@@ -1,0 +1,136 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-custom-router-receives-the-scoped-identity-and-metadata",
+  "title": "A custom router receives the normalized address, metadata and identity of the caller organization; an unscoped call sees no scoped identity",
+  "rules": [
+    "§10.1 step 2",
+    "§10.4",
+    "§17.2"
+  ],
+  "notes": "Python: tests/test_room_org_scoping.py::TestScopedInbound::test_the_router_is_given_the_organization_and_the_identity. The scripted router returns null deliberately, so every request creates a separate room.",
+  "setup": {
+    "kit": {
+      "router": {
+        "room_id": null
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "addresses": {
+          "normalizes": {
+            "+1 (555) 000-0001": "+15550000001"
+          }
+        }
+      }
+    ],
+    "identities": [
+      {
+        "id": "id-alice",
+        "organization_id": "acme",
+        "channel_addresses": {
+          "sms": [
+            "+15550000001"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "organization_id": "acme",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+1 (555) 000-0001",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        },
+        "metadata": {
+          "ticket": "case-17"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        },
+        "metadata": {
+          "ticket": "case-18"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r2"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "router_calls": [
+      {
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "participant_id": "+15550000001",
+        "channel_data": {
+          "ticket": "case-17"
+        },
+        "organization_id": "acme",
+        "identity_id": "id-alice"
+      },
+      {
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "participant_id": "+15550000001",
+        "channel_data": {
+          "ticket": "case-18"
+        },
+        "organization_id": null,
+        "identity_id": null
+      }
+    ],
+    "rooms": {
+      "$r1": {
+        "organization_id": "acme"
+      },
+      "$r2": {
+        "organization_id": null
+      }
+    },
+    "timeline": {
+      "$r1": [
+        {
+          "content": {
+            "body": "hello"
+          }
+        }
+      ],
+      "$r2": [
+        {
+          "content": {
+            "body": "hello"
+          }
+        }
+      ]
+    }
+  }
+}

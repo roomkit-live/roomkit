@@ -1,0 +1,121 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-hook-refusal-keeps-the-routed-correspondent",
+  "title": "A BEFORE_BROADCAST refusal keeps the sender recorded by routing and keeps a later stranger out",
+  "rules": [
+    "§10.1 step 2",
+    "§10.4",
+    "§17.2"
+  ],
+  "notes": "Python: tests/test_shared_channel_routing.py::TestWhatTheBindingRetains::test_a_refused_first_message_still_routes_its_sender. Routing decides the conversation before the hook decides the event.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sink",
+        "type": "sms",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "sink"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "block",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "result": {
+              "action": "block",
+              "reason": "spam"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "bob",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "spam"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "$r1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "room": {
+        "sms": {
+          "participant_id": "bob"
+        }
+      }
+    },
+    "timeline": {
+      "room": [
+        {
+          "status": "blocked",
+          "source": {
+            "participant_id": "bob"
+          }
+        }
+      ],
+      "$r1": [
+        {
+          "content": {
+            "body": "hello"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room": {
+        "sink": []
+      }
+    }
+  }
+}

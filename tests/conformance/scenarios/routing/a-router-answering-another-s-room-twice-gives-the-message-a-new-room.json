@@ -6,7 +6,7 @@
     "§10.1 step 2",
     "§10.4"
   ],
-  "notes": "Python: tests/test_shared_channel_routing.py::TestTheLockChecksTheRoomAgain::test_a_second_answer_that_is_not_the_messages_gives_it_a_new_room. How often the router and the identity store are asked, which Python counts, is not compared here.",
+  "notes": "Python: tests/test_shared_channel_routing.py::TestTheLockChecksTheRoomAgain::test_a_second_answer_that_is_not_the_messages_gives_it_a_new_room. The router is asked exactly twice. The one identity-store lookup remains checked by the specialized Python source test.",
   "setup": {
     "kit": {
       "router": {
@@ -72,7 +72,37 @@
       }
     },
     "timeline": {
-      "alice-room": []
+      "alice-room": [],
+      "$r1": [
+        {
+          "content": {
+            "body": "bob: hello"
+          }
+        }
+      ]
+    },
+    "router_calls": [
+      {
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "participant_id": "+15550000002",
+        "channel_data": {},
+        "organization_id": null,
+        "identity_id": null
+      },
+      {
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "participant_id": "+15550000002",
+        "channel_data": {},
+        "organization_id": null,
+        "identity_id": null
+      }
+    ],
+    "deliveries": {
+      "alice-room": {
+        "sms": []
+      }
     }
   }
 }

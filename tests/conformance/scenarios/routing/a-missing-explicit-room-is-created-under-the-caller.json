@@ -1,0 +1,83 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/a-missing-explicit-room-is-created-under-the-caller",
+  "title": "A missing explicit room is created with the chosen id and caller organization",
+  "rules": [
+    "§10.1 step 2",
+    "§10.4",
+    "§17.2"
+  ],
+  "notes": "Python: tests/test_room_org_scoping.py::TestScopedInbound::test_a_room_that_does_not_exist_is_created_under_the_caller and test_a_room_a_router_answers_that_does_not_exist_is_created_with_its_id. A new explicit room is bound at creation; an existing explicit room does not record a correspondent.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "created",
+        "trigger": "on_room_created"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "chosen"
+          }
+        }
+      },
+      "room_id": "chosen",
+      "organization_id": "acme"
+    }
+  ],
+  "expect": {
+    "router_calls": [],
+    "rooms": {
+      "chosen": {
+        "organization_id": "acme",
+        "event_count": 1,
+        "latest_index": 0
+      }
+    },
+    "bindings": {
+      "chosen": {
+        "sms": {
+          "participant_id": "alice"
+        }
+      }
+    },
+    "timeline": {
+      "chosen": [
+        {
+          "content": {
+            "body": "hello"
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "created": [
+        {
+          "room_id": "chosen",
+          "trigger": "on_room_created"
+        }
+      ]
+    }
+  }
+}
