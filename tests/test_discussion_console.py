@@ -7,6 +7,7 @@ a dummy output) on a real kit, with scripted agents.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from collections.abc import Iterator
 from pathlib import Path
@@ -16,7 +17,7 @@ from prompt_toolkit.application import create_app_session
 from prompt_toolkit.input import PipeInput, create_pipe_input
 from prompt_toolkit.output import DummyOutput
 
-from roomkit import Agent, Discussion, RoomKit
+from roomkit import Agent, ChannelDeclaration, Discussion, InMemoryTurnBackend, RoomKit
 from roomkit.console import AgentCard, DiscussionConsole
 from roomkit.console._discussion_screen import STYLE
 from roomkit.console._discussion_view import AGENT_STYLES, DiscussionView
@@ -25,8 +26,11 @@ from roomkit.orchestration.strategies.discussion import (
     SpeakQueueChange,
     SpeakQueueEvent,
 )
-from roomkit.providers.ai.base import AIResponse
+from roomkit.providers.ai.base import AIResponse, AITool, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
+from roomkit.realtime.base import EphemeralEvent, EphemeralEventType
+from roomkit.tasks.background import BACKGROUND_TOOL
+from roomkit.turns import TurnExecutor
 from tests.test_framework import SimpleChannel
 
 CARDS = (AgentCard("dev", role="Developer", model="m-1"), AgentCard("sre", description="Ops"))
@@ -227,6 +231,131 @@ async def test_logs_go_to_the_file_while_the_screen_is_up(pipe: PipeInput, tmp_p
 
     assert "kept out of the screen" in log_file.read_text()
     assert root.handlers == before
+    await kit.close()
+
+
+# -- What an agent does, wherever it runs (RMK-1612) --
+
+
+def _agent_with_a_tool() -> Agent:
+    provider = MockAIProvider(
+        ai_responses=[
+            AIResponse(
+                content="",
+                tool_calls=[AIToolCall(id="c1", name="query_logs", arguments={"level": "ERROR"})],
+            ),
+            AIResponse(content="all clear"),
+        ]
+    )
+
+    async def query_logs(name: str, arguments: dict[str, object]) -> str:
+        return "line one\nline two"
+
+    return Agent(
+        "dev",
+        provider=provider,
+        tools=[AITool(name="query_logs", description="Reads the logs.", parameters={})],
+        tool_handler=query_logs,
+    )
+
+
+@pytest.mark.parametrize("apart", [False, True], ids=["on_the_kit", "on_another_executor"])
+async def test_the_console_shows_the_tools_an_agent_calls(pipe: PipeInput, apart: bool) -> None:
+    backend = InMemoryTurnBackend()
+    kit = RoomKit(turn_backend=backend)
+    kit.register_channel(SimpleChannel("ops"))
+    agent = _agent_with_a_tool()
+    executor = None
+    if apart:
+        kit.register_channel(ChannelDeclaration(channel_id="dev"))
+        executor = TurnExecutor(
+            lambda _channel: agent, hosts={"dev"}, executor_id="elsewhere", store=kit.store
+        )
+        await backend.serve(executor)
+    await kit.create_room(
+        room_id="r1", orchestration=Discussion(agents=["dev"] if apart else [agent])
+    )
+    await kit.attach_channel("r1", "ops")
+    console = DiscussionConsole(kit, "r1", channel_id="ops")
+    running = asyncio.create_task(console.run())
+    await _until(lambda: console._view is not None)
+
+    pipe.send_text("status?\r")
+    view = console.view
+    await _until(lambda: "all clear" in _room(view) and view.used["dev"] > 0)
+
+    assert "@dev ⚙ query_logs(level='ERROR') → line one | line two" in _room(view)
+    assert view.used["dev"] == 1
+    console.exit()
+    await asyncio.wait_for(running, 5)
+    await kit.close()
+    if executor is not None:
+        await executor.close()
+
+
+async def test_a_background_tool_call_makes_the_task_the_calling_agents(pipe: PipeInput) -> None:
+    kit = RoomKit()
+    await _discussion_room(kit)
+    console = DiscussionConsole(kit, "r1", channel_id="ops")
+    running = asyncio.create_task(console.run())
+    await _until(lambda: console._view is not None)
+    view = console.view
+
+    async def tool_ended(result: str) -> None:
+        call = {"id": "c1", "name": BACKGROUND_TOOL, "result": result, "status": "completed"}
+        await kit.realtime.publish_to_room(
+            "r1",
+            EphemeralEvent(
+                room_id="r1",
+                type=EphemeralEventType.TOOL_CALL_END,
+                user_id="dev",
+                channel_id="dev",
+                data={"tool_calls": [call]},
+            ),
+        )
+
+    await tool_ended(json.dumps({"task_id": "task-abc123"}))
+    await _until(lambda: view.used["dev"] == 1)
+    view.task_started("task-abc123", "worker", "go through the tickets")
+    assert view.working["task-abc123"] == "dev"
+
+    console.exit()
+    await asyncio.wait_for(running, 5)
+    witnessed = asyncio.Event()
+
+    async def witness(_event: EphemeralEvent) -> None:
+        witnessed.set()
+
+    await kit.realtime.subscribe_to_room("r1", witness)
+    await tool_ended("after the console closed")
+    await asyncio.wait_for(witnessed.wait(), 5)
+    await asyncio.sleep(0)
+    assert view.used["dev"] == 1, "closed, the console follows nothing"
+    await kit.close()
+
+
+async def test_a_turn_that_failed_reads_as_failed(pipe: PipeInput) -> None:
+    kit = RoomKit(turn_backend=InMemoryTurnBackend())
+    kit.register_channel(SimpleChannel("ops"))
+    kit.register_channel(ChannelDeclaration(channel_id="dev"))
+    await kit.create_room(room_id="r1", orchestration=Discussion(agents=["dev"]))
+    await kit.attach_channel("r1", "ops")
+    console = DiscussionConsole(kit, "r1", channel_id="ops")
+    running = asyncio.create_task(console.run())
+    await _until(lambda: console._view is not None)
+
+    pipe.send_text("status?\r")
+    view = console.view
+    # The speaking turn is over too: what its end shows has been shown.
+    await _until(
+        lambda: "failed" in _room(view) and view.queue is not None and view.queue.speaking is None
+    )
+
+    room = _room(view)
+    assert "@dev failed: No executor serves channel 'dev'" in room
+    assert "nothing to add" not in room
+    console.exit()
+    await asyncio.wait_for(running, 5)
     await kit.close()
 
 

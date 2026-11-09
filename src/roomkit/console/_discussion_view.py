@@ -174,6 +174,13 @@ class DiscussionView:
         self.used[agent] += 1
         self._add(f"  {self.label(agent)} ⚙ {tool_line(name, arguments, result)}", "class:dim")
 
+    def failed(self, agent: str, error: str) -> None:
+        """*agent*'s turn failed; its end will not read as having nothing to say."""
+        self._turn_said[agent] = True
+        shown = _cut(error.replace("\n", " | "), _PREVIEW)
+        self._add(f"{self.label(agent)} failed: {shown}", "class:failed")
+        self._add("")
+
     def note(self, text: str) -> None:
         self._add(f"· {text}", "class:note")
 

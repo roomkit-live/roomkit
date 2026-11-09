@@ -4,13 +4,15 @@ The person at the terminal is one of the room's people: what they type goes
 into the room through the transport channel they name, and the screen shows
 the room as it happens (every message, every tool call, the answer an agent
 is writing), the agents with their identity, live state and running tasks,
-and the speak queue. It follows the room through hooks it removes when it
-closes, so it can be opened on a running room and closed without disturbing
-it.
+and the speak queue. It follows the room through hooks and a subscription to
+what the room publishes, removed when it closes, so it can be opened on a
+running room and closed without disturbing it, whichever executors run the
+room's agents.
 """
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 from collections.abc import Awaitable, Callable, Mapping, Sequence
@@ -24,11 +26,12 @@ from roomkit.channels._speaker import turn_labels
 from roomkit.channels.acp import ACPChannel
 from roomkit.console._discussion_screen import DiscussionScreen
 from roomkit.console._discussion_view import AgentCard, DiscussionView, short_task
-from roomkit.core.hooks import TURN_TRIGGERS, HookRegistration
+from roomkit.core.hooks import HookRegistration
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import ChannelCategory, EventType, HookExecution, HookTrigger
 from roomkit.models.event import RoomEvent, TextContent
 from roomkit.orchestration.strategies.discussion._names import read_names
+from roomkit.realtime.base import EphemeralEvent, EphemeralEventType
 from roomkit.tasks._room_tasks import HOST_REACH, why_not_cancelled
 from roomkit.tasks.background import BACKGROUND_TOOL
 from roomkit.tasks.status import room_task_lines
@@ -36,7 +39,6 @@ from roomkit.tasks.status import room_task_lines
 if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
     from roomkit.models.context import RoomContext
-    from roomkit.models.tool_call import ToolCallEvent
     from roomkit.orchestration.strategies.discussion import SpeakQueueEvent
 
 logger = logging.getLogger("roomkit.console.discussion")
@@ -120,6 +122,7 @@ class DiscussionConsole:
         self._log_file = Path(log_file) if log_file is not None else None
         self._log_level = log_level
         self._hook_prefix = f"discussion_console_{uuid4().hex[:8]}"
+        self._tool_arguments: dict[tuple[str, str], dict[str, Any]] = {}
         self._view: DiscussionView | None = None
         self._screen: DiscussionScreen | None = None
 
@@ -155,14 +158,19 @@ class DiscussionConsole:
         restore_logs = _capture_logs(self._log_file, self._log_level)
         hooks = self._hooks()
         live = None
+        activity = None
         try:
             for hook in hooks:
-                await self._add_hook(hook)
+                self._kit.hook_engine.add_room_hook(self._room_id, hook)
+            activity = await self._kit.realtime.subscribe_to_room(self._room_id, self._on_activity)
             live = self._follow_streams()
             await self._screen.run()
         finally:
             for hook in hooks:
-                await self._remove_hook(hook)
+                self._kit.hook_engine.remove_room_hook(self._room_id, hook.name)
+            if activity is not None:
+                with contextlib.suppress(Exception):
+                    await self._kit.realtime.unsubscribe(activity)
             if live is not None:
                 live()
             restore_logs()
@@ -320,22 +328,6 @@ class DiscussionConsole:
 
     # -- Following the room --
 
-    async def _add_hook(self, hook: HookRegistration) -> None:
-        """Follow the room through *hook*: a trigger a turn fires is a room
-        hook defined by name on the kit's executor (RFC §10.6.6)."""
-        if hook.trigger in TURN_TRIGGERS:
-            self._kit.turn_executor.hooks.define_room_hook(hook)
-            await self._kit.enable_room_hook(self._room_id, hook.name)
-        else:
-            self._kit.hook_engine.add_room_hook(self._room_id, hook)
-
-    async def _remove_hook(self, hook: HookRegistration) -> None:
-        if hook.trigger in TURN_TRIGGERS:
-            await self._kit.disable_room_hook(self._room_id, hook.name)
-            self._kit.turn_executor.hooks.undefine_room_hook(hook.name)
-        else:
-            self._kit.hook_engine.remove_room_hook(self._room_id, hook.name)
-
     def _hooks(self) -> list[HookRegistration]:
         return [
             HookRegistration(
@@ -346,10 +338,10 @@ class DiscussionConsole:
                 event_types={EventType.MESSAGE},
             ),
             HookRegistration(
-                trigger=HookTrigger.ON_TOOL_CALL,
+                trigger=HookTrigger.ON_ERROR,
                 execution=HookExecution.ASYNC,
-                fn=self._on_tool_call,  # ty: ignore[invalid-argument-type]
-                name=f"{self._hook_prefix}_tools",
+                fn=self._on_error,
+                name=f"{self._hook_prefix}_errors",
             ),
             HookRegistration(
                 trigger=HookTrigger.ON_SPEAK_QUEUE,
@@ -387,21 +379,54 @@ class DiscussionConsole:
                 self._author(event, context), event.addressed_to, text, mine=self._mine(event)
             )
 
-    async def _on_tool_call(self, event: ToolCallEvent, context: RoomContext) -> None:
-        self.view.tool(event.channel_id, event.name, event.arguments, event.result)
-        if event.name == BACKGROUND_TOOL:
-            self._tool_started_task(event)
+    async def _on_error(self, event: RoomEvent, context: RoomContext) -> None:
+        """A turn of one of the room's agents failed (RFC §9.2's ON_ERROR)."""
+        source = event.source.channel_id
+        if any(card.channel == source for card in self.view.cards):
+            text = event.content.body if isinstance(event.content, TextContent) else ""
+            self.view.failed(source, text)
 
-    def _tool_started_task(self, event: ToolCallEvent) -> None:
+    async def _on_activity(self, event: EphemeralEvent) -> None:
+        """A tool call of the room's agents, as the room publishes it.
+
+        Not a hook: ON_TOOL_CALL fires on the executor running the turn, which
+        may be another process, and a room hook that executor did not register
+        keeps it from taking the turn (RFC §10.6.7).
+        """
+        calls = event.data.get("tool_calls")
+        if not isinstance(calls, list):
+            return
+        agent = event.channel_id or str(event.data.get("channel_id") or "")
+        if event.type == EphemeralEventType.TOOL_CALL_START:
+            self._tool_calls_started(agent, calls)
+        elif event.type == EphemeralEventType.TOOL_CALL_END:
+            self._tool_calls_ended(agent, calls)
+
+    def _tool_calls_started(self, agent: str, calls: list[dict[str, Any]]) -> None:
+        """Keep each call's arguments: its end carries only its result."""
+        for call in calls:
+            arguments = call.get("arguments")
+            key = (agent, str(call.get("id")))
+            self._tool_arguments[key] = arguments if isinstance(arguments, dict) else {}
+
+    def _tool_calls_ended(self, agent: str, calls: list[dict[str, Any]]) -> None:
+        for call in calls:
+            name, result = str(call.get("name")), call.get("result")
+            arguments = self._tool_arguments.pop((agent, str(call.get("id"))), {})
+            self.view.tool(agent, name, arguments, result)
+            if name == BACKGROUND_TOOL:
+                self._tool_started_task(agent, result)
+
+    def _tool_started_task(self, agent: str, result: Any) -> None:
         """The task a ``work_in_background`` call started is the calling
         agent's, whatever channel does the work."""
         try:
-            answer = json.loads(str(event.result))
+            answer = json.loads(str(result))
         except (TypeError, ValueError):
             return
         task_id = answer.get("task_id") if isinstance(answer, dict) else None
         if isinstance(task_id, str):
-            self.view.task_for(task_id, event.channel_id)
+            self.view.task_for(task_id, agent)
 
     async def _on_task_started(self, event: RoomEvent, context: RoomContext) -> None:
         meta = event.metadata or {}

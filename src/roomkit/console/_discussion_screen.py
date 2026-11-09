@@ -71,6 +71,7 @@ STYLE = Style.from_dict(
         "status": f"bg:{_BRAND['surface']} {_BRAND['light']}",
         "speaking": f"bg:{_BRAND['primary']} #ffffff bold",
         "held": "#ef4444",
+        "failed": "#ef4444 bold",
         **{f"agent{i}": f"{color} bold" for i, color in enumerate(_AGENT_COLORS)},
     }
 )
