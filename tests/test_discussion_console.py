@@ -359,6 +359,32 @@ async def test_a_turn_that_failed_reads_as_failed(pipe: PipeInput) -> None:
     await kit.close()
 
 
+async def test_a_wait_is_announced_when_it_starts_not_when_it_ends(pipe: PipeInput) -> None:
+    kit = RoomKit()
+    kit.register_channel(SimpleChannel("ops"))
+    agents = [_agent("dev", "@sre first", "@sre second"), _agent("sre", "never reached")]
+    await kit.create_room(room_id="r1", orchestration=Discussion(agents, max_depth=2))
+    await kit.attach_channel("r1", "ops")
+    console = DiscussionConsole(kit, "r1", channel_id="ops")
+    running = asyncio.create_task(console.run())
+    await _until(lambda: console._view is not None)
+    view = console.view
+    notice = "the discussion waits for a person"
+
+    pipe.send_text("@dev status?\r")
+    await _until(lambda: _room(view).count(notice) == 1)
+    # The person ends that wait; the depth limit then starts another.
+    pipe.send_text("@dev again?\r")
+    await _until(
+        lambda: "@sre second" in _room(view) and view.queue is not None and view.queue.waiting
+    )
+
+    assert _room(view).count(notice) == 2
+    console.exit()
+    await asyncio.wait_for(running, 5)
+    await kit.close()
+
+
 # -- Agents addressed by handle (RMK-764) --
 
 DEV_ID, SRE_ID = "agent:8e41f0d2", "agent:c5a3e7b1"

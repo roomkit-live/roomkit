@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `DiscussionConsole` no longer says "the discussion waits for a person" when a person has just ended that wait (RMK-1615).
 - `DiscussionConsole` shows a room whose agents run on another executor, and a turn that failed reads as failed instead of "has nothing to add" (RMK-1612).
 - `CLIChannel(console=True)` keeps its status line right under the input on a nearly empty terminal, instead of on the last row of the screen (RMK-1613).
 - A read-only, muted agent consumes its stream and audits its answers as `source_read_only`, as RFC §7.5 requires; its turns still run in order (RMK-1600).

@@ -192,7 +192,9 @@ class DiscussionView:
             self._turn_changed(event.change, agent)
         self._notice_asked(event.queue)
         notice = _NOTICES.get(event.change)
-        if notice is not None:
+        # WAITING reports a wait's end too (RFC §19.7.5): only its start is news.
+        wait_ended = event.change == SpeakQueueChange.WAITING and not event.queue.waiting
+        if notice is not None and not wait_ended:
             self.note(notice(", ".join(self.label(a) for a in event.channel_ids)))
         self._changed()
 
