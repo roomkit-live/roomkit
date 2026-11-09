@@ -1,0 +1,88 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/observers-start-in-firing-order-while-earlier-bodies-wait",
+  "title": "Successive status observers start in firing order while their earlier bodies still wait",
+  "rules": [
+    "§22.1",
+    "§9.2",
+    "§9.3"
+  ],
+  "notes": "Python: tests/test_hook_observers.py::TestTheRoomGoesOn::test_a_trigger_of_this_implementation_alone_holds_nothing_up; HookEngine._start_async_hooks starts the bodies in creation order and does not wait for their completion. The second body must start while the first is held (RMK-1550).",
+  "setup": {
+    "rooms": [
+      {
+        "id": "room-1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "heard",
+        "trigger": "on_delivery_status",
+        "execution": "async",
+        "reactions": [
+          {
+            "gate": "first"
+          },
+          {
+            "gate": "second"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_delivery_status",
+      "status": {
+        "provider": "mock",
+        "message_id": "first",
+        "status": "delivered",
+        "room_id": "room-1"
+      }
+    },
+    {
+      "call": "process_delivery_status",
+      "status": {
+        "provider": "mock",
+        "message_id": "second",
+        "status": "delivered",
+        "room_id": "room-1"
+      }
+    },
+    {
+      "wait_for": "first"
+    },
+    {
+      "wait_for": "second"
+    },
+    {
+      "open": "second"
+    },
+    {
+      "open": "first"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "heard": [
+        {
+          "trigger": "on_delivery_status",
+          "room_id": "room-1",
+          "delivery_status": {
+            "message_id": "first"
+          }
+        },
+        {
+          "trigger": "on_delivery_status",
+          "room_id": "room-1",
+          "delivery_status": {
+            "message_id": "second"
+          }
+        }
+      ]
+    }
+  }
+}

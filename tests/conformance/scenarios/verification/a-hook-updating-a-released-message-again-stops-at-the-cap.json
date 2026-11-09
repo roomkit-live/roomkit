@@ -7,7 +7,7 @@
     "§10.3",
     "§8.3"
   ],
-  "notes": "Python: src/roomkit/core/mixins/verification.py (_release_held, _restore_held, _held_window), src/roomkit/core/mixins/regenerate.py (_rerun_agents_on); tests/test_verification_release.py::test_a_hook_updating_a_released_message_again_stops_at_the_cap (RMK-1173). With a depth limit of 1 the budget holds ten hook calls; the release's own write draws none. Run on no budget, the first update would start one of its own, and the twelfth would be refused.",
+  "notes": "Python: src/roomkit/core/mixins/verification.py (_release_held, _restore_held, _held_window), src/roomkit/core/mixins/regenerate.py (_rerun_agents_on); tests/test_verification_release.py::test_a_hook_updating_a_released_message_again_stops_at_the_cap (RMK-1173). With a depth limit of 1 the budget holds ten hook calls; the release's own write draws none. Run on no budget, the first update would start one of its own, and the twelfth would be refused. The updates commit in chain order, but an observer and the observer its call fires finish independently (RFC §9.2). Assert every successful result and the one cap refusal exactly once, without ordering their returns (RMK-1551).",
   "setup": {
     "kit": {
       "max_chain_depth": 1,
@@ -282,81 +282,83 @@
       ]
     },
     "actions": {
-      "update": [
-        {
-          "result": {
-            "metadata": {
-              "n": 1
+      "update": {
+        "$unordered": [
+          {
+            "result": {
+              "metadata": {
+                "n": 1
+              }
             }
-          }
-        },
-        {
-          "result": {
-            "metadata": {
-              "n": 2
+          },
+          {
+            "result": {
+              "metadata": {
+                "n": 2
+              }
             }
-          }
-        },
-        {
-          "result": {
-            "metadata": {
-              "n": 3
+          },
+          {
+            "result": {
+              "metadata": {
+                "n": 3
+              }
             }
-          }
-        },
-        {
-          "result": {
-            "metadata": {
-              "n": 4
+          },
+          {
+            "result": {
+              "metadata": {
+                "n": 4
+              }
             }
-          }
-        },
-        {
-          "result": {
-            "metadata": {
-              "n": 5
+          },
+          {
+            "result": {
+              "metadata": {
+                "n": 5
+              }
             }
-          }
-        },
-        {
-          "result": {
-            "metadata": {
-              "n": 6
+          },
+          {
+            "result": {
+              "metadata": {
+                "n": 6
+              }
             }
-          }
-        },
-        {
-          "result": {
-            "metadata": {
-              "n": 7
+          },
+          {
+            "result": {
+              "metadata": {
+                "n": 7
+              }
             }
-          }
-        },
-        {
-          "result": {
-            "metadata": {
-              "n": 8
+          },
+          {
+            "result": {
+              "metadata": {
+                "n": 8
+              }
             }
-          }
-        },
-        {
-          "result": {
-            "metadata": {
-              "n": 9
+          },
+          {
+            "result": {
+              "metadata": {
+                "n": 9
+              }
             }
-          }
-        },
-        {
-          "result": {
-            "metadata": {
-              "n": 10
+          },
+          {
+            "result": {
+              "metadata": {
+                "n": 10
+              }
             }
+          },
+          {
+            "error": "reentry_loop_cap"
           }
-        },
-        {
-          "error": "reentry_loop_cap"
-        }
-      ]
+        ]
+      }
     }
   }
 }
