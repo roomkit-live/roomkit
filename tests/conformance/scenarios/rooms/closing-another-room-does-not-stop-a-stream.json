@@ -1,0 +1,168 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/closing-another-room-does-not-stop-a-stream",
+  "title": "Closing another room leaves every row of the active stream deliverable",
+  "rules": [
+    "§5.1",
+    "§7.5 rule 2",
+    "§12.2 step 14s"
+  ],
+  "notes": "Python: tests/test_stream_room_reads.py::test_another_room_closing_costs_one_read_and_blocks_nothing. The shared contract covers room isolation and complete delivery; the Python-specific cache read count is not a cross-language requirement.",
+  "setup": {
+    "channels": [
+      {
+        "id": "web",
+        "type": "webhook",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "Let me ",
+                "check."
+              ],
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "lookup_order",
+                  "arguments": {
+                    "order": "42"
+                  }
+                }
+              ]
+            },
+            {
+              "deltas": [
+                "Order 42 ",
+                "shipped."
+              ]
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup_order",
+            "description": "Find an order by its number",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "order": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "order"
+              ]
+            },
+            "returns": "shipped"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "other"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "moderator",
+        "trigger": "on_tool_call",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "close_room",
+                "room_id": "other"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "web",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Where is order 42?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "web"
+          }
+        },
+        {
+          "type": "message",
+          "content": {
+            "body": "Let me check."
+          }
+        },
+        {
+          "type": "tool_call_start"
+        },
+        {
+          "type": "tool_call_end"
+        },
+        {
+          "type": "message",
+          "content": {
+            "body": "Order 42 shipped."
+          }
+        }
+      ],
+      "other": []
+    },
+    "rooms": {
+      "room-1": {
+        "status": "active"
+      },
+      "other": {
+        "status": "closed"
+      }
+    }
+  }
+}

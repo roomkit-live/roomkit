@@ -1,0 +1,359 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/a-closed-room-refuses-response-cap-replacement-records",
+  "title": "A closed room refuses response-cap replacement records as well as ordinary responses",
+  "rules": [
+    "§5.1",
+    "§8.2",
+    "§10.1 step 14",
+    "§26.1"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "do": [
+              {
+                "call": "close_room",
+                "room_id": "$room",
+                "as": "close"
+              }
+            ],
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Too late"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Too late"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Too late"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Too late"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Too late"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Too late"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Too late"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Too late"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Too late"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Too late"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Too late"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Too late"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Too late"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Too late"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Too late"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Too late"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Too late"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Too late"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Too late"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Too late"
+                }
+              },
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Too late"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "kit": {
+      "max_chain_depth": 2
+    }
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "status": "delivered"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": []
+      }
+    },
+    "framework_events": {
+      "room-1": [
+        "room_closed",
+        {
+          "$unordered": [
+            {
+              "event": "room_refused_event",
+              "status": "closed",
+              "operation": "reentry",
+              "event_type": "message"
+            },
+            {
+              "event": "room_refused_event",
+              "status": "closed",
+              "operation": "reentry",
+              "event_type": "message"
+            },
+            {
+              "event": "room_refused_event",
+              "status": "closed",
+              "operation": "reentry",
+              "event_type": "message"
+            },
+            {
+              "event": "room_refused_event",
+              "status": "closed",
+              "operation": "reentry",
+              "event_type": "message"
+            },
+            {
+              "event": "room_refused_event",
+              "status": "closed",
+              "operation": "reentry",
+              "event_type": "message"
+            },
+            {
+              "event": "room_refused_event",
+              "status": "closed",
+              "operation": "reentry",
+              "event_type": "message"
+            },
+            {
+              "event": "room_refused_event",
+              "status": "closed",
+              "operation": "reentry",
+              "event_type": "message"
+            },
+            {
+              "event": "room_refused_event",
+              "status": "closed",
+              "operation": "reentry",
+              "event_type": "message"
+            },
+            {
+              "event": "room_refused_event",
+              "status": "closed",
+              "operation": "reentry",
+              "event_type": "message"
+            },
+            {
+              "event": "room_refused_event",
+              "status": "closed",
+              "operation": "reentry",
+              "event_type": "message"
+            },
+            {
+              "event": "room_refused_event",
+              "status": "closed",
+              "operation": "reentry",
+              "event_type": "message"
+            },
+            {
+              "event": "room_refused_event",
+              "status": "closed",
+              "operation": "reentry",
+              "event_type": "message"
+            },
+            {
+              "event": "room_refused_event",
+              "status": "closed",
+              "operation": "reentry",
+              "event_type": "message"
+            },
+            {
+              "event": "room_refused_event",
+              "status": "closed",
+              "operation": "reentry",
+              "event_type": "message"
+            },
+            {
+              "event": "room_refused_event",
+              "status": "closed",
+              "operation": "reentry",
+              "event_type": "message"
+            },
+            {
+              "event": "room_refused_event",
+              "status": "closed",
+              "operation": "reentry",
+              "event_type": "message"
+            },
+            {
+              "event": "room_refused_event",
+              "status": "closed",
+              "operation": "reentry",
+              "event_type": "message"
+            },
+            {
+              "event": "room_refused_event",
+              "status": "closed",
+              "operation": "reentry",
+              "event_type": "message"
+            },
+            {
+              "event": "room_refused_event",
+              "status": "closed",
+              "operation": "reentry",
+              "event_type": "message"
+            },
+            {
+              "event": "room_refused_event",
+              "status": "closed",
+              "operation": "reentry",
+              "event_type": "message"
+            },
+            {
+              "event": "room_refused_event",
+              "status": "closed",
+              "operation": "reentry",
+              "event_type": "message"
+            },
+            {
+              "event": "event_processed",
+              "event_id": "room-1#0"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "notes": "Python: tests/test_rfc_write_gates.py::TestReentryMeetsTheStatusGate::test_a_record_in_place_of_a_refused_answer_is_refused_alike. Every refused answer, including the replacement at a bound, is reported and no answer row is stored."
+}

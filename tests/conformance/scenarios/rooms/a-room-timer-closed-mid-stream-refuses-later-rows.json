@@ -1,0 +1,220 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/a-room-timer-closed-mid-stream-refuses-later-rows",
+  "title": "A room timer-closed mid-stream refuses every following row, including tool results",
+  "rules": [
+    "§5.1",
+    "§7.5 rule 2",
+    "§12.2 step 14s"
+  ],
+  "notes": "Python: tests/test_stream_room_reads.py::test_every_close_refuses_the_rows_after_it and test_a_timer_due_at_a_row_s_commit_applies_there. The same stream and exact stored rows as the close case, with an archive or timers applied by the next row itself.",
+  "setup": {
+    "channels": [
+      {
+        "id": "web",
+        "type": "webhook",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "Let me ",
+                "check."
+              ],
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "lookup_order",
+                  "arguments": {
+                    "order": "42"
+                  }
+                }
+              ]
+            },
+            {
+              "deltas": [
+                "Order 42 ",
+                "shipped."
+              ]
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup_order",
+            "description": "Find an order by its number",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "order": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "order"
+              ]
+            },
+            "returns": "shipped"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "moderator",
+        "trigger": "on_tool_call",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "set_room_timers",
+                "room_id": "$room",
+                "timers": {
+                  "inactive_after_seconds": 0,
+                  "closed_after_seconds": 0
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "web",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Where is order 42?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message",
+          "source": {
+            "channel_id": "web"
+          },
+          "content": {
+            "body": "Where is order 42?"
+          },
+          "status": "delivered"
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "source": {
+            "channel_id": "agent",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "Let me check."
+          },
+          "status": "delivered"
+        },
+        {
+          "index": 2,
+          "type": "tool_call_start",
+          "content": {
+            "tool_id": "call-1",
+            "status": "pending"
+          },
+          "status": "delivered"
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "index": 0
+          }
+        ],
+        "web": [
+          {
+            "id": "room-1#1"
+          },
+          {
+            "id": "room-1#2"
+          }
+        ]
+      }
+    },
+    "streamed": {
+      "room-1": {
+        "ws": [
+          {
+            "text": "Let me "
+          },
+          {
+            "text": "check."
+          },
+          {
+            "row": {
+              "id": "room-1#1",
+              "index": 1,
+              "type": "message",
+              "content": {
+                "body": "Let me check."
+              }
+            }
+          },
+          {
+            "row": {
+              "id": "room-1#2",
+              "index": 2,
+              "type": "tool_call_start"
+            }
+          }
+        ]
+      }
+    },
+    "rooms": {
+      "room-1": {
+        "status": "closed"
+      }
+    }
+  }
+}

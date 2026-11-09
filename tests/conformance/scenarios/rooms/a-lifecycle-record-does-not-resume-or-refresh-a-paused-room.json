@@ -1,0 +1,56 @@
+{
+  "title": "A lifecycle record leaves the paused room and its activity unchanged",
+  "rules": [
+    "§5.1"
+  ],
+  "notes": "Python: tests/test_room_timers.py::test_what_is_no_activity_resumes_nothing; tests/test_room_activity.py. The old activity is the earliest instant (@1); each operation must keep it.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "status": "paused",
+        "timers": {
+          "last_activity_at": "2026-01-01T11:00:00Z"
+        },
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "hooks": []
+  },
+  "steps": [
+    {
+      "call": "mute",
+      "channel_id": "sms",
+      "room_id": "room-1"
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "room-1": {
+        "status": "paused",
+        "timers": {
+          "last_activity_at": "@1"
+        }
+      }
+    },
+    "framework_events": {
+      "room-1": []
+    }
+  },
+  "id": "rooms/a-lifecycle-record-does-not-resume-or-refresh-a-paused-room",
+  "$schema": "../../scenario.schema.json"
+}

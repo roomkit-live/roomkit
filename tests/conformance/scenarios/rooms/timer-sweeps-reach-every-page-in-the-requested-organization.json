@@ -1,0 +1,3097 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/timer-sweeps-reach-every-page-in-the-requested-organization",
+  "title": "A timer sweep reaches more than one page of ACTIVE and PAUSED rooms, changes each once, and respects organization scope",
+  "rules": [
+    "§5.1",
+    "§17.2"
+  ],
+  "notes": "Python: tests/test_resilience.py::TestRoomTimers::test_check_all_timers_reaches_every_room_past_a_page and test_check_all_timers_paused_to_closed; tests/test_room_org_scoping.py::TestScopedMutations::test_check_all_timers_can_be_limited_to_one_tenant. 101 rooms in each writable status cross the 100-row page boundary. The second sweep changes none.",
+  "setup": {
+    "rooms": [
+      {
+        "id": "active-000",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-001",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-002",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-003",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-004",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-005",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-006",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-007",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-008",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-009",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-010",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-011",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-012",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-013",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-014",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-015",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-016",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-017",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-018",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-019",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-020",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-021",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-022",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-023",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-024",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-025",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-026",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-027",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-028",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-029",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-030",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-031",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-032",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-033",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-034",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-035",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-036",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-037",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-038",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-039",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-040",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-041",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-042",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-043",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-044",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-045",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-046",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-047",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-048",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-049",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-050",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-051",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-052",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-053",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-054",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-055",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-056",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-057",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-058",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-059",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-060",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-061",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-062",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-063",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-064",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-065",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-066",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-067",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-068",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-069",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-070",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-071",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-072",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-073",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-074",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-075",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-076",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-077",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-078",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-079",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-080",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-081",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-082",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-083",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-084",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-085",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-086",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-087",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-088",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-089",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-090",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-091",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-092",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-093",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-094",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-095",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-096",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-097",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-098",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-099",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "active-100",
+        "organization_id": "acme",
+        "status": "active",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-000",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-001",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-002",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-003",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-004",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-005",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-006",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-007",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-008",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-009",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-010",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-011",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-012",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-013",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-014",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-015",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-016",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-017",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-018",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-019",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-020",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-021",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-022",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-023",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-024",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-025",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-026",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-027",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-028",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-029",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-030",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-031",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-032",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-033",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-034",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-035",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-036",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-037",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-038",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-039",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-040",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-041",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-042",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-043",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-044",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-045",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-046",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-047",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-048",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-049",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-050",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-051",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-052",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-053",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-054",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-055",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-056",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-057",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-058",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-059",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-060",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-061",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-062",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-063",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-064",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-065",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-066",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-067",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-068",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-069",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-070",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-071",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-072",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-073",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-074",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-075",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-076",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-077",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-078",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-079",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-080",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-081",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-082",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-083",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-084",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-085",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-086",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-087",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-088",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-089",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-090",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-091",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-092",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-093",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-094",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-095",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-096",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-097",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-098",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-099",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "paused-100",
+        "organization_id": "acme",
+        "status": "paused",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "foreign",
+        "organization_id": "elsewhere",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      },
+      {
+        "id": "closed",
+        "status": "closed"
+      },
+      {
+        "id": "archived",
+        "status": "archived"
+      },
+      {
+        "id": "inert"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "check_all_timers",
+      "organization_id": "acme",
+      "expect": {
+        "result": {
+          "$unordered": [
+            {
+              "id": "active-000",
+              "status": "paused"
+            },
+            {
+              "id": "active-001",
+              "status": "paused"
+            },
+            {
+              "id": "active-002",
+              "status": "paused"
+            },
+            {
+              "id": "active-003",
+              "status": "paused"
+            },
+            {
+              "id": "active-004",
+              "status": "paused"
+            },
+            {
+              "id": "active-005",
+              "status": "paused"
+            },
+            {
+              "id": "active-006",
+              "status": "paused"
+            },
+            {
+              "id": "active-007",
+              "status": "paused"
+            },
+            {
+              "id": "active-008",
+              "status": "paused"
+            },
+            {
+              "id": "active-009",
+              "status": "paused"
+            },
+            {
+              "id": "active-010",
+              "status": "paused"
+            },
+            {
+              "id": "active-011",
+              "status": "paused"
+            },
+            {
+              "id": "active-012",
+              "status": "paused"
+            },
+            {
+              "id": "active-013",
+              "status": "paused"
+            },
+            {
+              "id": "active-014",
+              "status": "paused"
+            },
+            {
+              "id": "active-015",
+              "status": "paused"
+            },
+            {
+              "id": "active-016",
+              "status": "paused"
+            },
+            {
+              "id": "active-017",
+              "status": "paused"
+            },
+            {
+              "id": "active-018",
+              "status": "paused"
+            },
+            {
+              "id": "active-019",
+              "status": "paused"
+            },
+            {
+              "id": "active-020",
+              "status": "paused"
+            },
+            {
+              "id": "active-021",
+              "status": "paused"
+            },
+            {
+              "id": "active-022",
+              "status": "paused"
+            },
+            {
+              "id": "active-023",
+              "status": "paused"
+            },
+            {
+              "id": "active-024",
+              "status": "paused"
+            },
+            {
+              "id": "active-025",
+              "status": "paused"
+            },
+            {
+              "id": "active-026",
+              "status": "paused"
+            },
+            {
+              "id": "active-027",
+              "status": "paused"
+            },
+            {
+              "id": "active-028",
+              "status": "paused"
+            },
+            {
+              "id": "active-029",
+              "status": "paused"
+            },
+            {
+              "id": "active-030",
+              "status": "paused"
+            },
+            {
+              "id": "active-031",
+              "status": "paused"
+            },
+            {
+              "id": "active-032",
+              "status": "paused"
+            },
+            {
+              "id": "active-033",
+              "status": "paused"
+            },
+            {
+              "id": "active-034",
+              "status": "paused"
+            },
+            {
+              "id": "active-035",
+              "status": "paused"
+            },
+            {
+              "id": "active-036",
+              "status": "paused"
+            },
+            {
+              "id": "active-037",
+              "status": "paused"
+            },
+            {
+              "id": "active-038",
+              "status": "paused"
+            },
+            {
+              "id": "active-039",
+              "status": "paused"
+            },
+            {
+              "id": "active-040",
+              "status": "paused"
+            },
+            {
+              "id": "active-041",
+              "status": "paused"
+            },
+            {
+              "id": "active-042",
+              "status": "paused"
+            },
+            {
+              "id": "active-043",
+              "status": "paused"
+            },
+            {
+              "id": "active-044",
+              "status": "paused"
+            },
+            {
+              "id": "active-045",
+              "status": "paused"
+            },
+            {
+              "id": "active-046",
+              "status": "paused"
+            },
+            {
+              "id": "active-047",
+              "status": "paused"
+            },
+            {
+              "id": "active-048",
+              "status": "paused"
+            },
+            {
+              "id": "active-049",
+              "status": "paused"
+            },
+            {
+              "id": "active-050",
+              "status": "paused"
+            },
+            {
+              "id": "active-051",
+              "status": "paused"
+            },
+            {
+              "id": "active-052",
+              "status": "paused"
+            },
+            {
+              "id": "active-053",
+              "status": "paused"
+            },
+            {
+              "id": "active-054",
+              "status": "paused"
+            },
+            {
+              "id": "active-055",
+              "status": "paused"
+            },
+            {
+              "id": "active-056",
+              "status": "paused"
+            },
+            {
+              "id": "active-057",
+              "status": "paused"
+            },
+            {
+              "id": "active-058",
+              "status": "paused"
+            },
+            {
+              "id": "active-059",
+              "status": "paused"
+            },
+            {
+              "id": "active-060",
+              "status": "paused"
+            },
+            {
+              "id": "active-061",
+              "status": "paused"
+            },
+            {
+              "id": "active-062",
+              "status": "paused"
+            },
+            {
+              "id": "active-063",
+              "status": "paused"
+            },
+            {
+              "id": "active-064",
+              "status": "paused"
+            },
+            {
+              "id": "active-065",
+              "status": "paused"
+            },
+            {
+              "id": "active-066",
+              "status": "paused"
+            },
+            {
+              "id": "active-067",
+              "status": "paused"
+            },
+            {
+              "id": "active-068",
+              "status": "paused"
+            },
+            {
+              "id": "active-069",
+              "status": "paused"
+            },
+            {
+              "id": "active-070",
+              "status": "paused"
+            },
+            {
+              "id": "active-071",
+              "status": "paused"
+            },
+            {
+              "id": "active-072",
+              "status": "paused"
+            },
+            {
+              "id": "active-073",
+              "status": "paused"
+            },
+            {
+              "id": "active-074",
+              "status": "paused"
+            },
+            {
+              "id": "active-075",
+              "status": "paused"
+            },
+            {
+              "id": "active-076",
+              "status": "paused"
+            },
+            {
+              "id": "active-077",
+              "status": "paused"
+            },
+            {
+              "id": "active-078",
+              "status": "paused"
+            },
+            {
+              "id": "active-079",
+              "status": "paused"
+            },
+            {
+              "id": "active-080",
+              "status": "paused"
+            },
+            {
+              "id": "active-081",
+              "status": "paused"
+            },
+            {
+              "id": "active-082",
+              "status": "paused"
+            },
+            {
+              "id": "active-083",
+              "status": "paused"
+            },
+            {
+              "id": "active-084",
+              "status": "paused"
+            },
+            {
+              "id": "active-085",
+              "status": "paused"
+            },
+            {
+              "id": "active-086",
+              "status": "paused"
+            },
+            {
+              "id": "active-087",
+              "status": "paused"
+            },
+            {
+              "id": "active-088",
+              "status": "paused"
+            },
+            {
+              "id": "active-089",
+              "status": "paused"
+            },
+            {
+              "id": "active-090",
+              "status": "paused"
+            },
+            {
+              "id": "active-091",
+              "status": "paused"
+            },
+            {
+              "id": "active-092",
+              "status": "paused"
+            },
+            {
+              "id": "active-093",
+              "status": "paused"
+            },
+            {
+              "id": "active-094",
+              "status": "paused"
+            },
+            {
+              "id": "active-095",
+              "status": "paused"
+            },
+            {
+              "id": "active-096",
+              "status": "paused"
+            },
+            {
+              "id": "active-097",
+              "status": "paused"
+            },
+            {
+              "id": "active-098",
+              "status": "paused"
+            },
+            {
+              "id": "active-099",
+              "status": "paused"
+            },
+            {
+              "id": "active-100",
+              "status": "paused"
+            },
+            {
+              "id": "paused-000",
+              "status": "closed"
+            },
+            {
+              "id": "paused-001",
+              "status": "closed"
+            },
+            {
+              "id": "paused-002",
+              "status": "closed"
+            },
+            {
+              "id": "paused-003",
+              "status": "closed"
+            },
+            {
+              "id": "paused-004",
+              "status": "closed"
+            },
+            {
+              "id": "paused-005",
+              "status": "closed"
+            },
+            {
+              "id": "paused-006",
+              "status": "closed"
+            },
+            {
+              "id": "paused-007",
+              "status": "closed"
+            },
+            {
+              "id": "paused-008",
+              "status": "closed"
+            },
+            {
+              "id": "paused-009",
+              "status": "closed"
+            },
+            {
+              "id": "paused-010",
+              "status": "closed"
+            },
+            {
+              "id": "paused-011",
+              "status": "closed"
+            },
+            {
+              "id": "paused-012",
+              "status": "closed"
+            },
+            {
+              "id": "paused-013",
+              "status": "closed"
+            },
+            {
+              "id": "paused-014",
+              "status": "closed"
+            },
+            {
+              "id": "paused-015",
+              "status": "closed"
+            },
+            {
+              "id": "paused-016",
+              "status": "closed"
+            },
+            {
+              "id": "paused-017",
+              "status": "closed"
+            },
+            {
+              "id": "paused-018",
+              "status": "closed"
+            },
+            {
+              "id": "paused-019",
+              "status": "closed"
+            },
+            {
+              "id": "paused-020",
+              "status": "closed"
+            },
+            {
+              "id": "paused-021",
+              "status": "closed"
+            },
+            {
+              "id": "paused-022",
+              "status": "closed"
+            },
+            {
+              "id": "paused-023",
+              "status": "closed"
+            },
+            {
+              "id": "paused-024",
+              "status": "closed"
+            },
+            {
+              "id": "paused-025",
+              "status": "closed"
+            },
+            {
+              "id": "paused-026",
+              "status": "closed"
+            },
+            {
+              "id": "paused-027",
+              "status": "closed"
+            },
+            {
+              "id": "paused-028",
+              "status": "closed"
+            },
+            {
+              "id": "paused-029",
+              "status": "closed"
+            },
+            {
+              "id": "paused-030",
+              "status": "closed"
+            },
+            {
+              "id": "paused-031",
+              "status": "closed"
+            },
+            {
+              "id": "paused-032",
+              "status": "closed"
+            },
+            {
+              "id": "paused-033",
+              "status": "closed"
+            },
+            {
+              "id": "paused-034",
+              "status": "closed"
+            },
+            {
+              "id": "paused-035",
+              "status": "closed"
+            },
+            {
+              "id": "paused-036",
+              "status": "closed"
+            },
+            {
+              "id": "paused-037",
+              "status": "closed"
+            },
+            {
+              "id": "paused-038",
+              "status": "closed"
+            },
+            {
+              "id": "paused-039",
+              "status": "closed"
+            },
+            {
+              "id": "paused-040",
+              "status": "closed"
+            },
+            {
+              "id": "paused-041",
+              "status": "closed"
+            },
+            {
+              "id": "paused-042",
+              "status": "closed"
+            },
+            {
+              "id": "paused-043",
+              "status": "closed"
+            },
+            {
+              "id": "paused-044",
+              "status": "closed"
+            },
+            {
+              "id": "paused-045",
+              "status": "closed"
+            },
+            {
+              "id": "paused-046",
+              "status": "closed"
+            },
+            {
+              "id": "paused-047",
+              "status": "closed"
+            },
+            {
+              "id": "paused-048",
+              "status": "closed"
+            },
+            {
+              "id": "paused-049",
+              "status": "closed"
+            },
+            {
+              "id": "paused-050",
+              "status": "closed"
+            },
+            {
+              "id": "paused-051",
+              "status": "closed"
+            },
+            {
+              "id": "paused-052",
+              "status": "closed"
+            },
+            {
+              "id": "paused-053",
+              "status": "closed"
+            },
+            {
+              "id": "paused-054",
+              "status": "closed"
+            },
+            {
+              "id": "paused-055",
+              "status": "closed"
+            },
+            {
+              "id": "paused-056",
+              "status": "closed"
+            },
+            {
+              "id": "paused-057",
+              "status": "closed"
+            },
+            {
+              "id": "paused-058",
+              "status": "closed"
+            },
+            {
+              "id": "paused-059",
+              "status": "closed"
+            },
+            {
+              "id": "paused-060",
+              "status": "closed"
+            },
+            {
+              "id": "paused-061",
+              "status": "closed"
+            },
+            {
+              "id": "paused-062",
+              "status": "closed"
+            },
+            {
+              "id": "paused-063",
+              "status": "closed"
+            },
+            {
+              "id": "paused-064",
+              "status": "closed"
+            },
+            {
+              "id": "paused-065",
+              "status": "closed"
+            },
+            {
+              "id": "paused-066",
+              "status": "closed"
+            },
+            {
+              "id": "paused-067",
+              "status": "closed"
+            },
+            {
+              "id": "paused-068",
+              "status": "closed"
+            },
+            {
+              "id": "paused-069",
+              "status": "closed"
+            },
+            {
+              "id": "paused-070",
+              "status": "closed"
+            },
+            {
+              "id": "paused-071",
+              "status": "closed"
+            },
+            {
+              "id": "paused-072",
+              "status": "closed"
+            },
+            {
+              "id": "paused-073",
+              "status": "closed"
+            },
+            {
+              "id": "paused-074",
+              "status": "closed"
+            },
+            {
+              "id": "paused-075",
+              "status": "closed"
+            },
+            {
+              "id": "paused-076",
+              "status": "closed"
+            },
+            {
+              "id": "paused-077",
+              "status": "closed"
+            },
+            {
+              "id": "paused-078",
+              "status": "closed"
+            },
+            {
+              "id": "paused-079",
+              "status": "closed"
+            },
+            {
+              "id": "paused-080",
+              "status": "closed"
+            },
+            {
+              "id": "paused-081",
+              "status": "closed"
+            },
+            {
+              "id": "paused-082",
+              "status": "closed"
+            },
+            {
+              "id": "paused-083",
+              "status": "closed"
+            },
+            {
+              "id": "paused-084",
+              "status": "closed"
+            },
+            {
+              "id": "paused-085",
+              "status": "closed"
+            },
+            {
+              "id": "paused-086",
+              "status": "closed"
+            },
+            {
+              "id": "paused-087",
+              "status": "closed"
+            },
+            {
+              "id": "paused-088",
+              "status": "closed"
+            },
+            {
+              "id": "paused-089",
+              "status": "closed"
+            },
+            {
+              "id": "paused-090",
+              "status": "closed"
+            },
+            {
+              "id": "paused-091",
+              "status": "closed"
+            },
+            {
+              "id": "paused-092",
+              "status": "closed"
+            },
+            {
+              "id": "paused-093",
+              "status": "closed"
+            },
+            {
+              "id": "paused-094",
+              "status": "closed"
+            },
+            {
+              "id": "paused-095",
+              "status": "closed"
+            },
+            {
+              "id": "paused-096",
+              "status": "closed"
+            },
+            {
+              "id": "paused-097",
+              "status": "closed"
+            },
+            {
+              "id": "paused-098",
+              "status": "closed"
+            },
+            {
+              "id": "paused-099",
+              "status": "closed"
+            },
+            {
+              "id": "paused-100",
+              "status": "closed"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "check_all_timers",
+      "organization_id": "acme",
+      "expect": {
+        "result": []
+      }
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "active-000": {
+        "status": "paused"
+      },
+      "active-001": {
+        "status": "paused"
+      },
+      "active-002": {
+        "status": "paused"
+      },
+      "active-003": {
+        "status": "paused"
+      },
+      "active-004": {
+        "status": "paused"
+      },
+      "active-005": {
+        "status": "paused"
+      },
+      "active-006": {
+        "status": "paused"
+      },
+      "active-007": {
+        "status": "paused"
+      },
+      "active-008": {
+        "status": "paused"
+      },
+      "active-009": {
+        "status": "paused"
+      },
+      "active-010": {
+        "status": "paused"
+      },
+      "active-011": {
+        "status": "paused"
+      },
+      "active-012": {
+        "status": "paused"
+      },
+      "active-013": {
+        "status": "paused"
+      },
+      "active-014": {
+        "status": "paused"
+      },
+      "active-015": {
+        "status": "paused"
+      },
+      "active-016": {
+        "status": "paused"
+      },
+      "active-017": {
+        "status": "paused"
+      },
+      "active-018": {
+        "status": "paused"
+      },
+      "active-019": {
+        "status": "paused"
+      },
+      "active-020": {
+        "status": "paused"
+      },
+      "active-021": {
+        "status": "paused"
+      },
+      "active-022": {
+        "status": "paused"
+      },
+      "active-023": {
+        "status": "paused"
+      },
+      "active-024": {
+        "status": "paused"
+      },
+      "active-025": {
+        "status": "paused"
+      },
+      "active-026": {
+        "status": "paused"
+      },
+      "active-027": {
+        "status": "paused"
+      },
+      "active-028": {
+        "status": "paused"
+      },
+      "active-029": {
+        "status": "paused"
+      },
+      "active-030": {
+        "status": "paused"
+      },
+      "active-031": {
+        "status": "paused"
+      },
+      "active-032": {
+        "status": "paused"
+      },
+      "active-033": {
+        "status": "paused"
+      },
+      "active-034": {
+        "status": "paused"
+      },
+      "active-035": {
+        "status": "paused"
+      },
+      "active-036": {
+        "status": "paused"
+      },
+      "active-037": {
+        "status": "paused"
+      },
+      "active-038": {
+        "status": "paused"
+      },
+      "active-039": {
+        "status": "paused"
+      },
+      "active-040": {
+        "status": "paused"
+      },
+      "active-041": {
+        "status": "paused"
+      },
+      "active-042": {
+        "status": "paused"
+      },
+      "active-043": {
+        "status": "paused"
+      },
+      "active-044": {
+        "status": "paused"
+      },
+      "active-045": {
+        "status": "paused"
+      },
+      "active-046": {
+        "status": "paused"
+      },
+      "active-047": {
+        "status": "paused"
+      },
+      "active-048": {
+        "status": "paused"
+      },
+      "active-049": {
+        "status": "paused"
+      },
+      "active-050": {
+        "status": "paused"
+      },
+      "active-051": {
+        "status": "paused"
+      },
+      "active-052": {
+        "status": "paused"
+      },
+      "active-053": {
+        "status": "paused"
+      },
+      "active-054": {
+        "status": "paused"
+      },
+      "active-055": {
+        "status": "paused"
+      },
+      "active-056": {
+        "status": "paused"
+      },
+      "active-057": {
+        "status": "paused"
+      },
+      "active-058": {
+        "status": "paused"
+      },
+      "active-059": {
+        "status": "paused"
+      },
+      "active-060": {
+        "status": "paused"
+      },
+      "active-061": {
+        "status": "paused"
+      },
+      "active-062": {
+        "status": "paused"
+      },
+      "active-063": {
+        "status": "paused"
+      },
+      "active-064": {
+        "status": "paused"
+      },
+      "active-065": {
+        "status": "paused"
+      },
+      "active-066": {
+        "status": "paused"
+      },
+      "active-067": {
+        "status": "paused"
+      },
+      "active-068": {
+        "status": "paused"
+      },
+      "active-069": {
+        "status": "paused"
+      },
+      "active-070": {
+        "status": "paused"
+      },
+      "active-071": {
+        "status": "paused"
+      },
+      "active-072": {
+        "status": "paused"
+      },
+      "active-073": {
+        "status": "paused"
+      },
+      "active-074": {
+        "status": "paused"
+      },
+      "active-075": {
+        "status": "paused"
+      },
+      "active-076": {
+        "status": "paused"
+      },
+      "active-077": {
+        "status": "paused"
+      },
+      "active-078": {
+        "status": "paused"
+      },
+      "active-079": {
+        "status": "paused"
+      },
+      "active-080": {
+        "status": "paused"
+      },
+      "active-081": {
+        "status": "paused"
+      },
+      "active-082": {
+        "status": "paused"
+      },
+      "active-083": {
+        "status": "paused"
+      },
+      "active-084": {
+        "status": "paused"
+      },
+      "active-085": {
+        "status": "paused"
+      },
+      "active-086": {
+        "status": "paused"
+      },
+      "active-087": {
+        "status": "paused"
+      },
+      "active-088": {
+        "status": "paused"
+      },
+      "active-089": {
+        "status": "paused"
+      },
+      "active-090": {
+        "status": "paused"
+      },
+      "active-091": {
+        "status": "paused"
+      },
+      "active-092": {
+        "status": "paused"
+      },
+      "active-093": {
+        "status": "paused"
+      },
+      "active-094": {
+        "status": "paused"
+      },
+      "active-095": {
+        "status": "paused"
+      },
+      "active-096": {
+        "status": "paused"
+      },
+      "active-097": {
+        "status": "paused"
+      },
+      "active-098": {
+        "status": "paused"
+      },
+      "active-099": {
+        "status": "paused"
+      },
+      "active-100": {
+        "status": "paused"
+      },
+      "paused-000": {
+        "status": "closed"
+      },
+      "paused-001": {
+        "status": "closed"
+      },
+      "paused-002": {
+        "status": "closed"
+      },
+      "paused-003": {
+        "status": "closed"
+      },
+      "paused-004": {
+        "status": "closed"
+      },
+      "paused-005": {
+        "status": "closed"
+      },
+      "paused-006": {
+        "status": "closed"
+      },
+      "paused-007": {
+        "status": "closed"
+      },
+      "paused-008": {
+        "status": "closed"
+      },
+      "paused-009": {
+        "status": "closed"
+      },
+      "paused-010": {
+        "status": "closed"
+      },
+      "paused-011": {
+        "status": "closed"
+      },
+      "paused-012": {
+        "status": "closed"
+      },
+      "paused-013": {
+        "status": "closed"
+      },
+      "paused-014": {
+        "status": "closed"
+      },
+      "paused-015": {
+        "status": "closed"
+      },
+      "paused-016": {
+        "status": "closed"
+      },
+      "paused-017": {
+        "status": "closed"
+      },
+      "paused-018": {
+        "status": "closed"
+      },
+      "paused-019": {
+        "status": "closed"
+      },
+      "paused-020": {
+        "status": "closed"
+      },
+      "paused-021": {
+        "status": "closed"
+      },
+      "paused-022": {
+        "status": "closed"
+      },
+      "paused-023": {
+        "status": "closed"
+      },
+      "paused-024": {
+        "status": "closed"
+      },
+      "paused-025": {
+        "status": "closed"
+      },
+      "paused-026": {
+        "status": "closed"
+      },
+      "paused-027": {
+        "status": "closed"
+      },
+      "paused-028": {
+        "status": "closed"
+      },
+      "paused-029": {
+        "status": "closed"
+      },
+      "paused-030": {
+        "status": "closed"
+      },
+      "paused-031": {
+        "status": "closed"
+      },
+      "paused-032": {
+        "status": "closed"
+      },
+      "paused-033": {
+        "status": "closed"
+      },
+      "paused-034": {
+        "status": "closed"
+      },
+      "paused-035": {
+        "status": "closed"
+      },
+      "paused-036": {
+        "status": "closed"
+      },
+      "paused-037": {
+        "status": "closed"
+      },
+      "paused-038": {
+        "status": "closed"
+      },
+      "paused-039": {
+        "status": "closed"
+      },
+      "paused-040": {
+        "status": "closed"
+      },
+      "paused-041": {
+        "status": "closed"
+      },
+      "paused-042": {
+        "status": "closed"
+      },
+      "paused-043": {
+        "status": "closed"
+      },
+      "paused-044": {
+        "status": "closed"
+      },
+      "paused-045": {
+        "status": "closed"
+      },
+      "paused-046": {
+        "status": "closed"
+      },
+      "paused-047": {
+        "status": "closed"
+      },
+      "paused-048": {
+        "status": "closed"
+      },
+      "paused-049": {
+        "status": "closed"
+      },
+      "paused-050": {
+        "status": "closed"
+      },
+      "paused-051": {
+        "status": "closed"
+      },
+      "paused-052": {
+        "status": "closed"
+      },
+      "paused-053": {
+        "status": "closed"
+      },
+      "paused-054": {
+        "status": "closed"
+      },
+      "paused-055": {
+        "status": "closed"
+      },
+      "paused-056": {
+        "status": "closed"
+      },
+      "paused-057": {
+        "status": "closed"
+      },
+      "paused-058": {
+        "status": "closed"
+      },
+      "paused-059": {
+        "status": "closed"
+      },
+      "paused-060": {
+        "status": "closed"
+      },
+      "paused-061": {
+        "status": "closed"
+      },
+      "paused-062": {
+        "status": "closed"
+      },
+      "paused-063": {
+        "status": "closed"
+      },
+      "paused-064": {
+        "status": "closed"
+      },
+      "paused-065": {
+        "status": "closed"
+      },
+      "paused-066": {
+        "status": "closed"
+      },
+      "paused-067": {
+        "status": "closed"
+      },
+      "paused-068": {
+        "status": "closed"
+      },
+      "paused-069": {
+        "status": "closed"
+      },
+      "paused-070": {
+        "status": "closed"
+      },
+      "paused-071": {
+        "status": "closed"
+      },
+      "paused-072": {
+        "status": "closed"
+      },
+      "paused-073": {
+        "status": "closed"
+      },
+      "paused-074": {
+        "status": "closed"
+      },
+      "paused-075": {
+        "status": "closed"
+      },
+      "paused-076": {
+        "status": "closed"
+      },
+      "paused-077": {
+        "status": "closed"
+      },
+      "paused-078": {
+        "status": "closed"
+      },
+      "paused-079": {
+        "status": "closed"
+      },
+      "paused-080": {
+        "status": "closed"
+      },
+      "paused-081": {
+        "status": "closed"
+      },
+      "paused-082": {
+        "status": "closed"
+      },
+      "paused-083": {
+        "status": "closed"
+      },
+      "paused-084": {
+        "status": "closed"
+      },
+      "paused-085": {
+        "status": "closed"
+      },
+      "paused-086": {
+        "status": "closed"
+      },
+      "paused-087": {
+        "status": "closed"
+      },
+      "paused-088": {
+        "status": "closed"
+      },
+      "paused-089": {
+        "status": "closed"
+      },
+      "paused-090": {
+        "status": "closed"
+      },
+      "paused-091": {
+        "status": "closed"
+      },
+      "paused-092": {
+        "status": "closed"
+      },
+      "paused-093": {
+        "status": "closed"
+      },
+      "paused-094": {
+        "status": "closed"
+      },
+      "paused-095": {
+        "status": "closed"
+      },
+      "paused-096": {
+        "status": "closed"
+      },
+      "paused-097": {
+        "status": "closed"
+      },
+      "paused-098": {
+        "status": "closed"
+      },
+      "paused-099": {
+        "status": "closed"
+      },
+      "paused-100": {
+        "status": "closed"
+      },
+      "foreign": {
+        "status": "active"
+      },
+      "closed": {
+        "status": "closed"
+      },
+      "archived": {
+        "status": "archived"
+      },
+      "inert": {
+        "status": "active"
+      }
+    }
+  }
+}

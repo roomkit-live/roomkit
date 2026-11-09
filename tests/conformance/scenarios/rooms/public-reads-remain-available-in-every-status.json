@@ -1,0 +1,1024 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/public-reads-remain-available-in-every-status",
+  "title": "Public history, members and bindings stay readable in all four statuses, scoped to their organization",
+  "rules": [
+    "§5.1",
+    "§17.2"
+  ],
+  "notes": "Python: tests/test_room_status_enforcement.py::TestOpenRoomsAreUnaffected::test_history_stays_readable_after_closing; tests/test_framework_queries.py::TestGetBinding, TestListBindings, TestGetTimeline. Store commits seed a public row without activity; only public read calls are asserted. The reads must not resume a room or emit a lifecycle notice.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "active",
+        "status": "active",
+        "organization_id": "acme",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ],
+        "participants": [
+          {
+            "id": "here",
+            "channel_id": "sms",
+            "status": "active"
+          },
+          {
+            "id": "left",
+            "channel_id": "sms",
+            "status": "left"
+          }
+        ]
+      },
+      {
+        "id": "paused",
+        "status": "paused",
+        "organization_id": "acme",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ],
+        "participants": [
+          {
+            "id": "here",
+            "channel_id": "sms",
+            "status": "active"
+          },
+          {
+            "id": "left",
+            "channel_id": "sms",
+            "status": "left"
+          }
+        ]
+      },
+      {
+        "id": "closed",
+        "status": "closed",
+        "organization_id": "acme",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ],
+        "participants": [
+          {
+            "id": "here",
+            "channel_id": "sms",
+            "status": "active"
+          },
+          {
+            "id": "left",
+            "channel_id": "sms",
+            "status": "left"
+          }
+        ]
+      },
+      {
+        "id": "archived",
+        "status": "archived",
+        "organization_id": "acme",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ],
+        "participants": [
+          {
+            "id": "here",
+            "channel_id": "sms",
+            "status": "active"
+          },
+          {
+            "id": "left",
+            "channel_id": "sms",
+            "status": "left"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.commit_event",
+      "room_id": "active",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "kept"
+        },
+        "visibility": "public"
+      }
+    },
+    {
+      "call": "get_room",
+      "room_id": "active",
+      "expect": {
+        "result": {
+          "id": "active",
+          "status": "active"
+        }
+      }
+    },
+    {
+      "call": "get_room",
+      "room_id": "active",
+      "expect": {
+        "result": {
+          "id": "active",
+          "status": "active"
+        }
+      },
+      "organization_id": "acme"
+    },
+    {
+      "call": "get_room",
+      "room_id": "active",
+      "expect": {
+        "error": "room_not_found"
+      },
+      "organization_id": "elsewhere"
+    },
+    {
+      "call": "get_timeline",
+      "room_id": "active",
+      "visibility_filter": "public",
+      "expect": {
+        "result": [
+          {
+            "content": {
+              "body": "kept"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "call": "get_timeline",
+      "room_id": "active",
+      "visibility_filter": "public",
+      "expect": {
+        "result": [
+          {
+            "content": {
+              "body": "kept"
+            }
+          }
+        ]
+      },
+      "organization_id": "acme"
+    },
+    {
+      "call": "get_timeline",
+      "room_id": "active",
+      "visibility_filter": "public",
+      "expect": {
+        "error": "room_not_found"
+      },
+      "organization_id": "elsewhere"
+    },
+    {
+      "call": "get_binding",
+      "room_id": "active",
+      "channel_id": "sms",
+      "expect": {
+        "result": {
+          "channel_id": "sms"
+        }
+      }
+    },
+    {
+      "call": "get_binding",
+      "room_id": "active",
+      "channel_id": "sms",
+      "expect": {
+        "result": {
+          "channel_id": "sms"
+        }
+      },
+      "organization_id": "acme"
+    },
+    {
+      "call": "get_binding",
+      "room_id": "active",
+      "channel_id": "sms",
+      "expect": {
+        "error": "room_not_found"
+      },
+      "organization_id": "elsewhere"
+    },
+    {
+      "call": "list_bindings",
+      "room_id": "active",
+      "expect": {
+        "result": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    },
+    {
+      "call": "list_bindings",
+      "room_id": "active",
+      "expect": {
+        "result": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      },
+      "organization_id": "acme"
+    },
+    {
+      "call": "list_bindings",
+      "room_id": "active",
+      "expect": {
+        "error": "room_not_found"
+      },
+      "organization_id": "elsewhere"
+    },
+    {
+      "call": "list_members",
+      "room_id": "active",
+      "expect": {
+        "result": [
+          {
+            "id": "here"
+          }
+        ]
+      }
+    },
+    {
+      "call": "list_members",
+      "room_id": "active",
+      "expect": {
+        "result": [
+          {
+            "id": "here"
+          }
+        ]
+      },
+      "organization_id": "acme"
+    },
+    {
+      "call": "list_members",
+      "room_id": "active",
+      "expect": {
+        "error": "room_not_found"
+      },
+      "organization_id": "elsewhere"
+    },
+    {
+      "call": "list_members",
+      "room_id": "active",
+      "include_left": true,
+      "expect": {
+        "result": {
+          "$unordered": [
+            {
+              "id": "here"
+            },
+            {
+              "id": "left"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "list_members",
+      "room_id": "active",
+      "include_left": true,
+      "expect": {
+        "result": {
+          "$unordered": [
+            {
+              "id": "here"
+            },
+            {
+              "id": "left"
+            }
+          ]
+        }
+      },
+      "organization_id": "acme"
+    },
+    {
+      "call": "list_members",
+      "room_id": "active",
+      "include_left": true,
+      "expect": {
+        "error": "room_not_found"
+      },
+      "organization_id": "elsewhere"
+    },
+    {
+      "call": "get_binding",
+      "room_id": "active",
+      "channel_id": "unbound",
+      "expect": {
+        "error": "channel_not_bound"
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "paused",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "kept"
+        },
+        "visibility": "public"
+      }
+    },
+    {
+      "call": "get_room",
+      "room_id": "paused",
+      "expect": {
+        "result": {
+          "id": "paused",
+          "status": "paused"
+        }
+      }
+    },
+    {
+      "call": "get_room",
+      "room_id": "paused",
+      "expect": {
+        "result": {
+          "id": "paused",
+          "status": "paused"
+        }
+      },
+      "organization_id": "acme"
+    },
+    {
+      "call": "get_room",
+      "room_id": "paused",
+      "expect": {
+        "error": "room_not_found"
+      },
+      "organization_id": "elsewhere"
+    },
+    {
+      "call": "get_timeline",
+      "room_id": "paused",
+      "visibility_filter": "public",
+      "expect": {
+        "result": [
+          {
+            "content": {
+              "body": "kept"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "call": "get_timeline",
+      "room_id": "paused",
+      "visibility_filter": "public",
+      "expect": {
+        "result": [
+          {
+            "content": {
+              "body": "kept"
+            }
+          }
+        ]
+      },
+      "organization_id": "acme"
+    },
+    {
+      "call": "get_timeline",
+      "room_id": "paused",
+      "visibility_filter": "public",
+      "expect": {
+        "error": "room_not_found"
+      },
+      "organization_id": "elsewhere"
+    },
+    {
+      "call": "get_binding",
+      "room_id": "paused",
+      "channel_id": "sms",
+      "expect": {
+        "result": {
+          "channel_id": "sms"
+        }
+      }
+    },
+    {
+      "call": "get_binding",
+      "room_id": "paused",
+      "channel_id": "sms",
+      "expect": {
+        "result": {
+          "channel_id": "sms"
+        }
+      },
+      "organization_id": "acme"
+    },
+    {
+      "call": "get_binding",
+      "room_id": "paused",
+      "channel_id": "sms",
+      "expect": {
+        "error": "room_not_found"
+      },
+      "organization_id": "elsewhere"
+    },
+    {
+      "call": "list_bindings",
+      "room_id": "paused",
+      "expect": {
+        "result": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    },
+    {
+      "call": "list_bindings",
+      "room_id": "paused",
+      "expect": {
+        "result": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      },
+      "organization_id": "acme"
+    },
+    {
+      "call": "list_bindings",
+      "room_id": "paused",
+      "expect": {
+        "error": "room_not_found"
+      },
+      "organization_id": "elsewhere"
+    },
+    {
+      "call": "list_members",
+      "room_id": "paused",
+      "expect": {
+        "result": [
+          {
+            "id": "here"
+          }
+        ]
+      }
+    },
+    {
+      "call": "list_members",
+      "room_id": "paused",
+      "expect": {
+        "result": [
+          {
+            "id": "here"
+          }
+        ]
+      },
+      "organization_id": "acme"
+    },
+    {
+      "call": "list_members",
+      "room_id": "paused",
+      "expect": {
+        "error": "room_not_found"
+      },
+      "organization_id": "elsewhere"
+    },
+    {
+      "call": "list_members",
+      "room_id": "paused",
+      "include_left": true,
+      "expect": {
+        "result": {
+          "$unordered": [
+            {
+              "id": "here"
+            },
+            {
+              "id": "left"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "list_members",
+      "room_id": "paused",
+      "include_left": true,
+      "expect": {
+        "result": {
+          "$unordered": [
+            {
+              "id": "here"
+            },
+            {
+              "id": "left"
+            }
+          ]
+        }
+      },
+      "organization_id": "acme"
+    },
+    {
+      "call": "list_members",
+      "room_id": "paused",
+      "include_left": true,
+      "expect": {
+        "error": "room_not_found"
+      },
+      "organization_id": "elsewhere"
+    },
+    {
+      "call": "get_binding",
+      "room_id": "paused",
+      "channel_id": "unbound",
+      "expect": {
+        "error": "channel_not_bound"
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "closed",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "kept"
+        },
+        "visibility": "public"
+      }
+    },
+    {
+      "call": "get_room",
+      "room_id": "closed",
+      "expect": {
+        "result": {
+          "id": "closed",
+          "status": "closed"
+        }
+      }
+    },
+    {
+      "call": "get_room",
+      "room_id": "closed",
+      "expect": {
+        "result": {
+          "id": "closed",
+          "status": "closed"
+        }
+      },
+      "organization_id": "acme"
+    },
+    {
+      "call": "get_room",
+      "room_id": "closed",
+      "expect": {
+        "error": "room_not_found"
+      },
+      "organization_id": "elsewhere"
+    },
+    {
+      "call": "get_timeline",
+      "room_id": "closed",
+      "visibility_filter": "public",
+      "expect": {
+        "result": [
+          {
+            "content": {
+              "body": "kept"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "call": "get_timeline",
+      "room_id": "closed",
+      "visibility_filter": "public",
+      "expect": {
+        "result": [
+          {
+            "content": {
+              "body": "kept"
+            }
+          }
+        ]
+      },
+      "organization_id": "acme"
+    },
+    {
+      "call": "get_timeline",
+      "room_id": "closed",
+      "visibility_filter": "public",
+      "expect": {
+        "error": "room_not_found"
+      },
+      "organization_id": "elsewhere"
+    },
+    {
+      "call": "get_binding",
+      "room_id": "closed",
+      "channel_id": "sms",
+      "expect": {
+        "result": {
+          "channel_id": "sms"
+        }
+      }
+    },
+    {
+      "call": "get_binding",
+      "room_id": "closed",
+      "channel_id": "sms",
+      "expect": {
+        "result": {
+          "channel_id": "sms"
+        }
+      },
+      "organization_id": "acme"
+    },
+    {
+      "call": "get_binding",
+      "room_id": "closed",
+      "channel_id": "sms",
+      "expect": {
+        "error": "room_not_found"
+      },
+      "organization_id": "elsewhere"
+    },
+    {
+      "call": "list_bindings",
+      "room_id": "closed",
+      "expect": {
+        "result": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    },
+    {
+      "call": "list_bindings",
+      "room_id": "closed",
+      "expect": {
+        "result": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      },
+      "organization_id": "acme"
+    },
+    {
+      "call": "list_bindings",
+      "room_id": "closed",
+      "expect": {
+        "error": "room_not_found"
+      },
+      "organization_id": "elsewhere"
+    },
+    {
+      "call": "list_members",
+      "room_id": "closed",
+      "expect": {
+        "result": [
+          {
+            "id": "here"
+          }
+        ]
+      }
+    },
+    {
+      "call": "list_members",
+      "room_id": "closed",
+      "expect": {
+        "result": [
+          {
+            "id": "here"
+          }
+        ]
+      },
+      "organization_id": "acme"
+    },
+    {
+      "call": "list_members",
+      "room_id": "closed",
+      "expect": {
+        "error": "room_not_found"
+      },
+      "organization_id": "elsewhere"
+    },
+    {
+      "call": "list_members",
+      "room_id": "closed",
+      "include_left": true,
+      "expect": {
+        "result": {
+          "$unordered": [
+            {
+              "id": "here"
+            },
+            {
+              "id": "left"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "list_members",
+      "room_id": "closed",
+      "include_left": true,
+      "expect": {
+        "result": {
+          "$unordered": [
+            {
+              "id": "here"
+            },
+            {
+              "id": "left"
+            }
+          ]
+        }
+      },
+      "organization_id": "acme"
+    },
+    {
+      "call": "list_members",
+      "room_id": "closed",
+      "include_left": true,
+      "expect": {
+        "error": "room_not_found"
+      },
+      "organization_id": "elsewhere"
+    },
+    {
+      "call": "get_binding",
+      "room_id": "closed",
+      "channel_id": "unbound",
+      "expect": {
+        "error": "channel_not_bound"
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "archived",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "kept"
+        },
+        "visibility": "public"
+      }
+    },
+    {
+      "call": "get_room",
+      "room_id": "archived",
+      "expect": {
+        "result": {
+          "id": "archived",
+          "status": "archived"
+        }
+      }
+    },
+    {
+      "call": "get_room",
+      "room_id": "archived",
+      "expect": {
+        "result": {
+          "id": "archived",
+          "status": "archived"
+        }
+      },
+      "organization_id": "acme"
+    },
+    {
+      "call": "get_room",
+      "room_id": "archived",
+      "expect": {
+        "error": "room_not_found"
+      },
+      "organization_id": "elsewhere"
+    },
+    {
+      "call": "get_timeline",
+      "room_id": "archived",
+      "visibility_filter": "public",
+      "expect": {
+        "result": [
+          {
+            "content": {
+              "body": "kept"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "call": "get_timeline",
+      "room_id": "archived",
+      "visibility_filter": "public",
+      "expect": {
+        "result": [
+          {
+            "content": {
+              "body": "kept"
+            }
+          }
+        ]
+      },
+      "organization_id": "acme"
+    },
+    {
+      "call": "get_timeline",
+      "room_id": "archived",
+      "visibility_filter": "public",
+      "expect": {
+        "error": "room_not_found"
+      },
+      "organization_id": "elsewhere"
+    },
+    {
+      "call": "get_binding",
+      "room_id": "archived",
+      "channel_id": "sms",
+      "expect": {
+        "result": {
+          "channel_id": "sms"
+        }
+      }
+    },
+    {
+      "call": "get_binding",
+      "room_id": "archived",
+      "channel_id": "sms",
+      "expect": {
+        "result": {
+          "channel_id": "sms"
+        }
+      },
+      "organization_id": "acme"
+    },
+    {
+      "call": "get_binding",
+      "room_id": "archived",
+      "channel_id": "sms",
+      "expect": {
+        "error": "room_not_found"
+      },
+      "organization_id": "elsewhere"
+    },
+    {
+      "call": "list_bindings",
+      "room_id": "archived",
+      "expect": {
+        "result": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    },
+    {
+      "call": "list_bindings",
+      "room_id": "archived",
+      "expect": {
+        "result": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      },
+      "organization_id": "acme"
+    },
+    {
+      "call": "list_bindings",
+      "room_id": "archived",
+      "expect": {
+        "error": "room_not_found"
+      },
+      "organization_id": "elsewhere"
+    },
+    {
+      "call": "list_members",
+      "room_id": "archived",
+      "expect": {
+        "result": [
+          {
+            "id": "here"
+          }
+        ]
+      }
+    },
+    {
+      "call": "list_members",
+      "room_id": "archived",
+      "expect": {
+        "result": [
+          {
+            "id": "here"
+          }
+        ]
+      },
+      "organization_id": "acme"
+    },
+    {
+      "call": "list_members",
+      "room_id": "archived",
+      "expect": {
+        "error": "room_not_found"
+      },
+      "organization_id": "elsewhere"
+    },
+    {
+      "call": "list_members",
+      "room_id": "archived",
+      "include_left": true,
+      "expect": {
+        "result": {
+          "$unordered": [
+            {
+              "id": "here"
+            },
+            {
+              "id": "left"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "list_members",
+      "room_id": "archived",
+      "include_left": true,
+      "expect": {
+        "result": {
+          "$unordered": [
+            {
+              "id": "here"
+            },
+            {
+              "id": "left"
+            }
+          ]
+        }
+      },
+      "organization_id": "acme"
+    },
+    {
+      "call": "list_members",
+      "room_id": "archived",
+      "include_left": true,
+      "expect": {
+        "error": "room_not_found"
+      },
+      "organization_id": "elsewhere"
+    },
+    {
+      "call": "get_binding",
+      "room_id": "archived",
+      "channel_id": "unbound",
+      "expect": {
+        "error": "channel_not_bound"
+      }
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "active": {
+        "status": "active"
+      },
+      "paused": {
+        "status": "paused"
+      },
+      "closed": {
+        "status": "closed"
+      },
+      "archived": {
+        "status": "archived"
+      }
+    },
+    "framework_events": {
+      "active": [],
+      "paused": [],
+      "closed": [],
+      "archived": []
+    }
+  }
+}

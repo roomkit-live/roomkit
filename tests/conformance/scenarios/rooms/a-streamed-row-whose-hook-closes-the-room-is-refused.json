@@ -1,0 +1,214 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/a-streamed-row-whose-hook-closes-the-room-is-refused",
+  "title": "A close in a streamed row hook refuses that row and all following rows before their hooks",
+  "rules": [
+    "§5.1",
+    "§7.5 rule 2",
+    "§12.2 step 14s"
+  ],
+  "notes": "Python: tests/test_stream_room_reads.py::test_a_close_during_the_hooks_refuses_the_row and test_a_refusal_the_commit_found_spares_the_next_row_s_hooks. The row whose hook closes the room is not stored; later rows do not enter BEFORE_BROADCAST.",
+  "setup": {
+    "channels": [
+      {
+        "id": "web",
+        "type": "webhook",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "Let me ",
+                "check."
+              ],
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "lookup_order",
+                  "arguments": {
+                    "order": "42"
+                  }
+                }
+              ]
+            },
+            {
+              "deltas": [
+                "Order 42 ",
+                "shipped."
+              ]
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup_order",
+            "description": "Find an order by its number",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "order": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "order"
+              ]
+            },
+            "returns": "shipped"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "moderator",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "type": "tool_call_start"
+            },
+            "do": [
+              {
+                "call": "close_room",
+                "room_id": "$room"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "web",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Where is order 42?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message",
+          "source": {
+            "channel_id": "web"
+          },
+          "content": {
+            "body": "Where is order 42?"
+          },
+          "status": "delivered"
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "source": {
+            "channel_id": "agent",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "Let me check."
+          },
+          "status": "delivered"
+        }
+      ]
+    },
+    "streamed": {
+      "room-1": {
+        "ws": [
+          {
+            "text": "Let me "
+          },
+          {
+            "text": "check."
+          },
+          {
+            "row": {
+              "id": "room-1#1",
+              "index": 1,
+              "type": "message",
+              "content": {
+                "body": "Let me check."
+              }
+            }
+          }
+        ]
+      }
+    },
+    "hooks": {
+      "moderator": [
+        {
+          "event": {
+            "type": "message",
+            "source": {
+              "channel_id": "web"
+            }
+          }
+        },
+        {
+          "event": {
+            "type": "message",
+            "source": {
+              "channel_id": "agent"
+            }
+          }
+        },
+        {
+          "event": {
+            "type": "tool_call_start"
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "room-1": {
+        "status": "closed"
+      }
+    }
+  },
+  "reentrancy": [
+    "commit@locked"
+  ]
+}

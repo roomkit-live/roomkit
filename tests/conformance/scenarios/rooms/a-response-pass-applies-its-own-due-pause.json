@@ -1,0 +1,123 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/a-response-pass-applies-its-own-due-pause",
+  "title": "A response pass applies a due pause even when the trigger just resumed the room",
+  "rules": [
+    "§5.1",
+    "§8.2",
+    "§10.1 step 14",
+    "§26.1"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Too late"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "paused",
+        "trigger": "on_room_paused",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "set_room_timers",
+      "room_id": "room-1",
+      "timers": {
+        "inactive_after_seconds": 0
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "status": "delivered"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "room-1": {
+        "status": "active",
+        "paused_at": null
+      }
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "Hello"
+          }
+        },
+        {
+          "content": {
+            "body": "Too late"
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "paused": [
+        {
+          "context_room": {
+            "status": "paused"
+          }
+        },
+        {
+          "context_room": {
+            "status": "paused"
+          }
+        }
+      ]
+    }
+  },
+  "notes": "Python: tests/test_room_timers.py::test_a_response_pass_applies_the_due_transitions_first. A zero inactivity bound is due at both passes; each DELIVERED commit resumes the room silently."
+}

@@ -1,0 +1,74 @@
+{
+  "title": "A record applies a due pause before deciding its work",
+  "rules": [
+    "§5.1"
+  ],
+  "notes": "Python: tests/test_room_timers.py::test_every_locked_section_applies_the_due_transitions_first. Timers are set only after setup, without applying them. The operation must apply the pause itself; a delivered send resumes it again.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "paused",
+        "trigger": "on_room_paused",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "set_room_timers",
+      "room_id": "room-1",
+      "timers": {
+        "inactive_after_seconds": 0
+      }
+    },
+    {
+      "call": "commit_event",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "trace"
+        },
+        "visibility": "none"
+      },
+      "room_id": "room-1"
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "paused": [
+        {
+          "context_room": {
+            "status": "paused"
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "room-1": {
+        "status": "paused"
+      }
+    }
+  },
+  "id": "rooms/a-due-pause-is-applied-by-record",
+  "$schema": "../../scenario.schema.json"
+}

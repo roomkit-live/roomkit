@@ -1,0 +1,148 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/timer-checks-leave-inert-not-due-and-terminal-rooms-unchanged",
+  "title": "A check preserves inert, not-yet-due and terminal rooms; a close-only timer cannot close an ACTIVE room",
+  "rules": [
+    "§5.1"
+  ],
+  "notes": "Python: tests/test_resilience.py::TestRoomTimers (inactive thresholds, no timers, close-only timer, terminal room, explicit activity and inert creation defaults). Read calls on an empty room return empty lists.",
+  "setup": {
+    "rooms": [
+      {
+        "id": "inert"
+      },
+      {
+        "id": "future",
+        "timers": {
+          "inactive_after_seconds": 3600
+        }
+      },
+      {
+        "id": "close-only",
+        "timers": {
+          "closed_after_seconds": 0
+        }
+      },
+      {
+        "id": "explicit",
+        "timers": {
+          "last_activity_at": "2026-01-01T11:00:00Z"
+        }
+      },
+      {
+        "id": "closed",
+        "status": "closed"
+      },
+      {
+        "id": "archived",
+        "status": "archived"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "check_timers",
+      "room_id": "inert",
+      "expect": {
+        "result": {
+          "id": "inert",
+          "status": "active",
+          "timers": {
+            "last_activity_at": null,
+            "inactive_after_seconds": null,
+            "closed_after_seconds": null
+          }
+        }
+      }
+    },
+    {
+      "call": "check_timers",
+      "room_id": "future",
+      "expect": {
+        "result": {
+          "id": "future",
+          "status": "active",
+          "timers": {
+            "last_activity_at": null
+          }
+        }
+      }
+    },
+    {
+      "call": "check_timers",
+      "room_id": "close-only",
+      "expect": {
+        "result": {
+          "id": "close-only",
+          "status": "active",
+          "timers": {
+            "last_activity_at": null
+          }
+        }
+      }
+    },
+    {
+      "call": "check_timers",
+      "room_id": "explicit",
+      "expect": {
+        "result": {
+          "id": "explicit",
+          "status": "active",
+          "timers": {
+            "last_activity_at": "@1"
+          }
+        }
+      }
+    },
+    {
+      "call": "check_timers",
+      "room_id": "closed",
+      "expect": {
+        "result": {
+          "id": "closed",
+          "status": "closed"
+        }
+      }
+    },
+    {
+      "call": "check_timers",
+      "room_id": "archived",
+      "expect": {
+        "result": {
+          "id": "archived",
+          "status": "archived"
+        }
+      }
+    },
+    {
+      "call": "list_bindings",
+      "room_id": "inert",
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "call": "list_members",
+      "room_id": "inert",
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "call": "check_all_timers",
+      "expect": {
+        "result": []
+      }
+    }
+  ],
+  "expect": {
+    "framework_events": {
+      "inert": [],
+      "future": [],
+      "close-only": [],
+      "explicit": [],
+      "closed": [],
+      "archived": []
+    }
+  }
+}

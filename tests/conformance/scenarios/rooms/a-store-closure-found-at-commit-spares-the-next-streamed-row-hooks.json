@@ -1,0 +1,208 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/a-store-closure-found-at-commit-spares-the-next-streamed-row-hooks",
+  "title": "A streamed commit finds a store closure and skips the following rows and hooks",
+  "rules": [
+    "§5.1",
+    "§7.5 rule 2",
+    "§12.2 step 14s"
+  ],
+  "notes": "Python: tests/test_stream_room_reads.py::test_a_refusal_the_commit_found_spares_the_next_row_s_hooks. RFC §5.1 MAY cache the pre-hook status read: the tool-result hook may run with that cache or be skipped with a fresh read. Both must refuse that row at commit and skip the later message and its hooks. The observer would mark room metadata if the later message entered its hook; that marker must stay absent.",
+  "setup": {
+    "channels": [
+      {
+        "id": "web",
+        "type": "webhook",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "Let me ",
+                "check."
+              ],
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "lookup_order",
+                  "arguments": {
+                    "order": "42"
+                  }
+                }
+              ]
+            },
+            {
+              "deltas": [
+                "Order 42 ",
+                "shipped."
+              ]
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup_order",
+            "description": "Find an order by its number",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "order": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "order"
+              ]
+            },
+            "returns": "shipped"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "moderator",
+        "trigger": "on_tool_call",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "set_room_timers",
+                "room_id": "$room",
+                "timers": {
+                  "last_activity_at": "2026-01-01T12:00:00Z"
+                }
+              },
+              {
+                "call": "store.update_room_if",
+                "room": {
+                  "id": "$room",
+                  "status": "closed"
+                },
+                "status": "active",
+                "paused_at": null,
+                "last_activity_at": "2026-01-01T12:00:00Z"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "watch",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "Order 42 shipped."
+            },
+            "do": [
+              {
+                "call": "update_room_metadata",
+                "room_id": "$room",
+                "metadata": {
+                  "late_hook": true
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "web",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Where is order 42?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message",
+          "source": {
+            "channel_id": "web"
+          },
+          "content": {
+            "body": "Where is order 42?"
+          },
+          "status": "delivered"
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "source": {
+            "channel_id": "agent",
+            "direction": "outbound"
+          },
+          "content": {
+            "type": "text",
+            "body": "Let me check."
+          },
+          "status": "delivered"
+        },
+        {
+          "index": 2,
+          "type": "tool_call_start",
+          "content": {
+            "tool_id": "call-1",
+            "status": "pending"
+          },
+          "status": "delivered"
+        }
+      ]
+    },
+    "rooms": {
+      "room-1": {
+        "status": "closed",
+        "metadata": {
+          "late_hook": {
+            "$absent": true
+          }
+        }
+      }
+    }
+  }
+}

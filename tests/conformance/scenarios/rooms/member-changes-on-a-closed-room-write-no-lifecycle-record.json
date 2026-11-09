@@ -1,0 +1,71 @@
+{
+  "title": "Member changes keep the closed room timeline unchanged",
+  "rules": [
+    "§5.1",
+    "§5.5"
+  ],
+  "notes": "Python: tests/test_rfc_write_gates.py::TestLifecycleSystemEventsMeetTheStatusGate::test_member_change_on_closed_room_writes_nothing. Membership state can change; its lifecycle records are refused by the closed timeline.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "status": "closed",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "add_member",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "participant_id": "alice"
+    },
+    {
+      "call": "rename_member",
+      "room_id": "room-1",
+      "participant_id": "alice",
+      "display_name": "Alice"
+    },
+    {
+      "call": "remove_member",
+      "room_id": "room-1",
+      "participant_id": "alice"
+    },
+    {
+      "call": "get_timeline",
+      "room_id": "room-1",
+      "visibility_filter": "internal",
+      "include_blocked": true,
+      "expect": {
+        "result": [
+          {
+            "type": "channel_attached"
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": []
+    },
+    "rooms": {
+      "room-1": {
+        "status": "closed"
+      }
+    }
+  },
+  "id": "rooms/member-changes-on-a-closed-room-write-no-lifecycle-record",
+  "$schema": "../../scenario.schema.json"
+}

@@ -1,0 +1,144 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/a-injected-closed-by-its-own-hook-is-refused",
+  "title": "A injected pass closed by its own hook stores no row or blocked replacement",
+  "rules": [
+    "§5.1",
+    "§8.2",
+    "§10.1 step 14",
+    "§26.1"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": []
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "closer",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "Too late"
+            },
+            "do": [
+              {
+                "call": "close_room",
+                "room_id": "$room"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "inject",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "Hello"
+            },
+            "result": {
+              "action": "allow",
+              "injected_events": [
+                {
+                  "event": {
+                    "content": {
+                      "type": "text",
+                      "body": "Too late"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "status": "delivered"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": []
+      }
+    },
+    "framework_events": {
+      "room-1": [
+        {
+          "$unordered": [
+            "room_closed",
+            {
+              "event": "room_refused_event",
+              "status": "closed",
+              "operation": "reentry",
+              "event_type": "message"
+            },
+            {
+              "event": "event_processed",
+              "event_id": "room-1#0"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "notes": "Python: tests/test_room_status_enforcement.py::TestClosedRoomRefuses::test_a_room_a_pass_s_hook_closed_refuses_that_pass. The source checks the refusal contract, not event_processed timing relative to the injected pass; these notifications are compared without imposing a total order.",
+  "reentrancy": [
+    "commit@locked"
+  ]
+}

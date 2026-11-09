@@ -1,0 +1,161 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/a-room-closed-outside-the-kit-before-the-first-streamed-row-refuses-it",
+  "title": "The first streamed row reads a closure made directly in the store",
+  "rules": [
+    "§5.1",
+    "§7.5 rule 2",
+    "§12.2 step 14s"
+  ],
+  "notes": "Python: tests/test_stream_room_reads.py::test_a_close_before_the_first_row_is_read. A generation starts with an open room context; a store write closes it without passing through the kit, and the first row must read that status.",
+  "setup": {
+    "channels": [
+      {
+        "id": "web",
+        "type": "webhook",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "Let me ",
+                "check."
+              ],
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "lookup_order",
+                  "arguments": {
+                    "order": "42"
+                  }
+                }
+              ]
+            },
+            {
+              "deltas": [
+                "Order 42 ",
+                "shipped."
+              ]
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup_order",
+            "description": "Find an order by its number",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "order": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "order"
+              ]
+            },
+            "returns": "shipped"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "moderator",
+        "trigger": "before_ai_generation",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "set_room_timers",
+                "room_id": "$room",
+                "timers": {
+                  "last_activity_at": "2026-01-01T12:00:00Z"
+                }
+              },
+              {
+                "call": "store.update_room_if",
+                "room": {
+                  "id": "$room",
+                  "status": "closed"
+                },
+                "status": "active",
+                "paused_at": null,
+                "last_activity_at": "2026-01-01T12:00:00Z"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "web",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Where is order 42?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message",
+          "source": {
+            "channel_id": "web"
+          },
+          "content": {
+            "body": "Where is order 42?"
+          },
+          "status": "delivered"
+        }
+      ]
+    },
+    "rooms": {
+      "room-1": {
+        "status": "closed"
+      }
+    }
+  }
+}

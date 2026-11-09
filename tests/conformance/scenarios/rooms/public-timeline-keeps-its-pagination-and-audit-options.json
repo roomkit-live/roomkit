@@ -1,0 +1,254 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/public-timeline-keeps-its-pagination-and-audit-options",
+  "title": "Public timeline reads forward pagination, visibility and audit options without changing the room",
+  "rules": [
+    "§5.1",
+    "§14.1"
+  ],
+  "notes": "Python: tests/test_framework_queries.py::TestGetTimeline and TestGetTimelineCursorPagination. Store commits seed four rows including one refused row. Public get_timeline must exclude it by default and include it for audit.",
+  "setup": {
+    "rooms": [
+      {
+        "id": "room-1"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "0"
+        },
+        "visibility": "public",
+        "status": "delivered"
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "1"
+        },
+        "visibility": "public",
+        "status": "blocked"
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "2"
+        },
+        "visibility": "public",
+        "status": "delivered"
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "activity": false,
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "3"
+        },
+        "visibility": "public",
+        "status": "delivered"
+      }
+    },
+    {
+      "call": "get_timeline",
+      "room_id": "room-1",
+      "expect": {
+        "result": [
+          {
+            "content": {
+              "body": "0"
+            }
+          },
+          {
+            "content": {
+              "body": "2"
+            }
+          },
+          {
+            "content": {
+              "body": "3"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "call": "get_timeline",
+      "room_id": "room-1",
+      "limit": 2,
+      "expect": {
+        "result": [
+          {
+            "content": {
+              "body": "0"
+            }
+          },
+          {
+            "content": {
+              "body": "2"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "call": "get_timeline",
+      "room_id": "room-1",
+      "offset": 1,
+      "limit": 1,
+      "expect": {
+        "result": [
+          {
+            "content": {
+              "body": "2"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "call": "get_timeline",
+      "room_id": "room-1",
+      "after_index": 0,
+      "limit": 2,
+      "expect": {
+        "result": [
+          {
+            "content": {
+              "body": "2"
+            }
+          },
+          {
+            "content": {
+              "body": "3"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "call": "get_timeline",
+      "room_id": "room-1",
+      "before_index": 3,
+      "expect": {
+        "result": [
+          {
+            "content": {
+              "body": "0"
+            }
+          },
+          {
+            "content": {
+              "body": "2"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "call": "get_timeline",
+      "room_id": "room-1",
+      "newest_first": true,
+      "limit": 2,
+      "expect": {
+        "result": [
+          {
+            "content": {
+              "body": "2"
+            }
+          },
+          {
+            "content": {
+              "body": "3"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "call": "get_timeline",
+      "room_id": "room-1",
+      "include_blocked": true,
+      "expect": {
+        "result": [
+          {
+            "content": {
+              "body": "0"
+            }
+          },
+          {
+            "content": {
+              "body": "1"
+            }
+          },
+          {
+            "content": {
+              "body": "2"
+            }
+          },
+          {
+            "content": {
+              "body": "3"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "call": "get_timeline",
+      "room_id": "room-1",
+      "visibility_filter": "internal",
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "call": "get_timeline",
+      "room_id": "room-1",
+      "after_index": 0,
+      "before_index": 3,
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "get_timeline",
+      "room_id": "missing",
+      "expect": {
+        "error": "room_not_found"
+      }
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "room-1": {
+        "status": "active",
+        "event_count": 4,
+        "timers": {
+          "last_activity_at": null
+        }
+      }
+    },
+    "framework_events": {
+      "room-1": []
+    }
+  }
+}
