@@ -297,11 +297,25 @@ async def _sent_round(**config: Any) -> dict[str, Any]:
     return captured[0]["messages"][0]
 
 
-async def test_a_configured_thinking_field_carries_a_round_s_reasoning_to_the_server() -> None:
-    sent = await _sent_round(thinking_field="reasoning_content")
+@pytest.mark.parametrize("field", ["reasoning_content", "reasoning"])
+async def test_a_configured_thinking_field_carries_a_round_s_reasoning_to_the_server(
+    field: str,
+) -> None:
+    sent = await _sent_round(thinking_field=field)
 
-    assert sent["reasoning_content"] == "why"
+    assert sent[field] == "why"
     assert sent["content"] == "Look."
+
+
+async def test_a_configured_thinking_field_carries_an_answer_s_reasoning() -> None:
+    captured: list[dict[str, Any]] = []
+    settings = OpenAIConfig(api_key="k", model="glm", thinking_field="reasoning_content")
+    provider = OpenAIAIProvider(settings, transport=_answer(captured))
+    answer = AIMessage(role="assistant", content=[_THOUGHT, AITextPart(text="Sunny.")])
+
+    await provider.generate(AIContext(messages=[answer]))
+
+    assert captured[0]["messages"][0]["reasoning_content"] == "why"
 
 
 async def test_without_a_thinking_field_the_server_gets_no_reasoning() -> None:
