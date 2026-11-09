@@ -95,7 +95,7 @@ _ORDER_OF_ITS_CUT = (
 _ANSWERS_AFTER_ITS_CUT = {"tools/a-call-that-returns-once-its-turn-is-cut-ends-aborted"}
 
 
-# Store and room lifecycle scenarios run on each store this implementation ships that
+# Store, idempotency and room lifecycle scenarios run on each store this implementation ships that
 # needs no server: the in-memory store, the kit's default, and SQLiteStore.
 _STORES = ("memory", "sqlite")
 
@@ -117,7 +117,12 @@ def _cases() -> list[Any]:
                     reason=KNOWN_FAILURES[scenario_id], strict=True, raises=AssertionError
                 )
             )
-        for store in _STORES if scenario_id.startswith(("store/", "rooms/")) else ("memory",):
+        stores = (
+            _STORES
+            if scenario_id.startswith(("store/", "rooms/", "idempotency/"))
+            else ("memory",)
+        )
+        for store in stores:
             name = scenario_id if store == "memory" else f"{scenario_id}[{store}]"
             cases.append(pytest.param(path, store, id=name, marks=marks))
     return cases

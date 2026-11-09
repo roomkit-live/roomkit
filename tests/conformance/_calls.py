@@ -20,6 +20,7 @@ from roomkit.core.exceptions import (
     ChannelNotFoundError,
     ChannelNotRegisteredError,
     EventNotFoundError,
+    IdempotencyKeyTakenError,
     IdentityNotFoundError,
     ParticipantNotFoundError,
     ProcessTimeoutError,
@@ -85,6 +86,7 @@ _ERRORS: tuple[tuple[type[Exception], str], ...] = (
     (ReentrantCallError, "reentrant"),
     (ReentryLoopCapError, "reentry_loop_cap"),
     (EventNotFoundError, "event_not_found"),
+    (IdempotencyKeyTakenError, "idempotency_key_taken"),
     (TaskNotFoundError, "task_not_found"),
     (VerificationRefusedError, "verification_refused"),
     (TurnLinkError, "turn_link"),
@@ -151,6 +153,7 @@ def dump(value: Any) -> Any:
         return {
             "event": dump(value.event),
             "blocked": value.blocked,
+            "duplicate": value.duplicate,
             "reason": value.reason,
             "error": None if value.error is None else str(value.error),
             "response_metadata": dump(dict(value.response_metadata)),

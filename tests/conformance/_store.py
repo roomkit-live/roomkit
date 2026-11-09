@@ -120,6 +120,8 @@ STORE_ARGUMENTS: dict[str, set[str]] = {
     "store.get_unread_count": {"room_id", "channel_id"},
     "store.list_read_markers": {"room_id"},
     "store.get_event": {"event_id"},
+    "store.check_idempotency": {"room_id", "key", "channel_id"},
+    "store.get_event_by_idempotency_key": {"room_id", "key", "channel_id"},
     "store.update_event": {"event"},
     "store.record_delivery_results": {"room_id", "event_id", "results"},
     "store.write_change_target": {"room_id", "target"},
