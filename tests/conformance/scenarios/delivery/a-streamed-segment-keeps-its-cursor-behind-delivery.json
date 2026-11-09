@@ -1,0 +1,148 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "rules": [
+    "§10.2",
+    "§13.5",
+    "§5.1"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "deliver": [
+          {
+            "when": {
+              "text": "first half"
+            },
+            "gate": "first"
+          }
+        ]
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "ok"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "first ",
+                "half"
+              ],
+              "calls": [
+                {
+                  "id": "t1",
+                  "name": "lookup",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "second half"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "access": "read_write"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "background": true,
+      "as": "turn"
+    },
+    {
+      "wait_for": "first"
+    },
+    {
+      "call": "get_room",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "latest_index": {
+            "$as": "committed"
+          },
+          "delivered_index": {
+            "$as": "delivered"
+          }
+        }
+      }
+    },
+    {
+      "open": "first"
+    },
+    {
+      "await": "turn"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "room-1": {
+        "latest_index": 4,
+        "delivered_index": 4
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [
+          {
+            "content": {
+              "body": "first half"
+            }
+          },
+          {
+            "type": "tool_call_start"
+          },
+          {
+            "type": "tool_call_end"
+          },
+          {
+            "content": {
+              "body": "second half"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "id": "delivery/a-streamed-segment-keeps-its-cursor-behind-delivery",
+  "title": "A streamed segment holds the cursor until transport delivery, and later segments follow it",
+  "notes": "Python: tests/test_delivery_order.py::test_a_streamed_segment_holds_the_cursor_until_it_is_delivered. Text segments are split by a real scripted tool call; the actual first transport delivery waits at a gate. Distinct $as names assert that committed and delivered indices differ while it is held."
+}

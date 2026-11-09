@@ -1,0 +1,128 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-successful-provider-receipt-reaches-the-caller",
+  "title": "The successful provider receipt reaches the caller; a clean set writes no delivery results",
+  "rules": [
+    "§5.13",
+    "§10.2",
+    "§14.3"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "reader",
+        "type": "websocket",
+        "deliver": [
+          {
+            "output": {
+              "provider_result": {
+                "success": true,
+                "provider_message_id": "provider-accepted",
+                "metadata": {
+                  "carrier": "test",
+                  "segments": 2,
+                  "accepted": true
+                }
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "reader"
+          }
+        ]
+      }
+    ]
+  },
+  "notes": "Python: tests/test_delivery_outcomes.py::TestTheCallerIsToldWhatHappened::test_a_successful_provider_result_is_preserved and test_a_negative_provider_result_uses_the_retry_path. The scripted channel returns the provider receipt; the production lane constructs and stores the outcomes.",
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "status": "delivered",
+          "delivery_results": {
+            "sms": {
+              "$absent": true
+            },
+            "reader": {
+              "$absent": true
+            },
+            "web": {
+              "$absent": true
+            },
+            "x": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "reader": [
+          {
+            "content": {
+              "body": "hello"
+            }
+          }
+        ],
+        "sms": []
+      }
+    }
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "status": "delivered"
+          },
+          "delivery_results": {
+            "reader": {
+              "channel_id": "reader",
+              "status": "sent",
+              "provider_message_id": "provider-accepted",
+              "provider_result": {
+                "success": true,
+                "provider_message_id": "provider-accepted",
+                "metadata": {
+                  "carrier": "test",
+                  "segments": 2,
+                  "accepted": true
+                }
+              },
+              "error": null
+            },
+            "sms": {
+              "$absent": true
+            }
+          }
+        }
+      }
+    }
+  ]
+}

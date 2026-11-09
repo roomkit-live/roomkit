@@ -1,0 +1,396 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/an-explicit-status-preserves-its-payload-in-every-room-state",
+  "title": "An explicit status reaches any existing room without a binding or activity",
+  "rules": [
+    "§10.4 A delivery status follows its message"
+  ],
+  "setup": {
+    "hooks": [
+      {
+        "name": "status",
+        "trigger": "on_delivery_status",
+        "execution": "async",
+        "channel_types": [
+          "email"
+        ]
+      }
+    ]
+  },
+  "expect": {
+    "hooks": {
+      "status": [
+        {
+          "room_id": "room-active",
+          "delivery_status": {
+            "provider": "mock",
+            "message_id": "m-active",
+            "status": "failed",
+            "room_id": "room-active",
+            "channel_id": "unregistered",
+            "sender": "sender",
+            "recipient": "recipient",
+            "error_code": "E42",
+            "error_message": "refused",
+            "raw": {
+              "nested": {
+                "attempt": 2
+              }
+            }
+          }
+        },
+        {
+          "room_id": "room-paused",
+          "delivery_status": {
+            "provider": "mock",
+            "message_id": "m-paused",
+            "status": "failed",
+            "room_id": "room-paused",
+            "channel_id": "unregistered",
+            "sender": "sender",
+            "recipient": "recipient",
+            "error_code": "E42",
+            "error_message": "refused",
+            "raw": {
+              "nested": {
+                "attempt": 2
+              }
+            }
+          }
+        },
+        {
+          "room_id": "room-closed",
+          "delivery_status": {
+            "provider": "mock",
+            "message_id": "m-closed",
+            "status": "failed",
+            "room_id": "room-closed",
+            "channel_id": "unregistered",
+            "sender": "sender",
+            "recipient": "recipient",
+            "error_code": "E42",
+            "error_message": "refused",
+            "raw": {
+              "nested": {
+                "attempt": 2
+              }
+            }
+          }
+        },
+        {
+          "room_id": "room-archived",
+          "delivery_status": {
+            "provider": "mock",
+            "message_id": "m-archived",
+            "status": "failed",
+            "room_id": "room-archived",
+            "channel_id": "unregistered",
+            "sender": "sender",
+            "recipient": "recipient",
+            "error_code": "E42",
+            "error_message": "refused",
+            "raw": {
+              "nested": {
+                "attempt": 2
+              }
+            }
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "room-active": [],
+      "room-paused": [],
+      "room-closed": [],
+      "room-archived": []
+    },
+    "framework_events": {
+      "room-active": [],
+      "room-paused": [],
+      "room-closed": [],
+      "room-archived": []
+    }
+  },
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-active",
+        "status": "active",
+        "timers": {
+          "last_activity_at": "2026-01-01T00:00:00Z"
+        },
+        "event_count": 7,
+        "latest_index": 9,
+        "updated_at": "2026-01-01T00:00:00Z"
+      }
+    },
+    {
+      "call": "get_room",
+      "room_id": "room-active",
+      "expect": {
+        "result": {
+          "timers": {
+            "last_activity_at": {
+              "$as": "activity-active"
+            }
+          },
+          "updated_at": {
+            "$as": "activity-active"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_delivery_status",
+      "status": {
+        "provider": "mock",
+        "message_id": "m-active",
+        "status": "failed",
+        "room_id": "room-active",
+        "channel_id": "unregistered",
+        "sender": "sender",
+        "recipient": "recipient",
+        "error_code": "E42",
+        "error_message": "refused",
+        "raw": {
+          "nested": {
+            "attempt": 2
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "get_room",
+      "room_id": "room-active",
+      "expect": {
+        "result": {
+          "status": "active",
+          "event_count": 7,
+          "latest_index": 9,
+          "timers": {
+            "last_activity_at": {
+              "$as": "activity-active"
+            }
+          },
+          "updated_at": {
+            "$as": "activity-active"
+          }
+        }
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-paused",
+        "status": "paused",
+        "timers": {
+          "last_activity_at": "2026-01-01T00:00:01Z"
+        },
+        "event_count": 7,
+        "latest_index": 9,
+        "updated_at": "2026-01-01T00:00:01Z"
+      }
+    },
+    {
+      "call": "get_room",
+      "room_id": "room-paused",
+      "expect": {
+        "result": {
+          "timers": {
+            "last_activity_at": {
+              "$as": "activity-paused"
+            }
+          },
+          "updated_at": {
+            "$as": "activity-paused"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_delivery_status",
+      "status": {
+        "provider": "mock",
+        "message_id": "m-paused",
+        "status": "failed",
+        "room_id": "room-paused",
+        "channel_id": "unregistered",
+        "sender": "sender",
+        "recipient": "recipient",
+        "error_code": "E42",
+        "error_message": "refused",
+        "raw": {
+          "nested": {
+            "attempt": 2
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "get_room",
+      "room_id": "room-paused",
+      "expect": {
+        "result": {
+          "status": "paused",
+          "event_count": 7,
+          "latest_index": 9,
+          "timers": {
+            "last_activity_at": {
+              "$as": "activity-paused"
+            }
+          },
+          "updated_at": {
+            "$as": "activity-paused"
+          }
+        }
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-closed",
+        "status": "closed",
+        "timers": {
+          "last_activity_at": "2026-01-01T00:00:02Z"
+        },
+        "event_count": 7,
+        "latest_index": 9,
+        "updated_at": "2026-01-01T00:00:02Z"
+      }
+    },
+    {
+      "call": "get_room",
+      "room_id": "room-closed",
+      "expect": {
+        "result": {
+          "timers": {
+            "last_activity_at": {
+              "$as": "activity-closed"
+            }
+          },
+          "updated_at": {
+            "$as": "activity-closed"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_delivery_status",
+      "status": {
+        "provider": "mock",
+        "message_id": "m-closed",
+        "status": "failed",
+        "room_id": "room-closed",
+        "channel_id": "unregistered",
+        "sender": "sender",
+        "recipient": "recipient",
+        "error_code": "E42",
+        "error_message": "refused",
+        "raw": {
+          "nested": {
+            "attempt": 2
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "get_room",
+      "room_id": "room-closed",
+      "expect": {
+        "result": {
+          "status": "closed",
+          "event_count": 7,
+          "latest_index": 9,
+          "timers": {
+            "last_activity_at": {
+              "$as": "activity-closed"
+            }
+          },
+          "updated_at": {
+            "$as": "activity-closed"
+          }
+        }
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-archived",
+        "status": "archived",
+        "timers": {
+          "last_activity_at": "2026-01-01T00:00:03Z"
+        },
+        "event_count": 7,
+        "latest_index": 9,
+        "updated_at": "2026-01-01T00:00:03Z"
+      }
+    },
+    {
+      "call": "get_room",
+      "room_id": "room-archived",
+      "expect": {
+        "result": {
+          "timers": {
+            "last_activity_at": {
+              "$as": "activity-archived"
+            }
+          },
+          "updated_at": {
+            "$as": "activity-archived"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_delivery_status",
+      "status": {
+        "provider": "mock",
+        "message_id": "m-archived",
+        "status": "failed",
+        "room_id": "room-archived",
+        "channel_id": "unregistered",
+        "sender": "sender",
+        "recipient": "recipient",
+        "error_code": "E42",
+        "error_message": "refused",
+        "raw": {
+          "nested": {
+            "attempt": 2
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "get_room",
+      "room_id": "room-archived",
+      "expect": {
+        "result": {
+          "status": "archived",
+          "event_count": 7,
+          "latest_index": 9,
+          "timers": {
+            "last_activity_at": {
+              "$as": "activity-archived"
+            }
+          },
+          "updated_at": {
+            "$as": "activity-archived"
+          }
+        }
+      }
+    }
+  ]
+}

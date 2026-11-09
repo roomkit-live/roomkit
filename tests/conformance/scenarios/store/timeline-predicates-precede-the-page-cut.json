@@ -1,0 +1,306 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/timeline-predicates-precede-the-page-cut",
+  "title": "Timeline filters combine, exclude time boundaries and blocked rows, and apply before pagination",
+  "rules": [
+    "§14.1"
+  ],
+  "notes": "Python: tests/test_store_activity.py::TestEventFilterInMemoryStore. Each result is an exact-length ordered list; negative controls exclude mismatching rows.",
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-1"
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "message",
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "participant_id": "alice"
+        },
+        "content": {
+          "type": "text",
+          "body": "m0"
+        },
+        "visibility": "all",
+        "correlation_id": "a",
+        "status": "delivered",
+        "created_at": "2026-01-01T00:00:00Z"
+      },
+      "activity": false
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "tool_call_start",
+        "source": {
+          "channel_id": "ai",
+          "channel_type": "ai",
+          "participant_id": "bot"
+        },
+        "content": {
+          "type": "tool_call",
+          "tool_name": "lookup",
+          "tool_id": "call-1"
+        },
+        "visibility": "all",
+        "correlation_id": "a",
+        "status": "delivered",
+        "created_at": "2026-01-01T00:00:01Z"
+      },
+      "activity": false
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "message",
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "participant_id": "alice"
+        },
+        "content": {
+          "type": "text",
+          "body": "m2"
+        },
+        "visibility": "transport",
+        "correlation_id": "b",
+        "status": "delivered",
+        "created_at": "2026-01-01T00:00:02Z"
+      },
+      "activity": false
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "message",
+        "source": {
+          "channel_id": "ai",
+          "channel_type": "ai",
+          "participant_id": "bot"
+        },
+        "content": {
+          "type": "text",
+          "body": "m3"
+        },
+        "visibility": "all",
+        "correlation_id": "a",
+        "status": "blocked",
+        "created_at": "2026-01-01T00:00:03Z"
+      },
+      "activity": false
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "type": "message",
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms",
+          "participant_id": "alice"
+        },
+        "content": {
+          "type": "text",
+          "body": "m4"
+        },
+        "visibility": "all",
+        "correlation_id": "a",
+        "status": "delivered",
+        "created_at": "2026-01-01T00:00:04Z"
+      },
+      "activity": false
+    },
+    {
+      "call": "store.get_timeline",
+      "room_id": "room-1",
+      "event_filter": {},
+      "expect": {
+        "result": [
+          {
+            "index": 0
+          },
+          {
+            "index": 1
+          },
+          {
+            "index": 2
+          },
+          {
+            "index": 4
+          }
+        ]
+      }
+    },
+    {
+      "call": "store.get_timeline",
+      "room_id": "room-1",
+      "event_filter": {
+        "event_types": [
+          "message"
+        ],
+        "exclude_types": [
+          "message"
+        ]
+      },
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "call": "store.get_timeline",
+      "room_id": "room-1",
+      "event_filter": {
+        "event_types": [
+          "message"
+        ],
+        "correlation_id": "a",
+        "source_channel_id": "sms"
+      },
+      "expect": {
+        "result": [
+          {
+            "index": 0
+          },
+          {
+            "index": 4
+          }
+        ]
+      }
+    },
+    {
+      "call": "store.get_timeline",
+      "room_id": "room-1",
+      "event_filter": {
+        "source_channel_type": "ai"
+      },
+      "expect": {
+        "result": [
+          {
+            "index": 1
+          }
+        ]
+      }
+    },
+    {
+      "call": "store.get_timeline",
+      "room_id": "room-1",
+      "event_filter": {
+        "participant_id": "alice",
+        "visibility": "transport"
+      },
+      "expect": {
+        "result": [
+          {
+            "index": 2
+          }
+        ]
+      }
+    },
+    {
+      "call": "store.get_timeline",
+      "room_id": "room-1",
+      "event_filter": {
+        "after_time": "2026-01-01T00:00:00Z",
+        "before_time": "2026-01-01T00:00:04Z"
+      },
+      "expect": {
+        "result": [
+          {
+            "index": 1
+          },
+          {
+            "index": 2
+          }
+        ]
+      }
+    },
+    {
+      "call": "store.get_timeline",
+      "room_id": "room-1",
+      "event_filter": {
+        "event_types": []
+      },
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "call": "store.get_timeline",
+      "room_id": "room-1",
+      "event_filter": {
+        "correlation_id": "missing"
+      },
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "call": "store.get_timeline",
+      "room_id": "room-1",
+      "event_filter": {
+        "event_types": [
+          "message"
+        ],
+        "source_channel_id": "sms",
+        "correlation_id": "a"
+      },
+      "limit": 1,
+      "newest_first": false,
+      "expect": {
+        "result": [
+          {
+            "index": 0
+          }
+        ]
+      }
+    },
+    {
+      "call": "store.get_timeline",
+      "room_id": "room-1",
+      "event_filter": {
+        "event_types": [
+          "message"
+        ],
+        "source_channel_id": "sms",
+        "correlation_id": "a"
+      },
+      "limit": 1,
+      "newest_first": true,
+      "expect": {
+        "result": [
+          {
+            "index": 4
+          }
+        ]
+      }
+    },
+    {
+      "call": "store.get_timeline",
+      "room_id": "room-1",
+      "event_filter": {
+        "source_channel_type": "ai",
+        "include_blocked": true
+      },
+      "expect": {
+        "result": [
+          {
+            "index": 1
+          },
+          {
+            "index": 3,
+            "status": "blocked"
+          }
+        ]
+      }
+    }
+  ]
+}

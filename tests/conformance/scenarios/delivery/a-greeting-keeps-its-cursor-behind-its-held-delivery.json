@@ -1,0 +1,102 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "rules": [
+    "§10.2",
+    "§13.5",
+    "§5.1"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "deliver": [
+          {
+            "when": {
+              "text": "greeting"
+            },
+            "gate": "first"
+          }
+        ]
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "agent": {
+          "auto_greet": false,
+          "greeting": "greeting"
+        },
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "access": "write_only"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_greeting",
+      "room_id": "room-1",
+      "background": true,
+      "as": "greet"
+    },
+    {
+      "wait_for": "first"
+    },
+    {
+      "call": "get_room",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "latest_index": 0,
+          "delivered_index": -1
+        }
+      }
+    },
+    {
+      "open": "first"
+    },
+    {
+      "await": "greet"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "room-1": {
+        "latest_index": 0,
+        "delivered_index": 0
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [
+          {
+            "content": {
+              "body": "greeting"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "id": "delivery/a-greeting-keeps-its-cursor-behind-its-held-delivery",
+  "title": "A greeting is committed before delivery, and advances the cursor only after its transport returns",
+  "notes": "Python: tests/test_delivery_order.py::test_committed_event_stays_off_the_cursor_until_it_is_delivered. A gate holds the actual transport callback, not a timer."
+}

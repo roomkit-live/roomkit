@@ -1,0 +1,178 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-status-picks-the-newest-eligible-active-room",
+  "title": "A recipient status selects the newest ACTIVE or PAUSED room, ignoring later closed rooms",
+  "rules": [
+    "§10.4 A delivery status follows its message"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "recipient_key": "phone_number",
+        "addresses": {
+          "normalizes": {}
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "status",
+        "trigger": "on_delivery_status",
+        "execution": "async"
+      }
+    ]
+  },
+  "expect": {
+    "hooks": {
+      "status": [
+        {
+          "room_id": "room-1",
+          "delivery_status": {
+            "message_id": "m1"
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "room-0": {
+        "status": "paused",
+        "event_count": 0,
+        "latest_index": null,
+        "timers": {
+          "last_activity_at": null
+        }
+      },
+      "room-1": {
+        "status": "active",
+        "event_count": 0,
+        "latest_index": null,
+        "timers": {
+          "last_activity_at": null
+        }
+      },
+      "room-2": {
+        "status": "closed",
+        "event_count": 0,
+        "latest_index": null,
+        "timers": {
+          "last_activity_at": null
+        }
+      },
+      "room-3": {
+        "status": "archived",
+        "event_count": 0,
+        "latest_index": null,
+        "timers": {
+          "last_activity_at": null
+        }
+      }
+    },
+    "framework_events": {
+      "room-0": [],
+      "room-1": [],
+      "room-2": [],
+      "room-3": []
+    }
+  },
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-0",
+        "status": "paused",
+        "created_at": "2026-01-01T00:00:00Z"
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-0",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "category": "transport",
+        "participant_id": "alice",
+        "metadata": {
+          "phone_number": "alice"
+        }
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-1",
+        "status": "active",
+        "created_at": "2026-01-02T00:00:00Z"
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-1",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "category": "transport",
+        "participant_id": "alice",
+        "metadata": {
+          "phone_number": "alice"
+        }
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-2",
+        "status": "closed",
+        "created_at": "2026-01-03T00:00:00Z"
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-2",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "category": "transport",
+        "participant_id": "alice",
+        "metadata": {
+          "phone_number": "alice"
+        }
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-3",
+        "status": "archived",
+        "created_at": "2026-01-04T00:00:00Z"
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-3",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "category": "transport",
+        "participant_id": "alice",
+        "metadata": {
+          "phone_number": "alice"
+        }
+      }
+    },
+    {
+      "call": "process_delivery_status",
+      "status": {
+        "provider": "mock",
+        "message_id": "m1",
+        "status": "delivered",
+        "channel_id": "sms",
+        "recipient": "alice"
+      }
+    },
+    {
+      "idle": true
+    }
+  ]
+}

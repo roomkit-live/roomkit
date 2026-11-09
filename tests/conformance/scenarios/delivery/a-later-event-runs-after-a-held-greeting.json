@@ -1,0 +1,137 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "rules": [
+    "§10.2",
+    "§13.5",
+    "§5.1"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "deliver": [
+          {
+            "when": {
+              "text": "greeting"
+            },
+            "gate": "first"
+          },
+          {
+            "when": {
+              "text": "later"
+            },
+            "do": [
+              {
+                "call": "get_room",
+                "room_id": "$room",
+                "expect": {
+                  "result": {
+                    "delivered_index": 0
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "agent": {
+          "auto_greet": false,
+          "greeting": "greeting"
+        },
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "access": "write_only"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_greeting",
+      "room_id": "room-1",
+      "background": true,
+      "as": "greet"
+    },
+    {
+      "wait_for": "first"
+    },
+    {
+      "call": "get_room",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "latest_index": 0,
+          "delivered_index": -1
+        }
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "agent",
+      "content": {
+        "type": "text",
+        "body": "later"
+      },
+      "background": true,
+      "as": "later"
+    },
+    {
+      "open": "first"
+    },
+    {
+      "await": "greet"
+    },
+    {
+      "await": "later"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "room-1": {
+        "latest_index": 1,
+        "delivered_index": 1
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [
+          {
+            "content": {
+              "body": "greeting"
+            }
+          },
+          {
+            "content": {
+              "body": "later"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "id": "delivery/a-later-event-runs-after-a-held-greeting",
+  "title": "A later public send cannot overtake a greeting held in its transport",
+  "notes": "Python: tests/test_delivery_order.py::test_a_later_index_does_not_overtake_a_stalled_inline_delivery. This shared case uses the public send path; the source test also enqueues a plan directly in the internal lane."
+}

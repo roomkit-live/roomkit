@@ -24,7 +24,8 @@
             "refuse": {
               "error": "rejected",
               "code": "550",
-              "retryable": false
+              "retryable": false,
+              "provider_message_id": "provider-refused"
             }
           }
         ]
@@ -32,7 +33,22 @@
       {
         "id": "email",
         "type": "email",
-        "category": "transport"
+        "category": "transport",
+        "deliver": [
+          {
+            "output": {
+              "provider_result": {
+                "success": true,
+                "provider_message_id": "provider-accepted",
+                "metadata": {
+                  "carrier": "test",
+                  "segments": 2,
+                  "accepted": true
+                }
+              }
+            }
+          }
+        ]
       }
     ],
     "rooms": [
@@ -69,6 +85,39 @@
           "blocked": false,
           "event": {
             "status": "delivered"
+          },
+          "delivery_results": {
+            "ws": {
+              "channel_id": "ws",
+              "status": "failed",
+              "error": {
+                "code": "550",
+                "retryable": false
+              },
+              "provider_message_id": "provider-refused",
+              "provider_result": {
+                "success": false,
+                "provider_message_id": "provider-refused",
+                "error": "rejected"
+              }
+            },
+            "email": {
+              "channel_id": "email",
+              "status": "sent",
+              "provider_message_id": "provider-accepted",
+              "provider_result": {
+                "success": true,
+                "provider_message_id": "provider-accepted",
+                "metadata": {
+                  "carrier": "test",
+                  "segments": 2,
+                  "accepted": true
+                }
+              }
+            },
+            "sms": {
+              "$absent": true
+            }
           }
         }
       }
@@ -86,11 +135,27 @@
               "error": {
                 "code": "550",
                 "retryable": false
+              },
+              "provider_message_id": "provider-refused",
+              "provider_result": {
+                "success": false,
+                "provider_message_id": "provider-refused",
+                "error": "rejected"
               }
             },
             "email": {
               "channel_id": "email",
-              "status": "sent"
+              "status": "sent",
+              "provider_message_id": "provider-accepted",
+              "provider_result": {
+                "success": true,
+                "provider_message_id": "provider-accepted",
+                "metadata": {
+                  "carrier": "test",
+                  "segments": 2,
+                  "accepted": true
+                }
+              }
             },
             "sms": {
               "$absent": true

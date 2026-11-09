@@ -145,6 +145,26 @@
       }
     },
     {
+      "call": "store.get_event",
+      "event_id": "$target",
+      "expect": {
+        "result": {
+          "content": {
+            "body": "corrected"
+          },
+          "delivery_results": {
+            "sms": {
+              "status": "failed",
+              "error": "provider down"
+            },
+            "web": {
+              "$absent": true
+            }
+          }
+        }
+      }
+    },
+    {
       "call": "store.commit_event",
       "room_id": "room-1",
       "event": {
@@ -171,6 +191,26 @@
         "delivery_results": {
           "web": {
             "status": "delivered"
+          }
+        }
+      }
+    },
+    {
+      "call": "store.get_event",
+      "event_id": "$target",
+      "expect": {
+        "result": {
+          "content": {
+            "body": "corrected twice"
+          },
+          "delivery_results": {
+            "sms": {
+              "status": "failed",
+              "error": "provider down"
+            },
+            "web": {
+              "$absent": true
+            }
           }
         }
       }
@@ -215,6 +255,50 @@
               "error": "provider down"
             },
             "web": {
+              "$absent": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "store.record_delivery_results",
+      "room_id": "room-1",
+      "event_id": "missing",
+      "results": {
+        "bad": {
+          "status": "failed"
+        }
+      }
+    },
+    {
+      "call": "store.record_delivery_results",
+      "room_id": "room-1",
+      "event_id": "$target",
+      "results": {}
+    },
+    {
+      "call": "store.get_event",
+      "event_id": "$target",
+      "expect": {
+        "result": {
+          "content": {
+            "body": "corrected twice"
+          },
+          "metadata": {
+            "deleted": true
+          },
+          "delivery_results": {
+            "sms": {
+              "$absent": true
+            },
+            "reader": {
+              "$absent": true
+            },
+            "web": {
+              "$absent": true
+            },
+            "x": {
               "$absent": true
             }
           }
