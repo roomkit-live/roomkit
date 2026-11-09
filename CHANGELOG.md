@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A turn run on another executor than the kit's own names it in its record: `executor_id` on the turn's last message, beside `ai_model` (RMK-1618).
 - **`OpenAIConfig.thinking_field`.** Names the assistant message field a server reads a model's earlier reasoning from, for a server whose documentation asks for it back (`"reasoning_content"` on Z.ai's GLM). A round or an answer that reasoned carries it there. It is absent by default, since strict servers refuse a field they do not know, and the configs of the providers that already send reasoning where their vendor reads it (DeepSeek, MiniMax, Kimi, Cerebras) refuse it.
 
 ### Fixed

@@ -292,7 +292,7 @@ class SegmentWriter:
         stream is handed the marker last (:meth:`stream`).
         """
         self._end_marker = marker
-        self._turn_record = _ended_record(marker)
+        self._turn_record = self._naming_executor(_ended_record(marker))
         self._record_owed = True
         self._sr.turn_record = self._turn_record
 
@@ -309,9 +309,17 @@ class SegmentWriter:
             return
         if recorded_turn_end(stream_record(self._sr)) not in (None, "completed"):
             return
-        self._turn_record = self._generations.cut_record()
+        self._turn_record = self._naming_executor(self._generations.cut_record())
         self._record_owed = True
         self._sr.turn_record = self._turn_record
+
+    def _naming_executor(self, record: dict[str, Any]) -> dict[str, Any]:
+        """*record*, naming the executor of a turn run apart from the kit's own
+        (RFC §6.4): where it ran, as ``ai_model`` says what it ran on."""
+        executor = getattr(self._sr.stream, "executor_id", None)
+        if executor is None or executor == self._kit.turn_executor.executor_id:
+            return record
+        return {**record, "executor_id": executor}
 
     async def write_owed_record(self) -> None:
         """Write a record no final text carried on the last MESSAGE already

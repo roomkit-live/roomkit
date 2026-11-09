@@ -1,0 +1,141 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-turn-s-record-names-the-executor-that-ran-it-apart",
+  "title": "A turn's record names the executor that ran it apart; a turn on the kit's own executor names none",
+  "rules": [
+    "§6.4 The turn's record"
+  ],
+  "notes": "The room learns the executor from the turn it took. A room run in one process keeps the record it had.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "From the executor."
+            }
+          ]
+        }
+      },
+      {
+        "id": "local",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "From the kit."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "coder"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "local",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hello."
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hi."
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "From the executor."
+          },
+          "metadata": {
+            "executor_id": "first"
+          }
+        }
+      ],
+      "r2": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hi."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "From the kit."
+          },
+          "metadata": {
+            "executor_id": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -51,6 +51,11 @@ class RemoteStream:
         return self
 
     @property
+    def executor_id(self) -> str | None:
+        """The executor that took the turn (RFC §10.6.4)."""
+        return self._turn.executor_id
+
+    @property
     def end_owed(self) -> bool:
         """Whether its turn ended for the owner without the executor's end:
         its cleanup is not known to be done (RFC §10.6.8)."""
