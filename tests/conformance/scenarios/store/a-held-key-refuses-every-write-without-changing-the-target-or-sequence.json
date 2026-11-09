@@ -1,0 +1,203 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/a-held-key-refuses-every-write-without-changing-the-target-or-sequence",
+  "title": "A taken key refuses a commit, insert and auto-indexed insert atomically, preserving the target and next index",
+  "rules": [
+    "§13.4",
+    "§8.1",
+    "§14.3"
+  ],
+  "notes": "Python: tests/test_store_binding_contract.py::test_a_key_its_channel_holds_refuses_another_event. RMK-1609.",
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-1"
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "first"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms"
+        },
+        "idempotency_key": "k"
+      },
+      "as": "held"
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "target"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms"
+        },
+        "idempotency_key": null
+      },
+      "as": "target"
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "content": {
+          "type": "edit",
+          "target_event_id": "$target",
+          "new_content": {
+            "type": "text",
+            "body": "changed"
+          }
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms"
+        },
+        "idempotency_key": "k",
+        "type": "edit"
+      },
+      "target": {
+        "content": {
+          "type": "text",
+          "body": "changed"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms"
+        },
+        "idempotency_key": null,
+        "id": "$target",
+        "index": 1
+      },
+      "expect": {
+        "error": "idempotency_key_taken"
+      }
+    },
+    {
+      "call": "store.add_event",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "refused"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms"
+        },
+        "idempotency_key": "k",
+        "room_id": "room-1",
+        "index": 50
+      },
+      "expect": {
+        "error": "idempotency_key_taken"
+      }
+    },
+    {
+      "call": "store.add_event_auto_index",
+      "room_id": "room-1",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "refused"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms"
+        },
+        "idempotency_key": "k"
+      },
+      "expect": {
+        "error": "idempotency_key_taken"
+      }
+    },
+    {
+      "call": "store.get_event",
+      "event_id": "$target",
+      "expect": {
+        "result": {
+          "content": {
+            "type": "text",
+            "body": "target"
+          },
+          "metadata": {
+            "edited": null
+          }
+        }
+      }
+    },
+    {
+      "call": "store.get_event_by_idempotency_key",
+      "room_id": "room-1",
+      "key": "k",
+      "channel_id": "sms",
+      "expect": {
+        "result": {
+          "id": "room-1#0"
+        }
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "next"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms"
+        },
+        "idempotency_key": null
+      },
+      "expect": {
+        "result": {
+          "index": 2
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "type": "text",
+            "body": "first"
+          }
+        },
+        {
+          "index": 1,
+          "content": {
+            "type": "text",
+            "body": "target"
+          }
+        },
+        {
+          "index": 2,
+          "content": {
+            "type": "text",
+            "body": "next"
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "room-1": {
+        "event_count": 3,
+        "latest_index": 2
+      }
+    }
+  }
+}

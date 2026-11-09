@@ -1,0 +1,203 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/a-blank-key-is-stored-as-no-key",
+  "title": "A blank key is stored as no key and no scope finds it",
+  "rules": [
+    "§13.4",
+    "§8.1",
+    "§14.3"
+  ],
+  "notes": "Python: tests/test_store_binding_contract.py::test_a_blank_key_is_no_key. RMK-1609.",
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-1"
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "0"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms"
+        },
+        "idempotency_key": ""
+      },
+      "expect": {
+        "result": {
+          "index": 0,
+          "idempotency_key": null
+        }
+      }
+    },
+    {
+      "call": "store.check_idempotency",
+      "room_id": "room-1",
+      "key": "",
+      "channel_id": "sms",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "call": "store.check_idempotency",
+      "room_id": "room-1",
+      "key": "",
+      "channel_id": null,
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "1"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms"
+        },
+        "idempotency_key": ""
+      },
+      "expect": {
+        "result": {
+          "index": 1,
+          "idempotency_key": null
+        }
+      }
+    },
+    {
+      "call": "store.check_idempotency",
+      "room_id": "room-1",
+      "key": "",
+      "channel_id": "sms",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "call": "store.check_idempotency",
+      "room_id": "room-1",
+      "key": "",
+      "channel_id": null,
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "2"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms"
+        },
+        "idempotency_key": " \t\n"
+      },
+      "expect": {
+        "result": {
+          "index": 2,
+          "idempotency_key": null
+        }
+      }
+    },
+    {
+      "call": "store.check_idempotency",
+      "room_id": "room-1",
+      "key": " \t\n",
+      "channel_id": "sms",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "call": "store.check_idempotency",
+      "room_id": "room-1",
+      "key": " \t\n",
+      "channel_id": null,
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "3"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms"
+        },
+        "idempotency_key": " \t\n"
+      },
+      "expect": {
+        "result": {
+          "index": 3,
+          "idempotency_key": null
+        }
+      }
+    },
+    {
+      "call": "store.check_idempotency",
+      "room_id": "room-1",
+      "key": " \t\n",
+      "channel_id": "sms",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "call": "store.check_idempotency",
+      "room_id": "room-1",
+      "key": " \t\n",
+      "channel_id": null,
+      "expect": {
+        "result": false
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "idempotency_key": null
+        },
+        {
+          "index": 1,
+          "idempotency_key": null
+        },
+        {
+          "index": 2,
+          "idempotency_key": null
+        },
+        {
+          "index": 3,
+          "idempotency_key": null
+        }
+      ]
+    },
+    "rooms": {
+      "room-1": {
+        "event_count": 4,
+        "latest_index": 3
+      }
+    }
+  }
+}

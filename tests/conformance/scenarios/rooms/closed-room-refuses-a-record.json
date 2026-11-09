@@ -1,7 +1,7 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "rooms/closed-room-refuses-a-record",
-  "title": "A closed room refuses a record committed outside the pipeline, with no framework event",
+  "title": "A closed or archived room refuses a record committed outside the pipeline, with no framework event",
   "rules": [
     "§5.1",
     "§10.5 A record outside the pipeline"
@@ -23,6 +23,15 @@
           }
         ],
         "status": "closed"
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ],
+        "status": "archived"
       }
     ]
   },
@@ -41,14 +50,31 @@
       "expect": {
         "error": "room_closed"
       }
+    },
+    {
+      "call": "commit_event",
+      "room_id": "room-2",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "trace"
+        },
+        "status": "delivered",
+        "visibility": "none"
+      },
+      "expect": {
+        "error": "room_closed"
+      }
     }
   ],
   "expect": {
     "timeline": {
-      "room-1": []
+      "room-1": [],
+      "room-2": []
     },
     "framework_events": {
-      "room-1": []
+      "room-1": [],
+      "room-2": []
     }
   }
 }

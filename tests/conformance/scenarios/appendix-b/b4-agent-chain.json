@@ -96,7 +96,8 @@
           "content": {
             "type": "text",
             "body": "Analyse the quarter"
-          }
+          },
+          "index": 0
         },
         {
           "chain_depth": 1,
@@ -104,7 +105,8 @@
             "channel_id": "analyst"
           },
           "responds_to": "room-1#0",
-          "status": "delivered"
+          "status": "delivered",
+          "index": 1
         },
         {
           "chain_depth": 2,
@@ -112,7 +114,8 @@
             "channel_id": "writer"
           },
           "responds_to": "room-1#1",
-          "status": "delivered"
+          "status": "delivered",
+          "index": 2
         },
         {
           "chain_depth": 3,
@@ -120,7 +123,8 @@
             "channel_id": "analyst"
           },
           "responds_to": "room-1#2",
-          "status": "delivered"
+          "status": "delivered",
+          "index": 3
         },
         {
           "chain_depth": 4,
@@ -128,7 +132,8 @@
             "channel_id": "writer"
           },
           "responds_to": "room-1#3",
-          "status": "delivered"
+          "status": "delivered",
+          "index": 4
         },
         {
           "type": "message",
@@ -143,7 +148,8 @@
             "type": "text",
             "body": ""
           },
-          "responds_to": "room-1#4"
+          "responds_to": "room-1#4",
+          "index": 5
         }
       ]
     },
@@ -199,6 +205,12 @@
           ]
         }
       ]
+    },
+    "rooms": {
+      "room-1": {
+        "event_count": 6,
+        "latest_index": 5
+      }
     }
   }
 }

@@ -94,12 +94,14 @@
         {
           "content": {
             "body": "What is the weather?"
-          }
+          },
+          "index": 0
         },
         {
           "content": {
             "body": "First answer"
-          }
+          },
+          "index": 1
         },
         {
           "content": {
@@ -107,7 +109,8 @@
           },
           "source": {
             "channel_id": "agent"
-          }
+          },
+          "index": 2
         }
       ]
     },
@@ -134,6 +137,12 @@
           ]
         }
       ]
+    },
+    "rooms": {
+      "room-1": {
+        "event_count": 3,
+        "latest_index": 2
+      }
     }
   }
 }

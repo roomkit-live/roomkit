@@ -1,0 +1,143 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "idempotency/an-unstored-event-reserves-neither-key-nor-index",
+  "title": "An event excluded by the persistence policy is delivered on each call and reserves neither key nor index",
+  "rules": [
+    "§13.4",
+    "§8.1",
+    "§14.3"
+  ],
+  "notes": "Python: tests/test_commit_atomicity.py::test_policy_excluded_event_does_not_advance_latest_index; tests/test_latest_index.py. RMK-1609.",
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "content": {
+        "type": "text",
+        "body": "unstored"
+      },
+      "event_type": "system",
+      "idempotency_key": "k"
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "content": {
+        "type": "text",
+        "body": "unstored"
+      },
+      "event_type": "system",
+      "idempotency_key": "k"
+    },
+    {
+      "call": "store.check_idempotency",
+      "room_id": "room-1",
+      "key": "k",
+      "channel_id": "sms",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "stored"
+        },
+        "idempotency_key": "k"
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "reason": null,
+          "duplicate": false,
+          "event": {
+            "id": "room-1#0",
+            "index": 0
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "type": "text",
+            "body": "stored"
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "room-1": {
+        "event_count": 1,
+        "latest_index": 0
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "type": "text",
+              "body": "unstored"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "unstored"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "stored"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "kit": {
+      "persistence_policy": {
+        "persist_types": [
+          "message"
+        ]
+      }
+    }
+  }
+}

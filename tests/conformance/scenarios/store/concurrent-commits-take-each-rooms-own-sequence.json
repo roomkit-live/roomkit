@@ -1,0 +1,347 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/concurrent-commits-take-each-rooms-own-sequence",
+  "title": "Concurrent commits allocate each room its own sequence and update its counters with every stored row",
+  "rules": [
+    "§13.4",
+    "§8.1",
+    "§14.3"
+  ],
+  "notes": "Python: tests/test_store_sqlite.py::TestSQLiteStore::test_two_connections_allocate_one_monotonic_sequence (shared scenario supplements the two-connection test). RMK-1609.",
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-1"
+      },
+      "expect": {
+        "result": {
+          "event_count": 0,
+          "latest_index": null
+        }
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-2"
+      },
+      "expect": {
+        "result": {
+          "event_count": 0,
+          "latest_index": null
+        }
+      }
+    },
+    {
+      "concurrent": [
+        {
+          "call": "store.commit_event",
+          "room_id": "room-1",
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "first"
+            },
+            "source": {
+              "channel_id": "sms",
+              "channel_type": "sms"
+            },
+            "idempotency_key": null
+          }
+        },
+        {
+          "call": "store.commit_event",
+          "room_id": "room-2",
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "first"
+            },
+            "source": {
+              "channel_id": "sms",
+              "channel_type": "sms"
+            },
+            "idempotency_key": null
+          }
+        },
+        {
+          "call": "store.commit_event",
+          "room_id": "room-1",
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "first"
+            },
+            "source": {
+              "channel_id": "sms",
+              "channel_type": "sms"
+            },
+            "idempotency_key": null
+          }
+        },
+        {
+          "call": "store.commit_event",
+          "room_id": "room-2",
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "first"
+            },
+            "source": {
+              "channel_id": "sms",
+              "channel_type": "sms"
+            },
+            "idempotency_key": null
+          }
+        },
+        {
+          "call": "store.commit_event",
+          "room_id": "room-1",
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "first"
+            },
+            "source": {
+              "channel_id": "sms",
+              "channel_type": "sms"
+            },
+            "idempotency_key": null
+          }
+        },
+        {
+          "call": "store.commit_event",
+          "room_id": "room-2",
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "first"
+            },
+            "source": {
+              "channel_id": "sms",
+              "channel_type": "sms"
+            },
+            "idempotency_key": null
+          }
+        },
+        {
+          "call": "store.commit_event",
+          "room_id": "room-1",
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "first"
+            },
+            "source": {
+              "channel_id": "sms",
+              "channel_type": "sms"
+            },
+            "idempotency_key": null
+          }
+        },
+        {
+          "call": "store.commit_event",
+          "room_id": "room-2",
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "first"
+            },
+            "source": {
+              "channel_id": "sms",
+              "channel_type": "sms"
+            },
+            "idempotency_key": null
+          }
+        },
+        {
+          "call": "store.commit_event",
+          "room_id": "room-1",
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "first"
+            },
+            "source": {
+              "channel_id": "sms",
+              "channel_type": "sms"
+            },
+            "idempotency_key": null
+          }
+        },
+        {
+          "call": "store.commit_event",
+          "room_id": "room-2",
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "first"
+            },
+            "source": {
+              "channel_id": "sms",
+              "channel_type": "sms"
+            },
+            "idempotency_key": null
+          }
+        },
+        {
+          "call": "store.commit_event",
+          "room_id": "room-1",
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "first"
+            },
+            "source": {
+              "channel_id": "sms",
+              "channel_type": "sms"
+            },
+            "idempotency_key": null
+          }
+        },
+        {
+          "call": "store.commit_event",
+          "room_id": "room-2",
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "first"
+            },
+            "source": {
+              "channel_id": "sms",
+              "channel_type": "sms"
+            },
+            "idempotency_key": null
+          }
+        },
+        {
+          "call": "store.commit_event",
+          "room_id": "room-1",
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "first"
+            },
+            "source": {
+              "channel_id": "sms",
+              "channel_type": "sms"
+            },
+            "idempotency_key": null
+          }
+        },
+        {
+          "call": "store.commit_event",
+          "room_id": "room-2",
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "first"
+            },
+            "source": {
+              "channel_id": "sms",
+              "channel_type": "sms"
+            },
+            "idempotency_key": null
+          }
+        },
+        {
+          "call": "store.commit_event",
+          "room_id": "room-1",
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "first"
+            },
+            "source": {
+              "channel_id": "sms",
+              "channel_type": "sms"
+            },
+            "idempotency_key": null
+          }
+        },
+        {
+          "call": "store.commit_event",
+          "room_id": "room-2",
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "first"
+            },
+            "source": {
+              "channel_id": "sms",
+              "channel_type": "sms"
+            },
+            "idempotency_key": null
+          }
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0
+        },
+        {
+          "index": 1
+        },
+        {
+          "index": 2
+        },
+        {
+          "index": 3
+        },
+        {
+          "index": 4
+        },
+        {
+          "index": 5
+        },
+        {
+          "index": 6
+        },
+        {
+          "index": 7
+        }
+      ],
+      "room-2": [
+        {
+          "index": 0
+        },
+        {
+          "index": 1
+        },
+        {
+          "index": 2
+        },
+        {
+          "index": 3
+        },
+        {
+          "index": 4
+        },
+        {
+          "index": 5
+        },
+        {
+          "index": 6
+        },
+        {
+          "index": 7
+        }
+      ]
+    },
+    "rooms": {
+      "room-1": {
+        "event_count": 8,
+        "latest_index": 7
+      },
+      "room-2": {
+        "event_count": 8,
+        "latest_index": 7
+      }
+    }
+  }
+}

@@ -122,6 +122,16 @@
       "room-2": {
         "sms": []
       }
+    },
+    "rooms": {
+      "room-1": {
+        "event_count": 2,
+        "latest_index": 1
+      },
+      "room-2": {
+        "event_count": 0,
+        "latest_index": null
+      }
     }
   }
 }

@@ -1,0 +1,229 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "idempotency/a-blank-key-is-no-key-at-commit-event",
+  "title": "A blank or absent key is no key at commit_event: each call stores its own event",
+  "rules": [
+    "§13.4",
+    "§8.1",
+    "§14.3"
+  ],
+  "notes": "Python: tests/test_store_binding_contract.py::test_a_blank_key_is_no_key; tests/test_idempotent_redelivery.py::TestTheSecondDeliveryAnswersWithTheFirst. RMK-1609.",
+  "steps": [
+    {
+      "call": "commit_event",
+      "room_id": "room-1",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "0"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms"
+        },
+        "idempotency_key": null
+      },
+      "expect": {
+        "result": {
+          "index": 0,
+          "idempotency_key": null
+        }
+      }
+    },
+    {
+      "call": "commit_event",
+      "room_id": "room-1",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "1"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms"
+        },
+        "idempotency_key": null
+      },
+      "expect": {
+        "result": {
+          "index": 1,
+          "idempotency_key": null
+        }
+      }
+    },
+    {
+      "call": "commit_event",
+      "room_id": "room-1",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "2"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms"
+        },
+        "idempotency_key": ""
+      },
+      "expect": {
+        "result": {
+          "index": 2,
+          "idempotency_key": null
+        }
+      }
+    },
+    {
+      "call": "commit_event",
+      "room_id": "room-1",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "3"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms"
+        },
+        "idempotency_key": ""
+      },
+      "expect": {
+        "result": {
+          "index": 3,
+          "idempotency_key": null
+        }
+      }
+    },
+    {
+      "call": "commit_event",
+      "room_id": "room-1",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "4"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms"
+        },
+        "idempotency_key": " \t\n"
+      },
+      "expect": {
+        "result": {
+          "index": 4,
+          "idempotency_key": null
+        }
+      }
+    },
+    {
+      "call": "commit_event",
+      "room_id": "room-1",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "5"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms"
+        },
+        "idempotency_key": " \t\n"
+      },
+      "expect": {
+        "result": {
+          "index": 5,
+          "idempotency_key": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "type": "text",
+            "body": "0"
+          },
+          "idempotency_key": null
+        },
+        {
+          "index": 1,
+          "content": {
+            "type": "text",
+            "body": "1"
+          },
+          "idempotency_key": null
+        },
+        {
+          "index": 2,
+          "content": {
+            "type": "text",
+            "body": "2"
+          },
+          "idempotency_key": null
+        },
+        {
+          "index": 3,
+          "content": {
+            "type": "text",
+            "body": "3"
+          },
+          "idempotency_key": null
+        },
+        {
+          "index": 4,
+          "content": {
+            "type": "text",
+            "body": "4"
+          },
+          "idempotency_key": null
+        },
+        {
+          "index": 5,
+          "content": {
+            "type": "text",
+            "body": "5"
+          },
+          "idempotency_key": null
+        }
+      ]
+    },
+    "rooms": {
+      "room-1": {
+        "event_count": 6,
+        "latest_index": 5
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": []
+      }
+    }
+  },
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -117,13 +117,15 @@
           "visibility": "none",
           "metadata": {
             "kind": "trace"
-          }
+          },
+          "index": 0
         },
         {
           "content": {
             "type": "text",
             "body": "Hello"
-          }
+          },
+          "index": 1
         }
       ]
     },
@@ -151,6 +153,12 @@
           }
         }
       ]
+    },
+    "rooms": {
+      "room-1": {
+        "event_count": 2,
+        "latest_index": 1
+      }
     }
   }
 }

@@ -1,0 +1,125 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "idempotency/a-record-under-a-held-key-is-refused-without-taking-an-index",
+  "title": "A record outside the pipeline is never a replay: its taken key is refused and the next delivered event has no gap",
+  "rules": [
+    "§13.4",
+    "§8.1",
+    "§14.3"
+  ],
+  "notes": "Python: tests/test_commit_event.py::test_a_record_under_a_key_its_channel_holds_is_refused. RMK-1609.",
+  "steps": [
+    {
+      "call": "commit_event",
+      "room_id": "room-1",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "first"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms"
+        },
+        "idempotency_key": "k"
+      },
+      "expect": {
+        "result": {
+          "index": 0
+        }
+      }
+    },
+    {
+      "call": "commit_event",
+      "room_id": "room-1",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "refused"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms"
+        },
+        "idempotency_key": "k"
+      },
+      "expect": {
+        "error": "idempotency_key_taken"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "content": {
+        "type": "text",
+        "body": "next"
+      },
+      "expect": {
+        "result": {
+          "index": 1
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "type": "text",
+            "body": "first"
+          }
+        },
+        {
+          "index": 1,
+          "content": {
+            "type": "text",
+            "body": "next"
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "room-1": {
+        "event_count": 2,
+        "latest_index": 1
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "index": 1
+          }
+        ]
+      }
+    }
+  },
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  }
+}

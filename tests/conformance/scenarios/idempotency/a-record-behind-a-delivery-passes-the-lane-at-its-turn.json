@@ -1,0 +1,151 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "idempotency/a-record-behind-a-delivery-passes-the-lane-at-its-turn",
+  "title": "A record behind a held delivery passes the lane at its turn, taking one index but reaching no channel",
+  "rules": [
+    "§10.5",
+    "§13.5",
+    "§8.1"
+  ],
+  "notes": "Python: tests/test_commit_event.py::test_a_record_behind_a_delivery_in_flight_is_passed_at_its_turn. RMK-1609.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "deliver": [
+          {
+            "gate": "delivering"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "content": {
+        "type": "text",
+        "body": "first"
+      },
+      "background": true,
+      "as": "first"
+    },
+    {
+      "wait_for": "delivering"
+    },
+    {
+      "call": "commit_event",
+      "room_id": "room-1",
+      "event": {
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms"
+        },
+        "content": {
+          "type": "text",
+          "body": "record"
+        }
+      },
+      "expect": {
+        "result": {
+          "index": 1
+        }
+      }
+    },
+    {
+      "call": "get_room",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "event_count": 2,
+          "latest_index": 1,
+          "delivered_index": -1
+        }
+      }
+    },
+    {
+      "open": "delivering"
+    },
+    {
+      "await": "first"
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "content": {
+        "type": "text",
+        "body": "next"
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "type": "text",
+            "body": "first"
+          }
+        },
+        {
+          "index": 1,
+          "content": {
+            "type": "text",
+            "body": "record"
+          }
+        },
+        {
+          "index": 2,
+          "content": {
+            "type": "text",
+            "body": "next"
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "room-1": {
+        "event_count": 3,
+        "latest_index": 2,
+        "delivered_index": 2
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "index": 0
+          },
+          {
+            "index": 2
+          }
+        ]
+      }
+    }
+  }
+}

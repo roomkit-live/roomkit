@@ -1,0 +1,145 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "idempotency/a-precommit-timeout-reserves-neither-key-nor-index",
+  "title": "A message timing out before commit reserves neither its key nor its index; retrying it commits normally",
+  "rules": [
+    "§13.4",
+    "§8.1",
+    "§14.3"
+  ],
+  "notes": "Python: tests/test_precommit_timeout.py::TestTheWindowStopsWhereItShould::test_a_refused_message_commits_nothing; tests/test_idempotent_redelivery.py. RMK-1609.",
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "first"
+        },
+        "idempotency_key": "k"
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "process_timeout",
+          "event": null
+        }
+      }
+    },
+    {
+      "open": "parsing"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "retried"
+        },
+        "idempotency_key": "k"
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "reason": null,
+          "duplicate": false,
+          "event": {
+            "id": "room-1#0",
+            "index": 0
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "ignored"
+        },
+        "idempotency_key": "k"
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "reason": null,
+          "duplicate": true,
+          "event": {
+            "id": "room-1#0",
+            "index": 0
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "type": "text",
+            "body": "retried"
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "room-1": {
+        "event_count": 1,
+        "latest_index": 0
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "index": 0
+          }
+        ]
+      }
+    }
+  },
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "parse": [
+          {
+            "gate": "parsing"
+          }
+        ]
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "kit": {
+      "process_timeout_ms": 1000
+    }
+  }
+}

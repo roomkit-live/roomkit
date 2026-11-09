@@ -1,0 +1,212 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/a-key-is-looked-up-in-its-scope-by-lowest-index",
+  "title": "A key lookup is scoped to room and channel, or the lowest index in the room when no channel is named",
+  "rules": [
+    "§13.4",
+    "§8.1",
+    "§14.3"
+  ],
+  "notes": "Python: tests/test_store_binding_contract.py::test_a_key_is_found_within_its_channel_or_within_the_room. RMK-1609.",
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-1"
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-2"
+      }
+    },
+    {
+      "call": "store.add_event",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "later"
+        },
+        "source": {
+          "channel_id": "ws",
+          "channel_type": "sms"
+        },
+        "idempotency_key": "k",
+        "room_id": "room-1",
+        "index": 5
+      }
+    },
+    {
+      "call": "store.add_event",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "earlier"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms"
+        },
+        "idempotency_key": "k",
+        "room_id": "room-1",
+        "index": 2
+      }
+    },
+    {
+      "call": "store.add_event",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "elsewhere"
+        },
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms"
+        },
+        "idempotency_key": "k",
+        "room_id": "room-2",
+        "index": 0
+      }
+    },
+    {
+      "call": "store.check_idempotency",
+      "room_id": "room-1",
+      "key": "k",
+      "channel_id": "sms",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "store.get_event_by_idempotency_key",
+      "room_id": "room-1",
+      "key": "k",
+      "channel_id": "sms",
+      "expect": {
+        "result": {
+          "index": 2,
+          "id": "room-1#2"
+        }
+      }
+    },
+    {
+      "call": "store.check_idempotency",
+      "room_id": "room-1",
+      "key": "k",
+      "channel_id": "ws",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "store.get_event_by_idempotency_key",
+      "room_id": "room-1",
+      "key": "k",
+      "channel_id": "ws",
+      "expect": {
+        "result": {
+          "index": 5,
+          "id": "room-1#5"
+        }
+      }
+    },
+    {
+      "call": "store.check_idempotency",
+      "room_id": "room-1",
+      "key": "k",
+      "channel_id": null,
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "store.get_event_by_idempotency_key",
+      "room_id": "room-1",
+      "key": "k",
+      "channel_id": null,
+      "expect": {
+        "result": {
+          "index": 2,
+          "id": "room-1#2"
+        }
+      }
+    },
+    {
+      "call": "store.check_idempotency",
+      "room_id": "room-2",
+      "key": "k",
+      "channel_id": null,
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "store.get_event_by_idempotency_key",
+      "room_id": "room-2",
+      "key": "k",
+      "channel_id": null,
+      "expect": {
+        "result": {
+          "index": 0,
+          "id": "room-2#0"
+        }
+      }
+    },
+    {
+      "call": "store.check_idempotency",
+      "room_id": "room-1",
+      "key": "k",
+      "channel_id": "email",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "call": "store.get_event_by_idempotency_key",
+      "room_id": "room-1",
+      "key": "k",
+      "channel_id": "email",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.check_idempotency",
+      "room_id": "room-1",
+      "key": "missing",
+      "channel_id": null,
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "call": "store.get_event_by_idempotency_key",
+      "room_id": "room-1",
+      "key": "missing",
+      "channel_id": null,
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.check_idempotency",
+      "room_id": "missing",
+      "key": "k",
+      "channel_id": null,
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "call": "store.get_event_by_idempotency_key",
+      "room_id": "missing",
+      "key": "k",
+      "channel_id": null,
+      "expect": {
+        "result": null
+      }
+    }
+  ],
+  "expect": {}
+}

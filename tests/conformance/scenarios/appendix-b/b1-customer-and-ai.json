@@ -210,6 +210,12 @@
           "event_id": "$r1#0"
         }
       ]
+    },
+    "rooms": {
+      "$r1": {
+        "event_count": 2,
+        "latest_index": 1
+      }
     }
   }
 }

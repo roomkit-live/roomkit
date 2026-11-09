@@ -146,6 +146,12 @@
           }
         ]
       }
+    },
+    "rooms": {
+      "room-1": {
+        "event_count": 4,
+        "latest_index": 3
+      }
     }
   }
 }

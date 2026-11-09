@@ -1,0 +1,99 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "idempotency/a-muted-sources-record-is-stored-as-given-but-for-its-author",
+  "title": "A muted source can commit a record as given, with no delivery and no forged author metadata",
+  "rules": [
+    "§10.5",
+    "§10.1 step 12"
+  ],
+  "notes": "Python: tests/test_commit_event.py::test_a_muted_sources_record_is_stored_as_given; test_a_record_is_stored_as_given_but_for_its_author_record. RMK-1609.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms",
+            "muted": true
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "commit_event",
+      "room_id": "room-1",
+      "event": {
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms"
+        },
+        "content": {
+          "type": "text",
+          "body": "record"
+        },
+        "metadata": {
+          "author": {
+            "name": "forged",
+            "rank": 9
+          },
+          "keep": 1
+        },
+        "status": "delivered"
+      },
+      "expect": {
+        "result": {
+          "index": 0,
+          "status": "delivered",
+          "metadata": {
+            "author": null,
+            "keep": 1
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "status": "delivered",
+          "content": {
+            "type": "text",
+            "body": "record"
+          },
+          "metadata": {
+            "author": null,
+            "keep": 1
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "room-1": {
+        "event_count": 1,
+        "latest_index": 0
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": []
+      }
+    }
+  }
+}

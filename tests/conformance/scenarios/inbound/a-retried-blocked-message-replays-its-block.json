@@ -63,7 +63,8 @@
       "expect": {
         "result": {
           "blocked": true,
-          "reason": "spam"
+          "reason": "spam",
+          "duplicate": false
         }
       }
     },
@@ -87,7 +88,8 @@
             "id": "room-1#0",
             "status": "blocked",
             "blocked_by": "gate"
-          }
+          },
+          "duplicate": true
         }
       }
     }
@@ -106,6 +108,17 @@
           "trigger": "before_broadcast"
         }
       ]
+    },
+    "rooms": {
+      "room-1": {
+        "event_count": 1,
+        "latest_index": 0
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": []
+      }
     }
   }
 }

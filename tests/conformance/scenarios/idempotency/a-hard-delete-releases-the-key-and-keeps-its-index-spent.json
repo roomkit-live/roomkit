@@ -1,0 +1,136 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "idempotency/a-hard-delete-releases-the-key-and-keeps-its-index-spent",
+  "title": "A hard delete releases its event key; retrying is a new commit past the removed index",
+  "rules": [
+    "§13.4",
+    "§8.1",
+    "§14.3"
+  ],
+  "notes": "Python: tests/test_store_memory.py::TestDeleteEvent::test_delete_releases_idempotency_key; test_commit_after_deleting_latest_keeps_index_monotonic. RMK-1609.",
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "first"
+        },
+        "idempotency_key": "k"
+      },
+      "as": "first"
+    },
+    {
+      "call": "delete_event",
+      "room_id": "room-1",
+      "event_id": "$first"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "retried"
+        },
+        "idempotency_key": "k"
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "reason": null,
+          "duplicate": false,
+          "event": {
+            "id": "room-1#1",
+            "index": 1
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "ignored"
+        },
+        "idempotency_key": "k"
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "reason": null,
+          "duplicate": true,
+          "event": {
+            "id": "room-1#1",
+            "index": 1
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 1,
+          "content": {
+            "type": "text",
+            "body": "retried"
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "room-1": {
+        "event_count": 2,
+        "latest_index": 1
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "index": 0
+          },
+          {
+            "index": 1
+          }
+        ]
+      }
+    }
+  },
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  }
+}
