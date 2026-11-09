@@ -128,6 +128,8 @@ class _Comparison:
     def models(self) -> None:
         if "resolver" in self.expect:
             self._check(self.expect["resolver"], self.observed.resolver, "resolver")
+        if "router_calls" in self.expect:
+            self._check(self.expect["router_calls"], self.observed.router_calls, "router_calls")
         if "media_resolver" in self.expect:
             expected = self.expect["media_resolver"]
             self._check(expected, self.observed.media_resolver, "media_resolver")

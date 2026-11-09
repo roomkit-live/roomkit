@@ -233,9 +233,7 @@ class Harness:
             kwargs["store"] = store
         if "router" in kit_setup:
             router = kit_setup["router"]
-            kwargs["inbound_router"] = ScriptedRouter(
-                router["room_id"], router.get("gate"), self.gates
-            )
+            kwargs["inbound_router"] = ScriptedRouter(router["room_id"], self, router.get("gate"))
         kwargs |= kit_options(kit_setup, self)
         kwargs |= delivery_options(kit_setup)
         kwargs |= lock_options(kit_setup)
@@ -402,6 +400,11 @@ class Harness:
             "sender_id": message.sender_id,
         }
         self.observed.resolver.append(call)
+
+    def record_router_call(self, call: dict[str, Any]) -> None:
+        """The custom inbound router's inputs, recorded before any gate."""
+        if self._recording:
+            self.observed.router_calls.append(call)
 
     def record_media_resolver(self, url: str, room_id: str) -> None:
         """One call of the kit's media resolver (§6.4)."""

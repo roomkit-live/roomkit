@@ -95,7 +95,7 @@ _ORDER_OF_ITS_CUT = (
 _ANSWERS_AFTER_ITS_CUT = {"tools/a-call-that-returns-once-its-turn-is-cut-ends-aborted"}
 
 
-# Store, idempotency and room lifecycle scenarios run on each store this implementation ships that
+# Store, routing, tenancy, idempotency and room lifecycle scenarios run on each store that
 # needs no server: the in-memory store, the kit's default, and SQLiteStore.
 _STORES = ("memory", "sqlite")
 
@@ -119,7 +119,7 @@ def _cases() -> list[Any]:
             )
         stores = (
             _STORES
-            if scenario_id.startswith(("store/", "rooms/", "idempotency/"))
+            if scenario_id.startswith(("store/", "rooms/", "idempotency/", "routing/", "tenancy/"))
             else ("memory",)
         )
         for store in stores:

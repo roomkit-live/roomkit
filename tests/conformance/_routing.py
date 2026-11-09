@@ -82,6 +82,7 @@ async def _default_route(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]
         spec["channel_id"],
         ChannelType(spec["channel_type"]),
         participant_id=spec.get("participant_id"),
+        organization_id=spec.get("organization_id"),
         identity=None if identity_id is None else Identity(id=identity_id),
     )
 
@@ -93,5 +94,11 @@ ROUTING_CALLS: dict[str, Call] = {
 
 ROUTING_ARGUMENTS: dict[str, set[str]] = {
     "save_conversation_state": {"room_id", "transitions"},
-    "default_router.route": {"channel_id", "channel_type", "participant_id", "identity_id"},
+    "default_router.route": {
+        "channel_id",
+        "channel_type",
+        "participant_id",
+        "identity_id",
+        "organization_id",
+    },
 }

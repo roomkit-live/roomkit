@@ -456,10 +456,10 @@ class ScriptedRouter(InboundRoomRouter):
     """A router answering every routed message with one room, once held at
     its gate when it has one."""
 
-    def __init__(self, room_id: str, gate: str | None = None, gates: Gates | None = None) -> None:
+    def __init__(self, room_id: str | None, harness: Harness, gate: str | None = None) -> None:
         self._room_id = room_id
+        self._harness = harness
         self._gate = gate
-        self._gates = gates
 
     async def route(
         self,
@@ -471,8 +471,18 @@ class ScriptedRouter(InboundRoomRouter):
         organization_id: str | None = None,
         identity: Identity | None = None,
     ) -> str | None:
-        if self._gate is not None and self._gates is not None:
-            await self._gates.hold(self._gate)
+        self._harness.record_router_call(
+            {
+                "channel_id": channel_id,
+                "channel_type": str(channel_type),
+                "participant_id": participant_id,
+                "channel_data": channel_data,
+                "organization_id": organization_id,
+                "identity_id": identity.id if identity is not None else None,
+            }
+        )
+        if self._gate is not None:
+            await self._harness.gates.hold(self._gate)
         return self._room_id
 
 
