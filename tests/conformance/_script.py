@@ -446,6 +446,11 @@ class ScriptedChannel(Channel):
                 complete_observation(o, room_id, self.channel_id)
                 for o in output.get("observations", [])
             ],
+            provider_result=(
+                ProviderResult.model_validate(output["provider_result"])
+                if output.get("provider_result") is not None
+                else None
+            ),
             metadata_updates=output.get("metadata_updates", {}),
             response_metadata=dict(output.get("response_metadata", {})),
             error=RuntimeError(error) if error is not None else None,

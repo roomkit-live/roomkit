@@ -321,7 +321,15 @@ REACTION = {
 INVALID_RESULT = {"kind", "tasks", "observations", "injected_events"}
 REFUSE = {"error", "code", "retryable", "provider_message_id"}
 WHEN = {"room_id", "text", "type", "source_channel_id", "chain_depth"}
-OUTPUT = {"tasks", "observations", "metadata_updates", "response_metadata", "error"}
+OUTPUT = {
+    "tasks",
+    "observations",
+    "metadata_updates",
+    "response_metadata",
+    "error",
+    "provider_result",
+}
+PROVIDER_RESULT = {"success", "provider_message_id", "error", "metadata"}
 RESULT = {"action", "event", "reason", "injected_events", "tasks", "observations", "metadata"}
 INJECTED = {"event", "target_channel_ids"}
 OUTCOME = {"result", "error"}
@@ -731,6 +739,7 @@ def _reaction(
         _invalid_return(reaction, path, found, permitted=invalid_return)
     _members(reaction.get("when", {}), WHEN, f"{path}.when", found)
     _members(reaction.get("output", {}), OUTPUT, f"{path}.output", found)
+    _provider_result(reaction.get("output", {}), f"{path}.output", found)
     _members(reaction.get("refuse", {}), REFUSE, f"{path}.refuse", found)
     if "result" in reaction:
         _members(reaction["result"], RESULT, f"{path}.result", found)
@@ -739,6 +748,26 @@ def _reaction(
     for member in ("do", "after_turn"):
         for index, action in enumerate(reaction.get(member, [])):
             _call(action, {"as", "expect"}, f"{path}.{member}[{index}]", found)
+
+
+def _provider_result(output: Mapping[str, Any], path: str, found: list[str]) -> None:
+    """Reject malformed receipts before a channel can turn them into a delivery failure."""
+    if not isinstance(output, Mapping):
+        return
+    value = output.get("provider_result")
+    if value is None:
+        return
+    at = f"{path}.provider_result"
+    _members(value, PROVIDER_RESULT, at, found)
+    if not isinstance(value, Mapping):
+        return
+    if not isinstance(value.get("success"), bool):
+        found.append(f"{at}.success: a boolean is required")
+    for key in ("provider_message_id", "error"):
+        if value.get(key) is not None and not isinstance(value[key], str):
+            found.append(f"{at}.{key}: not a string or null")
+    if "metadata" in value and not isinstance(value["metadata"], Mapping):
+        found.append(f"{at}.metadata: not an object")
 
 
 def _invalid_return(

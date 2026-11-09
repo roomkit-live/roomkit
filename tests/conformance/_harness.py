@@ -186,9 +186,16 @@ class Harness:
     """One run of one scenario."""
 
     def __init__(
-        self, scenario: Mapping[str, Any], store: ConversationStore | None = None
+        self,
+        scenario: Mapping[str, Any],
+        store: ConversationStore | None = None,
+        *,
+        observation_store: ConversationStore | None = None,
     ) -> None:
         self.scenario = scenario
+        # A separate reader can inspect persistent records after the scenario
+        # closes its kit and its store. The caller owns this reader's lifetime.
+        self._observation_store = observation_store
         self.gates = Gates()
         self.observed = Observed(literal_rooms=_literal_rooms(scenario))
         self._recording = False
@@ -830,7 +837,8 @@ class Harness:
         return None
 
     async def _timeline(self, room_id: str) -> list[dict[str, Any]]:
-        events = await self.kit.store.list_events(
+        store = self._observation_store or self.kit.store
+        events = await store.list_events(
             room_id, limit=100_000, event_filter=EventFilter(include_blocked=True)
         )
         return sorted((e.model_dump(mode="json") for e in events), key=lambda e: e["index"])
@@ -838,7 +846,7 @@ class Harness:
     # -- observation and comparison ---------------------------------------
 
     async def _observe(self) -> None:
-        store = self.kit.store
+        store = self._observation_store or self.kit.store
         for room in await store.list_rooms(limit=100_000):
             self.observed.timelines[room.id] = await self._timeline(room.id)
             self.observed.rooms[room.id] = room.model_dump(mode="json")

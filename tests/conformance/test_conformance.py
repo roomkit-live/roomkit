@@ -119,7 +119,17 @@ def _cases() -> list[Any]:
             )
         stores = (
             _STORES
-            if scenario_id.startswith(("store/", "rooms/", "idempotency/", "routing/", "tenancy/"))
+            if scenario_id.startswith(
+                (
+                    "store/",
+                    "rooms/",
+                    "idempotency/",
+                    "routing/",
+                    "tenancy/",
+                    "delivery/",
+                    "broadcast/",
+                )
+            )
             else ("memory",)
         )
         for store in stores:
@@ -165,5 +175,10 @@ async def test_scenario(path: Path, store: str, tmp_path: Path) -> None:
     if unknown := unknown_members(scenario):
         pytest.fail("members the runner does not know:\n" + "\n".join(unknown))
     on = SQLiteStore(tmp_path / "store.db") if store == "sqlite" else None
-    problems = await Harness(scenario, on).run()
+    reader = SQLiteStore(tmp_path / "store.db") if store == "sqlite" else None
+    try:
+        problems = await Harness(scenario, on, observation_store=reader).run()
+    finally:
+        if reader is not None:
+            await reader.close()
     assert not problems, "\n".join(problems)
