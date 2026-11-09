@@ -731,9 +731,9 @@ class EventRouter:
                     # build happened in on_event), but its streamed reply must
                     # not be delivered. Close the un-consumed generator so no
                     # provider round-trip is made — the reply is never generated
-                    # (RFC §7.5 rule 2 permits it). A read-only source's stream
-                    # is read instead, its rows stored BLOCKED as they commit.
-                    if binding.muted:
+                    # (RFC §7.5 rule 2 permits it). Read-only wins over mute:
+                    # its stream is read, its rows stored BLOCKED as they commit.
+                    if binding.muted and binding.access not in (Access.READ_ONLY, Access.NONE):
                         await _aclose_stream(output.response_stream)
                         logger.debug(
                             "Channel %s is muted — suppressing streaming response",
@@ -933,11 +933,11 @@ class EventRouter:
         """Whether *channel*'s turn waits its place in the room: an
         intelligence channel that declares it, unless a strategy takes its
         turns, which orders them itself (RFC §6.4, §10.6.1). A muted one
-        reacts at once, as any muted channel does, its answer closed unread
-        (RFC §7.2)."""
+        reacts at once only when mute closes its answer unread. Read-only
+        takes precedence and still consumes the stream (RFC §7.5 rule 2)."""
         if binding.category != ChannelCategory.INTELLIGENCE or not channel.serializes_room_turns:
             return False
-        if binding.muted:
+        if binding.muted and binding.access not in (Access.READ_ONLY, Access.NONE):
             return False
         runner_of = self._runner_of
         return runner_of is None or runner_of(context.room.id, channel.channel_id) is None

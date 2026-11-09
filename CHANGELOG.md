@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A read-only, muted agent consumes its stream and audits its answers as `source_read_only`, as RFC §7.5 requires; its turns still run in order (RMK-1600).
+
 ## [0.112.0] — 2026-11-08
 
 ### Added

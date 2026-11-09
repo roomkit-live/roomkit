@@ -226,7 +226,10 @@ class TestRefusedEventsStayRefused:
         assert "hello" in _prompted(provider)
         await kit.close()
 
-    async def test_an_agent_that_cannot_write_loses_its_own_refused_answers(self) -> None:
+    @pytest.mark.parametrize("muted", [False, True])
+    async def test_an_agent_that_cannot_write_loses_its_own_refused_answers(
+        self, muted: bool
+    ) -> None:
         """RFC §7.5 rule 2 stores the answers of an agent that cannot write
         BLOCKED (a read-only agent's stream is read to its end, each row
         ``source_read_only``; a muted one's is closed unread); nobody received
@@ -234,6 +237,8 @@ class TestRefusedEventsStayRefused:
         room's other turns still are."""
         kit, provider = await _room()
         await kit.set_access("r1", "ai1", Access.READ_ONLY)
+        if muted:
+            await kit.mute("r1", "ai1")
 
         await kit.process_inbound(
             InboundMessage(channel_id="ws1", sender_id="u1", content=TextContent(body="first"))

@@ -19,6 +19,7 @@ from typing import Any
 import pytest
 
 from roomkit import (
+    Access,
     Agent,
     ChannelCategory,
     ChannelDeclaration,
@@ -154,6 +155,30 @@ async def test_a_room_s_turns_run_one_after_the_other_each_reading_the_answers_b
     for result in (a, b, c):
         assert result.delivery is not None
         assert (await asyncio.wait_for(result.delivery.wait(), WAIT)).error is None
+
+
+async def test_a_read_only_muted_agent_still_takes_its_turns_in_order(room: Room) -> None:
+    """Read-only takes precedence over mute, including the stream's queue."""
+    await room.kit.set_access("r", "agent", Access.READ_ONLY)
+    await room.kit.mute("r", "agent")
+    first = await room.send("first")
+    await room.agent.until_started("first")
+    second = await room.send("second")
+    await room.until_waiting(2)
+    assert list(room.agent.read) == ["first"]
+
+    room.agent.answer("first")
+    await room.agent.until_started("second")
+    assert room.agent.read["second"] == ["first", "second"]
+    room.agent.answer("second")
+    for result in (first, second):
+        assert result.delivery is not None
+        assert (await asyncio.wait_for(result.delivery.wait(), WAIT)).error is None
+    events = await room.kit.store.list_events("r", event_filter=EventFilter(include_blocked=True))
+    assert [event.blocked_by for event in events if event.source.channel_id == "agent"] == [
+        "source_read_only",
+        "source_read_only",
+    ]
 
 
 async def test_a_waiting_turn_whose_agent_leaves_the_room_never_starts(room: Room) -> None:
