@@ -1,12 +1,12 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "injection/a-sent-event-keeps-its-answer-scope",
-  "title": "A direct injection given a response_visibility returns and stores the event with it",
+  "title": "A direct injection preserves an explicit answer scope and leaves its default unset",
   "rules": [
     "§10.5",
     "§5.12"
   ],
-  "notes": "Python: tests/test_response_visibility.py::TestResponseVisibilityOnSendEvent::test_send_event_stamps_response_visibility.",
+  "notes": "Python: tests/test_response_visibility.py::TestResponseVisibilityOnSendEvent::test_send_event_default_response_visibility. Each list expectation is exact; object expectations select the stated contract fields.",
   "setup": {
     "channels": [
       {
@@ -41,6 +41,20 @@
           "response_visibility": "ws1"
         }
       }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "src",
+      "content": {
+        "type": "text",
+        "body": "Default"
+      },
+      "expect": {
+        "result": {
+          "response_visibility": null
+        }
+      }
     }
   ],
   "expect": {
@@ -51,6 +65,12 @@
             "body": "Hi"
           },
           "response_visibility": "ws1"
+        },
+        {
+          "content": {
+            "body": "Default"
+          },
+          "response_visibility": null
         }
       ]
     }

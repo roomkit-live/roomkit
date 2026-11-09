@@ -1,0 +1,112 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "permissions/transport-direction-gates-delivery-but-not-on-event",
+  "title": "Inbound-only and outbound-only transports both observe an event, but only the outbound transport receives delivery",
+  "rules": [
+    "§4.2",
+    "§7.5"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "in",
+        "type": "websocket",
+        "category": "transport",
+        "on_event": [
+          {
+            "output": {
+              "observations": [
+                {
+                  "category": "direction",
+                  "content": "in"
+                }
+              ]
+            }
+          }
+        ],
+        "direction": "inbound"
+      },
+      {
+        "id": "out",
+        "type": "websocket",
+        "category": "transport",
+        "on_event": [
+          {
+            "output": {
+              "observations": [
+                {
+                  "category": "direction",
+                  "content": "out"
+                }
+              ]
+            }
+          }
+        ],
+        "direction": "outbound"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "in"
+          },
+          {
+            "channel_id": "out"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "deliveries": {
+      "room-1": {
+        "sms": [],
+        "in": [],
+        "out": [
+          {
+            "content": {
+              "body": "hello"
+            }
+          }
+        ]
+      }
+    },
+    "observations": {
+      "room-1": {
+        "$unordered": [
+          {
+            "content": "in"
+          },
+          {
+            "content": "out"
+          }
+        ]
+      }
+    }
+  },
+  "notes": "Python: tests/test_visibility_rules.py::TestDirection::test_an_inbound_only_transport_is_told_but_not_delivered_to; tests/test_visibility_rules.py::TestDirection::test_an_outbound_only_transport_is_delivered_to. Each list expectation is exact; object expectations select the stated contract fields."
+}

@@ -1,0 +1,158 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "permissions/a-read-only-muted-stream-is-consumed-as-read-only",
+  "title": "A source both read-only and muted has its stream consumed to the end and its answer stored blocked as read-only",
+  "rules": [
+    "§7.5 rule 2"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "source",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "first",
+                " second"
+              ]
+            },
+            {
+              "deltas": [
+                "first",
+                " second"
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "read-only",
+        "bindings": [
+          {
+            "channel_id": "source"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "access": "read_only",
+            "muted": false
+          }
+        ]
+      },
+      {
+        "id": "read-only-muted",
+        "bindings": [
+          {
+            "channel_id": "source"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "access": "read_only",
+            "muted": true
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "read-only",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "read-only-muted",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "read-only": [
+        {
+          "content": {
+            "body": "hello"
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "body": "first second"
+          },
+          "status": "blocked",
+          "blocked_by": "source_read_only",
+          "visibility": "all"
+        }
+      ],
+      "read-only-muted": [
+        {
+          "content": {
+            "body": "hello"
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "body": "first second"
+          },
+          "status": "blocked",
+          "blocked_by": "source_read_only",
+          "visibility": "all"
+        }
+      ]
+    },
+    "deliveries": {
+      "read-only": {
+        "source": []
+      },
+      "read-only-muted": {
+        "source": []
+      }
+    },
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "hello"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "hello"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

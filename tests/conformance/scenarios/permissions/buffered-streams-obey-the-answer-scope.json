@@ -1,0 +1,543 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "permissions/buffered-streams-obey-the-answer-scope",
+  "title": "A real model stream buffered into ordinary transports reaches exactly the answer scope, including one a hook sets",
+  "rules": [
+    "§5.12",
+    "§7.3",
+    "§7.5"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "t1",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "t2",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "t3",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "Hello",
+                " world"
+              ]
+            },
+            {
+              "deltas": [
+                "Hello",
+                " world"
+              ]
+            },
+            {
+              "deltas": [
+                "Hello",
+                " world"
+              ]
+            },
+            {
+              "deltas": [
+                "Hello",
+                " world"
+              ]
+            },
+            {
+              "deltas": [
+                "Hello",
+                " world"
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "default",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "t1"
+          },
+          {
+            "channel_id": "t2"
+          },
+          {
+            "channel_id": "t3"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      },
+      {
+        "id": "single",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "t1"
+          },
+          {
+            "channel_id": "t2"
+          },
+          {
+            "channel_id": "t3"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      },
+      {
+        "id": "none",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "t1"
+          },
+          {
+            "channel_id": "t2"
+          },
+          {
+            "channel_id": "t3"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      },
+      {
+        "id": "list",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "t1"
+          },
+          {
+            "channel_id": "t2"
+          },
+          {
+            "channel_id": "t3"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      },
+      {
+        "id": "hook",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "t1"
+          },
+          {
+            "channel_id": "t2"
+          },
+          {
+            "channel_id": "t3"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "scope",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "hook"
+            },
+            "result": {
+              "action": "modify",
+              "event": {
+                "response_visibility": "t1"
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "default",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "default"
+        },
+        "response_visibility": null
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "single",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "single"
+        },
+        "response_visibility": "t1"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "none",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "none"
+        },
+        "response_visibility": "none"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "list",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "list"
+        },
+        "response_visibility": "t1,t3"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "hook",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "hook"
+        },
+        "response_visibility": null
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "default": [
+        {
+          "content": {
+            "body": "default"
+          }
+        },
+        {
+          "content": {
+            "body": "Hello world"
+          },
+          "visibility": "all",
+          "status": "delivered"
+        }
+      ],
+      "single": [
+        {
+          "content": {
+            "body": "single"
+          }
+        },
+        {
+          "content": {
+            "body": "Hello world"
+          },
+          "visibility": "t1",
+          "status": "delivered"
+        }
+      ],
+      "none": [
+        {
+          "content": {
+            "body": "none"
+          }
+        },
+        {
+          "content": {
+            "body": "Hello world"
+          },
+          "visibility": "none",
+          "status": "delivered"
+        }
+      ],
+      "list": [
+        {
+          "content": {
+            "body": "list"
+          }
+        },
+        {
+          "content": {
+            "body": "Hello world"
+          },
+          "visibility": "t1,t3",
+          "status": "delivered"
+        }
+      ],
+      "hook": [
+        {
+          "content": {
+            "body": "hook"
+          }
+        },
+        {
+          "content": {
+            "body": "Hello world"
+          },
+          "visibility": "t1",
+          "status": "delivered"
+        }
+      ]
+    },
+    "deliveries": {
+      "default": {
+        "sms": [
+          {
+            "content": {
+              "body": "Hello world"
+            }
+          }
+        ],
+        "t1": [
+          {
+            "content": {
+              "body": "default"
+            }
+          },
+          {
+            "content": {
+              "body": "Hello world"
+            }
+          }
+        ],
+        "t2": [
+          {
+            "content": {
+              "body": "default"
+            }
+          },
+          {
+            "content": {
+              "body": "Hello world"
+            }
+          }
+        ],
+        "t3": [
+          {
+            "content": {
+              "body": "default"
+            }
+          },
+          {
+            "content": {
+              "body": "Hello world"
+            }
+          }
+        ]
+      },
+      "single": {
+        "sms": [],
+        "t1": [
+          {
+            "content": {
+              "body": "single"
+            }
+          },
+          {
+            "content": {
+              "body": "Hello world"
+            }
+          }
+        ],
+        "t2": [
+          {
+            "content": {
+              "body": "single"
+            }
+          }
+        ],
+        "t3": [
+          {
+            "content": {
+              "body": "single"
+            }
+          }
+        ]
+      },
+      "none": {
+        "sms": [],
+        "t1": [
+          {
+            "content": {
+              "body": "none"
+            }
+          }
+        ],
+        "t2": [
+          {
+            "content": {
+              "body": "none"
+            }
+          }
+        ],
+        "t3": [
+          {
+            "content": {
+              "body": "none"
+            }
+          }
+        ]
+      },
+      "list": {
+        "sms": [],
+        "t1": [
+          {
+            "content": {
+              "body": "list"
+            }
+          },
+          {
+            "content": {
+              "body": "Hello world"
+            }
+          }
+        ],
+        "t2": [
+          {
+            "content": {
+              "body": "list"
+            }
+          }
+        ],
+        "t3": [
+          {
+            "content": {
+              "body": "list"
+            }
+          },
+          {
+            "content": {
+              "body": "Hello world"
+            }
+          }
+        ]
+      },
+      "hook": {
+        "sms": [],
+        "t1": [
+          {
+            "content": {
+              "body": "hook"
+            }
+          },
+          {
+            "content": {
+              "body": "Hello world"
+            }
+          }
+        ],
+        "t2": [
+          {
+            "content": {
+              "body": "hook"
+            }
+          }
+        ],
+        "t3": [
+          {
+            "content": {
+              "body": "hook"
+            }
+          }
+        ]
+      }
+    },
+    "models": {
+      "ai": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "default"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "single"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "none"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "list"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "hook"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "notes": "Python: tests/test_response_visibility.py::TestResponseVisibilityDefault::test_default_delivers_to_simple_targets; tests/test_response_visibility.py::TestResponseVisibilitySingleChannel::test_reentry_only_to_targeted_simple_channel; tests/test_response_visibility.py::TestResponseVisibilityNone::test_none_skips_simple_reentry; tests/test_response_visibility.py::TestResponseVisibilityCommaSeparated::test_comma_separated_simple_targets; tests/test_response_visibility.py::TestResponseVisibilityNonStreamingReentry::test_reentry_visibility_stamped_from_hook. Each list expectation is exact; object expectations select the stated contract fields."
+}

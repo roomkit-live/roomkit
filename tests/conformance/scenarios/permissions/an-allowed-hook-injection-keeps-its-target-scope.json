@@ -1,0 +1,130 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "permissions/an-allowed-hook-injection-keeps-its-target-scope",
+  "title": "A hook injection naming a scoped source is stored and delivered with its explicit target scope",
+  "rules": [
+    "§7.3",
+    "§9.4"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "other",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms",
+            "visibility": "ws"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "other"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "notice",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "result": {
+              "action": "allow",
+              "injected_events": [
+                {
+                  "event": {
+                    "source": {
+                      "channel_id": "sms",
+                      "channel_type": "websocket"
+                    },
+                    "content": {
+                      "type": "text",
+                      "body": "notice"
+                    }
+                  },
+                  "target_channel_ids": [
+                    "ws"
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "hello"
+          },
+          "visibility": "ws"
+        },
+        {
+          "content": {
+            "body": "notice"
+          },
+          "visibility": "ws",
+          "status": "delivered"
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [],
+        "ws": [
+          {
+            "content": {
+              "body": "hello"
+            }
+          },
+          {
+            "content": {
+              "body": "notice"
+            }
+          }
+        ],
+        "other": []
+      }
+    }
+  },
+  "notes": "Python: tests/test_visibility_rules.py::TestEveryCommitPathStampsTheVisibility::test_an_injected_event_takes_its_source_binding_s_scope. Each list expectation is exact; object expectations select the stated contract fields."
+}

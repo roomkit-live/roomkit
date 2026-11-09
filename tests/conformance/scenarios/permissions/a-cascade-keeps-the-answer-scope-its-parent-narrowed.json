@@ -1,0 +1,233 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "permissions/a-cascade-keeps-the-answer-scope-its-parent-narrowed",
+  "title": "A second agent answer stays within the scope its parent answer narrowed, with or without an incoming scope",
+  "rules": [
+    "§5.12",
+    "§7.3"
+  ],
+  "setup": {
+    "kit": {
+      "max_chain_depth": 3
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "repeat": true,
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "A"
+                },
+                "response_visibility": "b,sms"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "A"
+            },
+            "repeat": true,
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "B"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "default",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "a"
+          },
+          {
+            "channel_id": "b"
+          }
+        ]
+      },
+      {
+        "id": "scoped",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "a"
+          },
+          {
+            "channel_id": "b"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "default",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "scoped",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        },
+        "response_visibility": "a,b,sms,ws"
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "default": [
+        {
+          "content": {
+            "body": "hello"
+          }
+        },
+        {
+          "content": {
+            "body": "A"
+          },
+          "visibility": "all",
+          "response_visibility": "b,sms"
+        },
+        {
+          "content": {
+            "body": "B"
+          },
+          "visibility": "b,sms",
+          "response_visibility": "b,sms"
+        }
+      ],
+      "scoped": [
+        {
+          "content": {
+            "body": "hello"
+          }
+        },
+        {
+          "content": {
+            "body": "A"
+          },
+          "visibility": "a,b,sms,ws",
+          "response_visibility": "b,sms"
+        },
+        {
+          "content": {
+            "body": "B"
+          },
+          "visibility": "b,sms",
+          "response_visibility": "b,sms"
+        }
+      ]
+    },
+    "deliveries": {
+      "default": {
+        "sms": [
+          {
+            "content": {
+              "body": "A"
+            }
+          },
+          {
+            "content": {
+              "body": "B"
+            }
+          }
+        ],
+        "ws": [
+          {
+            "content": {
+              "body": "hello"
+            }
+          },
+          {
+            "content": {
+              "body": "A"
+            }
+          }
+        ]
+      },
+      "scoped": {
+        "sms": [
+          {
+            "content": {
+              "body": "A"
+            }
+          },
+          {
+            "content": {
+              "body": "B"
+            }
+          }
+        ],
+        "ws": [
+          {
+            "content": {
+              "body": "hello"
+            }
+          },
+          {
+            "content": {
+              "body": "A"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "notes": "Python: tests/test_visibility_rules.py::TestTheCommittedVisibility::test_an_answer_s_own_scope_holds_within_the_message_s. Each list expectation is exact; object expectations select the stated contract fields."
+}

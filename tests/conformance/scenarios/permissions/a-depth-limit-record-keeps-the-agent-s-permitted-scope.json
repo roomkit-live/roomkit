@@ -1,0 +1,171 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "permissions/a-depth-limit-record-keeps-the-agent-s-permitted-scope",
+  "title": "An agent not asked at the depth limit leaves a refused record in its binding scope, or none under an internal answer scope",
+  "rules": [
+    "§7.3",
+    "§8.3"
+  ],
+  "setup": {
+    "kit": {
+      "max_chain_depth": 1
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "binding",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai",
+            "visibility": "ws"
+          }
+        ]
+      },
+      {
+        "id": "internal",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai",
+            "visibility": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "scope",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "internal"
+            },
+            "result": {
+              "action": "modify",
+              "event": {
+                "response_visibility": "internal"
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "binding",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "internal",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "internal"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "binding": [
+        {
+          "content": {
+            "body": "hello"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ai"
+          },
+          "status": "blocked",
+          "blocked_by": "event_chain_depth_limit",
+          "visibility": "ws"
+        }
+      ],
+      "internal": [
+        {
+          "content": {
+            "body": "internal"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ai"
+          },
+          "status": "blocked",
+          "blocked_by": "event_chain_depth_limit",
+          "visibility": "none"
+        }
+      ]
+    },
+    "models": {
+      "ai": []
+    },
+    "deliveries": {
+      "binding": {
+        "sms": [],
+        "ws": [
+          {
+            "content": {
+              "body": "hello"
+            }
+          }
+        ]
+      },
+      "internal": {
+        "sms": [],
+        "ws": [
+          {
+            "content": {
+              "body": "internal"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "notes": "Python: tests/test_visibility_rules.py::TestARefusedRecordSeesNoMoreThanItsEvent::test_the_record_of_an_agent_not_asked_at_the_depth_limit; tests/test_visibility_rules.py::TestOnlyTheFrameworkWritesInternal::test_the_record_in_place_of_an_answer_carrying_it_is_stored_for_no_channel. Each list expectation is exact; object expectations select the stated contract fields."
+}

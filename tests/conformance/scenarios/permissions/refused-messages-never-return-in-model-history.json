@@ -1,0 +1,219 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "permissions/refused-messages-never-return-in-model-history",
+  "title": "Hook-blocked and read-only source messages remain audit records and never reach a later model call or regeneration",
+  "rules": [
+    "§7.5 rule 8",
+    "§9.4",
+    "§10.1"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "text": "ok"
+            },
+            {
+              "text": "ok"
+            },
+            {
+              "text": "ok"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "hook",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      },
+      {
+        "id": "read-only",
+        "bindings": [
+          {
+            "channel_id": "sms",
+            "access": "read_only"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "policy",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "HOOK-SECRET"
+            },
+            "result": {
+              "action": "block",
+              "reason": "spam"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "hook",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "HOOK-SECRET"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "hook",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      }
+    },
+    {
+      "call": "regenerate_response",
+      "room_id": "hook"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "read-only",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "READ-ONLY-SECRET"
+        }
+      }
+    },
+    {
+      "call": "set_access",
+      "room_id": "read-only",
+      "channel_id": "sms",
+      "access": "read_write"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "read-only",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "ai": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "hello"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "assistant",
+              "text": "ok"
+            },
+            {
+              "role": "user",
+              "text": "hello"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "hello"
+            }
+          ]
+        }
+      ]
+    },
+    "timeline": {
+      "hook": [
+        {
+          "content": {
+            "body": "HOOK-SECRET"
+          },
+          "status": "blocked",
+          "blocked_by": "policy"
+        },
+        {
+          "content": {
+            "body": "hello"
+          }
+        },
+        {
+          "content": {
+            "body": "ok"
+          }
+        },
+        {
+          "content": {
+            "body": "ok"
+          }
+        }
+      ],
+      "read-only": [
+        {
+          "content": {
+            "body": "READ-ONLY-SECRET"
+          },
+          "status": "blocked",
+          "blocked_by": "source_read_only"
+        },
+        {
+          "content": {
+            "body": "hello"
+          }
+        },
+        {
+          "content": {
+            "body": "ok"
+          }
+        }
+      ]
+    }
+  },
+  "notes": "Python: tests/test_context_visibility.py::TestRefusedEventsStayRefused::test_a_message_a_hook_blocked_never_reaches_the_model; tests/test_context_visibility.py::TestRefusedEventsStayRefused::test_a_read_only_source_message_never_reaches_the_model. Each list expectation is exact; object expectations select the stated contract fields. Model calls prove the text history. Structural retention, raw payload removal and hook contexts are additionally covered by the specialized tests; this scenario does not claim every media or distributed path."
+}

@@ -1,0 +1,253 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "permissions/an-answer-intersects-its-own-visibility-with-the-trigger-s-scope",
+  "title": "An answer keeps its own visibility only within the scope its trigger permits",
+  "rules": [
+    "§7.3",
+    "§5.12"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "hello-0"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer"
+                },
+                "visibility": "sms"
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "hello-1"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer"
+                },
+                "visibility": "transport"
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "hello-2"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer"
+                },
+                "visibility": "all"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "case-0",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      },
+      {
+        "id": "case-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      },
+      {
+        "id": "case-2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "case-0",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "hello-0"
+        },
+        "response_visibility": "sms,ws"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "case-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "hello-1"
+        },
+        "response_visibility": "ai,sms"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "case-2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "hello-2"
+        },
+        "response_visibility": "ws"
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "case-0": [
+        {
+          "content": {
+            "body": "hello-0"
+          },
+          "response_visibility": "sms,ws"
+        },
+        {
+          "content": {
+            "body": "answer"
+          },
+          "visibility": "sms"
+        }
+      ],
+      "case-1": [
+        {
+          "content": {
+            "body": "hello-1"
+          },
+          "response_visibility": "ai,sms"
+        },
+        {
+          "content": {
+            "body": "answer"
+          },
+          "visibility": "sms"
+        }
+      ],
+      "case-2": [
+        {
+          "content": {
+            "body": "hello-2"
+          },
+          "response_visibility": "ws"
+        },
+        {
+          "content": {
+            "body": "answer"
+          },
+          "visibility": "ws"
+        }
+      ]
+    },
+    "deliveries": {
+      "case-0": {
+        "sms": [
+          {
+            "content": {
+              "body": "answer"
+            }
+          }
+        ],
+        "ws": [
+          {
+            "content": {
+              "body": "hello-0"
+            }
+          }
+        ]
+      },
+      "case-1": {
+        "sms": [
+          {
+            "content": {
+              "body": "answer"
+            }
+          }
+        ],
+        "ws": [
+          {
+            "content": {
+              "body": "hello-1"
+            }
+          }
+        ]
+      },
+      "case-2": {
+        "sms": [],
+        "ws": [
+          {
+            "content": {
+              "body": "hello-2"
+            }
+          },
+          {
+            "content": {
+              "body": "answer"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "notes": "Python: tests/test_visibility_rules.py::TestTheCommittedVisibility::test_an_answer_keeps_its_channel_s_scope_within_the_message_s. Each list expectation is exact; object expectations select the stated contract fields."
+}

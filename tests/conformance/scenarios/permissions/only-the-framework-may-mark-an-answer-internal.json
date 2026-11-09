@@ -1,0 +1,163 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "permissions/only-the-framework-may-mark-an-answer-internal",
+  "title": "A hook cannot write internal visibility and an agent answer carrying it is stored for no channel",
+  "rules": [
+    "§7.3",
+    "§7.5"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer"
+                },
+                "visibility": "internal"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "hook",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      },
+      {
+        "id": "answer",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "internal",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "hook"
+            },
+            "result": {
+              "action": "modify",
+              "event": {
+                "visibility": "internal"
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "hook",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "hook"
+        },
+        "visibility": "ws"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "answer",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "hook": [
+        {
+          "content": {
+            "body": "hook"
+          },
+          "visibility": "ws"
+        }
+      ],
+      "answer": [
+        {
+          "content": {
+            "body": "hello"
+          }
+        },
+        {
+          "content": {
+            "body": "answer"
+          },
+          "visibility": "none",
+          "status": "delivered"
+        }
+      ]
+    },
+    "deliveries": {
+      "hook": {
+        "sms": [],
+        "ws": [
+          {
+            "content": {
+              "body": "hook"
+            }
+          }
+        ]
+      },
+      "answer": {
+        "sms": [],
+        "ws": [
+          {
+            "content": {
+              "body": "hello"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "notes": "Python: tests/test_visibility_rules.py::TestOnlyTheFrameworkWritesInternal::test_a_hook_writing_it_has_the_visibility_put_back; tests/test_visibility_rules.py::TestOnlyTheFrameworkWritesInternal::test_an_answer_carrying_it_is_stored_for_no_channel. Each list expectation is exact; object expectations select the stated contract fields."
+}

@@ -1,0 +1,401 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "permissions/model-history-withholds-deleted-text-and-keeps-live-edits",
+  "title": "A model reads live edits, loses deleted text and edits, and keeps content beside an unchecked DELETE row",
+  "rules": [
+    "§7.5 rule 8",
+    "§10.3"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "text": "ok"
+            },
+            {
+              "text": "ok"
+            },
+            {
+              "text": "ok"
+            },
+            {
+              "text": "ok"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "deleted",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      },
+      {
+        "id": "edited",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      },
+      {
+        "id": "unchecked",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "deleted",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "ORIGINAL-SECRET"
+        },
+        "raw_payload": {
+          "text": "ORIGINAL-SECRET"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "deleted",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "delete",
+          "target_event_id": "deleted#0",
+          "delete_type": "sender"
+        },
+        "event_type": "delete"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "deleted",
+      "channel_id": "ai",
+      "category": "intelligence"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "deleted",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "edited",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "ORIGINAL-SECRET"
+        },
+        "raw_payload": {
+          "text": "ORIGINAL-SECRET"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "edited",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "edit",
+          "target_event_id": "edited#0",
+          "new_content": {
+            "type": "text",
+            "body": "EDITED-SECRET"
+          }
+        },
+        "event_type": "edit"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "edited",
+      "channel_id": "ai",
+      "category": "intelligence"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "edited",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "before delete"
+        }
+      }
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "edited",
+      "channel_id": "ai"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "edited",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "delete",
+          "target_event_id": "edited#0",
+          "delete_type": "sender"
+        },
+        "event_type": "delete"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "edited",
+      "channel_id": "ai",
+      "category": "intelligence"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "edited",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "unchecked",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "ORIGINAL-SECRET"
+        },
+        "raw_payload": {
+          "text": "ORIGINAL-SECRET"
+        }
+      }
+    },
+    {
+      "call": "commit_event",
+      "room_id": "unchecked",
+      "event": {
+        "type": "delete",
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "websocket"
+        },
+        "content": {
+          "type": "delete",
+          "target_event_id": "unchecked#0",
+          "delete_type": "sender"
+        }
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "unchecked",
+      "channel_id": "ai",
+      "category": "intelligence"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "unchecked",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "deleted": [
+        {
+          "content": {
+            "body": "ORIGINAL-SECRET"
+          },
+          "id": "deleted#0",
+          "index": 0,
+          "metadata": {
+            "deleted": true
+          },
+          "source": {
+            "raw_payload": {
+              "text": "ORIGINAL-SECRET"
+            }
+          }
+        },
+        {
+          "type": "delete"
+        },
+        {
+          "content": {
+            "body": "hello"
+          }
+        },
+        {
+          "content": {
+            "body": "ok"
+          }
+        }
+      ],
+      "edited": [
+        {
+          "content": {
+            "body": "EDITED-SECRET"
+          },
+          "metadata": {
+            "deleted": true
+          }
+        },
+        {
+          "type": "edit",
+          "content": {
+            "new_content": {
+              "body": "EDITED-SECRET"
+            }
+          },
+          "metadata": {
+            "deleted": true
+          }
+        },
+        {
+          "content": {
+            "body": "before delete"
+          }
+        },
+        {
+          "content": {
+            "body": "ok"
+          }
+        },
+        {
+          "type": "delete"
+        },
+        {
+          "content": {
+            "body": "hello"
+          }
+        },
+        {
+          "content": {
+            "body": "ok"
+          }
+        }
+      ],
+      "unchecked": [
+        {
+          "content": {
+            "body": "ORIGINAL-SECRET"
+          }
+        },
+        {
+          "type": "delete"
+        },
+        {
+          "content": {
+            "body": "hello"
+          }
+        },
+        {
+          "content": {
+            "body": "ok"
+          }
+        }
+      ]
+    },
+    "models": {
+      "ai": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "hello"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "EDITED-SECRET"
+            },
+            {
+              "role": "user",
+              "text": "before delete"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "before delete"
+            },
+            {
+              "role": "assistant",
+              "text": "ok"
+            },
+            {
+              "role": "user",
+              "text": "hello"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "ORIGINAL-SECRET"
+            },
+            {
+              "role": "user",
+              "text": "hello"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "notes": "Python: tests/test_context_visibility.py::TestDeletedContentStaysDeleted::test_an_agent_s_turn_after_a_delete_does_not_read_the_deleted_text; tests/test_context_visibility.py::TestDeletedContentStaysDeleted::test_an_edit_s_new_content_is_still_read; tests/test_context_visibility.py::TestDeletedContentStaysDeleted::test_an_edit_of_a_deleted_event_has_its_new_content_withheld; tests/test_context_visibility.py::TestWithheldContent::test_a_delete_row_committed_outside_the_pipeline_hides_nothing. Each list expectation is exact; object expectations select the stated contract fields. Model calls prove the text history. Structural retention, raw payload removal and hook contexts are additionally covered by the specialized tests; this scenario does not claim every media or distributed path."
+}

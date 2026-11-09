@@ -1,0 +1,327 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "permissions/a-hook-only-narrows-the-answer-scope",
+  "title": "A hook can narrow an answer scope but cannot widen, clear or replace it with internal",
+  "rules": [
+    "§7.3",
+    "§5.12",
+    "§9.4"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "repeat": true,
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "case-0",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      },
+      {
+        "id": "case-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      },
+      {
+        "id": "case-2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      },
+      {
+        "id": "case-3",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "scope",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "hello-0"
+            },
+            "result": {
+              "action": "modify",
+              "event": {
+                "response_visibility": "all"
+              }
+            }
+          },
+          {
+            "when": {
+              "text": "hello-1"
+            },
+            "result": {
+              "action": "modify",
+              "event": {
+                "response_visibility": null
+              }
+            }
+          },
+          {
+            "when": {
+              "text": "hello-2"
+            },
+            "result": {
+              "action": "modify",
+              "event": {
+                "response_visibility": "sms"
+              }
+            }
+          },
+          {
+            "when": {
+              "text": "hello-3"
+            },
+            "result": {
+              "action": "modify",
+              "event": {
+                "response_visibility": "internal"
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "case-0",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "hello-0"
+        },
+        "response_visibility": "sms"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "case-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "hello-1"
+        },
+        "response_visibility": "sms"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "case-2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "hello-2"
+        },
+        "response_visibility": "sms,ws"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "case-3",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "hello-3"
+        },
+        "response_visibility": null
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "case-0": [
+        {
+          "content": {
+            "body": "hello-0"
+          },
+          "response_visibility": "sms"
+        },
+        {
+          "content": {
+            "body": "answer"
+          },
+          "visibility": "sms"
+        }
+      ],
+      "case-1": [
+        {
+          "content": {
+            "body": "hello-1"
+          },
+          "response_visibility": "sms"
+        },
+        {
+          "content": {
+            "body": "answer"
+          },
+          "visibility": "sms"
+        }
+      ],
+      "case-2": [
+        {
+          "content": {
+            "body": "hello-2"
+          },
+          "response_visibility": "sms"
+        },
+        {
+          "content": {
+            "body": "answer"
+          },
+          "visibility": "sms"
+        }
+      ],
+      "case-3": [
+        {
+          "content": {
+            "body": "hello-3"
+          },
+          "response_visibility": "none"
+        },
+        {
+          "content": {
+            "body": "answer"
+          },
+          "visibility": "none"
+        }
+      ]
+    },
+    "deliveries": {
+      "case-0": {
+        "sms": [
+          {
+            "content": {
+              "body": "answer"
+            }
+          }
+        ],
+        "ws": [
+          {
+            "content": {
+              "body": "hello-0"
+            }
+          }
+        ]
+      },
+      "case-1": {
+        "sms": [
+          {
+            "content": {
+              "body": "answer"
+            }
+          }
+        ],
+        "ws": [
+          {
+            "content": {
+              "body": "hello-1"
+            }
+          }
+        ]
+      },
+      "case-2": {
+        "sms": [
+          {
+            "content": {
+              "body": "answer"
+            }
+          }
+        ],
+        "ws": [
+          {
+            "content": {
+              "body": "hello-2"
+            }
+          }
+        ]
+      },
+      "case-3": {
+        "sms": [],
+        "ws": [
+          {
+            "content": {
+              "body": "hello-3"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "notes": "Python: tests/test_visibility_rules.py::TestAHookOnAnAnswerScope::test_a_hook_may_only_narrow_where_the_answers_go. Each list expectation is exact; object expectations select the stated contract fields."
+}
