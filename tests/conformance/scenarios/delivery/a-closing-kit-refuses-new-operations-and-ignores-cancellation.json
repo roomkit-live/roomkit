@@ -1,0 +1,180 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-closing-kit-refuses-new-operations-and-ignores-cancellation",
+  "title": "Once shutdown starts, new deliveries and failed verification attempts are refused and cancellation cannot replace the shutdown reason",
+  "rules": [
+    "§12.10.4",
+    "§10.1 Explicit delivery cancellation"
+  ],
+  "notes": "Python: tests/test_kit_close.py::test_every_other_call_is_refused_once_the_close_started and ::test_a_teardown_call_returns_doing_nothing_once_the_close_started. The dropped queued delivery proves the close started while the first transport remains held. The key still names that first delivery.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "deliver": [
+          {
+            "when": {
+              "text": "held"
+            },
+            "gate": "sending"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "held"
+        },
+        "delivery_key": "held"
+      },
+      "defer_delivery": true,
+      "as": "held"
+    },
+    {
+      "wait_for": "sending"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "queued"
+        },
+        "delivery_key": "queued"
+      },
+      "defer_delivery": true,
+      "as": "queued"
+    },
+    {
+      "call": "close",
+      "background": true,
+      "as": "closing"
+    },
+    {
+      "call": "delivery.wait",
+      "of": "queued",
+      "expect": {
+        "result": {
+          "cancellation_reason": "kit_closed"
+        }
+      }
+    },
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "content": "late",
+      "expect": {
+        "error": "kit_closed"
+      }
+    },
+    {
+      "call": "record_failed_attempt",
+      "request_id": "unknown",
+      "expect": {
+        "error": "kit_closed"
+      }
+    },
+    {
+      "call": "cancel_delivery",
+      "key": "held",
+      "expect": {
+        "result": 0
+      }
+    },
+    {
+      "open": "sending"
+    },
+    {
+      "await": "closing"
+    },
+    {
+      "call": "deliver",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "content": "late",
+      "expect": {
+        "error": "kit_closed"
+      }
+    },
+    {
+      "call": "record_failed_attempt",
+      "request_id": "unknown",
+      "expect": {
+        "error": "kit_closed"
+      }
+    },
+    {
+      "call": "cancel_delivery",
+      "key": "held",
+      "expect": {
+        "result": 0
+      }
+    },
+    {
+      "call": "delivery.wait",
+      "of": "held",
+      "expect": {
+        "result": {
+          "cancellation_reason": "kit_closed"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "held"
+          }
+        },
+        {
+          "content": {
+            "body": "queued"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "body": "held"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

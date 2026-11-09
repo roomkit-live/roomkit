@@ -7,7 +7,7 @@
     "§23.3",
     "§9.3"
   ],
-  "notes": "Python: tests/tasks/test_delegation_result_delivery.py::test_a_supervisor_s_failed_background_workers_hand_back_their_failure; orchestration/_background.py _work (the run raised: posted failed with its message) and background_failure_text; core/_fallback.py FALLBACK_FAILED.",
+  "notes": "Python: tests/tasks/test_delegation_result_delivery.py::test_a_supervisor_s_failed_background_workers_hand_back_their_failure; orchestration/_background.py _work (the run raised: posted failed with its message) and background_failure_text; core/_fallback.py FALLBACK_FAILED. The failure hand-back is held at BEFORE_DELIVER until the original call has returned its acknowledgement: the background run and that answer otherwise race. This pins the scenario's schedule without requiring an order between independent turns.",
   "setup": {
     "channels": [
       {
@@ -80,6 +80,20 @@
           "async_delivery": true
         }
       }
+    ],
+    "hooks": [
+      {
+        "name": "hold-hand-back",
+        "trigger": "before_deliver",
+        "reactions": [
+          {
+            "gate": "hand-back",
+            "result": {
+              "action": "allow"
+            }
+          }
+        ]
+      }
     ]
   },
   "steps": [
@@ -106,9 +120,30 @@
       "expect": {
         "result": {
           "blocked": false,
-          "error": null
+          "error": null,
+          "response_events": [
+            {
+              "type": "tool_call_start"
+            },
+            {
+              "type": "tool_call_end"
+            },
+            {
+              "content": {
+                "type": "text",
+                "body": "On it."
+              },
+              "chain_depth": 1
+            }
+          ]
         }
       }
+    },
+    {
+      "wait_for": "hand-back"
+    },
+    {
+      "open": "hand-back"
     },
     {
       "idle": true
