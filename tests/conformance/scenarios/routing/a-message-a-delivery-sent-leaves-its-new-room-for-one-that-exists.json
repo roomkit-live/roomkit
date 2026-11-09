@@ -6,7 +6,7 @@
     "§9.5.1",
     "§10.1 step 2"
   ],
-  "notes": "Room W's delivery to ws sends Alice's message m, routed: the default router finds none, so m creates a room, which a hook binds to Bob. While m waits, Alice's own m2 opens a room of hers. m is routed once more, step 1 gives it Alice's room, which exists. Every m delivered to ws there sends another m into that room, until the budget the room's cascade draws on is spent. Found by the review of RMK-1396.",
+  "notes": "Room W's delivery to ws sends Alice's message m, routed: the default router finds none, so m creates a room, which a hook binds to Bob. While m waits, Alice's own m2 opens a room of hers. m is routed once more, step 1 gives it Alice's room, which exists. Every m delivered to ws there sends another m into that room, until the budget the room's cascade draws on is spent. Found by the review of RMK-1396. The gate belongs to the first bind reaction, so that reaction is reserved before the competing message creates its room. Observer priorities do not order concurrent hook completion.",
   "setup": {
     "channels": [
       {
@@ -92,7 +92,8 @@
                 "channel_id": "sms",
                 "participant_id": "+15550000002"
               }
-            ]
+            ],
+            "gate": "g"
           },
           {
             "do": [
@@ -102,16 +103,6 @@
                 "channel_id": "ws"
               }
             ]
-          }
-        ]
-      },
-      {
-        "name": "hold",
-        "trigger": "on_room_created",
-        "priority": 1,
-        "reactions": [
-          {
-            "gate": "g"
           }
         ]
       }
