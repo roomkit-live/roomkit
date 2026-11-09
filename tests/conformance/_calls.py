@@ -22,6 +22,7 @@ from roomkit.core.exceptions import (
     EventNotFoundError,
     IdempotencyKeyTakenError,
     IdentityNotFoundError,
+    KitClosedError,
     ParticipantNotFoundError,
     ProcessTimeoutError,
     ReentrantCallError,
@@ -74,6 +75,7 @@ class HandleWaitsForItselfError(Exception):
 
 # The Python class of each error the suite names (README, "Errors").
 _ERRORS: tuple[tuple[type[Exception], str], ...] = (
+    (KitClosedError, "kit_closed"),
     (RoomNotFoundError, "room_not_found"),
     (RoomClosedError, "room_closed"),
     (ChannelNotRegisteredError, "channel_not_registered"),

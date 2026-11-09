@@ -17,11 +17,19 @@ import asyncio
 
 import pytest
 
-from roomkit import FrameworkEvent, HookExecution, HookTrigger, ProcessTimeoutError, RoomKit
+from roomkit import (
+    FrameworkEvent,
+    HookExecution,
+    HookTrigger,
+    KitClosedError,
+    ProcessTimeoutError,
+    RoomKit,
+)
 from roomkit.core.inbound_router import InboundRoomRouter
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.event import RoomEvent, TextContent
+from roomkit.models.room import Room
 from roomkit.store.memory import InMemoryStore
 from tests.test_framework import SimpleChannel
 
@@ -346,3 +354,56 @@ class TestOneDeadlineFromTheCallsStart:
 
         assert answered == [(True, "process_timeout")]
         await kit.close()
+
+
+async def test_a_scope_read_under_a_locked_hook_keeps_close_grace() -> None:
+    """A nested call already in the locked section keeps its close grace."""
+
+    class HeldRoomRead(InMemoryStore):
+        armed = False
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.reading = asyncio.Event()
+            self.release = asyncio.Event()
+
+        async def get_room(self, room_id: str) -> Room | None:
+            if self.armed:
+                self.reading.set()
+                await self.release.wait()
+            return await super().get_room(room_id)
+
+    store = HeldRoomRead()
+    kit = RoomKit(store=store, process_timeout=5)
+    kit.register_channel(SimpleChannel("sms1"))
+    await kit.create_room(room_id="r1", organization_id="org")
+    await kit.attach_channel("r1", "sms1")
+    results = []
+
+    @kit.hook(HookTrigger.BEFORE_BROADCAST)
+    async def again(event: RoomEvent, ctx: RoomContext) -> None:
+        if event.content == TextContent(body="hi"):
+            store.armed = True
+            results.append(
+                await kit.process_inbound(
+                    InboundMessage(
+                        channel_id="sms1", sender_id="u1", content=TextContent(body="again")
+                    ),
+                    room_id="r1",
+                    organization_id="org",
+                )
+            )
+
+    call = asyncio.create_task(kit.process_inbound(_msg(), room_id="r1"))
+    await asyncio.wait_for(store.reading.wait(), 5)
+    close = asyncio.create_task(kit.close())
+    await asyncio.sleep(0)
+    with pytest.raises(KitClosedError):
+        await kit.create_room(room_id="late")
+    store.armed = False
+    store.release.set()
+    await asyncio.wait_for(call, 5)
+    await asyncio.wait_for(close, 5)
+    assert len(results) == 1
+    assert results[0].blocked is False
+    assert "again" in [getattr(row.content, "body", None) for row in await kit.get_timeline("r1")]
