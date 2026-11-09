@@ -31,6 +31,10 @@ from tests.test_injected_events import _hello, _notice, _notices, _room
         HookTrigger.AFTER_TOOL_ROUND,
         HookTrigger.ON_USER_INPUT_REQUIRED,
         HookTrigger.BEFORE_AI_GENERATION,
+        HookTrigger.BEFORE_BRIDGE_AUDIO,
+        HookTrigger.BEFORE_BRIDGE_VIDEO,
+        HookTrigger.ON_SPEAK_DECISION,
+        HookTrigger.ON_VISION_RESULT,
     ],
 )
 @pytest.mark.parametrize("action", ["allow", "modify", "block"])
