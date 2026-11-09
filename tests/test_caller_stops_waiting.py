@@ -66,6 +66,40 @@ async def _cancelled_while(caller: asyncio.Task[Any], reached: asyncio.Event) ->
 
 
 class TestACommitInFlight:
+    async def test_a_retry_after_the_caller_leaves_returns_the_committed_event(self) -> None:
+        """A caller gone during the commit can retry without a second delivery (§13.4)."""
+        store = _SlowAnswer()
+        kit = RoomKit(store=store)
+        ws = SimpleChannel("ws1")
+        kit.register_channel(SimpleChannel("sms1"))
+        kit.register_channel(ws)
+        await kit.create_room(room_id="r1")
+        await kit.attach_channel("r1", "sms1")
+        await kit.attach_channel("r1", "ws1")
+        before = await kit.get_room("r1")
+        message = _msg("first").model_copy(update={"idempotency_key": "k"})
+        store.held = "first"
+        try:
+            caller = asyncio.create_task(kit.process_inbound(message, room_id="r1"))
+            await _cancelled_while(caller, store.written)
+            store.answer.set()
+            with pytest.raises(asyncio.CancelledError):
+                await caller
+            replay = await asyncio.wait_for(kit.process_inbound(message, room_id="r1"), 5)
+            after = await kit.get_room("r1")
+            assert replay.duplicate and not replay.blocked
+            assert replay.event is not None and replay.event.index == before.event_count
+            held = await store.get_event_by_idempotency_key("r1", "k", channel_id="sms1")
+            assert held is not None and replay.event.id == held.id
+            assert (after.event_count, after.latest_index) == (
+                before.event_count + 1,
+                before.event_count,
+            )
+            assert [_body(event) for event in ws.delivered] == ["first"]
+        finally:
+            store.answer.set()
+            await kit.close()
+
     @pytest.mark.parametrize("action", ["allow", "block"])
     async def test_its_writes_are_whole_and_the_lane_goes_on(self, action: str) -> None:
         """The caller is cancelled while its event's commit (a DELIVERED event
