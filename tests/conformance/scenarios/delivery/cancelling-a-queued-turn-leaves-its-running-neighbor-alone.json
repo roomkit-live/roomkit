@@ -1,0 +1,203 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/cancelling-a-queued-turn-leaves-its-running-neighbor-alone",
+  "title": "Cancelling a queued turn returns while the running turn remains held, and preserves both transport deliveries",
+  "rules": [
+    "§10.1 Explicit delivery cancellation",
+    "§10.1 step 18"
+  ],
+  "notes": "Python: tests/test_delivery_cancellation.py::test_queued_cancel_does_not_wait_for_unrelated_tool. The scripted turn is held at a gate: cancelling B must return before the gate opens, A answers normally and B never runs.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "on_event": [
+          {
+            "when": {
+              "text": "task A"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer to task A"
+                }
+              }
+            ],
+            "gate": "a-runs"
+          },
+          {
+            "when": {
+              "text": "task B"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer to task B"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "task A"
+        }
+      },
+      "defer_delivery": true,
+      "as": "a"
+    },
+    {
+      "wait_for": "a-runs"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "task B"
+        }
+      },
+      "defer_delivery": true,
+      "as": "b"
+    },
+    {
+      "call": "delivery.cancel",
+      "of": "b",
+      "reason": "queued-stop",
+      "expect": {
+        "result": {
+          "cancellation_reason": "queued-stop",
+          "response_events": [],
+          "blocked": false
+        }
+      }
+    },
+    {
+      "open": "a-runs"
+    },
+    {
+      "call": "delivery.wait",
+      "of": "a",
+      "expect": {
+        "result": {
+          "cancellation_reason": null,
+          "response_events": [
+            {
+              "content": {
+                "body": "answer to task A"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "delivery.wait",
+      "of": "b",
+      "expect": {
+        "result": {
+          "cancellation_reason": "queued-stop",
+          "response_events": []
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "task A"
+          },
+          "index": 0,
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "body": "task B"
+          },
+          "index": 1,
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "body": "answer to task A"
+          },
+          "index": 2
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "body": "task A"
+            }
+          },
+          {
+            "content": {
+              "body": "task B"
+            }
+          },
+          {
+            "content": {
+              "body": "answer to task A"
+            }
+          }
+        ]
+      }
+    },
+    "turns": {
+      "room-1": {
+        "ai": [
+          {
+            "content": {
+              "body": "task A"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

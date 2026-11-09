@@ -1,12 +1,12 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "delivery/a-handle-s-cancel-cuts-its-running-turn",
-  "title": "A deferred call's handle cancels its running turn: the call returns its reason once the turn is over, a second cancel keeps the first reason, the message stays delivered and the room's next turn runs",
+  "title": "Cancelling a running delivery releases every waiter with its first reason and preserves a turn already queued in its room",
   "rules": [
     "§10.1 Explicit delivery cancellation",
     "§10.1 step 18"
   ],
-  "notes": "Python: src/roomkit/models/delivery.py (DeliveryHandle.cancel), src/roomkit/core/lanes.py (cancel_and_wait); tests/test_delivery_cancellation.py::test_caller_cancellation_drains_tool_and_preserves_other_room, ::test_queued_turn_in_same_room_survives_cancelled_cascade, ::test_deferred_cancel_is_terminal_and_releases_all_waiters (RMK-1194).",
+  "notes": "Python: tests/test_delivery_cancellation.py::test_queued_turn_in_same_room_survives_cancelled_cascade and ::test_deferred_cancel_is_terminal_and_releases_all_waiters. B commits while A is held; two waits start before the cut. This checks outcomes after cleanup, not Python finalizer scheduling.",
   "setup": {
     "channels": [
       {
@@ -98,6 +98,39 @@
       "wait_for": "a-runs"
     },
     {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "task B"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "cancellation_reason": null,
+          "response_events": []
+        }
+      },
+      "defer_delivery": true,
+      "as": "b"
+    },
+    {
+      "call": "delivery.wait",
+      "of": "a",
+      "background": true,
+      "as": "wait_1"
+    },
+    {
+      "call": "delivery.wait",
+      "of": "a",
+      "background": true,
+      "as": "wait_2"
+    },
+    {
       "call": "delivery.cancel",
       "of": "a",
       "reason": "stopped",
@@ -133,20 +166,42 @@
       }
     },
     {
-      "call": "process_inbound",
-      "room_id": "room-1",
-      "message": {
-        "channel_id": "sms",
-        "sender_id": "+15551234567",
-        "content": {
-          "type": "text",
-          "body": "task B"
-        }
-      },
+      "await": "wait_1",
       "expect": {
         "result": {
+          "cancellation_reason": "stopped",
           "blocked": false,
-          "cancellation_reason": null
+          "response_events": [],
+          "error": null
+        }
+      }
+    },
+    {
+      "await": "wait_2",
+      "expect": {
+        "result": {
+          "cancellation_reason": "stopped",
+          "blocked": false,
+          "response_events": [],
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "delivery.wait",
+      "of": "b",
+      "expect": {
+        "result": {
+          "cancellation_reason": null,
+          "response_events": [
+            {
+              "content": {
+                "body": "answer to task B"
+              }
+            }
+          ],
+          "blocked": false,
+          "error": null
         }
       }
     }

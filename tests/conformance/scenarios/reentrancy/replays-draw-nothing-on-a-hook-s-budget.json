@@ -1,0 +1,516 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reentrancy/replays-draw-nothing-on-a-hook-s-budget",
+  "title": "A hook replays the same key past its budget without consuming a pass, then commits a new injection",
+  "rules": [
+    "§8.3",
+    "§9.5.1 Reentrance",
+    "§13.4"
+  ],
+  "reentrancy": [
+    "inject@locked"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "audit",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "audit"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "inject",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "trigger"
+            },
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "ws",
+                "content": {
+                  "type": "text",
+                  "body": "sent 0"
+                },
+                "idempotency_key": "k",
+                "as": "replay",
+                "expect": {
+                  "result": {
+                    "id": "room-1#0",
+                    "content": {
+                      "body": "sent 0"
+                    },
+                    "blocked_by": null
+                  }
+                }
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "ws",
+                "content": {
+                  "type": "text",
+                  "body": "sent 1"
+                },
+                "idempotency_key": "k",
+                "as": "replay",
+                "expect": {
+                  "result": {
+                    "id": "room-1#0",
+                    "content": {
+                      "body": "sent 0"
+                    },
+                    "blocked_by": null
+                  }
+                }
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "ws",
+                "content": {
+                  "type": "text",
+                  "body": "sent 2"
+                },
+                "idempotency_key": "k",
+                "as": "replay",
+                "expect": {
+                  "result": {
+                    "id": "room-1#0",
+                    "content": {
+                      "body": "sent 0"
+                    },
+                    "blocked_by": null
+                  }
+                }
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "ws",
+                "content": {
+                  "type": "text",
+                  "body": "sent 3"
+                },
+                "idempotency_key": "k",
+                "as": "replay",
+                "expect": {
+                  "result": {
+                    "id": "room-1#0",
+                    "content": {
+                      "body": "sent 0"
+                    },
+                    "blocked_by": null
+                  }
+                }
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "ws",
+                "content": {
+                  "type": "text",
+                  "body": "sent 4"
+                },
+                "idempotency_key": "k",
+                "as": "replay",
+                "expect": {
+                  "result": {
+                    "id": "room-1#0",
+                    "content": {
+                      "body": "sent 0"
+                    },
+                    "blocked_by": null
+                  }
+                }
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "ws",
+                "content": {
+                  "type": "text",
+                  "body": "sent 5"
+                },
+                "idempotency_key": "k",
+                "as": "replay",
+                "expect": {
+                  "result": {
+                    "id": "room-1#0",
+                    "content": {
+                      "body": "sent 0"
+                    },
+                    "blocked_by": null
+                  }
+                }
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "ws",
+                "content": {
+                  "type": "text",
+                  "body": "sent 6"
+                },
+                "idempotency_key": "k",
+                "as": "replay",
+                "expect": {
+                  "result": {
+                    "id": "room-1#0",
+                    "content": {
+                      "body": "sent 0"
+                    },
+                    "blocked_by": null
+                  }
+                }
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "ws",
+                "content": {
+                  "type": "text",
+                  "body": "sent 7"
+                },
+                "idempotency_key": "k",
+                "as": "replay",
+                "expect": {
+                  "result": {
+                    "id": "room-1#0",
+                    "content": {
+                      "body": "sent 0"
+                    },
+                    "blocked_by": null
+                  }
+                }
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "ws",
+                "content": {
+                  "type": "text",
+                  "body": "sent 8"
+                },
+                "idempotency_key": "k",
+                "as": "replay",
+                "expect": {
+                  "result": {
+                    "id": "room-1#0",
+                    "content": {
+                      "body": "sent 0"
+                    },
+                    "blocked_by": null
+                  }
+                }
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "ws",
+                "content": {
+                  "type": "text",
+                  "body": "sent 9"
+                },
+                "idempotency_key": "k",
+                "as": "replay",
+                "expect": {
+                  "result": {
+                    "id": "room-1#0",
+                    "content": {
+                      "body": "sent 0"
+                    },
+                    "blocked_by": null
+                  }
+                }
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "ws",
+                "content": {
+                  "type": "text",
+                  "body": "sent 10"
+                },
+                "idempotency_key": "k",
+                "as": "replay",
+                "expect": {
+                  "result": {
+                    "id": "room-1#0",
+                    "content": {
+                      "body": "sent 0"
+                    },
+                    "blocked_by": null
+                  }
+                }
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "ws",
+                "content": {
+                  "type": "text",
+                  "body": "sent 11"
+                },
+                "idempotency_key": "k",
+                "as": "replay",
+                "expect": {
+                  "result": {
+                    "id": "room-1#0",
+                    "content": {
+                      "body": "sent 0"
+                    },
+                    "blocked_by": null
+                  }
+                }
+              },
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "ws",
+                "content": {
+                  "type": "text",
+                  "body": "new"
+                },
+                "as": "new",
+                "expect": {
+                  "result": {
+                    "id": "room-1#1",
+                    "blocked_by": null
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "kit": {
+      "max_chain_depth": 1
+    }
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "trigger"
+        }
+      },
+      "expect": {
+        "result": {
+          "event": {
+            "index": 2,
+            "status": "delivered"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "sent 0"
+          },
+          "index": 0,
+          "status": "delivered",
+          "blocked_by": null
+        },
+        {
+          "content": {
+            "body": "new"
+          },
+          "index": 1,
+          "status": "delivered",
+          "blocked_by": null
+        },
+        {
+          "content": {
+            "body": "trigger"
+          },
+          "index": 2,
+          "status": "delivered",
+          "blocked_by": null
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "audit": [
+          {
+            "content": {
+              "body": "sent 0"
+            }
+          },
+          {
+            "content": {
+              "body": "new"
+            }
+          },
+          {
+            "content": {
+              "body": "trigger"
+            }
+          }
+        ]
+      }
+    },
+    "actions": {
+      "replay": [
+        {
+          "result": {
+            "id": "room-1#0",
+            "content": {
+              "body": "sent 0"
+            },
+            "blocked_by": null
+          }
+        },
+        {
+          "result": {
+            "id": "room-1#0",
+            "content": {
+              "body": "sent 0"
+            },
+            "blocked_by": null
+          }
+        },
+        {
+          "result": {
+            "id": "room-1#0",
+            "content": {
+              "body": "sent 0"
+            },
+            "blocked_by": null
+          }
+        },
+        {
+          "result": {
+            "id": "room-1#0",
+            "content": {
+              "body": "sent 0"
+            },
+            "blocked_by": null
+          }
+        },
+        {
+          "result": {
+            "id": "room-1#0",
+            "content": {
+              "body": "sent 0"
+            },
+            "blocked_by": null
+          }
+        },
+        {
+          "result": {
+            "id": "room-1#0",
+            "content": {
+              "body": "sent 0"
+            },
+            "blocked_by": null
+          }
+        },
+        {
+          "result": {
+            "id": "room-1#0",
+            "content": {
+              "body": "sent 0"
+            },
+            "blocked_by": null
+          }
+        },
+        {
+          "result": {
+            "id": "room-1#0",
+            "content": {
+              "body": "sent 0"
+            },
+            "blocked_by": null
+          }
+        },
+        {
+          "result": {
+            "id": "room-1#0",
+            "content": {
+              "body": "sent 0"
+            },
+            "blocked_by": null
+          }
+        },
+        {
+          "result": {
+            "id": "room-1#0",
+            "content": {
+              "body": "sent 0"
+            },
+            "blocked_by": null
+          }
+        },
+        {
+          "result": {
+            "id": "room-1#0",
+            "content": {
+              "body": "sent 0"
+            },
+            "blocked_by": null
+          }
+        },
+        {
+          "result": {
+            "id": "room-1#0",
+            "content": {
+              "body": "sent 0"
+            },
+            "blocked_by": null
+          }
+        }
+      ],
+      "new": [
+        {
+          "result": {
+            "id": "room-1#1",
+            "blocked_by": null
+          }
+        }
+      ]
+    }
+  },
+  "notes": "Python: tests/test_reentrance.py::TestAnInjectionMadeFromTheRoomsOwnWork::test_a_replay_draws_nothing_and_returns_its_original. Twelve sends with one key exceed the budget of ten only if duplicate lookups charge it. Every replay must return the original id and content; the next fresh send must still commit."
+}

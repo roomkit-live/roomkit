@@ -1,0 +1,87 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "resilience/process-timeout-covers-the-inbound-parser",
+  "title": "The pre-commit deadline covers handle_inbound: a parser held past it commits and delivers nothing",
+  "rules": [
+    "§13.6",
+    "§8.2"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "parse": [
+          {
+            "gate": "late"
+          }
+        ]
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "kit": {
+      "process_timeout_ms": 100
+    }
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "process_timeout",
+          "event": null
+        }
+      }
+    },
+    {
+      "open": "late"
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": []
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": []
+      }
+    },
+    "framework_events": {
+      "room-1": [
+        {
+          "event": "process_timeout",
+          "timeout": 0.1
+        }
+      ]
+    }
+  },
+  "notes": "Python: tests/test_precommit_timeout.py::TestTheWindowCoversWhatItClaims::test_a_channel_that_hangs_in_handle_inbound. The gate remains closed until process_inbound returns its timeout."
+}

@@ -1,0 +1,235 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-cascade-cancel-leaves-another-room-s-running-turn-alone",
+  "title": "Cancelling one room's cascade leaves another room's running turn usable on the same channel",
+  "rules": [
+    "§10.1 Explicit delivery cancellation",
+    "§10.1 step 18"
+  ],
+  "notes": "Python: tests/test_delivery_cancellation.py::test_caller_cancellation_drains_tool_and_preserves_other_room. The other room starts before the cut; both bind the same scripted intelligence channel. This does not emulate caller-task cancellation or tool finalizers.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "on_event": [
+          {
+            "when": {
+              "text": "task A"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer to task A"
+                }
+              }
+            ],
+            "gate": "a-runs"
+          },
+          {
+            "when": {
+              "text": "task B"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer to task B"
+                }
+              }
+            ],
+            "gate": "b-runs"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      },
+      {
+        "id": "other",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "task A"
+        }
+      },
+      "defer_delivery": true,
+      "as": "a"
+    },
+    {
+      "wait_for": "a-runs"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "other",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "task B"
+        }
+      },
+      "defer_delivery": true,
+      "as": "b"
+    },
+    {
+      "wait_for": "b-runs"
+    },
+    {
+      "call": "delivery.cancel",
+      "of": "a",
+      "reason": "stopped",
+      "expect": {
+        "result": {
+          "cancellation_reason": "stopped",
+          "response_events": []
+        }
+      }
+    },
+    {
+      "open": "b-runs"
+    },
+    {
+      "call": "delivery.wait",
+      "of": "b",
+      "expect": {
+        "result": {
+          "cancellation_reason": null,
+          "response_events": [
+            {
+              "content": {
+                "body": "answer to task B"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "delivery.wait",
+      "of": "a",
+      "expect": {
+        "result": {
+          "cancellation_reason": "stopped",
+          "response_events": []
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "task A"
+          },
+          "index": 0,
+          "status": "delivered"
+        }
+      ],
+      "other": [
+        {
+          "content": {
+            "body": "task B"
+          },
+          "index": 0,
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "body": "answer to task B"
+          },
+          "index": 1
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "body": "task A"
+            }
+          }
+        ]
+      },
+      "other": {
+        "ws": [
+          {
+            "content": {
+              "body": "task B"
+            }
+          },
+          {
+            "content": {
+              "body": "answer to task B"
+            }
+          }
+        ]
+      }
+    },
+    "turns": {
+      "room-1": {
+        "ai": [
+          {
+            "content": {
+              "body": "task A"
+            }
+          }
+        ]
+      },
+      "other": {
+        "ai": [
+          {
+            "content": {
+              "body": "task B"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
