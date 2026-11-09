@@ -268,7 +268,8 @@ class _SlowTransitionAnswer(InMemoryStore):
         return written
 
 
-async def test_a_transition_its_caller_left_is_reported_whole() -> None:
+@pytest.mark.parametrize("entry", ["inbound", "check", "attach", "record"])
+async def test_a_transition_its_caller_left_is_reported_whole(entry: str) -> None:
     """The message's caller is cancelled once the transitions' write is
     stored: each still takes its record, its framework event and its hook
     (RFC §5.1, §13.6), since no later section finds them due."""
@@ -281,7 +282,13 @@ async def test_a_transition_its_caller_left_is_reported_whole() -> None:
     )
     store.armed = True
     try:
-        caller = asyncio.create_task(kit.process_inbound(_message("too late"), room_id="r1"))
+        calls = {
+            "inbound": lambda: kit.process_inbound(_message("too late"), room_id="r1"),
+            "check": lambda: kit.check_room_timers("r1"),
+            "attach": lambda: _attach(kit),
+            "record": lambda: _record(kit),
+        }
+        caller = asyncio.create_task(calls[entry]())
         await asyncio.wait_for(store.written.wait(), 1)
         caller.cancel()
         store.answer.set()
@@ -292,6 +299,7 @@ async def test_a_transition_its_caller_left_is_reported_whole() -> None:
         records = await kit.store.list_events("r1", event_filter=EventFilter(include_blocked=True))
         codes = [e.content.code for e in records if isinstance(e.content, SystemContent)]
         assert codes[-2:] == ["room_paused_by_timer", "room_closed_by_timer"]
+        assert await kit.store.get_binding("r1", "sms2") is None
         assert heard.reports == [
             "room_paused:timer",
             "room_closed:timer",
@@ -465,3 +473,35 @@ async def test_a_commit_landing_before_the_transition_write_is_not_overwritten(
     assert after.timers.last_activity_at == fresh.timers.last_activity_at
     assert heard.reports == []
     await kit.close()
+
+
+async def test_timer_hooks_read_activity_committed_after_the_transition_write() -> None:
+    """A greeting off the room lock can land after the timer's status write."""
+    store = _SlowTransitionAnswer()
+    kit, heard = await _kit(
+        store, timers=RoomTimers(inactive_after_seconds=60, last_activity_at=_ago(3600))
+    )
+    contexts: list[RoomContext] = []
+
+    @kit.hook(HookTrigger.ON_ROOM_PAUSED, execution=HookExecution.ASYNC)
+    async def observe(event: RoomEvent, context: RoomContext) -> None:
+        contexts.append(context)
+
+    store.armed = True
+    checking = asyncio.create_task(kit.check_room_timers("r1"))
+    try:
+        await asyncio.wait_for(store.written.wait(), 1)
+        await store.commit_event("r1", make_event(room_id="r1", channel_id="voice", body="hello"))
+        store.answer.set()
+        checked = await asyncio.wait_for(checking, 1)
+        await heard.hooks_fired(1)
+        assert checked == await kit.get_room("r1")
+        assert checked.status is RoomStatus.ACTIVE
+        assert len(contexts) == 1
+        assert contexts[0].room == checked
+        assert any(
+            getattr(event.content, "body", None) == "hello" for event in contexts[0].recent_events
+        )
+    finally:
+        store.answer.set()
+        await kit.close()

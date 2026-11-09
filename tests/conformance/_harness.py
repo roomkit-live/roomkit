@@ -321,11 +321,18 @@ class Harness:
         if self._recording:
             self.observed.dispatch_turns.setdefault(strategy_id, []).append(turn)
 
-    def record_hook(self, name: str, trigger: str, room_id: str, payload: Any) -> None:
+    def record_hook(
+        self, name: str, trigger: str, room_id: str, payload: Any, context: RoomContext
+    ) -> None:
         if not self._recording:
             return
         event = payload.model_dump(mode="json") if isinstance(payload, RoomEvent) else None
-        call: dict[str, Any] = {"trigger": trigger, "room_id": room_id, "event": event}
+        call: dict[str, Any] = {
+            "trigger": trigger,
+            "room_id": room_id,
+            "event": event,
+            "context_room": context.room.model_dump(mode="json"),
+        }
         if isinstance(payload, ToolCallEvent):
             call["tool_call"] = tool_call_record(payload)
         if isinstance(payload, DeliveryStatus):

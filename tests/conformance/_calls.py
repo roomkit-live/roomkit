@@ -48,6 +48,7 @@ from roomkit.providers.sms import WebhookMeta
 from roomkit.tasks import DelegatedTask
 from tests.conformance._acp import scripted_acp_channel
 from tests.conformance._agent import scripted_agent
+from tests.conformance._room_queries import call as room_query
 from tests.conformance._script import (
     ScriptedChannel,
     ScriptedFailureError,
@@ -540,6 +541,17 @@ async def _close(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any
 
 
 CALLS: dict[str, Call] = {
+    **dict.fromkeys(
+        (
+            "get_room",
+            "get_binding",
+            "list_bindings",
+            "list_members",
+            "get_timeline",
+            "check_all_timers",
+        ),
+        room_query,
+    ),
     "close": _close,
     "process_inbound": _process_inbound,
     "send_event": _send_event,

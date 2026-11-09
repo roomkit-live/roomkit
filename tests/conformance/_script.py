@@ -464,7 +464,7 @@ def hook_handler(spec: Mapping[str, Any], harness: Harness) -> HookHandler:
 
     async def handler(payload: Any, context: RoomContext) -> HookResult | None:
         room_id = context.room.id
-        harness.record_hook(name, spec["trigger"], room_id, payload)
+        harness.record_hook(name, spec["trigger"], room_id, payload, context)
         reaction = reactions.pick(event_subject(payload, room_id))
         if reaction is None:
             return HookResult.allow()
