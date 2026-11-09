@@ -459,6 +459,14 @@ class Harness:
             self.scenario.get("expect", {}), self.observed, self._checks
         )
 
+    async def _set_room_status(self, room: Mapping[str, Any]) -> None:
+        if room.get("status") == "paused":
+            await self.kit.pause_room(room["id"])
+        if room.get("status") in ("closed", "archived"):
+            await self.kit.close_room(room["id"])
+        if room.get("status") == "archived":
+            await self.kit.archive_room(room["id"])
+
     async def _setup(self) -> None:
         setup = self.scenario.get("setup", {})
         recorded = LEVEL_0_EVENTS + LEVEL_2_EVENTS + INPUT_EVENTS + VERIFICATION_EVENTS + AI_EVENTS
@@ -480,10 +488,7 @@ class Harness:
                     await self.kit.mute(room["id"], binding["channel_id"])
             for participant in room.get("participants", []):
                 await add_participant(self.kit, room["id"], participant)
-            if room.get("status") in ("closed", "archived"):
-                await self.kit.close_room(room["id"])
-            if room.get("status") == "archived":
-                await self.kit.archive_room(room["id"])
+            await self._set_room_status(room)
         for hook in setup.get("hooks", []):
             register_hook(self.kit, self, hook)
         for hook in setup.get("identity_hooks", []):

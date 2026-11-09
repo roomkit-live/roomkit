@@ -1,0 +1,261 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/due-timers-run-before-explicit-transitions",
+  "title": "Due timers close each room before its explicit transition is decided",
+  "rules": [
+    "§5.1",
+    "§8.2",
+    "§17.2",
+    "§26.1"
+  ],
+  "notes": "Python: test_every_locked_section_applies_the_due_transitions_first and test_close_room_on_a_room_its_timer_closes_returns_it_as_stored. A pause/resume now refuses CLOSED, reopen succeeds from CLOSED, close is already done, archive follows CLOSED. Timer announcements must precede the explicit archive, with no duplicate close. All rooms share the same due close instant; its normalized rank may differ with optional lifecycle payloads, so equality names the value. The exact deadline arithmetic remains covered by the specialized timer tests.",
+  "setup": {
+    "rooms": [
+      {
+        "id": "pause",
+        "organization_id": "acme",
+        "timers": {
+          "inactive_after_seconds": 60,
+          "closed_after_seconds": 60,
+          "last_activity_at": "2026-01-01T11:00:00Z"
+        }
+      },
+      {
+        "id": "resume",
+        "organization_id": "acme",
+        "timers": {
+          "inactive_after_seconds": 60,
+          "closed_after_seconds": 60,
+          "last_activity_at": "2026-01-01T11:00:00Z"
+        }
+      },
+      {
+        "id": "reopen",
+        "organization_id": "acme",
+        "timers": {
+          "inactive_after_seconds": 60,
+          "closed_after_seconds": 60,
+          "last_activity_at": "2026-01-01T11:00:00Z"
+        }
+      },
+      {
+        "id": "close",
+        "organization_id": "acme",
+        "timers": {
+          "inactive_after_seconds": 60,
+          "closed_after_seconds": 60,
+          "last_activity_at": "2026-01-01T11:00:00Z"
+        }
+      },
+      {
+        "id": "archive",
+        "organization_id": "acme",
+        "timers": {
+          "inactive_after_seconds": 60,
+          "closed_after_seconds": 60,
+          "last_activity_at": "2026-01-01T11:00:00Z"
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "paused",
+        "trigger": "on_room_paused",
+        "execution": "async"
+      },
+      {
+        "name": "closed",
+        "trigger": "on_room_closed",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "pause_room",
+      "room_id": "pause",
+      "organization_id": "acme",
+      "expect": {
+        "error": "transition_refused"
+      }
+    },
+    {
+      "call": "resume_room",
+      "room_id": "resume",
+      "organization_id": "acme",
+      "expect": {
+        "error": "transition_refused"
+      }
+    },
+    {
+      "call": "reopen_room",
+      "room_id": "reopen",
+      "organization_id": "acme",
+      "expect": {
+        "result": {
+          "status": "active"
+        }
+      }
+    },
+    {
+      "call": "close_room",
+      "room_id": "close",
+      "organization_id": "acme",
+      "expect": {
+        "result": {
+          "status": "closed"
+        }
+      }
+    },
+    {
+      "call": "archive_room",
+      "room_id": "archive",
+      "organization_id": "acme",
+      "expect": {
+        "result": {
+          "status": "archived"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "pause": {
+        "status": "closed",
+        "paused_at": null,
+        "closed_at": {
+          "$as": "due-close"
+        }
+      },
+      "resume": {
+        "status": "closed",
+        "paused_at": null,
+        "closed_at": {
+          "$as": "due-close"
+        }
+      },
+      "reopen": {
+        "status": "active",
+        "paused_at": null
+      },
+      "close": {
+        "status": "closed",
+        "paused_at": null,
+        "closed_at": {
+          "$as": "due-close"
+        }
+      },
+      "archive": {
+        "status": "archived",
+        "paused_at": null,
+        "closed_at": {
+          "$as": "due-close"
+        }
+      }
+    },
+    "hooks": {
+      "paused": [
+        {
+          "trigger": "on_room_paused",
+          "room_id": "pause"
+        },
+        {
+          "trigger": "on_room_paused",
+          "room_id": "resume"
+        },
+        {
+          "trigger": "on_room_paused",
+          "room_id": "reopen"
+        },
+        {
+          "trigger": "on_room_paused",
+          "room_id": "close"
+        },
+        {
+          "trigger": "on_room_paused",
+          "room_id": "archive"
+        }
+      ],
+      "closed": [
+        {
+          "trigger": "on_room_closed",
+          "room_id": "pause"
+        },
+        {
+          "trigger": "on_room_closed",
+          "room_id": "resume"
+        },
+        {
+          "trigger": "on_room_closed",
+          "room_id": "reopen"
+        },
+        {
+          "trigger": "on_room_closed",
+          "room_id": "close"
+        },
+        {
+          "trigger": "on_room_closed",
+          "room_id": "archive"
+        }
+      ]
+    },
+    "framework_events": {
+      "pause": [
+        {
+          "event": "room_paused",
+          "reason": "timer"
+        },
+        {
+          "event": "room_closed",
+          "reason": "timer"
+        }
+      ],
+      "resume": [
+        {
+          "event": "room_paused",
+          "reason": "timer"
+        },
+        {
+          "event": "room_closed",
+          "reason": "timer"
+        }
+      ],
+      "reopen": [
+        {
+          "event": "room_paused",
+          "reason": "timer"
+        },
+        {
+          "event": "room_closed",
+          "reason": "timer"
+        }
+      ],
+      "close": [
+        {
+          "event": "room_paused",
+          "reason": "timer"
+        },
+        {
+          "event": "room_closed",
+          "reason": "timer"
+        }
+      ],
+      "archive": [
+        {
+          "event": "room_paused",
+          "reason": "timer"
+        },
+        {
+          "event": "room_closed",
+          "reason": "timer"
+        },
+        {
+          "event": "room_archived",
+          "reason": {
+            "$absent": true
+          }
+        }
+      ]
+    }
+  }
+}

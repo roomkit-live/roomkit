@@ -1,0 +1,164 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/transitions-with-the-owning-organization",
+  "title": "Every transition accepts the owning organization",
+  "rules": [
+    "§5.1",
+    "§8.2",
+    "§17.2",
+    "§26.1"
+  ],
+  "notes": "Positive counterpart of transitions-scope-before-due-timers: forwarding the caller scope must not reject its own room.",
+  "setup": {
+    "rooms": [
+      {
+        "id": "pause",
+        "status": "active",
+        "organization_id": "acme"
+      },
+      {
+        "id": "resume",
+        "status": "paused",
+        "organization_id": "acme"
+      },
+      {
+        "id": "reopen",
+        "status": "closed",
+        "organization_id": "acme"
+      },
+      {
+        "id": "close",
+        "status": "active",
+        "organization_id": "acme"
+      },
+      {
+        "id": "archive",
+        "status": "active",
+        "organization_id": "acme"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "paused",
+        "trigger": "on_room_paused",
+        "execution": "async"
+      },
+      {
+        "name": "closed",
+        "trigger": "on_room_closed",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "pause_room",
+      "room_id": "pause",
+      "organization_id": "acme",
+      "expect": {
+        "result": {
+          "status": "paused",
+          "organization_id": "acme"
+        }
+      }
+    },
+    {
+      "call": "resume_room",
+      "room_id": "resume",
+      "organization_id": "acme",
+      "expect": {
+        "result": {
+          "status": "active",
+          "organization_id": "acme"
+        }
+      }
+    },
+    {
+      "call": "reopen_room",
+      "room_id": "reopen",
+      "organization_id": "acme",
+      "expect": {
+        "result": {
+          "status": "active",
+          "organization_id": "acme"
+        }
+      }
+    },
+    {
+      "call": "close_room",
+      "room_id": "close",
+      "organization_id": "acme",
+      "expect": {
+        "result": {
+          "status": "closed",
+          "organization_id": "acme"
+        }
+      }
+    },
+    {
+      "call": "archive_room",
+      "room_id": "archive",
+      "organization_id": "acme",
+      "expect": {
+        "result": {
+          "status": "archived",
+          "organization_id": "acme"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "pause": {
+        "status": "paused"
+      },
+      "resume": {
+        "status": "active"
+      },
+      "reopen": {
+        "status": "active"
+      },
+      "close": {
+        "status": "closed"
+      },
+      "archive": {
+        "status": "archived"
+      }
+    },
+    "hooks": {
+      "paused": [
+        {
+          "trigger": "on_room_paused",
+          "room_id": "pause"
+        }
+      ],
+      "closed": [
+        {
+          "trigger": "on_room_closed",
+          "room_id": "close"
+        }
+      ]
+    },
+    "framework_events": {
+      "pause": [],
+      "resume": [],
+      "reopen": [],
+      "close": [
+        {
+          "event": "room_closed",
+          "reason": {
+            "$absent": true
+          }
+        }
+      ],
+      "archive": [
+        {
+          "event": "room_archived",
+          "reason": {
+            "$absent": true
+          }
+        }
+      ]
+    }
+  }
+}

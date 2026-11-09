@@ -1,0 +1,110 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/a-timer-check-does-not-change-another-due-room",
+  "title": "A named timer check changes only that room",
+  "rules": [
+    "§5.1",
+    "§8.2",
+    "§17.2",
+    "§26.1"
+  ],
+  "notes": "check_timers is the named-room public check, not check_all_timers. Both rooms are overdue, so a sweeper substituted by a runner would be observable. Python: tests/test_room_timers.py, public check_room_timers.",
+  "setup": {
+    "rooms": [
+      {
+        "id": "checked",
+        "timers": {
+          "inactive_after_seconds": 60,
+          "closed_after_seconds": 60,
+          "last_activity_at": "2026-01-01T11:00:00Z"
+        }
+      },
+      {
+        "id": "untouched",
+        "timers": {
+          "inactive_after_seconds": 60,
+          "closed_after_seconds": 60,
+          "last_activity_at": "2026-01-01T11:00:00Z"
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "paused",
+        "trigger": "on_room_paused",
+        "execution": "async"
+      },
+      {
+        "name": "closed",
+        "trigger": "on_room_closed",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.get_room",
+      "room_id": "untouched",
+      "expect": {
+        "result": {
+          "$as": "before"
+        }
+      }
+    },
+    {
+      "call": "check_timers",
+      "room_id": "checked",
+      "expect": {
+        "result": {
+          "status": "closed"
+        }
+      }
+    },
+    {
+      "call": "store.get_room",
+      "room_id": "untouched",
+      "expect": {
+        "result": {
+          "$as": "before"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "checked": {
+        "status": "closed"
+      },
+      "untouched": {
+        "status": "active"
+      }
+    },
+    "hooks": {
+      "paused": [
+        {
+          "trigger": "on_room_paused",
+          "room_id": "checked"
+        }
+      ],
+      "closed": [
+        {
+          "trigger": "on_room_closed",
+          "room_id": "checked"
+        }
+      ]
+    },
+    "framework_events": {
+      "checked": [
+        {
+          "event": "room_paused",
+          "reason": "timer"
+        },
+        {
+          "event": "room_closed",
+          "reason": "timer"
+        }
+      ],
+      "untouched": []
+    }
+  }
+}

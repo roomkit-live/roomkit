@@ -1,0 +1,179 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/close-from-every-room-status",
+  "title": "Close from every room status: accepted transitions, no-ops and refusals",
+  "rules": [
+    "§5.1",
+    "§8.2",
+    "§17.2",
+    "§26.1"
+  ],
+  "notes": "Python: tests/test_room_transitions.py. Whole-room equality checks timestamps and state on no-op/refusal; specialized store-write assertions are still needed to prove that equal values were not written. Setup reaches each status through public transitions before observation starts.",
+  "setup": {
+    "rooms": [
+      {
+        "id": "active",
+        "status": "active"
+      },
+      {
+        "id": "paused",
+        "status": "paused"
+      },
+      {
+        "id": "closed",
+        "status": "closed"
+      },
+      {
+        "id": "archived",
+        "status": "archived"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "paused",
+        "trigger": "on_room_paused",
+        "execution": "async"
+      },
+      {
+        "name": "closed",
+        "trigger": "on_room_closed",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "close_room",
+      "room_id": "active",
+      "expect": {
+        "result": {
+          "status": "closed",
+          "paused_at": null,
+          "closed_at": {
+            "$present": true
+          }
+        }
+      }
+    },
+    {
+      "call": "close_room",
+      "room_id": "paused",
+      "expect": {
+        "result": {
+          "status": "closed",
+          "paused_at": null,
+          "closed_at": {
+            "$present": true
+          }
+        }
+      }
+    },
+    {
+      "call": "store.get_room",
+      "room_id": "closed",
+      "expect": {
+        "result": {
+          "$as": "before-closed"
+        }
+      }
+    },
+    {
+      "call": "close_room",
+      "room_id": "closed",
+      "expect": {
+        "result": {
+          "$as": "before-closed"
+        }
+      }
+    },
+    {
+      "call": "store.get_room",
+      "room_id": "closed",
+      "expect": {
+        "result": {
+          "$as": "before-closed"
+        }
+      }
+    },
+    {
+      "call": "store.get_room",
+      "room_id": "archived",
+      "expect": {
+        "result": {
+          "$as": "before-archived"
+        }
+      }
+    },
+    {
+      "call": "close_room",
+      "room_id": "archived",
+      "expect": {
+        "error": "transition_refused"
+      }
+    },
+    {
+      "call": "store.get_room",
+      "room_id": "archived",
+      "expect": {
+        "result": {
+          "$as": "before-archived"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "active": {
+        "status": "closed"
+      },
+      "paused": {
+        "status": "closed"
+      },
+      "closed": {
+        "status": "closed"
+      },
+      "archived": {
+        "status": "archived"
+      }
+    },
+    "timeline": {
+      "active": [],
+      "paused": [],
+      "closed": [],
+      "archived": []
+    },
+    "hooks": {
+      "paused": [],
+      "closed": [
+        {
+          "trigger": "on_room_closed",
+          "room_id": "active"
+        },
+        {
+          "trigger": "on_room_closed",
+          "room_id": "paused"
+        }
+      ]
+    },
+    "framework_events": {
+      "active": [
+        {
+          "event": "room_closed",
+          "reason": {
+            "$absent": true
+          }
+        }
+      ],
+      "paused": [
+        {
+          "event": "room_closed",
+          "reason": {
+            "$absent": true
+          }
+        }
+      ],
+      "closed": [],
+      "archived": []
+    }
+  }
+}

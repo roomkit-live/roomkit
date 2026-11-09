@@ -7,6 +7,8 @@ fails with nothing written. No call takes a room out of ARCHIVED.
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock
+
 import pytest
 
 from roomkit import (
@@ -52,6 +54,15 @@ async def _room_in(status: RoomStatus) -> tuple[RoomKit, list[str]]:
     return kit, heard
 
 
+def _watch_room_writes(kit: RoomKit, monkeypatch: pytest.MonkeyPatch) -> list[AsyncMock]:
+    writes = []
+    for name in ("update_room", "update_room_if"):
+        write = AsyncMock(wraps=getattr(kit.store, name))
+        monkeypatch.setattr(kit.store, name, write)
+        writes.append(write)
+    return writes
+
+
 @pytest.mark.parametrize(
     ("operation", "status"),
     [
@@ -61,9 +72,12 @@ async def _room_in(status: RoomStatus) -> tuple[RoomKit, list[str]]:
         ("resume_room", RoomStatus.ACTIVE),
     ],
 )
-async def test_a_transition_already_done_does_nothing(operation: str, status: RoomStatus) -> None:
+async def test_a_transition_already_done_does_nothing(
+    operation: str, status: RoomStatus, monkeypatch: pytest.MonkeyPatch
+) -> None:
     kit, heard = await _room_in(status)
     before = await kit.store.get_room("r1")
+    writes = _watch_room_writes(kit, monkeypatch)
 
     room = await getattr(kit, operation)("r1")
     await kit.hook_engine.drain_observers()
@@ -71,6 +85,8 @@ async def test_a_transition_already_done_does_nothing(operation: str, status: Ro
     assert room == before
     assert await kit.store.get_room("r1") == before
     assert heard == []
+    for write in writes:
+        write.assert_not_awaited()
     await kit.close()
 
 
@@ -88,10 +104,11 @@ async def test_a_transition_already_done_does_nothing(operation: str, status: Ro
     ],
 )
 async def test_a_transition_from_a_status_it_does_not_leave_fails(
-    operation: str, status: RoomStatus
+    operation: str, status: RoomStatus, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     kit, heard = await _room_in(status)
     before = await kit.store.get_room("r1")
+    writes = _watch_room_writes(kit, monkeypatch)
 
     with pytest.raises(TransitionRefusedError) as refused:
         await getattr(kit, operation)("r1")
@@ -99,6 +116,8 @@ async def test_a_transition_from_a_status_it_does_not_leave_fails(
     assert (refused.value.room_id, refused.value.status) == ("r1", status)
     assert await kit.store.get_room("r1") == before
     assert heard == []
+    for write in writes:
+        write.assert_not_awaited()
     await kit.close()
 
 

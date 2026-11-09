@@ -62,11 +62,20 @@
       }
     },
     {
+      "call": "store.get_room",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "$as": "archive-unchanged"
+        }
+      }
+    },
+    {
       "call": "archive_room",
       "room_id": "room-1",
       "expect": {
         "result": {
-          "status": "archived"
+          "$as": "archive-unchanged"
         }
       }
     },

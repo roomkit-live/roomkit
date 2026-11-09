@@ -1,0 +1,108 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/resume-and-reopen-restart-inactivity",
+  "title": "Resume and reopen restart inactivity and report no transition notices",
+  "rules": [
+    "§5.1",
+    "§8.2",
+    "§17.2",
+    "§26.1"
+  ],
+  "notes": "Python: test_a_pause_a_resume_and_a_reopen_move_the_room_as_roomkit_rs_does. The seeded activity is old: preserving it would immediately pause the room at check_timers. A 60-second new inactivity window avoids comparing two nearly simultaneous clock reads.",
+  "setup": {
+    "rooms": [
+      {
+        "id": "resume",
+        "status": "paused",
+        "timers": {
+          "inactive_after_seconds": 60,
+          "last_activity_at": "2026-01-01T11:00:00Z"
+        }
+      },
+      {
+        "id": "reopen",
+        "status": "closed",
+        "timers": {
+          "inactive_after_seconds": 60,
+          "last_activity_at": "2026-01-01T11:00:00Z"
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "paused",
+        "trigger": "on_room_paused",
+        "execution": "async"
+      },
+      {
+        "name": "closed",
+        "trigger": "on_room_closed",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "resume_room",
+      "room_id": "resume",
+      "expect": {
+        "result": {
+          "status": "active",
+          "paused_at": null,
+          "closed_at": null
+        }
+      }
+    },
+    {
+      "call": "check_timers",
+      "room_id": "resume",
+      "expect": {
+        "result": {
+          "status": "active",
+          "paused_at": null,
+          "closed_at": null
+        }
+      }
+    },
+    {
+      "call": "reopen_room",
+      "room_id": "reopen",
+      "expect": {
+        "result": {
+          "status": "active",
+          "paused_at": null,
+          "closed_at": null
+        }
+      }
+    },
+    {
+      "call": "check_timers",
+      "room_id": "reopen",
+      "expect": {
+        "result": {
+          "status": "active",
+          "paused_at": null,
+          "closed_at": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "resume": {
+        "status": "active"
+      },
+      "reopen": {
+        "status": "active"
+      }
+    },
+    "hooks": {
+      "paused": [],
+      "closed": []
+    },
+    "framework_events": {
+      "resume": [],
+      "reopen": []
+    }
+  }
+}

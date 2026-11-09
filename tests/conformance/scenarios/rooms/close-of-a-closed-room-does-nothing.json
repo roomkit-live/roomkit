@@ -43,11 +43,20 @@
       }
     },
     {
+      "call": "store.get_room",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "$as": "close-unchanged"
+        }
+      }
+    },
+    {
       "call": "close_room",
       "room_id": "room-1",
       "expect": {
         "result": {
-          "status": "closed"
+          "$as": "close-unchanged"
         }
       }
     }

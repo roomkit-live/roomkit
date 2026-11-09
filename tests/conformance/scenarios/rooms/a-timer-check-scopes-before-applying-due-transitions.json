@@ -1,0 +1,129 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/a-timer-check-scopes-before-applying-due-transitions",
+  "title": "A scoped timer check cannot transition another organization or an unscoped room",
+  "rules": [
+    "§5.1",
+    "§8.2",
+    "§17.2",
+    "§26.1"
+  ],
+  "notes": "The rooms have long-overdue timers. Refusal must preserve their entire room record and emit no timer notices. Missing-room calls must not sweep other rooms either. Python: tests/test_room_org_scoping.py and test_room_transitions.py; this combines their scope and transition boundaries.",
+  "setup": {
+    "rooms": [
+      {
+        "id": "foreign",
+        "organization_id": "other",
+        "timers": {
+          "inactive_after_seconds": 60,
+          "closed_after_seconds": 60,
+          "last_activity_at": "2026-01-01T11:00:00Z"
+        }
+      },
+      {
+        "id": "unscoped",
+        "timers": {
+          "inactive_after_seconds": 60,
+          "closed_after_seconds": 60,
+          "last_activity_at": "2026-01-01T11:00:00Z"
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "paused",
+        "trigger": "on_room_paused",
+        "execution": "async"
+      },
+      {
+        "name": "closed",
+        "trigger": "on_room_closed",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.get_room",
+      "room_id": "foreign",
+      "expect": {
+        "result": {
+          "$as": "foreign-before"
+        }
+      }
+    },
+    {
+      "call": "store.get_room",
+      "room_id": "unscoped",
+      "expect": {
+        "result": {
+          "$as": "unscoped-before"
+        }
+      }
+    },
+    {
+      "call": "check_timers",
+      "room_id": "foreign",
+      "organization_id": "acme",
+      "expect": {
+        "error": "room_not_found"
+      }
+    },
+    {
+      "call": "check_timers",
+      "room_id": "unscoped",
+      "organization_id": "acme",
+      "expect": {
+        "error": "room_not_found"
+      }
+    },
+    {
+      "call": "check_timers",
+      "room_id": "missing",
+      "organization_id": "acme",
+      "expect": {
+        "error": "room_not_found"
+      }
+    },
+    {
+      "call": "store.get_room",
+      "room_id": "foreign",
+      "expect": {
+        "result": {
+          "$as": "foreign-before"
+        }
+      }
+    },
+    {
+      "call": "store.get_room",
+      "room_id": "unscoped",
+      "expect": {
+        "result": {
+          "$as": "unscoped-before"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "foreign": {
+        "status": "active"
+      },
+      "unscoped": {
+        "status": "active"
+      }
+    },
+    "timeline": {
+      "foreign": [],
+      "unscoped": []
+    },
+    "hooks": {
+      "paused": [],
+      "closed": []
+    },
+    "framework_events": {
+      "foreign": [],
+      "unscoped": []
+    }
+  }
+}

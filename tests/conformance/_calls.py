@@ -354,6 +354,18 @@ async def _close_room(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -
     return await kit.close_room(spec["room_id"], **_org(spec))
 
 
+async def _pause_room(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
+    return await kit.pause_room(spec["room_id"], **_org(spec))
+
+
+async def _resume_room(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
+    return await kit.resume_room(spec["room_id"], **_org(spec))
+
+
+async def _reopen_room(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
+    return await kit.reopen_room(spec["room_id"], **_org(spec))
+
+
 async def _regenerate_response(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
     trigger = {"trigger_id": spec["trigger_id"]} if "trigger_id" in spec else {}
     return await kit.regenerate_response(spec["room_id"], **trigger, **_org(spec))
@@ -544,6 +556,9 @@ CALLS: dict[str, Call] = {
     "set_visibility": _set_visibility,
     "update_binding_metadata": _update_binding_metadata,
     "close_room": _close_room,
+    "pause_room": _pause_room,
+    "resume_room": _resume_room,
+    "reopen_room": _reopen_room,
     "send_greeting": _send_greeting,
     "regenerate_response": _regenerate_response,
     "regenerate_target": _regenerate_target,
