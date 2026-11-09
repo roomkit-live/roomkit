@@ -194,7 +194,9 @@ async def _host_send_event(kit: RoomKit, harness: Harness, spec: Mapping[str, An
 async def _host_delegate(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
     names = TASK_ARGUMENTS["host.delegate"] - {"room_id", "agent_id", "task"}
     options = _named(spec, names)
-    return await _host().delegate(spec["room_id"], spec["agent_id"], spec["task"], **options)
+    task_id = await _host().delegate(spec["room_id"], spec["agent_id"], spec["task"], **options)
+    harness.handled_tasks.add(task_id)
+    return task_id
 
 
 async def _host_wait_task(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
