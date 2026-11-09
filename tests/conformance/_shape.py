@@ -21,6 +21,7 @@ from tests.conformance._discussion import (
     DISCUSSION_MEMBERS,
     DISPATCH_MEMBERS,
 )
+from tests.conformance._executors import EXECUTOR_ARGUMENTS
 from tests.conformance._handoff import HANDOFF_ARGUMENTS
 from tests.conformance._inputs import INPUT_ARGUMENTS
 from tests.conformance._media import ATTACHED_MEDIA, MEDIA_RESOLVER
@@ -57,8 +58,12 @@ SETUP = {
     "strategies",
     "session_auditor",
     "processes",
+    "executors",
 }
 PROCESS = {"id"}
+EXECUTOR = {"id", "hosts", "hooks", "room_hooks", "started", "answers", "gate"}
+TURN_TIMEOUTS = {"accept_ms", "heartbeat_interval_ms", "heartbeat_timeout_ms", "cancel_ms"}
+VERB = {"result", "keeps", "reads"}
 KIT = {
     "max_chain_depth",
     "process_timeout_ms",
@@ -75,6 +80,7 @@ KIT = {
     "lock_manager",
     "inbound_rate_limit",
     "persistence_policy",
+    "turn_timeouts",
 }
 LOCK_MANAGER = {"release_error"}
 RATE_LIMIT = {"max_per_second", "max_per_minute", "max_per_hour"}
@@ -155,6 +161,8 @@ CHANNEL = {
     "sender_is_participant",
     "memory",
     "agent",
+    "declared",
+    "verbs",
 }
 ADDRESSES = {"normalizes", "conversation_key", "recipient_at"}
 AGENT = {
@@ -348,6 +356,7 @@ EXPECT = {
     "media_resolver",
     "tool_audit",
     "session_audit",
+    "executors",
 }
 NEW_ROOM = {"id", "organization_id", "metadata", "timers"}
 
@@ -460,6 +469,7 @@ CALLS |= ROUTING_ARGUMENTS
 CALLS |= HANDOFF_ARGUMENTS
 CALLS |= DELEGATE_TOOL_ARGUMENTS
 CALLS |= DISCUSSION_ARGUMENTS
+CALLS |= EXECUTOR_ARGUMENTS
 STEPS = {"await": {"await", "expect"}, "concurrent": {"concurrent"}, "wait_for": {"wait_for"}}
 STEPS |= {"open": {"open"}, "idle": {"idle"}, "wait_for_lock": {"wait_for_lock", "waiters"}}
 STEPS |= {"lock_releases": {"lock_releases"}}
@@ -471,22 +481,7 @@ def unknown_members(scenario: Mapping[str, Any]) -> list[str]:
     _members(scenario, TOP, "$", found)
     setup = scenario.get("setup", {})
     _members(setup, SETUP, "setup", found)
-    _members(setup.get("kit", {}), KIT, "setup.kit", found)
-    if "delivery_backend" in setup.get("kit", {}):
-        backend = setup["kit"]["delivery_backend"]
-        _members(backend, DELIVERY_BACKEND, "setup.kit.delivery_backend", found)
-    if "lock_manager" in setup.get("kit", {}):
-        _members(setup["kit"]["lock_manager"], LOCK_MANAGER, "setup.kit.lock_manager", found)
-    if "inbound_rate_limit" in setup.get("kit", {}):
-        limit = setup["kit"]["inbound_rate_limit"]
-        _members(limit, RATE_LIMIT, "setup.kit.inbound_rate_limit", found)
-    if "persistence_policy" in setup.get("kit", {}):
-        policy = setup["kit"]["persistence_policy"]
-        _members(policy, PERSISTENCE_POLICY, "setup.kit.persistence_policy", found)
-    readers = {"media_resolver": MEDIA_RESOLVER, "attached_media": ATTACHED_MEDIA}
-    for reader, members in readers.items():
-        if reader in setup.get("kit", {}):
-            _members(setup["kit"][reader], members, f"setup.kit.{reader}", found)
+    _kit(setup.get("kit", {}), found)
     _identity(setup, found)
     for position, channel in enumerate(setup.get("channels", [])):
         _channel(channel, f"setup.channels[{position}]", found)
@@ -501,6 +496,7 @@ def unknown_members(scenario: Mapping[str, Any]) -> list[str]:
         _strategy(strategy, f"setup.strategies[{position}]", found)
     for position, process in enumerate(setup.get("processes", [])):
         _members(process, PROCESS, f"setup.processes[{position}]", found)
+    _executors(setup, found)
     for position, step in enumerate(scenario.get("steps", [])):
         _step(step, f"steps[{position}]", found)
     expect = scenario.get("expect", {})
@@ -510,6 +506,33 @@ def unknown_members(scenario: Mapping[str, Any]) -> list[str]:
         for index, outcome in enumerate(listed):
             _outcome(outcome, f"expect.actions.{label}[{index}]", found)
     return found
+
+
+def _kit(kit: Mapping[str, Any], found: list[str]) -> None:
+    """The members of the setup's ``kit``, and of the records it holds."""
+    _members(kit, KIT, "setup.kit", found)
+    records = {
+        "delivery_backend": DELIVERY_BACKEND,
+        "lock_manager": LOCK_MANAGER,
+        "inbound_rate_limit": RATE_LIMIT,
+        "persistence_policy": PERSISTENCE_POLICY,
+        "media_resolver": MEDIA_RESOLVER,
+        "attached_media": ATTACHED_MEDIA,
+        "turn_timeouts": TURN_TIMEOUTS,
+    }
+    for record, members in records.items():
+        if record in kit:
+            _members(kit[record], members, f"setup.kit.{record}", found)
+
+
+def _executors(setup: Mapping[str, Any], found: list[str]) -> None:
+    """The members of the setup's executors."""
+    for position, executor in enumerate(setup.get("executors", [])):
+        path = f"setup.executors[{position}]"
+        _members(executor, EXECUTOR, path, found)
+        for member in ("hooks", "room_hooks"):
+            for index, hook in enumerate(executor.get(member, [])):
+                _hook(hook, f"{path}.{member}[{index}]", found)
 
 
 def _strategy(strategy: Mapping[str, Any], path: str, found: list[str]) -> None:
@@ -599,6 +622,13 @@ def _channel(channel: Mapping[str, Any], path: str, found: list[str]) -> None:
         _members(channel["agent"], AGENT, f"{path}.agent", found)
     if "memory" in channel:
         _memory(channel["memory"], f"{path}.memory", found)
+    _channel_settings(channel, path, found)
+
+
+def _channel_settings(channel: Mapping[str, Any], path: str, found: list[str]) -> None:
+    """The members of a channel's verbs, per-room configs, skills and human input."""
+    for verb, spec in channel.get("verbs", {}).items():
+        _members(spec, VERB, f"{path}.verbs.{verb}", found)
     for room_id, config in channel.get("config_provider", {}).items():
         path_of = f"{path}.config_provider.{room_id}"
         if isinstance(config, list):

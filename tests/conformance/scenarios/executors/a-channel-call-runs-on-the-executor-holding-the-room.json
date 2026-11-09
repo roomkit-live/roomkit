@@ -1,0 +1,124 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-channel-call-runs-on-the-executor-holding-the-room",
+  "title": "A channel call runs on the executor holding the room's state, though another serves the channel, and returns its result",
+  "rules": [
+    "§10.6.3",
+    "§10.6.7"
+  ],
+  "notes": "Python: tests/test_turns_channel_control.py test_a_channel_call_reaches_the_executor_holding_the_room.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "category": "intelligence",
+        "declared": true,
+        "verbs": {
+          "ping": {
+            "result": "pong"
+          }
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "before",
+        "hosts": [
+          "coder"
+        ]
+      },
+      {
+        "id": "holder",
+        "hosts": [
+          "coder"
+        ]
+      },
+      {
+        "id": "after",
+        "hosts": [
+          "coder"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "executor.pause",
+      "executor": "before"
+    },
+    {
+      "call": "executor.pause",
+      "executor": "after"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hello."
+        }
+      }
+    },
+    {
+      "call": "executor.resume",
+      "executor": "before"
+    },
+    {
+      "call": "executor.resume",
+      "executor": "after"
+    },
+    {
+      "call": "channel_call",
+      "channel_id": "coder",
+      "room_id": "r1",
+      "verb": "ping",
+      "expect": {
+        "result": "pong"
+      }
+    }
+  ],
+  "expect": {
+    "executors": {
+      "before": [],
+      "holder": [
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1
+        },
+        {
+          "call": "channel_call",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1,
+          "verb": "ping"
+        }
+      ],
+      "after": []
+    }
+  }
+}

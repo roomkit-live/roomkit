@@ -1,0 +1,119 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/an-executor-that-never-answers-loses-the-turn-and-no-other-gets-it",
+  "title": "A turn its executor never answers fails executor_lost at accept_timeout and is handed to no other",
+  "rules": [
+    "§10.6.7",
+    "§10.6.8"
+  ],
+  "notes": "Python: tests/test_turns_backend.py test_a_silent_executor_loses_its_turn. The other executor starts once the turn was handed over.",
+  "setup": {
+    "kit": {
+      "turn_timeouts": {
+        "heartbeat_interval_ms": 10,
+        "heartbeat_timeout_ms": 60,
+        "accept_ms": 150,
+        "cancel_ms": 100
+      }
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "Never given."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "mute",
+        "hosts": [
+          "coder"
+        ],
+        "answers": false,
+        "gate": "taken"
+      },
+      {
+        "id": "other",
+        "hosts": [
+          "coder"
+        ],
+        "started": false
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "background": true,
+      "as": "turn"
+    },
+    {
+      "wait_for": "taken"
+    },
+    {
+      "call": "executor.start",
+      "executor": "other"
+    },
+    {
+      "await": "turn",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "executor_lost"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Go."
+          }
+        }
+      ]
+    },
+    "executors": {
+      "other": []
+    }
+  }
+}

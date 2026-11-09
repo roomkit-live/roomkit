@@ -140,6 +140,9 @@ class _Comparison:
         for channel_id, expected in self.expect.get("acp_wire", {}).items():
             actual = self.observed.acp_wire.get(channel_id, [])
             self._check(expected, actual, f"acp_wire.{channel_id}")
+        for executor_id, expected in self.expect.get("executors", {}).items():
+            actual = self.observed.executors.get(executor_id, [])
+            self._check(expected, actual, f"executors.{executor_id}")
         for kind in ("tool_audit", "session_audit"):
             if kind in self.expect:
                 self._check(self.expect[kind], getattr(self.observed, kind), kind)

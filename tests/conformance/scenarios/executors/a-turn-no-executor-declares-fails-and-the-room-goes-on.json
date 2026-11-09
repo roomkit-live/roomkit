@@ -1,0 +1,131 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-turn-no-executor-declares-fails-and-the-room-goes-on",
+  "title": "A turn no executor declares fails naming its channel, the message stays, and the room's next turn runs once one serves",
+  "rules": [
+    "§10.6.7",
+    "§10.6.8"
+  ],
+  "notes": "Python: tests/test_channel_declaration.py test_with_no_executor_to_build_it_a_declared_agent_s_turn_fails_at_once. A turn's failure reaches process_inbound as its message; the reason no_executor is asserted where a call raises it (a-channel-call-no-executor-takes-fails-no-executor).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "Now I can."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "late",
+        "hosts": [
+          "coder"
+        ],
+        "started": false
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Anyone?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "coder"
+          }
+        }
+      }
+    },
+    {
+      "call": "executor.start",
+      "executor": "late"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "And now?"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Anyone?"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "And now?"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Now I can."
+          }
+        }
+      ]
+    },
+    "executors": {
+      "late": [
+        {
+          "call": "built",
+          "channel_id": "coder",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1
+        }
+      ]
+    }
+  }
+}

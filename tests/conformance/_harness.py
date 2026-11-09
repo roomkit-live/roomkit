@@ -67,6 +67,7 @@ from tests.conformance._discussion import (
     dispatch_decision_record,
     speak_queue_record,
 )
+from tests.conformance._executors import EXECUTOR_CALLS, Executors
 from tests.conformance._handoff import HANDOFF_CALLS
 from tests.conformance._identity import kit_options, register_identity_hook
 from tests.conformance._inputs import INPUT_CALLS, request_record
@@ -209,7 +210,16 @@ class Harness:
         setup = scenario.get("setup", {})
         self.discussion_done: dict[str, bool] = {}
         self.strategies = strategies(setup, self)
-        kit_setup = setup.get("kit", {})
+        self.executors = Executors(self)
+        self.kit = RoomKit(**self._kit_arguments(setup.get("kit", {}), store))
+        # The other processes of `setup.processes`, by id, and the kits closed.
+        self.processes: dict[str, RoomKit] = {}
+        self._closed: list[RoomKit] = []
+
+    def _kit_arguments(
+        self, kit_setup: Mapping[str, Any], store: ConversationStore | None
+    ) -> dict[str, Any]:
+        """What the run's kit is built with, read from the setup's ``kit``."""
         kwargs: dict[str, Any] = {}
         if "max_chain_depth" in kit_setup:
             kwargs["max_chain_depth"] = kit_setup["max_chain_depth"]
@@ -232,12 +242,10 @@ class Harness:
         kwargs |= verification_options(kit_setup)
         kwargs |= media_options(kit_setup, self)
         kwargs |= kit_orchestration(kit_setup, self)
+        kwargs |= self.executors.kit_options()
         if "text_events" in self.scenario.get("expect", {}):
             kwargs["realtime"] = _TextRecorder(self.observed.text_events)
-        self.kit = RoomKit(**kwargs)
-        # The other processes of `setup.processes`, by id, and the kits closed.
-        self.processes: dict[str, RoomKit] = {}
-        self._closed: list[RoomKit] = []
+        return kwargs
 
     def kit_of(self, spec: Mapping[str, Any]) -> RoomKit:
         """The kit a call's ``kit`` names: a process of the setup, the run's
@@ -315,6 +323,27 @@ class Harness:
         per_room = self.observed.room_callbacks.setdefault(room_id, {})
         per_room.setdefault(channel_id, []).append(item)
         self.observed.hook_order.append(f"{channel_id}.{call}")
+
+    def record_executor(
+        self,
+        executor_id: str,
+        channel_id: str,
+        build: int,
+        call: str,
+        room_id: str | None,
+        **details: Any,
+    ) -> None:
+        """One call an executor made on a channel it built (README, ``executors``)."""
+        if not self._recording:
+            return
+        item = {"call": call, "channel_id": channel_id, "build": build, **details}
+        if room_id is not None:
+            item["room_id"] = room_id
+        self.executors.calls.setdefault(executor_id, []).append(item)
+
+    def executor_calls(self, executor_id: str) -> list[dict[str, Any]]:
+        """What an executor did so far (README, ``executors``)."""
+        return list(self.executors.calls.get(executor_id, []))
 
     def record_dispatch_turn(self, strategy_id: str, turn: dict[str, Any]) -> None:
         """A turn the scripted dispatch policy of *strategy_id* was handed."""
@@ -461,6 +490,7 @@ class Harness:
         finally:
             for kit in self._open_kits():
                 await kit.close()
+            await self.executors.close_all()
             self.auditors.close()
         return self._problems + compare(
             self.scenario.get("expect", {}), self.observed, self._checks
@@ -484,6 +514,7 @@ class Harness:
         self.auditors.set_up(setup.get("session_auditor"), self.kit)
         for channel in setup.get("channels", []):
             register_channel(self.kit, self, channel)
+        await self.executors.start_all()
         await store_identities(self.kit, setup.get("identities", []))
         for room in setup.get("rooms", []):
             await create_room(self.kit, room)
@@ -605,7 +636,7 @@ class Harness:
         resolved = await self.resolve(dict(spec), scope)
         calls = CALLS | STORE_CALLS | TASK_CALLS | MEMBER_CALLS | INPUT_CALLS | STRATEGY_CALLS
         calls |= VERIFICATION_CALLS | ROUTING_CALLS | HANDOFF_CALLS | DISCUSSION_CALLS
-        call = (calls | DELEGATE_TOOL_CALLS)[spec["call"]]
+        call = (calls | DELEGATE_TOOL_CALLS | EXECUTOR_CALLS)[spec["call"]]
         try:
             kit = self.kit_of(spec)
             result = await asyncio.wait_for(call(kit, self, resolved), CALL_BOUND_S)
@@ -827,6 +858,9 @@ class Harness:
         }
         self.observed.acp_wire = {
             channel_id: list(agent.received) for channel_id, agent in self.acp_agents.items()
+        }
+        self.observed.executors = {
+            executor_id: list(calls) for executor_id, calls in self.executors.calls.items()
         }
         tools, sessions, problems = self.auditors.observe()
         self.observed.tool_audit, self.observed.session_audit = tools, sessions

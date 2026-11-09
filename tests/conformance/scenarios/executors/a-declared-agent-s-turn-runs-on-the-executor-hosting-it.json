@@ -1,0 +1,159 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-declared-agent-s-turn-runs-on-the-executor-hosting-it",
+  "title": "Each declared agent's turn runs on the executor that hosts it, and its answer lands in the room",
+  "rules": [
+    "§10.6.2",
+    "§10.6.7"
+  ],
+  "notes": "Python: tests/test_channel_declaration.py test_a_declared_agent_s_turn_runs_on_the_executor_that_builds_it.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "From the first."
+            }
+          ]
+        }
+      },
+      {
+        "id": "builder",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "From the second."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "coder"
+        ]
+      },
+      {
+        "id": "second",
+        "hosts": [
+          "builder"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "builder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hello."
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hi."
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "From the first."
+          }
+        }
+      ],
+      "r2": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hi."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "From the second."
+          }
+        }
+      ]
+    },
+    "executors": {
+      "first": [
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1
+        }
+      ],
+      "second": [
+        {
+          "call": "on_event",
+          "channel_id": "builder",
+          "room_id": "r2",
+          "build": 1
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,172 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-turn-apart-calls-a-tool-the-room-owner-serves",
+  "title": "A turn on an executor apart calls a tool the room owner serves, and the worker it delegates to runs on its own executor",
+  "rules": [
+    "§10.6.5",
+    "§23.4"
+  ],
+  "notes": "Python: tests/test_turns_owner_tools.py. delegate_task is served by the owner: the call crosses from the executor, its handler runs on the owner.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "delegate_task",
+                  "arguments": {
+                    "agent": "worker",
+                    "task": "Fix it."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "On it."
+            },
+            {
+              "text": "Fixed."
+            }
+          ]
+        }
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "declared": true,
+        "on_event": [
+          {
+            "when": {
+              "source_channel_id": "system",
+              "type": "message"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Done."
+                }
+              }
+            ],
+            "repeat": true
+          }
+        ]
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "coder"
+        ]
+      },
+      {
+        "id": "second",
+        "hosts": [
+          "worker"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate_handler",
+      "handler": "tool"
+    },
+    {
+      "call": "setup_delegation",
+      "agent_id": "coder",
+      "handler": "tool",
+      "targets": [
+        [
+          "worker",
+          "Fixes"
+        ]
+      ]
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "coder": [
+        "$any",
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": {
+                "$contains": "\"status\": \"delegated\""
+              }
+            }
+          ]
+        },
+        "$any"
+      ]
+    },
+    "executors": {
+      "first": [
+        "$any",
+        "$any"
+      ],
+      "second": [
+        {
+          "call": "built",
+          "channel_id": "worker",
+          "build": 1
+        },
+        {
+          "call": "on_room_attached",
+          "channel_id": "worker",
+          "room_id": "$r1",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "worker",
+          "room_id": "$r1",
+          "build": 1
+        }
+      ]
+    }
+  }
+}

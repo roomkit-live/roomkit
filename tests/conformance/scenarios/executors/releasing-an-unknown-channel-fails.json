@@ -1,0 +1,38 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/releasing-an-unknown-channel-fails",
+  "title": "Releasing a channel the kit does not hold fails with channel_not_registered",
+  "rules": [
+    "§10.6.3"
+  ],
+  "notes": "Python: tests/test_turns_channel_release.py.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "release_channel",
+      "channel_id": "nobody",
+      "expect": {
+        "error": "channel_not_registered"
+      }
+    }
+  ],
+  "expect": {}
+}

@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 from pydantic import TypeAdapter, ValidationError
 
 from roomkit import HostChannel, RoomKit
+from roomkit.channels.base import Channel
 from roomkit.core.exceptions import (
     ChangeRefusedError,
     ChannelNotFoundError,
@@ -28,6 +29,7 @@ from roomkit.core.exceptions import (
     RoomNotFoundError,
     TaskNotFoundError,
     TransitionRefusedError,
+    TurnLinkError,
     VerificationRefusedError,
 )
 from roomkit.models.delivery import DeliveryOutcome, DeliveryStatus, InboundMessage, InboundResult
@@ -85,6 +87,7 @@ _ERRORS: tuple[tuple[type[Exception], str], ...] = (
     (EventNotFoundError, "event_not_found"),
     (TaskNotFoundError, "task_not_found"),
     (VerificationRefusedError, "verification_refused"),
+    (TurnLinkError, "turn_link"),
     (ValueError, "invalid_argument"),
     (HandleWaitsForItselfError, "waits_for_itself"),
 )
@@ -408,16 +411,24 @@ async def _register_channel(kit: RoomKit, harness: Harness, spec: Mapping[str, A
 def register_channel(
     kit: RoomKit, harness: Harness, channel: Mapping[str, Any], *, process: bool = False
 ) -> None:
-    """Registers *channel* on *kit*; in a *process* of the setup, a scripted
-    agent answers from the model the run's kit's agent of its id has."""
+    """Registers *channel* on *kit*, by its declaration alone when the setup
+    runs it on executors of their own (README, ``executors``)."""
+    built = scripted_channel(kit, harness, channel, process=process)
+    kit.register_channel(built.declaration() if channel.get("declared") else built)
+
+
+def scripted_channel(
+    kit: RoomKit, harness: Harness, channel: Mapping[str, Any], *, process: bool = False
+) -> Channel:
+    """The channel the scenario describes; in a *process* of the setup or on
+    an executor, a scripted agent answers from the model the run's kit's agent
+    of its id has."""
     if channel["type"] == ChannelType.HOST:
-        kit.register_channel(HostChannel(channel["id"]))
-        return
+        return HostChannel(channel["id"])
     if "acp" in channel:
         acp_channel, acp_agent = read(lambda: scripted_acp_channel(channel, harness.gates))
         harness.acp_agents[channel["id"]] = acp_agent
-        kit.register_channel(acp_channel)
-        return
+        return acp_channel
     if "model" in channel:
         agent, models = read(
             lambda: scripted_agent(
@@ -434,9 +445,8 @@ def register_channel(
             )
         )
         harness.models.update(models)
-        kit.register_channel(agent)
-        return
-    kit.register_channel(read(lambda: ScriptedChannel(channel, harness)))
+        return agent
+    return read(lambda: ScriptedChannel(channel, harness))
 
 
 async def _unregister_channel(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:

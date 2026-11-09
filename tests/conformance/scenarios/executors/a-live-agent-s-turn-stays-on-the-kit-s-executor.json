@@ -1,0 +1,86 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-live-agent-s-turn-stays-on-the-kit-s-executor",
+  "title": "An agent the kit holds live runs on the kit's own executor, though another executor declares its id",
+  "rules": [
+    "§10.6.7"
+  ],
+  "notes": "Python: tests/test_turns_own_executor.py test_a_host_executor_served_first_does_not_take_a_live_agent_s_turn.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "From the kit."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "host",
+        "hosts": [
+          "coder"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hello."
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "From the kit."
+          }
+        }
+      ]
+    },
+    "executors": {
+      "host": []
+    }
+  }
+}

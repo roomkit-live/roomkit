@@ -1,0 +1,113 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/work-a-turn-apart-began-publishes-to-its-room-after-it",
+  "title": "Work a turn on an executor apart began publishes to the turn's room once the turn ended, and to that room only",
+  "rules": [
+    "§10.6.3",
+    "§10.6.5"
+  ],
+  "notes": "Python: tests/test_turns_between.py test_a_publication_after_the_turn_reaches_the_owner_for_its_room_only.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "category": "intelligence",
+        "declared": true,
+        "on_event": [
+          {
+            "after_turn": [
+              {
+                "call": "channel.publish",
+                "executor": "first",
+                "channel_id": "coder",
+                "room_id": "r1",
+                "kind": "thinking_delta",
+                "data": {
+                  "thinking_length": 5,
+                  "round": 0,
+                  "channel_id": "coder"
+                },
+                "as": "here"
+              },
+              {
+                "call": "channel.publish",
+                "executor": "first",
+                "channel_id": "coder",
+                "room_id": "r2",
+                "kind": "thinking_delta",
+                "data": {
+                  "thinking_length": 5,
+                  "round": 0,
+                  "channel_id": "coder"
+                },
+                "as": "there"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "coder"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    }
+  ],
+  "expect": {
+    "thinking_events": {
+      "r1": [
+        {
+          "type": "thinking_delta",
+          "channel_id": "coder",
+          "round": 0
+        }
+      ],
+      "r2": []
+    }
+  }
+}

@@ -1,0 +1,70 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-verb-the-channel-lacks-fails",
+  "title": "A channel call for a verb the channel does not have fails",
+  "rules": [
+    "§10.6.3"
+  ],
+  "notes": "Python: tests/test_turns_channel_control.py test_a_verb_the_channel_lacks_raises_on_the_owner. §10.6.3 leaves the error of an unknown verb to the channel; Python's raises ValueError, the suite's invalid_argument.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "category": "intelligence",
+        "declared": true
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "coder"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "channel_call",
+      "channel_id": "coder",
+      "room_id": "r1",
+      "verb": "nope",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    }
+  ],
+  "expect": {
+    "executors": {
+      "first": [
+        {
+          "call": "channel_call",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1,
+          "verb": "nope"
+        }
+      ]
+    }
+  }
+}

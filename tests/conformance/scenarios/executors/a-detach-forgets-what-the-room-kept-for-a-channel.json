@@ -1,0 +1,90 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-detach-forgets-what-the-room-kept-for-a-channel",
+  "title": "A channel detached and attached again finds nothing of what the room kept for it",
+  "rules": [
+    "§10.6.2"
+  ],
+  "notes": "Python: tests/test_turns_channel_control.py test_detaching_a_channel_forgets_what_the_room_kept_for_it.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "category": "intelligence",
+        "declared": true,
+        "verbs": {
+          "keep": {
+            "keeps": true
+          },
+          "read": {
+            "reads": true
+          }
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "coder"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "channel_call",
+      "channel_id": "coder",
+      "room_id": "r1",
+      "verb": "keep",
+      "arguments": {
+        "mode": "fast"
+      }
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "r1",
+      "channel_id": "coder"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "r1",
+      "channel_id": "coder",
+      "category": "intelligence"
+    },
+    {
+      "call": "channel_call",
+      "channel_id": "coder",
+      "room_id": "r1",
+      "verb": "read",
+      "expect": {
+        "result": {
+          "mode": {
+            "$absent": true
+          }
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

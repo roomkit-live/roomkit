@@ -1,0 +1,112 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-turn-apart-calls-the-host-verbs-during-and-after-it",
+  "title": "A turn on an executor apart reaches its room through its host, during the turn and after it",
+  "rules": [
+    "§10.6.3",
+    "§10.6.5"
+  ],
+  "notes": "Python: tests/test_turns_host.py, tests/test_turns_between.py test_work_a_turn_began_writes_the_room_after_the_turn_ended.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "category": "intelligence",
+        "declared": true,
+        "on_event": [
+          {
+            "do": [
+              {
+                "call": "host.send_event",
+                "room_id": "r1",
+                "channel_id": "coder",
+                "content": {
+                  "type": "text",
+                  "body": "During."
+                },
+                "as": "during"
+              }
+            ],
+            "after_turn": [
+              {
+                "call": "host.update_room_metadata",
+                "room_id": "r1",
+                "metadata": {
+                  "later": true
+                },
+                "as": "after"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "coder"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Go."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "During."
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "r1": {
+        "metadata": {
+          "later": true
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,139 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-turn-apart-asks-a-person-through-the-room-owner",
+  "title": "A tool of a turn on an executor apart asks a person through the room owner, and reads the answer",
+  "rules": [
+    "§10.6.5",
+    "§9.3"
+  ],
+  "notes": "Python: tests/test_turns_inputs.py test_the_owner_answers_a_turns_request.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "ask_user",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "Thanks."
+            }
+          ]
+        },
+        "human_input": {
+          "tool_names": [
+            "ask_user"
+          ],
+          "timeout_ms": 5000,
+          "tools": [
+            {
+              "name": "ask_user",
+              "description": "Ask the user.",
+              "parameters": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "coder"
+        ],
+        "hooks": [
+          {
+            "name": "asked",
+            "trigger": "on_user_input_required",
+            "reactions": [
+              {
+                "do": [
+                  {
+                    "call": "answer_input",
+                    "request_id": "$request",
+                    "value": "Blue"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "coder": [
+        {
+          "tool_results": []
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "Blue"
+            }
+          ]
+        }
+      ]
+    },
+    "executors": {
+      "first": [
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1
+        }
+      ]
+    }
+  }
+}

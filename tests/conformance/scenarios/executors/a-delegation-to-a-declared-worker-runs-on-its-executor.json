@@ -1,0 +1,127 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-delegation-to-a-declared-worker-runs-on-its-executor",
+  "title": "A task delegated to an agent the room holds by declaration runs on the executor hosting it, and its result comes back",
+  "rules": [
+    "§10.6.1",
+    "§23.3"
+  ],
+  "notes": "Python: tests/test_channel_declaration.py test_a_delegation_to_a_declared_worker_runs_on_its_executor.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "Noted."
+            }
+          ]
+        }
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence",
+        "declared": true,
+        "on_event": [
+          {
+            "when": {
+              "source_channel_id": "system",
+              "type": "message"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Done."
+                }
+              }
+            ],
+            "repeat": true
+          }
+        ]
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "coder"
+        ]
+      },
+      {
+        "id": "second",
+        "hosts": [
+          "worker"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "r1",
+      "agent_id": "worker",
+      "task": "Fix it.",
+      "notify": "coder",
+      "as": "task"
+    },
+    {
+      "call": "task.wait",
+      "task_id": "$task",
+      "expect": {
+        "result": {
+          "output": "Done."
+        }
+      }
+    }
+  ],
+  "expect": {
+    "executors": {
+      "first": [
+        "$any"
+      ],
+      "second": [
+        {
+          "call": "built",
+          "channel_id": "worker",
+          "build": 1
+        },
+        {
+          "call": "on_room_attached",
+          "channel_id": "worker",
+          "room_id": "$r1",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "worker",
+          "room_id": "$r1",
+          "build": 1
+        }
+      ]
+    }
+  }
+}

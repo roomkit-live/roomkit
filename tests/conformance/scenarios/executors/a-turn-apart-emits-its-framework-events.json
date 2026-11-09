@@ -1,0 +1,82 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-turn-apart-emits-its-framework-events",
+  "title": "A turn on an executor apart emits its AI framework events on the room owner's bus",
+  "rules": [
+    "§10.6.2",
+    "§10.6.3",
+    "§8.2"
+  ],
+  "notes": "Python: tests/test_turns_between.py, tests/test_turns_wiring.py. The events a turn emits cross as frames and the owner emits them.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "Done."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "coder"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    }
+  ],
+  "expect": {
+    "ai_events": {
+      "r1": [
+        {
+          "event": "before_ai_generation",
+          "channel_id": "coder"
+        },
+        {
+          "event": "ai_response",
+          "channel_id": "coder"
+        }
+      ]
+    }
+  }
+}

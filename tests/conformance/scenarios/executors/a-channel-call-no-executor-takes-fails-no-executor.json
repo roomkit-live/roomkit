@@ -1,0 +1,72 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-channel-call-no-executor-takes-fails-no-executor",
+  "title": "A channel call no executor takes fails with no_executor",
+  "rules": [
+    "§10.6.3",
+    "§10.6.7"
+  ],
+  "notes": "Python: tests/test_channel_declaration.py test_a_channel_call_to_a_declared_agent_with_no_executor_fails_at_once.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "category": "intelligence",
+        "declared": true,
+        "verbs": {
+          "ping": {
+            "result": "pong"
+          }
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "late",
+        "hosts": [
+          "coder"
+        ],
+        "started": false
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "channel_call",
+      "channel_id": "coder",
+      "room_id": "r1",
+      "verb": "ping",
+      "expect": {
+        "error": {
+          "name": "turn_link",
+          "reason": "no_executor"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "executors": {
+      "late": []
+    }
+  }
+}

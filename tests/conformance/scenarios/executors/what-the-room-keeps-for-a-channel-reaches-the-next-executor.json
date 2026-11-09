@@ -1,0 +1,129 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/what-the-room-keeps-for-a-channel-reaches-the-next-executor",
+  "title": "What a channel call changed of a room's state is stored with the room and handed to the next executor",
+  "rules": [
+    "§10.6.2",
+    "§10.6.3"
+  ],
+  "notes": "Python: tests/test_turns_channel_control.py test_the_kit_stores_a_channel_call_s_room_state_with_the_room, test_a_turn_hands_the_channel_what_the_room_keeps_for_it.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "category": "intelligence",
+        "declared": true,
+        "verbs": {
+          "keep": {
+            "keeps": true
+          },
+          "read": {
+            "reads": true
+          }
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "coder"
+        ]
+      },
+      {
+        "id": "next",
+        "hosts": [
+          "coder"
+        ],
+        "started": false
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "channel_call",
+      "channel_id": "coder",
+      "room_id": "r1",
+      "verb": "keep",
+      "arguments": {
+        "mode": "fast"
+      },
+      "expect": {
+        "result": {
+          "mode": "fast"
+        }
+      }
+    },
+    {
+      "call": "executor.start",
+      "executor": "next"
+    },
+    {
+      "call": "executor.close",
+      "executor": "first"
+    },
+    {
+      "call": "channel_call",
+      "channel_id": "coder",
+      "room_id": "r1",
+      "verb": "read",
+      "expect": {
+        "result": {
+          "mode": "fast"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "executors": {
+      "first": [
+        {
+          "call": "channel_call",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1,
+          "verb": "keep"
+        },
+        {
+          "call": "close",
+          "channel_id": "coder",
+          "build": 1
+        }
+      ],
+      "next": [
+        {
+          "call": "built",
+          "channel_id": "coder",
+          "build": 1
+        },
+        {
+          "call": "channel_call",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1,
+          "verb": "read"
+        }
+      ]
+    }
+  }
+}

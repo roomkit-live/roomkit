@@ -67,6 +67,10 @@ class Gates:
         reached.set()
         await opened.wait()
 
+    def reach(self, name: str) -> None:
+        """Says a call reached the gate, holding nothing there."""
+        self._pair(name)[1].set()
+
     async def wait_for(self, name: str) -> None:
         _, reached = self._pair(name)
         await asyncio.wait_for(reached.wait(), GATE_BOUND_S)
@@ -215,6 +219,8 @@ class ScriptedChannel(Channel):
         self._on_room_detached = Reactions(spec.get("on_room_detached"))
         self._addresses = spec.get("addresses")
         self._recent_events_window = int(spec.get("recent_events_window", 0))
+        self._verbs: Mapping[str, Mapping[str, Any]] = spec.get("verbs", {})
+        self._kept: dict[str, dict[str, Any]] = {}
         if "sender_is_participant" in spec:
             # Declared on the class by a real channel; per scenario here.
             self.sender_is_participant = bool(spec["sender_is_participant"])
@@ -365,8 +371,28 @@ class ScriptedChannel(Channel):
         await self._room_callback(self._on_room_attached, room_id)
 
     async def on_room_detached(self, room_id: str) -> None:
+        self._kept.pop(room_id, None)
         self._harness.record_room_callback(room_id, self.channel_id, "on_room_detached", None)
         await self._room_callback(self._on_room_detached, room_id)
+
+    async def channel_call(self, room_id: str, verb: str, arguments: dict[str, Any]) -> Any:
+        """What the scenario's ``verbs`` says *verb* does (README, ``verbs``);
+        a verb it does not list is refused as the channel contract refuses it."""
+        if verb not in self._verbs:
+            return await super().channel_call(room_id, verb, arguments)
+        spec = self._verbs[verb]
+        if spec.get("keeps"):
+            self._kept.setdefault(room_id, {}).update(arguments)
+        if spec.get("keeps") or spec.get("reads"):
+            return dict(self._kept.get(room_id, {}))
+        return spec.get("result")
+
+    def room_state(self, room_id: str) -> dict[str, Any]:
+        return dict(self._kept.get(room_id, {}))
+
+    def restore_room_state(self, room_id: str, state: dict[str, Any]) -> None:
+        if room_id not in self._kept and state:
+            self._kept[room_id] = dict(state)
 
     async def _room_callback(self, reactions: Reactions, room_id: str) -> None:
         """A room callback's reaction: its gate, its actions, its failure."""

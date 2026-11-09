@@ -1,0 +1,202 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/an-executor-killed-mid-answer-loses-its-turn-and-what-was-shown-stays",
+  "title": "An executor killed during a turn loses it as executor_lost; the answer's text shown so far stays and the room goes on",
+  "rules": [
+    "§10.6.8"
+  ],
+  "notes": "Python: tests/test_turns_redis.py kills a real process; examples/turns_redis.py. Killed while a tool holds the turn, after the first round's text was read.",
+  "setup": {
+    "kit": {
+      "turn_timeouts": {
+        "heartbeat_interval_ms": 10,
+        "heartbeat_timeout_ms": 60,
+        "accept_ms": 1000,
+        "cancel_ms": 100
+      }
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "Looking.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "slow",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "Back."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "slow",
+            "gate": "tool",
+            "returns": "ok"
+          }
+        ]
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "coder"
+        ]
+      },
+      {
+        "id": "next",
+        "hosts": [
+          "coder"
+        ],
+        "started": false
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "background": true,
+      "as": "turn"
+    },
+    {
+      "wait_for": "tool"
+    },
+    {
+      "call": "executor.kill",
+      "executor": "first"
+    },
+    {
+      "await": "turn",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "executor_lost"
+          }
+        }
+      }
+    },
+    {
+      "call": "executor.start",
+      "executor": "next"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Again."
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Go."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Looking."
+          }
+        },
+        {
+          "content": {
+            "type": "tool_call",
+            "tool_name": "slow",
+            "status": "pending"
+          }
+        },
+        {
+          "content": {
+            "type": "tool_call",
+            "tool_name": "slow",
+            "status": "failed"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Again."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Back."
+          }
+        }
+      ]
+    },
+    "executors": {
+      "first": [
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1
+        }
+      ],
+      "next": [
+        {
+          "call": "built",
+          "channel_id": "coder",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1
+        }
+      ]
+    }
+  }
+}

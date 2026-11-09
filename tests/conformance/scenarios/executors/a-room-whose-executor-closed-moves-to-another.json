@@ -1,0 +1,154 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-room-whose-executor-closed-moves-to-another",
+  "title": "Once the executor holding a room closes, the room's next turn runs on another that serves the channel",
+  "rules": [
+    "§10.6.7"
+  ],
+  "notes": "Python: tests/test_turns_channel_control.py test_a_room_whose_executor_stopped_moves_to_another.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "One."
+            },
+            {
+              "text": "Two."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "coder"
+        ]
+      },
+      {
+        "id": "next",
+        "hosts": [
+          "coder"
+        ],
+        "started": false
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "First."
+        }
+      }
+    },
+    {
+      "call": "executor.start",
+      "executor": "next"
+    },
+    {
+      "call": "executor.close",
+      "executor": "first"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Second."
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "First."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "One."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Second."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Two."
+          }
+        }
+      ]
+    },
+    "executors": {
+      "first": [
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1
+        },
+        {
+          "call": "close",
+          "channel_id": "coder",
+          "build": 1
+        }
+      ],
+      "next": [
+        {
+          "call": "built",
+          "channel_id": "coder",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1
+        }
+      ]
+    }
+  }
+}

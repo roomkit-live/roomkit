@@ -1,0 +1,183 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/an-executor-drops-the-state-a-turn-elsewhere-made-stale",
+  "title": "An executor that took a room back drops the state it held before running, a turn elsewhere having made it stale",
+  "rules": [
+    "§10.6.2",
+    "§10.6.7"
+  ],
+  "notes": "Python: tests/test_turns_channel_control.py test_an_executor_drops_a_room_s_state_a_turn_elsewhere_made_stale. Dropping reads as the channel's on_room_detached (§10.6.2). A build that never saw the room lets go of nothing, which is not listed.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "One."
+            },
+            {
+              "text": "Two."
+            },
+            {
+              "text": "Three."
+            },
+            {
+              "text": "Four."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "coder"
+        ]
+      },
+      {
+        "id": "second",
+        "hosts": [
+          "coder"
+        ],
+        "started": false
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "A."
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "B."
+        }
+      }
+    },
+    {
+      "call": "executor.pause",
+      "executor": "first"
+    },
+    {
+      "call": "executor.start",
+      "executor": "second"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "C."
+        }
+      }
+    },
+    {
+      "call": "executor.resume",
+      "executor": "first"
+    },
+    {
+      "call": "executor.close",
+      "executor": "second"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "D."
+        }
+      }
+    }
+  ],
+  "expect": {
+    "executors": {
+      "first": [
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1
+        },
+        {
+          "call": "on_room_detached",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1
+        }
+      ],
+      "second": [
+        {
+          "call": "built",
+          "channel_id": "coder",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1
+        },
+        {
+          "call": "close",
+          "channel_id": "coder",
+          "build": 1
+        }
+      ]
+    }
+  }
+}

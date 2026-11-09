@@ -1,0 +1,128 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-turn-apart-publishes-its-thinking-and-tool-calls-to-the-room",
+  "title": "A turn on an executor apart publishes its thinking and its tool calls to the room's subscribers as it runs",
+  "rules": [
+    "§10.6.2",
+    "§10.6.3",
+    "§6.4"
+  ],
+  "notes": "Python: tests/test_turn_ephemerals_scope.py test_a_turn_whose_answer_reaches_the_room_publishes_its_reasoning. A channel's realtime publications cross as frames: the same events a live agent's subscribers read.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "thinking": [
+                "Hmm."
+              ],
+              "text": "Looking.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "fast",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "fast",
+            "returns": "ok"
+          }
+        ]
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "coder"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    }
+  ],
+  "expect": {
+    "thinking_events": {
+      "r1": [
+        {
+          "type": "thinking_start",
+          "channel_id": "coder"
+        },
+        {
+          "type": "thinking_delta",
+          "channel_id": "coder"
+        },
+        {
+          "type": "thinking_end",
+          "channel_id": "coder"
+        }
+      ]
+    },
+    "tool_events": {
+      "r1": [
+        {
+          "type": "tool_call_start",
+          "channel_id": "coder"
+        },
+        {
+          "type": "tool_call_end",
+          "channel_id": "coder"
+        }
+      ]
+    },
+    "executors": {
+      "first": [
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1
+        }
+      ]
+    }
+  }
+}
