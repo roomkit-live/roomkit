@@ -19,6 +19,7 @@ from typing import Any
 import pytest
 
 from roomkit import (
+    EventStatus,
     FrameworkEvent,
     HookExecution,
     HookResult,
@@ -491,7 +492,10 @@ async def test_timer_hooks_read_activity_committed_after_the_transition_write() 
     checking = asyncio.create_task(kit.check_room_timers("r1"))
     try:
         await asyncio.wait_for(store.written.wait(), 1)
-        await store.commit_event("r1", make_event(room_id="r1", channel_id="voice", body="hello"))
+        greeting = make_event(
+            room_id="r1", channel_id="voice", body="hello", status=EventStatus.DELIVERED
+        )
+        await store.commit_event("r1", greeting)
         store.answer.set()
         checked = await asyncio.wait_for(checking, 1)
         await heard.hooks_fired(1)
