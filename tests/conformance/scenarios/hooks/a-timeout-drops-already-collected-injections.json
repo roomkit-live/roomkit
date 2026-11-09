@@ -1,0 +1,135 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/a-timeout-drops-already-collected-injections",
+  "title": "A timeout after collecting an injection stores and delivers neither cause nor notice",
+  "rules": [
+    "§9.4 Injected events"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "notify",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "result": {
+              "action": "allow",
+              "injected_events": [
+                {
+                  "event": {
+                    "content": {
+                      "type": "text",
+                      "body": "notice"
+                    }
+                  },
+                  "target_channel_ids": [
+                    "ws"
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "needs_lock": false
+      },
+      {
+        "name": "slow",
+        "trigger": "before_broadcast",
+        "priority": 1,
+        "timeout_ms": 5000,
+        "reactions": [
+          {
+            "gate": "late"
+          }
+        ]
+      }
+    ],
+    "kit": {
+      "process_timeout_ms": 100
+    }
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "process_timeout",
+          "event": null
+        }
+      }
+    },
+    {
+      "open": "late"
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": []
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": []
+      }
+    },
+    "hooks": {
+      "notify": [
+        {
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "hello"
+            }
+          }
+        }
+      ],
+      "slow": [
+        {
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "hello"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

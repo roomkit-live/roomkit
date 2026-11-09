@@ -1,0 +1,170 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/an-off-lock-modify-keeps-its-injection",
+  "title": "An off-lock modify keeps its injection until its cause commits",
+  "rules": [
+    "§9.4 Injected events"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "notify",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "result": {
+              "action": "modify",
+              "injected_events": [
+                {
+                  "event": {
+                    "content": {
+                      "type": "text",
+                      "body": "notice"
+                    }
+                  },
+                  "target_channel_ids": [
+                    "ws"
+                  ]
+                }
+              ],
+              "event": {
+                "content": {
+                  "type": "text",
+                  "body": "changed"
+                }
+              }
+            }
+          }
+        ],
+        "needs_lock": false
+      },
+      {
+        "name": "locked",
+        "trigger": "before_broadcast",
+        "priority": 1
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "changed"
+          },
+          "index": 0,
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "notice"
+          },
+          "index": 1,
+          "status": "delivered",
+          "visibility": "ws"
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "type": "text",
+              "body": "changed"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "notice"
+            }
+          }
+        ]
+      }
+    },
+    "hooks": {
+      "notify": [
+        {
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "hello"
+            }
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "notice"
+            }
+          }
+        }
+      ],
+      "locked": [
+        {
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "changed"
+            }
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "notice"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "notes": "Python: tests/test_injected_events.py::TestItsPass and tests/test_off_lock_check.py::TestDecisionMerge; the injected pass runs every BEFORE_BROADCAST hook under its own lock."
+}
