@@ -57,6 +57,8 @@ from roomkit.providers.ai.tool_calls import is_malformed_call
 from roomkit.providers.deepseek.ai import DEEPSEEK_CHAT
 from roomkit.providers.kimi.ai import KIMI_CHAT
 from roomkit.providers.minimax.ai import MINIMAX_CHAT
+from roomkit.providers.openai.ai import OpenAIAIProvider
+from roomkit.providers.openai.config import OpenAIConfig
 from roomkit.providers.utils import _aclose_stream
 from roomkit.skills.registry import SkillRegistry
 from roomkit.tasks import CancelTaskTool, TaskStatusTool
@@ -86,6 +88,9 @@ TOOL_SEARCH_SETTINGS = (
 
 CHAT_DIALECTS = {
     "openai": OPENAI_CHAT,
+    "openai_thinking_field": OpenAIAIProvider(
+        OpenAIConfig(api_key="scripted", model="scripted", thinking_field="reasoning_content")
+    )._dialect(),
     "deepseek": DEEPSEEK_CHAT,
     "minimax": MINIMAX_CHAT,
     "kimi": KIMI_CHAT,

@@ -31,6 +31,11 @@ class OpenAIConfig(BaseModel):
     true and refuses ``supports_reasoning_effort_with_tools`` rather than
     ignore it (RFC §6.7)."""
 
+    _vendor_names_thinking_field: ClassVar[bool] = False
+    """Whether this config's provider sends a model's earlier reasoning where
+    its vendor reads it: a derivative that does sets it true and refuses
+    ``thinking_field`` rather than be told otherwise (RFC §6.4)."""
+
     api_key: SecretStr
     base_url: str | None = None
     model: str
@@ -107,6 +112,27 @@ class OpenAIConfig(BaseModel):
     Read by the OpenAI and LiteLLM providers; the configs of the derivatives
     that know their vendor's rule (Meta, Cerebras, xAI, OpenRouter, DeepSeek,
     MiniMax, Kimi, Qwen) refuse it."""
+    thinking_field: str | None = None
+    """The assistant message field this server reads a model's earlier
+    reasoning from, for a server whose documentation asks for it back
+    (``"reasoning_content"`` on Z.ai's GLM). A round or an answer that reasoned
+    carries it there, and one that did not carries nothing. ``None`` sends no
+    earlier reasoning (RFC §6.4): strict servers refuse a field they do not
+    know, so it is never guessed. The configs of the derivatives that send
+    reasoning where their vendor reads it (DeepSeek, MiniMax, Kimi, Cerebras)
+    refuse it."""
+
+    @field_validator("thinking_field")
+    @classmethod
+    def _refused_where_the_vendor_names_it(cls, value: str | None) -> str | None:
+        """Refuse a field this config's provider already has from its vendor
+        (RFC §6.4)."""
+        if value is not None and cls._vendor_names_thinking_field:
+            raise ValueError(
+                f"{cls.__name__} takes no thinking_field: its provider sends "
+                "reasoning where its vendor reads it"
+            )
+        return value
 
     @field_validator("supports_reasoning_effort_with_tools")
     @classmethod

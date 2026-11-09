@@ -16,6 +16,7 @@ class CerebrasConfig(OpenAIConfig):
     """
 
     _vendor_rule_on_tool_turns: ClassVar[bool] = True
+    _vendor_names_thinking_field: ClassVar[bool] = True
 
     base_url: str = "https://api.cerebras.ai/v1"
     """Cerebras endpoint. May be overridden for a dedicated endpoint or proxy."""

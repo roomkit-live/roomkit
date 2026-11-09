@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from roomkit.providers.ai.base import (
@@ -263,8 +264,16 @@ class OpenAIAIProvider(AIProvider):
     ) -> list[dict[str, Any]]:
         """The conversation as this endpoint reads it (``chat_request``)."""
         return chat_messages(
-            messages, system_prompt, self._chat_dialect, provider=self._provider_name
+            messages, system_prompt, self._dialect(), provider=self._provider_name
         )
+
+    def _dialect(self) -> ChatDialect:
+        """This endpoint's rendering, reasoning in the field the config names
+        when it names one (RFC §6.4)."""
+        field = getattr(self._config, "thinking_field", None)
+        if field is None:
+            return self._chat_dialect
+        return replace(self._chat_dialect, thinking_field=field)
 
     def _token_limit_kwarg(self, value: int | None) -> dict[str, int]:
         """Build the output-cap kwarg under the name the endpoint expects;

@@ -7,11 +7,15 @@ OpenAI, its derivatives, Mistral and PolarGrid render through
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
+import httpx
 import pytest
+from pydantic import ValidationError
 
 from roomkit.providers.ai.base import (
+    AIContext,
     AIImagePart,
     AIMessage,
     AITextPart,
@@ -21,9 +25,13 @@ from roomkit.providers.ai.base import (
 )
 from roomkit.providers.ai.chat_request import OPENAI_CHAT, ChatDialect, chat_messages
 from roomkit.providers.cerebras.ai import CerebrasAIProvider
+from roomkit.providers.cerebras.config import CerebrasConfig
 from roomkit.providers.deepseek.ai import DEEPSEEK_CHAT
+from roomkit.providers.deepseek.config import DeepSeekConfig
 from roomkit.providers.kimi.ai import KIMI_CHAT
+from roomkit.providers.kimi.config import KimiConfig
 from roomkit.providers.minimax.ai import MINIMAX_CHAT
+from roomkit.providers.minimax.config import MiniMaxConfig
 from roomkit.providers.mistral.ai import MISTRAL_CHAT, MistralAIProvider
 from roomkit.providers.mistral.config import MistralConfig
 from roomkit.providers.openai.ai import OpenAIAIProvider
@@ -251,3 +259,67 @@ def test_a_call_round_s_required_reasoning_field_is_the_assistants_alone(
     held = _round(AIToolResultPart(tool_call_id="c1", name="lookup", result="found"))
     [rendered] = _render(DEEPSEEK_CHAT, held.model_copy(update={"role": role}))
     assert {k: v for k, v in rendered.items() if k == "reasoning_content"} == field
+
+
+def _answer(captured: list[dict[str, Any]]) -> httpx.MockTransport:
+    """A server keeping each request's body, answering every one in a word."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={
+                "id": "chatcmpl-test",
+                "object": "chat.completion",
+                "created": 0,
+                "model": "m",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "ok"},
+                        "finish_reason": "stop",
+                    }
+                ],
+            },
+        )
+
+    return httpx.MockTransport(handler)
+
+
+async def _sent_round(**config: Any) -> dict[str, Any]:
+    """The round as a server receives it, through the provider's public API."""
+    captured: list[dict[str, Any]] = []
+    settings = OpenAIConfig(
+        api_key="k", base_url="https://models.example/v1", model="glm-5.3-flash", **config
+    )
+    provider = OpenAIAIProvider(settings, transport=_answer(captured))
+    await provider.generate(AIContext(messages=[_round(_THOUGHT, AITextPart(text="Look."))]))
+    return captured[0]["messages"][0]
+
+
+async def test_a_configured_thinking_field_carries_a_round_s_reasoning_to_the_server() -> None:
+    sent = await _sent_round(thinking_field="reasoning_content")
+
+    assert sent["reasoning_content"] == "why"
+    assert sent["content"] == "Look."
+
+
+async def test_without_a_thinking_field_the_server_gets_no_reasoning() -> None:
+    assert "reasoning_content" not in await _sent_round()
+
+
+async def test_a_configured_thinking_field_leaves_a_round_that_did_not_reason_without_it() -> None:
+    captured: list[dict[str, Any]] = []
+    settings = OpenAIConfig(api_key="k", model="glm", thinking_field="reasoning_content")
+    provider = OpenAIAIProvider(settings, transport=_answer(captured))
+
+    await provider.generate(AIContext(messages=[_round(AITextPart(text="Look."))]))
+
+    assert "reasoning_content" not in captured[0]["messages"][0]
+
+
+@pytest.mark.parametrize("config", [DeepSeekConfig, MiniMaxConfig, KimiConfig, CerebrasConfig])
+def test_a_config_whose_vendor_names_the_field_refuses_another(config: type[OpenAIConfig]) -> None:
+    with pytest.raises(ValidationError, match="thinking_field"):
+        config(api_key="k", model="m", thinking_field="reasoning_content")
+    assert config(api_key="k", model="m").thinking_field is None

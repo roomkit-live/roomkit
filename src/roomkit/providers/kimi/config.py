@@ -18,6 +18,7 @@ class KimiConfig(OpenAIConfig):
     """
 
     _vendor_rule_on_tool_turns: ClassVar[bool] = True
+    _vendor_names_thinking_field: ClassVar[bool] = True
 
     base_url: str = KIMI_BASE_URL
     """Kimi's OpenAI-compatible endpoint. Point it at a vLLM or a gateway serving

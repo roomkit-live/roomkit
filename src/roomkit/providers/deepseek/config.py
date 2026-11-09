@@ -28,6 +28,7 @@ class DeepSeekConfig(OpenAIConfig):
     """
 
     _vendor_rule_on_tool_turns: ClassVar[bool] = True
+    _vendor_names_thinking_field: ClassVar[bool] = True
 
     base_url: str = "https://api.deepseek.com/v1"
     """DeepSeek's OpenAI-compatible endpoint. Override only to point at a

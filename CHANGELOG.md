@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`OpenAIConfig.thinking_field`.** Names the assistant message field a server reads a model's earlier reasoning from, for a server whose documentation asks for it back (`"reasoning_content"` on Z.ai's GLM). A round or an answer that reasoned carries it there. It is absent by default, since strict servers refuse a field they do not know, and the configs of the providers that already send reasoning where their vendor reads it (DeepSeek, MiniMax, Kimi, Cerebras) refuse it.
+
 ### Fixed
 
 - A read-only, muted agent consumes its stream and audits its answers as `source_read_only`, as RFC §7.5 requires; its turns still run in order (RMK-1600).
