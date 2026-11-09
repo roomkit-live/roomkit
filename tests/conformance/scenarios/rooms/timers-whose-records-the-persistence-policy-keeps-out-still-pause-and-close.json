@@ -70,13 +70,21 @@
       "paused": [
         {
           "trigger": "on_room_paused",
-          "room_id": "room-1"
+          "room_id": "room-1",
+          "context_room": {
+            "status": "closed",
+            "paused_at": null
+          }
         }
       ],
       "closed": [
         {
           "trigger": "on_room_closed",
-          "room_id": "room-1"
+          "room_id": "room-1",
+          "context_room": {
+            "status": "closed",
+            "paused_at": null
+          }
         }
       ]
     },
