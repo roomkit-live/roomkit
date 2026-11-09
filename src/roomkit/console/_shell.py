@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.application import Application
+from prompt_toolkit.filters import Always
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.patch_stdout import patch_stdout
 from prompt_toolkit.styles import Style
@@ -192,6 +193,7 @@ async def run_console_shell(
         input=input,
         output=output,
     )
+    _keep_status_under_input(session)
 
     channel._shell_width = _terminal_width(session)
     if _active_app is not None:
@@ -289,6 +291,16 @@ async def run_console_shell(
         channel._activity = None
         tracker.on_change = None
         tracker.clear()
+
+
+def _keep_status_under_input(session: PromptSession[str]) -> None:
+    """Size the input window to its text, so the toolbar follows right under it.
+
+    A terminal that answers prompt_toolkit's cursor query offers the zone every
+    row below the cursor, and the input window takes them all: on a nearly
+    empty screen the toolbar would sit on the last row, away from the input.
+    """
+    session.layout.current_window.dont_extend_height = Always()
 
 
 async def _spin(

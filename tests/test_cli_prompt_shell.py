@@ -12,7 +12,10 @@ from unittest.mock import AsyncMock, patch
 
 import prompt_toolkit.patch_stdout
 import pytest
+from prompt_toolkit.application import set_app
 from prompt_toolkit.input import create_pipe_input
+from prompt_toolkit.layout.mouse_handlers import MouseHandlers
+from prompt_toolkit.layout.screen import Screen, WritePosition
 from prompt_toolkit.output import DummyOutput
 from prompt_toolkit.patch_stdout import StdoutProxy
 
@@ -604,3 +607,36 @@ class TestInputZonePlacement:
             await _run_shell(cli, kit, pipe)
 
         assert "\x1b[" not in out.getvalue()
+
+    async def test_the_status_line_stays_under_the_input_on_a_tall_screen(self) -> None:
+        # A terminal answering the cursor query offers the zone every row
+        # below the cursor: on a nearly empty screen the status line must not
+        # fall to the last of them, away from the input.
+        cli = CLIChannel("cli", console=True)
+        kit = AsyncMock()
+        columns, free_rows = 80, 40
+        screen = Screen()
+
+        with create_pipe_input() as pipe:
+
+            async def draw() -> None:
+                while (app := active_shell_app()) is None:
+                    await asyncio.sleep(0.01)
+                with set_app(app):
+                    area = WritePosition(0, 0, columns, free_rows)
+                    app.layout.container.write_to_screen(
+                        screen, MouseHandlers(), area, "", False, None
+                    )
+                pipe.send_text("quit\n")
+
+            drawing = asyncio.create_task(draw())
+            await _run_shell(cli, kit, pipe)
+            await drawing
+
+        rows = [
+            "".join(screen.data_buffer[y][x].char for x in range(columns))
+            for y in range(free_rows)
+        ]
+        prompt = next(y for y, row in enumerate(rows) if row.startswith("❯"))
+        status = next(y for y, row in enumerate(rows) if "idle" in row)
+        assert status == prompt + 2, "one rule between the input and its status line"
