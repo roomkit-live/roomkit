@@ -479,7 +479,10 @@ def hook_handler(spec: Mapping[str, Any], harness: Harness) -> HookHandler:
             await perform(harness, reaction, scope)
         finally:
             HOOKED.reset(hooked)
-        return _scripted_hook_result(reaction, payload, room_id)
+        resolved = dict(reaction)
+        if "result" in reaction:
+            resolved["result"] = await harness.resolve(reaction["result"], scope)
+        return _scripted_hook_result(resolved, payload, room_id)
 
     return handler
 
