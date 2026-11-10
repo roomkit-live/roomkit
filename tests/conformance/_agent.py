@@ -45,6 +45,7 @@ from roomkit.providers.ai.base import (
     StreamEvent,
     StreamTextDelta,
     StreamThinkingDelta,
+    StreamToolCallDelta,
     response_stream_events,
     stream_call_of,
 )
@@ -117,6 +118,7 @@ class ScriptedModel(AIProvider):
         gates: Gates,
         *,
         vision: bool = False,
+        deferred_tools: bool = False,
         labelled: Callable[[Any], Any] | None = None,
         pricing: Mapping[str, Any] | None = None,
         context_window: int | None = None,
@@ -126,7 +128,12 @@ class ScriptedModel(AIProvider):
         response_schema: bool = False,
         response_schema_with_tools: bool = False,
     ) -> None:
-        self._chat_dialect = None if chat_dialect is None else CHAT_DIALECTS[chat_dialect]
+        self._anthropic_dialect = chat_dialect == "anthropic"
+        self._chat_dialect = (
+            None
+            if chat_dialect is None or self._anthropic_dialect
+            else CHAT_DIALECTS[chat_dialect]
+        )
         self._response_schema = response_schema
         self._response_schema_with_tools = response_schema_with_tools
         self._context_window = context_window
@@ -135,6 +142,7 @@ class ScriptedModel(AIProvider):
         self._rounds = list(rounds)
         self._gates = gates
         self._vision = vision
+        self._deferred_tools = deferred_tools
         self._pricing = ModelPricing.model_validate(pricing) if pricing is not None else None
         self._labelled = labelled
         self.requests: list[dict[str, Any]] = []
@@ -150,6 +158,10 @@ class ScriptedModel(AIProvider):
     @property
     def supports_vision(self) -> bool:
         return self._vision
+
+    @property
+    def supports_deferred_tools(self) -> bool:
+        return self._deferred_tools
 
     @property
     def supports_response_schema(self) -> bool:
@@ -260,6 +272,15 @@ class ScriptedModel(AIProvider):
             {
                 "messages": messages(context),
                 "tool_results": tool_results(context),
+                "deferred_tools": [tool.name for tool in context.tools if tool.defer_loading],
+                "reopened_tools": [
+                    name
+                    for message in context.messages
+                    if message.metadata.get("reopening") and isinstance(message.content, list)
+                    for part in message.content
+                    if getattr(part, "type", None) == "tool_result"
+                    for name in part.references
+                ],
                 "system_prompt": context.system_prompt,
                 "temperature": context.temperature,
                 "max_tokens": context.max_tokens,
@@ -272,7 +293,11 @@ class ScriptedModel(AIProvider):
                 },
             }
         )
-        if self._chat_dialect is not None:
+        if self._anthropic_dialect:
+            from roomkit.providers.anthropic.request import build_messages
+
+            self.requests[-1]["chat_messages"] = build_messages(context.messages)
+        elif self._chat_dialect is not None:
             self.requests[-1]["chat_messages"] = chat_messages(
                 context.messages,
                 context.system_prompt,
@@ -367,12 +392,23 @@ def _stream_events(
             yield stream_call_of(_tool_call(event["call"], labelled))
         elif "text" in event:
             yield StreamTextDelta(text=event["text"])
+        elif "tool_call_delta" in event:
+            yield StreamToolCallDelta(**event["tool_call_delta"])
         else:
             yield StreamThinkingDelta(**event)
+    if not round_.get("failure_after_done"):
+        if "fails" in round_:
+            raise ModelFailedError(round_["fails"])
+        _refuse(round_)
     yield StreamDone(
         finish_reason=round_.get("finish_reason", "tool_calls" if called else "stop"),
         usage=dict(round_.get("usage", {})),
     )
+
+    if round_.get("failure_after_done"):
+        if "fails" in round_:
+            raise ModelFailedError(round_["fails"])
+        _refuse(round_)
 
 
 def messages(context: AIContext) -> list[dict[str, Any]]:
@@ -448,6 +484,7 @@ def tool_results(context: AIContext) -> list[dict[str, Any]]:
                         "name": part.name,
                         "content": result_content(part.result),
                         "is_error": part.is_error,
+                        "references": part.references,
                     }
                 )
     return found
@@ -548,6 +585,7 @@ def scripted_agent(
         name=spec["model"].get("name", "scripted"),
         provider=spec["model"].get("provider", "scripted"),
         chat_dialect=spec["model"].get("chat_dialect"),
+        deferred_tools=spec["model"].get("deferred_tools", False),
         response_schema=bool(spec["model"].get("response_schema", False)),
         response_schema_with_tools=bool(spec["model"].get("response_schema_with_tools", False)),
     )
@@ -607,6 +645,7 @@ def scripted_agent(
             name=spec["fallback_model"].get("name", "scripted"),
             provider=spec["fallback_model"].get("provider", "scripted"),
             chat_dialect=spec["fallback_model"].get("chat_dialect"),
+            deferred_tools=spec["fallback_model"].get("deferred_tools", False),
             response_schema=bool(spec["fallback_model"].get("response_schema", False)),
             response_schema_with_tools=bool(
                 spec["fallback_model"].get("response_schema_with_tools", False)
