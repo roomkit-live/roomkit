@@ -64,6 +64,9 @@
             "b"
           ]
         }
+      },
+      {
+        "id": "custom"
       }
     ]
   },
@@ -84,6 +87,29 @@
       "call": "install_strategy",
       "room_id": "r1",
       "strategy": "d"
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": "d"
+      }
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "s",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "custom",
+      "expect": {
+        "error": "invalid_argument"
+      }
     },
     {
       "call": "speak_queue",

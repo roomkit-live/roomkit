@@ -1,7 +1,7 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "orchestration/a-hosts-own-strategy-is-taken-back-out-whole",
-  "title": "A host's own strategy is taken back out whole: the room hook and the room metadata its install added go with it",
+  "title": "A host's own strategy removes its additions while preserving the room's existing hooks, metadata, bindings and timeline",
   "rules": [
     "§19.7",
     "§9.1"
@@ -21,7 +21,12 @@
           {
             "channel_id": "ops"
           }
-        ]
+        ],
+        "metadata": {
+          "host_state": {
+            "owner": "ops"
+          }
+        }
       }
     ],
     "strategies": [
@@ -52,6 +57,14 @@
     ]
   },
   "steps": [
+    {
+      "call": "add_room_hook",
+      "room_id": "r1",
+      "hook": {
+        "name": "host_tag",
+        "trigger": "before_broadcast"
+      }
+    },
     {
       "call": "install_strategy",
       "room_id": "r1",
@@ -125,6 +138,22 @@
             }
           }
         }
+      ],
+      "host_tag": [
+        {
+          "event": {
+            "content": {
+              "body": "hello"
+            }
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "body": "again"
+            }
+          }
+        }
       ]
     },
     "rooms": {
@@ -132,9 +161,39 @@
         "metadata": {
           "custom_state": {
             "$absent": true
+          },
+          "host_state": {
+            "owner": "ops"
           }
         }
       }
+    },
+    "bindings": {
+      "r1": {
+        "ops": {
+          "category": "transport"
+        }
+      }
+    },
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "hello"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "again"
+          }
+        }
+      ]
     }
   }
 }

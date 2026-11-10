@@ -23,6 +23,9 @@
         "model": {
           "rounds": [
             {
+              "text": "Ready."
+            },
+            {
               "calls": [
                 {
                   "id": "c1",
@@ -90,6 +93,10 @@
         "bindings": [
           {
             "channel_id": "sms"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
           }
         ]
       }
@@ -115,6 +122,27 @@
     ]
   },
   "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Before the swarm."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
     {
       "call": "install_strategy",
       "room_id": "r1",
@@ -194,6 +222,27 @@
   "expect": {
     "timeline": {
       "r1": [
+        {
+          "source": {
+            "channel_id": "sms"
+          },
+          "content": {
+            "body": "Before the swarm."
+          },
+          "metadata": {
+            "_routed_to": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "body": "Ready."
+          }
+        },
         {
           "content": {
             "type": "text",
@@ -317,6 +366,16 @@
     },
     "hooks": {
       "seen": [
+        {
+          "response": {
+            "channel_id": "a",
+            "declared_tools": {
+              "handoff_conversation": {
+                "$absent": true
+              }
+            }
+          }
+        },
         {
           "response": {
             "channel_id": "a",

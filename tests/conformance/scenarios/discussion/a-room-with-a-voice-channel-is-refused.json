@@ -57,6 +57,13 @@
       "expect": {
         "result": null
       }
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": null
+      }
     }
   ],
   "expect": {
@@ -66,6 +73,16 @@
           "_discussion": {
             "$absent": true
           }
+        }
+      }
+    },
+    "bindings": {
+      "r1": {
+        "phone": {
+          "category": "transport"
+        },
+        "a": {
+          "$absent": true
         }
       }
     }

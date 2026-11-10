@@ -1,7 +1,7 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "orchestration/a-kit-s-pipeline-is-installed-in-the-rooms-it-creates",
-  "title": "A kit built with a Pipeline installs it in each room it creates, attaching its agents and setting the state; a creation naming none takes none, and one naming another Pipeline takes that one",
+  "title": "A kit's default strategy can be overridden or disabled, and create_room installs a Swarm through the same reversible path",
   "rules": [
     "§19.7",
     "§19.7.1"
@@ -60,6 +60,16 @@
             "x"
           ]
         }
+      },
+      {
+        "id": "swarm",
+        "swarm": {
+          "agents": [
+            "a",
+            "b"
+          ],
+          "entry": "b"
+        }
       }
     ]
   },
@@ -103,6 +113,62 @@
       "room_id": "r3",
       "expect": {
         "result": "other"
+      }
+    },
+    {
+      "call": "list_bindings",
+      "room_id": "r2",
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "call": "create_room",
+      "room": {
+        "id": "r4"
+      },
+      "orchestration": "swarm"
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r4",
+      "expect": {
+        "result": "swarm"
+      }
+    },
+    {
+      "call": "get_room",
+      "room_id": "r4",
+      "expect": {
+        "result": {
+          "metadata": {
+            "_conversation_state": {
+              "phase": "swarm",
+              "active_agent_id": "b"
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "uninstall_strategy",
+      "room_id": "r4",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "list_bindings",
+      "room_id": "r4",
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r4",
+      "expect": {
+        "result": null
       }
     }
   ],

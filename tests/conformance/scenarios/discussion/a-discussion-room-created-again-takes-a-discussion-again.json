@@ -75,6 +75,13 @@
       "orchestration": "e"
     },
     {
+      "call": "room_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": "e"
+      }
+    },
+    {
       "call": "attach_channel",
       "room_id": "r1",
       "channel_id": "ops"
