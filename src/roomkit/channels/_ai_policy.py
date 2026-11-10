@@ -32,7 +32,6 @@ if TYPE_CHECKING:
     from roomkit.channels._tool_usage import ToolUsageMemory
     from roomkit.models.context import RoomContext
     from roomkit.models.event import RoomEvent
-    from roomkit.providers.ai.base import AIProvider
     from roomkit.skills.registry import SkillRegistry
     from roomkit.tools.context import _ToolLoopContext
 
@@ -80,7 +79,6 @@ class AIToolPolicyMixin(_AIChannelContract):
     _skills: SkillRegistry | None
     _skill_activation: SkillActivationMemory
     _tool_search_pinned: set[str]
-    _provider: AIProvider
     _registry: ChannelRegistry  # the tools the channel serves, with their traits
     _tool_usage: ToolUsageMemory  # the room's tool memory, its kept declaration included
 
@@ -179,7 +177,8 @@ class AIToolPolicyMixin(_AIChannelContract):
     def _holds_tools(self, loop_ctx: _ToolLoopContext) -> bool:
         """Whether this turn declares tools held unseen: a loop built with its
         context, on a provider that can hold a tool (RFC §6.4)."""
-        return loop_ctx.all_context_tools is not None and self._provider.supports_deferred_tools
+        holds = self._turn_provider().supports_deferred_tools
+        return loop_ctx.all_context_tools is not None and holds
 
     def _declaration_origin(self, name: str, loop_ctx: _ToolLoopContext) -> ToolDeclarationOrigin:
         """Why a tool is in this round's declaration (``ToolDeclarationOrigin``).
@@ -430,7 +429,8 @@ class AIToolPolicyMixin(_AIChannelContract):
 def declared_for(provider: Any, context: AIContext) -> AIContext:
     """*context* as *provider* can take it: where it cannot hold a tool unseen,
     the held tools are dropped and those a result referenced declared plainly
-    (a fallback provider receives what the turn made visible, RFC §6.4), and
+    (a provider a retry is handed to receives what the turn made visible,
+    RFC §6.4), and
     each result goes as its text, without the references only such a
     provider reads (a provider behind a gateway that does not take them). The
     exchange that reopened tools at the turn's start is left out: it only

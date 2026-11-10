@@ -152,6 +152,7 @@ CHANNEL = {
     "tool_call_intents",
     "retry_policy",
     "fallback_model",
+    "router",
     "max_author_images",
     "evict_threshold_tokens",
     "describe_empty_event",
@@ -217,6 +218,7 @@ MODEL_ROUND = {
     "whole_response",
 }
 REFUSES = {"status", "message", "context_overflow", "provider", "retryable"}
+AI_ROUTER = {"models", "turns", "retries"}
 RETRY_POLICY = {"max_retries", "base_delay_ms", "max_delay_ms", "exponential_base"}
 MODEL_CALL = {"id", "name", "arguments", "cut", "metadata"}
 TOOL = {
@@ -366,6 +368,7 @@ EXPECT = {
     "actions",
     "lifecycle",
     "models",
+    "ai_routes",
     "acp_wire",
     "thinking_events",
     "tool_events",
@@ -631,6 +634,8 @@ def _channel(channel: Mapping[str, Any], path: str, found: list[str]) -> None:
         _acp(channel["acp"], f"{path}.acp", found)
     if "fallback_model" in channel:
         _model(channel["fallback_model"], f"{path}.fallback_model", found)
+    if "router" in channel:
+        _ai_router(channel["router"], f"{path}.router", found)
     if "retry_policy" in channel:
         _members(channel["retry_policy"], RETRY_POLICY, f"{path}.retry_policy", found)
     for index, tool in enumerate(channel.get("tools", [])):
@@ -709,6 +714,12 @@ def _retrieval(retrieval: Mapping[str, Any], path: str, found: list[str]) -> Non
         _members(source, SOURCE, f"{path}.sources[{index}]", found)
         for position, result in enumerate(source.get("results", [])):
             _members(result, SOURCE_RESULT, f"{path}.sources[{index}].results[{position}]", found)
+
+
+def _ai_router(router: Mapping[str, Any], path: str, found: list[str]) -> None:
+    _members(router, AI_ROUTER, path, found)
+    for name, model in router.get("models", {}).items():
+        _model(model, f"{path}.models.{name}", found)
 
 
 def _model(model: Mapping[str, Any], path: str, found: list[str]) -> None:

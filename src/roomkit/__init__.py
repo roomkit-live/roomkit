@@ -26,6 +26,7 @@ from roomkit.channels import (
 )
 from roomkit.channels._acp_context import ACPContextContributor, acp_event_text
 from roomkit.channels._acp_sessions import MCPServersForRoom
+from roomkit.channels._ai_router import AIRouter, FallbackRouter, RouteReason, RouteRequest
 from roomkit.channels._author_images import AttachedMedia, MediaResolver
 from roomkit.channels._turn_config import AIChannelTurnConfig
 from roomkit.channels.acp import ACPChannel
@@ -545,6 +546,10 @@ __all__ = [
     "AgentPresence",
     "AIChannel",
     "AIChannelTurnConfig",
+    "AIRouter",
+    "FallbackRouter",
+    "RouteReason",
+    "RouteRequest",
     "AudioVideoChannel",
     "BuzzChannel",
     "Channel",

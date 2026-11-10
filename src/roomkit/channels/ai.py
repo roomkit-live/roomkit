@@ -6,7 +6,7 @@ responses using an AI provider.  Behaviour is composed from focused mixins:
 - :class:`~._ai_events.AIEventsMixin` — ephemeral tool/thinking events
 - :class:`~._ai_steering.AISteeringMixin` — mid-run steering directives
 - :class:`~._ai_policy.AIToolPolicyMixin` — tool policy & skill gating
-- :class:`~._ai_resilience.AIResilienceMixin` — retry / fallback / compaction
+- :class:`~._ai_resilience.AIResilienceMixin` — retry / re-routing / compaction
 - :class:`~._ai_context.AIContextMixin` — AI context building
 - :class:`~._ai_tools.AIToolsMixin` — tool execution & dispatch
 - :class:`~._ai_generation.AIGenerationMixin` — generation hook, telemetry, provider errors
@@ -30,6 +30,7 @@ from roomkit.channels._ai_loop_rules import (
 )
 from roomkit.channels._ai_policy import AIToolPolicyMixin
 from roomkit.channels._ai_resilience import AIResilienceMixin
+from roomkit.channels._ai_router import AIRouter, RouteRequest
 from roomkit.channels._ai_speaking import AISpeakingMixin, speak_notes
 from roomkit.channels._ai_steering import AISteeringMixin
 from roomkit.channels._ai_streaming import AIStreamingMixin
@@ -161,7 +162,7 @@ class AIChannel(
     def __init__(
         self,
         channel_id: str,
-        provider: AIProvider,
+        provider: AIProvider | None = None,
         system_prompt: str | None = None,
         temperature: float = 0.7,
         max_tokens: int | None = None,
@@ -176,7 +177,7 @@ class AIChannel(
         thinking_coalesce_ms: float = 80.0,
         thinking_coalesce_chars: int = 256,
         retry_policy: RetryPolicy | None = None,
-        fallback_provider: AIProvider | None = None,
+        router: AIRouter | None = None,
         skills: SkillRegistry | None = None,
         skills_in_prompt: bool = True,
         script_executor: ScriptExecutor | None = None,
@@ -225,8 +226,8 @@ class AIChannel(
         self._store_speak_policy(speak_policy, speak_timeout)
         # What it thinks while it listens (RFC §6.4): none, no thought.
         self._store_thinker(thinker, think_wait, speak_policy)
-        self._store_turn_budget(turn_budget_tokens, turn_budget_usd, provider, fallback_provider)
-        self._provider = provider
+        self._store_provider(provider, router)
+        self._store_turn_budget(turn_budget_tokens, turn_budget_usd, provider)
         self._store_prompt_sources(system_prompt, skills, skills_in_prompt, server_instructions)
         # Per-turn config resolution — see channels/_turn_config.py. When
         # set, system prompt / tools / sampling are resolved fresh at the
@@ -271,7 +272,6 @@ class AIChannel(
         self._text_coalesce_ms = text_coalesce_ms
         self._text_coalesce_chars = text_coalesce_chars
         self._retry_policy = retry_policy
-        self._fallback_provider = fallback_provider
         self._script_executor = script_executor
         self._sandbox = sandbox
         self._tool_policy = tool_policy
@@ -343,17 +343,22 @@ class AIChannel(
         # activation tools.
         self._skills_in_prompt = skills_in_prompt
 
+    def _store_provider(self, provider: AIProvider | None, router: AIRouter | None) -> None:
+        """Keep what serves the channel's turns: one *provider*, or a *router*
+        that picks one per turn (RFC §6.4). One of the two, never both."""
+        if (provider is None) == (router is None):
+            raise ValueError("AIChannel takes a provider or a router, one of the two")
+        self._provider = provider
+        self._router = router
+
     def _store_turn_budget(
-        self,
-        tokens: int | None,
-        usd: float | None,
-        provider: AIProvider,
-        fallback: AIProvider | None,
+        self, tokens: int | None, usd: float | None, provider: AIProvider | None
     ) -> None:
         """Keep the channel's default turn budget, which the binding and the
         config provider may override per turn; a budget that is not a positive
-        number, or a cost budget for an unpriced model, fails here (RFC §6.4)."""
-        turn_budget(tokens, usd, provider, fallback)
+        number, or a cost budget for an unpriced model, fails here (RFC §6.4).
+        With a router, the price is checked per turn, on the model it picks."""
+        turn_budget(tokens, usd, provider)
         self._turn_budget_tokens = tokens
         self._turn_budget_usd = usd
 
@@ -536,9 +541,55 @@ class AIChannel(
         self._user_tool_handler = value
 
     @property
-    def provider(self) -> AIProvider:
-        """The underlying AI provider."""
+    def provider(self) -> AIProvider | None:
+        """The provider the channel was given; ``None`` with a router, which
+        picks one per turn. The provider that served an answer is on its
+        message, as ``ai_provider`` and ``ai_model`` (RFC §6.4)."""
         return self._provider
+
+    @property
+    def router(self) -> AIRouter | None:
+        """The router that picks each turn's provider, if the channel has one."""
+        return self._router
+
+    @property
+    def provider_name(self) -> str | None:
+        """The provider's name, or the router's label with a router."""
+        if self._router is not None:
+            return self._router.name
+        return super().provider_name
+
+    def _turn_provider(self) -> AIProvider:
+        """The provider the running turn is on (RFC §6.4): the one the router
+        picked at its start or handed a retry to, else the channel's own."""
+        loop_ctx = _current_loop_ctx.get()
+        if loop_ctx is not None and self._routed(loop_ctx):
+            assert loop_ctx.provider is not None  # what _routed checked
+            return loop_ctx.provider
+        if self._provider is None:
+            raise RuntimeError(f"AIChannel {self.channel_id!r}: no turn is routed here")
+        return self._provider
+
+    def _routed(self, loop_ctx: _ToolLoopContext) -> bool:
+        """Whether *loop_ctx* holds a provider this channel's turn runs on."""
+        return loop_ctx.provider is not None and loop_ctx.provider_of == self.channel_id
+
+    async def _route_turn(self, loop_ctx: _ToolLoopContext, request: RouteRequest) -> AIProvider:
+        """Set the turn's provider on *loop_ctx*: the channel's own, or the
+        one its router picks for *request* (RFC §6.4), told the channel's
+        telemetry."""
+        loop_ctx.route_request = request
+        if self._router is None:
+            provider = self._provider
+            assert provider is not None  # one of the two, checked at construction
+        else:
+            provider = await self._router.route(request)
+            if provider is None:
+                raise ValueError(f"router {self._router.name!r} named no provider for a turn")
+            self._telemetry_to(provider)
+        loop_ctx.provider = provider
+        loop_ctx.provider_of = self.channel_id
+        return provider
 
     @property
     def system_prompt(self) -> str | None:
@@ -578,13 +629,19 @@ class AIChannel(
 
     def _propagate_telemetry(self) -> None:
         """Propagate telemetry to AI provider."""
+        if self._provider is not None:
+            self._telemetry_to(self._provider)
+
+    def _telemetry_to(self, provider: AIProvider) -> None:
+        """Hand *provider* the channel's telemetry, once the kit set one."""
         telemetry = getattr(self, "_telemetry", None)
         if telemetry is not None:
-            self._provider._telemetry = telemetry
+            provider._telemetry = telemetry
 
     @property
     def info(self) -> dict[str, Any]:
-        return {"provider": type(self._provider).__name__, "active_turns": self.active_turns}
+        serves = self._router if self._router is not None else self._provider
+        return {"provider": type(serves).__name__, "active_turns": self.active_turns}
 
     @property
     def active_turns(self) -> int:
@@ -847,11 +904,14 @@ class AIChannel(
 
     async def close(self) -> None:
         """Close the channel: its running turns first (their calls cancelled
-        and reported, RFC §9.3), then its provider, memory, and executors."""
+        and reported, RFC §9.3), then its provider or router, memory, and
+        executors."""
         await self._end_running_turns()
         await self._close_minds()
         await self._human_input.close(self.channel_id)
         await super().close()
+        if self._router is not None:
+            await self._router.close()
         await self._memory.close()
         if self._script_executor is not None:
             await self._script_executor.close()

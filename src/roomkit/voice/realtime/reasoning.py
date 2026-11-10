@@ -328,8 +328,9 @@ class AgentReasoningBackend(ReasoningBackend):
         return frozenset(self._agent._channel_tool_names())
 
     @property
-    def provider(self) -> AIProvider:
-        """The model behind this backend."""
+    def provider(self) -> AIProvider | None:
+        """The model behind this backend: the agent's provider, ``None`` when
+        its router picks one per turn (RFC §6.4)."""
         return self._agent.provider
 
     async def run(self, request: ReasoningRequest) -> AsyncIterator[ReasoningOutput]:

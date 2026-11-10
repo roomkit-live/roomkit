@@ -58,16 +58,10 @@ class _StreamRoundState:
     # What the generation used, as its done event reports it; empty when it
     # reported nothing, or was cut before it.
     usage: dict[str, Any] = field(default_factory=dict)
-    # Whether the fallback provider served it.
-    by_fallback: bool = False
 
     def note_received(self) -> None:
         """The provider handed an event."""
         self.received = True
-
-    def note_fallback(self) -> None:
-        """The fallback provider took the generation over."""
-        self.by_fallback = True
 
     @property
     def text(self) -> str:

@@ -1,0 +1,168 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "ai-router/a-generation-the-router-hands-over-keeps-the-turn-s-later-rounds",
+  "title": "Once a generation's retries are spent before it handed anything, the router is asked again with the model that refused and its refusal; the model it names serves the generation, and the turn's later rounds stay on it",
+  "rules": [
+    "§6.4",
+    "§6.4 The turn's record"
+  ],
+  "notes": "Python: channels/ai.py _route_turn, channels/_ai_resilience.py _rerouted (RMK-1638).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up.",
+            "returns": "found"
+          }
+        ],
+        "retry_policy": {
+          "max_retries": 0,
+          "base_delay_ms": 1
+        },
+        "model": {
+          "name": "qwen",
+          "provider": "llamacpp",
+          "rounds": [
+            {
+              "refuses": {
+                "status": 503,
+                "message": "overloaded",
+                "retryable": true
+              }
+            }
+          ]
+        },
+        "router": {
+          "models": {
+            "hosted": {
+              "name": "kimi",
+              "provider": "moonshot",
+              "rounds": [
+                {
+                  "text": "Checking.",
+                  "calls": [
+                    {
+                      "id": "c1",
+                      "name": "lookup"
+                    }
+                  ]
+                },
+                {
+                  "text": "Done."
+                }
+              ]
+            }
+          },
+          "turns": [
+            "agent"
+          ],
+          "retries": [
+            "agent/hosted"
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0
+        },
+        {
+          "index": 1
+        },
+        {
+          "index": 2
+        },
+        {
+          "index": 3
+        },
+        {
+          "index": 4,
+          "content": {
+            "body": "Done."
+          },
+          "metadata": {
+            "ai_model": "kimi",
+            "ai_provider": "moonshot"
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {}
+      ],
+      "agent/hosted": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1"
+            }
+          ]
+        }
+      ]
+    },
+    "ai_routes": {
+      "agent": [
+        {
+          "reason": "turn",
+          "text": "Go.",
+          "previous": null,
+          "failed": null
+        },
+        {
+          "reason": "retry",
+          "text": "Go.",
+          "previous": "agent",
+          "failed": {
+            "status": 503,
+            "message": "overloaded"
+          }
+        }
+      ]
+    }
+  }
+}

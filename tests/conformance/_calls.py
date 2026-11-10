@@ -51,7 +51,7 @@ from roomkit.models.steering import SteeringDirective
 from roomkit.providers.sms import WebhookMeta
 from roomkit.tasks import DelegatedTask
 from tests.conformance._acp import scripted_acp_channel
-from tests.conformance._agent import scripted_agent
+from tests.conformance._agent import ScriptedAIRouter, scripted_agent
 from tests.conformance._room_queries import call as room_query
 from tests.conformance._script import (
     ScriptedChannel,
@@ -450,6 +450,8 @@ def scripted_channel(
             )
         )
         harness.models.update(models)
+        if isinstance(agent.router, ScriptedAIRouter):
+            harness.ai_routers[channel["id"]] = agent.router
         return agent
     return read(lambda: ScriptedChannel(channel, harness))
 

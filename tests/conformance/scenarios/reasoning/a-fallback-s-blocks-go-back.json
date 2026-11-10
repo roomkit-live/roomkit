@@ -1,11 +1,11 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "reasoning/a-fallback-s-blocks-go-back",
-  "title": "A round the fallback provider served goes back with its blocks",
+  "title": "A round the fallback provider served goes back with its blocks to the turn's next round, which it serves too",
   "rules": [
     "§6.4"
   ],
-  "notes": "Python: channels/_ai_streaming.py, one transcript per round, whichever provider served it.",
+  "notes": "Python: channels/_ai_streaming.py, one transcript per round; a turn's later rounds stay on the provider that served the round before (RMK-1638).",
   "setup": {
     "channels": [
       {
@@ -37,9 +37,6 @@
                 "message": "overloaded",
                 "retryable": true
               }
-            },
-            {
-              "text": "Done."
             }
           ]
         },
@@ -63,6 +60,9 @@
                   }
                 }
               ]
+            },
+            {
+              "text": "Done."
             }
           ]
         }
@@ -109,6 +109,9 @@
   "expect": {
     "models": {
       "agent": [
+        {}
+      ],
+      "agent/fallback": [
         {},
         {
           "messages": [
@@ -133,9 +136,6 @@
             }
           ]
         }
-      ],
-      "agent/fallback": [
-        {}
       ]
     }
   }

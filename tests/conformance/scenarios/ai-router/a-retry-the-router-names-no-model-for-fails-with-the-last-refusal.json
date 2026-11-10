@@ -1,0 +1,129 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "ai-router/a-retry-the-router-names-no-model-for-fails-with-the-last-refusal",
+  "title": "A router that names no model once a generation's retries are spent leaves the last refusal as the turn's error, and nothing is answered",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: channels/ai.py _route_turn, channels/_ai_resilience.py _rerouted (RMK-1638).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "retry_policy": {
+          "max_retries": 1,
+          "base_delay_ms": 1
+        },
+        "model": {
+          "rounds": [
+            {
+              "refuses": {
+                "status": 503,
+                "message": "overloaded",
+                "retryable": true
+              }
+            },
+            {
+              "refuses": {
+                "status": 503,
+                "message": "overloaded",
+                "retryable": true
+              }
+            }
+          ]
+        },
+        "router": {
+          "turns": [
+            "agent"
+          ],
+          "retries": [
+            null
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "overloaded"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message",
+          "source": {
+            "channel_id": "ws"
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {},
+        {}
+      ]
+    },
+    "ai_routes": {
+      "agent": [
+        {
+          "reason": "turn",
+          "text": "Hello?",
+          "previous": null,
+          "failed": null
+        },
+        {
+          "reason": "retry",
+          "text": "Hello?",
+          "previous": "agent",
+          "failed": {
+            "status": 503,
+            "message": "overloaded"
+          }
+        }
+      ]
+    }
+  }
+}

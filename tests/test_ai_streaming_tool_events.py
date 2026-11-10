@@ -18,6 +18,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from roomkit import HookExecution, HookResult, HookTrigger, RoomContext, ToolCallEvent
+from roomkit.channels import FallbackRouter
 from roomkit.channels._ai_coalescers import _ToolCallDeltaCoalescer
 from roomkit.channels.ai import AIChannel
 from roomkit.core.framework import RoomKit
@@ -1018,8 +1019,7 @@ async def test_a_fallback_failure_mid_composition_closes_the_composition() -> No
     kit = RoomKit()
     ai = AIChannel(
         "ai1",
-        provider=_PrimaryProvider(streaming=True),
-        fallback_provider=_BrokenFallback(streaming=True),
+        router=FallbackRouter(_PrimaryProvider(streaming=True), _BrokenFallback(streaming=True)),
         tool_handler=tool_handler,
         thinking_coalesce_ms=0,
     )

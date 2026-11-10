@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from roomkit.channels._ai_router import AIRouter as AIRouter
+from roomkit.channels._ai_router import FallbackRouter as FallbackRouter
+from roomkit.channels._ai_router import RouteReason as RouteReason
+from roomkit.channels._ai_router import RouteRequest as RouteRequest
 from roomkit.channels._note_blocks import add_turn_note as add_turn_note
 from roomkit.channels._tool_search_constants import TOOL_FIND_TOOLS as TOOL_FIND_TOOLS
 from roomkit.channels._tool_search_constants import TOOL_LIST_TOOLS as TOOL_LIST_TOOLS
@@ -40,6 +44,7 @@ from roomkit.models.enums import ChannelMediaType, ChannelType
 __all__ = [
     "ACPChannel",
     "AIChannel",
+    "AIRouter",
     "Addressing",
     "BuzzChannel",
     "CLIChannel",
@@ -47,11 +52,14 @@ __all__ = [
     "DeclaredChannel",
     "DiscordChannel",
     "EmailChannel",
+    "FallbackRouter",
     "HTTPChannel",
     "HostChannel",
     "MessengerChannel",
     "RCSChannel",
     "RealtimeVoiceChannel",
+    "RouteReason",
+    "RouteRequest",
     "RunSkillScriptTool",
     "SMSChannel",
     "SendFn",

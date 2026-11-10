@@ -1,0 +1,104 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "ai-router/before-ai-generation-names-the-model-the-router-picks",
+  "title": "BEFORE_AI_GENERATION names the provider of the model the router picked for the turn, not the agent's own",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: channels/ai.py _route_turn, channels/_ai_resilience.py _rerouted (RMK-1638).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "name": "qwen",
+          "provider": "llamacpp",
+          "rounds": [
+            {
+              "text": "Local."
+            }
+          ]
+        },
+        "router": {
+          "models": {
+            "hosted": {
+              "name": "kimi",
+              "provider": "moonshot",
+              "rounds": [
+                {
+                  "text": "Hosted."
+                }
+              ]
+            }
+          },
+          "turns": [
+            "agent/hosted"
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "gate",
+        "trigger": "before_ai_generation"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hi."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "gate": [
+        {
+          "trigger": "before_ai_generation",
+          "room_id": "room-1",
+          "generation": {
+            "channel_id": "agent",
+            "provider_name": "moonshot"
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [],
+      "agent/hosted": [
+        {}
+      ]
+    }
+  }
+}

@@ -44,14 +44,14 @@ class TurnBudget:
 def turn_budget(
     tokens: int | None,
     usd: float | None,
-    provider: AIProvider,
-    fallback: AIProvider | None = None,
+    provider: AIProvider | None,
 ) -> TurnBudget | None:
     """The budget *tokens* and *usd* set for a turn on *provider*, or ``None``
     when neither is set.
 
-    Every generation is priced at *provider*'s rate, one a *fallback* serves
-    included (RFC §6.4): a fallback priced otherwise is logged once.
+    Every generation of the turn is priced at *provider*'s rate, one a router
+    hands to another provider included (RFC §6.4). Without a *provider* (a
+    channel whose router picks it per turn), only the numbers are checked.
 
     Raises:
         ValueError: a budget that is not a positive number, or *usd* set for a
@@ -61,14 +61,14 @@ def turn_budget(
         return None
     _check_positive("turn_budget_tokens", tokens, int)
     _check_positive("turn_budget_usd", usd, (int, float))
+    if provider is None:
+        return TurnBudget(tokens=tokens, usd=usd)
     pricing = _pricing(provider)
     if usd is not None and pricing is None:
         raise ValueError(
             f"turn_budget_usd needs a model with a known price; {provider.model_name!r} "
             "has none in the catalogue. Set turn_budget_tokens instead."
         )
-    if usd is not None and fallback is not None:
-        _warn_if_priced_otherwise(provider, fallback)
     return TurnBudget(tokens=tokens, usd=usd, pricing=pricing)
 
 
@@ -92,20 +92,21 @@ def _pricing(provider: AIProvider) -> ModelPricing | None:
     return entry.pricing if entry is not None else None
 
 
-# The (primary, fallback) models already warned about: once per pair.
-_WARNED: set[tuple[str, str]] = set()
+# The models already warned about: once each.
+_WARNED: set[str] = set()
 
 
-def _warn_if_priced_otherwise(provider: AIProvider, fallback: AIProvider) -> None:
-    """Log once that a cost budget prices *fallback*'s generations at
-    *provider*'s rate when the two are priced otherwise."""
-    pair = (provider.model_name, fallback.model_name)
-    if _pricing(fallback) == _pricing(provider) or pair in _WARNED:
+def warn_if_priced_otherwise(budget: TurnBudget | None, other: AIProvider) -> None:
+    """Log once that a cost *budget*, priced at the rate of the model its
+    turn started on, prices *other*'s generations at that rate when *other*
+    is priced otherwise."""
+    if budget is None or budget.usd is None:
         return
-    _WARNED.add(pair)
+    if _pricing(other) == budget.pricing or other.model_name in _WARNED:
+        return
+    _WARNED.add(other.model_name)
     logger.warning(
-        "turn_budget_usd prices every generation at %s's rate; the fallback %s is "
-        "priced otherwise, so a turn it serves is counted at the primary's price",
-        pair[0],
-        pair[1],
+        "turn_budget_usd prices every generation of a turn at the rate of the model it "
+        "started on; %s, which the router handed a generation, is priced otherwise",
+        other.model_name,
     )

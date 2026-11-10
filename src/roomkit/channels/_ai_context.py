@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from roomkit._media import content_text, media_label, text_form
 from roomkit.channels._ai_cuts import CUT_NOTE, cut_answers, cut_mark, cut_records
 from roomkit.channels._ai_policy import policy_check
+from roomkit.channels._ai_router import turn_request
 from roomkit.channels._author_images import (
     AuthorImages,
     RefusedImages,
@@ -113,7 +114,6 @@ if TYPE_CHECKING:
     from roomkit.models.channel import ChannelBinding
     from roomkit.models.context import RoomContext
     from roomkit.models.event import RoomEvent
-    from roomkit.providers.ai.base import AIProvider
     from roomkit.sandbox.executor import SandboxExecutor
     from roomkit.skills.executor import ScriptExecutor
     from roomkit.skills.registry import SkillRegistry
@@ -170,8 +170,6 @@ class AIContextMixin(_AIChannelContract):
     derives from for the type checker only.
     """
 
-    _provider: AIProvider
-    _fallback_provider: AIProvider | None
     _tool_call_intents: bool
     _system_prompt: str | None
     _server_instructions: str | None
@@ -246,6 +244,8 @@ class AIContextMixin(_AIChannelContract):
         tools = self._turn_base_tools(turn, binding)
 
         loop_ctx = self._get_loop_ctx()
+        # The context is built for the provider the turn runs on (RFC §6.4).
+        await self._route_turn(loop_ctx, turn_request(event, binding.room_id))
         loop_ctx.turn_budget = self._turn_budget(binding, turn)
         loop_ctx.tool_handler = turn.tool_handler if turn is not None else None
         loop_ctx.skills = self._given_turn_skills(turn)
@@ -404,7 +404,7 @@ class AIContextMixin(_AIChannelContract):
     async def _author_images(self, event: RoomEvent, memory_result: MemoryResult) -> AuthorImages:
         """What the images the turn's history and input carry become (RFC §6.4);
         for a model that does not see, a mention that it does not see them."""
-        if not self._provider.supports_vision:
+        if not self._turn_provider().supports_vision:
             return unseen_images([*memory_result.events, event])
         return await author_images(
             [*memory_result.events, event],
@@ -419,7 +419,7 @@ class AIContextMixin(_AIChannelContract):
         the turn's input, their labels quoting the calls with each copy of a
         runtime mark replaced (RFC §6.4); none for a standalone turn or a
         model that does not see."""
-        if loop_ctx.standalone or not self._provider.supports_vision:
+        if loop_ctx.standalone or not self._turn_provider().supports_vision:
             return []
         return [
             AITextPart(text=without_mark_copies(part.text))
@@ -874,7 +874,7 @@ class AIContextMixin(_AIChannelContract):
         Unlike realtime, no provider.reconfigure is needed: the tool loop
         re-sends its (re-filtered) tool list every round.
         """
-        window = self._provider.context_window
+        window = self._turn_provider().context_window
         never = self._never_hidden(binding.room_id)
         loop_ctx.tool_search_active = should_activate_tool_search(
             mode=self._tool_search,
@@ -1080,7 +1080,7 @@ class AIContextMixin(_AIChannelContract):
         other settings (RFC §6.4)."""
         tokens = self._turn_value("turn_budget_tokens", binding, turn)
         usd = self._turn_value("turn_budget_usd", binding, turn)
-        return turn_budget(tokens, usd, self._provider, self._fallback_provider)
+        return turn_budget(tokens, usd, self._turn_provider())
 
     async def _hydrate_room_memories(
         self, usage_room_id: str, activation_room_id: str | None
@@ -1149,7 +1149,7 @@ class AIContextMixin(_AIChannelContract):
         """What *event* says to the model: its text, and for a model that sees,
         each media as *images* decided (its image, else a mention)."""
         content = event.content
-        if not self._provider.supports_vision:
+        if not self._turn_provider().supports_vision:
             return self._extract_text(event, images)
         if isinstance(content, TextContent):
             return content.body

@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from roomkit.channels import FallbackRouter
 from roomkit.channels._tool_reopen import (
     REOPENING,
     insert_before,
@@ -121,11 +122,11 @@ async def test_a_fallback_that_cannot_hold_receives_the_reopened_tool(streaming:
     fallback = MockAIProvider(ai_responses=[_DONE], streaming=streaming)
     ch = _searching(
         HoldingProvider(ai_responses=[_REVEAL, _DONE], streaming=streaming),
-        fallback_provider=fallback,
+        fallback=fallback,
         retry_policy=RetryPolicy(max_retries=0),
     )
     await _turn(ch, _CATALOGUE)
-    ch._provider = FailingHolder(streaming=streaming)
+    ch._router = FallbackRouter(FailingHolder(streaming=streaming), fallback)
 
     await _turn(ch, _CATALOGUE)
 
@@ -276,11 +277,11 @@ async def test_a_fallback_that_cannot_hold_receives_no_exchange(streaming: bool)
     fallback = MockAIProvider(ai_responses=[_DONE], streaming=streaming)
     ch = _searching(
         HoldingProvider(ai_responses=[_REVEAL, _DONE], streaming=streaming),
-        fallback_provider=fallback,
+        fallback=fallback,
         retry_policy=RetryPolicy(max_retries=0),
     )
     await _turn(ch, _CATALOGUE)
-    ch._provider = FailingHolder(streaming=streaming)
+    ch._router = FallbackRouter(FailingHolder(streaming=streaming), fallback)
 
     await _turn(ch, _CATALOGUE)
 

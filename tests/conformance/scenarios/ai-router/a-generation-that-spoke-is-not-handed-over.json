@@ -1,0 +1,126 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "ai-router/a-generation-that-spoke-is-not-handed-over",
+  "title": "A generation that handed text before it failed is not handed to another model: the router is asked only at the turn's start",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: channels/ai.py _route_turn, channels/_ai_resilience.py _rerouted (RMK-1638).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "retry_policy": {
+          "max_retries": 3,
+          "base_delay_ms": 1
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Voici",
+              "refuses": {
+                "status": 503,
+                "message": "the provider went away",
+                "retryable": true
+              }
+            }
+          ]
+        },
+        "router": {
+          "models": {
+            "hosted": {
+              "rounds": [
+                {
+                  "text": "hosted"
+                }
+              ]
+            }
+          },
+          "turns": [
+            "agent"
+          ],
+          "retries": [
+            "agent/hosted"
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello?"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message",
+          "source": {
+            "channel_id": "ws"
+          }
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "source": {
+            "channel_id": "agent"
+          },
+          "content": {
+            "type": "text",
+            "body": "Voici"
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {}
+      ],
+      "agent/hosted": []
+    },
+    "ai_routes": {
+      "agent": [
+        {
+          "reason": "turn",
+          "text": "Hello?",
+          "previous": null,
+          "failed": null
+        }
+      ]
+    }
+  }
+}

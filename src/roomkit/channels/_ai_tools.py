@@ -58,7 +58,6 @@ from roomkit.models.streaming import ToolCallEndMarker, ToolCallStartMarker
 from roomkit.models.tool_call import ToolCallEvent, ToolCallVerdict
 from roomkit.providers.ai.base import (
     AIImagePart,
-    AIProvider,
     AITextPart,
     AITool,
     AIToolResultPart,
@@ -186,7 +185,6 @@ class AIToolsMixin(_AIChannelContract):
     derives from for the type checker only.
     """
 
-    _provider: AIProvider
     _user_tool_handler: ToolHandler | None
     _user_tools: list[AITool]
     _skills: SkillRegistry | None
@@ -638,14 +636,14 @@ class AIToolsMixin(_AIChannelContract):
                 "Tool %s: folded hoisted arguments %s into its container (model=%s)",
                 tc.name,
                 list(repair.folded),
-                self._provider.model_name,
+                self._turn_provider().model_name,
             )
         if repair.unquoted:
             logger.info(
                 "Tool %s: read quoted %s as their declared types (model=%s)",
                 tc.name,
                 list(repair.unquoted),
-                self._provider.model_name,
+                self._turn_provider().model_name,
             )
         call_arguments = repair.arguments
         arg_error = validate_tool_arguments(params, call_arguments)
@@ -1479,7 +1477,7 @@ class AIToolsMixin(_AIChannelContract):
         """A text-only model gets the text of a content-part result, the way it
         gets a message's (``_extract_content``): an image it cannot take would
         fail the request."""
-        if isinstance(result, list) and not self._provider.supports_vision:
+        if isinstance(result, list) and not self._turn_provider().supports_vision:
             return AIToolResultPart(tool_call_id=tool_call_id, name=name, result=result).as_text()
         return result
 

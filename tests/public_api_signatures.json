@@ -55,7 +55,7 @@
     "provides_usage_metadata": ["property"]
   },
   "roomkit.AIChannel": {
-    "__init__": ["def", "channel_id", "provider", "system_prompt=None", "temperature=0.7", "max_tokens=None", "max_context_events=50", "tool_handler=None", "tools=None", "max_tool_rounds=50", "tool_loop_timeout_seconds=300.0", "tool_loop_warn_after=25", "max_empty_retries=1", "continuation=None", "thinking_coalesce_ms=80.0", "thinking_coalesce_chars=256", "retry_policy=None", "fallback_provider=None", "skills=None", "skills_in_prompt=True", "script_executor=None", "sandbox=None", "external_tool_handler=None", "human_input_handler=None", "memory=None", "tool_policy=None", "thinking_budget=None", "enable_thinking=None", "reasoning_effort=None", "response_schema=None", "evict_threshold_tokens=5000", "enable_planning=False", "config_provider=None", "tool_search=None", "tool_search_pinned=None", "tool_search_threshold=20", "tool_search_threshold_pct=10.0", "tool_search_miss_hint=None", "turn_budget_tokens=None", "turn_budget_usd=None", "tool_search_threshold_tokens=8000", "tool_timeout_seconds=30.0", "tool_timeouts=None", "describe_empty_event=None", "max_author_images=4", "speak_policy=None", "speak_timeout=2.0", "thinker=None", "think_wait=1.5", "server_instructions=None", "text_coalesce_ms=80.0", "text_coalesce_chars=256", "*", "publish_thinking_text=False", "publish_text_deltas=False", "serialize_room_turns=False", "steer_room_turns=False", "tool_call_intents=False", "tool_call_intents_required=False", "tool_call_intents_only=None"],
+    "__init__": ["def", "channel_id", "provider=None", "system_prompt=None", "temperature=0.7", "max_tokens=None", "max_context_events=50", "tool_handler=None", "tools=None", "max_tool_rounds=50", "tool_loop_timeout_seconds=300.0", "tool_loop_warn_after=25", "max_empty_retries=1", "continuation=None", "thinking_coalesce_ms=80.0", "thinking_coalesce_chars=256", "retry_policy=None", "router=None", "skills=None", "skills_in_prompt=True", "script_executor=None", "sandbox=None", "external_tool_handler=None", "human_input_handler=None", "memory=None", "tool_policy=None", "thinking_budget=None", "enable_thinking=None", "reasoning_effort=None", "response_schema=None", "evict_threshold_tokens=5000", "enable_planning=False", "config_provider=None", "tool_search=None", "tool_search_pinned=None", "tool_search_threshold=20", "tool_search_threshold_pct=10.0", "tool_search_miss_hint=None", "turn_budget_tokens=None", "turn_budget_usd=None", "tool_search_threshold_tokens=8000", "tool_timeout_seconds=30.0", "tool_timeouts=None", "describe_empty_event=None", "max_author_images=4", "speak_policy=None", "speak_timeout=2.0", "thinker=None", "think_wait=1.5", "server_instructions=None", "text_coalesce_ms=80.0", "text_coalesce_chars=256", "*", "publish_thinking_text=False", "publish_text_deltas=False", "serialize_room_turns=False", "steer_room_turns=False", "tool_call_intents=False", "tool_call_intents_required=False", "tool_call_intents_only=None"],
     "active_skill_names": ["def", "room_id"],
     "active_turns": ["property"],
     "capabilities": ["def"],
@@ -88,6 +88,7 @@
     "resolve_trace_room": ["def", "session_id"],
     "restore_room_state": ["def", "room_id", "state"],
     "room_state": ["def", "room_id"],
+    "router": ["property"],
     "serializes_room_turns": ["property"],
     "set_system_prompt": ["def", "prompt"],
     "steer": ["def", "directive", "*", "loop_id=None", "room_id=None", "turn_id=None"],
@@ -118,6 +119,11 @@
   "roomkit.AIResponseEvent": {
     "__init__": ["def", "channel_id", "response_content", "room_id=None", "tool_calls_count=0", "usage=<factory>", "thinking=''", "round_count=0", "loop_end_reason=None", "latency_ms=0", "streaming=False", "timestamp=<factory>", "segments=<factory>", "usage_metadata=<factory>", "declared_tools=<factory>"]
   },
+  "roomkit.AIRouter": {
+    "close": ["async def"],
+    "name": ["property"],
+    "route": ["async def", "request"]
+  },
   "roomkit.Access": {
     "NONE": ["member", "'none'"],
     "READ_ONLY": ["member", "'read_only'"],
@@ -132,7 +138,7 @@
     "PHONE_NUMBER": ["member", "'phone_number'"]
   },
   "roomkit.Agent": {
-    "__init__": ["def", "channel_id", "*", "provider=None", "name=None", "role=None", "description=None", "purpose=None", "scope=None", "voice=None", "greeting=None", "language=None", "auto_greet=True", "identity_in_prompt=True", "**kwargs"],
+    "__init__": ["def", "channel_id", "*", "provider=None", "router=None", "name=None", "role=None", "description=None", "purpose=None", "scope=None", "voice=None", "greeting=None", "language=None", "auto_greet=True", "identity_in_prompt=True", "**kwargs"],
     "active_skill_names": ["def", "room_id"],
     "active_turns": ["property"],
     "build_identity_block": ["def", "language=None"],
@@ -167,6 +173,7 @@
     "resolve_trace_room": ["def", "session_id"],
     "restore_room_state": ["def", "room_id", "state"],
     "room_state": ["def", "room_id"],
+    "router": ["property"],
     "serializes_room_turns": ["property"],
     "set_system_prompt": ["def", "prompt"],
     "steer": ["def", "directive", "*", "loop_id=None", "room_id=None", "turn_id=None"],
@@ -968,6 +975,14 @@
     "LEFT_CHEEK": ["member", "'left_cheek'"],
     "MOUTH": ["member", "'mouth'"],
     "RIGHT_CHEEK": ["member", "'right_cheek'"]
+  },
+  "roomkit.FallbackRouter": {
+    "__init__": ["def", "primary", "fallback"],
+    "close": ["async def"],
+    "fallback": ["property"],
+    "name": ["property"],
+    "primary": ["property"],
+    "route": ["async def", "request"]
   },
   "roomkit.FrameworkAwareChannel": {
     "set_framework": ["def", "framework"]
@@ -1992,6 +2007,9 @@
   },
   "roomkit.RoomTimers": {
     "__init__": ["def", "*", "inactive_after_seconds=None", "closed_after_seconds=None", "last_activity_at=None"]
+  },
+  "roomkit.RouteRequest": {
+    "__init__": ["def", "reason", "text", "event=None", "room_id=None", "previous=None", "failed=None"]
   },
   "roomkit.RoutingConditions": {
     "__init__": ["def", "*", "phases=None", "channel_types=None", "intents=None", "source_channel_ids=None", "custom=None"]

@@ -29,6 +29,7 @@ import httpx
 import openai
 import pytest
 
+from roomkit.channels import FallbackRouter
 from roomkit.channels.ai import AIChannel
 from roomkit.models.channel import RetryPolicy
 from roomkit.models.streaming import LoopEndMarker
@@ -46,6 +47,7 @@ from roomkit.providers.ai.base import (
 )
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.providers.ai.openai_dialect import overflow_fact
+from tests.routed_generation import routed_generation
 
 
 class _ScriptedStreamProvider(MockAIProvider):
@@ -128,13 +130,15 @@ def _channel(
     retry_policy: RetryPolicy | None = None,
     fallback: Any | None = None,
 ) -> AIChannel:
+    serves: dict[str, Any] = (
+        {"router": FallbackRouter(provider, fallback)} if fallback else {"provider": provider}
+    )
     return AIChannel(
         "ai1",
-        provider=provider,
         tool_handler=AsyncMock(return_value="ok"),
         tool_loop_timeout_seconds=None,
         retry_policy=retry_policy,
-        fallback_provider=fallback,
+        **serves,
     )
 
 
@@ -230,7 +234,7 @@ async def test_a_stream_that_spoke_is_not_reentered_even_by_the_retry() -> None:
 
     collected: list[Any] = []
     with pytest.raises(ProviderError):
-        async for event in ch._generate_stream_with_retry(_ctx()):
+        async for event in routed_generation(ch, _ctx()):
             collected.append(event)
 
     assert len(provider.calls) == 1
@@ -268,7 +272,7 @@ async def test_a_rate_limit_worded_like_an_overflow_keeps_its_retries() -> None:
     provider = _ScriptedStreamProvider([ProviderError(_TPM_RATE_LIMIT, retryable=True)])
     ch = _channel(provider, retry_policy=RetryPolicy(max_retries=3), fallback=fallback)
 
-    items = await _drain(ch._generate_stream_with_retry(_ctx()))
+    items = await _drain(routed_generation(ch, _ctx()))
 
     assert len(provider.calls) == 4  # every attempt the policy announces
     assert provider.seen_compacted == [False, False, False, False]
@@ -285,7 +289,7 @@ async def test_an_explicit_no_beats_matching_prose() -> None:
     ch = _channel(provider, retry_policy=RetryPolicy(max_retries=2))
 
     with pytest.raises(ProviderError):
-        await _drain(ch._generate_stream_with_retry(_ctx()))
+        await _drain(routed_generation(ch, _ctx()))
 
     assert len(provider.calls) == 3  # retried, never compacted
     assert provider.seen_compacted == [False, False, False]
@@ -303,7 +307,7 @@ async def test_a_refusal_that_survives_compaction_falls_through_to_retry() -> No
     )
     ch = _channel(provider, retry_policy=RetryPolicy(max_retries=3))
 
-    items = await _drain(ch._generate_stream_with_retry(_ctx()))
+    items = await _drain(routed_generation(ch, _ctx()))
 
     assert len(provider.calls) == 3  # refusal, compacted replay, retry
     assert provider.seen_compacted == [False, True, True]
@@ -324,7 +328,7 @@ async def test_overflow_is_recovered_before_retry_and_fallback() -> None:
         fallback=fallback,
     )
 
-    items = await _drain(ch._generate_stream_with_retry(_ctx()))
+    items = await _drain(routed_generation(ch, _ctx()))
 
     assert len(provider.calls) == 2  # refusal + compacted replay, no retry burn
     assert fallback.calls == []

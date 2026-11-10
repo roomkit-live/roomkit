@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable, Iterable, Sequence
 
     from roomkit.channels._ai_resilience import _StreamRetryBoundary
+    from roomkit.channels._ai_router import RouteRequest
     from roomkit.models.channel import ChannelBinding
     from roomkit.models.context import RoomContext
     from roomkit.models.event import RoomEvent
@@ -25,6 +26,7 @@ if TYPE_CHECKING:
         AIContext,
         AIImagePart,
         AIMessage,
+        AIProvider,
         AITextPart,
         AITool,
         AIToolResultPart,
@@ -135,8 +137,17 @@ class _AIChannelContract:
         context: AIContext,
         *,
         received: Callable[[], None] | None = None,
-        on_fallback: Callable[[], None] | None = None,
     ) -> AsyncIterator[StreamEvent | _StreamRetryBoundary]: ...
+
+    def _turn_provider(self) -> AIProvider: ...
+
+    def _routed(self, loop_ctx: _ToolLoopContext) -> bool: ...
+
+    async def _route_turn(
+        self, loop_ctx: _ToolLoopContext, request: RouteRequest
+    ) -> AIProvider: ...
+
+    def _telemetry_to(self, provider: AIProvider) -> None: ...
 
     def _record_declared_tools(
         self, loop_ctx: _ToolLoopContext, tools: list[AITool] | None

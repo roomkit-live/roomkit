@@ -1,0 +1,194 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "ai-router/the-router-picks-each-turn-s-model-and-its-rounds-stay-on-it",
+  "title": "A router picks the model of each turn at its start, asked with the text the turn answers, and every tool round of the turn stays on the model it picked",
+  "rules": [
+    "§6.4",
+    "§6.4 The turn's record"
+  ],
+  "notes": "Python: channels/ai.py _route_turn, channels/_ai_resilience.py _rerouted (RMK-1638).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up.",
+            "returns": "found"
+          }
+        ],
+        "model": {
+          "name": "qwen",
+          "provider": "llamacpp",
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "text": "Local."
+            }
+          ]
+        },
+        "router": {
+          "models": {
+            "hosted": {
+              "name": "kimi",
+              "provider": "moonshot",
+              "rounds": [
+                {
+                  "text": "Hosted."
+                }
+              ]
+            }
+          },
+          "turns": [
+            "agent",
+            "agent/hosted"
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "First."
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Second."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "First."
+          }
+        },
+        {
+          "index": 1,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 2,
+          "type": "tool_call_end"
+        },
+        {
+          "index": 3,
+          "content": {
+            "body": "Local."
+          },
+          "metadata": {
+            "ai_model": "qwen",
+            "ai_provider": "llamacpp"
+          }
+        },
+        {
+          "index": 4,
+          "content": {
+            "body": "Second."
+          }
+        },
+        {
+          "index": 5,
+          "content": {
+            "body": "Hosted."
+          },
+          "metadata": {
+            "ai_model": "kimi",
+            "ai_provider": "moonshot"
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "First."
+            }
+          ]
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1"
+            }
+          ]
+        }
+      ],
+      "agent/hosted": [
+        {}
+      ]
+    },
+    "ai_routes": {
+      "agent": [
+        {
+          "reason": "turn",
+          "text": "First.",
+          "previous": null,
+          "failed": null
+        },
+        {
+          "reason": "turn",
+          "text": "Second.",
+          "previous": null,
+          "failed": null
+        }
+      ]
+    }
+  }
+}

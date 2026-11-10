@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 
 from roomkit import Agent, ChannelCategory, InboundMessage, RoomKit, TextContent
+from roomkit.channels import FallbackRouter
 from roomkit.models.channel import ChannelBinding, ChannelOutput
 from roomkit.models.context import RoomContext
 from roomkit.models.event import RoomEvent
@@ -96,11 +97,10 @@ async def test_stream_finalizer_finishes_before_delivery_completion(kind: str, f
             AITool(name="lookup", description="lookup", parameters={"type": "object"})
         ]
     if kind.startswith("fallback"):
-        kwargs["fallback_provider"] = provider
-        primary = FailingProvider(streaming=True)
+        kwargs["router"] = FallbackRouter(FailingProvider(streaming=True), provider)
     else:
-        primary = provider
-    ai = Agent("ai", provider=primary, **kwargs)
+        kwargs["provider"] = provider
+    ai = Agent("ai", **kwargs)
     kit = RoomKit()
     kit.register_channel(transport)
     kit.register_channel(ai)

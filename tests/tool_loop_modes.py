@@ -18,6 +18,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
 
+from roomkit.channels import FallbackRouter
 from roomkit.channels.ai import AIChannel
 from roomkit.models.channel import ChannelBinding, ChannelOutput
 from roomkit.models.context import RoomContext
@@ -103,9 +104,14 @@ async def run_tool_loop(channel: AIChannel, context: AIContext) -> LoopRun:
 async def respond(
     channel: AIChannel, event: RoomEvent, binding: ChannelBinding, context: RoomContext
 ) -> LoopRun:
-    """Deliver ``event`` to the channel and read its reply."""
-    streams = channel.provider.supports_structured_streaming
-    if _expected_streaming is not None and streams != _expected_streaming:
+    """Deliver ``event`` to the channel and read its reply. With a router,
+    the check reads the primary of a fallback router, the provider a turn
+    starts on."""
+    provider = channel.provider
+    if isinstance(channel.router, FallbackRouter):
+        provider = channel.router.primary
+    streams = provider.supports_structured_streaming if provider is not None else None
+    if _expected_streaming is not None and streams not in (None, _expected_streaming):
         raise AssertionError(
             f"the test runs streaming={_expected_streaming} but the provider "
             f"streams={streams}: pass the fixture to the provider"

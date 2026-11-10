@@ -61,7 +61,8 @@ class AIGenerationMixin(_AIChannelContract):
             channel_id=self.channel_id,
             room_id=event.room_id,
             trigger=event,
-            provider_name=self.provider_name,
+            # The provider the turn's context was built for (RFC §6.4).
+            provider_name=self._turn_provider().name,
             purpose=purpose,
         )
         # Read before the hook runs: it may edit the list in place.

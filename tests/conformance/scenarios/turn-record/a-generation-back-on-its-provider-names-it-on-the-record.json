@@ -1,11 +1,11 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "turn-record/a-generation-back-on-its-provider-names-it-on-the-record",
-  "title": "A generation the channel's provider serves after its fallback served one names that provider and its model on the turn's record: the record names the last generation's",
+  "title": "A generation handed back to the channel's provider after its fallback served one names that provider and its model on the turn's record: the record names the last generation's",
   "rules": [
     "§6.4 The turn's record"
   ],
-  "notes": "Python: channels/_ai_streaming.py _StreamTurnState.count_generation (RMK-1056). roomkit-rs: tool_loop/mod.rs end_of, by_fallback (RMK-1029).",
+  "notes": "Python: channels/_ai_streaming.py _StreamTurnState.count_generation (RMK-1056), channels/_ai_resilience.py _rerouted (RMK-1638). roomkit-rs: tool_loop/mod.rs end_of (RMK-1029). The fallback serves the first round and keeps the turn; its second round is refused, and the fallback router hands it back to the primary.",
   "setup": {
     "channels": [
       {
@@ -63,6 +63,13 @@
               "usage": {
                 "input_tokens": 5,
                 "output_tokens": 2
+              }
+            },
+            {
+              "refuses": {
+                "status": 503,
+                "message": "overloaded",
+                "retryable": true
               }
             }
           ]

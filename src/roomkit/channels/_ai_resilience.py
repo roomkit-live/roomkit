@@ -1,4 +1,4 @@
-"""AIChannel mixin for retry, fallback, and context overflow recovery."""
+"""AIChannel mixin for retry, re-routing, and context overflow recovery."""
 
 from __future__ import annotations
 
@@ -6,16 +6,18 @@ import asyncio
 import logging
 from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from contextlib import aclosing
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 
 from roomkit.channels._ai_policy import declared_for
+from roomkit.channels._ai_router import RouteRequest
 from roomkit.channels._compaction import (
     compaction_cut,
     summary_text,
     with_compacted_history,
     with_results_stored,
 )
+from roomkit.channels._turn_budget import warn_if_priced_otherwise
 from roomkit.channels._user_text import with_leading_text
 from roomkit.models.channel import RetryPolicy
 from roomkit.providers.ai.base import (
@@ -35,6 +37,7 @@ from roomkit.providers.ai.tool_intent import presented_tools
 from roomkit.providers.utils import _aclose_stream
 
 if TYPE_CHECKING:
+    from roomkit.channels._ai_router import AIRouter
     from roomkit.channels._tool_eviction import ToolEviction
     from roomkit.memory.base import MemoryProvider
     from roomkit.providers.ai.base import AIMessage
@@ -74,7 +77,7 @@ class _Shown:
 
     A composition delta and a piece of reasoning are projections: neither is
     delivered as text nor persisted, so an attempt that showed only those can
-    be replayed, by a retry, a compacted replay or the fallback, without
+    be replayed, by a retry, a compacted replay or another provider, without
     duplicating anything the room holds (RFC §6.4). Counting a composition
     delta as handed would cost every tool round its retry budget, since a
     call's fragments arrive long before the call; counting reasoning would
@@ -125,8 +128,7 @@ class AIResilienceMixin(_AIChannelContract):
     """
 
     _retry_policy: RetryPolicy | None
-    _provider: AIProvider
-    _fallback_provider: AIProvider | None
+    _router: AIRouter | None
     _eviction: ToolEviction
     _memory: MemoryProvider
     _tool_call_intents: bool
@@ -139,26 +141,29 @@ class AIResilienceMixin(_AIChannelContract):
         context: AIContext,
         *,
         received: Callable[[], None] | None = None,
-        on_fallback: Callable[[], None] | None = None,
     ) -> AsyncIterator[StreamEvent | _StreamRetryBoundary]:
-        """Stream with compaction, retry and optional fallback.
+        """Stream on the turn's provider with compaction and retry, then, once
+        its retries are spent, on the provider the channel's router hands the
+        generation to, if it names one (RFC §6.4).
 
         This wrapper is the one layer positioned to know two facts, and both
         gate every recovery below:
 
         * **Whether anything already left for the consumer.** A stream that
           has yielded text, a call or its end cannot be re-entered — by retry,
-          compaction or fallback alike — without duplicating delivered output
-          in the room and in the persisted message, so a mid-stream failure
-          propagates as-is. Reasoning and a call's fragments are shown, never
-          held by the room: a stream that yielded only those is re-entered,
-          after a boundary that closes what it showed (RFC §6.4).
+          compaction or another provider alike — without duplicating
+          delivered output in the room and in the persisted message, so a
+          mid-stream failure propagates as-is. Reasoning and a call's
+          fragments are shown, never held by the room: a stream that yielded
+          only those is re-entered, after a boundary that closes what it
+          showed (RFC §6.4).
         * **Whether the refusal is a context overflow.** Replaying the same
           context is a deterministic refusal, so neither the retry budget nor
-          the fallback provider get it; the compacted replay runs first, once
-          per call, and mutates ``context.messages`` in place so a tool loop
-          builds its next rounds on the compacted history.
+          the router get it; the compacted replay runs first, once per call,
+          and mutates ``context.messages`` in place so a tool loop builds its
+          next rounds on the compacted history.
         """
+        provider = self._turn_provider()
         policy = self._retry_policy or RetryPolicy(max_retries=0)
         last_error: ProviderError | None = None
         compacted = False
@@ -166,7 +171,7 @@ class AIResilienceMixin(_AIChannelContract):
         attempt = 0
         while attempt <= policy.max_retries:
             shown = _Shown()
-            stream = self._structured_stream(self._provider, context, received)
+            stream = self._structured_stream(provider, context, received)
             try:
                 async for event in stream:
                     shown.note(event)
@@ -174,15 +179,15 @@ class AIResilienceMixin(_AIChannelContract):
                 return  # Stream completed successfully
             except ProviderError as exc:
                 if (boundary := shown.boundary()) is not None:
-                    # Close this visible attempt before a retry/fallback starts
-                    # or before its terminal failure reaches the caller.
+                    # Close this visible attempt before a retry or another
+                    # provider starts, or before its failure reaches the caller.
                     yield boundary
                 if shown.emitted:
                     raise
                 if not compacted and self._is_context_overflow(exc):
                     # One compacted replay, then ordinary retry semantics: an
                     # error that only *sounded* like an overflow keeps its
-                    # retry budget and its fallback.
+                    # retry budget and its re-routing.
                     logger.warning("Context overflow on stream. Compacting and replaying.")
                     compacted = True
                     await self._compact_context(context)
@@ -212,48 +217,62 @@ class AIResilienceMixin(_AIChannelContract):
             finally:
                 await _aclose_stream(stream)
 
-        # Fallback — only reachable when nothing was emitted.
-        if self._fallback_provider and last_error:
-            if on_fallback is not None:
-                on_fallback()
-            fallback = self._fallback_stream(context, last_error, received)
-            async with aclosing(fallback) as events:
-                async for event in events:
-                    yield event
+        # Only reachable when nothing was emitted.
+        if last_error is None:
             return
-
-        if last_error:
+        other = await self._rerouted(provider, last_error)
+        if other is None:
             raise last_error
+        rerouted = self._rerouted_stream(other, context, last_error, received)
+        async with aclosing(rerouted) as events:
+            async for event in events:
+                yield event
+        # It served the generation: the turn's later rounds stay on it.
+        self._get_loop_ctx().provider = other
 
-    async def _fallback_stream(
+    async def _rerouted(self, provider: AIProvider, error: ProviderError) -> AIProvider | None:
+        """The provider the router hands a generation to once *provider*
+        spent its retries on *error*; ``None`` without a router, or when it
+        names none (RFC §6.4)."""
+        if self._router is None:
+            return None
+        loop_ctx = self._get_loop_ctx()
+        asked = loop_ctx.route_request or RouteRequest("turn", "")
+        request = replace(asked, reason="retry", previous=provider, failed=error)
+        other = await self._router.route(request)
+        if other is not None:
+            self._telemetry_to(other)
+            warn_if_priced_otherwise(loop_ctx.turn_budget, other)
+        return other
+
+    async def _rerouted_stream(
         self,
+        provider: AIProvider,
         context: AIContext,
-        primary_error: ProviderError,
+        error: ProviderError,
         received: Callable[[], None] | None = None,
     ) -> AsyncGenerator[StreamEvent | _StreamRetryBoundary, None]:
-        """The fallback provider's stream, once the primary's retries are spent
-        and nothing reached the consumer.
+        """*provider*'s stream, the one attempt the router handed it once the
+        turn's provider spent its retries on *error* with nothing delivered.
 
-        A fallback that fails before it emits leaves the primary's error as
-        the turn's, its own failure riding as the cause: the fallback was a
-        second chance, not the turn's provider.
+        One that fails before it emits leaves *error* as the turn's, its own
+        failure riding as the cause: it was a second chance, not the turn's
+        provider.
         """
-        logger.warning("Trying fallback provider for stream.")
-        fallback = self._fallback_provider
-        assert fallback is not None  # the caller checked
-        stream = self._structured_stream(fallback, declared_for(fallback, context), received)
+        logger.warning("Retries spent (%s); the router hands the generation over.", error)
+        stream = self._structured_stream(provider, declared_for(provider, context), received)
         shown = _Shown()
         try:
             async for event in stream:
                 shown.note(event)
                 yield event
-        except ProviderError as fallback_exc:
+        except ProviderError as other_exc:
             if (boundary := shown.boundary()) is not None:
                 yield boundary
             if shown.emitted:
                 raise
-            logger.error("Fallback provider also failed: %s", fallback_exc)
-            raise primary_error from fallback_exc
+            logger.error("The provider the router handed the generation to failed: %s", other_exc)
+            raise error from other_exc
         except Exception:
             if (boundary := shown.boundary()) is not None:
                 yield boundary

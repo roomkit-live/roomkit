@@ -1,0 +1,114 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "ai-router/the-turn-s-context-is-built-for-the-model-the-router-picks",
+  "title": "A turn's context is built for the model its router picks: an image reads as a mention for a model that does not see, though the agent's own model sees",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: channels/ai.py _route_turn, channels/_ai_resilience.py _rerouted (RMK-1638).",
+  "setup": {
+    "kit": {
+      "attached_media": {
+        "key": "files"
+      }
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "vision": true,
+          "rounds": [
+            {
+              "text": "Seen."
+            }
+          ]
+        },
+        "router": {
+          "models": {
+            "blind": {
+              "vision": false,
+              "rounds": [
+                {
+                  "text": "Not seen."
+                }
+              ]
+            }
+          },
+          "turns": [
+            "agent/blind"
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "look"
+      },
+      "metadata": {
+        "files": [
+          {
+            "type": "media",
+            "url": "https://cdn.example.com/lamp.png",
+            "mime_type": "image/png",
+            "filename": "lamp.png"
+          }
+        ]
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [],
+      "agent/blind": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "look\n[Image not shown, this model does not see images: “lamp.png”]",
+              "parts": {
+                "$absent": true
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "ai_routes": {
+      "agent": [
+        {
+          "reason": "turn",
+          "text": "look"
+        }
+      ]
+    }
+  }
+}

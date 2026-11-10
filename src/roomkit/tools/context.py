@@ -39,12 +39,13 @@ from roomkit.tools._turn_calls import TurnCalls
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
 
+    from roomkit.channels._ai_router import RouteRequest
     from roomkit.channels._author_images import AuthorImages
     from roomkit.channels._turn_budget import TurnBudget
     from roomkit.channels.ai import ToolHandler
     from roomkit.models.steering import SteeringDirective
     from roomkit.models.tool_call import DeclaredTool
-    from roomkit.providers.ai.base import AIMessage, AITool
+    from roomkit.providers.ai.base import AIMessage, AIProvider, AITool
     from roomkit.skills.registry import SkillRegistry
     from roomkit.tools.timeout import ToolTimeouts
 
@@ -191,6 +192,15 @@ class _ToolLoopContext:
     answered_input: AIMessage | None = None
     # What the turn may spend, resolved with its other settings (RFC §6.4).
     turn_budget: TurnBudget | None = None
+    # The provider the turn runs on: the one its channel's router picked when
+    # the turn started, then the one a retry handed a generation to, which
+    # every later round stays on; the channel's own without a router (RFC §6.4).
+    provider: AIProvider | None = None
+    # The channel whose turn ``provider`` is: a loop of another channel that
+    # inherits this context routes its own turn.
+    provider_of: str | None = None
+    # What the router was asked at the turn's start, which a retry asks again.
+    route_request: RouteRequest | None = None
     # ``activate_skill`` calls whose activation waits for the call's outcome,
     # by tool_call_id: committed once the call is served, dropped when
     # ON_TOOL_CALL blocks it or it fails, so a refused activation opens no gate.
@@ -421,6 +431,9 @@ class _ToolLoopContext:
             ctx.turn_input = parent.turn_input
             ctx.standalone = parent.standalone
             ctx.turn_budget = parent.turn_budget
+            ctx.provider = parent.provider
+            ctx.provider_of = parent.provider_of
+            ctx.route_request = parent.route_request
         ctx.room = room if room is not None else (parent.room if parent else None)
         if ctx.room is not None:
             ctx.room_id = ctx.room.id

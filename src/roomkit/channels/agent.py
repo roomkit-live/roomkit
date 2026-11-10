@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from roomkit.channels._ai_router import AIRouter
 from roomkit.channels.ai import AIChannel
 from roomkit.models.channel import AgentIdentity, ChannelDeclaration
 from roomkit.providers.ai.base import AIContext, AIProvider, AIResponse
@@ -76,6 +77,7 @@ class Agent(AIChannel):
         channel_id: str,
         *,
         provider: AIProvider | None = None,
+        router: AIRouter | None = None,
         name: str | None = None,
         role: str | None = None,
         description: str | None = None,
@@ -88,7 +90,9 @@ class Agent(AIChannel):
         identity_in_prompt: bool = True,
         **kwargs: Any,
     ) -> None:
-        super().__init__(channel_id, provider=provider or _NullAIProvider(), **kwargs)
+        if provider is None and router is None:
+            provider = _NullAIProvider()
+        super().__init__(channel_id, provider=provider, router=router, **kwargs)
         # Human-readable display name (e.g. "Research Assistant"), distinct from the
         # channel_id and from ``role`` (the agent's instructions). Used to label
         # the agent in orchestration timelines instead of a truncated role.
@@ -126,7 +130,7 @@ class Agent(AIChannel):
     @property
     def is_config_only(self) -> bool:
         """Whether this agent has no AI provider (config-only mode)."""
-        return isinstance(self._provider, _NullAIProvider)
+        return self._router is None and isinstance(self._provider, _NullAIProvider)
 
     @property
     def system_prompt(self) -> str | None:

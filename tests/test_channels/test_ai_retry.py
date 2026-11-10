@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
+from roomkit.channels import FallbackRouter
 from roomkit.channels.ai import AIChannel
 from roomkit.models.channel import RetryPolicy
 from roomkit.providers.ai.base import (
@@ -18,11 +19,12 @@ from roomkit.providers.ai.base import (
     StreamThinkingDelta,
 )
 from roomkit.providers.ai.mock import MockAIProvider
+from tests.routed_generation import routed_generation
 
 
 async def _answer(ch: AIChannel, context: AIContext) -> str:
-    """What one generation through the channel's retry and fallback said."""
-    events = [event async for event in ch._generate_stream_with_retry(context)]
+    """What one generation through the channel's retry and re-routing said."""
+    events = [event async for event in routed_generation(ch, context)]
     return "".join(event.text for event in events if isinstance(event, StreamTextDelta))
 
 
@@ -155,7 +157,7 @@ class TestRetry:
             await _answer(ch, context)
 
 
-class TestFallbackProvider:
+class TestFallbackRouter:
     async def test_fallback_triggers_after_retry_exhaustion(self) -> None:
         """Fallback provider is used when primary exhausts all retries."""
 
@@ -168,8 +170,7 @@ class TestFallbackProvider:
 
         ch = AIChannel(
             "ai1",
-            provider=provider,
-            fallback_provider=fallback,
+            router=FallbackRouter(provider, fallback),
             retry_policy=RetryPolicy(max_retries=1, base_delay_seconds=0.01),
         )
 
@@ -195,8 +196,7 @@ class TestFallbackProvider:
 
         ch = AIChannel(
             "ai1",
-            provider=provider,
-            fallback_provider=fallback,
+            router=FallbackRouter(provider, fallback),
             retry_policy=RetryPolicy(max_retries=1, base_delay_seconds=0.01),
         )
 
@@ -214,8 +214,7 @@ class TestFallbackProvider:
 
         ch = AIChannel(
             "ai1",
-            provider=provider,
-            fallback_provider=fallback,
+            router=FallbackRouter(provider, fallback),
             retry_policy=RetryPolicy(max_retries=3),
         )
 
@@ -237,8 +236,7 @@ class TestFallbackProvider:
 
         ch = AIChannel(
             "ai1",
-            provider=provider,
-            fallback_provider=fallback,
+            router=FallbackRouter(provider, fallback),
             retry_policy=RetryPolicy(max_retries=3, base_delay_seconds=0.01),
         )
 
@@ -310,14 +308,13 @@ class TestStreamRetry:
 
         ch = AIChannel(
             "ai1",
-            provider=provider,
-            fallback_provider=fallback,
+            router=FallbackRouter(provider, fallback),
             retry_policy=RetryPolicy(max_retries=1, base_delay_seconds=0.01),
         )
 
         context = AIContext(messages=[AIMessage(role="user", content="hi")])
         events = []
-        async for event in ch._generate_stream_with_retry(context):
+        async for event in routed_generation(ch, context):
             events.append(event)
 
         text_events = [e for e in events if isinstance(e, StreamTextDelta)]

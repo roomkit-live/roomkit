@@ -13,6 +13,7 @@ from typing import Any
 
 import pytest
 
+from roomkit.channels import FallbackRouter
 from roomkit.channels.ai import AIChannel
 from roomkit.models.channel import ChannelBinding, RetryPolicy
 from roomkit.models.context import RoomContext
@@ -99,10 +100,15 @@ def _results(context: AIContext) -> list[AIToolResultPart]:
     ]
 
 
-def _searching(provider: MockAIProvider, **kwargs: Any) -> AIChannel:
+def _searching(
+    provider: MockAIProvider, *, fallback: MockAIProvider | None = None, **kwargs: Any
+) -> AIChannel:
+    if fallback is not None:
+        kwargs["router"] = FallbackRouter(provider, fallback)
+    else:
+        kwargs["provider"] = provider
     return AIChannel(
         "ai1",
-        provider=provider,
         tool_handler=_served,
         tool_search=True,
         tool_search_pinned={"lookup"},
@@ -361,7 +367,7 @@ async def test_a_fallback_that_cannot_hold_receives_what_the_turn_shows(streamin
     fallback = MockAIProvider(ai_responses=[_DONE], streaming=streaming)
     ch = _searching(
         FailingHolder(streaming=streaming),
-        fallback_provider=fallback,
+        fallback=fallback,
         retry_policy=RetryPolicy(max_retries=0),
     )
 

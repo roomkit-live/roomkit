@@ -18,7 +18,13 @@ from collections.abc import AsyncIterator, Callable, Iterator, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from roomkit import Agent, AIChannelTurnConfig
+from roomkit import (
+    Agent,
+    AIChannelTurnConfig,
+    AIRouter,
+    FallbackRouter,
+    RouteRequest,
+)
 from roomkit.channels.ai import AIChannel
 from roomkit.core.exceptions import ToolFailedError, ToolRefusedError, UnservedToolCallError
 from roomkit.models.channel import RetryPolicy
@@ -568,6 +574,64 @@ def _tool_handler(tools: list[Mapping[str, Any]], gates: Gates) -> Any:
     return handler
 
 
+class ScriptedAIRouter(AIRouter):
+    """A router picking from a script (README, ``router``): each turn's start
+    the next of ``turns``, each retry the next of ``retries``, the last of
+    each repeating; a pick names a model as ``expect.models`` does. Keeps
+    what each request carried, as ``expect.ai_routes`` reads it."""
+
+    def __init__(self, spec: Mapping[str, Any], models: Mapping[str, ScriptedModel]) -> None:
+        self._models = dict(models)
+        self._picks = {"turn": list(spec["turns"]), "retry": list(spec.get("retries", [None]))}
+        self._asked = {"turn": 0, "retry": 0}
+        self.requests: list[dict[str, Any]] = []
+
+    async def route(self, request: RouteRequest) -> AIProvider | None:
+        self.requests.append(
+            {
+                "reason": request.reason,
+                "text": request.text,
+                "previous": self._key(request.previous),
+                "failed": _refusal(request.failed),
+            }
+        )
+        picks = self._picks[request.reason]
+        pick = picks[min(self._asked[request.reason], len(picks) - 1)]
+        self._asked[request.reason] += 1
+        return self._models[pick] if pick is not None else None
+
+    def _key(self, provider: AIProvider | None) -> str | None:
+        return next((key for key, model in self._models.items() if model is provider), None)
+
+
+def _refusal(error: ProviderError | None) -> dict[str, Any] | None:
+    """A retry's refusal as ``expect.ai_routes`` reads it."""
+    if error is None:
+        return None
+    return {"status": error.status_code, "message": error.args[0] if error.args else str(error)}
+
+
+def _scripted_model(
+    spec: Mapping[str, Any], gates: Gates, labelled: Callable[[Any], Any] | None
+) -> ScriptedModel:
+    """The scripted model *spec* describes (README, "Scripted agents")."""
+    return ScriptedModel(
+        spec["rounds"],
+        gates,
+        streaming=spec.get("streaming", True),
+        vision=bool(spec.get("vision", False)),
+        labelled=labelled,
+        pricing=spec.get("pricing"),
+        context_window=spec.get("context_window"),
+        name=spec.get("name", "scripted"),
+        provider=spec.get("provider", "scripted"),
+        chat_dialect=spec.get("chat_dialect"),
+        deferred_tools=spec.get("deferred_tools", False),
+        response_schema=bool(spec.get("response_schema", False)),
+        response_schema_with_tools=bool(spec.get("response_schema_with_tools", False)),
+    )
+
+
 def scripted_agent(
     spec: Mapping[str, Any],
     gates: Gates,
@@ -587,21 +651,7 @@ def scripted_agent(
     *shared* holds under its name is answered from, as another process's
     channel of the same id is (README, ``processes``)."""
     shared = shared or {}
-    model = shared.get(spec["id"]) or ScriptedModel(
-        spec["model"]["rounds"],
-        gates,
-        streaming=spec["model"].get("streaming", True),
-        vision=bool(spec["model"].get("vision", False)),
-        labelled=labelled,
-        pricing=spec["model"].get("pricing"),
-        context_window=spec["model"].get("context_window"),
-        name=spec["model"].get("name", "scripted"),
-        provider=spec["model"].get("provider", "scripted"),
-        chat_dialect=spec["model"].get("chat_dialect"),
-        deferred_tools=spec["model"].get("deferred_tools", False),
-        response_schema=bool(spec["model"].get("response_schema", False)),
-        response_schema_with_tools=bool(spec["model"].get("response_schema_with_tools", False)),
-    )
+    model = shared.get(spec["id"]) or _scripted_model(spec["model"], gates, labelled)
     models = {spec["id"]: model}
     tools = spec.get("tools", [])
     kwargs: dict[str, Any] = {}
@@ -649,24 +699,15 @@ def scripted_agent(
     if "retry_policy" in spec:
         kwargs["retry_policy"] = _retry_policy(spec["retry_policy"])
     if "fallback_model" in spec:
-        fallback = shared.get(f"{spec['id']}/fallback") or ScriptedModel(
-            spec["fallback_model"]["rounds"],
-            gates,
-            streaming=spec["fallback_model"].get("streaming", True),
-            vision=bool(spec["fallback_model"].get("vision", False)),
-            labelled=labelled,
-            pricing=spec["fallback_model"].get("pricing"),
-            name=spec["fallback_model"].get("name", "scripted"),
-            provider=spec["fallback_model"].get("provider", "scripted"),
-            chat_dialect=spec["fallback_model"].get("chat_dialect"),
-            deferred_tools=spec["fallback_model"].get("deferred_tools", False),
-            response_schema=bool(spec["fallback_model"].get("response_schema", False)),
-            response_schema_with_tools=bool(
-                spec["fallback_model"].get("response_schema_with_tools", False)
-            ),
-        )
-        models[f"{spec['id']}/fallback"] = fallback
-        kwargs["fallback_provider"] = fallback
+        key = f"{spec['id']}/fallback"
+        fallback = shared.get(key) or _scripted_model(spec["fallback_model"], gates, labelled)
+        models[key] = fallback
+        kwargs["router"] = FallbackRouter(model, fallback)
+    if "router" in spec:
+        for name, model_spec in spec["router"].get("models", {}).items():
+            key = f"{spec['id']}/{name}"
+            models[key] = shared.get(key) or _scripted_model(model_spec, gates, labelled)
+        kwargs["router"] = ScriptedAIRouter(spec["router"], models)
     if "max_author_images" in spec:
         kwargs["max_author_images"] = spec["max_author_images"]
     if "evict_threshold_tokens" in spec:
@@ -706,9 +747,10 @@ def scripted_agent(
     if "agent" in spec:
         build = Agent
         kwargs.update(spec["agent"])
+    if "router" not in kwargs:
+        kwargs["provider"] = model
     channel = build(
         spec["id"],
-        provider=model,
         tools=[
             AITool(
                 name=tool["name"],

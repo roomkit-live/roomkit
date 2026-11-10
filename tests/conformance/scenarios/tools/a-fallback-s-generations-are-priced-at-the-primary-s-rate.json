@@ -6,7 +6,7 @@
     "§6.4",
     "Appendix A.9"
   ],
-  "notes": "Python: channels/_turn_budget.py turn_budget (TurnBudget.pricing is the provider's catalogue price, the fallback's never read; a fallback priced otherwise is only logged, _warn_if_priced_otherwise), _ai_loop_rules.py _ToolLoopState.count; RFC §6.4. Each generation the primary refuses as worth another try, with no retry policy, and the fallback answers. At the primary's price a generation costs 0.0081 and the third reaches the 0.02025 budget; at the fallback's, 0.81, the first would.",
+  "notes": "Python: channels/_turn_budget.py turn_budget (TurnBudget.pricing is the catalogue price of the provider the turn started on, the fallback's never read; a fallback priced otherwise is only logged, warn_if_priced_otherwise), _ai_loop_rules.py _ToolLoopState.count; RFC §6.4. The primary refuses the first generation as worth another try, with no retry policy, the fallback answers it and keeps the turn's later rounds (RMK-1638). At the primary's price a generation costs 0.0081 and the third reaches the 0.02025 budget; at the fallback's, 0.81, the first would.",
   "setup": {
     "channels": [
       {
@@ -19,20 +19,6 @@
         "type": "ai",
         "model": {
           "rounds": [
-            {
-              "refuses": {
-                "status": 503,
-                "message": "unavailable",
-                "retryable": true
-              }
-            },
-            {
-              "refuses": {
-                "status": 503,
-                "message": "unavailable",
-                "retryable": true
-              }
-            },
             {
               "refuses": {
                 "status": 503,
@@ -278,12 +264,6 @@
       "agent": [
         {
           "tool_results": []
-        },
-        {
-          "tool_results": "$any"
-        },
-        {
-          "tool_results": "$any"
         }
       ],
       "agent/fallback": [

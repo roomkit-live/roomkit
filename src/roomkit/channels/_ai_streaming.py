@@ -25,6 +25,7 @@ from roomkit.channels._ai_loop_rules import (
     turn_span_status,
     warn_refused,
 )
+from roomkit.channels._ai_router import messages_request
 from roomkit.channels._ai_stream_external_tools import _ExternalStreamTools
 from roomkit.channels._ai_stream_round import _StreamRound, _StreamRoundState
 from roomkit.channels._ai_tools import call_end_marker
@@ -91,8 +92,8 @@ class _StreamTurnState:
     # The limits the turn runs under, as its end marker states them.
     max_rounds: int
     timeout_seconds: float | None
-    # What the turn's last generation ran on: the channel's provider until
-    # its fallback serves one.
+    # What the turn's last generation ran on: the provider the turn started
+    # on until the router hands a generation to another (RFC §6.4).
     model: str
     provider: str
     usage: dict[str, int] = field(default_factory=dict)
@@ -225,8 +226,6 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
     derives from for the type checker only.
     """
 
-    _provider: AIProvider
-    _fallback_provider: AIProvider | None
     _max_tool_rounds: int
     _tool_loop_timeout_seconds: float | None
     _tool_loop_warn_after: int
@@ -391,6 +390,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         """The turn's state, its ``llm.generate`` span started, and the limits
         it runs under: the ones the loop enforces and its end marker states."""
         telemetry = self._telemetry_provider
+        provider = self._turn_provider()
         span_id = telemetry.start_span(
             SpanKind.LLM_GENERATE,
             "llm.generate",
@@ -398,7 +398,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
             room_id=room_id,
             channel_id=self.channel_id,
             attributes={
-                Attr.PROVIDER: type(self._provider).__name__,
+                Attr.PROVIDER: type(provider).__name__,
                 Attr.LLM_STREAMING: True,
             },
         )
@@ -410,8 +410,8 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
             max_rounds=self._max_tool_rounds,
             # Unset or zero: no deadline.
             timeout_seconds=self._tool_loop_timeout_seconds or None,
-            model=self._provider.model_name,
-            provider=self._provider.name,
+            model=provider.model_name,
+            provider=provider.name,
         )
 
     @asynccontextmanager
@@ -436,6 +436,10 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         _current_loop_ctx.set(loop_ctx)
         self._active_loops[loop_ctx.loop_id] = loop_ctx
         try:
+            if not self._routed(loop_ctx):
+                # A turn driven without a built context (a voice delegation)
+                # is routed on its messages (RFC §6.4).
+                await self._route_turn(loop_ctx, messages_request(context.messages, room_id))
             turn = self._new_turn_state(loop_ctx, room_id, parent_span_id)
             try:
                 yield turn
@@ -626,11 +630,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         try:
             async with aclosing(
                 round_.stream(
-                    self._generate_stream_with_retry(
-                        context,
-                        received=round_.state.note_received,
-                        on_fallback=round_.state.note_fallback,
-                    )
+                    self._generate_stream_with_retry(context, received=round_.state.note_received)
                 )
             ) as deltas:
                 async for delta in deltas:
@@ -649,14 +649,10 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
             raise
         if round_.state.thinking:
             turn.thinking.append(round_.state.thinking)
-        turn.count_generation(round_.state, self._served_by(round_.state))
+        # The provider that served it: the turn's, which a retry the router
+        # handed to another provider moved to that one (RFC §6.4).
+        turn.count_generation(round_.state, self._turn_provider())
         yield UsageMarker(usage=dict(round_.state.usage), model=turn.model, provider=turn.provider)
-
-    def _served_by(self, state: _StreamRoundState) -> AIProvider:
-        """The provider that served a generation."""
-        if state.by_fallback and self._fallback_provider is not None:
-            return self._fallback_provider
-        return self._provider
 
     def _forget_sent_images(self, turn: _StreamTurnState, context: AIContext) -> None:
         """Send no more the images a request whose content the provider refused

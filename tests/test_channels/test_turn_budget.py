@@ -14,6 +14,7 @@ from typing import Any
 
 import pytest
 
+from roomkit.channels import FallbackRouter
 from roomkit.channels._ai_loop_rules import require_schema_answer
 from roomkit.channels._turn_config import AIChannelTurnConfig
 from roomkit.channels.ai import AIChannel
@@ -28,6 +29,7 @@ from roomkit.providers.ai.base import (
     AIToolCall,
     ModelInfo,
     ModelPricing,
+    ProviderError,
 )
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.providers.ai.response_schema import ResponseSchemaError
@@ -242,7 +244,13 @@ def test_a_schema_turn_stopped_by_its_budget_has_no_document() -> None:
         require_schema_answer(context, "budget_exceeded")
 
 
-def test_a_fallback_priced_otherwise_is_logged_once(caplog: pytest.LogCaptureFixture) -> None:
+async def test_a_generation_handed_to_a_model_priced_otherwise_is_logged_once(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    class _Refusing(_Priced):
+        async def generate(self, context: AIContext) -> AIResponse:
+            raise ProviderError("overloaded", retryable=True, status_code=503)
+
     class _Fallback(MockAIProvider):
         @property
         def model_name(self) -> str:
@@ -250,9 +258,12 @@ def test_a_fallback_priced_otherwise_is_logged_once(caplog: pytest.LogCaptureFix
 
     with caplog.at_level(logging.WARNING, logger="roomkit.channels.ai"):
         for _ in range(2):
-            AIChannel(
-                "ai1", provider=_Priced(), fallback_provider=_Fallback(), turn_budget_usd=1.0
+            fallback = _Fallback(ai_responses=[_DONE])
+            ch = AIChannel(
+                "ai1", router=FallbackRouter(_Refusing(), fallback), turn_budget_usd=1.0
             )
+            run = await _turn(ch)
+            assert run.reason == "completed"
 
     warnings = [r for r in caplog.records if "priced otherwise" in r.getMessage()]
     assert len(warnings) == 1
