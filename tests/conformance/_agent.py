@@ -583,6 +583,7 @@ def scripted_agent(
         "text_coalesce_ms",
         "text_coalesce_chars",
         "publish_text_deltas",
+        "tool_call_intents",
     ):
         if setting in spec:
             kwargs[setting] = spec[setting]
