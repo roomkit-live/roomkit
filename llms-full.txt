@@ -2174,6 +2174,63 @@ from roomkit.providers.ai import MockAIProvider
 provider = MockAIProvider(responses=["Hello!", "How can I help?"])
 ```
 
+## A Provider per Turn (`router=`)
+
+`AIChannel(router=...)` takes an `AIRouter` in place of a `provider`: the router
+picks the provider of each turn (RFC §6.4). `provider=` and `router=` are
+exclusive. The router is asked:
+
+- at the turn's start (`request.reason == "turn"`), before the turn's context
+  is built, so the context is built for the model it picks: whether that model
+  sees images, its context window (which decides Tool Search), whether it holds
+  tools unseen. It must name a provider; `None` fails the turn.
+- once a generation's retries are spent before it handed anything
+  (`request.reason == "retry"`, `request.previous` the provider that refused,
+  `request.failed` its last `ProviderError`). The provider it names gets one
+  attempt; `None`, or a provider that also fails before it hands anything,
+  leaves the last error as the turn's.
+
+Every later round of the turn stays on the provider that served it: a tool
+round reads the reasoning and the prompt cache of the round before.
+`request.text` is what the turn answers, as text, and `request.event` the event
+it answers (`None` for a voice delegation, routed on its last user message).
+
+```python
+import os
+
+from roomkit import AIChannel, AIRouter, RouteRequest
+from roomkit.providers.ai import AIProvider
+
+
+class LocalOrHosted(AIRouter):
+    def __init__(self, local: AIProvider, hosted: AIProvider) -> None:
+        self.local, self.hosted = local, hosted
+
+    async def route(self, request: RouteRequest) -> AIProvider | None:
+        if request.reason == "retry":  # the local model is busy: hosted
+            return self.hosted if request.previous is self.local else None
+        loaded = os.getloadavg()[0] / (os.cpu_count() or 1) > 0.8
+        hard = len(request.text) > 280 or "```" in request.text
+        return self.hosted if loaded or hard else self.local
+
+    async def close(self) -> None:  # the channel closes its router
+        await self.local.close()
+        await self.hosted.close()
+
+
+agent = AIChannel("assistant", router=LocalOrHosted(local, hosted))
+```
+
+A router is plain code: rules like these are often enough, and a `Classifier`
+(a model's typed judgment, or a subclass that answers from rules) can decide
+where they are not. `FallbackRouter(primary, fallback)` starts every turn on
+`primary` and hands a generation to the other provider once its retries are
+spent. With a router, `channel.provider` is `None`, `channel.router` returns
+it and `channel.provider_name` is its `name` (its class name by default). The
+provider that served an answer is on its message (`ai_provider`, `ai_model`),
+and `BEFORE_AI_GENERATION` names the provider the turn starts on. See
+`examples/ai_router_local_or_hosted.py`.
+
 ## Model Catalog and Pricing
 
 `provider.catalog_entry()` returns the configured model's offline `ModelInfo`.
@@ -3227,7 +3284,7 @@ the assistant message is assembled, so a dropped call is absent from the
 transcript as well as from the results — no provider sees a tool call with no
 matching result. The loop enforces it from its round rules.
 
-A turn can also be capped by what it spends: `turn_budget_tokens` counts every token the provider bills for the turn (input, cache reads and writes, output), `turn_budget_usd` prices each generation at the model's catalogue rate. At the first round boundary where the turn has reached either, the loop ends `budget_exceeded`: the calls that round asked for do not run and no further generation is asked for. Both are off by default and can be set on the channel, per room (binding metadata) or per turn (`AIChannelTurnConfig`). A budget that is not a positive number, or a cost budget on a model with no catalogue price, raises `ValueError`: on the channel when it is built, otherwise in the turn that reads it. A generation the `fallback_provider` serves is priced at the primary provider's rate (RFC §6.4).
+A turn can also be capped by what it spends: `turn_budget_tokens` counts every token the provider bills for the turn (input, cache reads and writes, output), `turn_budget_usd` prices each generation at the model's catalogue rate. At the first round boundary where the turn has reached either, the loop ends `budget_exceeded`: the calls that round asked for do not run and no further generation is asked for. Both are off by default and can be set on the channel, per room (binding metadata) or per turn (`AIChannelTurnConfig`). A budget that is not a positive number, or a cost budget on a model with no catalogue price, raises `ValueError`: on the channel when it is built, otherwise in the turn that reads it. Every generation of a turn is priced at the rate of the provider it started on, one a router hands to another provider included; a provider priced otherwise is logged once (RFC §6.4).
 
 ## AI Thinking/Reasoning
 
@@ -3712,7 +3769,7 @@ await kit.subscribe_room("room-1", my_callback)
 `TOOL_CALL_DELTA` is streaming-only. It reports the running argument size while
 the model composes a call, but never exposes the argument content. An empty
 `tool_calls` is the terminal frame for that composition, including cancellation,
-provider failure, retry, and fallback. Each retry is a new attempt, so its
+provider failure, retry, and a router handing the generation over. Each retry is a new attempt, so its
 cumulative `arguments_chars` counts restart from zero. These projection events
 are not persisted; the complete arguments still arrive in `TOOL_CALL_START`.
 ---
