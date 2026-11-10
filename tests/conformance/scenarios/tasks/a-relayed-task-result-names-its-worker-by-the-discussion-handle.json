@@ -1,0 +1,147 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-relayed-task-result-names-its-worker-by-the-discussion-handle",
+  "title": "A background result names its worker by the discussion handle while its task metadata keeps the channel id",
+  "rules": [
+    "§23.4",
+    "§19.7.5 rule 4",
+    "§23.3 step 8"
+  ],
+  "notes": "Python: tests/orchestration/test_discussion_handles.py::test_a_background_task_names_its_agent_by_handle; core/mixins/delegation.py::_deliver_delegation_result. The result is relayed to the same agent as a new turn, not posted. The worker is the agent itself. The task metadata retains its channel id.",
+  "setup": {
+    "channels": [
+      {
+        "id": "phone",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent:worker-01",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "work_in_background",
+                  "arguments": {
+                    "task": "Count the tickets."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "On it."
+            },
+            {
+              "text": "Findings: 12."
+            },
+            {
+              "text": "12 tickets."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "call",
+        "bindings": [
+          {
+            "channel_id": "phone"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "discussion",
+        "discussion": {
+          "agents": [
+            "agent:worker-01"
+          ],
+          "handles": {
+            "agent:worker-01": "Ops"
+          }
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "call",
+      "strategy": "discussion"
+    },
+    {
+      "call": "setup_background",
+      "agent_id": "agent:worker-01"
+    },
+    {
+      "call": "add_room_hook",
+      "room_id": "call",
+      "hook": {
+        "name": "handback",
+        "trigger": "before_deliver"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "call",
+      "message": {
+        "channel_id": "phone",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "@Ops count the tickets"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "handback": [
+        {
+          "event": {
+            "type": "instruction",
+            "content": {
+              "body": {
+                "$contains": "[Background task from Ops completed."
+              }
+            },
+            "metadata": {
+              "agent_id": "agent:worker-01",
+              "task_status": "completed",
+              "task": "Count the tickets."
+            }
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent:worker-01": [
+        {},
+        {},
+        {},
+        {
+          "messages": [
+            "$any",
+            "$any",
+            "$any",
+            "$any",
+            {
+              "role": "user",
+              "text": {
+                "$contains": "[Background task from Ops completed."
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,149 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-own-task-status-tool-names-the-discussion-worker-by-handle",
+  "title": "The own task_status tool names a discussion worker by its handle and leaves the status bus keyed by channel id",
+  "rules": [
+    "§23.4",
+    "§19.7.5 rule 4"
+  ],
+  "notes": "Python: tests/test_task_status.py::test_task_status_names_a_discussions_agent_by_its_handle; tasks/status.py::_named_by_handle. The same task is read through the tool and directly on the bus. The agent holds TaskStatusTool directly in its tools.",
+  "setup": {
+    "channels": [
+      {
+        "id": "phone",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent:worker-01",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Findings."
+            },
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "task_status",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "kit_tools": [
+          "task_status"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "call",
+        "bindings": [
+          {
+            "channel_id": "phone"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "discussion",
+        "discussion": {
+          "agents": [
+            "agent:worker-01"
+          ],
+          "handles": {
+            "agent:worker-01": "Ops"
+          }
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "call",
+      "strategy": "discussion"
+    },
+    {
+      "call": "delegate",
+      "room_id": "call",
+      "agent_id": "agent:worker-01",
+      "task": "Count the tickets.",
+      "wait": true,
+      "expect": {
+        "result": {
+          "agent_id": "agent:worker-01",
+          "status": "completed",
+          "result": {
+            "output": "Findings."
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "call",
+      "message": {
+        "channel_id": "phone",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "@Ops what is the result?"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "status.recent",
+      "agent_id": "agent:worker-01",
+      "expect": {
+        "result": [
+          {
+            "agent_id": "agent:worker-01",
+            "status": "pending"
+          },
+          {
+            "agent_id": "agent:worker-01",
+            "status": "completed",
+            "detail": "Findings.",
+            "metadata": {
+              "task_status": "completed"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent:worker-01": [
+        {},
+        {
+          "tool_results": []
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": {
+                "$contains": "\"agent\": \"Ops\""
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
