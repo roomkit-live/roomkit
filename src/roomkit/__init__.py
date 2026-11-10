@@ -334,10 +334,12 @@ from roomkit.tools.base import Tool
 from roomkit.tools.human_input import HumanInputHandler, HumanInputToolHandler
 from roomkit.tools.policy import RoleOverride, ToolPolicy
 from roomkit.turns import (
+    AgentPresence,
     ChannelCall,
     ChannelControl,
     ChannelResult,
     CommittedEvent,
+    ExecutorInfo,
     ExecutorLink,
     InMemoryTurnBackend,
     OwnerEvents,
@@ -508,6 +510,7 @@ __all__ = [
     "CommittedEvent",
     "ChannelControl",
     "ChannelResult",
+    "ExecutorInfo",
     "ExecutorLink",
     "InMemoryTurnBackend",
     "OwnerEvents",
@@ -539,6 +542,7 @@ __all__ = [
     "ACPSessionInvalidatedError",
     "Agent",
     "AgentIdentity",
+    "AgentPresence",
     "AIChannel",
     "AIChannelTurnConfig",
     "AudioVideoChannel",

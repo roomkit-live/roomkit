@@ -361,6 +361,39 @@ async def test_a_turn_that_failed_reads_as_failed(pipe: PipeInput) -> None:
     await kit.close()
 
 
+async def test_an_agent_no_executor_serves_shows_offline_until_one_does(pipe: PipeInput) -> None:
+    """The console opens on an agent no executor serves, marked offline; an
+    executor serving it brings it back online, its close takes it offline
+    again (RFC §10.6.7)."""
+    backend = InMemoryTurnBackend()
+    host = TurnExecutor(lambda _: None, hosts={"dev"}, executor_id="host")
+    kit = RoomKit(turn_backend=backend)
+    kit.register_channel(SimpleChannel("ops"))
+    kit.register_channel(ChannelDeclaration(channel_id="dev"))
+    await kit.create_room(room_id="r1", orchestration=Discussion(agents=["dev"]))
+    await kit.attach_channel("r1", "ops")
+    console = DiscussionConsole(kit, "r1", channel_id="ops")
+    running = asyncio.create_task(console.run())
+    await _until(lambda: console._view is not None and "dev" in console.view.offline)
+    view = console.view
+    opened = _panel(view)
+
+    await backend.serve(host)
+    await _until(lambda: "dev" not in view.offline)
+    served = _panel(view)
+    await host.close()
+    await _until(lambda: "dev" in view.offline)
+
+    room = _room(view)
+    console.exit()
+    await asyncio.wait_for(running, 5)
+    await kit.close()
+
+    assert "@dev  offline" in opened and "offline" not in served
+    assert "@dev is back online" in room
+    assert "@dev is offline: no executor serves it" in room
+
+
 async def test_a_wait_is_announced_when_it_starts_not_when_it_ends(pipe: PipeInput) -> None:
     kit = RoomKit()
     kit.register_channel(SimpleChannel("ops"))

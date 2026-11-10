@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import logging
-from collections.abc import Callable, Collection, Iterable
+from collections.abc import Awaitable, Callable, Collection, Iterable
 from functools import partial
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
@@ -142,6 +142,9 @@ class TurnExecutor:
         # Builds let go of (``channel_released``, the bound), closed once the
         # turns that run on them end.
         self._retiring = Retiring()
+        # What the backends serving it run once it closed (it no longer
+        # covers its channels, RFC §10.6.7).
+        self._closed_listeners: list[Callable[[], Awaitable[None]]] = []
 
     @property
     def hooks(self) -> HookEngine:
@@ -352,7 +355,21 @@ class TurnExecutor:
                 self._turns[task].stop_watching()
         await self._channels.close()
         await self._retiring.close()
+        await self._tell_closed()
         return left
+
+    def _listen_closed(self, listener: Callable[[], Awaitable[None]]) -> None:
+        """Have *listener* run once this executor closed: a backend serving
+        it learns it no longer covers its channels."""
+        if listener not in self._closed_listeners:
+            self._closed_listeners.append(listener)
+
+    async def _tell_closed(self) -> None:
+        for listener in self._closed_listeners:
+            try:
+                await listener()
+            except Exception:
+                logger.exception("Executor %s: a listener of its close failed", self.executor_id)
 
     async def control(self, message: ChannelControl) -> ChannelResult | None:
         """Apply a channel control message of the owner's (RFC §10.6.3): a

@@ -43,6 +43,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("roomkit.console.discussion")
 
+# The ephemeral events that tell an agent's presence (RFC §10.6.7).
+_PRESENCE = {EphemeralEventType.PRESENCE_ONLINE, EphemeralEventType.PRESENCE_OFFLINE}
+
 Command = Callable[[str], Awaitable[None]]
 """A slash command of the host's: receives the rest of the line."""
 
@@ -163,6 +166,7 @@ class DiscussionConsole:
             for hook in hooks:
                 self._kit.hook_engine.add_room_hook(self._room_id, hook)
             activity = await self._kit.realtime.subscribe_to_room(self._room_id, self._on_activity)
+            await self._read_presence()
             live = self._follow_streams()
             await self._screen.run()
         finally:
@@ -386,13 +390,25 @@ class DiscussionConsole:
             text = event.content.body if isinstance(event.content, TextContent) else ""
             self.view.failed(source, text)
 
+    async def _read_presence(self) -> None:
+        """Mark the agents no executor serves as the console opens; their
+        presence events say what changes next (RFC §10.6.7)."""
+        for presence in await self._kit.agent_presence(self._room_id):
+            self.view.presence(presence.channel_id, presence.online, quiet=True)
+
     async def _on_activity(self, event: EphemeralEvent) -> None:
-        """A tool call of the room's agents, as the room publishes it.
+        """A tool call of the room's agents, or an agent's presence, as the
+        room publishes it.
 
         Not a hook: ON_TOOL_CALL fires on the executor running the turn, which
         may be another process, and a room hook that executor did not register
         keeps it from taking the turn (RFC §10.6.7).
         """
+        if event.type in _PRESENCE:
+            if any(card.channel == event.user_id for card in self.view.cards):
+                online = event.type == EphemeralEventType.PRESENCE_ONLINE
+                self.view.presence(event.user_id, online)
+            return
         calls = event.data.get("tool_calls")
         if not isinstance(calls, list):
             return

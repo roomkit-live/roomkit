@@ -155,6 +155,18 @@ class LiveExecutors:
         await self.refresh()
         return self._alive_declared()
 
+    async def declared(self) -> list[tuple[Declaration, int, bool]]:
+        """Every executor declared, with its last beat (the server's ms) and
+        whether it beat within the timeout, as read within the last heartbeat
+        interval: one silent stays until its member is forgotten."""
+        if time.monotonic() - self._read_at >= self.interval:
+            await self.refresh()
+        view = self._view
+        return [
+            (declared, view.beats.get(member, 0), self.alive(member))
+            for member, declared in view.declared.items()
+        ]
+
     def last_beat(self, member: str) -> int | None:
         """The server time of *member*'s last beat seen, in ms."""
         return self._view.beats.get(member)

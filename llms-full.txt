@@ -2265,6 +2265,22 @@ await kit.attach_channel(room_id, "meteo")  # an intelligence binding
   declared agents of every organization the owners serve. A multi-tenant
   host assigns agent ids itself (one prefix per pool kept apart) and never
   lets a tenant choose one.
+- Which agents can answer: `await kit.executors()` lists the executors the
+  turn backend carries turns to (what each declares, its room hooks, its
+  last beat, `online`), and `await kit.agent_presence(room_id)` gives each
+  of the room's agents `online` with the executors covering it there (one
+  defining the room's enabled hooks). The kit publishes `presence_online` /
+  `presence_offline` for an agent (`user_id` its channel id) in a room as it
+  is attached, and in each of its rooms when its covering executors change:
+  an executor's process silent past `heartbeat_timeout` reads offline, not
+  on one late beat. Of several room owner processes, one publishes each
+  change (`TurnBackend.claim_presence`, kept in Redis by `RedisTurnBackend`
+  so a restart publishes nothing unchanged; in process otherwise). A change
+  reaches an agent's 10,000 oldest active or paused rooms at most. A turn
+  backend of your own that does not implement `executors()` has nothing
+  published for the agents the kit holds by declaration, and
+  `agent_presence` reads them offline. `DiscussionConsole` marks an agent
+  no executor serves `offline` (`examples/agent_presence.py`).
 - The kit holds a `DeclaredChannel` under the id: a binding takes its
   `capabilities`, routing plans its turns, `delegate` / `start_task` name it,
   `send_greeting` and auto-greet read its identity (`auto_greet` defaults to
@@ -8026,6 +8042,7 @@ RoomKit exports **348 symbols** from `roomkit`. Providers and voice types import
 | `InMemoryTurnBackend` | Default turn backend: in this process, every message serialized but a request's events, which reach the executor as they are |
 | `RedisTurnBackend` | Turn backend across processes (`pip install roomkit[redis]`): one per process on a shared Redis; an executor declared with `hosts={...}` (ids, or prefixes as `{"acme-*"}`) takes turns from every process, beating from a thread; a killed executor fails its turn with `executor_lost` |
 | `TurnExecutor` | Builds a channel and runs its turns; the kit owns one reading its registered channels. One a host builds (`TurnExecutor(build_channel, hosts={...}, media_resolver=, attached_media=, telemetry=, error_classes=, max_channels=)`, `hosts` the set of channel ids it runs, prefixes ending in `*` among them (`"acme-*"`, `"*"` for every id), or a predicate for its own process only; a channel its factory builds nothing for fails its turn and channel calls with `no_executor`; it builds a channel at its first turn, channel call or committed event, never for a room's attach, and `max_channels` keeps that many built at most, letting go of the one used least recently; with an `OpenTelemetryProvider` as `telemetry=`, a turn from another process continues the owner's trace) builds each channel when first needed, wires it as the kit wires the ones it registers (its hooks fire, what the channel publishes during a turn crosses as `ephemeral` / `framework_event` frames), and closes what it built; `executor.room_hook(name, trigger)(fn)` defines a room hook by name |
+| `ExecutorInfo` / `AgentPresence` | What `kit.executors()` (`TurnBackend.executors()`, none for a custom backend by default, which then has no presence published for declared agents) and `kit.agent_presence(room_id)` return: an executor's `executor_id`, `node`, `hosts` (ids and prefixes; `None` for a predicate), `room_hooks`, `last_beat`, `online`; an agent's `channel_id`, `online` and the `executors` covering it in the room. `TurnBackend.claim_presence(channel_id, room_id, online)` records the presence last published, so one room owner publishes each change (in process by default, in Redis for `RedisTurnBackend`) |
 | `ChannelDeclaration` | What the room's owner knows of a channel without its object: `channel_id`, `channel_type`, `category`, `capabilities`, `identity`, `thinks_while_listening`, `recent_events_window`; `channel.declaration()` gives a live channel's |
 | `AgentIdentity` | An agent's identity in its declaration: `name`, `role`, `description`, `scope`, `greeting`, `language`, `auto_greet` |
 | `DeclaredChannel` | The channel the kit holds for a registered declaration: bound and routed to, never run in the kit's process |

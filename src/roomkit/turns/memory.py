@@ -31,6 +31,7 @@ from roomkit.turns.base import (
     TurnLink,
     no_executor,
 )
+from roomkit.turns.presence import ExecutorInfo, local_info
 from roomkit.turns.wire import (
     ChannelCall,
     ChannelControlEnvelope,
@@ -207,9 +208,14 @@ class InMemoryTurnBackend(TurnBackend):
         return _OwnerLink(turn, request, self)
 
     async def serve(self, executor: TurnExecutor) -> None:
+        own = self._owner.executor if self._owner is not None else None
         if executor not in self._executors:
             self._executors.append(executor)
+            if executor is not own:
+                executor._listen_closed(self._executors_changed)
         executor.reach_owner(self._port)
+        if executor is not own:
+            await self._executors_changed()
 
     async def attend(self, owner: RoomOwner) -> None:
         if self._owner is not None and self._owner is not owner:
@@ -295,6 +301,10 @@ class InMemoryTurnBackend(TurnBackend):
         if own is not None:
             return [own] if own in self._executors and own.declares(channel_id) else []
         return [e for e in self._executors if e.declares(channel_id)]
+
+    async def executors(self) -> list[ExecutorInfo]:
+        own = self._owner.executor if self._owner is not None else None
+        return [local_info(e) for e in self._executors if e is not own and not e.closed]
 
     def _owning(self, channel_id: str) -> TurnExecutor | None:
         """The owner's own executor when it hosts *channel_id*, closed or not:

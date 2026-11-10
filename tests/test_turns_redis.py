@@ -38,6 +38,8 @@ from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.models.steering import Cancel
 from roomkit.providers.ai.base import AIResponse, AITool, AIToolCall, StreamTextDelta
 from roomkit.providers.ai.mock import MockAIProvider
+from roomkit.realtime import EphemeralEvent, EphemeralEventType
+from roomkit.realtime.memory import InMemoryRealtime
 from roomkit.store.base import ConversationStore
 from roomkit.store.memory import InMemoryStore
 from roomkit.store.sqlite import SQLiteStore
@@ -199,6 +201,80 @@ async def test_a_turn_whose_cpu_stalls_its_executor_keeps_beating(
     finally:
         await kit.close()
         await executor.stop()
+
+
+@pytest.mark.wallclock
+async def test_an_executor_whose_process_died_goes_offline_at_the_heartbeat_timeout(
+    prefix: str, redis_client: Any, database: Path
+) -> None:
+    """The kit lists an executor of another process with its node and last
+    beat. Its process killed, it stays online, the agent it covers with it,
+    until the heartbeat timeout passes without a beat: then both read
+    offline (RFC §10.6.8)."""
+    executor = await _ExecutorProcess.start(prefix, "host-1", database)
+    kit = await _owner(prefix, "worker", store=SQLiteStore(database))
+    try:
+        [before] = await kit.executors()
+        await executor.kill()
+        killed = time.monotonic()
+        [just_after] = await kit.executors()
+        while (await kit.executors())[0].online:
+            assert time.monotonic() - killed < 3 * TIMEOUTS.heartbeat_timeout
+            await asyncio.sleep(TIMEOUTS.heartbeat_interval / 4)
+        silent_for = time.monotonic() - killed
+        presence = await kit.agent_presence("r")
+    finally:
+        await kit.close()
+        await executor.stop()
+
+    assert (before.executor_id, before.hosts, before.online) == ("host-1", {"worker"}, True)
+    assert before.node is not None and before.last_beat is not None
+    assert just_after.online
+    assert silent_for >= TIMEOUTS.heartbeat_timeout - TIMEOUTS.heartbeat_interval
+    assert [(p.channel_id, p.online, p.executors) for p in presence] == [("worker", False, [])]
+
+
+@pytest.mark.wallclock
+async def test_two_room_owners_publish_an_agent_s_presence_change_once(
+    prefix: str, redis_client: Any, database: Path
+) -> None:
+    """Two room owner processes serve room r, whose agent an executor of a
+    third covers. Its process killed, both owners see the agent lose its
+    executors: one of them alone publishes it offline in the room, as one
+    published it online at the attach (RFC §10.6.7)."""
+    executor = await _ExecutorProcess.start(prefix, "host-1", database)
+    realtime = InMemoryRealtime()
+    store = SQLiteStore(database)
+    kits = []
+    for _ in range(2):
+        kit = RoomKit(store=store, turn_backend=_backend(prefix), realtime=realtime)
+        kit.register_channel(SimpleChannel("tx"))
+        kit.register_channel(ChannelDeclaration(channel_id="worker", identity=AgentIdentity()))
+        kits.append(kit)
+    heard: list[str] = []
+    offline = asyncio.Event()
+
+    async def record(event: EphemeralEvent) -> None:
+        if event.type.value.startswith("presence_") and event.user_id == "worker":
+            heard.append(event.type.value)
+            if event.type == EphemeralEventType.PRESENCE_OFFLINE:
+                offline.set()
+
+    await realtime.subscribe_to_room("r", record)
+    try:
+        await kits[0].create_room(room_id="r")
+        await kits[0].attach_channel("r", "tx")
+        await kits[0].attach_channel("r", "worker", category=ChannelCategory.INTELLIGENCE)
+        await executor.kill()
+        await asyncio.wait_for(offline.wait(), 5 * TIMEOUTS.heartbeat_timeout)
+        # Both owners look again meanwhile: a second publication would land.
+        await asyncio.sleep(3 * TIMEOUTS.heartbeat_interval)
+    finally:
+        for kit in kits:
+            await kit.close()
+        await executor.stop()
+
+    assert heard == ["presence_online", "presence_offline"]
 
 
 async def test_a_killed_executor_fails_its_turn_and_the_room_goes_on(

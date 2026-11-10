@@ -85,6 +85,8 @@ class DiscussionView:
         self.live: _Live | None = None
         self.working: dict[str, str] = {}
         """The room's running tasks: task id to the agent the task is for."""
+        self.offline: set[str] = set()
+        """The agents no executor serves now (RFC §10.6.7)."""
         self._owners: dict[str, str] = {}
         """The agent a task is for, told before its start was observed: the
         hooks that report a start are not waited for (RFC §9.3)."""
@@ -115,6 +117,23 @@ class DiscussionView:
             self._said_live(author, text)
         self._add(self._agent_header(author, addressed, by=by), self.agent_style(author))
         self._body(text)
+
+    def presence(self, agent: str, online: bool, *, quiet: bool = False) -> None:
+        """*agent* is online or not, as its presence in the room says; a line
+        says so when it changes, unless *quiet* (the state the console found
+        as it opened)."""
+        if online == (agent not in self.offline):
+            return
+        if online:
+            self.offline.discard(agent)
+            line, style = f"{self._labels.get(agent, agent)} is back online", "class:dim"
+        else:
+            self.offline.add(agent)
+            label = self._labels.get(agent, agent)
+            line, style = f"{label} is offline: no executor serves it", "class:failed"
+        if not quiet:
+            self._add(line, style)
+        self._changed()
 
     # -- What an agent is writing --
 
@@ -288,10 +307,12 @@ class DiscussionView:
 
     def _state(self, channel: str) -> tuple[str, str, str]:
         queue = self.queue
+        if queue is not None and queue.speaking == channel:
+            return "▶", "speaking", "class:speaking"
+        if channel in self.offline:
+            return "○", "offline", "class:failed"
         if queue is None:
             return "·", "", "class:dim"
-        if queue.speaking == channel:
-            return "▶", "speaking", "class:speaking"
         asked = [person for agent, person in queue.asked if agent == channel]
         if channel in queue.listening:
             return "‖", "listening", "class:held"

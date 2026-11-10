@@ -23,6 +23,7 @@ import asyncio
 import contextvars
 import logging
 from collections.abc import Callable, Coroutine, Iterable
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
@@ -38,6 +39,7 @@ from roomkit.turns._redis_presence import Keys, Registry, member_of
 from roomkit.turns._redis_routes import REFUSED, Routes
 from roomkit.turns.base import TurnBackend, TurnTimeouts
 from roomkit.turns.memory import InMemoryTurnBackend
+from roomkit.turns.presence import ExecutorInfo, local_info
 from roomkit.turns.wire import (
     ChannelCall,
     ChannelControlEnvelope,
@@ -208,6 +210,41 @@ class RedisTurnBackend(TurnBackend):
             await self._beat_for(executor)
         # Work a turn began reaches the owner of that turn, here or elsewhere.
         executor.reach_owner(self._routes.port)
+        # The owner's own executor covers nothing kit.executors() lists.
+        if executor is not self._placement.own:
+            executor._listen_closed(self._executors_changed)
+            await self._executors_changed()
+
+    async def claim_presence(self, channel_id: str, room_id: str, online: bool | None) -> bool:
+        """Kept in Redis, so of the room owner processes that see the same
+        change, one alone publishes it."""
+        self._start()
+        return await self._registry.claim_presence(channel_id, room_id, online)
+
+    async def executors(self) -> list[ExecutorInfo]:
+        """This process's executors as they stand, and the other processes'
+        as their beats tell: online while beating within the heartbeat
+        timeout, listed while their process has not withdrawn them."""
+        self._start()
+        own = self._placement.own
+        here = [
+            local_info(e, self.node_id)
+            for e in self._placement.here
+            if e is not own and not e.closed
+        ]
+        elsewhere = [
+            ExecutorInfo(
+                executor_id=declared.executor_id,
+                node=declared.node,
+                hosts=declared.channels.entries,
+                room_hooks=declared.room_hooks,
+                last_beat=datetime.fromtimestamp(beat / 1000, UTC),
+                online=online,
+            )
+            for declared, beat, online in await self._live.declared()
+            if declared.node != self.node_id
+        ]
+        return here + elsewhere
 
     async def attend(self, owner: RoomOwner) -> None:
         self._start()

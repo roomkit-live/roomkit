@@ -182,6 +182,9 @@
   "roomkit.AgentIdentity": {
     "__init__": ["def", "*", "name=None", "role=None", "description=None", "scope=None", "greeting=None", "language=None", "purpose=None", "voice=None", "auto_greet=True"]
   },
+  "roomkit.AgentPresence": {
+    "__init__": ["def", "*", "channel_id", "online", "executors"]
+  },
   "roomkit.AgentReasoningBackend": {
     "__init__": ["def", "agent", "*", "spoken_progress=False"],
     "agent": ["property"],
@@ -928,6 +931,10 @@
     "TOOL_CALL_START": ["member", "'tool_call_start'"],
     "TYPING": ["member", "'typing'"]
   },
+  "roomkit.ExecutorInfo": {
+    "__init__": ["def", "*", "executor_id", "node=None", "hosts=None", "room_hooks=frozenset([])", "last_beat=None", "online=True"],
+    "covers": ["def", "channel_id", "room_hooks=()"]
+  },
   "roomkit.ExecutorLink": {
     "receive": ["async def"],
     "send": ["async def", "frame"],
@@ -1307,8 +1314,10 @@
   "roomkit.InMemoryTurnBackend": {
     "__init__": ["def"],
     "attend": ["async def", "owner"],
+    "claim_presence": ["async def", "channel_id", "room_id", "online"],
     "close": ["async def"],
     "control": ["async def", "message"],
+    "executors": ["async def"],
     "serve": ["async def", "executor"],
     "submit": ["async def", "request"]
   },
@@ -1761,8 +1770,10 @@
   "roomkit.RedisTurnBackend": {
     "__init__": ["def", "url=None", "*", "client=None", "key_prefix='roomkit:turns'", "timeouts=None", "_loop_back=False"],
     "attend": ["async def", "owner"],
+    "claim_presence": ["async def", "channel_id", "room_id", "online"],
     "close": ["async def"],
     "control": ["async def", "message"],
+    "executors": ["async def"],
     "serve": ["async def", "executor"],
     "submit": ["async def", "request"]
   },
@@ -1819,6 +1830,7 @@
     "add_member": ["async def", "room_id", "channel_id", "participant_id", "*", "identity_id=None", "display_name=None", "role=<ParticipantRole.MEMBER: 'member'>", "organization_id=None"],
     "add_room_hook": ["async def", "room_id", "trigger", "execution", "fn", "priority=0", "name=''", "*", "fail_closed=False", "needs_lock=True", "organization_id=None"],
     "add_room_recording_track": ["async def", "room_id", "track", "*", "organization_id=None"],
+    "agent_presence": ["async def", "room_id", "*", "organization_id=None"],
     "answer_input": ["async def", "request_id", "value"],
     "archive_room": ["async def", "room_id", "*", "organization_id=None"],
     "attach_channel": ["async def", "room_id", "channel_id", "category=None", "access=<Access.READ_WRITE: 'read_write'>", "visibility=<Visibility.ALL: 'all'>", "organization_id=None", "**kwargs"],
@@ -1853,6 +1865,7 @@
     "disconnect_websocket": ["async def", "channel_id", "connection_id", "*", "organization_id=None"],
     "enable_room_hook": ["async def", "room_id", "name", "*", "organization_id=None"],
     "ensure_participant": ["async def", "room_id", "channel_id", "participant_id", "display_name=None", "*", "organization_id=None"],
+    "executors": ["async def"],
     "get_binding": ["async def", "room_id", "channel_id", "*", "organization_id=None"],
     "get_channel": ["def", "channel_id"],
     "get_room": ["async def", "room_id", "*", "organization_id=None"],
@@ -2417,8 +2430,10 @@
   },
   "roomkit.TurnBackend": {
     "attend": ["async def", "owner"],
+    "claim_presence": ["async def", "channel_id", "room_id", "online"],
     "close": ["async def"],
     "control": ["async def", "message"],
+    "executors": ["async def"],
     "serve": ["async def", "executor"],
     "submit": ["async def", "request"]
   },
@@ -2809,7 +2824,9 @@
     "update_binding_metadata": ["async def", "room_id", "channel_id", "metadata", "*", "organization_id=None"]
   },
   "roomkit.core.mixins.ChannelStateMixin": {
+    "agent_presence": ["async def", "room_id", "*", "organization_id=None"],
     "channel_call": ["async def", "channel_id", "room_id", "verb", "*", "organization_id=None", "**arguments"],
+    "executors": ["async def"],
     "release_channel": ["async def", "channel_id"]
   },
   "roomkit.core.mixins.DelegationMixin": {

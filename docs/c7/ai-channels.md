@@ -170,6 +170,22 @@ await kit.attach_channel(room_id, "meteo")  # an intelligence binding
   declared agents of every organization the owners serve. A multi-tenant
   host assigns agent ids itself (one prefix per pool kept apart) and never
   lets a tenant choose one.
+- Which agents can answer: `await kit.executors()` lists the executors the
+  turn backend carries turns to (what each declares, its room hooks, its
+  last beat, `online`), and `await kit.agent_presence(room_id)` gives each
+  of the room's agents `online` with the executors covering it there (one
+  defining the room's enabled hooks). The kit publishes `presence_online` /
+  `presence_offline` for an agent (`user_id` its channel id) in a room as it
+  is attached, and in each of its rooms when its covering executors change:
+  an executor's process silent past `heartbeat_timeout` reads offline, not
+  on one late beat. Of several room owner processes, one publishes each
+  change (`TurnBackend.claim_presence`, kept in Redis by `RedisTurnBackend`
+  so a restart publishes nothing unchanged; in process otherwise). A change
+  reaches an agent's 10,000 oldest active or paused rooms at most. A turn
+  backend of your own that does not implement `executors()` has nothing
+  published for the agents the kit holds by declaration, and
+  `agent_presence` reads them offline. `DiscussionConsole` marks an agent
+  no executor serves `offline` (`examples/agent_presence.py`).
 - The kit holds a `DeclaredChannel` under the id: a binding takes its
   `capabilities`, routing plans its turns, `delegate` / `start_task` name it,
   `send_greeting` and auto-greet read its identity (`auto_greet` defaults to

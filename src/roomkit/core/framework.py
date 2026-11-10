@@ -30,6 +30,7 @@ if TYPE_CHECKING:
 from roomkit.channels.base import Channel
 from roomkit.channels.websocket import SendFn, StreamSendFn, WebSocketChannel
 from roomkit.core import _host_post
+from roomkit.core._agent_presence import AgentPresenceWatch
 from roomkit.core._changes import CHANGE_REFUSALS
 from roomkit.core._closing import Cascades, DoorRuns, event_cut_result, inbound_cut_result
 from roomkit.core._instructions import names_an_agent, without_fingerprint
@@ -517,6 +518,9 @@ class RoomKit(
         self._realtime = realtime or InMemoryRealtime()
         self._transcoder = DefaultContentTranscoder()
         self._event_handlers: list[tuple[str, FrameworkEventHandler]] = []
+        # A room closed, by a call or its timer: its agents' presence there
+        # is forgotten (RFC §10.6.7).
+        self._event_handlers.append(("room_closed", self._presence_watch.room_closed))
         self._identity_hooks: dict[HookTrigger, list[IdentityHookRegistration]] = {}
         self._inbound_router = inbound_router or DefaultInboundRoomRouter(
             self._store, channel_of=self._channels.get
@@ -687,6 +691,9 @@ class RoomKit(
         # The kit's executor wires each channel the kit registers from the kit.
         self.turn_executor.use_wiring(KitWiringEnv(self))
         self._turn_hooks = self.turn_executor.hooks
+        # Its agents' presence, published in their rooms (RFC §10.6.7).
+        self._presence_watch = AgentPresenceWatch(self)
+        self._turns._on_first_use = self._presence_watch.start
 
     # -- Properties --
 
@@ -1180,6 +1187,7 @@ class RoomKit(
             # The discussions' turns, their queues kept (RFC §19.7.5 rule 16)
             "discussions": self._stop_discussions(),
             "delegated tasks": self._task_runner.close(),
+            "agent presence": self._presence_watch.close(),
         }
         if self._delivery_backend is not None:
             steps["delivery backend"] = self._delivery_backend.close()

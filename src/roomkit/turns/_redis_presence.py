@@ -22,6 +22,7 @@ import logging
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import quote
 
 from roomkit.turns._hosting import Hosted
 
@@ -184,6 +185,10 @@ class Keys:
     def running(self, node: str) -> str:
         return f"{self.prefix}:running:{node}"
 
+    def agent_presence(self, channel_id: str, room_id: str) -> str:
+        """The presence last published for *channel_id* in *room_id*."""
+        return f"{self.prefix}:presence:{quote(room_id, safe='')}:{quote(channel_id, safe='')}"
+
     def inbox(self, node: str) -> str:
         return f"{self.prefix}:inbox:{node}"
 
@@ -199,6 +204,26 @@ class Keys:
         ]
 
 
+# KEYS: the presence last published for an agent in a room. ARGV: the state
+# (empty: forget it), the key's ttl in ms. 1 when the state changed (the
+# caller publishes it).
+CLAIM_PRESENCE_SCRIPT = """
+if ARGV[1] == '' then
+  redis.call('DEL', KEYS[1])
+  return 0
+end
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  redis.call('PEXPIRE', KEYS[1], ARGV[2])
+  return 0
+end
+redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[2])
+return 1
+"""
+
+# How long a presence published is kept once no change renews it.
+_PRESENCE_TTL_MS = 7 * 24 * 3600 * 1000
+
+
 class Registry:
     """The processes' beats and declarations, on Redis."""
 
@@ -207,6 +232,14 @@ class Registry:
         self._keys = keys
         self._view = client.register_script(_VIEW)
         self._beat = client.register_script(BEAT_SCRIPT)
+        self._claim = client.register_script(CLAIM_PRESENCE_SCRIPT)
+
+    async def claim_presence(self, channel_id: str, room_id: str, online: bool | None) -> bool:
+        """Whether *channel_id*'s presence in *room_id* changes to *online*:
+        one process alone is told so (RFC §10.6.7); ``None`` forgets it."""
+        key = self._keys.agent_presence(channel_id, room_id)
+        state = "" if online is None else "online" if online else "offline"
+        return bool(await self._claim(keys=[key], args=[state, _PRESENCE_TTL_MS]))
 
     async def view(self, forget_after_ms: int) -> View:
         """The processes alive, read now; members silent for

@@ -92,6 +92,7 @@ class HooksApiMixin(HelpersMixin):
     _store: ConversationStore
     _hook_engine: HookEngine
     _turns: Any  # RoomKit's TurnClient
+    _presence_watch: Any  # RoomKit's AgentPresenceWatch
     turn_executor: Any  # RoomKit's own TurnExecutor
     _event_handlers: list[tuple[str, FrameworkEventHandler]]
     _identity_hooks: dict[HookTrigger, list[IdentityHookRegistration]]
@@ -516,6 +517,8 @@ class HooksApiMixin(HelpersMixin):
                 room_id,
             )
         self._turns.enable_room_hook(room_id, name)
+        # Its agents' presence there follows the hooks (RFC §10.6.7).
+        await self._presence_watch.room_changed(room_id)
 
     async def disable_room_hook(
         self, room_id: str, name: str, *, organization_id: str | None = None
@@ -526,4 +529,7 @@ class HooksApiMixin(HelpersMixin):
         :class:`RoomNotFoundError` with nothing disabled."""
         if organization_id is not None:
             await self.get_room(room_id, organization_id=organization_id)
-        return self._turns.disable_room_hook(room_id, name)
+        disabled = self._turns.disable_room_hook(room_id, name)
+        if disabled:
+            await self._presence_watch.room_changed(room_id)
+        return disabled

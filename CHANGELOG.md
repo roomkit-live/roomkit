@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Which agents can answer, and their presence in the room.** `kit.executors()` (and `TurnBackend.executors()`) lists the executors a turn backend carries turns to, with what each declares, its last beat and whether it is online; `kit.agent_presence(room_id)` says, for each of a room's agents, whether an executor online covers it there and which. The kit publishes `presence_online` / `presence_offline` for an agent in its rooms as it is attached and when its covering executors change, one room owner process publishing each change (`TurnBackend.claim_presence`); `DiscussionConsole` shows an agent no executor serves as offline (RFC §10.6.7, RMK-1626, `examples/agent_presence.py`).
 - A call whose model writes the intent property without its leading underscore, `roomkit_intent`, has it taken as its intent instead of refused as an unknown argument; a tool that declares that name keeps it (RFC §6.4, `INTENT_ALIAS`).
 - Muse Ember 1.0 and Claude Fable 5.2 in the model catalogs, with their context
   windows, reasoning support and pricing. Meta discovery includes Ember; its
@@ -21,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Attaching an intelligence channel to a room publishes its presence there (`presence_online` / `presence_offline`, `user_id` its channel id), a live AI channel included: a UI forwarding a room's ephemerals sees its agents as present or not (RFC §10.6.7, RMK-1626).
 - Removed `qwen3-coder-plus` and `grok-imagine-image-quality` from the curated
   catalogs after their disappearance from the upstream mirror; this does not
   assert their retirement from the vendors' APIs.

@@ -12,17 +12,21 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import contextvars
+import logging
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from roomkit.core.exceptions import TurnLinkError
 
+logger = logging.getLogger("roomkit.turns")
+
 if TYPE_CHECKING:
     from roomkit.models.event import RoomEvent
     from roomkit.realtime.base import EphemeralEvent
     from roomkit.turns.executor import TurnExecutor
+    from roomkit.turns.presence import ExecutorInfo
     from roomkit.turns.wire import (
         ChannelControl,
         ChannelResult,
@@ -268,6 +272,9 @@ class TurnBackend(ABC):
     """The bounds every side of its turns keeps, when the backend sets them:
     its processes must agree on them (RFC §10.6.8)."""
 
+    _presence_claims: dict[tuple[str, str], bool] | None = None
+    _executor_watchers: list[Callable[[], Awaitable[None]]] | None = None
+
     @abstractmethod
     async def submit(self, request: TurnRequest) -> TurnLink:
         """Start a turn: an executor that declares its channel takes it. The
@@ -306,6 +313,47 @@ class TurnBackend(ABC):
         §10.6.7).
         Default: nothing reaches an owner outside a turn, and an executor's
         verbs made after their turn are refused."""
+
+    async def claim_presence(self, channel_id: str, room_id: str, online: bool | None) -> bool:
+        """Record that *channel_id* is now *online* (or not) in *room_id*:
+        ``True`` when it is a change, for the one caller that then publishes
+        it there, ``False`` when it was already so (RFC §10.6.7). ``None``
+        forgets it, the channel detached from the room: its next attach
+        there is a change.
+        Default: kept in this process, which fits one room owner process.
+        A backend shared by several keeps it where they all read it."""
+        if self._presence_claims is None:
+            self._presence_claims = {}
+        key = (channel_id, room_id)
+        if online is None:
+            self._presence_claims.pop(key, None)
+            return False
+        if self._presence_claims.get(key) == online:
+            return False
+        self._presence_claims[key] = online
+        return True
+
+    def _watch_executors(self, listener: Callable[[], Awaitable[None]]) -> None:
+        """Have *listener* run when this process serves an executor or one it
+        serves closes; changes elsewhere are read at the next look."""
+        if self._executor_watchers is None:
+            self._executor_watchers = []
+        self._executor_watchers.append(listener)
+
+    async def _executors_changed(self) -> None:
+        for listener in list(self._executor_watchers or ()):
+            try:
+                await listener()
+            except Exception:
+                logger.exception("A watcher of the executors served failed")
+
+    async def executors(self) -> list[ExecutorInfo]:
+        """The executors this backend carries turns to, the owner's own
+        executor aside, with what each declares and whether it is online
+        (RFC §10.6.7, §10.6.8); a closed one is not listed.
+        Default: none known, so the kit reads every agent it holds by its
+        declaration alone as offline."""
+        return []
 
     @abstractmethod
     async def close(self) -> None:

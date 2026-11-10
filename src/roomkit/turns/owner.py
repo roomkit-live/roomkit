@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import weakref
-from collections.abc import Generator, Iterable
+from collections.abc import Callable, Generator, Iterable
 from contextlib import contextmanager
 from functools import partial
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
@@ -161,6 +161,9 @@ class TurnClient(RoomOwner):
         self._events = events
         self._serving = executor is None
         self._attending = False
+        # Run once, as the client first reaches its backend (the kit starts
+        # watching its agents' presence then, RFC §10.6.7).
+        self._on_first_use: Callable[[], None] | None = None
         if executor is not None:
             # Its rooms' hooks follow this client's names, at once (RFC §10.6.6).
             executor._room_hooks_from_owner = True
@@ -392,6 +395,8 @@ class TurnClient(RoomOwner):
         client's own executor on it, once."""
         if not self._attending:
             self._attending = True
+            if self._on_first_use is not None:
+                self._on_first_use()
             await self.backend.attend(self)
         if not self._serving:
             self._serving = True

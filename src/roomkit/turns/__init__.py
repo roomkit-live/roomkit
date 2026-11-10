@@ -24,6 +24,7 @@ from roomkit.turns.executor import TurnExecutor
 from roomkit.turns.host import DeclaredVerb, TurnHost, current_turn_host
 from roomkit.turns.memory import InMemoryTurnBackend
 from roomkit.turns.owner import TurnClient
+from roomkit.turns.presence import AgentPresence, ExecutorInfo
 from roomkit.turns.redis import RedisTurnBackend
 from roomkit.turns.wire import (
     ChannelCall,
@@ -40,11 +41,13 @@ from roomkit.turns.wire import (
 )
 
 __all__ = [
+    "AgentPresence",
     "ChannelCall",
     "CommittedEvent",
     "ChannelControl",
     "ChannelResult",
     "DeclaredVerb",
+    "ExecutorInfo",
     "ExecutorLink",
     "InMemoryTurnBackend",
     "OwnerEvents",

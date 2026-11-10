@@ -1,13 +1,16 @@
 """ChannelStateMixin — what a room keeps for a channel, its per-room verbs,
-and the release of a declared channel's build (RFC §10.6.3, §6.4)."""
+the release of a declared channel's build, and which executors serve the
+room's agents (RFC §10.6.3, §10.6.7, §6.4)."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from roomkit.channels.declared import DeclaredChannel
 from roomkit.core.exceptions import ChannelNotFoundError, ChannelNotRegisteredError
 from roomkit.models.enums import ChannelCategory
 from roomkit.turns._rooms import room_state_key, stored_room_state
+from roomkit.turns.presence import AgentPresence, ExecutorInfo
 from roomkit.turns.wire import ChannelCall, ChannelReleased, RoomDetached
 
 if TYPE_CHECKING:
@@ -15,6 +18,7 @@ if TYPE_CHECKING:
     from roomkit.core.locks import RoomLockManager
     from roomkit.models.channel import ChannelBinding
     from roomkit.store.base import ConversationStore
+    from roomkit.turns.executor import TurnExecutor
     from roomkit.turns.owner import TurnClient
 
 
@@ -26,6 +30,7 @@ class ChannelStateMixin:
     _lock_manager: RoomLockManager
     _channels: dict[str, Channel]
     _turns: TurnClient
+    turn_executor: TurnExecutor
     get_room: Any  # see RoomLifecycleMixin
 
     async def channel_call(
@@ -94,6 +99,50 @@ class ChannelStateMixin:
         if channel_id not in self._channels:
             raise ChannelNotRegisteredError(f"No channel {channel_id!r} is registered")
         await self._turns.control(ChannelReleased(channel_id=channel_id))
+
+    async def executors(self) -> list[ExecutorInfo]:
+        """The executors the kit's turn backend carries turns to, the kit's
+        own aside: what each declares, and whether it is online (RFC
+        §10.6.7, §10.6.8). A closed executor is not listed."""
+        return await self._turns.backend.executors()
+
+    async def agent_presence(
+        self, room_id: str, *, organization_id: str | None = None
+    ) -> list[AgentPresence]:
+        """Each of *room_id*'s agents (its intelligence channels), sorted by
+        channel id: online while an executor online covers it in the room,
+        declaring it and defining the room's enabled hooks, with the ids of
+        those executors (RFC §10.6.7); an agent the kit holds live, while
+        the kit's own executor takes its turns there.
+
+        *organization_id* scopes the read to one tenant (RFC §17.2).
+
+        Raises:
+            RoomNotFoundError: no room *room_id*, or another organization's.
+        """
+        await self.get_room(room_id, organization_id=organization_id)
+        hooks = self._turns.room_hook_names(room_id)
+        infos = await self.executors()
+        agents = [
+            binding.channel_id
+            for binding in await self._store.list_bindings(room_id)
+            if binding.category == ChannelCategory.INTELLIGENCE
+        ]
+        return [self._presence_of(agent, hooks, infos) for agent in sorted(agents)]
+
+    def _presence_of(
+        self, channel_id: str, hooks: list[str], infos: list[ExecutorInfo]
+    ) -> AgentPresence:
+        """Whether *channel_id* can answer in a room with *hooks*: on the
+        kit's own executor for a channel it holds live, else on the executors
+        of *infos* covering it."""
+        channel = self._channels.get(channel_id)
+        if channel is not None and not isinstance(channel, DeclaredChannel):
+            own = self.turn_executor
+            covering = [own.executor_id] if own.takes(channel_id, hooks) else []
+        else:
+            covering = sorted(i.executor_id for i in infos if i.covers(channel_id, hooks))
+        return AgentPresence(channel_id=channel_id, online=bool(covering), executors=covering)
 
     async def _keep_answered_state(
         self, room_id: str, channel_id: str, state: dict[str, Any]

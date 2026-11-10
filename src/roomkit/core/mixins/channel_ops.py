@@ -33,6 +33,7 @@ from roomkit.turns.wire import RoomAttached
 
 if TYPE_CHECKING:
     from roomkit.channels._author_images import AttachedMedia, MediaResolver
+    from roomkit.core._agent_presence import AgentPresenceWatch
     from roomkit.core.event_router import EventRouter
     from roomkit.core.hooks import HookEngine
     from roomkit.core.locks import RoomLockManager
@@ -173,6 +174,7 @@ class ChannelOpsMixin(HelpersMixin):
     _channels: dict[str, Channel]
     _turns: TurnClient
     _owner_tools: OwnerToolStore
+    _presence_watch: AgentPresenceWatch
     _lock_manager: RoomLockManager
     _event_router: EventRouter | None
     _hook_engine: HookEngine
@@ -251,6 +253,9 @@ class ChannelOpsMixin(HelpersMixin):
         )
         self._channels[channel.channel_id] = channel
         self._event_router = None  # Reset router cache
+        if isinstance(channel, DeclaredChannel):
+            # Its presence follows the executors covering it (RFC §10.6.7).
+            self._presence_watch.start()
 
         # Wire protocol trace framework handler on all channels
         channel._trace_framework_handler = self._on_channel_trace
@@ -450,6 +455,9 @@ class ChannelOpsMixin(HelpersMixin):
             # Flush traces that arrived before the room existed
             await self._flush_pending_traces(room_id)
 
+        if result.category == ChannelCategory.INTELLIGENCE:
+            # The agent's presence in the room it joins (RFC §10.6.7).
+            await self._presence_watch.attached(room_id, channel_id)
         # Auto-start voice session for single-user backends (e.g. LocalAudioBackend).
         # Runs AFTER the lock is released to avoid deadlocks if callbacks
         # re-enter the framework (e.g. hooks calling get_room).
@@ -542,6 +550,7 @@ class ChannelOpsMixin(HelpersMixin):
         *organization_id* scopes the operation to one tenant (RFC §17.2); a
         room belonging to another organization is reported as not found.
         """
+        refusal: Exception | None = None
         async with self._lock_manager.locked(room_id):
             # RFC §5.1: the room's due timer transitions apply first.
             await self._room_timers.room_due(room_id, organization_id=organization_id)
@@ -578,15 +587,18 @@ class ChannelOpsMixin(HelpersMixin):
                 # whether, and observers told nothing would go on believing the
                 # channel is attached. The error still reaches the caller, after
                 # the room has been told.
-                refusal: Exception | None = None
                 try:
                     await self._on_room_detached(room_id, binding)
                 except Exception as error:
                     refusal = error
                 await self._announce_detach(room_id, channel_id, refusal)
-                if refusal is not None:
-                    raise refusal
-            return removed
+        if removed and binding.category == ChannelCategory.INTELLIGENCE:
+            # What was published of its presence there is forgotten, out of
+            # the room's lock (RFC §10.6.7).
+            await self._presence_watch.detached(room_id, channel_id)
+        if refusal is not None:
+            raise refusal
+        return removed
 
     async def _record_detach_tombstone(self, room_id: str, channel_id: str) -> None:
         """Persist the revocation of *channel_id*'s binding (RFC §7.5-7).
