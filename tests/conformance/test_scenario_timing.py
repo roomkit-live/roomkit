@@ -19,6 +19,7 @@ _SCENARIO = (
 )
 
 
+@pytest.mark.wallclock
 @pytest.mark.parametrize("store", ["memory", "sqlite"])
 async def test_a_team_timeout_leaves_room_for_a_slow_successful_worker(
     store: str, tmp_path: Path
