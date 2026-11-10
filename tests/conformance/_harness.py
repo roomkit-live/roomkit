@@ -35,6 +35,7 @@ from roomkit.orchestration.base import Orchestration
 from roomkit.orchestration.status_bus import StatusEntry
 from roomkit.realtime import EphemeralEvent, EphemeralEventType, InMemoryRealtime
 from roomkit.store.base import ConversationStore
+from roomkit.store.sqlite import SQLiteStore
 from roomkit.tasks import DelegatedTask, DelegateHandler
 from tests.conformance._acp import ScriptedACPAgent
 from tests.conformance._agent import ScriptedModel, tool_call_record
@@ -173,6 +174,7 @@ class _TextRecorder(InMemoryRealtime):
 KIT_CALLS = frozenset(
     {
         "process_inbound",
+        "regenerate_response",
         "install_strategy",
         "uninstall_strategy",
         "claim_room_strategy",
@@ -559,7 +561,12 @@ class Harness:
     def _process(self) -> RoomKit:
         """Another process serving the rooms: a kit over the run's store and
         lock manager, holding the setup's channels as objects of its own."""
-        kit = RoomKit(store=self.kit.store, lock_manager=self.kit.lock_manager)
+        store = self.kit.store
+        if isinstance(store, SQLiteStore):
+            # Processes share the file, never a connection that one's close
+            # would close for all the others (as in the Rust SQLite runner).
+            store = SQLiteStore(store._path)
+        kit = RoomKit(store=store, lock_manager=self.kit.lock_manager)
         for channel in self.scenario.get("setup", {}).get("channels", []):
             register_channel(kit, self, channel, process=True)
         return kit
