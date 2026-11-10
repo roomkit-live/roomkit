@@ -9,7 +9,7 @@
     "§19.8",
     "§17.2"
   ],
-  "notes": "Python: tests/tasks/test_cancel_task.py::test_a_task_the_host_cancels_is_still_handed_back_to_the_agent, tests/tasks/test_cancelled_delegation.py::test_a_background_delegation_the_runner_cancels_ends_cancelled and test_the_notified_agent_is_told_its_task_was_cancelled, tests/test_room_org_scoping.py::test_a_task_of_another_organizations_room_is_not_cancelled, tests/tasks/test_task_turn_record.py::test_a_task_cut_mid_turn_carries_its_turn_cancelled[cancel-task]; tests/tasks/test_cancel_task.py::test_the_host_and_an_agent_cancelling_at_once_cancel_once (two doors at once, here the host's twice); tests/tasks/test_runner.py::TestInMemoryTaskRunner::test_cancel_running_task, test_cancel_unknown_task; core/mixins/delegation.py cancel_task, _cancel_joined, _task_in_scope; tasks/memory.py cancel; tasks/models.py cancelled_task_fields. The worker's turn is held at a gate while the task is cancelled: its run had begun, so the result names its turn cancelled. Every result, terminal hook, status entry and hand-back names the same task; a late cancellation leaves its cancelled result unchanged.",
+  "notes": "Python: tests/tasks/test_cancel_task.py::test_a_task_the_host_cancels_is_still_handed_back_to_the_agent, tests/tasks/test_cancelled_delegation.py::test_a_background_delegation_the_runner_cancels_ends_cancelled and test_the_notified_agent_is_told_its_task_was_cancelled, tests/test_room_org_scoping.py::test_a_task_of_another_organizations_room_is_not_cancelled, tests/tasks/test_task_turn_record.py::test_a_task_cut_mid_turn_carries_its_turn_cancelled[cancel-task]; tests/tasks/test_cancel_task.py::test_the_host_and_an_agent_cancelling_at_once_cancel_once (two doors at once, here the host's twice); tests/tasks/test_runner.py::TestInMemoryTaskRunner::test_cancel_running_task, test_cancel_unknown_task; core/mixins/delegation.py cancel_task, _cancel_joined, _task_in_scope; tasks/memory.py cancel; tasks/models.py cancelled_task_fields. The worker's turn is held at a gate while the task is cancelled: its run had begun, so the result names its turn cancelled. Every result, terminal hook, status entry and hand-back names the same task; a late cancellation leaves its cancelled result unchanged. The scoped cancellation starts first; its hand-back is held at a second gate until the unscoped cancellation has reached its first wait, joining the cancellation still under way. Merely scheduling both calls together does not guarantee overlap on a multithreaded executor; the gate proves it without relying on scheduling speed.",
   "setup": {
     "channels": [
       {
@@ -41,7 +41,12 @@
       {
         "id": "speaker",
         "type": "ai",
-        "category": "intelligence"
+        "category": "intelligence",
+        "on_event": [
+          {
+            "gate": "handing-back"
+          }
+        ]
       }
     ],
     "rooms": [
@@ -95,23 +100,35 @@
       }
     },
     {
-      "concurrent": [
-        {
-          "call": "cancel_task",
-          "task_id": "$t",
-          "organization_id": "globex",
-          "expect": {
-            "result": true
-          }
-        },
-        {
-          "call": "cancel_task",
-          "task_id": "$t",
-          "expect": {
-            "result": true
-          }
-        }
-      ]
+      "call": "cancel_task",
+      "task_id": "$t",
+      "organization_id": "globex",
+      "background": true,
+      "as": "first_cancel"
+    },
+    {
+      "wait_for": "handing-back"
+    },
+    {
+      "call": "cancel_task",
+      "task_id": "$t",
+      "background": true,
+      "as": "second_cancel"
+    },
+    {
+      "open": "handing-back"
+    },
+    {
+      "await": "first_cancel",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "await": "second_cancel",
+      "expect": {
+        "result": true
+      }
     },
     {
       "call": "task.wait",
