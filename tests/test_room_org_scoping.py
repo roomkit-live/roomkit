@@ -646,7 +646,7 @@ _HOST_DOORS: dict[str, Callable[[RoomKit, str | None], Awaitable[Any]]] = {
         "globex-room", 0.9, comment="great", organization_id=org
     ),
     "steer": lambda kit, org: kit.steer(
-        InjectMessage(content="Mind the budget."), "ai", room_id="globex-room", organization_id=org
+        "globex-room", "ai", InjectMessage(content="Mind the budget."), organization_id=org
     ),
 }
 
@@ -710,17 +710,13 @@ class TestScopedHostDoors:
         assert len(agent.calls) > 1  # the task ran on the room's agent
         await kit.submit_feedback("globex-room", 0.9, organization_id=organization_id)
         assert len(await kit.store.list_observations("globex-room")) == 1
-        steered = await kit.steer(
-            Cancel(), "ai", room_id="globex-room", organization_id=organization_id
-        )
+        steered = await kit.steer("globex-room", "ai", Cancel(), organization_id=organization_id)
         assert steered == 0  # no turn runs
         await kit.close()
 
-    @pytest.mark.parametrize(
-        ("organization_id", "reached"), [("globex", 1), (None, 1), ("acme", 0)]
-    )
-    async def test_a_steer_naming_no_room_reaches_only_its_organizations_turns(
-        self, organization_id: str | None, reached: int
+    @pytest.mark.parametrize("organization_id", ["globex", None], ids=["own", "unscoped"])
+    async def test_a_steer_for_the_rooms_own_organization_or_none_reaches_its_turn(
+        self, organization_id: str | None
     ) -> None:
         tool = _Paused()
         kit, provider = await _globex_turn_held(tool)
@@ -728,14 +724,16 @@ class TestScopedHostDoors:
         await asyncio.wait_for(tool.started.wait(), 2)
 
         count = await kit.steer(
-            InjectMessage(content="Mind the budget."), "ai", organization_id=organization_id
+            "globex-room",
+            "ai",
+            InjectMessage(content="Mind the budget."),
+            organization_id=organization_id,
         )
         tool.release.set()
         await asyncio.wait_for(turn, 5)
 
-        assert count == reached
-        injected = any("Mind the budget." in str(m.content) for m in provider.calls[1].messages)
-        assert injected is bool(reached)
+        assert count == 1
+        assert any("Mind the budget." in str(m.content) for m in provider.calls[1].messages)
         await kit.close()
 
 

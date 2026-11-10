@@ -17,7 +17,7 @@ from roomkit.models.channel import ChannelBinding
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import ChannelCategory, ChannelType
 from roomkit.models.room import Room
-from roomkit.models.steering import Cancel, InjectMessage
+from roomkit.models.steering import Cancel, InjectMessage, SteeringDirective, UpdateSystemPrompt
 from roomkit.providers.ai.base import AIContext, AIResponse
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.tools.context import _ToolLoopContext
@@ -64,19 +64,28 @@ def test_a_room_with_no_running_loop_is_reached_by_nothing() -> None:
     assert not b1.cancel_event.is_set()
 
 
-def test_unaddressed_the_most_recent_loop_is_reached_whatever_its_room() -> None:
+@pytest.mark.parametrize(
+    ("directive", "address"),
+    [
+        (InjectMessage(content="Alice's PIN is 1234."), {}),
+        (UpdateSystemPrompt(append=" Be brief."), {}),
+        (Cancel(reason="stop"), {}),
+        (Cancel(reason="stop"), {"loop_id": "loop-0", "room_id": "A"}),
+    ],
+    ids=["inject", "prompt", "cancel", "loop-and-room"],
+)
+def test_a_steer_naming_not_exactly_one_loop_room_or_turn_is_refused(
+    directive: SteeringDirective, address: dict[str, str]
+) -> None:
+    """The most recent loop may be another person's turn, in another room:
+    a directive names exactly one of its loop, room or turn, or it is
+    refused and reaches no loop."""
     ch, (a1, b1) = _channel_with_loops("A", "B")
 
-    assert ch.steer(InjectMessage(content="hi")) == 1
+    with pytest.raises(ValueError, match="exactly one of a loop_id, a room_id or a turn_id"):
+        ch.steer(directive, **address)
 
-    assert _reached(b1) and not _reached(a1)
-
-
-def test_a_loop_and_a_room_are_not_addressed_together() -> None:
-    ch, _loops = _channel_with_loops("A")
-
-    with pytest.raises(ValueError, match="not several"):
-        ch.steer(Cancel(reason="stop"), loop_id="loop-0", room_id="A")
+    assert not _reached(a1) and not _reached(b1)
 
 
 class _HeldProvider(MockAIProvider):

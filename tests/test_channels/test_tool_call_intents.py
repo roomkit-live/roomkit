@@ -335,7 +335,7 @@ async def test_a_call_a_stop_kept_from_running_ends_with_its_intent(streaming: b
     ends = []
     async for delta in channel._run_streaming_tool_loop(context, parent_loop_ctx=loop):
         if isinstance(delta, ToolCallStartMarker):
-            channel.steer(Cancel(reason="user stopped"))
+            channel.steer(Cancel(reason="user stopped"), room_id="r1")
         elif isinstance(delta, ToolCallEndMarker):
             ends.append((delta.intent, delta.outcome))
     await kit.close()

@@ -545,8 +545,7 @@ async def _cancel_delivery(kit: RoomKit, harness: Harness, spec: Mapping[str, An
 
 async def _steer(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
     directive = _DIRECTIVE.validate_python(spec["directive"])
-    room = {"room_id": spec["room_id"]} if "room_id" in spec else {}
-    return await kit.steer(directive, spec["channel_id"], **room, **_org(spec))
+    return await kit.steer(spec["room_id"], spec["channel_id"], directive, **_org(spec))
 
 
 async def _close(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:

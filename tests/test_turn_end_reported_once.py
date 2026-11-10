@@ -82,7 +82,7 @@ def _agent(channel_id: str, end: str) -> Agent:
 
     async def lookup(name: str, arguments: dict[str, Any]) -> str:
         if end == "cancelled":
-            agents[0].steer(Cancel())
+            agents[0].steer(Cancel(), room_id="r")
         return "found"
 
     agent = Agent(

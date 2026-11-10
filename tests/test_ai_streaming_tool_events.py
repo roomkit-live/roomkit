@@ -675,7 +675,7 @@ async def test_cancelling_mid_composition_ends_the_loop_at_the_next_fragment() -
                 self.pulled += 1
                 yield StreamToolCallDelta(id="tc1", name="publish", arguments_delta="x" * 64)
                 if self.pulled == 3:
-                    channel["ai"].steer(Cancel())
+                    channel["ai"].steer(Cancel(), room_id="r1")
             yield StreamToolCall(id="tc1", name="publish", arguments={"svg": "x" * 3200})
             yield StreamDone(finish_reason="tool_calls")
 
@@ -715,7 +715,7 @@ async def test_cancelling_mid_composition_names_its_exit() -> None:
                 self.pulled += 1
                 yield StreamToolCallDelta(id="tc1", name="publish", arguments_delta="x" * 64)
                 if self.pulled == 3:
-                    holder["ai"].steer(Cancel())
+                    holder["ai"].steer(Cancel(), room_id="r1")
             yield StreamToolCall(id="tc1", name="publish", arguments={"svg": "x" * 3200})
             yield StreamDone(finish_reason="tool_calls")
 
@@ -770,7 +770,7 @@ async def test_cancelling_mid_reasoning_closes_the_thinking_window() -> None:
                 self.pulled += 1
                 yield StreamThinkingDelta(thinking=f"step {i} ")
                 if self.pulled == 3:
-                    holder["ai"].steer(Cancel())
+                    holder["ai"].steer(Cancel(), room_id="r1")
             yield StreamTextDelta(text="never reached")
             yield StreamDone(finish_reason="stop")
 
@@ -894,7 +894,7 @@ async def test_a_round_that_never_reaches_execution_still_closes_the_composition
                 self.pulled += 1
                 yield StreamToolCallDelta(id="tc1", name="publish", arguments_delta="x" * 64)
                 if self.pulled == 3:
-                    holder["ai"].steer(Cancel())
+                    holder["ai"].steer(Cancel(), room_id="r1")
             yield StreamToolCall(id="tc1", name="publish", arguments={"svg": "x" * 3200})
             yield StreamDone(finish_reason="tool_calls")
 

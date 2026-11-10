@@ -174,7 +174,7 @@ async def test_a_stop_while_the_calls_are_announced_runs_none() -> None:
     @turn.kit.hook(HookTrigger.BEFORE_BROADCAST, name="stop_on_start")
     async def stop(event: Any, ctx: Any) -> HookResult:
         if event.type == EventType.TOOL_CALL_START:
-            ai.steer(Cancel(reason="user pressed stop"))
+            ai.steer(Cancel(reason="user pressed stop"), room_id="r1")
         return HookResult.allow()
 
     await turn.say()
@@ -194,7 +194,7 @@ class _StopAfterTheRound(MockAIProvider):
         async for event in super().generate_structured_stream(context):
             yield event
             if isinstance(event, StreamDone) and self.channel is not None:
-                self.channel.steer(Cancel(reason="user pressed stop"))
+                self.channel.steer(Cancel(reason="user pressed stop"), room_id="r1")
 
 
 async def test_a_stop_after_the_models_last_event_announces_nothing() -> None:
@@ -280,7 +280,7 @@ async def test_a_steering_cancel_closes_its_span_cancelled(streaming: bool) -> N
 
     async def cancelling(name: str, arguments: dict[str, Any]) -> str:
         assert ai is not None
-        ai.steer(Cancel())
+        ai.steer(Cancel(), room_id="r1")
         return "ok"
 
     turn.handler = cancelling  # type: ignore[method-assign]

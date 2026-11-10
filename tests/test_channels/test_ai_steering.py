@@ -5,6 +5,8 @@ from __future__ import annotations
 from unittest.mock import AsyncMock
 
 from roomkit.channels.ai import AIChannel
+from roomkit.models.context import RoomContext
+from roomkit.models.room import Room
 from roomkit.models.steering import Cancel, InjectMessage, UpdateSystemPrompt
 from roomkit.providers.ai.base import (
     AIContext,
@@ -30,6 +32,10 @@ def _final_response(content: str = "Done") -> AIResponse:
     return AIResponse(content=content, tool_calls=[])
 
 
+_IN_ROOM = RoomContext(room=Room(id="r1"))
+"""The room a directly run tool loop serves, so a steer addresses it."""
+
+
 def _register_loop(ch: AIChannel) -> _ToolLoopContext:
     """Register a _ToolLoopContext so steer() has an active loop to target."""
     ctx = _ToolLoopContext(loop_id="test-loop")
@@ -45,7 +51,7 @@ class TestSteerMethod:
         loop_ctx = _register_loop(ch)
 
         directive = InjectMessage(content="hello")
-        ch.steer(directive)
+        ch.steer(directive, loop_id="test-loop")
 
         assert not loop_ctx.steering_queue.empty()
         assert loop_ctx.steering_queue.get_nowait() is directive
@@ -56,7 +62,7 @@ class TestSteerMethod:
         ch = AIChannel("ai1", provider=provider)
         loop_ctx = _register_loop(ch)
 
-        ch.steer(Cancel(reason="user abort"))
+        ch.steer(Cancel(reason="user abort"), loop_id="test-loop")
 
         assert loop_ctx.cancel_event.is_set()
         assert not loop_ctx.steering_queue.empty()
@@ -67,18 +73,10 @@ class TestSteerMethod:
         ch = AIChannel("ai1", provider=provider)
         loop_ctx = _register_loop(ch)
 
-        ch.steer(InjectMessage(content="hi"))
-        ch.steer(UpdateSystemPrompt(append=" extra"))
+        ch.steer(InjectMessage(content="hi"), loop_id="test-loop")
+        ch.steer(UpdateSystemPrompt(append=" extra"), loop_id="test-loop")
 
         assert not loop_ctx.cancel_event.is_set()
-
-    def test_steer_no_active_loop_warns(self) -> None:
-        """steer() with no active loop logs a warning and is a no-op."""
-        provider = MockAIProvider()
-        ch = AIChannel("ai1", provider=provider)
-
-        # No active loops — should not raise, just warn
-        ch.steer(InjectMessage(content="lost"))
 
     def test_steer_targets_specific_loop(self) -> None:
         """steer() with explicit loop_id targets that specific loop."""
@@ -94,21 +92,6 @@ class TestSteerMethod:
 
         assert not ctx1.steering_queue.empty()
         assert ctx2.steering_queue.empty()
-
-    def test_steer_defaults_to_latest_loop(self) -> None:
-        """steer() without loop_id targets the most recently added loop."""
-        provider = MockAIProvider()
-        ch = AIChannel("ai1", provider=provider)
-
-        ctx1 = _ToolLoopContext(loop_id="loop-1")
-        ctx2 = _ToolLoopContext(loop_id="loop-2")
-        ch._active_loops["loop-1"] = ctx1
-        ch._active_loops["loop-2"] = ctx2
-
-        ch.steer(InjectMessage(content="for latest"))
-
-        assert ctx1.steering_queue.empty()
-        assert not ctx2.steering_queue.empty()
 
 
 class TestDrainSteeringQueue:
@@ -214,12 +197,12 @@ class TestToolLoopCancellation:
             # On first call, steer cancel into the now-active loop
             if not hasattr(generate_with_cancel, "_called"):
                 generate_with_cancel._called = True  # type: ignore[attr-defined]
-                ch.steer(Cancel(reason="preemptive"))
+                ch.steer(Cancel(reason="preemptive"), room_id="r1")
             return await original_generate(context)
 
         provider.generate = generate_with_cancel  # type: ignore[assignment]
 
-        context = AIContext(messages=[AIMessage(role="user", content="go")])
+        context = AIContext(messages=[AIMessage(role="user", content="go")], room=_IN_ROOM)
         run = await run_tool_loop(ch, context)
 
         # Tool execution should be skipped because cancel was set
@@ -235,7 +218,7 @@ class TestToolLoopCancellation:
             call_count += 1
             if call_count == 1:
                 # Cancel during first tool execution
-                ch.steer(Cancel(reason="mid-run"))
+                ch.steer(Cancel(reason="mid-run"), room_id="r1")
             return "ok"
 
         responses = [_tool_response()] * 10 + [_final_response()]
@@ -248,7 +231,7 @@ class TestToolLoopCancellation:
             tool_loop_timeout_seconds=None,
         )
 
-        context = AIContext(messages=[AIMessage(role="user", content="go")])
+        context = AIContext(messages=[AIMessage(role="user", content="go")], room=_IN_ROOM)
         run = await run_tool_loop(ch, context)
 
         # Tool handler runs once, then drain catches the cancel
@@ -273,7 +256,7 @@ class TestToolLoopCancellation:
         async def handler_that_injects(name: str, args: dict) -> str:
             nonlocal call_count
             call_count += 1
-            ch.steer(InjectMessage(content="urgent update"))
+            ch.steer(InjectMessage(content="urgent update"), room_id="r1")
             return "ok"
 
         ch = AIChannel(
@@ -284,7 +267,7 @@ class TestToolLoopCancellation:
             tool_loop_timeout_seconds=None,
         )
 
-        context = AIContext(messages=[AIMessage(role="user", content="go")])
+        context = AIContext(messages=[AIMessage(role="user", content="go")], room=_IN_ROOM)
         run = await run_tool_loop(ch, context)
 
         assert run.text == "saw it"
@@ -315,7 +298,7 @@ class TestStreamingToolLoopCancellation:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
-                ch.steer(Cancel(reason="stop"))
+                ch.steer(Cancel(reason="stop"), room_id="r1")
             return "ok"
 
         ch = AIChannel(
@@ -326,7 +309,7 @@ class TestStreamingToolLoopCancellation:
             tool_loop_timeout_seconds=None,
         )
 
-        context = AIContext(messages=[AIMessage(role="user", content="go")])
+        context = AIContext(messages=[AIMessage(role="user", content="go")], room=_IN_ROOM)
         chunks: list[str] = []
         async for chunk in ch._run_streaming_tool_loop(context):
             chunks.append(chunk)
@@ -353,7 +336,7 @@ class TestStreamingToolLoopCancellation:
         provider._supports_structured_streaming = True
 
         async def handler_that_cancels(name: str, args: dict) -> str:
-            ch.steer(Cancel(reason="immediate"))
+            ch.steer(Cancel(reason="immediate"), room_id="r1")
             return "ok"
 
         ch = AIChannel(
@@ -364,7 +347,7 @@ class TestStreamingToolLoopCancellation:
             tool_loop_timeout_seconds=None,
         )
 
-        context = AIContext(messages=[AIMessage(role="user", content="go")])
+        context = AIContext(messages=[AIMessage(role="user", content="go")], room=_IN_ROOM)
         chunks: list[str] = []
         async for chunk in ch._run_streaming_tool_loop(context):
             chunks.append(chunk)

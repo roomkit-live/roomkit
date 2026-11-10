@@ -432,56 +432,47 @@ class TurnClient(RoomOwner):
 
     async def steer(
         self,
-        directive: SteeringDirective,
+        room_id: str,
         channel_id: str,
+        directive: SteeringDirective,
         *,
-        room_id: str | None = None,
         turn_id: str | None = None,
         organization_id: str | None = None,
     ) -> int:
-        """Steer the running turns of *channel_id* this client started (RFC
-        §21.3, §10.6.8): the turn *turn_id*; else the turns of *room_id*, all
-        of them for a ``Cancel`` and the most recent for any other directive;
-        else the most recent turn of the channel. How many loops it reached.
-        With *organization_id*, only the turns of that organization's rooms
-        (RFC §17.2).
-
-        Raises:
-            ValueError: both *room_id* and *turn_id* given.
-        """
-        if room_id is not None and turn_id is not None:
-            raise ValueError("steer() addresses a room_id or a turn_id, not both")
+        """Steer the running turns of *channel_id* in *room_id* this client
+        started (RFC §21.3, §10.6.8): the room's turn *turn_id* alone when
+        given, else all of the room's turns for a ``Cancel`` and its most
+        recent for any other directive; never a turn of another room. How
+        many loops it reached. With *organization_id*, only the turns of that
+        organization's rooms (RFC §17.2)."""
         await self._handed_over(channel_id, room_id, turn_id)
-        running = [
+        in_room = [
             t
             for t in self._started
             if not t.over
             and t.request.channel_id == channel_id
+            and t.request.room_id == room_id
             and (
                 organization_id is None
                 or t.request.context.room.organization_id == organization_id
             )
         ]
         if turn_id is not None:
-            targets = [t for t in running if t.request.turn_id == turn_id]
-        elif room_id is not None:
-            in_room = [t for t in running if t.request.room_id == room_id]
-            targets = in_room if isinstance(directive, SteeringCancel) else in_room[-1:]
+            targets = [t for t in in_room if t.request.turn_id == turn_id]
         else:
-            targets = running[-1:]
+            targets = in_room if isinstance(directive, SteeringCancel) else in_room[-1:]
         reached = await asyncio.gather(*(turn.steer(directive) for turn in targets))
         return sum(reached)
 
-    async def _handed_over(
-        self, channel_id: str, room_id: str | None, turn_id: str | None
-    ) -> None:
-        """Wait for the turns of *channel_id* (in *room_id*, or *turn_id*)
-        still being handed to an executor: each may already run there."""
+    async def _handed_over(self, channel_id: str, room_id: str, turn_id: str | None) -> None:
+        """Wait for the turns of *channel_id* in *room_id* (its turn
+        *turn_id*, when given) still being handed to an executor: each may
+        already run there."""
         pending = [
             handed
             for request, handed in self._handing.values()
             if request.channel_id == channel_id
-            and (room_id is None or request.room_id == room_id)
+            and request.room_id == room_id
             and (turn_id is None or request.turn_id == turn_id)
         ]
         if pending:

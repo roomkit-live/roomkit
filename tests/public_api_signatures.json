@@ -1939,7 +1939,7 @@
     "start_room_recording": ["async def", "room_id", "recorders", "*", "organization_id=None"],
     "start_task": ["async def", "room_id", "agent_id", "task", "*", "hand_back=None", "organization_id=None"],
     "status_bus": ["property"],
-    "steer": ["async def", "directive", "channel_id", "*", "room_id=None", "turn_id=None", "organization_id=None"],
+    "steer": ["async def", "room_id", "channel_id", "directive", "*", "turn_id=None", "organization_id=None"],
     "stop_room_recording": ["async def", "room_id", "*", "organization_id=None"],
     "store": ["property"],
     "stt": ["property"],
@@ -2449,7 +2449,7 @@
     "room_hook_names": ["def", "room_id"],
     "room_publication": ["async def", "message"],
     "run": ["async def", "event", "binding", "context", "*", "strategy_turn=False"],
-    "steer": ["async def", "directive", "channel_id", "*", "room_id=None", "turn_id=None", "organization_id=None"]
+    "steer": ["async def", "room_id", "channel_id", "directive", "*", "turn_id=None", "organization_id=None"]
   },
   "roomkit.TurnCutShortError": {
     "__init__": ["def", "message", "reason"]

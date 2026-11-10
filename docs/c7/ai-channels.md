@@ -287,8 +287,8 @@ Runnable: `examples/agent_steered_turn.py`.
 
 `steer()` hands a running tool loop a directive (`Cancel`, `InjectMessage`,
 `UpdateSystemPrompt`, RFC §21.3) and returns how many loops it reached. One
-channel object serves every room it is bound to, so a host acting for one
-room addresses that room:
+channel object serves every room it is bound to, so a directive names exactly
+one of the loop, the room or the turn it is for (`ValueError` otherwise):
 
 ```python
 from roomkit.models import Cancel, InjectMessage
@@ -298,8 +298,7 @@ agent.steer(InjectMessage(content="Also check the logs."), room_id="room-a")  # 
 agent.steer(Cancel(reason="timeout"), loop_id="loop-abc123")   # one loop
 ```
 
-Without `loop_id` or `room_id`, a directive reaches the channel's most
-recent loop, whatever its room. A loop is reachable once its turn has started
+A loop is reachable once its turn has started
 (its response stream is read): a directive that comes before reaches none, and
 `steer()` returns 0. A loop reads its directives before each round and once
 the model has answered: an `InjectMessage` that came during the answer has the
@@ -311,18 +310,23 @@ that may run them in another process steers through the kit, which reaches
 the turns it started wherever they run:
 
 ```python
-reached = await kit.steer(Cancel(reason="stop pressed"), "agent", room_id="room-a")
+reached = await kit.steer("room-a", "agent", Cancel(reason="stop pressed"))
+await kit.steer("room-a", "agent", InjectMessage(content="Also check the logs."))
+await kit.steer("room-a", "agent", Cancel(), turn_id=turn_id)  # one turn of room-a
 ```
 
-`kit.steer(directive, channel_id, room_id=..., turn_id=...)` follows the same
-rules (a `Cancel` reaches every turn of the room, another directive the most
-recent one) and answers the loops reached. A channel without steering (an ACP
-agent) takes a `Cancel` as its turn's cancel, counted as one. With
-`kit.steer(..., organization_id=...)` (RFC §17.2), a `room_id` of another
-organization raises `RoomNotFoundError`, and only the turns of that
-organization's rooms are reached. `agent.steer()` reaches the loops of the
-process it is called in, whatever room's: the channel holds no store, and
-the kit's `steer()` is the door that reads the room.
+`kit.steer(room_id, channel_id, directive, *, turn_id=None)` always names the
+room: a `Cancel` reaches every turn of the agent in the room, another
+directive the most recent one, and `turn_id` narrows it to one turn of that
+room (a turn of another room is reached by nothing). It answers the loops
+reached. A channel without steering (an ACP agent) takes a `Cancel` as its
+turn's cancel, counted as one. To stop the turns one message starts, started
+or not, cancel its delivery (`DeliveryHandle.cancel()`,
+`kit.cancel_delivery(key)`) rather than steering the room. With
+`kit.steer(..., organization_id=...)` (RFC §17.2), a room of another
+organization raises `RoomNotFoundError`. `agent.steer()` reaches the loops of
+the process it is called in: the channel holds no store, and the kit's
+`steer()` is the door that reads the room.
 
 ## Tool Calling
 

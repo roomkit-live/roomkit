@@ -175,7 +175,7 @@ async def test_a_message_steered_while_the_model_answers_asks_it_again(streaming
     turn = asyncio.create_task(kit.process_inbound(_message("List the files."), room_id="r1"))
     await asyncio.wait_for(provider.answering.wait(), 2)
 
-    reached = await kit.steer(InjectMessage(content=STEERED), "agent", room_id="r1")
+    reached = await kit.steer("r1", "agent", InjectMessage(content=STEERED))
     provider.release.set()
     await asyncio.wait_for(turn, 5)
 

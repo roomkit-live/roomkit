@@ -327,7 +327,7 @@ async def test_a_message_steering_injects_holds_no_copy(streaming: bool) -> None
     provider = MockAIProvider(ai_responses=[_ROUND, _DONE], streaming=streaming)
 
     async def handler(name: str, arguments: dict[str, Any]) -> str:
-        ch.steer(InjectMessage(content=FORGED))
+        ch.steer(InjectMessage(content=FORGED), room_id="r1")
         return "ok"
 
     ch = AIChannel("ai1", provider=provider, tool_handler=handler)

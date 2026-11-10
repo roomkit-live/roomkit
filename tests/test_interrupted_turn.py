@@ -248,7 +248,7 @@ async def test_a_turn_cancelled_between_rounds_adds_no_terminal_text(streaming: 
 
     async def cancelling(name: str, arguments: dict[str, Any]) -> str:
         assert ai is not None
-        ai.steer(Cancel())
+        ai.steer(Cancel(), room_id="r1")
         return "ok"
 
     provider = MockAIProvider(
@@ -272,7 +272,7 @@ async def test_a_turn_without_final_text_keeps_its_record_on_its_last_message(
 
     async def cancelling(name: str, arguments: dict[str, Any]) -> str:
         assert ai is not None
-        ai.steer(Cancel())
+        ai.steer(Cancel(), room_id="r1")
         return "ok"
 
     provider = MockAIProvider(
@@ -528,7 +528,7 @@ class TestTheTurnRecord:
 
         async def cancelling(name: str, arguments: dict[str, Any]) -> str:
             assert ai is not None
-            ai.steer(Cancel())
+            ai.steer(Cancel(), room_id="r1")
             return "ok"
 
         provider = MockAIProvider(
@@ -555,7 +555,7 @@ class TestTheTurnRecord:
 
         async def cancelling(name: str, arguments: dict[str, Any]) -> str:
             assert ai is not None
-            ai.steer(Cancel())
+            ai.steer(Cancel(), room_id="r1")
             return "ok"
 
         async def broken(*args: Any, **kwargs: Any) -> Any:
@@ -604,7 +604,7 @@ async def test_a_turn_cancelled_mid_answer_keeps_its_text_marked_cancelled() -> 
         )
     )
     await provider.started.wait()
-    ai.steer(Cancel())
+    ai.steer(Cancel(), room_id="r1")
     provider.release.set()
     await turn
 

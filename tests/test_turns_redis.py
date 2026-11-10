@@ -551,7 +551,7 @@ async def test_a_steering_cancel_reaches_a_turn_elsewhere(prefix: str, redis_cli
         turn = asyncio.ensure_future(kit.process_inbound(_said("Hi."), room_id="r"))
         await asyncio.wait_for(started.wait(), 5)
         await asyncio.sleep(0.1)
-        reached = await kit.steer(Cancel(), "worker", room_id="r")
+        reached = await kit.steer("r", "worker", Cancel())
         result = await asyncio.wait_for(turn, 5)
 
         assert reached == 1

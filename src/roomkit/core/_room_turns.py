@@ -46,7 +46,7 @@ Reaction = Callable[[Channel, RoomEvent, ChannelBinding, RoomContext], Awaitable
 
 Steer = Callable[..., Awaitable[int]]
 """How the room's owner steers a channel's running turns in a room:
-``TurnClient.steer(directive, channel_id, room_id=...)``, how many it reached."""
+``TurnClient.steer(room_id, channel_id, directive)``, how many it reached."""
 
 _HELD: contextvars.ContextVar[tuple[_Place, ...]] = contextvars.ContextVar(
     "roomkit_room_turn_places", default=()
@@ -161,7 +161,7 @@ class RoomTurns:
         message = steered_message(event, context, channel.channel_id)
         if message is None:
             return False
-        reached = await self._steer(message, channel.channel_id, room_id=context.room.id)
+        reached = await self._steer(context.room.id, channel.channel_id, message)
         return reached > 0
 
     async def _start(

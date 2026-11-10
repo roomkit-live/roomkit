@@ -283,7 +283,7 @@ async def test_a_steering_cancel_cancels_the_prompt_as_its_own_cancel_does(
     said = asyncio.create_task(_say(kit, "read every file"))
     await asyncio.wait_for(connection.prompted.wait(), 5)
 
-    reached = await kit.steer(Cancel(reason="hold"), AGENT, room_id=ROOM)
+    reached = await kit.steer(ROOM, AGENT, Cancel(reason="hold"))
     await asyncio.wait_for(said, 5)
     await asyncio.sleep(0.05)
 
@@ -298,7 +298,7 @@ async def test_a_steering_cancel_reaches_no_idle_acp_agent(tmp_path: Any) -> Non
     channel, connection, _ = _channel(tmp_path, emit_updates=False)
     kit = await _room(channel)
     await _say(kit, "hello")
-    assert await kit.steer(Cancel(reason="hold"), AGENT, room_id=ROOM) == 0
+    assert await kit.steer(ROOM, AGENT, Cancel(reason="hold")) == 0
     assert connection.cancelled_sessions == []
     await kit.close()
 
@@ -327,7 +327,7 @@ async def test_a_steering_cancel_while_the_session_opens_stops_the_prompt(
     said = asyncio.create_task(_say(kit, "hello"))
     await asyncio.wait_for(connection.opening.wait(), 5)
 
-    assert await kit.steer(Cancel(reason="hold"), AGENT, room_id=ROOM) == 1
+    assert await kit.steer(ROOM, AGENT, Cancel(reason="hold")) == 1
     connection.release.set()
     await asyncio.wait_for(said, 5)
 
@@ -356,7 +356,7 @@ async def test_a_steering_cancel_before_the_agent_is_reached_cuts_the_turn(
     await asyncio.wait_for(contributing.wait(), 5)
 
     # No prompt of the turn is out yet: the owner cuts the turn itself.
-    assert await kit.steer(Cancel(reason="hold"), AGENT, room_id=ROOM) == 1
+    assert await kit.steer(ROOM, AGENT, Cancel(reason="hold")) == 1
     release.set()
     await asyncio.wait_for(said, 5)
     assert connection.prompt_calls == []

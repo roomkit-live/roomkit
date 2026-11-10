@@ -76,7 +76,7 @@ async def test_a_cut_while_the_executor_waits_for_a_pull_closes_the_stream_in_th
     assert isinstance(await anext(stream), SegmentBreakMarker)
     await asyncio.sleep(0.05)
 
-    assert await client.steer(Cancel(), "agent", room_id="room") == 1
+    assert await client.steer("room", "agent", Cancel()) == 1
     assert [item async for item in stream] == []
     turn_id = client._started[0].request.turn_id
     await client.close()
@@ -289,7 +289,7 @@ async def test_a_steering_cut_s_last_record_reaches_its_reader() -> None:
     assert await anext(stream) == "text"
     assert isinstance(await anext(stream), SegmentBreakMarker)
     await asyncio.sleep(0.02)
-    assert await client.steer(Cancel(), "agent", room_id="room") == 1
+    assert await client.steer("room", "agent", Cancel()) == 1
     await asyncio.sleep(0.05)  # the turn's end comes before the reader reads on
 
     assert [item async for item in stream] == []
@@ -318,7 +318,7 @@ async def test_a_second_cut_lets_the_first_cut_s_close_run_the_stream_s_cleanup(
     assert isinstance(await anext(stream), SegmentBreakMarker)
     await asyncio.sleep(0.02)
     turn_id = client._started[0].request.turn_id
-    await client.steer(Cancel(), "agent", room_id="room")  # the cut closes the stream
+    await client.steer("room", "agent", Cancel())  # the cut closes the stream
     await asyncio.sleep(0.01)
     if second == "reader_cancelled":
         reader = asyncio.ensure_future(anext(stream))
@@ -326,7 +326,7 @@ async def test_a_second_cut_lets_the_first_cut_s_close_run_the_stream_s_cleanup(
         reader.cancel("kit_closed")
         await asyncio.gather(reader, return_exceptions=True)
     else:
-        await client.steer(Cancel(), "agent", room_id="room")
+        await client.steer("room", "agent", Cancel())
     async with asyncio.timeout(1):  # the first cut's close runs the cleanup
         while not log:
             await asyncio.sleep(0.005)

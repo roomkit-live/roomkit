@@ -48,7 +48,7 @@ class AISteeringMixin(_AIChannelContract):
         Safe to call from any coroutine. Cancel directives also set the
         fast-path cancel event so the loop can exit without waiting for
         the next drain point. One channel object serves every room it is
-        bound to, so a host acting for one room addresses that room.
+        bound to, so a host names the one loop, room or turn it acts for.
 
         Args:
             directive: The steering directive to enqueue.
@@ -60,25 +60,20 @@ class AISteeringMixin(_AIChannelContract):
                 names it (RFC §10.6.8): a ``Cancel`` reaches every one, any
                 other directive the most recent.
 
-        With neither, the directive reaches the most recently started loop,
-        whatever its room.
-
         Returns:
             How many loops the directive reached. A loop is reachable once
             its turn has started (its response stream is read), so a
             directive that comes before reaches none.
 
         Raises:
-            ValueError: more than one of *loop_id*, *room_id* and *turn_id* given.
+            ValueError: not exactly one of *loop_id*, *room_id* and
+                *turn_id* given.
         """
-        if sum(x is not None for x in (loop_id, room_id, turn_id)) > 1:
-            raise ValueError("steer() addresses a loop_id, a room_id or a turn_id, not several")
+        if sum(x is not None for x in (loop_id, room_id, turn_id)) != 1:
+            raise ValueError("steer() addresses exactly one of a loop_id, a room_id or a turn_id")
         targets = self._steering_targets(directive, loop_id, room_id, turn_id)
         if not targets:
-            if room_id is None and turn_id is None:
-                logger.warning("steer() called with no active tool loop")
-            else:
-                logger.info("steer(): no active tool loop for %s", room_id or turn_id)
+            logger.info("steer(): no active tool loop for %s", loop_id or room_id or turn_id)
             return 0
         for ctx in targets:
             ctx.steering_queue.put_nowait(directive)
@@ -135,18 +130,17 @@ class AISteeringMixin(_AIChannelContract):
         room_id: str | None,
         turn_id: str | None = None,
     ) -> list[_ToolLoopContext]:
-        """The running loops *directive* reaches, as :meth:`steer` addresses
-        them: none that has read its queue for the last time."""
+        """The running loops *directive* reaches at the one address
+        :meth:`steer` was given: none that has read its queue for the last
+        time."""
         if loop_id is not None:
             ctx = self._active_loops.get(loop_id)
             return [ctx] if ctx is not None and not ctx.steering_closed else []
         loops = [ctx for ctx in self._active_loops.values() if not ctx.steering_closed]
         if turn_id is not None:
             addressed = [ctx for ctx in loops if ctx.turn_id == turn_id]
-        elif room_id is not None:
-            addressed = [ctx for ctx in loops if ctx.room_id == room_id]
         else:
-            return loops[-1:]
+            addressed = [ctx for ctx in loops if ctx.room_id == room_id]
         return addressed if isinstance(directive, Cancel) else addressed[-1:]
 
     def _drain_steering_queue(

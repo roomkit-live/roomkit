@@ -410,7 +410,7 @@ async def test_an_async_steer_of_the_channel_is_awaited() -> None:
     while ("turn", "room") not in first.log:
         await asyncio.sleep(0.01)
 
-    reached = await client.steer(Cancel(reason="hold"), "agent", room_id="room")
+    reached = await client.steer("room", "agent", Cancel(reason="hold"))
 
     assert reached == 1
     await asyncio.wait_for(turn, 5)

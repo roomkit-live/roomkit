@@ -198,7 +198,7 @@ class _CancelledWhileAnswering(MockAIProvider):
     channel: AIChannel
 
     def _next_response(self) -> AIResponse:
-        self.channel.steer(Cancel(reason="the user stopped it"))
+        self.channel.steer(Cancel(reason="the user stopped it"), room_id="r1")
         return super()._next_response()
 
 

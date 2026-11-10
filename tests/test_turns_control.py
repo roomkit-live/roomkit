@@ -99,7 +99,7 @@ async def test_a_directive_for_a_room_reaches_its_turns_loop() -> None:
     turn = asyncio.create_task(kit.process_inbound(_message(), room_id="r1"))
     await asyncio.wait_for(tool.started.wait(), 2)
 
-    reached = await kit.steer(InjectMessage(content="Mind the budget."), "agent", room_id="r1")
+    reached = await kit.steer("r1", "agent", InjectMessage(content="Mind the budget."))
     tool.release.set()
     await asyncio.wait_for(turn, 5)
 
@@ -116,7 +116,7 @@ async def test_a_cancel_for_a_room_ends_its_turn_before_another_round() -> None:
     turn = asyncio.create_task(kit.process_inbound(_message(), room_id="r1"))
     await asyncio.wait_for(tool.started.wait(), 2)
 
-    reached = await kit.steer(Cancel(reason="stop"), "agent", room_id="r1")
+    reached = await kit.steer("r1", "agent", Cancel(reason="stop"))
     tool.release.set()
     await asyncio.wait_for(turn, 5)
 
@@ -128,9 +128,8 @@ async def test_a_cancel_for_a_room_ends_its_turn_before_another_round() -> None:
 async def test_a_directive_for_a_room_with_no_turn_reaches_nothing() -> None:
     kit, _ = await _kit(Paused())
 
-    assert await kit.steer(Cancel(), "agent", room_id="r1") == 0
-    with pytest.raises(ValueError):
-        await kit.steer(Cancel(), "agent", room_id="r1", turn_id="t1")
+    assert await kit.steer("r1", "agent", Cancel()) == 0
+    assert await kit.steer("r1", "agent", Cancel(), turn_id="t1") == 0
     await kit.close()
 
 
@@ -205,11 +204,28 @@ async def test_a_directive_for_a_turn_reaches_that_turns_loop_even_unread() -> N
 
     # Nobody reads the stream: the owner still hears the turn's answer.
     reached = await asyncio.wait_for(
-        client.steer(InjectMessage(content="x"), "agent", turn_id=turn_id), 2
+        client.steer("room", "agent", InjectMessage(content="x"), turn_id=turn_id), 2
     )
 
     assert reached == 1
     assert channel.steered == [(InjectMessage(content="x"), turn_id)]
+    channel.release.set()
+    assert output.response_stream is not None
+    assert "".join([item async for item in output.response_stream]) == "firstsecond"
+    await client.close()
+
+
+async def test_a_turn_client_acting_for_an_organization_reaches_no_turn_outside_it() -> None:
+    """RFC §17.2: given an organization, a turn client reaches only the
+    turns of that organization's rooms; a turn of a room outside it reads as
+    one that does not run."""
+    channel = Steerable()
+    client = _client(channel)
+    output = await _start(client)
+
+    assert await client.steer("room", "agent", Cancel(), organization_id="globex") == 0
+
+    assert channel.steered == []
     channel.release.set()
     assert output.response_stream is not None
     assert "".join([item async for item in output.response_stream]) == "firstsecond"
@@ -224,7 +240,7 @@ async def test_a_cancel_for_a_channel_without_steering_cuts_its_turn() -> None:
     stream = output.response_stream
     assert await anext(stream) == "first"
 
-    reached = await asyncio.wait_for(client.steer(Cancel(), "agent", room_id="room"), 2)
+    reached = await asyncio.wait_for(client.steer("room", "agent", Cancel()), 2)
     # The turn ends as a closed stream would: no error for its reader.
     rest = [item async for item in stream]
 
@@ -259,7 +275,7 @@ async def test_a_close_after_a_cut_lets_the_channel_finish_its_cleanup() -> None
     stream = output.response_stream
     assert await anext(stream) == "first"
 
-    await asyncio.wait_for(client.steer(Cancel(), "agent", room_id="room"), 2)
+    await asyncio.wait_for(client.steer("room", "agent", Cancel()), 2)
     await asyncio.wait_for(channel.unwinding.wait(), 2)
     # A close reaching the executor while the cut's cleanup runs does not
     # cancel the cleanup again: the channel's finalizer runs to its end.
@@ -302,7 +318,7 @@ async def test_a_cut_after_a_close_lets_the_channel_finish_its_cleanup() -> None
     # The close finds no read under way: it starts the channel's cleanup.
     closing = asyncio.create_task(stream.aclose())
     await asyncio.wait_for(channel.unwinding.wait(), 2)
-    await asyncio.wait_for(client.steer(Cancel(), "agent", room_id="room"), 2)
+    await asyncio.wait_for(client.steer("room", "agent", Cancel()), 2)
     await asyncio.sleep(0.05)
     channel.release.set()
     await asyncio.wait_for(closing, 2)
@@ -316,7 +332,7 @@ async def test_a_directive_other_than_cancel_reaches_no_channel_without_steering
     client = _client(channel)
     output = await _start(client)
 
-    assert await client.steer(InjectMessage(content="x"), "agent", room_id="room") == 0
+    assert await client.steer("room", "agent", InjectMessage(content="x")) == 0
     channel.release.set()
     assert output.response_stream is not None
     assert "".join([item async for item in output.response_stream]) == "firstsecond"
@@ -387,7 +403,11 @@ async def test_a_turn_addressed_by_the_id_its_tool_reads() -> None:
 
     [turn_id] = turn_ids
     assert turn_id is not None
-    reached = await kit.steer(InjectMessage(content="Mind the budget."), "agent", turn_id=turn_id)
+    # A turn is addressed within its room: named with another, it is not reached.
+    assert await kit.steer("r2", "agent", InjectMessage(content="For r2."), turn_id=turn_id) == 0
+    reached = await kit.steer(
+        "r1", "agent", InjectMessage(content="Mind the budget."), turn_id=turn_id
+    )
     tool.release.set()
     await asyncio.wait_for(turn, 5)
 
@@ -403,9 +423,9 @@ async def test_a_cancel_reaches_every_turn_of_the_room_another_directive_the_lat
     second = await _start(client)
     turn_ids = [turn.request.turn_id for turn in client._started]
 
-    assert await client.steer(InjectMessage(content="x"), "agent", room_id="room") == 1
+    assert await client.steer("room", "agent", InjectMessage(content="x")) == 1
     assert channel.steered[-1][1] == turn_ids[1]
-    assert await client.steer(Cancel(), "agent", room_id="room") == 2
+    assert await client.steer("room", "agent", Cancel()) == 2
     channel.release.set()
     for output in (first, second):
         assert output.response_stream is not None
@@ -437,7 +457,7 @@ async def test_a_steer_of_the_channels_own_older_shape_takes_the_turns_room() ->
     client = _client(channel)
     output = await _start(client)
 
-    assert await asyncio.wait_for(client.steer(Cancel(), "agent", room_id="room"), 2) == 1
+    assert await asyncio.wait_for(client.steer("room", "agent", Cancel()), 2) == 1
     assert channel.steered == [(Cancel(), "room")]
     # The turn's controls still run: its stream reads to its end.
     channel.release.set()
@@ -451,7 +471,7 @@ async def test_a_steer_that_fails_reaches_nothing_and_the_turn_goes_on() -> None
     client = _client(channel)
     output = await _start(client)
 
-    assert await asyncio.wait_for(client.steer(Cancel(), "agent", room_id="room"), 2) == 0
+    assert await asyncio.wait_for(client.steer("room", "agent", Cancel()), 2) == 0
     channel.release.set()
     assert output.response_stream is not None
     assert "".join([item async for item in output.response_stream]) == "firstsecond"
@@ -474,7 +494,7 @@ async def test_a_call_a_steering_cancel_left_open_ends_cancelled() -> None:
     stream = output.response_stream
     start = await anext(stream)
 
-    assert await asyncio.wait_for(client.steer(Cancel(), "agent", room_id="room"), 2) == 1
+    assert await asyncio.wait_for(client.steer("room", "agent", Cancel()), 2) == 1
     rest = [item async for item in stream]
 
     [end] = rest
@@ -532,7 +552,7 @@ async def test_a_call_left_open_ends_cancelled_for_a_reader_that_comes_late() ->
     stream = output.response_stream
     start = await anext(stream)
 
-    assert await asyncio.wait_for(client.steer(Cancel(), "agent", room_id="room"), 2) == 1
+    assert await asyncio.wait_for(client.steer("room", "agent", Cancel()), 2) == 1
     async with asyncio.timeout(2):
         while not client._started[0].over:
             await asyncio.sleep(0.01)
@@ -571,7 +591,7 @@ async def test_a_turn_cut_while_its_channel_is_built_never_runs() -> None:
         while not client._started:
             await asyncio.sleep(0.01)
 
-    assert await asyncio.wait_for(client.steer(Cancel(), "agent", room_id="room"), 2) == 1
+    assert await asyncio.wait_for(client.steer("room", "agent", Cancel()), 2) == 1
     built.set()
     output = await asyncio.wait_for(started, 2)
 
@@ -631,9 +651,7 @@ async def test_a_steer_reaches_a_turn_still_being_handed_over() -> None:
     output = asyncio.ensure_future(_start(client))
     await asyncio.wait_for(backend.handed.wait(), 2)  # handed over, not yet acknowledged
 
-    steering = asyncio.ensure_future(
-        client.steer(InjectMessage(content="x"), "agent", room_id="room")
-    )
+    steering = asyncio.ensure_future(client.steer("room", "agent", InjectMessage(content="x")))
     for _ in range(5):  # the steer under way while the handover waits
         await asyncio.sleep(0)
     backend.acked.set()

@@ -1205,7 +1205,7 @@ key two tenants both chose only reaches the caller's rooms. Pass it to
 `process_inbound` as well: a call without it belongs to no organization until
 it reads its room (right after routing), and a scoped cancel reaching it
 before is applied then, uncounted. A call refused before its commit reports
-its refusal, not the cancellation. A `kit.steer(Cancel(), ...)` reaches only
+its refusal, not the cancellation. A `kit.steer(room_id, channel_id, Cancel())` reaches only
 turns that have started; use the delivery to stop one message's turns.
 External effects already committed and tasks detached by application handlers
 are outside this cancellation contract. See `examples/cancel_delivery.py`.
@@ -2382,8 +2382,8 @@ Runnable: `examples/agent_steered_turn.py`.
 
 `steer()` hands a running tool loop a directive (`Cancel`, `InjectMessage`,
 `UpdateSystemPrompt`, RFC §21.3) and returns how many loops it reached. One
-channel object serves every room it is bound to, so a host acting for one
-room addresses that room:
+channel object serves every room it is bound to, so a directive names exactly
+one of the loop, the room or the turn it is for (`ValueError` otherwise):
 
 ```python
 from roomkit.models import Cancel, InjectMessage
@@ -2393,8 +2393,7 @@ agent.steer(InjectMessage(content="Also check the logs."), room_id="room-a")  # 
 agent.steer(Cancel(reason="timeout"), loop_id="loop-abc123")   # one loop
 ```
 
-Without `loop_id` or `room_id`, a directive reaches the channel's most
-recent loop, whatever its room. A loop is reachable once its turn has started
+A loop is reachable once its turn has started
 (its response stream is read): a directive that comes before reaches none, and
 `steer()` returns 0. A loop reads its directives before each round and once
 the model has answered: an `InjectMessage` that came during the answer has the
@@ -2406,18 +2405,23 @@ that may run them in another process steers through the kit, which reaches
 the turns it started wherever they run:
 
 ```python
-reached = await kit.steer(Cancel(reason="stop pressed"), "agent", room_id="room-a")
+reached = await kit.steer("room-a", "agent", Cancel(reason="stop pressed"))
+await kit.steer("room-a", "agent", InjectMessage(content="Also check the logs."))
+await kit.steer("room-a", "agent", Cancel(), turn_id=turn_id)  # one turn of room-a
 ```
 
-`kit.steer(directive, channel_id, room_id=..., turn_id=...)` follows the same
-rules (a `Cancel` reaches every turn of the room, another directive the most
-recent one) and answers the loops reached. A channel without steering (an ACP
-agent) takes a `Cancel` as its turn's cancel, counted as one. With
-`kit.steer(..., organization_id=...)` (RFC §17.2), a `room_id` of another
-organization raises `RoomNotFoundError`, and only the turns of that
-organization's rooms are reached. `agent.steer()` reaches the loops of the
-process it is called in, whatever room's: the channel holds no store, and
-the kit's `steer()` is the door that reads the room.
+`kit.steer(room_id, channel_id, directive, *, turn_id=None)` always names the
+room: a `Cancel` reaches every turn of the agent in the room, another
+directive the most recent one, and `turn_id` narrows it to one turn of that
+room (a turn of another room is reached by nothing). It answers the loops
+reached. A channel without steering (an ACP agent) takes a `Cancel` as its
+turn's cancel, counted as one. To stop the turns one message starts, started
+or not, cancel its delivery (`DeliveryHandle.cancel()`,
+`kit.cancel_delivery(key)`) rather than steering the room. With
+`kit.steer(..., organization_id=...)` (RFC §17.2), a room of another
+organization raises `RoomNotFoundError`. `agent.steer()` reaches the loops of
+the process it is called in: the channel holds no store, and the kit's
+`steer()` is the door that reads the room.
 
 ## Tool Calling
 
@@ -8061,7 +8065,7 @@ RoomKit exports **348 symbols** from `roomkit`. Providers and voice types import
 | `current_turn_host()` | The `TurnHost` of the turn the current code runs in; after the turn, in work it began, the host for `send_event`, `post_status`, `update_room_metadata`, `add_observation` (`host.open` false); `None` elsewhere |
 | `RoomCall` / `RoomPublication` | What an executor sends its room owner after a turn ended (RFC §10.6.3): a host verb, answered by a `HostResult`, and a publication; accepted from the executor of the room's last turn only |
 | `RoomOwner` | ABC for what reaches a room owner outside a turn (`room_call`, `room_publication`); `TurnBackend.attend(owner)` has executors reach it |
-| `current_turn_id()` | The id of the turn the current code runs in, which `kit.steer(turn_id=...)` addresses; `None` outside a turn |
+| `current_turn_id()` | The id of the turn the current code runs in, which `kit.steer(room_id, channel_id, directive, turn_id=...)` addresses within its room; `None` outside a turn |
 | `PreviousTurn` | A request's (or a channel call's) `previous_turn`: the room's last turn or channel call of the channel (`turn_id`, `executor_id`), `None` after a detach; an executor drops a room's state another left (RFC §10.6.2) |
 | `RoomAttached` / `RoomDetached` | Channel control to the executors that may run the channel's turns (the kit's own alone for a channel it holds live, else every executor declaring it): it calls `on_room_attached` / `on_room_detached` and logs what they raise (RFC §10.6.3) |
 | `ChannelReleased` | Channel control to the same executors (`kit.release_channel`): one holding a build of the channel lets it go, closed once the turns running on it end, and builds it anew for the next; nothing for a channel the kit holds live (RFC §10.6.3) |
@@ -8280,7 +8284,7 @@ kit = RoomKit(
 | `send_greeting(room_id, channel_id?, greeting?, ..., organization_id=None)` | Send greeting |
 | `send_event(room_id, channel_id, content, ...)` | Send event directly: `INBOUND` from a transport, `OUTBOUND` from an intelligence channel; from the room's own work (a hook, a parse, a delivery, a turn) it draws on that work's reentry budget (RFC §10.5, §9.5.1). A channel the kit does not register raises `ChannelNotRegisteredError` before anything is read, one the room still binds included; one the room does not bind, `ChannelNotFoundError` |
 | `await post(room_id, content, *, participant_id?, addressed_to=(), metadata?, channel_id?, organization_id?, idempotency_key?, chain_depth=0)` | Write to the room's people in the host's own name, from a `HostChannel` attached on a room's first post (refused for a room it was detached from, or closed); solicits no agent unless addressed; speaks as a participant the host channel reaches (`ParticipantNotFoundError` for any other id); a key the channel holds returns the original, sending nothing again (RFC §10.5) |
-| `await steer(directive, channel_id, *, room_id=None, turn_id=None, organization_id=None)` | Steer the running turns of an intelligence channel the kit started, wherever they run; answers the loops reached (RFC §21.3, §10.6.8) |
+| `await steer(room_id, channel_id, directive, *, turn_id=None, organization_id=None)` | Steer the running turns of an intelligence channel in a room, wherever they run, one of them with `turn_id`; answers the loops reached (RFC §21.3, §10.6.8) |
 | `await release_channel(channel_id)` | Have every executor holding a build of a declared channel let it go, when its host changed what it is built from (its model, its provider): the next turn builds it anew, and the build let go is closed once the turns running on it end, never cut for this; a channel the kit holds live is its registry's, replaced by registering its successor; an unknown id raises `ChannelNotRegisteredError` (RFC §10.6.3) |
 | `await channel_call(channel_id, room_id, verb, *, organization_id=None, **arguments)` | Run a per-room verb of a channel attached to the room, on the executor holding the room's state (an ACP agent's `set_config_option`, `close_session`, `session_config`, `config_options`); what the room keeps for the channel is stored in its metadata, written by this call alone (RFC §10.6.3, §6.4) |
 | `await answer_input(request_id, value)` / `await reject_input(request_id, reason)` | Answer or reject a turn's human-input request, wherever its tool runs; an early answer is held 60 s, a second one returns `False` (RFC §10.6.5) |

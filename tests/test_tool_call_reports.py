@@ -126,7 +126,7 @@ async def test_a_stop_while_calls_are_announced_reports_them_cancelled(streaming
 
     async for delta in channel._run_streaming_tool_loop(context, parent_loop_ctx=loop):
         if isinstance(delta, ToolCallStartMarker):
-            channel.steer(Cancel(reason="user stopped"))
+            channel.steer(Cancel(reason="user stopped"), room_id="r1")
     await until(lambda: bool(seen))
 
     assert ran == []

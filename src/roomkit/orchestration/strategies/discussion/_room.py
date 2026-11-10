@@ -503,7 +503,7 @@ class DiscussionRoom:
         # Its turn runs through the turn backend: the owner steers it, an
         # external agent's prompt cancelled as its own cancel does (RFC §6.4).
         reached = (
-            await self.kit.steer(Cancel(reason=reason), agent, room_id=self.room_id)
+            await self.kit.steer(self.room_id, agent, Cancel(reason=reason))
             if channel is not None
             else 0
         )

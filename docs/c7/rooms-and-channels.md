@@ -697,7 +697,7 @@ key two tenants both chose only reaches the caller's rooms. Pass it to
 `process_inbound` as well: a call without it belongs to no organization until
 it reads its room (right after routing), and a scoped cancel reaching it
 before is applied then, uncounted. A call refused before its commit reports
-its refusal, not the cancellation. A `kit.steer(Cancel(), ...)` reaches only
+its refusal, not the cancellation. A `kit.steer(room_id, channel_id, Cancel())` reaches only
 turns that have started; use the delivery to stop one message's turns.
 External effects already committed and tasks detached by application handlers
 are outside this cancellation contract. See `examples/cancel_delivery.py`.

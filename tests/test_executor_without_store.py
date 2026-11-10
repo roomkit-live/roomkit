@@ -300,7 +300,7 @@ async def test_a_steer_during_the_room_s_read_waits_for_the_turn(
         )
     )
     await asyncio.wait_for(reading.wait(), 5)
-    steered = asyncio.create_task(kit.steer(Cancel(), "agent", room_id="r"))
+    steered = asyncio.create_task(kit.steer("r", "agent", Cancel()))
     await asyncio.sleep(0.01)
     assert not steered.done(), "a steer waits for a turn still being handed over"
     go_on.set()

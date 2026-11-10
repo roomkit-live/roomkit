@@ -730,42 +730,36 @@ class RoomKit(
 
     async def steer(
         self,
-        directive: SteeringDirective,
+        room_id: str,
         channel_id: str,
+        directive: SteeringDirective,
         *,
-        room_id: str | None = None,
         turn_id: str | None = None,
         organization_id: str | None = None,
     ) -> int:
-        """Steer the running turns of an intelligence channel (RFC §21.3,
-        §10.6.8), wherever they run: the turn *turn_id*; else the turns of
-        *room_id*, every one for a ``Cancel`` and the most recent for any
-        other directive; else the channel's most recent turn. How many loops
-        it reached; a channel without steering takes a ``Cancel`` as its
-        turn's cancel, counted as one.
+        """Steer the running turns of the intelligence channel *channel_id*
+        in *room_id* (RFC §21.3, §10.6.8), wherever they run: the room's turn
+        *turn_id* alone when given (one of another room is reached by
+        nothing), else every turn of the room for a ``Cancel`` and its most
+        recent for any other directive. How many loops it reached; a channel
+        without steering takes a ``Cancel`` as its turn's cancel, counted as
+        one. To stop the turns one message starts, started or not, cancel its
+        delivery instead (:meth:`cancel_delivery`).
 
         Only the turns this kit started are reached: with several kits owning
         rooms, steer from the one delivering the room.
 
         *organization_id* is the organization the caller acts for (RFC
-        §17.2): a *room_id* is read with it first, and only the turns of
-        that organization's rooms are reached, a turn of another
-        organization's room no more than a turn that does not run.
+        §17.2): the room is read with it first.
 
         Raises:
-            RoomNotFoundError: *organization_id* and *room_id* are set and
-                the room is missing or another organization's; nothing is
-                steered.
-            ValueError: both *room_id* and *turn_id* given.
+            RoomNotFoundError: *organization_id* is set and the room is
+                missing or another organization's; nothing is steered.
         """
-        if organization_id is not None and room_id is not None:
+        if organization_id is not None:
             await self.get_room(room_id, organization_id=organization_id)
         return await self._turns.steer(
-            directive,
-            channel_id,
-            room_id=room_id,
-            turn_id=turn_id,
-            organization_id=organization_id,
+            room_id, channel_id, directive, turn_id=turn_id, organization_id=organization_id
         )
 
     def declare_host_verb(
