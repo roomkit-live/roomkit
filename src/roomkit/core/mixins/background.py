@@ -122,7 +122,8 @@ class BackgroundMixin:
             agent_id: The agent the task is for: an intelligence channel
                 attached to the room, an external agent included.
             task: What to do and report.
-            hand_back: ``"relay"`` or ``"post"``; the agent's setup's when None.
+            hand_back: ``"relay"`` or ``"post"``; the agent's setup's when
+                ``None`` or an empty string.
             organization_id: The organization the caller acts for (RFC
                 §17.2): the room is read with it before anything is started.
 

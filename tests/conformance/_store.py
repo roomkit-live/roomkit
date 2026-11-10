@@ -127,6 +127,7 @@ STORE_ARGUMENTS: dict[str, set[str]] = {
     "store.write_change_target": {"room_id", "target"},
     "store.update_room_if": {"room", "status", "paused_at", "last_activity_at"},
     "store.get_room": {"room_id"},
+    "store.patch_room_metadata": {"room_id", "patch", "unset"},
     "store.add_task": {"task"},
     "store.get_task": {"task_id"},
     "store.update_task": {"task"},
