@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A discussion skips the turns of an agent no executor serves.** An agent held by its declaration that `kit.agent_presence` says offline has its queued turns dropped and announced as `SpeakQueueChange.TURN_SKIPPED`, instead of given to fail with `no_executor` and fire `ON_ERROR` at each message; `DiscussionConsole` notes it. On a turn backend that does not list its executors the turn is still given (RFC §19.7.5 rule 17, §10.6.7, RMK-1626).
 - Attaching an intelligence channel to a room publishes its presence there (`presence_online` / `presence_offline`, `user_id` its channel id), a live AI channel included: a UI forwarding a room's ephemerals sees its agents as present or not (RFC §10.6.7, RMK-1626).
 - Removed `qwen3-coder-plus` and `grok-imagine-image-quality` from the curated
   catalogs after their disappearance from the upstream mirror; this does not

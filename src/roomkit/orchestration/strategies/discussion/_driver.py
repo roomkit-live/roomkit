@@ -310,13 +310,16 @@ class TurnDriver:
         self, state: SpeakQueueState, entry: Entry, context: RoomContext
     ) -> _Turn | None:
         """Plan *entry*'s turn; None, the entry dropped, when it cannot be given
-        (the event it answers is gone, or the agent may no longer read it)."""
+        (the event it answers is gone, the agent may no longer read it, or it
+        is offline)."""
         room = self._room
         answered = await self._answered(entry)
         if answered is None:
             return self._not_given(state, entry)
         if entry.post:
             return self._handed(state, _Turn(entry, None, {}, posted=answered), answered.id)
+        if await room.kit._known_offline(room.room_id, [entry.agent]):
+            return self._skipped(state, entry, answered.id)
         answered = _at_ask_depth(answered, entry)
         mark = issue_mark([self._notes(entry, answered, context)])
         try:
@@ -354,6 +357,19 @@ class TurnDriver:
             entry.agent,
             room.room_id,
         )
+
+    def _skipped(self, state: SpeakQueueState, entry: Entry, answered_id: str) -> None:
+        """*entry*'s agent is offline, no executor serving it (RFC §10.6.7):
+        its turn is dropped and said so, never given to fail."""
+        room = self._room
+        state.entries.remove(entry)
+        room.drop_instructions([entry], keep=state)
+        logger.info(
+            "Discussion turn of %s in room %s skipped: the agent is offline",
+            entry.agent,
+            room.room_id,
+        )
+        room.fire(SpeakQueueChange.TURN_SKIPPED, [entry.agent], answered_id)
 
     def _max_turns_given(self, state: SpeakQueueState) -> bool:
         max_turns = self._room.config.max_turns

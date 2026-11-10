@@ -2255,6 +2255,7 @@
     "TALKING_AGAIN": ["member", "'talking_again'"],
     "TURN_ENDED": ["member", "'turn_ended'"],
     "TURN_GIVEN": ["member", "'turn_given'"],
+    "TURN_SKIPPED": ["member", "'turn_skipped'"],
     "WAITING": ["member", "'waiting'"]
   },
   "roomkit.SpeakQueueEvent": {

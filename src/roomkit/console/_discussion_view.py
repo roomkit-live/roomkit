@@ -371,6 +371,7 @@ _NOTICES: dict[SpeakQueueChange, Callable[[str], str]] = {
     SpeakQueueChange.WAITING: lambda _who: "the discussion waits for a person",
     SpeakQueueChange.OVER: lambda _who: "the discussion is over",
     SpeakQueueChange.INSTRUCTION_DROPPED: lambda who: f"an instruction for {who} was dropped",
+    SpeakQueueChange.TURN_SKIPPED: lambda who: f"{who} is offline: its turn is skipped",
 }
 
 

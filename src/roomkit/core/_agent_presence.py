@@ -30,7 +30,7 @@ from typing import TYPE_CHECKING, Any
 from roomkit.channels.declared import DeclaredChannel
 from roomkit.models.enums import ChannelCategory, RoomStatus
 from roomkit.models.store_filter import RoomFilter
-from roomkit.turns.base import TurnBackend, TurnTimeouts, heartbeat_tick
+from roomkit.turns.base import TurnTimeouts, heartbeat_tick, lists_executors
 
 if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
@@ -204,7 +204,7 @@ class AgentPresenceWatch:
     def _lists_executors(self) -> bool:
         """Whether the turn backend lists its executors: one that does not
         reads every agent held by its declaration as offline, untruly."""
-        return type(self._kit._turns.backend).executors is not TurnBackend.executors
+        return lists_executors(self._kit._turns.backend)
 
     def _declared(self) -> list[str]:
         return [cid for cid, ch in self._kit.channels.items() if isinstance(ch, DeclaredChannel)]

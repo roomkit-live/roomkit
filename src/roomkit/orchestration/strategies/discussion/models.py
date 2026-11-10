@@ -36,6 +36,9 @@ class SpeakQueueChange(StrEnum):
     QUEUED = "queued"
     TURN_GIVEN = "turn_given"
     TURN_ENDED = "turn_ended"
+    TURN_SKIPPED = "turn_skipped"
+    """A queued turn dropped instead of given: its agent is offline, no
+    executor serving it (RFC §10.6.7)."""
     INSTRUCTION_DROPPED = "instruction_dropped"
     LISTENING = "listening"
     TALKING_AGAIN = "talking_again"

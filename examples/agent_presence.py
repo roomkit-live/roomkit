@@ -10,6 +10,8 @@ The room holds two agents by their declaration alone: an executor serves
 3. A subscriber to the room hears the agents' presence as it changes, as a
    UI showing people's presence would: the executor closed takes ``coder``
    offline, and another one starting brings it back.
+4. A discussion of the same agents skips the offline ``reviewer``'s turn,
+   announced as ``turn_skipped`` (RFC §19.7.5 rule 17), and ``coder`` answers.
 
 Across processes (``RedisTurnBackend``) the same reads list the executors
 of every process, and one room owner publishes each change.
@@ -31,7 +33,13 @@ from roomkit import (
     Agent,
     ChannelCategory,
     ChannelDeclaration,
+    Discussion,
+    HookExecution,
+    HookTrigger,
+    InboundMessage,
     RoomKit,
+    SpeakQueueEvent,
+    TextContent,
     WebSocketChannel,
 )
 from roomkit.providers.ai import MockAIProvider
@@ -41,6 +49,7 @@ from roomkit.turns import InMemoryTurnBackend, TurnExecutor
 logger = setup_logging("example.agent_presence")
 
 ROOM = "review"
+TALK = "talk"
 PRESENCE = {EphemeralEventType.PRESENCE_ONLINE, EphemeralEventType.PRESENCE_OFFLINE}
 
 
@@ -98,9 +107,30 @@ async def main() -> None:
         await backend.serve(second)
         await asyncio.sleep(0)  # the realtime backend hands its events on
         await show_presence(kit)
+
+        logger.info("4. A discussion of both agents: the offline reviewer is skipped")
+        await discuss(kit)
     finally:
         await kit.close()
         await second.close()
+
+
+async def discuss(kit: RoomKit) -> None:
+    @kit.hook(HookTrigger.ON_SPEAK_QUEUE, execution=HookExecution.ASYNC)
+    async def follow(event: SpeakQueueEvent, ctx: object) -> None:
+        print(f"  queue: {event.change.value} {list(event.channel_ids)}")
+
+    await kit.create_room(room_id=TALK, orchestration=Discussion(agents=["coder", "reviewer"]))
+    await kit.attach_channel(TALK, "web")
+    said = InboundMessage(channel_id="web", sender_id="dana", content=TextContent(body="Status?"))
+    await kit.process_inbound(said, room_id=TALK)
+    for _ in range(200):  # the turns come after the message, in the discussion's driver
+        if any(e.source.channel_id == "coder" for e in await kit.store.list_events(TALK)):
+            break
+        await asyncio.sleep(0.01)
+    for event in await kit.store.list_events(TALK):
+        if isinstance(event.content, TextContent):
+            print(f"  {event.source.channel_id}: {event.content.body}")
 
 
 if __name__ == "__main__":

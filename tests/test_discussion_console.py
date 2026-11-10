@@ -337,7 +337,11 @@ async def test_a_background_tool_call_makes_the_task_the_calling_agents(pipe: Pi
 
 
 async def test_a_turn_that_failed_reads_as_failed(pipe: PipeInput) -> None:
-    kit = RoomKit(turn_backend=InMemoryTurnBackend())
+    backend = InMemoryTurnBackend()
+    # Online, as it declares dev, but its turn fails: it builds nothing.
+    host = TurnExecutor(lambda _: None, hosts={"dev"}, executor_id="host")
+    await backend.serve(host)
+    kit = RoomKit(turn_backend=backend)
     kit.register_channel(SimpleChannel("ops"))
     kit.register_channel(ChannelDeclaration(channel_id="dev"))
     await kit.create_room(room_id="r1", orchestration=Discussion(agents=["dev"]))
@@ -354,17 +358,18 @@ async def test_a_turn_that_failed_reads_as_failed(pipe: PipeInput) -> None:
     )
 
     room = _room(view)
-    assert "@dev failed: No executor serves channel 'dev'" in room
+    assert "@dev failed: Executor host builds no channel 'dev'" in room
     assert "nothing to add" not in room
     console.exit()
     await asyncio.wait_for(running, 5)
     await kit.close()
+    await host.close()
 
 
 async def test_an_agent_no_executor_serves_shows_offline_until_one_does(pipe: PipeInput) -> None:
-    """The console opens on an agent no executor serves, marked offline; an
-    executor serving it brings it back online, its close takes it offline
-    again (RFC §10.6.7)."""
+    """The console opens on an agent no executor serves, marked offline, whose
+    turns are skipped; an executor serving it brings it back online, its
+    close takes it offline again (RFC §10.6.7, §19.7.5 rule 17)."""
     backend = InMemoryTurnBackend()
     host = TurnExecutor(lambda _: None, hosts={"dev"}, executor_id="host")
     kit = RoomKit(turn_backend=backend)
@@ -377,6 +382,8 @@ async def test_an_agent_no_executor_serves_shows_offline_until_one_does(pipe: Pi
     await _until(lambda: console._view is not None and "dev" in console.view.offline)
     view = console.view
     opened = _panel(view)
+    pipe.send_text("status?\r")
+    await _until(lambda: "@dev is offline: its turn is skipped" in _room(view))
 
     await backend.serve(host)
     await _until(lambda: "dev" not in view.offline)
@@ -392,6 +399,7 @@ async def test_an_agent_no_executor_serves_shows_offline_until_one_does(pipe: Pi
     assert "@dev  offline" in opened and "offline" not in served
     assert "@dev is back online" in room
     assert "@dev is offline: no executor serves it" in room
+    assert "failed" not in room
 
 
 async def test_a_wait_is_announced_when_it_starts_not_when_it_ends(pipe: PipeInput) -> None:

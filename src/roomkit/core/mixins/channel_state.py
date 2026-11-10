@@ -4,12 +4,15 @@ room's agents (RFC §10.6.3, §10.6.7, §6.4)."""
 
 from __future__ import annotations
 
+import logging
+from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any
 
 from roomkit.channels.declared import DeclaredChannel
 from roomkit.core.exceptions import ChannelNotFoundError, ChannelNotRegisteredError
 from roomkit.models.enums import ChannelCategory
 from roomkit.turns._rooms import room_state_key, stored_room_state
+from roomkit.turns.base import lists_executors
 from roomkit.turns.presence import AgentPresence, ExecutorInfo
 from roomkit.turns.wire import ChannelCall, ChannelReleased, RoomDetached
 
@@ -20,6 +23,8 @@ if TYPE_CHECKING:
     from roomkit.store.base import ConversationStore
     from roomkit.turns.executor import TurnExecutor
     from roomkit.turns.owner import TurnClient
+
+logger = logging.getLogger("roomkit.turns")
 
 
 class ChannelStateMixin:
@@ -129,6 +134,22 @@ class ChannelStateMixin:
             if binding.category == ChannelCategory.INTELLIGENCE
         ]
         return [self._presence_of(agent, hooks, infos) for agent in sorted(agents)]
+
+    async def _known_offline(self, room_id: str, channel_ids: Iterable[str]) -> set[str]:
+        """The ones of *channel_ids* known offline in *room_id*: held by their
+        declaration, and no executor online covers them there (RFC §10.6.7).
+        A live agent never is, nor any agent on a turn backend that does not
+        list its executors, or whose list could not be read: it tells nothing."""
+        declared = [c for c in channel_ids if isinstance(self._channels.get(c), DeclaredChannel)]
+        if not declared or not lists_executors(self._turns.backend):
+            return set()
+        try:
+            infos = await self.executors()
+        except Exception:
+            logger.warning("Reading the executors serving %s failed", declared, exc_info=True)
+            return set()
+        hooks = self._turns.room_hook_names(room_id)
+        return {c for c in declared if not self._presence_of(c, hooks, infos).online}
 
     def _presence_of(
         self, channel_id: str, hooks: list[str], infos: list[ExecutorInfo]

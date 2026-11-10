@@ -131,6 +131,12 @@ room = await kit.create_room(orchestration=Discussion(
 - `kit.speak_queue(room_id)` returns the `SpeakQueue` (`speaking`, `queue`,
   `listening`, `asked`, `waiting`, `over`); `ON_SPEAK_QUEUE` announces each
   change as a `SpeakQueueEvent`. The host calls take `organization_id`.
+- An agent held by its declaration that no executor online serves
+  (`kit.agent_presence(room_id)` says it offline) has its queued turns
+  skipped, announced as `turn_skipped`, instead of given to fail with
+  `no_executor`; once an executor serves it, it takes its turns again. On a
+  turn backend that does not list its executors the kit cannot tell, and
+  gives the turn.
 - Agents address people by the transcript's names (`@AliceMartin`, `@sms1`
   for a sender with no name, at most 32 characters); an ask is recorded
   against that exact person, never one who takes their name.

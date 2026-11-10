@@ -359,3 +359,10 @@ class TurnBackend(ABC):
     async def close(self) -> None:
         """Fail the turns in flight (``backend_closed``) and release the
         transport."""
+
+
+def lists_executors(backend: TurnBackend) -> bool:
+    """Whether *backend* lists the executors it carries turns to: one that
+    keeps :meth:`TurnBackend.executors` as it is tells nothing of which
+    agents are served (RFC §10.6.7)."""
+    return type(backend).executors is not TurnBackend.executors

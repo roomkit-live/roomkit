@@ -368,9 +368,17 @@ class DiscussionRoom:
         as a room with no discussion delivers it (rule 3): a memory that
         learns as messages arrive learns the whole conversation. It reaches
         each agent through the turn backend, where the agent runs (RFC
-        §10.6.3), live or held by its declaration alone."""
-        for agent_id, agent in self.agents.items():
-            if agent is None or agent_id == event.source.channel_id or agent_id not in reach:
+        §10.6.3), live or held by its declaration alone; an agent offline,
+        which no executor serves, is handed nothing (RFC §10.6.7)."""
+        handed_to = [
+            agent_id
+            for agent_id, agent in self.agents.items()
+            if agent is not None and agent_id != event.source.channel_id and agent_id in reach
+        ]
+        offline = await self.kit._known_offline(self.room_id, handed_to)
+        for agent_id in handed_to:
+            if agent_id in offline:
+                logger.debug("Agent %s is offline: its memory misses an event", agent_id)
                 continue
             handed = CommittedEvent(channel_id=agent_id, room_id=self.room_id, event=event)
             try:
