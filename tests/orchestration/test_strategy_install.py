@@ -195,11 +195,17 @@ async def test_an_uninstall_after_an_install_the_store_cut_short_frees_the_room(
         return await real(room_id)
 
     monkeypatch.setattr(kit.store, "list_bindings", fails_once)
+    strategy = _Custom()
     with pytest.raises(RuntimeError, match="store down"):
+        await kit.install_strategy("r1", strategy)
+
+    assert kit.room_strategy("r1") is strategy
+    with pytest.raises(ValueError, match="holds a strategy already"):
         await kit.install_strategy("r1", _Custom())
 
     assert await asyncio.wait_for(kit.uninstall_strategy("r1"), 1) is True
     assert kit.room_strategy("r1") is None
+    await kit.install_strategy("r1", _Custom())
     await kit.close()
 
 
