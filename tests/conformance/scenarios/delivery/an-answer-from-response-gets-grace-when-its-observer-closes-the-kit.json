@@ -1,0 +1,131 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/an-answer-from-response-gets-grace-when-its-observer-closes-the-kit",
+  "title": "An answer placed in the idle lane runs when its own observer closes the kit",
+  "rules": [
+    "§12.10.4",
+    "§10.1 step 13"
+  ],
+  "notes": "Python: tests/test_kit_close_doors.py::test_an_answer_s_observer_closing_the_kit_finds_the_answer_running. The named close action must actually finish; the complete websocket delivery list is the observable contract.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "Hi."
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Hello."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "quit",
+        "trigger": "before_broadcast",
+        "execution": "async",
+        "reactions": [
+          {
+            "when": {
+              "text": "Hello."
+            },
+            "do": [
+              {
+                "call": "close",
+                "as": "closed"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u",
+        "content": {
+          "type": "text",
+          "body": "Hi."
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "Hi."
+          }
+        },
+        {
+          "content": {
+            "body": "Hello."
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "body": "Hi."
+            }
+          },
+          {
+            "content": {
+              "body": "Hello."
+            }
+          }
+        ]
+      }
+    },
+    "actions": {
+      "closed": [
+        {
+          "result": null
+        }
+      ]
+    }
+  }
+}
