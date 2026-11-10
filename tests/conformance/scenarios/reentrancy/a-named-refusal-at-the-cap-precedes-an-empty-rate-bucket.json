@@ -1,0 +1,360 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reentrancy/a-named-refusal-at-the-cap-precedes-an-empty-rate-bucket",
+  "title": "A named refusal at the cap precedes an empty rate bucket",
+  "rules": [
+    "§10.1",
+    "§9.5.1",
+    "§8.3",
+    "§14.1"
+  ],
+  "notes": "RMK-1560. Python core/mixins/inbound.py: _charge_named_room precedes the inbound rate limit. The delivery spends ten passes, or ten calls refused by rate, then asks late. A fresh call outside that work proves the token boundary. No sleeps or refill needed: one token per hour.",
+  "setup": {
+    "kit": {
+      "max_chain_depth": 1,
+      "inbound_rate_limit": {
+        "max_per_hour": 1
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "late",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "loop",
+        "type": "websocket",
+        "category": "transport",
+        "deliver": [
+          {
+            "when": {
+              "text": "hello"
+            },
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "room-1",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "again 0"
+                },
+                "expect": {
+                  "result": {
+                    "blocked_by": null
+                  }
+                }
+              },
+              {
+                "call": "send_event",
+                "room_id": "room-1",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "again 1"
+                },
+                "expect": {
+                  "result": {
+                    "blocked_by": null
+                  }
+                }
+              },
+              {
+                "call": "send_event",
+                "room_id": "room-1",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "again 2"
+                },
+                "expect": {
+                  "result": {
+                    "blocked_by": null
+                  }
+                }
+              },
+              {
+                "call": "send_event",
+                "room_id": "room-1",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "again 3"
+                },
+                "expect": {
+                  "result": {
+                    "blocked_by": null
+                  }
+                }
+              },
+              {
+                "call": "send_event",
+                "room_id": "room-1",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "again 4"
+                },
+                "expect": {
+                  "result": {
+                    "blocked_by": null
+                  }
+                }
+              },
+              {
+                "call": "send_event",
+                "room_id": "room-1",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "again 5"
+                },
+                "expect": {
+                  "result": {
+                    "blocked_by": null
+                  }
+                }
+              },
+              {
+                "call": "send_event",
+                "room_id": "room-1",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "again 6"
+                },
+                "expect": {
+                  "result": {
+                    "blocked_by": null
+                  }
+                }
+              },
+              {
+                "call": "send_event",
+                "room_id": "room-1",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "again 7"
+                },
+                "expect": {
+                  "result": {
+                    "blocked_by": null
+                  }
+                }
+              },
+              {
+                "call": "send_event",
+                "room_id": "room-1",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "again 8"
+                },
+                "expect": {
+                  "result": {
+                    "blocked_by": null
+                  }
+                }
+              },
+              {
+                "call": "send_event",
+                "room_id": "room-1",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "again 9"
+                },
+                "expect": {
+                  "result": {
+                    "blocked_by": null
+                  }
+                }
+              },
+              {
+                "call": "process_inbound",
+                "room_id": "room-1",
+                "message": {
+                  "channel_id": "late",
+                  "sender_id": "u",
+                  "content": {
+                    "type": "text",
+                    "body": "refused"
+                  }
+                },
+                "expect": {
+                  "result": {
+                    "blocked": true,
+                    "reason": "reentry_loop_cap",
+                    "event": null
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "late"
+          },
+          {
+            "channel_id": "loop"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "late",
+        "sender_id": "u",
+        "content": {
+          "type": "text",
+          "body": "first"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "late",
+        "sender_id": "u",
+        "content": {
+          "type": "text",
+          "body": "still limited"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "rate_limited",
+          "event": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "first"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "again 0"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "again 1"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "again 2"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "again 3"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "again 4"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "again 5"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "again 6"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "again 7"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "again 8"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "again 9"
+          }
+        }
+      ]
+    }
+  }
+}
