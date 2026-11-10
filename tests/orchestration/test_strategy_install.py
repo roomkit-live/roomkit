@@ -181,11 +181,16 @@ async def test_a_hosts_own_strategy_is_taken_back_out_whole() -> None:
     await kit.close()
 
 
+@pytest.mark.parametrize("replacing", [False, True], ids=["new", "discussion-replacement"])
 async def test_an_uninstall_after_an_install_the_store_cut_short_frees_the_room(
     monkeypatch: pytest.MonkeyPatch,
+    replacing: bool,
 ) -> None:
     kit = RoomKit()
     await kit.create_room(room_id="r1")
+    agent = _agent("a")
+    if replacing:
+        await kit.install_strategy("r1", Discussion([agent]))
     real = kit.store.list_bindings
     failures = iter([True])
 
@@ -195,17 +200,19 @@ async def test_an_uninstall_after_an_install_the_store_cut_short_frees_the_room(
         return await real(room_id)
 
     monkeypatch.setattr(kit.store, "list_bindings", fails_once)
-    strategy = _Custom()
+    strategy = Discussion([agent], rules="replacement") if replacing else _Custom()
     with pytest.raises(RuntimeError, match="store down"):
         await kit.install_strategy("r1", strategy)
 
     assert kit.room_strategy("r1") is strategy
-    with pytest.raises(ValueError, match="holds a strategy already"):
-        await kit.install_strategy("r1", _Custom())
+    retry = Discussion([agent], rules="retry") if replacing else _Custom()
+    reason = "another install is replacing" if replacing else "holds a strategy already"
+    with pytest.raises(ValueError, match=reason):
+        await kit.install_strategy("r1", retry)
 
     assert await asyncio.wait_for(kit.uninstall_strategy("r1"), 1) is True
     assert kit.room_strategy("r1") is None
-    await kit.install_strategy("r1", _Custom())
+    await kit.install_strategy("r1", retry)
     await kit.close()
 
 
