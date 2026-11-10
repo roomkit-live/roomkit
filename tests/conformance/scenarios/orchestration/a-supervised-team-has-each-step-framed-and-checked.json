@@ -6,7 +6,7 @@
     "§19.7.3",
     "§23.3"
   ],
-  "notes": "Python: tests/test_supervisor.py TestStrategyToolHandler::test_sequential_strategy_tool, TestSupervisedSequential::test_validates_and_frames_each_step, test_dispatch_and_review_leave_the_strategy_tool_in_its_room, test_worker_structured_payload_is_rendered_for_review, TestReviewUsesTheVerdictTool::test_the_review_forces_submit_verdict. orchestration/strategies/supervisor/supervised.py (_dispatch_prompt, _review_brief, _run_supervised_sequential, _step_ended), prompts.py (SUBMIT_VERDICT, _compose_supervised_handoff, _format_supervised_digest), results.py _render_result, _worker_profile. A turn goes on after its submit_result or submit_verdict call (its result reads received), so each such turn ends on a round of its own. The child rooms never declare delegate_workers; the step's terminal status entry is its rendered result (strategy supervised).",
+  "notes": "Python: tests/test_supervisor.py TestStrategyToolHandler::test_sequential_strategy_tool, TestSupervisedSequential::test_validates_and_frames_each_step, test_dispatch_and_review_leave_the_strategy_tool_in_its_room, test_worker_structured_payload_is_rendered_for_review, TestReviewUsesTheVerdictTool::test_the_review_forces_submit_verdict. orchestration/strategies/supervisor/supervised.py (_dispatch_prompt, _review_brief, _run_supervised_sequential, _step_ended), prompts.py (SUBMIT_VERDICT, _compose_supervised_handoff, _format_supervised_digest), results.py _render_result, _worker_profile. A turn goes on after its submit_result or submit_verdict call (its result reads received), so each such turn ends on a round of its own. The child rooms never declare delegate_workers; the step's terminal status entry is its rendered result (strategy supervised). Python: tests/orchestration/test_strategy_rooms.py::test_the_supervisor_runs_its_sub_runs_without_its_strategy_tool. Another installed room retains its own delegation tool after the dispatch and review child captures end.",
   "setup": {
     "channels": [
       {
@@ -70,6 +70,9 @@
             },
             {
               "text": "Acme, reviewed."
+            },
+            {
+              "text": "Still my room."
             }
           ]
         }
@@ -135,6 +138,14 @@
             "channel_id": "sms"
           }
         ]
+      },
+      {
+        "id": "other",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
       }
     ],
     "strategies": [
@@ -162,6 +173,11 @@
     {
       "call": "install_strategy",
       "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "other",
       "strategy": "team"
     },
     {
@@ -263,6 +279,27 @@
       "expect": {
         "result": []
       }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "other",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hello."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
     }
   ],
   "expect": {
@@ -297,6 +334,24 @@
           },
           "chain_depth": 1,
           "responds_to": "r1#0"
+        }
+      ],
+      "other": [
+        {
+          "source": {
+            "channel_id": "sms"
+          },
+          "content": {
+            "body": "Hello."
+          }
+        },
+        {
+          "source": {
+            "channel_id": "sup"
+          },
+          "content": {
+            "body": "Still my room."
+          }
         }
       ]
     },
@@ -462,6 +517,20 @@
               }
             }
           }
+        },
+        {
+          "room_id": "other",
+          "response": {
+            "channel_id": "sup",
+            "declared_tools": {
+              "delegate_workers": {
+                "position": 0
+              },
+              "submit_verdict": {
+                "$absent": true
+              }
+            }
+          }
         }
       ]
     },
@@ -533,6 +602,20 @@
               "is_error": false
             }
           ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Hello."
+            }
+          ],
+          "tools": {
+            "delegate_workers": 0,
+            "submit_verdict": {
+              "$absent": true
+            }
+          }
         }
       ],
       "analyst": [

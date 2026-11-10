@@ -1,0 +1,255 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-result-tool-is-declared-in-the-child-room-only",
+  "title": "A child's result tool is isolated during capture and removed from that child after capture",
+  "rules": [
+    "§19.7",
+    "§23.3"
+  ],
+  "notes": "Python: tests/orchestration/test_strategy_rooms.py::test_a_result_tool_is_declared_in_the_child_room_only; core/mixins/_result_capture.py capture_result. A held structured delegation makes the capture overlap a real turn in the agent's other room.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "agent": {},
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "child",
+                  "name": "submit_result",
+                  "arguments": {
+                    "status": "completed",
+                    "summary": "Private result."
+                  }
+                }
+              ],
+              "gate": "child"
+            },
+            {
+              "calls": [
+                {
+                  "id": "stray",
+                  "name": "submit_result",
+                  "arguments": {
+                    "status": "completed",
+                    "summary": "Not the child."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Public answer."
+            },
+            {
+              "text": "Captured."
+            },
+            {
+              "text": "After capture."
+            },
+            {
+              "text": "Child after capture."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "returns": "host"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "parent",
+        "bindings": []
+      },
+      {
+        "id": "customer",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "worker"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "worker",
+      "task": "Private task.",
+      "wait": true,
+      "require_structured_result": true,
+      "background": true,
+      "as": "child"
+    },
+    {
+      "wait_for": "child"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "customer",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "Hello."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "open": "child"
+    },
+    {
+      "await": "child",
+      "expect": {
+        "result": {
+          "status": "completed",
+          "result": {
+            "output": "{\"status\": \"completed\", \"summary\": \"Private result.\", \"data\": {}, \"deliverables\": [], \"reason\": \"\"}"
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "customer",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "Again."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "$r1",
+      "channel_id": "sms"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "$r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "Continue without capture."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "worker": [
+        {
+          "tools": {
+            "lookup": {
+              "$present": true
+            },
+            "submit_result": {
+              "$present": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "lookup": {
+              "$present": true
+            },
+            "submit_result": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "submit_result": {
+              "$absent": true
+            }
+          },
+          "tool_results": [
+            {
+              "tool_call_id": "stray",
+              "is_error": true,
+              "content": "{\"error\": \"Tool 'submit_result' is not declared.\"}"
+            }
+          ]
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "child",
+              "content": "{\"status\": \"received\"}"
+            }
+          ]
+        },
+        {
+          "tools": {
+            "lookup": {
+              "$present": true
+            },
+            "submit_result": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "lookup": {
+              "$present": true
+            },
+            "submit_result": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "$r1": {
+        "metadata": {
+          "task_agent_id": "worker"
+        }
+      },
+      "$r2": null
+    }
+  }
+}

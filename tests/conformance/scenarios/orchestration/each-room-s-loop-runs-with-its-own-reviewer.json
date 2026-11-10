@@ -1,0 +1,337 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/each-room-s-loop-runs-with-its-own-reviewer",
+  "title": "Two rooms share one producer but run their own reviewer and iteration limit; a third room gets the producer's ordinary answer",
+  "rules": [
+    "§19.7",
+    "§19.7.4"
+  ],
+  "notes": "Python: tests/orchestration/test_room_installs.py::test_each_room_s_loop_runs_with_its_own_reviewers; tests/orchestration/test_strategy_rooms.py::test_a_sync_loop_in_two_rooms_takes_their_turns_and_wraps_nothing. Public outputs and exact model calls replace inspection of private turn runners.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "writer",
+        "type": "ai",
+        "agent": {},
+        "model": {
+          "rounds": [
+            {
+              "text": "Clinic draft."
+            },
+            {
+              "text": "Bank draft."
+            },
+            {
+              "text": "Bank revision."
+            },
+            {
+              "text": "Plain answer."
+            }
+          ]
+        }
+      },
+      {
+        "id": "bank_editor",
+        "type": "ai",
+        "agent": {},
+        "model": {
+          "rounds": [
+            {
+              "text": "Revise the bank draft."
+            },
+            {
+              "text": "APPROVED"
+            }
+          ]
+        }
+      },
+      {
+        "id": "clinic_editor",
+        "type": "ai",
+        "agent": {},
+        "model": {
+          "rounds": [
+            {
+              "text": "Needs another draft."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "bank",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      },
+      {
+        "id": "clinic",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      },
+      {
+        "id": "plain",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "writer"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "bank",
+        "loop": {
+          "agent": "writer",
+          "reviewer": "bank_editor",
+          "max_iterations": 2
+        }
+      },
+      {
+        "id": "clinic",
+        "loop": {
+          "agent": "writer",
+          "reviewer": "clinic_editor",
+          "max_iterations": 1
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "bank",
+      "strategy": "bank"
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "clinic",
+      "strategy": "clinic"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "clinic",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "Write for clinic."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "bank",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "Write for bank."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "plain",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "Write for plain."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "clinic": [
+        {
+          "source": {
+            "channel_id": "sms"
+          },
+          "content": {
+            "body": "Write for clinic."
+          }
+        },
+        {
+          "source": {
+            "channel_id": "writer"
+          },
+          "content": {
+            "body": "Clinic draft."
+          },
+          "metadata": {
+            "approved": false
+          }
+        }
+      ],
+      "bank": [
+        {
+          "source": {
+            "channel_id": "sms"
+          },
+          "content": {
+            "body": "Write for bank."
+          }
+        },
+        {
+          "source": {
+            "channel_id": "writer"
+          },
+          "content": {
+            "body": "Bank revision."
+          },
+          "metadata": {
+            "approved": true
+          }
+        }
+      ],
+      "plain": [
+        {
+          "source": {
+            "channel_id": "sms"
+          },
+          "content": {
+            "body": "Write for plain."
+          }
+        },
+        {
+          "source": {
+            "channel_id": "writer"
+          },
+          "content": {
+            "body": "Plain answer."
+          },
+          "metadata": {
+            "approved": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    },
+    "models": {
+      "writer": [
+        {
+          "messages": [
+            {
+              "text": "Write for clinic."
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "text": "Write for bank."
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "text": {
+                "$contains": "Revise the bank draft."
+              }
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "text": "Write for plain."
+            }
+          ]
+        }
+      ],
+      "clinic_editor": [
+        {
+          "messages": [
+            {
+              "text": {
+                "$contains": "Clinic draft."
+              }
+            }
+          ]
+        }
+      ],
+      "bank_editor": [
+        {
+          "messages": [
+            {
+              "text": {
+                "$contains": "Bank draft."
+              }
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "text": {
+                "$contains": "Bank revision."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "bindings": {
+      "bank": {
+        "bank_editor": null,
+        "clinic_editor": null
+      },
+      "clinic": {
+        "bank_editor": null,
+        "clinic_editor": null
+      },
+      "plain": {
+        "bank_editor": null,
+        "clinic_editor": null
+      }
+    }
+  }
+}

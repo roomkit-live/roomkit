@@ -1,0 +1,64 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-structured-delegation-refuses-the-workers-own-result-tool",
+  "title": "A structured delegation to an agent whose host owns submit_result fails naming that tool before the worker generates",
+  "rules": [
+    "§21.1",
+    "§23.3"
+  ],
+  "notes": "Python: tests/orchestration/test_room_installs.py::test_a_structured_delegation_to_an_agent_with_its_own_result_tool_fails_naming_it.",
+  "setup": {
+    "channels": [
+      {
+        "id": "worker",
+        "type": "ai",
+        "agent": {},
+        "model": {
+          "rounds": []
+        },
+        "tools": [
+          {
+            "name": "submit_result",
+            "description": "The host's result tool.",
+            "returns": "host"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "parent",
+        "bindings": []
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "worker",
+      "task": "Do it.",
+      "wait": true,
+      "require_structured_result": true,
+      "expect": {
+        "result": {
+          "status": "failed",
+          "result": {
+            "status": "failed",
+            "error": {
+              "$contains": "'submit_result'"
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "worker": []
+    }
+  }
+}

@@ -1,0 +1,432 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/each-room-s-background-team-runs-its-own-workers",
+  "title": "Each room's background team tool declares and dispatches its own workers, then hands its results back to that room alone",
+  "rules": [
+    "§19.7",
+    "§19.7.3",
+    "§23.3"
+  ],
+  "notes": "Python: tests/orchestration/test_room_installs.py::test_each_room_s_team_tool_runs_its_own_team. Both installs share a supervisor but use different workers with async_delivery=True; the second room is called first, then the first, then a room with no install. Gates keep each dispatch separate from its hand-back.",
+  "setup": {
+    "channels": [
+      {
+        "id": "bank_sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "clinic_sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "plain_sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {},
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "b",
+                  "name": "delegate_workers",
+                  "arguments": {
+                    "task": "Clinic"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Clinic started."
+            },
+            {
+              "text": "Clinic done."
+            },
+            {
+              "calls": [
+                {
+                  "id": "a",
+                  "name": "delegate_workers",
+                  "arguments": {
+                    "task": "Bank"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Bank started."
+            },
+            {
+              "text": "Bank done."
+            },
+            {
+              "text": "My own answer."
+            }
+          ]
+        }
+      },
+      {
+        "id": "worker_a",
+        "type": "ai",
+        "agent": {},
+        "model": {
+          "rounds": [
+            {
+              "text": "Accounts.",
+              "gate": "bank"
+            }
+          ]
+        }
+      },
+      {
+        "id": "worker_b",
+        "type": "ai",
+        "agent": {},
+        "model": {
+          "rounds": [
+            {
+              "text": "Patients.",
+              "gate": "clinic"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "bank",
+        "bindings": [
+          {
+            "channel_id": "bank_sms"
+          }
+        ]
+      },
+      {
+        "id": "clinic",
+        "bindings": [
+          {
+            "channel_id": "clinic_sms"
+          }
+        ]
+      },
+      {
+        "id": "plain",
+        "bindings": [
+          {
+            "channel_id": "plain_sms"
+          },
+          {
+            "channel_id": "sup"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "bank",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "worker_a"
+          ],
+          "strategy": "parallel",
+          "async_delivery": true
+        }
+      },
+      {
+        "id": "clinic",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "worker_b"
+          ],
+          "strategy": "parallel",
+          "async_delivery": true
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "seen",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "bank",
+      "strategy": "bank"
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "clinic",
+      "strategy": "clinic"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "clinic",
+      "message": {
+        "channel_id": "clinic_sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "Check clinic."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "wait_for": "clinic"
+    },
+    {
+      "open": "clinic"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "bank",
+      "message": {
+        "channel_id": "bank_sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "Check bank."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "wait_for": "bank"
+    },
+    {
+      "open": "bank"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "plain",
+      "message": {
+        "channel_id": "plain_sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "Hello."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "sup": [
+        {
+          "tools": {
+            "delegate_workers": 0
+          }
+        },
+        {
+          "tools": {
+            "delegate_workers": 0
+          },
+          "tool_results": [
+            {
+              "tool_call_id": "b",
+              "content": "{\"status\": \"dispatched\", \"workers\": [\"worker_b\"], \"message\": \"Workers are running in the background. Their combined results will be handed to you when they are done.\"}",
+              "is_error": false
+            }
+          ]
+        },
+        {
+          "tools": {
+            "delegate_workers": 0
+          }
+        },
+        {
+          "tools": {
+            "delegate_workers": 0
+          }
+        },
+        {
+          "tools": {
+            "delegate_workers": 0
+          },
+          "tool_results": [
+            {
+              "tool_call_id": "a",
+              "content": "{\"status\": \"dispatched\", \"workers\": [\"worker_a\"], \"message\": \"Workers are running in the background. Their combined results will be handed to you when they are done.\"}",
+              "is_error": false
+            }
+          ]
+        },
+        {
+          "tools": {
+            "delegate_workers": 0
+          }
+        },
+        {
+          "tools": {
+            "delegate_workers": {
+              "$absent": true
+            }
+          }
+        }
+      ],
+      "worker_a": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Bank"
+            }
+          ]
+        }
+      ],
+      "worker_b": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Clinic"
+            }
+          ]
+        }
+      ]
+    },
+    "rooms": {
+      "$r1": {
+        "metadata": {
+          "task_agent_id": "worker_b",
+          "task_input": "Clinic"
+        }
+      },
+      "$r2": {
+        "metadata": {
+          "task_agent_id": "worker_a",
+          "task_input": "Bank"
+        }
+      },
+      "$r3": null
+    },
+    "timeline": {
+      "plain": [
+        {
+          "source": {
+            "channel_id": "plain_sms"
+          },
+          "content": {
+            "body": "Hello."
+          }
+        },
+        {
+          "source": {
+            "channel_id": "sup"
+          },
+          "content": {
+            "body": "My own answer."
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "seen": [
+        {
+          "room_id": "clinic",
+          "response": {
+            "channel_id": "sup",
+            "declared_tools": {
+              "delegate_workers": {
+                "description": "Delegate a task to ALL workers (worker_b) at once. Call this tool exactly ONCE with the topic. All workers run automatically in parallel mode. Do NOT split into separate calls per worker."
+              }
+            }
+          }
+        },
+        {
+          "room_id": "$r1",
+          "response": {
+            "channel_id": "worker_b"
+          }
+        },
+        {
+          "room_id": "clinic",
+          "response": {
+            "channel_id": "sup",
+            "declared_tools": {
+              "delegate_workers": {
+                "description": "Delegate a task to ALL workers (worker_b) at once. Call this tool exactly ONCE with the topic. All workers run automatically in parallel mode. Do NOT split into separate calls per worker."
+              }
+            }
+          }
+        },
+        {
+          "room_id": "bank",
+          "response": {
+            "channel_id": "sup",
+            "declared_tools": {
+              "delegate_workers": {
+                "description": "Delegate a task to ALL workers (worker_a) at once. Call this tool exactly ONCE with the topic. All workers run automatically in parallel mode. Do NOT split into separate calls per worker."
+              }
+            }
+          }
+        },
+        {
+          "room_id": "$r2",
+          "response": {
+            "channel_id": "worker_a"
+          }
+        },
+        {
+          "room_id": "bank",
+          "response": {
+            "channel_id": "sup",
+            "declared_tools": {
+              "delegate_workers": {
+                "description": "Delegate a task to ALL workers (worker_a) at once. Call this tool exactly ONCE with the topic. All workers run automatically in parallel mode. Do NOT split into separate calls per worker."
+              }
+            }
+          }
+        },
+        {
+          "room_id": "plain",
+          "response": {
+            "channel_id": "sup",
+            "declared_tools": {
+              "delegate_workers": {
+                "$absent": true
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

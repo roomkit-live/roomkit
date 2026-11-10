@@ -6,7 +6,7 @@
     "§19.7",
     "§21.1"
   ],
-  "notes": "Python: tests/orchestration/test_room_installs.py test_an_install_refused_halfway_sets_nothing_up; channels/_tool_registry.py register_all (all or none, ToolNameCollisionError: invalid_argument).",
+  "notes": "Python: tests/orchestration/test_room_installs.py test_an_install_refused_halfway_sets_nothing_up; channels/_tool_registry.py register_all (all or none, ToolNameCollisionError: invalid_argument). After refusal the host's colliding tool is called and still returns its own result; neither worker generates.",
   "setup": {
     "channels": [
       {
@@ -22,6 +22,17 @@
         },
         "model": {
           "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "host",
+                  "name": "delegate_to_w2",
+                  "arguments": {
+                    "task": "The host handles this."
+                  }
+                }
+              ]
+            },
             {
               "text": "Hello."
             }
@@ -142,6 +153,12 @@
           }
         },
         {
+          "type": "tool_call_start"
+        },
+        {
+          "type": "tool_call_end"
+        },
+        {
           "source": {
             "channel_id": "sup",
             "channel_type": "ai"
@@ -173,8 +190,25 @@
             },
             "delegate_to_w2": 0
           }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "host",
+              "content": "host",
+              "is_error": false
+            }
+          ],
+          "tools": {
+            "delegate_to_w1": {
+              "$absent": true
+            },
+            "delegate_to_w2": 0
+          }
         }
-      ]
+      ],
+      "w1": [],
+      "w2": []
     }
   }
 }

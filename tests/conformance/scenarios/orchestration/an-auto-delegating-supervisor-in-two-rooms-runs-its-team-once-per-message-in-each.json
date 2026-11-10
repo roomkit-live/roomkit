@@ -6,7 +6,7 @@
     "§19.7",
     "§19.7.3"
   ],
-  "notes": "Python: tests/orchestration/test_strategy_rooms.py test_a_sync_auto_supervisor_in_two_rooms_runs_once_per_message. orchestration/strategies/supervisor/_install_auto.py _install_sync_auto_delegate (kit._turn_runners.take per room and channel).",
+  "notes": "Python: tests/orchestration/test_strategy_rooms.py test_a_sync_auto_supervisor_in_two_rooms_runs_once_per_message. orchestration/strategies/supervisor/_install_auto.py _install_sync_auto_delegate (kit._turn_runners.take per room and channel). Also tests/orchestration/test_room_installs.py::test_a_room_without_the_install_gets_the_supervisor_s_own_answer: the third room runs no worker and receives the unwrapped supervisor turn.",
   "setup": {
     "channels": [
       {
@@ -33,6 +33,9 @@
             },
             {
               "text": "Beta, done."
+            },
+            {
+              "text": "My own answer."
             }
           ]
         }
@@ -69,6 +72,17 @@
         "bindings": [
           {
             "channel_id": "sms"
+          }
+        ]
+      },
+      {
+        "id": "plain",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "sup"
           }
         ]
       }
@@ -139,6 +153,27 @@
     },
     {
       "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "plain",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "Hello."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
     }
   ],
   "expect": {
@@ -176,6 +211,24 @@
           "chain_depth": 1,
           "responds_to": "r2#0"
         }
+      ],
+      "plain": [
+        {
+          "source": {
+            "channel_id": "sms"
+          },
+          "content": {
+            "body": "Hello."
+          }
+        },
+        {
+          "source": {
+            "channel_id": "sup"
+          },
+          "content": {
+            "body": "My own answer."
+          }
+        }
       ]
     },
     "models": {
@@ -196,6 +249,25 @@
             }
           ]
         }
+      ],
+      "sup": [
+        {},
+        {},
+        {},
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Hello."
+            }
+          ],
+          "tools": {
+            "delegate_workers": {
+              "$absent": true
+            }
+          }
+        }
       ]
     },
     "rooms": {
@@ -209,6 +281,13 @@
         "metadata": {
           "task_agent_id": "analyst",
           "task_input": "Beta"
+        }
+      },
+      "plain": {
+        "metadata": {
+          "_conversation_state": {
+            "$absent": true
+          }
         }
       }
     }
