@@ -1,0 +1,220 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "steering/a-steer-reaches-the-room-it-names-alone",
+  "title": "Alice and Bob talk to one agent at once: a message steered at Alice's room is read by Alice's turn alone, and a Cancel steered at Bob's room cuts Bob's turn alone",
+  "rules": [
+    "§21.3",
+    "§10.6.8",
+    "§17.2"
+  ],
+  "notes": "Alice and Bob, two members of one organization, each talk to the same agent in a room of their own, and both turns run at once, each held in its tool. A steer always names its room, so the turn that started last, Bob's, is never reached by what is meant for Alice: her next round reads the message, Bob's turn asks nothing more once cut, and Alice's answers.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "alice_lookup"
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "bob_lookup"
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "alice_lookup",
+            "description": "Look up Alice's account.",
+            "parameters": {
+              "type": "object"
+            },
+            "gate": "alice-tool",
+            "returns": "found"
+          },
+          {
+            "name": "bob_lookup",
+            "description": "Look up Bob's account.",
+            "parameters": {
+              "type": "object"
+            },
+            "gate": "bob-tool",
+            "returns": "found"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "alice-room",
+        "organization_id": "acme",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "bob-room",
+        "organization_id": "acme",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "alice-room",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Check my account."
+        }
+      },
+      "background": true,
+      "as": "alice"
+    },
+    {
+      "wait_for": "alice-tool"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "bob-room",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "bob",
+        "content": {
+          "type": "text",
+          "body": "Check my account too."
+        }
+      },
+      "background": true,
+      "as": "bob"
+    },
+    {
+      "wait_for": "bob-tool"
+    },
+    {
+      "call": "steer",
+      "room_id": "alice-room",
+      "channel_id": "agent",
+      "organization_id": "acme",
+      "directive": {
+        "type": "inject_message",
+        "content": "Alice's PIN is 1234."
+      },
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "call": "steer",
+      "room_id": "bob-room",
+      "channel_id": "agent",
+      "organization_id": "acme",
+      "directive": {
+        "type": "cancel",
+        "reason": "Bob pressed stop"
+      },
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "open": "alice-tool"
+    },
+    {
+      "open": "bob-tool"
+    },
+    {
+      "await": "alice",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "await": "bob"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Check my account."
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Check my account too."
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Check my account."
+            },
+            {
+              "role": "assistant",
+              "text": ""
+            },
+            {
+              "role": "tool",
+              "text": ""
+            },
+            {
+              "role": "user",
+              "text": "Alice's PIN is 1234."
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
