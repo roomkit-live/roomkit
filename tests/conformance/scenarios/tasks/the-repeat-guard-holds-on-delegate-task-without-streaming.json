@@ -1,0 +1,247 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/the-repeat-guard-holds-on-delegate-task-without-streaming",
+  "title": "Five identical delegate_task calls create only two worker tasks: the third and every subsequent call is refused (provider without streaming)",
+  "rules": [
+    "§6.4",
+    "§9.3",
+    "§23.4"
+  ],
+  "notes": "Python: tests/orchestration/test_room_installs.py::test_the_repeat_guard_holds_on_an_orchestration_tool. Real child task creation witnesses the first two calls, without replacing DelegateHandler.handle. This variant uses generate() through the default provider adapter; every model request asserts the actual generation method.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "lead",
+        "type": "ai",
+        "agent": {},
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "delegate_task",
+                  "arguments": {
+                    "agent": "worker",
+                    "task": "Same task."
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "delegate_task",
+                  "arguments": {
+                    "agent": "worker",
+                    "task": "Same task."
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c3",
+                  "name": "delegate_task",
+                  "arguments": {
+                    "agent": "worker",
+                    "task": "Same task."
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c4",
+                  "name": "delegate_task",
+                  "arguments": {
+                    "agent": "worker",
+                    "task": "Same task."
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c5",
+                  "name": "delegate_task",
+                  "arguments": {
+                    "agent": "worker",
+                    "task": "Same task."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done delegating."
+            }
+          ],
+          "streaming": false
+        }
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "agent": {},
+        "model": {
+          "rounds": [
+            {
+              "text": "Worked."
+            },
+            {
+              "text": "Worked."
+            }
+          ],
+          "streaming": false
+        }
+      },
+      {
+        "id": "observer",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "parent",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "lead"
+          },
+          {
+            "channel_id": "observer"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate_handler",
+      "handler": "tasks",
+      "notify": "observer"
+    },
+    {
+      "call": "setup_delegation",
+      "agent_id": "lead",
+      "handler": "tasks"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "parent",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "lead": [
+        {
+          "method": "generate"
+        },
+        {
+          "method": "generate"
+        },
+        {
+          "method": "generate"
+        },
+        {
+          "method": "generate"
+        },
+        {
+          "method": "generate"
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "is_error": false,
+              "content": {
+                "$contains": "\"status\": \"delegated\""
+              }
+            },
+            {
+              "tool_call_id": "c2",
+              "is_error": false,
+              "content": {
+                "$contains": "\"status\": \"delegated\""
+              }
+            },
+            {
+              "tool_call_id": "c3",
+              "is_error": true,
+              "content": {
+                "$contains": "You already called 'delegate_task'"
+              }
+            },
+            {
+              "tool_call_id": "c4",
+              "is_error": true,
+              "content": {
+                "$contains": "You already called 'delegate_task'"
+              }
+            },
+            {
+              "tool_call_id": "c5",
+              "is_error": true,
+              "content": {
+                "$contains": "You already called 'delegate_task'"
+              }
+            }
+          ],
+          "method": "generate"
+        }
+      ],
+      "worker": [
+        {
+          "method": "generate"
+        },
+        {
+          "method": "generate"
+        }
+      ]
+    },
+    "rooms": {
+      "$r1": {
+        "metadata": {
+          "task_agent_id": "worker",
+          "task_input": "Same task."
+        }
+      },
+      "$r2": {
+        "metadata": {
+          "task_agent_id": "worker",
+          "task_input": "Same task."
+        }
+      },
+      "$r3": null
+    }
+  }
+}
