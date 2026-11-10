@@ -1,0 +1,76 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "status/a-status-posted-after-close-starts-no-room-hook",
+  "title": "A retained status bus posts after close without starting a room hook",
+  "rules": [
+    "§12.10.4"
+  ],
+  "notes": "Python: tests/test_kit_close.py::test_work_a_read_starts_is_no_read_once_the_kit_closed. The positive control proves subscription and hook registration before closing. The late publication uses the already obtained bus. Native tests separately check that it reads no context from the released store; this scenario claims no SourceProvider implementation.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "status",
+        "trigger": "on_status_posted",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "status.post",
+      "agent_id": "src",
+      "action": "before",
+      "status": "ok",
+      "metadata": {
+        "room_id": "room-1"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "close"
+    },
+    {
+      "call": "status.post",
+      "agent_id": "src",
+      "action": "late",
+      "status": "ok",
+      "metadata": {
+        "room_id": "room-1"
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "status": [
+        {
+          "trigger": "on_status_posted",
+          "room_id": "room-1",
+          "status_entry": {
+            "action": "before"
+          }
+        }
+      ]
+    }
+  }
+}

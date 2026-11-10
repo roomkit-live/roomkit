@@ -1,0 +1,186 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/nonempty-task-and-observation-reads-remain-available-during-close",
+  "title": "Nonempty task and observation reads agree before and during close while the store remains open",
+  "rules": [
+    "§12.10.4"
+  ],
+  "notes": "Python: tests/test_kit_close.py::test_a_read_answers_during_the_close_and_after_it_while_its_store_is_open. Nonempty rows strengthen its read equality. The queued delivery is cut before the during-close reads, while the first send keeps close pending. Native memory-store tests separately assert reads after close; an owned SQL store then refuses them.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "deliver": [
+          {
+            "when": {
+              "text": "held"
+            },
+            "gate": "sending"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.add_task",
+      "task": {
+        "id": "task",
+        "room_id": "room-1",
+        "title": "Follow up"
+      }
+    },
+    {
+      "call": "submit_feedback",
+      "room_id": "room-1",
+      "rating": 0.75,
+      "comment": "Kept"
+    },
+    {
+      "call": "list_tasks",
+      "room_id": "room-1",
+      "expect": {
+        "result": [
+          {
+            "title": "Follow up",
+            "status": "pending"
+          }
+        ]
+      }
+    },
+    {
+      "call": "list_observations",
+      "room_id": "room-1",
+      "expect": {
+        "result": [
+          {
+            "category": "feedback:overall",
+            "content": "[overall] 0.75: Kept"
+          }
+        ]
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "held"
+        },
+        "delivery_key": "held"
+      },
+      "defer_delivery": true,
+      "as": "held"
+    },
+    {
+      "wait_for": "sending"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "queued"
+        },
+        "delivery_key": "queued"
+      },
+      "defer_delivery": true,
+      "as": "queued"
+    },
+    {
+      "call": "close",
+      "background": true,
+      "as": "closing"
+    },
+    {
+      "call": "delivery.wait",
+      "of": "queued",
+      "expect": {
+        "result": {
+          "cancellation_reason": "kit_closed"
+        }
+      }
+    },
+    {
+      "call": "list_tasks",
+      "room_id": "room-1",
+      "expect": {
+        "result": [
+          {
+            "title": "Follow up",
+            "status": "pending"
+          }
+        ]
+      }
+    },
+    {
+      "call": "list_observations",
+      "room_id": "room-1",
+      "expect": {
+        "result": [
+          {
+            "category": "feedback:overall",
+            "content": "[overall] 0.75: Kept"
+          }
+        ]
+      }
+    },
+    {
+      "open": "sending"
+    },
+    {
+      "await": "closing"
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "held"
+          }
+        },
+        {
+          "content": {
+            "body": "queued"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "body": "held"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

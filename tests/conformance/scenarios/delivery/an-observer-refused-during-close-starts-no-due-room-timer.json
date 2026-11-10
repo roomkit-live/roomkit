@@ -1,0 +1,187 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/an-observer-refused-during-close-starts-no-due-room-timer",
+  "title": "An observer committing into another room during close is refused before that room can run a due timer",
+  "rules": [
+    "§12.10.4"
+  ],
+  "notes": "Python: tests/test_kit_close.py::test_a_call_an_observer_makes_as_the_kit_closes_is_refused. The observer is already running, the other room has an immediately due inactivity timer, and the queued delivery proves shutdown admission closed before the observer resumes. No audit record or ON_ROOM_PAUSED hook is allowed.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "deliver": [
+          {
+            "when": {
+              "text": "held"
+            },
+            "gate": "sending"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "timers": {
+          "inactive_after_seconds": 0
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "audit",
+        "trigger": "before_broadcast",
+        "execution": "async",
+        "reactions": [
+          {
+            "when": {
+              "text": "held"
+            },
+            "gate": "audit",
+            "do": [
+              {
+                "call": "commit_event",
+                "room_id": "room-2",
+                "event": {
+                  "room_id": "room-2",
+                  "source": {
+                    "channel_id": "sms",
+                    "channel_type": "sms"
+                  },
+                  "content": {
+                    "type": "text",
+                    "body": "audit"
+                  }
+                },
+                "expect": {
+                  "error": "kit_closed"
+                },
+                "as": "refused_commit"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "paused",
+        "trigger": "on_room_paused"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "held"
+        },
+        "delivery_key": "held"
+      },
+      "defer_delivery": true,
+      "as": "held"
+    },
+    {
+      "wait_for": "sending"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "queued"
+        },
+        "delivery_key": "queued"
+      },
+      "defer_delivery": true,
+      "as": "queued"
+    },
+    {
+      "wait_for": "audit"
+    },
+    {
+      "call": "close",
+      "background": true,
+      "as": "closing"
+    },
+    {
+      "call": "delivery.wait",
+      "of": "queued",
+      "expect": {
+        "result": {
+          "cancellation_reason": "kit_closed"
+        }
+      }
+    },
+    {
+      "open": "audit"
+    },
+    {
+      "open": "sending"
+    },
+    {
+      "await": "closing"
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "held"
+          }
+        },
+        {
+          "content": {
+            "body": "queued"
+          }
+        }
+      ],
+      "room-2": []
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "body": "held"
+            }
+          }
+        ]
+      }
+    },
+    "hooks": {
+      "paused": []
+    },
+    "actions": {
+      "refused_commit": [
+        {
+          "error": "kit_closed"
+        }
+      ]
+    }
+  }
+}
