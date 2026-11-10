@@ -25,6 +25,7 @@ from roomkit.turns._error_codec import ErrorClasses, error_record
 from roomkit.turns._executor_channels import ChannelFactory, ExecutorChannels, close_quietly
 from roomkit.turns._executor_rooms import ExecutorRooms
 from roomkit.turns._executor_turn import ExecutorTurn
+from roomkit.turns._hosting import Hosted
 from roomkit.turns._wiring import TurnWiring
 from roomkit.turns._wiring_env import TurnWiringEnv
 from roomkit.turns.base import TurnTimeouts
@@ -51,9 +52,12 @@ class TurnExecutor:
             ``None`` when it has none; sync or async. The executor builds
             each channel once, wires it (RFC §10.6.2) and closes it when it
             closes.
-        hosts: Which channel ids this executor declares: their collection,
-            or a predicate; every id when omitted. Only a collection can be
-            told to executors' backends in other processes (RFC §10.6.7).
+        hosts: Which channel ids this executor declares: a collection of
+            ids and of prefixes ending in ``*`` (``"org-*"``; ``"*"`` for
+            every id), or a predicate; every id when omitted. Only a
+            collection is told to the room owners of other processes: a
+            predicate, or no *hosts*, takes the turns of its own process
+            alone (RFC §10.6.7).
         executor_id: The id the executor answers with; a random one when
             omitted.
         timeouts: The heartbeat bounds it keeps.
@@ -70,6 +74,8 @@ class TurnExecutor:
 
     Raises:
         TypeError: An entry of *error_classes* is not an ``Exception`` class.
+        ValueError: An entry of *hosts* holds a ``*`` elsewhere than at its
+            end.
     """
 
     def __init__(
@@ -92,8 +98,9 @@ class TurnExecutor:
         self._hosted: frozenset[str] | None = None
         self._hosts: Callable[[str], bool] | None = None
         if isinstance(hosts, Collection):
-            self._hosted = frozenset(hosts)
-            self._hosts = self._hosted.__contains__
+            declared = Hosted(frozenset(hosts))
+            self._hosted = declared.entries
+            self._hosts = declared.covers
         elif hosts is not None:
             self._hosts = hosts
         self._timeouts = timeouts or TurnTimeouts()
@@ -234,8 +241,8 @@ class TurnExecutor:
 
     @property
     def hosted(self) -> frozenset[str] | None:
-        """The channel ids it declares when they were given as a collection;
-        ``None`` for a predicate or every id (RFC §10.6.7)."""
+        """The channel ids and prefixes it declares when they were given as
+        a collection; ``None`` for a predicate or every id (RFC §10.6.7)."""
         return self._hosted
 
     @property

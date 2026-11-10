@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   windows, reasoning support and pricing. Meta discovery includes Ember; its
   prices triple above 200,000 input tokens, cached tokens included.
 - A turn run on another executor than the kit's own names it in its record: `executor_id` on the turn's last message, beside `ai_model` (RMK-1618).
+- **An executor declares its agents by prefix.** `TurnExecutor(build, hosts={"acme-*"})` (`{"*"}` for every agent) runs the turns of agents created after it started, from any process, so a pool of generic executors serves an organization's agents without being told of each (RFC §10.6.7, RMK-1631, `examples/turns_executor_pool.py`). An entry ending in `*` is a prefix, and a `*` anywhere else raises `ValueError`. Upgrade every room owner process first: an older one reads `acme-*` as an agent's id and fails its turns with `no_executor`.
 - **`max_result_chars` on `RoomKit.delegate()` and `DelegateHandler`.** How much of a worker's output its relayed result carries, 4,000 characters by default (RMK-1617). A review that came back cut at 4,000 can now come back whole.
 - **`OpenAIConfig.thinking_field`.** Names the assistant message field a server reads a model's earlier reasoning from, for a server whose documentation asks for it back (`"reasoning_content"` on Z.ai's GLM). A round or an answer that reasoned carries it there. It is absent by default, since strict servers refuse a field they do not know, and the configs of the providers that already send reasoning where their vendor reads it (DeepSeek, MiniMax, Kimi, Cerebras) refuse it.
 
@@ -22,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed `qwen3-coder-plus` and `grok-imagine-image-quality` from the curated
   catalogs after their disappearance from the upstream mirror; this does not
   assert their retirement from the vendors' APIs.
+- **BREAKING: an agent its executor builds nothing for fails with `no_executor`** (RFC §10.6.7, RMK-1631). A turn or channel call placed on an executor whose factory returns `None` for its channel raises `TurnLinkError` reason `no_executor`, as when no executor declares it, instead of `ChannelNotRegisteredError`, and goes to no other executor: catch `TurnLinkError` there.
 - **BREAKING: an executor has no store** (RFC §10.6.5, §10.6.6, §10.6.9, RMK-1619). The room that calls an executor sends what its turn reads, and a hook on the executor asks the room for its context, so an executor in another process needs only the turn backend. `TurnExecutor` no longer takes `store=`: remove the argument.
 
 ### Fixed

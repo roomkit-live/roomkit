@@ -22,7 +22,7 @@ from roomkit.channels._discussion_turn import DISCUSSION_TURN, issue_mark, retir
 from roomkit.channels._strategy_turn import strategy_turn
 from roomkit.channels._tool_registry import set_turn_owner_tools
 from roomkit.core._turn_scope import enter_turn
-from roomkit.core.exceptions import ChannelNotRegisteredError, TurnLinkError
+from roomkit.core.exceptions import TurnLinkError
 from roomkit.core.hooks import set_turn_room_hooks
 from roomkit.models.streaming import UsageMarker
 from roomkit.telemetry.context import get_current_span, set_current_span
@@ -38,7 +38,7 @@ from roomkit.turns._executor_steer import steer_turn
 from roomkit.turns._frame_sender import FrameSender
 from roomkit.turns._outlet import TurnOutlet, set_turn_outlet
 from roomkit.turns._wiring_env import set_turn_request
-from roomkit.turns.base import heartbeat_tick
+from roomkit.turns.base import builds_nothing, heartbeat_tick
 from roomkit.turns.host import TurnHost, set_turn_host
 from roomkit.turns.wire import (
     Accepted,
@@ -205,9 +205,7 @@ class ExecutorTurn:
             # never runs.
             return
         if channel is None:
-            missing = ChannelNotRegisteredError(
-                f"No channel {self._request.channel_id!r} on executor {self._executor_id}"
-            )
+            missing = builds_nothing(self._request.channel_id, self._executor_id)
             await self._send(Error(error=error_record(missing)))
             return
         event = self._marked_event()

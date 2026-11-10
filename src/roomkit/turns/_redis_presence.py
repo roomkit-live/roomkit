@@ -23,6 +23,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
+from roomkit.turns._hosting import Hosted
+
 logger = logging.getLogger("roomkit.turns")
 
 # KEYS: alive executors, declarations, alive owners, this node's inbox, this
@@ -90,11 +92,12 @@ return cjson.encode(view)
 
 @dataclass(frozen=True, slots=True)
 class Declaration:
-    """What an executor of a process declares to the owners (RFC §10.6.7)."""
+    """What an executor of a process declares to the owners (RFC §10.6.7):
+    its channels, names and prefixes as it was given them."""
 
     node: str
     executor_id: str
-    channels: frozenset[str]
+    channels: Hosted
     room_hooks: frozenset[str]
 
     @property
@@ -103,14 +106,14 @@ class Declaration:
         return member_of(self.node, self.executor_id)
 
     def takes(self, channel_id: str, room_hooks: Iterable[str]) -> bool:
-        return channel_id in self.channels and all(h in self.room_hooks for h in room_hooks)
+        return self.channels.covers(channel_id) and all(h in self.room_hooks for h in room_hooks)
 
     def dump(self) -> str:
         return json.dumps(
             {
                 "node": self.node,
                 "executor_id": self.executor_id,
-                "channels": sorted(self.channels),
+                "channels": sorted(self.channels.entries),
                 "room_hooks": sorted(self.room_hooks),
             }
         )
@@ -121,7 +124,7 @@ class Declaration:
         return cls(
             data["node"],
             data["executor_id"],
-            frozenset(data["channels"]),
+            Hosted(frozenset(data["channels"])),
             frozenset(data["room_hooks"]),
         )
 

@@ -18,9 +18,9 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
-from roomkit.core.exceptions import ChannelNotRegisteredError
 from roomkit.turns._error_codec import error_record
 from roomkit.turns._rooms import RoomRecords, stored_room_state
+from roomkit.turns.base import builds_nothing
 from roomkit.turns.wire import ChannelCall, ChannelResult, RoomAttached, RoomDetached
 
 if TYPE_CHECKING:
@@ -128,9 +128,7 @@ class ExecutorRooms:
         when the verb changed it."""
         executor_id = self._executor_id
         if channel is None:
-            missing = ChannelNotRegisteredError(
-                f"No channel {message.channel_id!r} on executor {executor_id}"
-            )
+            missing = builds_nothing(message.channel_id, executor_id)
             return ChannelResult(error=error_record(missing), executor_id=executor_id)
         room_id, channel_id = message.room_id, message.channel_id
         stale = self.enter(channel_id, room_id, message.call_id, message.previous_turn)

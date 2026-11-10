@@ -252,6 +252,40 @@ async def test_a_channel_call_to_a_declared_agent_with_no_executor_fails_at_once
     assert raised.value.reason == "no_executor"
 
 
+async def test_an_agent_its_executor_builds_nothing_for_fails_no_executor() -> None:
+    """Both executors declare ``ana``; the one its turns go to (served first)
+    builds nothing for it: the turn and the channel call fail as with no
+    executor, and never go to the other, which would build it. The room stays
+    on that executor: its next turn fails there too (RFC §10.6.7)."""
+    backend = InMemoryTurnBackend()
+    provider = MockAIProvider(responses=["It is sunny."])
+    blind = TurnExecutor(lambda _: None, hosts={"ana"})
+    able = TurnExecutor(lambda cid: Agent(cid, provider=provider), hosts={"ana"})
+    await backend.serve(blind)
+    await backend.serve(able)
+    kit = RoomKit(turn_backend=backend)
+    kit.register_channel(SimpleChannel("sms"))
+    kit.register_channel(ANA)
+    await kit.create_room(room_id="r")
+    await kit.attach_channel("r", "sms")
+    await kit.attach_channel("r", "ana", category=ChannelCategory.INTELLIGENCE)
+
+    hi = InboundMessage(channel_id="sms", sender_id="marie", content=TextContent(body="Hi."))
+    first = await kit.process_inbound(hi, room_id="r")
+    with pytest.raises(TurnLinkError) as raised:
+        await kit.channel_call("ana", "r", "set_mode", mode="quiet")
+    next_turn = await kit.process_inbound(hi, room_id="r")
+    said = await _said(kit, "ana")
+    await kit.close()
+    await blind.close()
+    await able.close()
+
+    for result in (first, next_turn):
+        assert isinstance(result.error, TurnLinkError) and result.error.reason == "no_executor"
+    assert raised.value.reason == "no_executor"
+    assert said == [] and provider.calls == []
+
+
 async def test_a_declaration_never_takes_a_live_channel_s_id_nor_the_reverse() -> None:
     kit = RoomKit()
     kit.register_channel(_agent("bob"))

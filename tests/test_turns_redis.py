@@ -256,6 +256,33 @@ async def test_a_turn_no_executor_declares_fails_at_once(prefix: str, redis_clie
         await kit.close()
 
 
+@pytest.mark.parametrize(
+    ("rule", "agent", "reason"),
+    [("*", "org-sales", None), ("org-*", "org-sales", None), ("org-*", "other", "no_executor")],
+)
+async def test_an_executor_elsewhere_declaring_a_rule_takes_the_agents_it_covers(
+    prefix: str, redis_client: Any, rule: str, agent: str, reason: str | None
+) -> None:
+    """An executor of another process declaring every agent, or a prefix,
+    runs the turns of an agent it was never named; one outside its prefix
+    has no executor (RFC §10.6.7)."""
+    store = InMemoryStore()
+    backend = _backend(prefix)
+    executor = _agent_executor("pool", store, hosts={rule}, answer="From the pool.")
+    await backend.serve(executor)
+    kit = await _owner(prefix, agent, store=store)
+    try:
+        result = await kit.process_inbound(_said("Hi."), room_id="r")
+        answers = await _answers(kit, agent)
+
+        assert getattr(result.error, "reason", None) == reason
+        assert answers == ([] if reason else ["From the pool."])
+    finally:
+        await kit.close()
+        await backend.close()
+        await executor.close()
+
+
 async def test_a_room_s_turns_stay_on_the_executor_holding_it(
     prefix: str, redis_client: Any
 ) -> None:

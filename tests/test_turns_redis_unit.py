@@ -22,6 +22,7 @@ from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.models.room import Room
 from roomkit.turns import InMemoryTurnBackend, TurnExecutor, TurnTimeouts, _redis_routes
 from roomkit.turns._error_codec import ROOMKIT_ERRORS
+from roomkit.turns._hosting import Hosted
 from roomkit.turns._owner_turn import OwnerTurn
 from roomkit.turns._redis_beat import LiveExecutors
 from roomkit.turns._redis_clients import redis_clients
@@ -61,25 +62,36 @@ def test_an_inbox_entry_reads_back_from_bytes_or_text() -> None:
 
 
 def test_a_declaration_takes_its_channels_with_every_room_hook_it_defines() -> None:
-    declared = Declaration("node-a", "host-a", frozenset({"meteo"}), frozenset({"audit"}))
+    declared = Declaration("node-a", "host-a", Hosted(frozenset({"meteo"})), frozenset({"audit"}))
+    pool = Declaration("node-b", "pool", Hosted(frozenset({"org-*", "meteo"})), frozenset())
 
     assert declared.takes("meteo", [])
     assert declared.takes("meteo", ["audit"])
     assert not declared.takes("meteo", ["audit", "billing"])
     assert not declared.takes("other", [])
     assert Declaration.load(declared.dump()) == declared
+    assert pool.takes("org-sales", []) and pool.takes("meteo", [])
+    assert not pool.takes("org", []) and not pool.takes("other", [])
+    assert Declaration.load(pool.dump()) == pool
 
 
 def test_an_executor_given_its_channels_tells_them() -> None:
     listed = TurnExecutor(lambda _: None, hosts={"meteo", "billing"})
+    prefixed = TurnExecutor(lambda _: None, hosts={"org-*"})
+    starred = TurnExecutor(lambda _: None, hosts={"*"})
     predicate = TurnExecutor(lambda _: None, hosts=lambda cid: cid == "meteo")
     every = TurnExecutor(lambda _: None)
 
     assert listed.hosted == {"meteo", "billing"} and listed.declares("billing")
+    assert prefixed.hosted == {"org-*"} and prefixed.declares("org-sales")
+    assert not prefixed.declares("meteo")
+    assert starred.hosted == {"*"} and starred.declares("anything")
     assert predicate.hosted is None and predicate.declares("meteo")
     assert every.hosted is None and every.declares("anything")
     with pytest.raises(TypeError, match="not one id"):
         TurnExecutor(lambda _: None, hosts="meteo")
+    with pytest.raises(ValueError, match="prefix"):
+        TurnExecutor(lambda _: None, hosts={"org-*-sales"})
 
 
 def test_an_executor_tells_the_names_of_its_room_hooks() -> None:
@@ -949,8 +961,9 @@ class _Holders:
 
 class _Alive:
     def __init__(self, members: list[str]) -> None:
+        agent = Hosted(frozenset({"agent"}))
         self._declared = {
-            member: Declaration(member.split(":")[0], "w", frozenset({"agent"}), frozenset())
+            member: Declaration(member.split(":")[0], "w", agent, frozenset())
             for member in members
         }
 

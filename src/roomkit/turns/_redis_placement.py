@@ -156,7 +156,7 @@ class Placement:
         return [
             Elsewhere(declared.executor_id, declared.node)
             for declared in (await self._live.current()).values()
-            if declared.node != self._node and channel_id in declared.channels
+            if declared.node != self._node and declared.channels.covers(channel_id)
         ]
 
     async def _takers_elsewhere(

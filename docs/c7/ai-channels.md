@@ -147,6 +147,23 @@ await kit.attach_channel(room_id, "meteo")  # an intelligence binding
 - Give the host's executor `hosts=`: without it, it takes the turns of every
   channel the kit does not run itself. The kit's own executor alone takes the
   turns of the agents the kit holds live (RFC §10.6.7).
+- `hosts=` takes ids and prefixes ending in `*`: a pool of generic executors
+  declares `hosts={"acme-*"}` (or `{"*"}`) and builds each agent from its
+  configuration, so agents created on the fly need no executor told of them.
+  Unlike a predicate, it reaches the owners of other processes (every owner
+  process must run a RoomKit that reads prefixes: an older one reads
+  `acme-*` as an id and fails the turns with `no_executor`). Every executor
+  declaring an agent builds it when a room attaches it, and keeps it until it
+  closes or the kit releases the channel (`kit.release_channel`). A turn or
+  channel call of an agent the factory builds nothing for
+  (it returns `None`) fails with `no_executor` and goes to no other executor;
+  the room's next turns go to that executor too while it lives, so every
+  executor declaring a prefix must build every agent under it
+  (`examples/turns_executor_pool.py`).
+- A prefix is the only scope a declaration carries: `{"*"}` takes the
+  declared agents of every organization the owners serve. A multi-tenant
+  host assigns agent ids itself (one prefix per pool kept apart) and never
+  lets a tenant choose one.
 - The kit holds a `DeclaredChannel` under the id: a binding takes its
   `capabilities`, routing plans its turns, `delegate` / `start_task` name it,
   `send_greeting` and auto-greet read its identity (`auto_greet` defaults to

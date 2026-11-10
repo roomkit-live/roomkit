@@ -18,6 +18,7 @@ import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
+from roomkit.turns._hosting import Hosted
 from roomkit.turns._redis_presence import BEAT_SCRIPT, Declaration, Registry, View, member_of
 
 if TYPE_CHECKING:
@@ -97,7 +98,8 @@ class BeatPayload:
             hooks = executor.hooks.defined_room_hooks()
         except RuntimeError:
             return self._declared.get(member, "")
-        dumped = Declaration(self._node, executor.executor_id, executor.hosted, hooks).dump()
+        declared = Hosted(executor.hosted)
+        dumped = Declaration(self._node, executor.executor_id, declared, hooks).dump()
         self._declared[member] = dumped
         return dumped
 

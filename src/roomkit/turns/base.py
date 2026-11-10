@@ -76,6 +76,13 @@ def no_executor(channel_id: str, room_hooks: Sequence[str] = ()) -> TurnLinkErro
     return TurnLinkError("no_executor", f"No executor serves channel {channel_id!r}{missing}")
 
 
+def builds_nothing(channel_id: str, executor_id: str) -> TurnLinkError:
+    """The failure of a turn or channel call of *channel_id* placed on an
+    executor whose factory builds nothing for it: no executor serves it, and
+    it is placed on no other (RFC §10.6.7)."""
+    return TurnLinkError("no_executor", f"Executor {executor_id} builds no channel {channel_id!r}")
+
+
 async def heartbeat_tick(interval: float) -> None:
     """Wait one heartbeat interval on the loop's own timer, so code that
     patches ``asyncio.sleep`` (a test, a host's clock) cannot make the
