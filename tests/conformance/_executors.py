@@ -161,9 +161,11 @@ class Executors:
 
     def _build(self, executor_id: str, channel_id: str) -> Channel | None:
         """The executor's own copy of a channel of the setup, whose calls it
-        records; a channel the kit holds live is built here only by a defect."""
+        records, none for a channel outside what its factory ``builds``; a
+        channel the kit holds live is built here only by a defect."""
         spec = self._channels.get(channel_id)
-        if spec is None:
+        builds = self._specs[executor_id].get("builds")
+        if spec is None or (builds is not None and channel_id not in builds):
             return None
         harness = self._harness
         channel = scripted_channel(harness.kit, harness, spec, process=True)

@@ -1,0 +1,128 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-room-whose-executor-builds-nothing-for-its-agent-stays-on-it",
+  "title": "A room whose turn went to an executor that builds nothing for its agent stays on it: the next turn fails there too, though another executor now serves the agent",
+  "rules": [
+    "§10.6.7"
+  ],
+  "notes": "Python: tests/test_channel_declaration.py test_an_agent_its_executor_builds_nothing_for_fails_no_executor. A turn's failure reaches process_inbound as its message.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "From coder."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "blind",
+        "hosts": [
+          "*"
+        ],
+        "builds": []
+      },
+      {
+        "id": "able",
+        "hosts": [
+          "*"
+        ],
+        "started": false
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Anyone?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "coder"
+          }
+        }
+      }
+    },
+    {
+      "call": "executor.start",
+      "executor": "able"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "And now?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "coder"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Anyone?"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "And now?"
+          }
+        }
+      ]
+    },
+    "executors": {
+      "blind": [],
+      "able": []
+    }
+  }
+}

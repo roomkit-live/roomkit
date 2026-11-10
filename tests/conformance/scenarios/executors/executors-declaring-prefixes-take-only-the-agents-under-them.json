@@ -1,0 +1,194 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/executors-declaring-prefixes-take-only-the-agents-under-them",
+  "title": "Two executors declaring prefixes (acme-*, globex-*) each run the agents under theirs, and an agent under neither has no executor",
+  "rules": [
+    "§10.6.7"
+  ],
+  "notes": "Python: tests/test_turns_redis.py test_an_executor_elsewhere_declaring_a_rule_takes_the_agents_it_covers, tests/test_turns_redis_unit.py test_a_declaration_takes_its_channels_with_every_room_hook_it_defines.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "acme-sales",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "From acme."
+            }
+          ]
+        },
+        "declared": true
+      },
+      {
+        "id": "globex-support",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "From globex."
+            }
+          ]
+        },
+        "declared": true
+      },
+      {
+        "id": "outsider",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Never."
+            }
+          ]
+        },
+        "declared": true
+      }
+    ],
+    "executors": [
+      {
+        "id": "acme",
+        "hosts": [
+          "acme-*"
+        ]
+      },
+      {
+        "id": "globex",
+        "hosts": [
+          "globex-*"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "acme-sales",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "globex-support",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "r3",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "outsider",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hello."
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hi."
+        }
+      }
+    },
+    {
+      "call": "channel_call",
+      "channel_id": "outsider",
+      "room_id": "r3",
+      "verb": "ping",
+      "expect": {
+        "error": {
+          "name": "turn_link",
+          "reason": "no_executor"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "From acme."
+          }
+        }
+      ],
+      "r2": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hi."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "From globex."
+          }
+        }
+      ]
+    },
+    "executors": {
+      "acme": [
+        {
+          "call": "on_event",
+          "channel_id": "acme-sales",
+          "room_id": "r1",
+          "build": 1
+        }
+      ],
+      "globex": [
+        {
+          "call": "on_event",
+          "channel_id": "globex-support",
+          "room_id": "r2",
+          "build": 1
+        }
+      ]
+    }
+  }
+}

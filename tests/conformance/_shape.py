@@ -61,7 +61,7 @@ SETUP = {
     "executors",
 }
 PROCESS = {"id"}
-EXECUTOR = {"id", "hosts", "hooks", "room_hooks", "started", "answers", "gate"}
+EXECUTOR = {"id", "hosts", "builds", "hooks", "room_hooks", "started", "answers", "gate"}
 TURN_TIMEOUTS = {"accept_ms", "heartbeat_interval_ms", "heartbeat_timeout_ms", "cancel_ms"}
 VERB = {"result", "keeps", "reads"}
 KIT = {

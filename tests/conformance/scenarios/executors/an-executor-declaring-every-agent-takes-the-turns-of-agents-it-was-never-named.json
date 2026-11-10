@@ -1,0 +1,214 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/an-executor-declaring-every-agent-takes-the-turns-of-agents-it-was-never-named",
+  "title": "An executor declaring every agent (*) builds and runs each declared agent, never named to it, and is never told of a live agent's attach nor given its turn",
+  "rules": [
+    "§10.6.7"
+  ],
+  "notes": "Python: tests/test_turns_redis.py test_an_executor_elsewhere_declaring_a_rule_takes_the_agents_it_covers, tests/test_turns_redis_unit.py test_an_executor_given_its_channels_tells_them.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "From coder."
+            }
+          ]
+        },
+        "declared": true
+      },
+      {
+        "id": "builder",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "From builder."
+            }
+          ]
+        },
+        "declared": true
+      },
+      {
+        "id": "helper",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "From the kit."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "pool",
+        "hosts": [
+          "*"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      },
+      {
+        "id": "r3",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "attach_channel",
+      "room_id": "r2",
+      "channel_id": "builder",
+      "category": "intelligence"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "r3",
+      "channel_id": "helper",
+      "category": "intelligence"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hello."
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hi."
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r3",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hey."
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "From coder."
+          }
+        }
+      ],
+      "r2": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hi."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "From builder."
+          }
+        }
+      ],
+      "r3": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hey."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "From the kit."
+          }
+        }
+      ]
+    },
+    "executors": {
+      "pool": [
+        {
+          "call": "built",
+          "channel_id": "builder",
+          "build": 1
+        },
+        {
+          "call": "on_room_attached",
+          "channel_id": "builder",
+          "room_id": "r2",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "builder",
+          "room_id": "r2",
+          "build": 1
+        }
+      ]
+    }
+  }
+}

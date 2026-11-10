@@ -1,0 +1,162 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/an-agent-its-executor-builds-nothing-for-fails-no-executor",
+  "title": "A turn or a channel call of an agent the executor's factory builds nothing for fails with no_executor, and the agents it builds run on",
+  "rules": [
+    "§10.6.2",
+    "§10.6.7"
+  ],
+  "notes": "Python: tests/test_channel_declaration.py test_an_agent_its_executor_builds_nothing_for_fails_no_executor. A turn's failure reaches process_inbound as its message; the reason no_executor is asserted on the channel call.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "From coder."
+            }
+          ]
+        },
+        "declared": true
+      },
+      {
+        "id": "stranger",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Never."
+            }
+          ]
+        },
+        "declared": true
+      }
+    ],
+    "executors": [
+      {
+        "id": "pool",
+        "hosts": [
+          "*"
+        ],
+        "builds": [
+          "coder"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "stranger",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Anyone?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "stranger"
+          }
+        }
+      }
+    },
+    {
+      "call": "channel_call",
+      "channel_id": "stranger",
+      "room_id": "r2",
+      "verb": "ping",
+      "expect": {
+        "error": {
+          "name": "turn_link",
+          "reason": "no_executor"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hello."
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "From coder."
+          }
+        }
+      ],
+      "r2": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Anyone?"
+          }
+        }
+      ]
+    },
+    "executors": {
+      "pool": [
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1
+        }
+      ]
+    }
+  }
+}
