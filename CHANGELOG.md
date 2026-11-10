@@ -32,11 +32,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   assert their retirement from the vendors' APIs.
 - An executor builds an agent at its first turn, channel call or committed event (it feeds the agent's memory), never for a room's attach or detach: an executor holding no build has nothing to apply, so a pool of executors no longer builds every agent of every room attached (RFC §10.6.3, RMK-1632). A custom intelligence channel run on an executor no longer gets `on_room_attached` before its first turn there.
 - **BREAKING: an agent its executor builds nothing for fails with `no_executor`** (RFC §10.6.7, RMK-1631). A turn or channel call placed on an executor whose factory returns `None` for its channel raises `TurnLinkError` reason `no_executor`, as when no executor declares it, instead of `ChannelNotRegisteredError`, and goes to no other executor: catch `TurnLinkError` there.
-- **BREAKING: an executor has no store** (RFC §10.6.5, §10.6.6, §10.6.9, RMK-1619). The room that calls an executor sends what its turn reads, and a hook on the executor asks the room for its context, so an executor in another process needs only the turn backend. `TurnExecutor` no longer takes `store=`: remove the argument.
+- **BREAKING: an executor has no store** (RFC §10.6.5, §10.6.6, §10.6.9, RMK-1619). The room that calls an executor sends what its turn reads, and a hook on the executor asks the room for its context, so an executor in another process needs only the turn backend. `TurnExecutor` no longer takes `store=`: remove the argument. A hook outside any turn reads the context of the executor's last turn in the room until every channel whose turns ran there is detached from it.
 
 ### Fixed
 
 - Discussion regeneration retains the first failed lock release in its result, including when target selection refuses the call (RFC §13.5).
+- An agent detached from a room, and attached to it again, no longer reads back the tool results it stored there, nor keeps the approvals to run a served skill's code given there (a realtime voice channel's approvals too). A room created again under an earlier room's id, for another person, could read that person's stored results (RFC §10.6.2, RMK-1645).
 
 - A discussion hands a committed message to its agents' memories at once, instead of one after the other: the message waited for the sum of their latencies before any agent was queued (RFC §19.7.5 rule 3, RMK-1626).
 - `DiscussionConsole` no longer says "the discussion waits for a person" when a person has just ended that wait (RMK-1615).

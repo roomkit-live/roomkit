@@ -173,6 +173,10 @@ class WiringEnv(ABC):
     def turn_started(self, request: TurnRequest) -> None:  # noqa: B027
         """A turn of the executor starts: *request* is what it was asked."""
 
+    def room_left(self, room_id: str, channel_id: str) -> None:  # noqa: B027
+        """*channel_id* of the executor was detached from *room_id*: what was
+        kept of the room's conversation for it goes (RFC §10.6.2)."""
+
     async def room_tasks(self, room_id: str) -> list[dict[str, Any]]:
         """The room's background tasks, outside a turn's host (RFC §23.4)."""
         return []
@@ -201,12 +205,31 @@ class TurnWiringEnv(WiringEnv):
         self._media_resolver = media_resolver
         self._attached_media = attached_media
         self._last_contexts: OrderedDict[str, RoomContext] = OrderedDict()
+        # The channels whose turns ran here in each room kept: the room's last
+        # context goes once the last of them is detached.
+        self._ran_in: dict[str, set[str]] = {}
 
     def turn_started(self, request: TurnRequest) -> None:
         self._last_contexts[request.room_id] = request.context
         self._last_contexts.move_to_end(request.room_id)
+        self._ran_in.setdefault(request.room_id, set()).add(request.channel_id)
         while len(self._last_contexts) > LAST_CONTEXTS_KEPT:
-            self._last_contexts.popitem(last=False)
+            dropped, _ = self._last_contexts.popitem(last=False)
+            self._ran_in.pop(dropped, None)
+
+    def room_left(self, room_id: str, channel_id: str) -> None:
+        """Once no channel whose turns ran here is attached to the room, a
+        room created again under the id reads nothing of the earlier
+        conversation outside a turn: a hook there fails closed until the
+        room's next turn here, as one in a room no turn ran in (RFC
+        §10.6.6). Another channel still attached keeps reading it."""
+        channels = self._ran_in.get(room_id)
+        if channels is None:
+            return
+        channels.discard(channel_id)
+        if not channels:
+            del self._ran_in[room_id]
+            self._last_contexts.pop(room_id, None)
 
     @property
     def media_resolver(self) -> MediaResolver | None:

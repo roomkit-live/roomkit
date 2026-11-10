@@ -38,6 +38,13 @@ class ServedExecutionGate:
         # while an approval is kept, no other source can take that identity.
         self._approved: OrderedDict[tuple[str | None, int, str, str], object] = OrderedDict()
 
+    def forget(self, room_id: str) -> None:
+        """Let go of the approvals given for *room_id*'s conversation, as the
+        channel lets the room go (RFC §10.6.2): a room joined again under
+        that id is asked again."""
+        for key in [key for key in self._approved if key[0] == room_id]:
+            del self._approved[key]
+
     async def refusal(
         self,
         skills: SkillRegistry | None,

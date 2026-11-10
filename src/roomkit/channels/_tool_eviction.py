@@ -180,6 +180,14 @@ class ToolEviction:
         room = self._room_scope()
         return any(key[0] == room for key in self._store)
 
+    def forget(self, room_id: str) -> None:
+        """Let go of the results *room_id* stored, as the channel lets the
+        room go (RFC §10.6.2): a room joined again under that id reads back
+        nothing of the earlier conversation. Its issued ids stay taken, so a
+        placeholder left in its history never reads another result."""
+        for key in [key for key in self._store if key[0] == room_id]:
+            self._drop(key)
+
     def holds(self, placeholder: str) -> bool:
         """Whether the room still stores the result *placeholder* points to:
         a later turn may then read it back as the turn that got it could."""

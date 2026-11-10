@@ -135,6 +135,9 @@ async def test_an_approval_lets_it_run_and_holds_for_the_fingerprint(streaming: 
         _call("sandbox_bash", command="ls"),
         _call("sandbox_bash", command="pwd", cwd="/"),
         _say("ok"),
+        _call("activate_skill", name=NAME),
+        _call("sandbox_bash", command="ls"),
+        _say("ok"),
     ]
     channel, sandbox, _ = await _channel(script, streaming, approve_execution=approver)
     await _turn(channel)
@@ -144,6 +147,12 @@ async def test_an_approval_lets_it_run_and_holds_for_the_fingerprint(streaming: 
     assert (request.name, request.label, request.uri) == (NAME, "hf", PDF.uri)
     assert request.fingerprint is not None and request.fingerprint.startswith("sha256:")
     assert (request.room_id, request.tool) == ("r1", "sandbox_bash")
+    # The channel let go of the room (a room created again under its id, for
+    # another person): its approval went with it, and the host is asked again
+    # (RFC §10.6.2, RMK-1645).
+    await channel.on_room_detached("r1")
+    await _turn(channel)
+    assert len(approver.asked) == 2
 
 
 @pytest.mark.parametrize("answer", [False, RuntimeError("down")])
@@ -203,6 +212,12 @@ class TestGateUnit:
         # Another conversation is asked on its own.
         await gate.refusal(registry, {NAME}, "r2", "sandbox_bash", sandbox_tools={"sandbox_bash"})
         assert len(approver.asked) == 2
+        # A room the channel let go of is asked again when it joins again,
+        # as a room created anew under its id would be (RMK-1645).
+        gate.forget("r1")
+        await gate.refusal(registry, {NAME}, "r1", "sandbox_bash", sandbox_tools={"sandbox_bash"})
+        await gate.refusal(registry, {NAME}, "r2", "sandbox_bash", sandbox_tools={"sandbox_bash"})
+        assert len(approver.asked) == 3
 
     async def test_a_dynamic_skill_is_asked_every_time_without_a_fingerprint(self) -> None:
         live = ServedSkill("live", {"SKILL.md": skill_md("live", "d")}, dynamic=True)

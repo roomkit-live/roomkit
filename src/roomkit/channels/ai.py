@@ -532,7 +532,9 @@ class AIChannel(
         nor orchestration serves (RFC §21.1).
 
         Replacing it replaces the host's handler only: the channel's own tools
-        and the ones orchestration set up keep being served.
+        and the ones orchestration set up keep being served. It is the
+        channel's in every room the channel serves: a handler that keeps state
+        keys it by the turn's room (``current_tool_room_id()``).
         """
         return self._user_tool_handler
 
@@ -612,6 +614,11 @@ class AIChannel(
         at the start of every turn, so the new prompt takes effect on the next
         turn with no reconnect and no loss of memory or tool state — the
         supported way to swap personas/attitudes mid-conversation.
+
+        The prompt is the channel's, in every room it serves (an executor runs
+        one build in all its agent's rooms): a prompt carrying one room's
+        details reaches the other rooms' turns. What differs per room comes
+        with that room's turn, through a ``config_provider``.
 
         Note: when a ``config_provider`` is set the system prompt is resolved
         fresh per turn, so this value is overridden on the next turn.
@@ -743,8 +750,9 @@ class AIChannel(
         """Everything the channel keeps for the room goes with the binding, or
         when a turn elsewhere made it stale (RFC §6.4, §10.6.2): its thought,
         what the speak policy kept, its plan, the images its provider
-        refused, and its records of tools used and skills activated, which
-        its next turn hydrates again from the store."""
+        refused, its records of tools used and skills activated, which its
+        next turn hydrates again from the store, the tool results it stored
+        and the approvals to run a served skill's code given there."""
         await self._forget_room(room_id)
 
     async def _forget_room(self, room_id: str) -> None:
@@ -756,6 +764,8 @@ class AIChannel(
         self._refused_images.forget(room_id)
         self._tool_usage.forget(room_id)
         self._skill_activation.forget(room_id)
+        self._eviction.forget(room_id)
+        self._served_execution.forget(room_id)
 
     async def _thinking_context(
         self, event: RoomEvent, binding: ChannelBinding, context: RoomContext

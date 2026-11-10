@@ -380,6 +380,8 @@ class TurnExecutor:
         if isinstance(message, ChannelReleased):
             await self._release(message.channel_id)
             return None
+        if isinstance(message, RoomDetached):
+            self._wiring.env.room_left(message.room_id, message.channel_id)
         with self._channels.use(message.channel_id):
             if isinstance(message, RoomAttached | RoomDetached):
                 channel = await self._channels.built(message.channel_id)

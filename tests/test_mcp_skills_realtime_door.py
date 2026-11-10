@@ -192,6 +192,49 @@ async def test_a_host_tool_running_code_waits_for_the_host_s_approval() -> None:
         handler.assert_awaited_once()
 
 
+async def test_an_approval_does_not_outlive_the_room_s_binding() -> None:
+    """Detached from its room and attached to it again (a room created again
+    under its id, for another person), the channel asks the host again before
+    code runs (RFC §10.6.2, RMK-1645)."""
+    asked: list[Any] = []
+
+    async def approve(request: Any) -> bool:
+        asked.append(request)
+        return True
+
+    registry = SkillRegistry()
+    await registry.add_mcp_server(
+        FakeSkillServer([PDF]), "hf", approve_execution=approve, execution_tools=["run_*"]
+    )
+    provider = MockRealtimeProvider()
+    channel = RealtimeVoiceChannel(
+        "rt",
+        provider=provider,
+        transport=MockRealtimeTransport(),
+        skills=registry,
+        tools=[tool("run_python")],
+        tool_handler=AsyncMock(return_value="ran"),
+    )
+    kit = RoomKit()
+    kit.register_channel(channel)
+    room = await kit.create_room(room_id="desk")
+    await kit.attach_channel(room.id, "rt")
+    provider.reconfigure = AsyncMock()  # type: ignore[method-assign]
+    try:
+        for person in ("alice", "bob"):
+            session = await channel.start_session(room.id, person, object())
+            await _call(channel, provider, session, "activate_skill", {"name": NAME})
+            ran = await _call(channel, provider, session, "run_python", {"action": "x"})
+            assert ran == {"text": "ran"}
+            await channel.end_session(session)
+            await kit.detach_channel(room.id, "rt")
+            await kit.attach_channel(room.id, "rt")
+    finally:
+        await kit.close()
+
+    assert [request.room_id for request in asked] == ["desk", "desk"]
+
+
 async def test_a_code_tool_nothing_serves_is_refused_before_the_hooks() -> None:
     """Found by an automated security review: the gate ran only once a handler
     served the call, and ON_TOOL_CALL's hooks may serve one no handler does."""

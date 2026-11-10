@@ -994,8 +994,16 @@ class RealtimeVoiceChannel(
     async def on_room_attached(self, room_id: str, binding: ChannelBinding) -> None:
         """Compile the patterns that find a copy of a runtime mark as the
         channel joins a room, off the event loop: the first injection of a
-        session (a greeting) then does not wait for them (RFC §6.4)."""
+        session (a greeting) then does not wait for them (RFC §6.4). A room
+        joined starts with no approval to run a served skill's code, whatever
+        an earlier room of the same id was given (RFC §10.6.2)."""
         await compile_mark_patterns()
+        self._served_execution.forget(room_id)
+
+    async def on_room_detached(self, room_id: str) -> None:
+        """The approvals to run a served skill's code given in the room go
+        with the binding (RFC §10.6.2)."""
+        self._served_execution.forget(room_id)
 
     async def inject_text(
         self,

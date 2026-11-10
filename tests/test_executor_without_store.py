@@ -233,20 +233,33 @@ async def test_a_hook_in_a_cut_turn_reads_the_context_the_turn_started_with() ->
 
 async def test_a_hook_outside_any_turn_reads_the_executor_s_last_turn_in_the_room() -> None:
     backend = _Seen()
-    kit = await _kit(backend, ChannelDeclaration(channel_id="agent"))
-    agent = _agent("agent", AIResponse(content="done"))
-    executor = TurnExecutor(lambda _c: agent, hosts={"agent"}, executor_id="elsewhere")
+    kit = await _kit(
+        backend, ChannelDeclaration(channel_id="agent"), ChannelDeclaration(channel_id="other")
+    )
+    await kit.attach_channel("r", "other", category=ChannelCategory.INTELLIGENCE)
+    agents = {cid: _agent(cid, AIResponse(content="done")) for cid in ("agent", "other")}
+    executor = TurnExecutor(agents.get, hosts=set(agents), executor_id="elsewhere")
     await backend.serve(executor)
     await _say(kit, "hello", 1)
+    async with asyncio.timeout(5):
+        while {r.channel_id for r in backend.requests} != set(agents):
+            await asyncio.sleep(0.01)
     env = executor.wiring.env
 
     async def outside(room_id: str) -> Any:
-        return await env.context(room_id)
+        return await asyncio.create_task(env.context(room_id), context=contextvars.Context())
 
-    fresh = contextvars.Context()
-    assert await asyncio.create_task(outside("r"), context=fresh) == backend.requests[-1].context
+    assert await outside("r") == backend.requests[-1].context
     with pytest.raises(RoomNotFoundError):
-        await asyncio.create_task(outside("no-turn-ran-there"), context=contextvars.Context())
+        await outside("no-turn-ran-there")
+    # While a channel whose turns ran in the room stays attached, its hooks
+    # keep reading the room; once none is, a room created again under the
+    # id reads nothing of the earlier conversation (RMK-1645).
+    await kit.detach_channel("r", "agent")
+    assert await outside("r") == backend.requests[-1].context
+    await kit.detach_channel("r", "other")
+    with pytest.raises(RoomNotFoundError):
+        await outside("r")
     await kit.close()
     await executor.close()
 
