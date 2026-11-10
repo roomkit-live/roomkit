@@ -6,7 +6,7 @@
     "§10.1 Explicit delivery cancellation",
     "§10.2"
   ],
-  "notes": "Python: tests/test_delivery_cancel_turns.py::test_an_awaited_call_cancelled_before_its_commit_waits_for_no_turn[identity]. B returns while A remains held, then only A finishes its turn. A scripted router holds routing; it does not model Python binding_exists specifically.",
+  "notes": "Python: tests/test_delivery_cancel_turns.py::test_an_awaited_call_cancelled_before_its_commit_waits_for_no_turn[identity]. The scripted identity resolver holds B after parsing while A remains held in its turn. B returns after cancellation before A is released, then only A finishes its turn.",
   "setup": {
     "channels": [
       {
