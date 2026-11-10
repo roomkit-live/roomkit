@@ -6,7 +6,7 @@
     "§19.7.3",
     "§23.3"
   ],
-  "notes": "Python: tests/orchestration/test_worker_delegation_bound.py test_a_worker_past_its_bound_is_cut_and_the_call_answers_once (the parallel door); tests/test_supervisor.py TestRunSequential::test_per_task_timeout_fails_one_worker_and_continues (its parallel twin). orchestration/strategies/supervisor/execution.py _run_parallel. The analyst's model waits at a gate no step opens. The 2 s budget leaves room for the critic's successful task, including SQLite I/O and CI scheduling; 50 ms raced that work (RMK-1331). Python tests/conformance/test_scenario_timing.py runs these same assertions with the critic held for 250 ms. This is a real-time timeout check, not a latency requirement. A parallel team's child rooms are created side by side: the RFC gives no order of their creation, so their records are matched as $created in either order.",
+  "notes": "Python: tests/orchestration/test_worker_delegation_bound.py test_a_worker_past_its_bound_is_cut_and_the_call_answers_once (the parallel door); tests/test_supervisor.py TestRunSequential::test_per_task_timeout_fails_one_worker_and_continues (its parallel twin). orchestration/strategies/supervisor/execution.py _run_parallel. The analyst's model waits at a gate no step opens. The 2 s budget leaves room for the critic's successful task, including SQLite I/O and CI scheduling (RMK-1331). Python tests/conformance/test_scenario_timing.py runs these same assertions with the critic held for 250 ms. This is a real-time timeout check, not a latency requirement. A parallel team's child rooms are created side by side: the RFC gives no order of their creation, so their records are matched as $created in either order.",
   "setup": {
     "channels": [
       {
