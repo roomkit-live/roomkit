@@ -724,24 +724,29 @@ class _Remembers(Agent):
 async def test_channel_controls_apply_before_the_turns_that_follow(
     prefix: str, redis_client: Any
 ) -> None:
-    """As in memory: the attach, then a committed event, are applied on the
-    executor before the room's next turn runs (RFC §10.6.3)."""
+    """As in memory: on an executor holding a build of the channel, a room's
+    attach, then a committed event, are applied before the room's next turn
+    runs (RFC §10.6.3)."""
     store = InMemoryStore()
     log: list[str] = []
     host, executor = await _hosted(prefix, store, _Remembers("worker", log))
     kit = await _owner(prefix, "worker", store=store)
     event = RoomEvent(
-        room_id="r",
+        room_id="r2",
         source=EventSource(channel_id="tx", channel_type=ChannelType.SMS),
         content=TextContent(body="earlier"),
     )
     try:
+        await kit.process_inbound(_said("first"), room_id="r")
+        await kit.create_room(room_id="r2")
+        await kit.attach_channel("r2", "tx")
+        await kit.attach_channel("r2", "worker", category=ChannelCategory.INTELLIGENCE)
         await kit._turns.backend.control(
-            CommittedEvent(channel_id="worker", room_id="r", event=event)
+            CommittedEvent(channel_id="worker", room_id="r2", event=event)
         )
-        await kit.process_inbound(_said("later"), room_id="r")
+        await kit.process_inbound(_said("later"), room_id="r2")
 
-        assert log == ["attached", "memory:earlier", "turn:later"]
+        assert log == ["turn:first", "attached", "memory:earlier", "turn:later"]
     finally:
         await kit.close()
         await host.close()

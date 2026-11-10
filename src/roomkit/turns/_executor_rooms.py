@@ -16,6 +16,7 @@ import asyncio
 import functools
 import logging
 from collections.abc import Awaitable, Callable
+from contextlib import AbstractContextManager
 from typing import TYPE_CHECKING
 
 from roomkit.turns._error_codec import error_record
@@ -39,15 +40,20 @@ class ExecutorRooms:
 
     Args:
         executor_id: The executor's id, which a channel call's result names.
-        channel: The executor's channel for a channel id (its factory),
-            which a record falling out drops the state of.
+        channel: The executor's build of a channel id, if any, which a
+            record falling out drops the state of.
+        use: Marks a channel in use while that drop runs on it.
     """
 
     def __init__(
-        self, executor_id: str, channel: Callable[[str], Awaitable[Channel | None]]
+        self,
+        executor_id: str,
+        channel: Callable[[str], Awaitable[Channel | None]],
+        use: Callable[[str], AbstractContextManager[None]],
     ) -> None:
         self._executor_id = executor_id
         self._channel = channel
+        self._use = use
         self._left: RoomRecords[str] = RoomRecords(evicted=self._evicted)
         # The drops of states whose record fell out, still running: a turn or
         # call of that room waits for its own.
@@ -165,9 +171,10 @@ class ExecutorRooms:
         task.add_done_callback(functools.partial(self._dropped, key))
 
     async def _drop(self, channel_id: str, room_id: str) -> None:
-        channel = await self._channel(channel_id)
-        if channel is not None:
-            await channel.on_room_detached(room_id)
+        with self._use(channel_id):
+            channel = await self._channel(channel_id)
+            if channel is not None:
+                await channel.on_room_detached(room_id)
 
     def _dropped(self, key: tuple[str, str], task: asyncio.Task[None]) -> None:
         if self._dropping.get(key) is task:

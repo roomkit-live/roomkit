@@ -2,15 +2,18 @@
 (RFC §10.6.7).
 
 No executor is told which agents it runs. Each declares a rule, every agent
-whose id starts with ``acme-``, and builds an agent from its configuration
-when a room attaches it: here a dict stands for the service that holds the
-organization's agents, the same for every pool process. The room's owner
-(this process) holds each agent by its declaration alone:
+whose id starts with ``acme-``, and builds an agent from its configuration at
+the agent's first turn there: here a dict stands for the service that holds
+the organization's agents, the same for every pool process. Each keeps one
+agent built at most (``max_channels=1``, kept low to show it), and says on
+stderr each one it builds. The room's owner (this process) holds each agent
+by its declaration alone:
 
 1. Two pool processes start, each declaring ``acme-*``.
-2. Three agents are created on the fly, each in a room of its own. Their
-   first turns spread over the pool; each room's next turns stay where its
-   first one ran.
+2. Three agents are created on the fly, each in a room of its own: attaching
+   them builds nothing. Their first turns spread over the pool, and each
+   room's next turns stay where its first one ran; a pool running two of
+   them builds each anew for its turn, past its bound.
 3. ``acme-legal``, which the service has no configuration for, fails with
    ``no_executor``, as does ``globex-sales``, under no executor's rule.
 4. One pool process is killed. Once its silence shows (the heartbeat
@@ -68,6 +71,8 @@ REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379")
 TIMEOUTS = TurnTimeouts(heartbeat_interval=0.5, heartbeat_timeout=2.0, accept=5.0, cancel=2.0)
 # What each pool executor declares: the organization's agents, whichever.
 RULE = "acme-*"
+# How many agents a pool executor keeps built: low, so its letting go shows.
+MAX_CHANNELS = 1
 
 
 # -- A pool process: builds any agent the service knows ---------------------------
@@ -90,6 +95,7 @@ def build_agent(pool_id: str) -> Callable[[str], Channel | None]:
             # Unknown to the service: the turn fails with no_executor.
             return None
         answer = f"{channel_id} here, running on {pool_id}."
+        logger.info("%s builds %s", pool_id, channel_id)
         return Agent(
             channel_id,
             provider=MockAIProvider(responses=[answer] * 10),
@@ -107,6 +113,7 @@ async def run_pool(url: str, prefix: str, pool_id: str) -> None:
         hosts={RULE},
         executor_id=pool_id,
         timeouts=TIMEOUTS,
+        max_channels=MAX_CHANNELS,
     )
     await backend.serve(executor)
     print("ready", flush=True)

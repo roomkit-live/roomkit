@@ -2439,7 +2439,7 @@
     "__init__": ["def", "message", "reason"]
   },
   "roomkit.TurnExecutor": {
-    "__init__": ["def", "build_channel", "*", "hosts=None", "executor_id=None", "timeouts=None", "media_resolver=None", "attached_media=None", "telemetry=None", "owns_channels=True", "error_classes=()"],
+    "__init__": ["def", "build_channel", "*", "hosts=None", "executor_id=None", "timeouts=None", "media_resolver=None", "attached_media=None", "telemetry=None", "owns_channels=True", "error_classes=()", "max_channels=None"],
     "close": ["async def"],
     "closed": ["property"],
     "control": ["async def", "message"],

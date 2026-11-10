@@ -22,14 +22,22 @@ from roomkit.core.hooks import HookEngine, HookRegistration, hook_decorator
 from roomkit.core.task_utils import acting_tasks, cancel_and_wait
 from roomkit.models.enums import HookExecution
 from roomkit.turns._error_codec import ErrorClasses, error_record
-from roomkit.turns._executor_channels import ChannelFactory, ExecutorChannels, close_quietly
+from roomkit.turns._executor_channels import ChannelFactory, ExecutorChannels
+from roomkit.turns._executor_retiring import Retiring
 from roomkit.turns._executor_rooms import ExecutorRooms
 from roomkit.turns._executor_turn import ExecutorTurn
 from roomkit.turns._hosting import Hosted
 from roomkit.turns._wiring import TurnWiring
 from roomkit.turns._wiring_env import TurnWiringEnv
 from roomkit.turns.base import TurnTimeouts
-from roomkit.turns.wire import ChannelCall, ChannelReleased, ChannelResult, CommittedEvent
+from roomkit.turns.wire import (
+    ChannelCall,
+    ChannelReleased,
+    ChannelResult,
+    CommittedEvent,
+    RoomAttached,
+    RoomDetached,
+)
 
 if TYPE_CHECKING:
     from roomkit.channels._author_images import AttachedMedia, MediaResolver
@@ -50,7 +58,8 @@ class TurnExecutor:
     Args:
         build_channel: The host's factory: the channel for a channel id, or
             ``None`` when it has none; sync or async. The executor builds
-            each channel once, wires it (RFC §10.6.2) and closes it when it
+            each channel when a turn, a channel call or a committed event
+            first needs it, wires it (RFC §10.6.2) and closes it when it
             closes.
         hosts: Which channel ids this executor declares: a collection of
             ids and of prefixes ending in ``*`` (``"org-*"``; ``"*"`` for
@@ -67,6 +76,14 @@ class TurnExecutor:
         telemetry: The telemetry its hooks and channels report to.
         owns_channels: ``False`` when *build_channel* reads a registry whose
             owner wires and closes its channels (the kit's own executor).
+        max_channels: How many built channels it keeps at most; no
+            bound when omitted. Past it, the one used least recently that
+            nothing runs on (a turn, a channel call, a committed event, a
+            room's attach or detach) is let go as
+            ``kit.release_channel`` lets it go: what it held for its rooms
+            and the room does not keep (an ACP session) goes, and its next
+            turn builds it anew (RFC §10.6.2). Unused with
+            ``owns_channels=False``.
         error_classes: The host's exception classes an error raised on the
             room owner is rebuilt as here, with their subclasses, beyond
             RoomKit's and Python's built-in ones (RFC §10.6.8). Any other comes back as
@@ -75,7 +92,7 @@ class TurnExecutor:
     Raises:
         TypeError: An entry of *error_classes* is not an ``Exception`` class.
         ValueError: An entry of *hosts* holds a ``*`` elsewhere than at its
-            end.
+            end, or *max_channels* is below 1.
     """
 
     def __init__(
@@ -90,19 +107,13 @@ class TurnExecutor:
         telemetry: TelemetryProvider | None = None,
         owns_channels: bool = True,
         error_classes: Iterable[type[Exception]] = (),
+        max_channels: int | None = None,
     ) -> None:
         self.executor_id = executor_id or f"executor-{uuid4().hex[:12]}"
         self._errors = ErrorClasses(error_classes)
-        if isinstance(hosts, str):
-            raise TypeError("hosts is a collection of channel ids or a predicate, not one id")
-        self._hosted: frozenset[str] | None = None
-        self._hosts: Callable[[str], bool] | None = None
-        if isinstance(hosts, Collection):
-            declared = Hosted(frozenset(hosts))
-            self._hosted = declared.entries
-            self._hosts = declared.covers
-        elif hosts is not None:
-            self._hosts = hosts
+        self._hosted, self._hosts = _declaration(hosts)
+        if max_channels is not None and max_channels < 1:
+            raise ValueError(f"max_channels is at least 1, not {max_channels}")
         self._timeouts = timeouts or TurnTimeouts()
         self._turns: dict[asyncio.Task[None], ExecutorTurn] = {}
         self._closed = False
@@ -119,13 +130,18 @@ class TurnExecutor:
         env = TurnWiringEnv(media_resolver=media_resolver, attached_media=attached_media)
         self._wiring = TurnWiring(self._hooks, env)
         self._channels = ExecutorChannels(
-            build_channel, owns=owns_channels, wire=self.wire, telemetry=telemetry
+            build_channel,
+            owns=owns_channels,
+            wire=self.wire,
+            telemetry=telemetry,
+            bound=max_channels,
+            in_use=self._in_use,
+            let_go=self._retire,
         )
-        self._rooms = ExecutorRooms(self.executor_id, self._channels.get)
-        # Channels let go of (``channel_released``), each with the turns that
-        # run on it or still may, closed once those end.
-        self._retiring: dict[int, tuple[Channel, set[asyncio.Task[None]]]] = {}
-        self._closing: set[asyncio.Task[None]] = set()
+        self._rooms = ExecutorRooms(self.executor_id, self._channels.built, self._channels.use)
+        # Builds let go of (``channel_released``, the bound), closed once the
+        # turns that run on them end.
+        self._retiring = Retiring()
 
     @property
     def hooks(self) -> HookEngine:
@@ -335,22 +351,32 @@ class TurnExecutor:
                 # Left running past its cut: nothing of it is heard again.
                 self._turns[task].stop_watching()
         await self._channels.close()
-        retiring, self._retiring = list(self._retiring.values()), {}
-        for channel, _holders in retiring:
-            self._close_released(channel)
-        if self._closing:
-            await asyncio.gather(*self._closing, return_exceptions=True)
+        await self._retiring.close()
         return left
 
     async def control(self, message: ChannelControl) -> ChannelResult | None:
         """Apply a channel control message of the owner's (RFC §10.6.3): a
         ``channel_call``'s result; nothing for ``room_attached``,
-        ``room_detached``, ``committed_event`` and ``channel_released``."""
+        ``room_detached``, ``committed_event`` and ``channel_released``.
+        A room's attach or detach builds nothing: an executor holding no
+        build of the channel has nothing to apply."""
         if isinstance(message, ChannelReleased):
             await self._release(message.channel_id)
             return None
+        with self._channels.use(message.channel_id):
+            if isinstance(message, RoomAttached | RoomDetached):
+                channel = await self._channels.built(message.channel_id)
+                return await self._rooms.apply(channel, message)
+            return await self._apply_on_build(message)
+
+    async def _apply_on_build(self, message: ChannelCall | CommittedEvent) -> ChannelResult | None:
+        """Apply a channel call or a committed event on the channel, built
+        for it when it is not: a committed event feeds the channel's memory
+        (RFC §19.7.5 rule 3), which a skipped event would miss. A build made
+        for a committed event alone is the first the bound lets go."""
         try:
-            channel = await self._channels.get(message.channel_id)
+            event = isinstance(message, CommittedEvent)
+            channel = await self._channels.get(message.channel_id, recent=not event)
         except Exception as exc:
             if isinstance(message, ChannelCall):
                 return ChannelResult(error=error_record(exc), executor_id=self.executor_id)
@@ -363,31 +389,27 @@ class TurnExecutor:
 
     def _forget(self, task: asyncio.Task[None]) -> None:
         self._turns.pop(task, None)
-        for key, (channel, holders) in list(self._retiring.items()):
-            holders.discard(task)
-            if not holders:
-                del self._retiring[key]
-                self._close_released(channel)
+        self._retiring.turn_ended(task)
+        # A channel the bound kept while this turn ran on it may go now.
+        self._channels.shrink()
+
+    def _in_use(self, channel: Channel) -> bool:
+        """Whether a turn runs on *channel*, or still may: the bound never
+        lets it go then."""
+        return any(turn.may_run_on(channel) for turn in self._turns.values())
 
     async def _release(self, channel_id: str) -> None:
         """Let go of the channel built for *channel_id* (``channel_released``):
-        the next turn builds it anew, and this one is closed once the turns
-        that run on it, or still may, end."""
+        the next turn builds it anew."""
         channel = await self._channels.release(channel_id)
-        if channel is None:
-            return
-        holders = {task for task, turn in self._turns.items() if turn.may_run_on(channel)}
-        if holders:
-            self._retiring[id(channel)] = (channel, holders)
-        else:
-            self._close_released(channel)
+        if channel is not None:
+            self._retire(channel)
 
-    def _close_released(self, channel: Channel) -> None:
-        task = asyncio.get_running_loop().create_task(
-            close_quietly(channel), name=f"roomkit-release-{channel.channel_id}"
-        )
-        self._closing.add(task)
-        task.add_done_callback(self._closing.discard)
+    def _retire(self, channel: Channel) -> None:
+        """Close *channel*, which the executor let go of (a release, the
+        bound), once the turns that run on it, or still may, end."""
+        holders = {task for task, turn in self._turns.items() if turn.may_run_on(channel)}
+        self._retiring.retire(channel, holders)
 
     async def _turn_channel(self, request: TurnRequest, stale: bool) -> Channel | None:
         """The channel of *request*'s turn, readied for its room (RFC §10.6.2)
@@ -422,6 +444,20 @@ class TurnExecutor:
                 f"{request.channel_id!r} on executor {self.executor_id}: rename one of them "
                 "(RFC §10.6.5)"
             )
+
+
+def _declaration(
+    hosts: Collection[str] | Callable[[str], bool] | None,
+) -> tuple[frozenset[str] | None, Callable[[str], bool] | None]:
+    """What *hosts* declares (RFC §10.6.7): the ids and prefixes told to
+    other processes when it is a collection, and the test of a channel id;
+    ``(None, None)`` for every id."""
+    if isinstance(hosts, str):
+        raise TypeError("hosts is a collection of channel ids or a predicate, not one id")
+    if isinstance(hosts, Collection):
+        declared = Hosted(frozenset(hosts))
+        return declared.entries, declared.covers
+    return None, hosts
 
 
 def _let_go(link: ExecutorLink, task: asyncio.Task[None]) -> None:

@@ -186,11 +186,23 @@ async def test_a_live_agent_s_call_and_event_fail_once_the_kit_s_executor_closed
     assert [s for s in seen if s.endswith(":host")] == []
 
 
+class _Told(TurnExecutor):
+    """A host executor that records each channel control it is given."""
+
+    def __init__(self, build: Callable[[str], Any]) -> None:
+        super().__init__(build)
+        self.told: list[tuple[str, str]] = []
+
+    async def control(self, message: Any) -> Any:
+        self.told.append((message.type, message.channel_id))
+        return await super().control(message)
+
+
 async def test_a_host_executor_builds_no_copy_of_a_live_agent_it_never_runs() -> None:
-    """RMK-881: a host executor declaring every channel is not told a live
-    agent was attached to a room, nor detached: it never runs its turns, so it
-    builds no copy of it; a channel the host alone serves is still told (RFC
-    §10.6.3)."""
+    """RMK-881: a host executor declaring every channel is told nothing of a
+    live agent attached to a room then detached, and builds no copy of it: it
+    never runs its turns (RFC §10.6.3, §10.6.7). An attach builds nothing; the
+    channel the host alone serves is built for its first turn."""
     built: list[str] = []
 
     def build(channel_id: str) -> AIChannel:
@@ -198,7 +210,7 @@ async def test_a_host_executor_builds_no_copy_of_a_live_agent_it_never_runs() ->
         return AIChannel(channel_id, provider=MockAIProvider(responses=["from the host"]))
 
     kit = RoomKit()
-    host = TurnExecutor(build)
+    host = _Told(build)
     await kit._turns.backend.serve(host)
     kit.register_channel(WebSocketChannel("ws"))
     kit.register_channel(AIChannel("ai", provider=MockAIProvider(responses=["from the kit"])))
@@ -208,11 +220,16 @@ async def test_a_host_executor_builds_no_copy_of_a_live_agent_it_never_runs() ->
     await kit.attach_channel("r", "ai", category=ChannelCategory.INTELLIGENCE)
     await kit.attach_channel("r", "remote", category=ChannelCategory.INTELLIGENCE)
     await kit.detach_channel("r", "ai")
+    after_attaches = list(built)
+    hi = InboundMessage(channel_id="ws", sender_id="u", content=TextContent(body="Hi."))
+    await kit.process_inbound(hi, room_id="r")
     await kit.close()
     await host.close()
 
-    assert "ai" not in built
-    assert "remote" in built
+    assert after_attaches == []
+    assert built == ["remote"]
+    assert [told for told in host.told if told[1] == "ai"] == []
+    assert ("room_attached", "remote") in host.told
 
 
 class _Tagged(AIChannel):

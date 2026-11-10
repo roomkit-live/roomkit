@@ -152,10 +152,16 @@ await kit.attach_channel(room_id, "meteo")  # an intelligence binding
   configuration, so agents created on the fly need no executor told of them.
   Unlike a predicate, it reaches the owners of other processes (every owner
   process must run a RoomKit that reads prefixes: an older one reads
-  `acme-*` as an id and fails the turns with `no_executor`). Every executor
-  declaring an agent builds it when a room attaches it, and keeps it until it
-  closes or the kit releases the channel (`kit.release_channel`). A turn or
-  channel call of an agent the factory builds nothing for
+  `acme-*` as an id and fails the turns with `no_executor`). An executor
+  builds an agent at its first turn, channel call or committed event there,
+  never for a room's attach or detach, and keeps it until it closes or the
+  kit releases the channel (`kit.release_channel`);
+  `TurnExecutor(max_channels=N)` keeps N built at most, letting go of the one
+  used least recently that nothing runs on, as a release does (its next turn
+  builds it anew; an ACP session it held reopens). The executor closes each
+  agent it lets go of, and an agent closes its provider: the factory gives
+  each build a provider of its own, never one shared by the agents it builds.
+  A turn or channel call of an agent the factory builds nothing for
   (it returns `None`) fails with `no_executor` and goes to no other executor;
   the room's next turns go to that executor too while it lives, so every
   executor declaring a prefix must build every agent under it

@@ -270,11 +270,60 @@ async def test_an_executor_that_missed_a_detach_still_drops_the_room_s_state() -
 # -- Channel control (RFC §10.6.3) --------------------------------------------------
 
 
-async def test_attach_and_detach_reach_every_executor_declaring_the_channel() -> None:
-    client, _a, _b, first, second = await _two_executors()
+async def test_attach_and_detach_apply_where_the_channel_is_built_and_build_nothing() -> None:
+    """Both executors declare the channel; A, served first, built it for a
+    turn. A room's attach and detach reach both: A applies them, B, holding
+    no build, has nothing to apply and builds nothing (RFC §10.6.3)."""
+    backend = InMemoryTurnBackend()
+    first, second = _Agent(), _Agent()
+    built: list[str] = []
+
+    def build_second(channel_id: str) -> _Agent:
+        built.append(channel_id)
+        return second
+
+    await backend.serve(_Recording(first, "a"))
+    await backend.serve(TurnExecutor(build_second, hosts={"agent"}, executor_id="b"))
+    client = TurnClient(backend)
+    await _turn(client, "other")
+
     await client.control(RoomAttached(channel_id="agent", room_id="room", binding=_binding()))
     await client.control(RoomDetached(channel_id="agent", room_id="room"))
-    assert first.log == second.log == [("attached", "room"), ("detached", "room")]
+
+    assert first.log == [("turn", "other"), ("attached", "room"), ("detached", "room")]
+    assert second.log == [] and built == []
+
+
+async def test_an_attach_during_the_channel_s_build_applies_once_it_is_built() -> None:
+    """A turn is building the channel when a room's attach arrives: the
+    attach waits for that build and applies on it (RFC §10.6.3)."""
+    agent = _Agent()
+    building, go = asyncio.Event(), asyncio.Event()
+
+    async def build(channel_id: str) -> _Agent:
+        building.set()
+        await go.wait()
+        return agent
+
+    backend = InMemoryTurnBackend()
+    executor = TurnExecutor(build, hosts={"agent"})
+    await backend.serve(executor)
+    client = TurnClient(backend)
+    turn = asyncio.ensure_future(_turn(client, "other"))
+    await asyncio.wait_for(building.wait(), 1)
+    attach = asyncio.ensure_future(
+        client.control(RoomAttached(channel_id="agent", room_id="room", binding=_binding()))
+    )
+    for _ in range(20):  # Let the attach reach the executor, which waits for the build.
+        await asyncio.sleep(0)
+    waited = not attach.done()
+    go.set()
+    # The first build in a process compiles the mark patterns, about a second.
+    await asyncio.wait_for(asyncio.gather(turn, attach), 5)
+    await executor.close()
+
+    assert waited
+    assert ("attached", "room") in agent.log
 
 
 class _Opaque:
@@ -285,7 +334,10 @@ async def test_channel_control_carries_a_value_json_has_no_form_for_as_its_text(
     """An application in the owner's process keeps an object in a binding's
     or an event's metadata: the control message carries it as its text, as a
     turn's request does."""
-    client, _a, _b, first, second = await _two_executors()
+    client, _a, b, first, second = await _two_executors()
+    b.declaring = False
+    await _turn(client)  # A builds the channel: the attach then applies there.
+    b.declaring = True
     binding = _binding().model_copy(update={"metadata": {"handle": _Opaque()}})
     event = _event().model_copy(update={"metadata": {"handle": _Opaque()}})
 
