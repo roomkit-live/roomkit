@@ -363,6 +363,54 @@ async def test_a_tool_that_declares_the_property_keeps_it_as_its_argument(
     assert [c.intent for _, c in seen.rows] == [None, None]
 
 
+MISSPELLED = "roomkit_intent"
+
+
+@pytest.mark.parametrize("tool", [SHELL, SHELL_CLOSED], ids=["open schema", "closed schema"])
+async def test_the_property_written_without_its_underscore_is_taken_as_the_intent(
+    streaming: bool, tool: AITool
+) -> None:
+    """A model that drops the leading underscore writes ``roomkit_intent``:
+    the loop takes it as the property, so a closed schema does not refuse the
+    call and the person still reads what it does."""
+    seen = await _turn(streaming, _calling(("c1", tool.name, {**COMMAND, MISSPELLED: INTENT})))
+
+    assert seen.received == [(tool.name, COMMAND)]
+    assert [(e.arguments, e.intent) for e in seen.before] == [(COMMAND, INTENT)]
+    assert [(c.arguments, c.intent) for _, c in seen.rows] == [(COMMAND, INTENT)] * 2
+
+
+async def test_the_property_wins_over_its_misspelling_and_neither_reaches_the_tool(
+    streaming: bool,
+) -> None:
+    arguments = {**_with(INTENT), MISSPELLED: "Autre chose."}
+    seen = await _turn(streaming, _calling(("c1", "shell_closed", arguments)))
+
+    assert seen.received == [("shell_closed", COMMAND)]
+    assert [c.intent for _, c in seen.rows] == [INTENT, INTENT]
+
+
+async def test_a_tool_that_declares_the_misspelled_name_keeps_it_as_its_argument(
+    streaming: bool,
+) -> None:
+    owner = AITool(
+        name="note",
+        description="Write a note",
+        parameters={"type": "object", "properties": {MISSPELLED: {"type": "string"}}},
+    )
+    seen = await _turn(streaming, _calling(("c1", "note", {MISSPELLED: "keep"})), tools=[owner])
+
+    assert seen.received == [("note", {MISSPELLED: "keep"})]
+    assert [c.intent for _, c in seen.rows] == [None, None]
+
+
+async def test_off_the_misspelled_name_is_an_argument_like_any_other(streaming: bool) -> None:
+    arguments = {**COMMAND, MISSPELLED: INTENT}
+    seen = await _turn(streaming, _calling(("c1", "shell", arguments)), intents=False)
+
+    assert seen.received == [("shell", arguments)]
+
+
 @pytest.mark.parametrize(
     ("value", "intent"),
     [

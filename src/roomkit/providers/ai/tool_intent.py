@@ -8,7 +8,9 @@ schemas, or those ``tool_call_intents_only`` names, with one property more,
 loop takes that property out of a call's arguments before anything reads
 them, and carries its value, normalized, as the call's ``intent``: the tool
 never receives it, and a closed schema never refuses it. A tool whose own
-schema declares the property keeps it as its argument.
+schema declares the property keeps it as its argument. A model that drops the
+property's leading underscore writes :data:`INTENT_ALIAS`, taken the same way
+unless the tool declares that name.
 
 The intent is display text the model wrote: it grants nothing, and says
 nothing of what the call did. The rules live here once, for the schemas the
@@ -29,6 +31,10 @@ logger = logging.getLogger("roomkit.providers.ai")
 
 INTENT_PROPERTY = "_roomkit_intent"
 """The reserved property a call's intent rides in."""
+
+INTENT_ALIAS = "roomkit_intent"
+"""The reserved property as a model may write it, without its leading
+underscore: taken as the property, unless the tool declares that name."""
 
 INTENT_MAX_CHARS = 200
 """The longest intent kept, in characters (code points)."""
@@ -119,28 +125,41 @@ def _log_unpresented(name: str) -> None:
     )
 
 
-def owning_tools(*toolsets: Iterable[AITool] | None) -> frozenset[str]:
+def owning_tools(
+    *toolsets: Iterable[AITool] | None, name: str = INTENT_PROPERTY
+) -> frozenset[str]:
     """The names, in *toolsets*, of the tools whose own schema declares the
-    reserved property: their calls keep it as an argument."""
+    property *name*, the reserved one by default: their calls keep it as an
+    argument."""
     return frozenset(
-        tool.name for tools in toolsets for tool in tools or () if _declares_intent(tool)
+        tool.name for tools in toolsets for tool in tools or () if _declares(tool, name)
     )
 
 
-def _declares_intent(tool: AITool) -> bool:
+def _declares(tool: AITool, name: str) -> bool:
     properties = tool.parameters.get("properties")
-    return isinstance(properties, dict) and INTENT_PROPERTY in properties
+    return isinstance(properties, dict) and name in properties
 
 
-def take_intent(call: StreamToolCall, owners: Container[str]) -> StreamToolCall:
-    """*call* without the reserved property, its value normalized as the
-    call's intent; *call* itself when it does not carry the property, when its
-    arguments do not read, or when its tool is one of *owners*."""
-    if call.partial or call.name in owners or INTENT_PROPERTY not in call.arguments:
+def take_intent(
+    call: StreamToolCall,
+    owners: Container[str],
+    alias_owners: Container[str] = frozenset(),
+) -> StreamToolCall:
+    """*call* without the reserved property, and without :data:`INTENT_ALIAS`
+    unless its tool is one of *alias_owners*, the value normalized as the
+    call's intent (the property's when both come); *call* itself when it
+    carries neither, when its arguments do not read, or when its tool is one
+    of *owners*."""
+    if call.partial or call.name in owners:
+        return call
+    misspelled = call.name not in alias_owners and INTENT_ALIAS in call.arguments
+    if INTENT_PROPERTY not in call.arguments and not misspelled:
         return call
     arguments = dict(call.arguments)
-    intent = normalized_intent(arguments.pop(INTENT_PROPERTY))
-    return call.model_copy(update={"arguments": arguments, "intent": intent})
+    written = arguments.pop(INTENT_ALIAS) if misspelled else None
+    value = arguments.pop(INTENT_PROPERTY, written)
+    return call.model_copy(update={"arguments": arguments, "intent": normalized_intent(value)})
 
 
 def with_intent_field(fields: dict[str, Any], intent: str | None) -> dict[str, Any]:

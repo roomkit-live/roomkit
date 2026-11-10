@@ -55,7 +55,7 @@ from roomkit.providers.ai.base import (
     ProviderError,
     StreamToolCall,
 )
-from roomkit.providers.ai.tool_intent import owning_tools, take_intent
+from roomkit.providers.ai.tool_intent import INTENT_ALIAS, owning_tools, take_intent
 from roomkit.realtime.base import EphemeralEventType
 from roomkit.telemetry.base import Attr, SpanKind, TelemetryProvider, span_error
 from roomkit.telemetry.context import get_current_span
@@ -810,11 +810,14 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
     ) -> Callable[[StreamToolCall], StreamToolCall] | None:
         """What takes a call's intent out of its arguments, with
         ``tool_call_intents`` on: a tool of the round or of the turn's
-        catalogue whose own schema declares the property keeps it (RFC §6.4)."""
+        catalogue whose own schema declares the property keeps it, as one
+        declaring its name without the underscore keeps that one (RFC §6.4)."""
         if not self._tool_call_intents:
             return None
-        owners = owning_tools(context.tools, loop_ctx.all_context_tools)
-        return partial(take_intent, owners=owners)
+        toolsets = (context.tools, loop_ctx.all_context_tools)
+        owners = owning_tools(*toolsets)
+        alias_owners = owning_tools(*toolsets, name=INTENT_ALIAS)
+        return partial(take_intent, owners=owners, alias_owners=alias_owners)
 
     def _round_outcome(
         self,
