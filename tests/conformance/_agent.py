@@ -127,6 +127,7 @@ class ScriptedModel(AIProvider):
         chat_dialect: str | None = None,
         response_schema: bool = False,
         response_schema_with_tools: bool = False,
+        streaming: bool = True,
     ) -> None:
         self._anthropic_dialect = chat_dialect == "anthropic"
         self._chat_dialect = (
@@ -135,6 +136,7 @@ class ScriptedModel(AIProvider):
             else CHAT_DIALECTS[chat_dialect]
         )
         self._response_schema = response_schema
+        self._streaming = streaming
         self._response_schema_with_tools = response_schema_with_tools
         self._context_window = context_window
         self._name = name
@@ -164,6 +166,10 @@ class ScriptedModel(AIProvider):
         return self._deferred_tools
 
     @property
+    def supports_structured_streaming(self) -> bool:
+        return self._streaming
+
+    @property
     def supports_response_schema(self) -> bool:
         return self._response_schema
 
@@ -182,8 +188,10 @@ class ScriptedModel(AIProvider):
 
     async def generate(self, context: AIContext) -> AIResponse:
         self._refuse_unsupported(context)
-        round_ = self._next_round(context)
+        round_ = self._next_round(context, "generate")
         await self._hold(round_)
+        if "fails" in round_:
+            raise ModelFailedError(round_["fails"])
         _refuse(round_)
         response = _response(round_, self._labelled)
         # As a real provider: a round that calls, or that ended on a call its
@@ -211,10 +219,13 @@ class ScriptedModel(AIProvider):
         """The round's events, under a response schema refused before the
         request when the model takes none, and checked before its done event
         (README, ``model.response_schema``)."""
-        self._refuse_unsupported(context)
-        stream = checked_stream(
-            self._scripted_stream(context), context, provider=self._provider, refusal=_refused
-        )
+        if not self._streaming:
+            stream = super().generate_structured_stream(context)
+        else:
+            self._refuse_unsupported(context)
+            stream = checked_stream(
+                self._scripted_stream(context), context, provider=self._provider, refusal=_refused
+            )
         try:
             async for event in stream:
                 yield event
@@ -228,7 +239,7 @@ class ScriptedModel(AIProvider):
         ``failure_after_done``. The model waits between two deltas,
         so each reaches the reader apart: deltas yielded without waiting may
         cross as one (RFC §10.6.4)."""
-        round_ = self._next_round(context)
+        round_ = self._next_round(context, "generate_structured_stream")
         await self._hold(round_)
         if "whole_response" in round_:
             for event in response_stream_events(_response(round_, self._labelled)):
@@ -267,9 +278,10 @@ class ScriptedModel(AIProvider):
                 return
             yield event
 
-    def _next_round(self, context: AIContext) -> Mapping[str, Any]:
+    def _next_round(self, context: AIContext, method: str) -> Mapping[str, Any]:
         self.requests.append(
             {
+                "method": method,
                 "messages": messages(context),
                 "tool_results": tool_results(context),
                 "deferred_tools": [tool.name for tool in context.tools if tool.defer_loading],
@@ -578,6 +590,7 @@ def scripted_agent(
     model = shared.get(spec["id"]) or ScriptedModel(
         spec["model"]["rounds"],
         gates,
+        streaming=spec["model"].get("streaming", True),
         vision=bool(spec["model"].get("vision", False)),
         labelled=labelled,
         pricing=spec["model"].get("pricing"),
@@ -639,6 +652,7 @@ def scripted_agent(
         fallback = shared.get(f"{spec['id']}/fallback") or ScriptedModel(
             spec["fallback_model"]["rounds"],
             gates,
+            streaming=spec["fallback_model"].get("streaming", True),
             vision=bool(spec["fallback_model"].get("vision", False)),
             labelled=labelled,
             pricing=spec["fallback_model"].get("pricing"),

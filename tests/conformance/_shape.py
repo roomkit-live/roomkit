@@ -189,6 +189,7 @@ AGENT = {
 }
 MODEL = {
     "rounds",
+    "streaming",
     "vision",
     "pricing",
     "context_window",
@@ -712,8 +713,23 @@ def _retrieval(retrieval: Mapping[str, Any], path: str, found: list[str]) -> Non
 
 def _model(model: Mapping[str, Any], path: str, found: list[str]) -> None:
     _members(model, MODEL, path, found)
+    if "streaming" in model and not isinstance(model["streaming"], bool):
+        found.append(f"{path}.streaming: expected a boolean")
     for index, round_ in enumerate(model.get("rounds", [])):
         _members(round_, MODEL_ROUND, f"{path}.rounds[{index}]", found)
+        if model.get("streaming") is False:
+            for field in (
+                "deltas",
+                "thinking",
+                "stream",
+                "done",
+                "failure_after_calls",
+                "failure_after_done",
+            ):
+                if field in round_:
+                    found.append(f"{path}.rounds[{index}].{field}: requires streaming")
+            if "whole_response" in round_ and ("fails" in round_ or "refuses" in round_):
+                found.append(f"{path}.rounds[{index}]: whole_response cannot also fail")
         if "refuses" in round_:
             _members(round_["refuses"], REFUSES, f"{path}.rounds[{index}].refuses", found)
         for position, call in enumerate(round_.get("calls", [])):
