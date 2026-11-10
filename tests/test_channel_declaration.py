@@ -64,7 +64,8 @@ class _Host:
         self.providers: dict[str, MockAIProvider] = {}
         self._answers = agents
         self.executor = TurnExecutor(
-            self._build, hosts=lambda channel_id: channel_id in agents, store=self.store
+            self._build,
+            hosts=lambda channel_id: channel_id in agents,
         )
 
     def _build(self, channel_id: str) -> Agent | None:
@@ -499,3 +500,30 @@ def test_no_channel_claims_the_type_reserved_to_the_framework() -> None:
         kit.register_channel(SimpleChannel("sys", ChannelType.SYSTEM))
 
     assert "sys" not in kit.channels
+
+
+@pytest.mark.parametrize("queued", [False, True], ids=["direct", "queued"])
+async def test_a_turn_s_record_names_its_executor(queued: bool) -> None:
+    backend = InMemoryTurnBackend()
+    kit = RoomKit(turn_backend=backend)
+    kit.register_channel(SimpleChannel("ws"))
+    kit.register_channel(ChannelDeclaration(channel_id="agent", serializes_room_turns=queued))
+    provider = MockAIProvider(responses=["hello"])
+    executor = TurnExecutor(
+        lambda _channel: Agent("agent", provider=provider), hosts={"agent"}, executor_id="there"
+    )
+    await backend.serve(executor)
+    await kit.create_room(room_id="r")
+    await kit.attach_channel("r", "ws")
+    await kit.attach_channel("r", "agent", category=ChannelCategory.INTELLIGENCE)
+
+    await kit.process_inbound(
+        InboundMessage(channel_id="ws", sender_id="u", content=TextContent(body="hi")), room_id="r"
+    )
+    async with asyncio.timeout(5):
+        while not (said := await kit.store.list_events("r", limit=5))[1:]:
+            await asyncio.sleep(0.01)
+
+    assert said[-1].metadata.get("executor_id") == "there"
+    await kit.close()
+    await executor.close()

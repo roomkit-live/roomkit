@@ -356,6 +356,11 @@ class QueuedTurn:
         return self._place.behind_one_held_here()
 
     @property
+    def executor_id(self) -> str | None:
+        """The executor that took the turn, once it started."""
+        return getattr(self._stream, "executor_id", None)
+
+    @property
     def end_owed(self) -> bool:
         """Whether the turn's executor still owes its end (RFC §10.6.8)."""
         return bool(getattr(self._stream, "end_owed", False))
