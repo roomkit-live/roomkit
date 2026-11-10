@@ -3,7 +3,7 @@
 The rules are the suite's, written in roomkit-specs ``conformance/README.md``
 ("Matching"): an object names the members it checks, a list matches element
 by element, and a few operators (``"$any"``, ``$unordered``, ``$absent``,
-``$present``, ``$contains``, ``$lacks``) loosen a member. ``$as`` names a
+``$present``, ``$contains``, ``$starts_with``, ``$lacks``) loosen a member. ``$as`` names a
 value, which every ``$as`` of that name in the scenario matches (``Names``).
 """
 
@@ -107,6 +107,8 @@ def _object(expected: dict[str, Any], actual: Any, path: str, names: Names) -> l
         )
     if expected.get("$present") is True:
         return [f"{path}: absent"] if actual is None or actual is MISSING else []
+    if "$starts_with" in expected:
+        return _starts_with(expected["$starts_with"], actual, path)
     if "$lacks" in expected:
         if isinstance(actual, str) and expected["$lacks"] not in actual:
             return []
@@ -121,6 +123,12 @@ def _object(expected: dict[str, Any], actual: Any, path: str, names: Names) -> l
     for key, value in expected.items():
         found.extend(mismatches(value, actual.get(key, MISSING), f"{path}.{key}", names))
     return found
+
+
+def _starts_with(prefix: str, actual: Any, path: str) -> list[str]:
+    if isinstance(actual, str) and actual.startswith(prefix):
+        return []
+    return [f"{path}: {_short(actual)} does not start with {prefix!r}"]
 
 
 def _list(expected: list[Any], actual: Any, path: str, names: Names) -> list[str]:
