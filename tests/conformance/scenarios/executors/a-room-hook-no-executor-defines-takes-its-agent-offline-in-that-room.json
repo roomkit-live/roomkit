@@ -1,0 +1,118 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-room-hook-no-executor-defines-takes-its-agent-offline-in-that-room",
+  "title": "A room enabling a hook no executor covering its agent defines publishes the agent offline there, and online once an executor defining it serves; the agent's other rooms hear nothing",
+  "rules": [
+    "§10.6.6",
+    "§10.6.7",
+    "§8.4"
+  ],
+  "notes": "Python: tests/test_agent_presence.py test_a_room_hook_no_executor_defines_takes_its_agent_offline_in_that_room.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "From coder."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "plain",
+        "hosts": [
+          "coder"
+        ]
+      },
+      {
+        "id": "audited",
+        "hosts": [
+          "coder"
+        ],
+        "started": false,
+        "room_hooks": [
+          {
+            "name": "audit",
+            "trigger": "before_tool_use"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "attach_channel",
+      "room_id": "r1",
+      "channel_id": "coder",
+      "category": "intelligence"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "r2",
+      "channel_id": "coder",
+      "category": "intelligence"
+    },
+    {
+      "call": "enable_room_hook",
+      "room_id": "r1",
+      "name": "audit"
+    },
+    {
+      "call": "executor.start",
+      "executor": "audited"
+    }
+  ],
+  "expect": {
+    "presence_events": {
+      "r1": [
+        {
+          "type": "presence_online",
+          "user_id": "coder"
+        },
+        {
+          "type": "presence_offline",
+          "user_id": "coder"
+        },
+        {
+          "type": "presence_online",
+          "user_id": "coder"
+        }
+      ],
+      "r2": [
+        {
+          "type": "presence_online",
+          "user_id": "coder"
+        }
+      ]
+    }
+  }
+}

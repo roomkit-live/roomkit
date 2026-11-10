@@ -1,0 +1,133 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/an-executor-lacking-a-room-s-hook-does-not-cover-its-agent-there",
+  "title": "Once a room enables a room hook, an executor that does not define it no longer covers the room's agent there: the agent is offline in that room until one defining it serves",
+  "rules": [
+    "§10.6.6",
+    "§10.6.7"
+  ],
+  "notes": "Python: tests/test_agent_presence.py test_an_executor_lacking_a_room_s_hook_does_not_cover_its_agent_there.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "From coder."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "plain",
+        "hosts": [
+          "coder"
+        ]
+      },
+      {
+        "id": "audited",
+        "hosts": [
+          "coder"
+        ],
+        "started": false,
+        "room_hooks": [
+          {
+            "name": "audit",
+            "trigger": "before_tool_use"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "enable_room_hook",
+      "room_id": "r1",
+      "name": "audit"
+    },
+    {
+      "call": "agent_presence",
+      "room_id": "r1",
+      "expect": {
+        "result": [
+          {
+            "channel_id": "coder",
+            "online": false,
+            "executors": []
+          }
+        ]
+      }
+    },
+    {
+      "call": "agent_presence",
+      "room_id": "r2",
+      "expect": {
+        "result": [
+          {
+            "channel_id": "coder",
+            "online": true,
+            "executors": [
+              "plain"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "call": "executor.start",
+      "executor": "audited"
+    },
+    {
+      "call": "agent_presence",
+      "room_id": "r1",
+      "expect": {
+        "result": [
+          {
+            "channel_id": "coder",
+            "online": true,
+            "executors": [
+              "audited"
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {}
+}

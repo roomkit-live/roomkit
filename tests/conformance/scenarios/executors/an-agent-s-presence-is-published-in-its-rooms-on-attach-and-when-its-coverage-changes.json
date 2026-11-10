@@ -1,0 +1,161 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/an-agent-s-presence-is-published-in-its-rooms-on-attach-and-when-its-coverage-changes",
+  "title": "An agent's presence is published in a room as it is attached there, and in each of its rooms when the executors covering it change: offline once none covers it, online again when one serves",
+  "rules": [
+    "§10.6.7",
+    "§8.4"
+  ],
+  "notes": "Python: tests/test_agent_presence.py test_an_agent_s_presence_is_published_on_attach_and_as_its_coverage_changes.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "From coder."
+            }
+          ]
+        }
+      },
+      {
+        "id": "stranger",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "From stranger."
+            }
+          ]
+        }
+      },
+      {
+        "id": "helper",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "From helper."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "host",
+        "hosts": [
+          "coder"
+        ]
+      },
+      {
+        "id": "late",
+        "hosts": [
+          "coder"
+        ],
+        "started": false
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "attach_channel",
+      "room_id": "r1",
+      "channel_id": "coder",
+      "category": "intelligence"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "r1",
+      "channel_id": "stranger",
+      "category": "intelligence"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "r1",
+      "channel_id": "helper",
+      "category": "intelligence"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "r2",
+      "channel_id": "coder",
+      "category": "intelligence"
+    },
+    {
+      "call": "executor.close",
+      "executor": "host"
+    },
+    {
+      "call": "executor.start",
+      "executor": "late"
+    }
+  ],
+  "expect": {
+    "presence_events": {
+      "r1": [
+        {
+          "type": "presence_online",
+          "user_id": "coder"
+        },
+        {
+          "type": "presence_offline",
+          "user_id": "stranger"
+        },
+        {
+          "type": "presence_online",
+          "user_id": "helper"
+        },
+        {
+          "type": "presence_offline",
+          "user_id": "coder"
+        },
+        {
+          "type": "presence_online",
+          "user_id": "coder"
+        }
+      ],
+      "r2": [
+        {
+          "type": "presence_online",
+          "user_id": "coder"
+        },
+        {
+          "type": "presence_offline",
+          "user_id": "coder"
+        },
+        {
+          "type": "presence_online",
+          "user_id": "coder"
+        }
+      ]
+    }
+  }
+}

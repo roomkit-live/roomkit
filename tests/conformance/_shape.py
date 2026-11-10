@@ -368,6 +368,7 @@ EXPECT = {
     "acp_wire",
     "thinking_events",
     "tool_events",
+    "presence_events",
     "text_events",
     "streamed",
     "room_callbacks",

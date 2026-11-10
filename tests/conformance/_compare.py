@@ -157,6 +157,7 @@ class _Comparison:
             "thinking_events",
             "text_events",
             "tool_events",
+            "presence_events",
         ):
             recorded = getattr(self.observed, kind)
             for alias, expected in self.expect.get(kind, {}).items():

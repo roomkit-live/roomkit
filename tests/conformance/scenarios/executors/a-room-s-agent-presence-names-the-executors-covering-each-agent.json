@@ -1,0 +1,175 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-room-s-agent-presence-names-the-executors-covering-each-agent",
+  "title": "A room's agent presence gives each of its agents online while an executor alive covers it, by a name or a prefix, with those executors; offline once none does; a live agent is online with the kit",
+  "rules": [
+    "§10.6.7",
+    "§10.6.8"
+  ],
+  "notes": "Python: tests/test_agent_presence.py test_a_room_s_agent_presence_names_the_executors_covering_each_agent.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "From coder."
+            }
+          ]
+        }
+      },
+      {
+        "id": "acme-sales",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "From acme-sales."
+            }
+          ]
+        }
+      },
+      {
+        "id": "stranger",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "From stranger."
+            }
+          ]
+        }
+      },
+      {
+        "id": "helper",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "From helper."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "pool",
+        "hosts": [
+          "acme-*"
+        ]
+      },
+      {
+        "id": "host",
+        "hosts": [
+          "coder"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "acme-sales",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "stranger",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "helper",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "agent_presence",
+      "room_id": "r1",
+      "expect": {
+        "result": [
+          {
+            "channel_id": "acme-sales",
+            "online": true,
+            "executors": [
+              "pool"
+            ]
+          },
+          {
+            "channel_id": "coder",
+            "online": true,
+            "executors": [
+              "host"
+            ]
+          },
+          {
+            "channel_id": "helper",
+            "online": true,
+            "executors": "$any"
+          },
+          {
+            "channel_id": "stranger",
+            "online": false,
+            "executors": []
+          }
+        ]
+      }
+    },
+    {
+      "call": "executor.close",
+      "executor": "host"
+    },
+    {
+      "call": "agent_presence",
+      "room_id": "r1",
+      "expect": {
+        "result": [
+          {
+            "channel_id": "acme-sales",
+            "online": true,
+            "executors": [
+              "pool"
+            ]
+          },
+          {
+            "channel_id": "coder",
+            "online": false,
+            "executors": []
+          },
+          {
+            "channel_id": "helper",
+            "online": true,
+            "executors": "$any"
+          },
+          {
+            "channel_id": "stranger",
+            "online": false,
+            "executors": []
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {}
+}

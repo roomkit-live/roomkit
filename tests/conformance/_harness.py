@@ -146,7 +146,11 @@ _TOOL_EVENTS = {
     EphemeralEventType.TOOL_CALL_END,
     EphemeralEventType.TOOL_CALL_DELTA,
 }
-_EPHEMERALS = ("thinking_events", "tool_events")
+_PRESENCE_EVENTS = {
+    EphemeralEventType.PRESENCE_ONLINE,
+    EphemeralEventType.PRESENCE_OFFLINE,
+}
+_EPHEMERALS = ("thinking_events", "tool_events", "presence_events")
 """The expectations a room's subscribers' ephemeral events are recorded for."""
 
 
@@ -470,6 +474,12 @@ class Harness:
             return
 
         async def record(event: EphemeralEvent) -> None:
+            if event.type in _PRESENCE_EVENTS:
+                # From the steps on: the setup's attaches publish too.
+                if self._recording:
+                    presence = {"type": event.type.value, "user_id": event.user_id}
+                    self.observed.presence_events.setdefault(room_id, []).append(presence)
+                return
             if event.type in _THINKING_EVENTS:
                 recorded = self.observed.thinking_events
             elif event.type in _TOOL_EVENTS:

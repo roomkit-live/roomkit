@@ -1,0 +1,135 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/the-kit-lists-the-executors-served-and-what-each-declares",
+  "title": "The kit lists the executors served on its turn backend, with what each declares and whether it is online; a closed one is no longer listed, and the kit's own executor never is",
+  "rules": [
+    "§10.6.7",
+    "§10.6.8"
+  ],
+  "notes": "Python: tests/test_agent_presence.py test_the_kit_lists_the_executors_served_and_what_each_declares.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "From coder."
+            }
+          ]
+        }
+      },
+      {
+        "id": "acme-sales",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "From acme-sales."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "pool",
+        "hosts": [
+          "acme-*"
+        ]
+      },
+      {
+        "id": "host",
+        "hosts": [
+          "coder"
+        ]
+      },
+      {
+        "id": "late",
+        "hosts": [
+          "coder"
+        ],
+        "started": false
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "executors",
+      "expect": {
+        "result": {
+          "$unordered": [
+            {
+              "executor_id": "pool",
+              "hosts": [
+                "acme-*"
+              ],
+              "room_hooks": [],
+              "online": true
+            },
+            {
+              "executor_id": "host",
+              "hosts": [
+                "coder"
+              ],
+              "room_hooks": [],
+              "online": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "call": "executor.start",
+      "executor": "late"
+    },
+    {
+      "call": "executor.close",
+      "executor": "host"
+    },
+    {
+      "call": "executors",
+      "expect": {
+        "result": {
+          "$unordered": [
+            {
+              "executor_id": "pool",
+              "hosts": [
+                "acme-*"
+              ],
+              "room_hooks": [],
+              "online": true
+            },
+            {
+              "executor_id": "late",
+              "hosts": [
+                "coder"
+              ],
+              "room_hooks": [],
+              "online": true
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

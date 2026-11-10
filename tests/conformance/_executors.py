@@ -315,6 +315,32 @@ async def _enable_room_hook(kit: RoomKit, harness: Harness, spec: Mapping[str, A
     await kit.enable_room_hook(spec["room_id"], spec["name"])
 
 
+async def _executors(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
+    """The executors served on the kit's backend (README, ``executors``)."""
+    return [
+        {
+            "executor_id": info.executor_id,
+            "hosts": None if info.hosts is None else sorted(info.hosts),
+            "room_hooks": sorted(info.room_hooks),
+            "online": info.online,
+        }
+        for info in await kit.executors()
+    ]
+
+
+async def _agent_presence(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
+    """Each of a room's agents, online or not (README, ``agent_presence``)."""
+    arguments = {"organization_id": spec["organization_id"]} if "organization_id" in spec else {}
+    return [
+        {
+            "channel_id": presence.channel_id,
+            "online": presence.online,
+            "executors": sorted(presence.executors),
+        }
+        for presence in await kit.agent_presence(spec["room_id"], **arguments)
+    ]
+
+
 EXECUTOR_CALLS: dict[str, Call] = {
     "executor.start": _start,
     "executor.close": _close,
@@ -326,6 +352,8 @@ EXECUTOR_CALLS: dict[str, Call] = {
     "channel_call": _channel_call,
     "release_channel": _release_channel,
     "enable_room_hook": _enable_room_hook,
+    "executors": _executors,
+    "agent_presence": _agent_presence,
 }
 
 # Each call's arguments, beside `call` and `organization_id`.
@@ -340,4 +368,6 @@ EXECUTOR_ARGUMENTS: dict[str, set[str]] = {
     "channel_call": {"channel_id", "room_id", "verb", "arguments"},
     "release_channel": {"channel_id"},
     "enable_room_hook": {"room_id", "name"},
+    "executors": set(),
+    "agent_presence": {"room_id"},
 }
