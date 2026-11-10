@@ -1,0 +1,233 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/an-empty-start-task-hand-back-keeps-the-default-or-configured-mode",
+  "title": "An empty start_task hand_back keeps its default or configured mode; a nonempty override still applies and unknown modes are refused",
+  "rules": [
+    "§23.4",
+    "§23.3 step 8"
+  ],
+  "notes": "Python: tests/tasks/test_background_tasks.py::test_start_task_without_a_setup_runs_on_the_agent_and_relays, test_start_task_overrides_the_setup_s_hand_back, test_setup_refuses_an_unknown_hand_back; tasks/background.py::start_background_task uses hand_back or setup.hand_back. Empty fallback belongs to start_task, not setup_background.",
+  "setup": {
+    "channels": [
+      {
+        "id": "phone",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "dev",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Findings."
+            },
+            {
+              "text": "Shared default."
+            },
+            {
+              "text": "Shared override."
+            }
+          ]
+        }
+      },
+      {
+        "id": "helper",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Findings."
+            },
+            {
+              "text": "Findings."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "call",
+        "bindings": [
+          {
+            "channel_id": "phone"
+          },
+          {
+            "channel_id": "dev"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "start_task",
+      "room_id": "call",
+      "agent_id": "dev",
+      "task": "Count default.",
+      "hand_back": "",
+      "as": "default",
+      "expect": {
+        "result": {
+          "hand_back": "relay",
+          "agent_id": "dev"
+        }
+      }
+    },
+    {
+      "call": "task.wait",
+      "task_id": "$default",
+      "expect": {
+        "result": {
+          "status": "completed",
+          "output": "Findings."
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "setup_background",
+      "agent_id": "dev",
+      "worker": "helper",
+      "hand_back": "post"
+    },
+    {
+      "call": "start_task",
+      "room_id": "call",
+      "agent_id": "dev",
+      "task": "Count configured.",
+      "hand_back": "",
+      "as": "configured",
+      "expect": {
+        "result": {
+          "hand_back": "post",
+          "agent_id": "helper"
+        }
+      }
+    },
+    {
+      "call": "task.wait",
+      "task_id": "$configured",
+      "expect": {
+        "result": {
+          "status": "completed",
+          "output": "Findings."
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "start_task",
+      "room_id": "call",
+      "agent_id": "dev",
+      "task": "Count override.",
+      "hand_back": "relay",
+      "as": "override",
+      "expect": {
+        "result": {
+          "hand_back": "relay",
+          "agent_id": "helper"
+        }
+      }
+    },
+    {
+      "call": "task.wait",
+      "task_id": "$override",
+      "expect": {
+        "result": {
+          "status": "completed",
+          "output": "Findings."
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "start_task",
+      "room_id": "call",
+      "agent_id": "dev",
+      "task": "Never started.",
+      "hand_back": " ",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "start_task",
+      "room_id": "call",
+      "agent_id": "dev",
+      "task": "Never started.",
+      "hand_back": "shout",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "setup_background",
+      "agent_id": "helper",
+      "hand_back": "",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "$r4": null
+    },
+    "timeline": {
+      "call": [
+        {
+          "type": "instruction_read",
+          "source": {
+            "channel_id": "dev"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "dev"
+          },
+          "content": {
+            "type": "text",
+            "body": "Shared default."
+          }
+        },
+        {
+          "type": "message",
+          "source": {
+            "channel_id": "dev"
+          },
+          "content": {
+            "type": "text",
+            "body": "Result of the task “Count configured.”:\n\nFindings."
+          },
+          "metadata": {
+            "agent_id": "helper",
+            "task_status": "completed"
+          }
+        },
+        {
+          "type": "instruction_read",
+          "source": {
+            "channel_id": "dev"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "dev"
+          },
+          "content": {
+            "type": "text",
+            "body": "Shared override."
+          }
+        }
+      ]
+    }
+  }
+}

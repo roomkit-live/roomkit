@@ -1,0 +1,171 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-background-tool-keeps-its-turns-name-before-a-post",
+  "title": "The background tool keeps the name its turn loaded while its new worker reads the current room (post)",
+  "rules": [
+    "§23.4",
+    "§21.4",
+    "§19.7.5 rule 4"
+  ],
+  "notes": "Python: tests/orchestration/test_discussion_handles.py::test_a_background_task_names_its_agent_by_handle; tests/test_tool_context.py::TestCurrentToolRoom; tasks/background.py::background_tool_server and start_background_task. A generation gate proves the turn loaded OldName before the store patch. This is a metadata snapshot test, not a public API for renaming an installed discussion.",
+  "setup": {
+    "channels": [
+      {
+        "id": "phone",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "dev",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "gate": "turn-loaded",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "work_in_background",
+                  "arguments": {
+                    "task": "Count the tickets."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "On it."
+            }
+          ]
+        }
+      },
+      {
+        "id": "helper",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Findings: 12."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "call",
+        "bindings": [
+          {
+            "channel_id": "phone"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "discussion",
+        "discussion": {
+          "agents": [
+            "dev"
+          ],
+          "handles": {
+            "dev": "OldName"
+          }
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "call",
+      "strategy": "discussion"
+    },
+    {
+      "call": "setup_background",
+      "agent_id": "dev",
+      "worker": "helper",
+      "hand_back": "post"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "call",
+      "message": {
+        "channel_id": "phone",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "@OldName count the tickets"
+        }
+      },
+      "background": true,
+      "as": "incoming"
+    },
+    {
+      "wait_for": "turn-loaded"
+    },
+    {
+      "call": "store.patch_room_metadata",
+      "room_id": "call",
+      "patch": {
+        "_discussion": {
+          "agents": [
+            "dev"
+          ],
+          "handles": {
+            "dev": "NewName"
+          },
+          "max_depth": 5
+        }
+      },
+      "expect": {
+        "result": {
+          "metadata": {
+            "_discussion": {
+              "handles": {
+                "dev": "NewName"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "open": "turn-loaded"
+    },
+    {
+      "await": "incoming"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "dev": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": {
+                "$contains": "its result is posted as OldName's message"
+              }
+            }
+          ]
+        }
+      ],
+      "helper": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$contains": "in the background for @NewName"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

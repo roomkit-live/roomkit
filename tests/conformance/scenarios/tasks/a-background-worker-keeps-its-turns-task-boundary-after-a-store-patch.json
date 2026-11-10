@@ -1,0 +1,142 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-background-worker-keeps-its-turns-task-boundary-after-a-store-patch",
+  "title": "A background worker still refuses a nested task after its stored task_id is removed",
+  "rules": [
+    "§23.4",
+    "§21.4"
+  ],
+  "notes": "Python: tests/tasks/test_background_tasks.py::test_the_tool_is_refused_in_a_task_s_child_room; tasks/background.py::background_tool_server reads current_tool_room. The gate proves the child turn loaded its task marker before the low-level store patch; no new task may be started.",
+  "setup": {
+    "channels": [
+      {
+        "id": "phone",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "dev",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Unused."
+            }
+          ]
+        }
+      },
+      {
+        "id": "helper",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "gate": "worker-loaded",
+              "calls": [
+                {
+                  "id": "nested",
+                  "name": "work_in_background",
+                  "arguments": {
+                    "task": "Do more work."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Findings."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "call",
+        "bindings": [
+          {
+            "channel_id": "phone"
+          },
+          {
+            "channel_id": "dev"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "setup_background",
+      "agent_id": "dev",
+      "worker": "helper",
+      "hand_back": "post"
+    },
+    {
+      "call": "setup_background",
+      "agent_id": "helper"
+    },
+    {
+      "call": "start_task",
+      "room_id": "call",
+      "agent_id": "dev",
+      "task": "Count.",
+      "as": "started"
+    },
+    {
+      "wait_for": "worker-loaded"
+    },
+    {
+      "call": "store.patch_room_metadata",
+      "room_id": "$r1",
+      "patch": {},
+      "unset": [
+        "task_id"
+      ],
+      "expect": {
+        "result": {
+          "metadata": {
+            "task_id": {
+              "$absent": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "open": "worker-loaded"
+    },
+    {
+      "call": "task.wait",
+      "task_id": "$started",
+      "expect": {
+        "result": {
+          "status": "completed",
+          "output": "Findings."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "helper": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "nested",
+              "content": {
+                "$contains": "A task starts no task of its own."
+              }
+            }
+          ]
+        }
+      ],
+      "dev": []
+    },
+    "rooms": {
+      "$r2": null
+    }
+  }
+}
