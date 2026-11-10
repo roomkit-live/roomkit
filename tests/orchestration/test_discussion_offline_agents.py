@@ -6,7 +6,9 @@ and the agent's return."""
 from __future__ import annotations
 
 import asyncio
+import os
 from typing import Any
+from uuid import uuid4
 
 import pytest
 
@@ -15,7 +17,13 @@ from roomkit.models.enums import EventType, HookExecution, HookTrigger
 from roomkit.models.event import RoomEvent
 from roomkit.orchestration.strategies.discussion import Discussion, SpeakQueueChange
 from roomkit.providers.ai.mock import MockAIProvider
-from roomkit.turns import InMemoryTurnBackend, TurnBackend
+from roomkit.turns import (
+    InMemoryTurnBackend,
+    RedisTurnBackend,
+    TurnBackend,
+    TurnExecutor,
+    TurnTimeouts,
+)
 from tests.orchestration.test_discussion_edges import _People, _say
 from tests.orchestration.test_strategy_discussion import _settle
 
@@ -31,7 +39,7 @@ class _ListFails(InMemoryTurnBackend):
         raise ConnectionError("registry unreachable")
 
 
-async def _discussion(backend: InMemoryTurnBackend) -> tuple[RoomKit, list[Any], list[str]]:
+async def _discussion(backend: TurnBackend) -> tuple[RoomKit, list[Any], list[str]]:
     """``ana`` held by its declaration, served by nobody; ``bob`` live."""
     kit = RoomKit(turn_backend=backend)
     changes: list[Any] = []
@@ -86,7 +94,54 @@ async def test_an_instruction_for_an_offline_agent_is_dropped_and_said_so() -> N
     finally:
         await kit.close()
 
-    assert (SpeakQueueChange.TURN_SKIPPED, ("ana",)) in changes
-    assert (SpeakQueueChange.TURN_GIVEN, ("ana",)) not in changes
+    told = [change for change, _ in changes]
+    assert told[told.index(SpeakQueueChange.QUEUED) + 1 :] == [
+        SpeakQueueChange.TURN_SKIPPED,
+        SpeakQueueChange.INSTRUCTION_DROPPED,
+    ]
     assert held == {}
     assert errors == []
+
+
+@pytest.mark.skipif(not os.environ.get("REDIS_URL"), reason="REDIS_URL not set")
+async def test_an_executor_started_since_the_owner_last_read_takes_the_turn() -> None:
+    """Across Redis the owner reads the executors once per heartbeat interval:
+    an agent whose executor started since then reads offline in that view, and
+    is checked against the registry read now before its turn is dropped."""
+    redis = pytest.importorskip("redis.asyncio")
+    prefix = f"roomkit:test:{uuid4().hex[:12]}"
+    timeouts = TurnTimeouts(heartbeat_interval=5.0, heartbeat_timeout=15.0, accept=3.0)
+    owner, elsewhere = (
+        RedisTurnBackend(os.environ["REDIS_URL"], key_prefix=prefix, timeouts=timeouts)
+        for _ in range(2)
+    )
+    host = TurnExecutor(
+        lambda cid: Agent(cid, provider=MockAIProvider(responses=["ana here."])),
+        hosts={"ana"},
+        executor_id="ana-host",
+        timeouts=timeouts,
+    )
+    kit, changes, errors = await _discussion(owner)
+    client = redis.from_url(os.environ["REDIS_URL"])
+    try:
+        assert [p.online for p in await kit.agent_presence("r1") if p.channel_id == "ana"] == [
+            False
+        ]
+        await elsewhere.serve(host)
+        await _say(kit, "are you there?", addressed_to=["ana"])
+        await _until(lambda: any(c[1] == ("ana",) and c[0] in _ENDS for c in changes))
+    finally:
+        await kit.close()
+        await host.close()
+        await elsewhere.close()
+        keys = [key async for key in client.scan_iter(f"{prefix}:*")]
+        if keys:
+            await client.delete(*keys)
+        await client.aclose()
+
+    assert (SpeakQueueChange.TURN_GIVEN, ("ana",)) in changes
+    assert (SpeakQueueChange.TURN_SKIPPED, ("ana",)) not in changes
+    assert errors == []
+
+
+_ENDS = {SpeakQueueChange.TURN_ENDED, SpeakQueueChange.TURN_SKIPPED}

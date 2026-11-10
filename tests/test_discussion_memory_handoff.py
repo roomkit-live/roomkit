@@ -6,6 +6,8 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 
+import pytest
+
 from roomkit import Agent, AgentIdentity, ChannelDeclaration, Discussion, RoomKit
 from roomkit.memory.mock import MockMemoryProvider
 from roomkit.models.delivery import InboundMessage
@@ -146,7 +148,10 @@ async def test_a_message_is_handed_to_every_agent_s_memory_at_once() -> None:
     assert all(_ingested(memory) == ["@nobody hello."] for memory in memories.values())
 
 
-async def test_an_agent_no_executor_runs_misses_its_memory_and_the_room_goes_on() -> None:
+async def test_an_agent_no_executor_runs_misses_its_memory_and_the_room_goes_on(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """An agent offline is handed nothing: no executor would take it."""
     kit = RoomKit()
     kit.register_channel(SimpleChannel("sms"))
     bob_memory = MockMemoryProvider()
@@ -161,3 +166,4 @@ async def test_an_agent_no_executor_runs_misses_its_memory_and_the_room_goes_on(
     await kit.close()
 
     assert said.count("Hello.") == 1
+    assert not [r for r in caplog.records if "memory was not handed" in r.getMessage()]

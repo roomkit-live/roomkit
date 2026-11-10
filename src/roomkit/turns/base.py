@@ -355,6 +355,12 @@ class TurnBackend(ABC):
         declaration alone as offline."""
         return []
 
+    async def _executors_now(self) -> list[ExecutorInfo]:
+        """:meth:`executors` as they stand now, for a decision that drops a
+        turn (RFC §19.7.5 rule 7): a backend whose list may lag behind (a
+        view read within the last heartbeat interval) reads it again."""
+        return await self.executors()
+
     @abstractmethod
     async def close(self) -> None:
         """Fail the turns in flight (``backend_closed``) and release the

@@ -360,16 +360,19 @@ class TurnDriver:
 
     def _skipped(self, state: SpeakQueueState, entry: Entry, answered_id: str) -> None:
         """*entry*'s agent is offline, no executor serving it (RFC §10.6.7):
-        its turn is dropped and said so, never given to fail."""
+        its turn is dropped and said so, never given to fail; an instruction
+        it was to take is dropped after."""
         room = self._room
-        state.entries.remove(entry)
-        room.drop_instructions([entry], keep=state)
+        hooks = room.kit._turns.room_hook_names(room.room_id)
         logger.info(
-            "Discussion turn of %s in room %s skipped: the agent is offline",
+            "Discussion turn of %s in room %s skipped: no executor online serves it%s",
             entry.agent,
             room.room_id,
+            f" with the room's hooks {hooks}" if hooks else "",
         )
+        state.entries.remove(entry)
         room.fire(SpeakQueueChange.TURN_SKIPPED, [entry.agent], answered_id)
+        room.drop_instructions([entry], keep=state)
 
     def _max_turns_given(self, state: SpeakQueueState) -> bool:
         max_turns = self._room.config.max_turns

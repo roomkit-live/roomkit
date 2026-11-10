@@ -246,6 +246,13 @@ class RedisTurnBackend(TurnBackend):
         ]
         return here + elsewhere
 
+    async def _executors_now(self) -> list[ExecutorInfo]:
+        """:meth:`executors` from the registry read now: the view read within
+        the last interval misses an executor started since."""
+        self._start()
+        await self._live.refresh()
+        return await self.executors()
+
     async def attend(self, owner: RoomOwner) -> None:
         self._start()
         await self._here.attend(owner)

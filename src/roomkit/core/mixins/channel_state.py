@@ -139,17 +139,25 @@ class ChannelStateMixin:
         """The ones of *channel_ids* known offline in *room_id*: held by their
         declaration, and no executor online covers them there (RFC §10.6.7).
         A live agent never is, nor any agent on a turn backend that does not
-        list its executors, or whose list could not be read: it tells nothing."""
+        list its executors, or whose list could not be read: it tells nothing.
+        What is dropped for an agent offline is lost, so an agent offline in
+        the list as last read is checked against the list read now."""
+        backend = self._turns.backend
         declared = [c for c in channel_ids if isinstance(self._channels.get(c), DeclaredChannel)]
-        if not declared or not lists_executors(self._turns.backend):
+        if not declared or not lists_executors(backend):
             return set()
+        hooks = self._turns.room_hook_names(room_id)
+        offline = set(declared)
         try:
-            infos = await self.executors()
+            for read in (backend.executors, backend._executors_now):
+                infos = await read()
+                offline = {c for c in offline if not self._presence_of(c, hooks, infos).online}
+                if not offline:
+                    break
         except Exception:
             logger.warning("Reading the executors serving %s failed", declared, exc_info=True)
             return set()
-        hooks = self._turns.room_hook_names(room_id)
-        return {c for c in declared if not self._presence_of(c, hooks, infos).online}
+        return offline
 
     def _presence_of(
         self, channel_id: str, hooks: list[str], infos: list[ExecutorInfo]
