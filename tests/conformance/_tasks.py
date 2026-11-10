@@ -196,7 +196,6 @@ async def _host_delegate(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]
     names = TASK_ARGUMENTS["host.delegate"] - {"room_id", "agent_id", "task"}
     options = _named(spec, names)
     task_id = await _host().delegate(spec["room_id"], spec["agent_id"], spec["task"], **options)
-    harness.handled_tasks.add(task_id)
     return task_id
 
 

@@ -51,7 +51,6 @@ async def _setup_delegation(kit: RoomKit, harness: Harness, spec: Mapping[str, A
 async def _handle(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
     handler = harness.delegate_handlers[spec["handler"]]
     answer = await handler.handle(spec["room_id"], spec["calling_agent_id"], spec["arguments"])
-    harness.handled_tasks.add(answer["task_id"])
     return answer
 
 

@@ -213,7 +213,6 @@ class Harness:
         self.auditors = Auditors()
         self.handoff_handlers: dict[str, HandoffHandler] = {}
         self.delegate_handlers: dict[str, DelegateHandler] = {}
-        self.handled_tasks: set[str] = set()
         setup = scenario.get("setup", {})
         self.discussion_done: dict[str, bool] = {}
         self.strategies = strategies(setup, self)
@@ -740,13 +739,7 @@ class Harness:
             if not task.done()
         ]
         tasks.extend(task for task in self._background.values() if not task.done())
-        # The tasks a call on a delegate handler started, then what the handler
-        # keeps of their end.
-        running = self.kit.task_runner._tasks  # ty: ignore[attr-defined]
-        held = [running[task_id] for task_id in self.handled_tasks if task_id in running]
-        for handler in self.delegate_handlers.values():
-            held.extend(handler._background_tasks)
-        tasks.extend(task for task in held if not task.done())
+        tasks.extend(self._task_runs())
         if after_turn:
             tasks.extend(task for task in self._after_turn if not task.done())
         if tasks:
@@ -759,6 +752,18 @@ class Harness:
             busy = True
             await asyncio.sleep(0.001)
         return busy
+
+    def _task_runs(self) -> list[asyncio.Task[Any]]:
+        """Task work and completion callbacks, including tasks an agent's
+        work_in_background tool started without a runner-side task handle.
+        A task can finish its turn before its result has been handed back.
+        """
+        runner = self.kit.task_runner
+        held = list(runner._tasks.values())  # ty: ignore[attr-defined]
+        held.extend(runner._ends.values())  # ty: ignore[attr-defined]
+        for handler in self.delegate_handlers.values():
+            held.extend(handler._background_tasks)
+        return [task for task in held if not task.done()]
 
     async def _drain_process(self, kit: RoomKit) -> bool:
         """One pass of the idle wait over another process's kit: its lanes,
