@@ -1,0 +1,138 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/an-executor-builds-an-agent-at-its-first-turn-not-when-a-room-attaches-it",
+  "title": "An executor that holds no build of an agent builds none for a room's attach or detach: it builds the agent at its first turn",
+  "rules": [
+    "§10.6.3"
+  ],
+  "notes": "Python: tests/test_turns_channel_control.py test_attach_and_detach_apply_where_the_channel_is_built_and_build_nothing.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "From coder."
+            },
+            {
+              "text": "From coder."
+            }
+          ]
+        }
+      },
+      {
+        "id": "builder",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "Never."
+            },
+            {
+              "text": "Never."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "pool",
+        "hosts": [
+          "*"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "attach_channel",
+      "room_id": "r2",
+      "channel_id": "builder",
+      "category": "intelligence"
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "r2",
+      "channel_id": "builder"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "r1",
+      "channel_id": "coder",
+      "category": "intelligence"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hello."
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "From coder."
+          }
+        }
+      ]
+    },
+    "executors": {
+      "pool": [
+        {
+          "call": "built",
+          "channel_id": "coder",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "room_id": "r1",
+          "build": 1
+        }
+      ]
+    }
+  }
+}

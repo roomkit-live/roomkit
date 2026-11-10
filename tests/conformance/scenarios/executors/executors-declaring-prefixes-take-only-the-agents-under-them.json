@@ -175,6 +175,11 @@
     "executors": {
       "acme": [
         {
+          "call": "built",
+          "channel_id": "acme-sales",
+          "build": 1
+        },
+        {
           "call": "on_event",
           "channel_id": "acme-sales",
           "room_id": "r1",
@@ -182,6 +187,11 @@
         }
       ],
       "globex": [
+        {
+          "call": "built",
+          "channel_id": "globex-support",
+          "build": 1
+        },
         {
           "call": "on_event",
           "channel_id": "globex-support",

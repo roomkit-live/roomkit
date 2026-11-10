@@ -137,6 +137,7 @@ class Executors:
         if executor_id not in self._specs or self._backend is None:
             raise UnreadableError(f"no executor {executor_id!r} in setup.executors")
         spec = self._specs[executor_id]
+        bound = {"max_channels": spec["max_channels"]} if "max_channels" in spec else {}
         executor = _ScenarioExecutor(
             partial(self._build, executor_id),
             bool(spec.get("answers", True)),
@@ -144,6 +145,7 @@ class Executors:
             hosts=set(spec.get("hosts", [])),
             executor_id=executor_id,
             timeouts=self._bounds,
+            **bound,
         )
         self._add_hooks(executor, spec)
         await self._backend.serve(executor)

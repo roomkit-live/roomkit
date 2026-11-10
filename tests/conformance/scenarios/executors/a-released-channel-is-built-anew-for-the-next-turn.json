@@ -78,6 +78,11 @@
       "first": {
         "$unordered": [
           {
+            "call": "built",
+            "channel_id": "coder",
+            "build": 1
+          },
+          {
             "call": "on_event",
             "channel_id": "coder",
             "room_id": "r1",

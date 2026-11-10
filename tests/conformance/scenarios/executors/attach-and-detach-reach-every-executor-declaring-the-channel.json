@@ -1,11 +1,11 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "executors/attach-and-detach-reach-every-executor-declaring-the-channel",
-  "title": "A room's attach and detach of a declared channel reach every executor that declares it",
+  "title": "A room's attach and detach of a declared channel are applied by the executor holding a build of it, and an executor declaring it that holds none builds nothing for them",
   "rules": [
     "§10.6.3"
   ],
-  "notes": "Python: tests/test_turns_channel_control.py test_attach_and_detach_reach_every_executor_declaring_the_channel.",
+  "notes": "Python: tests/test_turns_channel_control.py test_attach_and_detach_apply_where_the_channel_is_built_and_build_nothing.",
   "setup": {
     "channels": [
       {
@@ -17,7 +17,14 @@
         "id": "coder",
         "type": "ai",
         "category": "intelligence",
-        "declared": true
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "From coder."
+            }
+          ]
+        }
       }
     ],
     "executors": [
@@ -31,10 +38,23 @@
         "id": "second",
         "hosts": [
           "coder"
-        ]
+        ],
+        "started": false
       }
     ],
     "rooms": [
+      {
+        "id": "r0",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      },
       {
         "id": "r1",
         "bindings": [
@@ -46,6 +66,22 @@
     ]
   },
   "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r0",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hello."
+        }
+      }
+    },
+    {
+      "call": "executor.start",
+      "executor": "second"
+    },
     {
       "call": "attach_channel",
       "room_id": "r1",
@@ -59,11 +95,33 @@
     }
   ],
   "expect": {
+    "timeline": {
+      "r0": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "From coder."
+          }
+        }
+      ]
+    },
     "executors": {
       "first": [
         {
           "call": "built",
           "channel_id": "coder",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "coder",
+          "room_id": "r0",
           "build": 1
         },
         {
@@ -79,25 +137,7 @@
           "build": 1
         }
       ],
-      "second": [
-        {
-          "call": "built",
-          "channel_id": "coder",
-          "build": 1
-        },
-        {
-          "call": "on_room_attached",
-          "channel_id": "coder",
-          "room_id": "r1",
-          "build": 1
-        },
-        {
-          "call": "on_room_detached",
-          "channel_id": "coder",
-          "room_id": "r1",
-          "build": 1
-        }
-      ]
+      "second": []
     }
   }
 }

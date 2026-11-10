@@ -1,7 +1,7 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "executors/an-executor-declaring-every-agent-takes-the-turns-of-agents-it-was-never-named",
-  "title": "An executor declaring every agent (*) builds and runs each declared agent, never named to it, and is never told of a live agent's attach nor given its turn",
+  "title": "An executor declaring every agent (*) builds and runs each declared agent at its first turn, never named to it, and leaves a live agent's turn to the kit",
   "rules": [
     "§10.6.7"
   ],
@@ -187,19 +187,18 @@
       "pool": [
         {
           "call": "built",
-          "channel_id": "builder",
-          "build": 1
-        },
-        {
-          "call": "on_room_attached",
-          "channel_id": "builder",
-          "room_id": "r2",
+          "channel_id": "coder",
           "build": 1
         },
         {
           "call": "on_event",
           "channel_id": "coder",
           "room_id": "r1",
+          "build": 1
+        },
+        {
+          "call": "built",
+          "channel_id": "builder",
           "build": 1
         },
         {

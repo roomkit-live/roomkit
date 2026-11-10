@@ -101,18 +101,13 @@
   "expect": {
     "executors": {
       "first": [
+        "$any",
         "$any"
       ],
       "second": [
         {
           "call": "built",
           "channel_id": "worker",
-          "build": 1
-        },
-        {
-          "call": "on_room_attached",
-          "channel_id": "worker",
-          "room_id": "$r1",
           "build": 1
         },
         {

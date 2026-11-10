@@ -1,0 +1,308 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/an-executor-past-its-bound-closes-the-agent-it-used-least-recently",
+  "title": "An executor keeping two agents built closes the one it used least recently when a third is built, an agent used again counting as recent, and builds the one it closed anew for its room's next turn",
+  "rules": [
+    "§10.6.2"
+  ],
+  "notes": "Python: tests/test_turns_channel_release.py test_an_executor_past_its_bound_lets_go_of_the_agent_used_least_recently. The closes run apart from the turns, so the list is matched in any order: which builds and closes it holds shows which agent each build let go.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "alpha",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "From alpha."
+            },
+            {
+              "text": "From alpha."
+            }
+          ]
+        }
+      },
+      {
+        "id": "beta",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "From beta."
+            },
+            {
+              "text": "From beta."
+            }
+          ]
+        }
+      },
+      {
+        "id": "gamma",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "From gamma."
+            },
+            {
+              "text": "From gamma."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "pool",
+        "hosts": [
+          "*"
+        ],
+        "max_channels": 2
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "alpha",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "beta",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "r3",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "gamma",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "One."
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Two."
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Again."
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r3",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Three."
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Again."
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "One."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "From alpha."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Again."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "From alpha."
+          }
+        }
+      ],
+      "r2": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Two."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "From beta."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Again."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "From beta."
+          }
+        }
+      ],
+      "r3": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Three."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "From gamma."
+          }
+        }
+      ]
+    },
+    "executors": {
+      "pool": {
+        "$unordered": [
+          {
+            "call": "built",
+            "channel_id": "alpha",
+            "build": 1
+          },
+          {
+            "call": "on_event",
+            "channel_id": "alpha",
+            "build": 1,
+            "room_id": "r1"
+          },
+          {
+            "call": "built",
+            "channel_id": "beta",
+            "build": 1
+          },
+          {
+            "call": "on_event",
+            "channel_id": "beta",
+            "build": 1,
+            "room_id": "r2"
+          },
+          {
+            "call": "on_event",
+            "channel_id": "alpha",
+            "build": 1,
+            "room_id": "r1"
+          },
+          {
+            "call": "built",
+            "channel_id": "gamma",
+            "build": 1
+          },
+          {
+            "call": "close",
+            "channel_id": "beta",
+            "build": 1
+          },
+          {
+            "call": "on_event",
+            "channel_id": "gamma",
+            "build": 1,
+            "room_id": "r3"
+          },
+          {
+            "call": "built",
+            "channel_id": "beta",
+            "build": 2
+          },
+          {
+            "call": "close",
+            "channel_id": "alpha",
+            "build": 1
+          },
+          {
+            "call": "on_event",
+            "channel_id": "beta",
+            "build": 2,
+            "room_id": "r2"
+          }
+        ]
+      }
+    }
+  }
+}
