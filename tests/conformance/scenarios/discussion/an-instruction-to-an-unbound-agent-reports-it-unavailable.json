@@ -1,0 +1,135 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/an-instruction-to-an-unbound-agent-reports-it-unavailable",
+  "title": "An instruction to an agent registered outside the discussion room proceeds but reports that target unavailable and queues no turn",
+  "rules": [
+    "§10.1.1",
+    "§19.7.5 rule 7"
+  ],
+  "notes": "Python: tests/orchestration/test_discussion_edges.py::test_an_instruction_to_an_agent_the_room_lacks_reports_it_unavailable.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "a done"
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "b done"
+            }
+          ]
+        }
+      },
+      {
+        "id": "elsewhere",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "must not answer"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a",
+            "b"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "x"
+        },
+        "event_type": "instruction",
+        "addressed_to": [
+          "elsewhere"
+        ],
+        "chain_depth": 0
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null,
+          "unavailable_targets": [
+            "elsewhere"
+          ]
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "speaking": null,
+          "queue": [],
+          "waiting": false
+        }
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "a": [],
+      "b": [],
+      "elsewhere": []
+    },
+    "timeline": {
+      "r1": []
+    },
+    "deliveries": {
+      "r1": {
+        "ops": []
+      }
+    }
+  }
+}

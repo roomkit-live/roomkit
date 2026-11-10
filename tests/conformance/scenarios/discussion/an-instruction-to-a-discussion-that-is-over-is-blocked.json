@@ -46,6 +46,11 @@
           }
         ]
       }
+    ],
+    "processes": [
+      {
+        "id": "fresh"
+      }
     ]
   },
   "steps": [
@@ -105,7 +110,8 @@
           "reason": "discussion_over",
           "event": null
         }
-      }
+      },
+      "kit": "fresh"
     }
   ],
   "expect": {
@@ -114,7 +120,15 @@
         "a1": [],
         "a2": []
       }
+    },
+    "timeline": {
+      "room-1": []
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": []
+      }
     }
   },
-  "notes": "The room's first call in a process: the stored queue is read, not what this process last read of it (HITL 0d726397)."
+  "notes": "The room's first call in a process: the stored queue is read, not what this process last read of it (HITL 0d726397). Python: tests/test_discussion_core.py::test_an_instruction_to_a_stored_discussion_over_is_blocked_at_the_rooms_first_call. The fresh kit makes no room call before the instruction; another kit created the room and its bindings. No external process or service is required by this first-read contract."
 }

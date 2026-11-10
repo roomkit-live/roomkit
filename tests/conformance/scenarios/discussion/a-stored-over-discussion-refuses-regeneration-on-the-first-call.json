@@ -1,0 +1,150 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/a-stored-over-discussion-refuses-regeneration-on-the-first-call",
+  "title": "A kit first reading a stored discussion that is over refuses regeneration with discussion_over, leaving the message and all agents untouched",
+  "rules": [
+    "§19.7.5 rule 15"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a1",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "from a1"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "a2",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "from a2"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "processes": [
+      {
+        "id": "fresh"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-1",
+        "metadata": {
+          "_discussion": {
+            "agents": [
+              "a1",
+              "a2"
+            ],
+            "max_depth": 5
+          },
+          "_speak_queue": {
+            "over": true
+          }
+        }
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "sms"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "a1",
+      "category": "intelligence"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "a2",
+      "category": "intelligence"
+    },
+    {
+      "call": "store.add_event_auto_index",
+      "room_id": "room-1",
+      "event": {
+        "room_id": "room-1",
+        "source": {
+          "channel_id": "sms",
+          "channel_type": "sms"
+        },
+        "content": {
+          "type": "text",
+          "body": "hello"
+        },
+        "addressed_to": [
+          "a1"
+        ]
+      }
+    },
+    {
+      "call": "regenerate_response",
+      "room_id": "room-1",
+      "kit": "fresh",
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "discussion_over",
+          "event": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "turns": {
+      "room-1": {
+        "a1": [],
+        "a2": []
+      }
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": []
+      }
+    }
+  },
+  "notes": "Python: tests/test_discussion_core.py::test_a_discussion_stored_over_refuses_a_regeneration_at_the_rooms_first_call; core/mixins/regenerate.py _regenerate_discussion reads _stored_discussion_over before queuing. The fresh kit makes no room call before regeneration. A shared local store exercises the first read, not an external service."
+}
