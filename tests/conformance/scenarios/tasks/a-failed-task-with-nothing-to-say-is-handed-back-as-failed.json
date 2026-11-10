@@ -79,7 +79,8 @@
       "as": "t1",
       "expect": {
         "result": {
-          "child_room_id": "$r1"
+          "child_room_id": "$r1",
+          "id": "$e1"
         }
       }
     },
@@ -88,7 +89,9 @@
       "task_id": "$t1",
       "expect": {
         "result": {
-          "status": "failed"
+          "status": "failed",
+          "task_id": "$e1",
+          "child_room_id": "$r1"
         }
       }
     },
@@ -104,7 +107,9 @@
       "task_id": "$t1",
       "expect": {
         "result": {
-          "status": "failed"
+          "status": "failed",
+          "task_id": "$e1",
+          "child_room_id": "$r1"
         }
       }
     },
@@ -120,7 +125,8 @@
       "as": "t2",
       "expect": {
         "result": {
-          "child_room_id": "$r2"
+          "child_room_id": "$r2",
+          "id": "$e2"
         }
       }
     },
@@ -129,7 +135,9 @@
       "task_id": "$t2",
       "expect": {
         "result": {
-          "status": "failed"
+          "status": "failed",
+          "task_id": "$e2",
+          "child_room_id": "$r2"
         }
       }
     },
@@ -145,7 +153,9 @@
       "task_id": "$t2",
       "expect": {
         "result": {
-          "status": "failed"
+          "status": "failed",
+          "task_id": "$e2",
+          "child_room_id": "$r2"
         }
       }
     },
@@ -160,27 +170,39 @@
           {
             "status": "pending",
             "action": "task",
-            "detail": "say nothing"
+            "detail": "say nothing",
+            "metadata": {
+              "task_id": "$e1",
+              "child_room_id": "$r1"
+            }
           },
           {
             "status": "failed",
             "action": "task",
             "metadata": {
               "room_id": "room-1",
-              "task_status": "failed"
+              "task_status": "failed",
+              "task_id": "$e1",
+              "child_room_id": "$r1"
             }
           },
           {
             "status": "pending",
             "action": "task",
-            "detail": "break"
+            "detail": "break",
+            "metadata": {
+              "task_id": "$e2",
+              "child_room_id": "$r2"
+            }
           },
           {
             "status": "failed",
             "action": "task",
             "metadata": {
               "room_id": "room-1",
-              "task_status": "failed"
+              "task_status": "failed",
+              "task_id": "$e2",
+              "child_room_id": "$r2"
             }
           }
         ]
@@ -203,7 +225,8 @@
             ],
             "metadata": {
               "agent_id": "worker",
-              "task_status": "failed"
+              "task_status": "failed",
+              "task_id": "$e1"
             }
           },
           {
@@ -218,7 +241,8 @@
             ],
             "metadata": {
               "agent_id": "worker",
-              "task_status": "failed"
+              "task_status": "failed",
+              "task_id": "$e2"
             }
           }
         ]
@@ -229,14 +253,16 @@
         "metadata": {
           "parent_room_id": "room-1",
           "task_status": "failed",
-          "task_result": null
+          "task_result": null,
+          "task_id": "$e1"
         }
       },
       "$r2": {
         "metadata": {
           "parent_room_id": "room-1",
           "task_status": "failed",
-          "task_result": null
+          "task_result": null,
+          "task_id": "$e2"
         }
       }
     },
@@ -252,7 +278,9 @@
             "type": "task_completed",
             "metadata": {
               "agent_id": "worker",
-              "task_status": "failed"
+              "task_status": "failed",
+              "task_id": "$e1",
+              "child_room_id": "$r1"
             }
           }
         },
@@ -263,7 +291,9 @@
             "type": "task_completed",
             "metadata": {
               "agent_id": "worker",
-              "task_status": "failed"
+              "task_status": "failed",
+              "task_id": "$e2",
+              "child_room_id": "$r2"
             }
           }
         }
