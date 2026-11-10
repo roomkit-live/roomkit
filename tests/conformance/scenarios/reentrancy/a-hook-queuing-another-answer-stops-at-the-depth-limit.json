@@ -1,0 +1,700 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reentrancy/a-hook-queuing-another-answer-stops-at-the-depth-limit",
+  "title": "Queued deliveries from a hook keep its depth after that body ends",
+  "rules": [
+    "§8.3",
+    "§9.5.1",
+    "§10.3"
+  ],
+  "notes": "Python: tests/test_reentrance.py::TestACallFromAnAsyncHook::test_a_hook_delivering_to_the_agent_through_a_queue_stops_at_the_depth_limit. The first worker waits until the seed call has returned. Twenty finite reactions bound a broken loop.",
+  "setup": {
+    "kit": {
+      "max_chain_depth": 6,
+      "delivery_backend": {}
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Answer."
+            },
+            {
+              "text": "Answer."
+            },
+            {
+              "text": "Answer."
+            },
+            {
+              "text": "Answer."
+            },
+            {
+              "text": "Answer."
+            },
+            {
+              "text": "Answer."
+            },
+            {
+              "text": "Answer."
+            },
+            {
+              "text": "Answer."
+            },
+            {
+              "text": "Answer."
+            },
+            {
+              "text": "Answer."
+            },
+            {
+              "text": "Answer."
+            },
+            {
+              "text": "Answer."
+            },
+            {
+              "text": "Answer."
+            },
+            {
+              "text": "Answer."
+            },
+            {
+              "text": "Answer."
+            },
+            {
+              "text": "Answer."
+            },
+            {
+              "text": "Answer."
+            },
+            {
+              "text": "Answer."
+            },
+            {
+              "text": "Answer."
+            },
+            {
+              "text": "Answer."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "again",
+        "trigger": "after_broadcast",
+        "execution": "async",
+        "reactions": [
+          {
+            "when": {
+              "text": "Answer.",
+              "source_channel_id": "a"
+            },
+            "do": [
+              {
+                "call": "deliver",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": "again",
+                "addressed_to": [
+                  "a"
+                ],
+                "as": "queued",
+                "expect": {
+                  "result": {
+                    "status": "queued"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "Answer.",
+              "source_channel_id": "a"
+            },
+            "do": [
+              {
+                "call": "deliver",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": "again",
+                "addressed_to": [
+                  "a"
+                ],
+                "as": "queued",
+                "expect": {
+                  "result": {
+                    "status": "queued"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "Answer.",
+              "source_channel_id": "a"
+            },
+            "do": [
+              {
+                "call": "deliver",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": "again",
+                "addressed_to": [
+                  "a"
+                ],
+                "as": "queued",
+                "expect": {
+                  "result": {
+                    "status": "queued"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "Answer.",
+              "source_channel_id": "a"
+            },
+            "do": [
+              {
+                "call": "deliver",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": "again",
+                "addressed_to": [
+                  "a"
+                ],
+                "as": "queued",
+                "expect": {
+                  "result": {
+                    "status": "queued"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "Answer.",
+              "source_channel_id": "a"
+            },
+            "do": [
+              {
+                "call": "deliver",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": "again",
+                "addressed_to": [
+                  "a"
+                ],
+                "as": "queued",
+                "expect": {
+                  "result": {
+                    "status": "queued"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "Answer.",
+              "source_channel_id": "a"
+            },
+            "do": [
+              {
+                "call": "deliver",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": "again",
+                "addressed_to": [
+                  "a"
+                ],
+                "as": "queued",
+                "expect": {
+                  "result": {
+                    "status": "queued"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "Answer.",
+              "source_channel_id": "a"
+            },
+            "do": [
+              {
+                "call": "deliver",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": "again",
+                "addressed_to": [
+                  "a"
+                ],
+                "as": "queued",
+                "expect": {
+                  "result": {
+                    "status": "queued"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "Answer.",
+              "source_channel_id": "a"
+            },
+            "do": [
+              {
+                "call": "deliver",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": "again",
+                "addressed_to": [
+                  "a"
+                ],
+                "as": "queued",
+                "expect": {
+                  "result": {
+                    "status": "queued"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "Answer.",
+              "source_channel_id": "a"
+            },
+            "do": [
+              {
+                "call": "deliver",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": "again",
+                "addressed_to": [
+                  "a"
+                ],
+                "as": "queued",
+                "expect": {
+                  "result": {
+                    "status": "queued"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "Answer.",
+              "source_channel_id": "a"
+            },
+            "do": [
+              {
+                "call": "deliver",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": "again",
+                "addressed_to": [
+                  "a"
+                ],
+                "as": "queued",
+                "expect": {
+                  "result": {
+                    "status": "queued"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "Answer.",
+              "source_channel_id": "a"
+            },
+            "do": [
+              {
+                "call": "deliver",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": "again",
+                "addressed_to": [
+                  "a"
+                ],
+                "as": "queued",
+                "expect": {
+                  "result": {
+                    "status": "queued"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "Answer.",
+              "source_channel_id": "a"
+            },
+            "do": [
+              {
+                "call": "deliver",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": "again",
+                "addressed_to": [
+                  "a"
+                ],
+                "as": "queued",
+                "expect": {
+                  "result": {
+                    "status": "queued"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "Answer.",
+              "source_channel_id": "a"
+            },
+            "do": [
+              {
+                "call": "deliver",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": "again",
+                "addressed_to": [
+                  "a"
+                ],
+                "as": "queued",
+                "expect": {
+                  "result": {
+                    "status": "queued"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "Answer.",
+              "source_channel_id": "a"
+            },
+            "do": [
+              {
+                "call": "deliver",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": "again",
+                "addressed_to": [
+                  "a"
+                ],
+                "as": "queued",
+                "expect": {
+                  "result": {
+                    "status": "queued"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "Answer.",
+              "source_channel_id": "a"
+            },
+            "do": [
+              {
+                "call": "deliver",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": "again",
+                "addressed_to": [
+                  "a"
+                ],
+                "as": "queued",
+                "expect": {
+                  "result": {
+                    "status": "queued"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "Answer.",
+              "source_channel_id": "a"
+            },
+            "do": [
+              {
+                "call": "deliver",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": "again",
+                "addressed_to": [
+                  "a"
+                ],
+                "as": "queued",
+                "expect": {
+                  "result": {
+                    "status": "queued"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "Answer.",
+              "source_channel_id": "a"
+            },
+            "do": [
+              {
+                "call": "deliver",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": "again",
+                "addressed_to": [
+                  "a"
+                ],
+                "as": "queued",
+                "expect": {
+                  "result": {
+                    "status": "queued"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "Answer.",
+              "source_channel_id": "a"
+            },
+            "do": [
+              {
+                "call": "deliver",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": "again",
+                "addressed_to": [
+                  "a"
+                ],
+                "as": "queued",
+                "expect": {
+                  "result": {
+                    "status": "queued"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "Answer.",
+              "source_channel_id": "a"
+            },
+            "do": [
+              {
+                "call": "deliver",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": "again",
+                "addressed_to": [
+                  "a"
+                ],
+                "as": "queued",
+                "expect": {
+                  "result": {
+                    "status": "queued"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "Answer.",
+              "source_channel_id": "a"
+            },
+            "do": [
+              {
+                "call": "deliver",
+                "room_id": "$room",
+                "channel_id": "sms",
+                "content": "again",
+                "addressed_to": [
+                  "a"
+                ],
+                "as": "queued",
+                "expect": {
+                  "result": {
+                    "status": "queued"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "worker",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "again",
+              "chain_depth": 2
+            },
+            "gate": "worker"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u",
+        "content": {
+          "type": "text",
+          "body": "@a hello"
+        }
+      }
+    },
+    {
+      "wait_for": "worker"
+    },
+    {
+      "open": "worker"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "a": [
+        {},
+        {},
+        {}
+      ]
+    },
+    "actions": {
+      "queued": [
+        {
+          "result": {
+            "status": "queued"
+          }
+        },
+        {
+          "result": {
+            "status": "queued"
+          }
+        },
+        {
+          "result": {
+            "status": "queued"
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "@a hello"
+          },
+          "chain_depth": 0
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Answer."
+          },
+          "chain_depth": 1
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "again"
+          },
+          "chain_depth": 2
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Answer."
+          },
+          "chain_depth": 3
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "again"
+          },
+          "chain_depth": 4
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Answer."
+          },
+          "chain_depth": 5
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "again"
+          },
+          "chain_depth": 6
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "chain_depth": 7,
+          "status": "blocked",
+          "blocked_by": "event_chain_depth_limit"
+        }
+      ]
+    }
+  }
+}

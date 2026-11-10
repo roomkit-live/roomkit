@@ -1,0 +1,502 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/recursive-send-event-from-an-off-lock-hook-stops-at-the-cap",
+  "title": "Recursive send_event from an off-lock hook consumes its cascade budget",
+  "rules": [
+    "§8.3",
+    "§9.5.1"
+  ],
+  "notes": "Python: tests/test_reentrance.py::TestAnInjectionMadeFromTheRoomsOwnWork::test_a_hook_that_injects_on_every_event_stops_at_the_cap. This invokes the public send_event entry point, not HookResult injections. Twenty scripted calls bound a broken loop above the expected ten passes.",
+  "setup": {
+    "kit": {
+      "max_chain_depth": 1
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "echo",
+        "trigger": "before_broadcast",
+        "needs_lock": false,
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "room-1",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "again"
+                }
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "room-1",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "again"
+                }
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "room-1",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "again"
+                }
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "room-1",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "again"
+                }
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "room-1",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "again"
+                }
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "room-1",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "again"
+                }
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "room-1",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "again"
+                }
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "room-1",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "again"
+                }
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "room-1",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "again"
+                }
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "room-1",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "again"
+                }
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "room-1",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "again"
+                }
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "room-1",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "again"
+                }
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "room-1",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "again"
+                }
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "room-1",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "again"
+                }
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "room-1",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "again"
+                }
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "room-1",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "again"
+                }
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "room-1",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "again"
+                }
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "room-1",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "again"
+                }
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "room-1",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "again"
+                }
+              }
+            ]
+          },
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "room-1",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "again"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": {
+        "$unordered": [
+          {
+            "content": {
+              "type": "text",
+              "body": "hello"
+            },
+            "blocked_by": null
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "again"
+            },
+            "blocked_by": null,
+            "chain_depth": 0
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "again"
+            },
+            "blocked_by": null,
+            "chain_depth": 0
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "again"
+            },
+            "blocked_by": null,
+            "chain_depth": 0
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "again"
+            },
+            "blocked_by": null,
+            "chain_depth": 0
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "again"
+            },
+            "blocked_by": null,
+            "chain_depth": 0
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "again"
+            },
+            "blocked_by": null,
+            "chain_depth": 0
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "again"
+            },
+            "blocked_by": null,
+            "chain_depth": 0
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "again"
+            },
+            "blocked_by": null,
+            "chain_depth": 0
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "again"
+            },
+            "blocked_by": null,
+            "chain_depth": 0
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "again"
+            },
+            "blocked_by": null,
+            "chain_depth": 0
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "again"
+            },
+            "blocked_by": "reentry_loop_cap",
+            "status": "blocked",
+            "chain_depth": 0
+          }
+        ]
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [],
+        "ws": {
+          "$unordered": [
+            {
+              "content": {
+                "type": "text",
+                "body": "again"
+              }
+            },
+            {
+              "content": {
+                "type": "text",
+                "body": "again"
+              }
+            },
+            {
+              "content": {
+                "type": "text",
+                "body": "again"
+              }
+            },
+            {
+              "content": {
+                "type": "text",
+                "body": "again"
+              }
+            },
+            {
+              "content": {
+                "type": "text",
+                "body": "again"
+              }
+            },
+            {
+              "content": {
+                "type": "text",
+                "body": "again"
+              }
+            },
+            {
+              "content": {
+                "type": "text",
+                "body": "again"
+              }
+            },
+            {
+              "content": {
+                "type": "text",
+                "body": "again"
+              }
+            },
+            {
+              "content": {
+                "type": "text",
+                "body": "again"
+              }
+            },
+            {
+              "content": {
+                "type": "text",
+                "body": "again"
+              }
+            },
+            {
+              "content": {
+                "type": "text",
+                "body": "hello"
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

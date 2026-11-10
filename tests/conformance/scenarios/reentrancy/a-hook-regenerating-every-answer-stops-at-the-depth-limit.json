@@ -1,0 +1,526 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reentrancy/a-hook-regenerating-every-answer-stops-at-the-depth-limit",
+  "title": "Deleting and regenerating each answer continues the hook chain to its depth limit",
+  "rules": [
+    "§8.3",
+    "§9.5.1",
+    "§10.3"
+  ],
+  "notes": "Python: tests/test_reentrance.py::TestACallFromAnAsyncHook::test_a_hook_regenerating_after_each_answer_stops_at_the_depth_limit. Plain room variant; discussion regeneration is tracked separately in RMK-1474. Deleted answer indexes remain spent.",
+  "setup": {
+    "kit": {
+      "max_chain_depth": 6
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Answer."
+            },
+            {
+              "text": "Answer."
+            },
+            {
+              "text": "Answer."
+            },
+            {
+              "text": "Answer."
+            },
+            {
+              "text": "Answer."
+            },
+            {
+              "text": "Answer."
+            },
+            {
+              "text": "Answer."
+            },
+            {
+              "text": "Answer."
+            },
+            {
+              "text": "Answer."
+            },
+            {
+              "text": "Answer."
+            },
+            {
+              "text": "Answer."
+            },
+            {
+              "text": "Answer."
+            },
+            {
+              "text": "Answer."
+            },
+            {
+              "text": "Answer."
+            },
+            {
+              "text": "Answer."
+            },
+            {
+              "text": "Answer."
+            },
+            {
+              "text": "Answer."
+            },
+            {
+              "text": "Answer."
+            },
+            {
+              "text": "Answer."
+            },
+            {
+              "text": "Answer."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "redo",
+        "trigger": "after_broadcast",
+        "execution": "async",
+        "reactions": [
+          {
+            "when": {
+              "text": "Answer.",
+              "source_channel_id": "a"
+            },
+            "do": [
+              {
+                "call": "delete_event",
+                "room_id": "$room",
+                "event_id": "$event"
+              },
+              {
+                "call": "regenerate_response",
+                "room_id": "$room",
+                "as": "regenerated"
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "Answer.",
+              "source_channel_id": "a"
+            },
+            "do": [
+              {
+                "call": "delete_event",
+                "room_id": "$room",
+                "event_id": "$event"
+              },
+              {
+                "call": "regenerate_response",
+                "room_id": "$room",
+                "as": "regenerated"
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "Answer.",
+              "source_channel_id": "a"
+            },
+            "do": [
+              {
+                "call": "delete_event",
+                "room_id": "$room",
+                "event_id": "$event"
+              },
+              {
+                "call": "regenerate_response",
+                "room_id": "$room",
+                "as": "regenerated"
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "Answer.",
+              "source_channel_id": "a"
+            },
+            "do": [
+              {
+                "call": "delete_event",
+                "room_id": "$room",
+                "event_id": "$event"
+              },
+              {
+                "call": "regenerate_response",
+                "room_id": "$room",
+                "as": "regenerated"
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "Answer.",
+              "source_channel_id": "a"
+            },
+            "do": [
+              {
+                "call": "delete_event",
+                "room_id": "$room",
+                "event_id": "$event"
+              },
+              {
+                "call": "regenerate_response",
+                "room_id": "$room",
+                "as": "regenerated"
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "Answer.",
+              "source_channel_id": "a"
+            },
+            "do": [
+              {
+                "call": "delete_event",
+                "room_id": "$room",
+                "event_id": "$event"
+              },
+              {
+                "call": "regenerate_response",
+                "room_id": "$room",
+                "as": "regenerated"
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "Answer.",
+              "source_channel_id": "a"
+            },
+            "do": [
+              {
+                "call": "delete_event",
+                "room_id": "$room",
+                "event_id": "$event"
+              },
+              {
+                "call": "regenerate_response",
+                "room_id": "$room",
+                "as": "regenerated"
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "Answer.",
+              "source_channel_id": "a"
+            },
+            "do": [
+              {
+                "call": "delete_event",
+                "room_id": "$room",
+                "event_id": "$event"
+              },
+              {
+                "call": "regenerate_response",
+                "room_id": "$room",
+                "as": "regenerated"
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "Answer.",
+              "source_channel_id": "a"
+            },
+            "do": [
+              {
+                "call": "delete_event",
+                "room_id": "$room",
+                "event_id": "$event"
+              },
+              {
+                "call": "regenerate_response",
+                "room_id": "$room",
+                "as": "regenerated"
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "Answer.",
+              "source_channel_id": "a"
+            },
+            "do": [
+              {
+                "call": "delete_event",
+                "room_id": "$room",
+                "event_id": "$event"
+              },
+              {
+                "call": "regenerate_response",
+                "room_id": "$room",
+                "as": "regenerated"
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "Answer.",
+              "source_channel_id": "a"
+            },
+            "do": [
+              {
+                "call": "delete_event",
+                "room_id": "$room",
+                "event_id": "$event"
+              },
+              {
+                "call": "regenerate_response",
+                "room_id": "$room",
+                "as": "regenerated"
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "Answer.",
+              "source_channel_id": "a"
+            },
+            "do": [
+              {
+                "call": "delete_event",
+                "room_id": "$room",
+                "event_id": "$event"
+              },
+              {
+                "call": "regenerate_response",
+                "room_id": "$room",
+                "as": "regenerated"
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "Answer.",
+              "source_channel_id": "a"
+            },
+            "do": [
+              {
+                "call": "delete_event",
+                "room_id": "$room",
+                "event_id": "$event"
+              },
+              {
+                "call": "regenerate_response",
+                "room_id": "$room",
+                "as": "regenerated"
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "Answer.",
+              "source_channel_id": "a"
+            },
+            "do": [
+              {
+                "call": "delete_event",
+                "room_id": "$room",
+                "event_id": "$event"
+              },
+              {
+                "call": "regenerate_response",
+                "room_id": "$room",
+                "as": "regenerated"
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "Answer.",
+              "source_channel_id": "a"
+            },
+            "do": [
+              {
+                "call": "delete_event",
+                "room_id": "$room",
+                "event_id": "$event"
+              },
+              {
+                "call": "regenerate_response",
+                "room_id": "$room",
+                "as": "regenerated"
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "Answer.",
+              "source_channel_id": "a"
+            },
+            "do": [
+              {
+                "call": "delete_event",
+                "room_id": "$room",
+                "event_id": "$event"
+              },
+              {
+                "call": "regenerate_response",
+                "room_id": "$room",
+                "as": "regenerated"
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "Answer.",
+              "source_channel_id": "a"
+            },
+            "do": [
+              {
+                "call": "delete_event",
+                "room_id": "$room",
+                "event_id": "$event"
+              },
+              {
+                "call": "regenerate_response",
+                "room_id": "$room",
+                "as": "regenerated"
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "Answer.",
+              "source_channel_id": "a"
+            },
+            "do": [
+              {
+                "call": "delete_event",
+                "room_id": "$room",
+                "event_id": "$event"
+              },
+              {
+                "call": "regenerate_response",
+                "room_id": "$room",
+                "as": "regenerated"
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "Answer.",
+              "source_channel_id": "a"
+            },
+            "do": [
+              {
+                "call": "delete_event",
+                "room_id": "$room",
+                "event_id": "$event"
+              },
+              {
+                "call": "regenerate_response",
+                "room_id": "$room",
+                "as": "regenerated"
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "Answer.",
+              "source_channel_id": "a"
+            },
+            "do": [
+              {
+                "call": "delete_event",
+                "room_id": "$room",
+                "event_id": "$event"
+              },
+              {
+                "call": "regenerate_response",
+                "room_id": "$room",
+                "as": "regenerated"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u",
+        "content": {
+          "type": "text",
+          "body": "@a hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "a": [
+        {},
+        {},
+        {}
+      ]
+    },
+    "actions": {
+      "regenerated": [
+        {},
+        {},
+        {}
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "@a hello"
+          },
+          "chain_depth": 0
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "status": "blocked",
+          "chain_depth": 7,
+          "blocked_by": "event_chain_depth_limit"
+        }
+      ]
+    }
+  }
+}

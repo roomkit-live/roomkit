@@ -1,0 +1,392 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/a-delivery-s-send-event-into-another-room-has-its-own-budget",
+  "title": "Every direct send into another existing room has its own budget",
+  "rules": [
+    "§8.3",
+    "§9.5.1"
+  ],
+  "notes": "Python: tests/test_reentrance.py::TestACallFromADelivery::test_a_delivery_s_call_into_another_existing_room_has_its_own_budget. Eleven send_event calls originate in one transport delivery; room-2 exists before the delivery starts.",
+  "setup": {
+    "kit": {
+      "max_chain_depth": 1
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "deliver": [
+          {
+            "when": {
+              "room_id": "room-1"
+            },
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "room-2",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "forwarded 0"
+                },
+                "expect": {
+                  "result": {
+                    "blocked_by": null
+                  }
+                }
+              },
+              {
+                "call": "send_event",
+                "room_id": "room-2",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "forwarded 1"
+                },
+                "expect": {
+                  "result": {
+                    "blocked_by": null
+                  }
+                }
+              },
+              {
+                "call": "send_event",
+                "room_id": "room-2",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "forwarded 2"
+                },
+                "expect": {
+                  "result": {
+                    "blocked_by": null
+                  }
+                }
+              },
+              {
+                "call": "send_event",
+                "room_id": "room-2",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "forwarded 3"
+                },
+                "expect": {
+                  "result": {
+                    "blocked_by": null
+                  }
+                }
+              },
+              {
+                "call": "send_event",
+                "room_id": "room-2",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "forwarded 4"
+                },
+                "expect": {
+                  "result": {
+                    "blocked_by": null
+                  }
+                }
+              },
+              {
+                "call": "send_event",
+                "room_id": "room-2",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "forwarded 5"
+                },
+                "expect": {
+                  "result": {
+                    "blocked_by": null
+                  }
+                }
+              },
+              {
+                "call": "send_event",
+                "room_id": "room-2",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "forwarded 6"
+                },
+                "expect": {
+                  "result": {
+                    "blocked_by": null
+                  }
+                }
+              },
+              {
+                "call": "send_event",
+                "room_id": "room-2",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "forwarded 7"
+                },
+                "expect": {
+                  "result": {
+                    "blocked_by": null
+                  }
+                }
+              },
+              {
+                "call": "send_event",
+                "room_id": "room-2",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "forwarded 8"
+                },
+                "expect": {
+                  "result": {
+                    "blocked_by": null
+                  }
+                }
+              },
+              {
+                "call": "send_event",
+                "room_id": "room-2",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "forwarded 9"
+                },
+                "expect": {
+                  "result": {
+                    "blocked_by": null
+                  }
+                }
+              },
+              {
+                "call": "send_event",
+                "room_id": "room-2",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "forwarded 10"
+                },
+                "expect": {
+                  "result": {
+                    "blocked_by": null
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          }
+        }
+      ],
+      "room-2": [
+        {
+          "content": {
+            "type": "text",
+            "body": "forwarded 0"
+          },
+          "blocked_by": null
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "forwarded 1"
+          },
+          "blocked_by": null
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "forwarded 2"
+          },
+          "blocked_by": null
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "forwarded 3"
+          },
+          "blocked_by": null
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "forwarded 4"
+          },
+          "blocked_by": null
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "forwarded 5"
+          },
+          "blocked_by": null
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "forwarded 6"
+          },
+          "blocked_by": null
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "forwarded 7"
+          },
+          "blocked_by": null
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "forwarded 8"
+          },
+          "blocked_by": null
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "forwarded 9"
+          },
+          "blocked_by": null
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "forwarded 10"
+          },
+          "blocked_by": null
+        }
+      ]
+    },
+    "deliveries": {
+      "room-2": {
+        "sms": [],
+        "ws": [
+          {
+            "content": {
+              "type": "text",
+              "body": "forwarded 0"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "forwarded 1"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "forwarded 2"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "forwarded 3"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "forwarded 4"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "forwarded 5"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "forwarded 6"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "forwarded 7"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "forwarded 8"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "forwarded 9"
+            }
+          },
+          {
+            "content": {
+              "type": "text",
+              "body": "forwarded 10"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
