@@ -1,0 +1,181 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-skill-activated-on-one-executor-rides-the-next-turn-on-another",
+  "title": "A skill a turn activated on one executor rides the room's next turn on another",
+  "rules": [
+    "§24.4",
+    "§10.6.3"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "skills": [],
+        "config_provider": {
+          "room-1": {
+            "skills": [
+              {
+                "name": "ada-procedure",
+                "description": "The ada-procedure procedure",
+                "instructions": "Rules for ada-procedure."
+              }
+            ]
+          }
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "ada-procedure"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            },
+            {
+              "calls": [
+                {
+                  "id": "call-2",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "ada-procedure"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        },
+        "declared": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "agent"
+        ]
+      },
+      {
+        "id": "second",
+        "hosts": [
+          "agent"
+        ],
+        "started": false
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "executor.close",
+      "executor": "first"
+    },
+    {
+      "call": "executor.start",
+      "executor": "second"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "system_prompt": {
+            "$lacks": "Rules for ada-procedure."
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "content": {
+                "$contains": "Rules for ada-procedure."
+              },
+              "is_error": false,
+              "tool_call_id": "call-1"
+            }
+          ]
+        },
+        {
+          "system_prompt": {
+            "$contains": "Rules for ada-procedure."
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "call-1",
+              "content": {
+                "$contains": "Rules for ada-procedure."
+              },
+              "is_error": false
+            },
+            {
+              "tool_call_id": "call-2",
+              "content": {
+                "$contains": "\"already_active\": true"
+              },
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -65,7 +65,8 @@ class _Host:
             for channel_id, script in answers.items()
         }
         self.executor = TurnExecutor(
-            self._build, hosts=lambda channel_id: channel_id in answers, store=self.store
+            self._build,
+            hosts=lambda channel_id: channel_id in answers,
         )
 
     def _build(self, channel_id: str) -> Agent | None:

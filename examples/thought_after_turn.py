@@ -74,7 +74,10 @@ def build_nova(channel_id: str) -> AIChannel | None:
 async def main() -> None:
     store = InMemoryStore()
     backend = InMemoryTurnBackend()
-    executor = TurnExecutor(build_nova, hosts=lambda channel_id: channel_id == "nova", store=store)
+    executor = TurnExecutor(
+        build_nova,
+        hosts=lambda channel_id: channel_id == "nova",
+    )
 
     @executor.hook(HookTrigger.ON_THOUGHT, execution=HookExecution.ASYNC)
     async def post_thought(event: ThoughtEvent, ctx: object) -> None:

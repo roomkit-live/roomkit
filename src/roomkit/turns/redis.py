@@ -205,13 +205,6 @@ class RedisTurnBackend(TurnBackend):
         if self._loop_back or executor.hosted is not None:
             self._routes.shared[executor.executor_id] = executor
         if executor.hosted is not None:
-            if executor.store is None or executor.store.is_process_local:
-                logger.warning(
-                    "Executor %s takes turns from other processes without a store they "
-                    "share (TurnExecutor(store=...)): its channels read the rooms there "
-                    "(RFC §10.6.9)",
-                    executor.executor_id,
-                )
             await self._beat_for(executor)
         # Work a turn began reaches the owner of that turn, here or elsewhere.
         executor.reach_owner(self._routes.port)

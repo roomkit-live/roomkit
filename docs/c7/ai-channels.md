@@ -127,7 +127,7 @@ from roomkit import AgentIdentity, ChannelDeclaration, RoomKit
 from roomkit.turns import InMemoryTurnBackend, TurnExecutor
 
 backend = InMemoryTurnBackend()
-executor = TurnExecutor(build_agent, hosts=lambda channel_id: channel_id == "meteo", store=store)
+executor = TurnExecutor(build_agent, hosts=lambda channel_id: channel_id == "meteo")
 await backend.serve(executor)  # in this process or another, on a shared backend
 
 kit = RoomKit(store=store, turn_backend=backend)

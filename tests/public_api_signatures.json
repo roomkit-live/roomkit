@@ -1561,7 +1561,8 @@
   },
   "roomkit.OwnerHost": {
     "call": ["async def", "request", "verb", "arguments"],
-    "call_between_turns": ["async def", "message"]
+    "call_between_turns": ["async def", "message"],
+    "channel_rows": ["async def", "room_id", "channel_id", "first"]
   },
   "roomkit.OwnerTool": {
     "__init__": ["def", "*", "tool", "waits_by_design=False"]
@@ -2438,7 +2439,7 @@
     "__init__": ["def", "message", "reason"]
   },
   "roomkit.TurnExecutor": {
-    "__init__": ["def", "build_channel", "*", "hosts=None", "executor_id=None", "timeouts=None", "store=None", "media_resolver=None", "attached_media=None", "telemetry=None", "owns_channels=True", "error_classes=()"],
+    "__init__": ["def", "build_channel", "*", "hosts=None", "executor_id=None", "timeouts=None", "media_resolver=None", "attached_media=None", "telemetry=None", "owns_channels=True", "error_classes=()"],
     "close": ["async def"],
     "closed": ["property"],
     "control": ["async def", "message"],
@@ -2468,6 +2469,7 @@
     "open": ["property"],
     "post_status": ["async def", "agent_id", "action", "status", "*", "detail=''", "metadata=None"],
     "reachable": ["property"],
+    "room_context": ["async def"],
     "room_tasks": ["async def"],
     "room_vision": ["async def"],
     "send_event": ["async def", "room_id", "channel_id", "content", "**options"],
@@ -2485,7 +2487,7 @@
     "__init__": ["def", "reason", "message=None"]
   },
   "roomkit.TurnRequest": {
-    "__init__": ["def", "*", "turn_id", "room_id", "channel_id", "event", "binding", "context", "strategy_turn=False", "notes=<factory>", "in_place=False", "owner_tools=<factory>", "room_hooks=<factory>", "previous_turn=None", "trace=None"],
+    "__init__": ["def", "*", "turn_id", "room_id", "channel_id", "event", "binding", "context", "strategy_turn=False", "notes=<factory>", "in_place=False", "owner_tools=<factory>", "room_hooks=<factory>", "previous_turn=None", "channel_rows=<factory>", "trace=None"],
     "hand_over": ["def"],
     "handed": ["property"],
     "refused": ["def"]

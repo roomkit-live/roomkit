@@ -36,6 +36,7 @@ from roomkit.models.enums import TaskStatus
 from roomkit.tasks.status import RUN_ENTRY, TASK_ACTION
 from roomkit.tools.context import ToolCallContext, owner_served_call
 from roomkit.turns._error_codec import error_record
+from roomkit.turns._wiring_env import read_channel_rows
 from roomkit.turns.base import OwnerHost, response_depth
 from roomkit.turns.host import (
     BETWEEN_TURNS,
@@ -44,6 +45,7 @@ from roomkit.turns.host import (
     DeclaredVerb,
     Delegate,
     PostStatus,
+    ReadRoomContext,
     RoomTasks,
     RoomVision,
     SendEvent,
@@ -54,6 +56,7 @@ from roomkit.turns.host import (
 if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
     from roomkit.models.context import RoomContext
+    from roomkit.models.event import RoomEvent
     from roomkit.models.room import Room
     from roomkit.tasks.models import DelegatedTask
     from roomkit.turns.wire import RoomCall, TurnRequest
@@ -97,6 +100,7 @@ class KitHost(OwnerHost):
             "add_observation": self._add_observation,
             "room_tasks": self._room_tasks,
             "room_vision": self._room_vision,
+            "room_context": self._room_context,
         }
         self._declared: dict[str, DeclaredVerb] = {}
         # The declared verbs served after their turn too.
@@ -221,6 +225,16 @@ class KitHost(OwnerHost):
 
     async def _room_tasks(self, scope: _Scope, args: RoomTasks) -> list[dict[str, Any]]:
         return await self._kit._build_room_tasks_loader()(scope.room_id)
+
+    async def _room_context(self, scope: _Scope, args: ReadRoomContext) -> dict[str, Any]:
+        context = await self._kit._build_context(scope.room_id, reads_history=True)
+        return context.model_dump(mode="json")
+
+    async def channel_rows(
+        self, room_id: str, channel_id: str, first: int | None
+    ) -> list[RoomEvent]:
+        with self._kit._resource_lease():
+            return await read_channel_rows(self._kit.store, room_id, channel_id, first)
 
     async def _room_vision(self, scope: _Scope, args: RoomVision) -> str | None:
         # What the room's cameras last saw lives in this process (RFC §12.8.7).

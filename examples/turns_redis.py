@@ -2,8 +2,8 @@
 
 The room's owner (this process) holds the agent by its declaration alone. An
 executor in a second process (this script, run as ``executor``) builds the
-agent and runs its turns. The two share the rooms through a SQLite file and
-the turns through Redis:
+agent and runs its turns. Redis carries everything between them; the store stays
+with the room:
 
 1. The owner starts an executor process and waits until it serves.
 2. A person asks a question. The turn crosses Redis to the executor, which
@@ -29,7 +29,6 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
-import tempfile
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -53,7 +52,6 @@ from roomkit import (
     RoomContext,
     RoomEvent,
     RoomKit,
-    SQLiteStore,
     TextContent,
 )
 from roomkit.providers.ai import (
@@ -145,7 +143,7 @@ def build_agent(executor_id: str) -> Any:
     return build
 
 
-async def run_executor(url: str, prefix: str, database: str, executor_id: str) -> None:
+async def run_executor(url: str, prefix: str, executor_id: str) -> None:
     """Serve the agent ``assistant`` until the owner says stop (or kills us)."""
     backend = RedisTurnBackend(url, key_prefix=prefix, timeouts=TIMEOUTS)
     executor = TurnExecutor(
@@ -153,7 +151,6 @@ async def run_executor(url: str, prefix: str, database: str, executor_id: str) -
         hosts={"assistant"},
         executor_id=executor_id,
         timeouts=TIMEOUTS,
-        store=SQLiteStore(database),
     )
     await backend.serve(executor)
     print("ready", flush=True)
@@ -226,14 +223,13 @@ class ExecutorProcess:
         self.executor_id = executor_id
 
     @classmethod
-    async def start(cls, prefix: str, database: Path, executor_id: str) -> ExecutorProcess:
+    async def start(cls, prefix: str, executor_id: str) -> ExecutorProcess:
         process = await asyncio.create_subprocess_exec(
             sys.executable,
             __file__,
             "executor",
             REDIS_URL,
             prefix,
-            str(database),
             executor_id,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
@@ -283,43 +279,40 @@ async def ask(kit: RoomKit, text: str) -> Any:
 async def run_owner() -> None:
     await check_redis()
     prefix = f"roomkit:example:{uuid4().hex[:8]}"
-    with tempfile.TemporaryDirectory() as directory:
-        database = Path(directory) / "rooms.db"
-        kit = RoomKit(
-            store=SQLiteStore(database),
-            turn_backend=RedisTurnBackend(REDIS_URL, key_prefix=prefix, timeouts=TIMEOUTS),
-        )
-        screen = Screen("web")
-        kit.register_channel(screen)
-        kit.register_channel(
-            ChannelDeclaration(channel_id="assistant", identity=AgentIdentity(name="Assistant"))
-        )
-        await kit.create_room(room_id=ROOM)
-        await kit.attach_channel(ROOM, "web")
-        await kit.attach_channel(ROOM, "assistant", category=ChannelCategory.INTELLIGENCE)
-        executor = await ExecutorProcess.start(prefix, database, "executor-1")
-        try:
-            logger.info("1. A question, answered in the executor's process")
-            await ask(kit, "When does my plan renew?")
+    kit = RoomKit(
+        turn_backend=RedisTurnBackend(REDIS_URL, key_prefix=prefix, timeouts=TIMEOUTS),
+    )
+    screen = Screen("web")
+    kit.register_channel(screen)
+    kit.register_channel(
+        ChannelDeclaration(channel_id="assistant", identity=AgentIdentity(name="Assistant"))
+    )
+    await kit.create_room(room_id=ROOM)
+    await kit.attach_channel(ROOM, "web")
+    await kit.attach_channel(ROOM, "assistant", category=ChannelCategory.INTELLIGENCE)
+    executor = await ExecutorProcess.start(prefix, "executor-1")
+    try:
+        logger.info("1. A question, answered in the executor's process")
+        await ask(kit, "When does my plan renew?")
 
-            logger.info("2. A long answer, and the executor killed while it streams")
-            screen.watch()
-            turn = asyncio.ensure_future(ask(kit, "Give me the long version, please."))
-            await asyncio.wait_for(screen.streaming.wait(), 30)
-            await executor.kill()
-            result = await turn
-            logger.info("The turn failed: %r", result.error)
+        logger.info("2. A long answer, and the executor killed while it streams")
+        screen.watch()
+        turn = asyncio.ensure_future(ask(kit, "Give me the long version, please."))
+        await asyncio.wait_for(screen.streaming.wait(), 30)
+        await executor.kill()
+        result = await turn
+        logger.info("The turn failed: %r", result.error)
 
-            logger.info("3. A new executor takes the room's next turn")
-            executor = await ExecutorProcess.start(prefix, database, "executor-2")
-            await ask(kit, "When does my plan renew, again?")
-        finally:
-            await executor.stop()
-            await kit.close()
+        logger.info("3. A new executor takes the room's next turn")
+        executor = await ExecutorProcess.start(prefix, "executor-2")
+        await ask(kit, "When does my plan renew, again?")
+    finally:
+        await executor.stop()
+        await kit.close()
 
 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "executor":
-        asyncio.run(run_executor(*sys.argv[2:6]))
+        asyncio.run(run_executor(*sys.argv[2:5]))
     else:
         asyncio.run(run_owner())

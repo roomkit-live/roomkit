@@ -51,7 +51,8 @@ class _Host:
         self.store = InMemoryStore()
         self.backend = InMemoryTurnBackend()
         self.executor = TurnExecutor(
-            agents.get, hosts=lambda channel_id: channel_id in agents, store=self.store
+            agents.get,
+            hosts=lambda channel_id: channel_id in agents,
         )
 
     async def kit(self) -> RoomKit:

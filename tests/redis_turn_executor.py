@@ -24,7 +24,6 @@ from roomkit.providers.ai.base import (
     StreamTextDelta,
 )
 from roomkit.providers.ai.mock import MockAIProvider
-from roomkit.store.sqlite import SQLiteStore
 from roomkit.turns import TurnExecutor, TurnTimeouts
 from roomkit.turns.redis import RedisTurnBackend
 
@@ -59,7 +58,6 @@ async def main(url: str, prefix: str, executor_id: str, database: str) -> None:
         hosts={"worker"},
         executor_id=executor_id,
         timeouts=TIMEOUTS,
-        store=SQLiteStore(database),
     )
     await backend.serve(executor)
     print("ready", flush=True)

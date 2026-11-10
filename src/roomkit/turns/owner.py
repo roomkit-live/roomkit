@@ -8,6 +8,7 @@ kit's own executor is served on first use.
 from __future__ import annotations
 
 import asyncio
+import logging
 import weakref
 from collections.abc import Generator, Iterable
 from contextlib import contextmanager
@@ -15,11 +16,12 @@ from functools import partial
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from uuid import uuid4
 
+from roomkit.channels._ai_context import history_start
 from roomkit.channels._discussion_turn import DISCUSSION_TURN, discussion_notes, discussion_turn
 from roomkit.channels.declared import DeclaredChannel
 from roomkit.core.task_utils import acting_tasks, close_callers
 from roomkit.core.visibility import answers_reach
-from roomkit.models.enums import Visibility
+from roomkit.models.enums import ChannelCategory, Visibility
 from roomkit.models.pending_input import PendingInputEvent
 from roomkit.models.steering import Cancel as SteeringCancel
 from roomkit.telemetry.context import get_current_span
@@ -58,6 +60,9 @@ if TYPE_CHECKING:
         RoomCall,
         RoomPublication,
     )
+
+
+logger = logging.getLogger("roomkit.turns")
 
 
 def turn_request(
@@ -207,6 +212,7 @@ class TurnClient(RoomOwner):
         handed: asyncio.Future[None] = asyncio.get_running_loop().create_future()
         self._handing[request.turn_id] = (request, handed)
         try:
+            request.channel_rows = await self._channel_rows(event, binding, context)
             link = await self.backend.submit(request)
         except BaseException:
             # Failed before its backend gave it to an executor, the turn is
@@ -232,6 +238,29 @@ class TurnClient(RoomOwner):
         # Steerable from now: a steer that waited for the hand-over finds it.
         self._handed(request, handed)
         return await turn.output()
+
+    async def _channel_rows(
+        self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
+    ) -> list[RoomEvent]:
+        """What the turn reads of the room, for an executor elsewhere (RFC
+        §10.6.3); the owner's own executor reads the store itself. A store
+        that fails costs the turn its earlier calls, not the turn."""
+        channel_id = binding.channel_id
+        own = self.executor is not None and self.executor.hosts_channel(channel_id)
+        if own or self._host is None or binding.category != ChannelCategory.INTELLIGENCE:
+            return []
+        try:
+            return await self._host.channel_rows(
+                event.room_id, channel_id, history_start(event, context)
+            )
+        except Exception:
+            logger.warning(
+                "Could not read room %s's rows of %s for its turn",
+                event.room_id,
+                channel_id,
+                exc_info=True,
+            )
+            return []
 
     def _handed(self, request: TurnRequest, handed: asyncio.Future[None]) -> None:
         self._handing.pop(request.turn_id, None)

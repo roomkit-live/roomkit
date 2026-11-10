@@ -120,6 +120,10 @@ class TurnRequest(_HandedOver):
     its first since the channel was detached from the room. An executor
     holding the room's state for the channel that this turn did not leave
     drops it before the turn runs (RFC §10.6.2)."""
+    channel_rows: list[RoomEvent] = Field(default_factory=list)
+    """The channel's own rows of the room its turn reads (its tool calls, the
+    instructions it read), each once, oldest first: the owner holds the store
+    (RFC §10.6.3). Empty for a turn the owner's own executor runs."""
     trace: dict[str, str] | None = None
 
 

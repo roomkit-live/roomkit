@@ -2,7 +2,7 @@
 §10.6.2, §10.6.3, §10.6.6, RMK-821).
 
 A host builds an executor with a factory; its channels fire its hooks,
-against a room context built from the shared store, and what they publish
+against a room context asked of the room's owner, and what they publish
 and emit during a turn reaches the room's owner as frames. Room hooks on the
 triggers a turn fires are defined by name on the executors and enabled per
 room on the owner.
@@ -99,7 +99,7 @@ async def _elsewhere(store: InMemoryStore, **options: Any) -> tuple[InMemoryTurn
         return built[-1]
 
     executor = TurnExecutor(
-        factory, hosts=lambda c: c == "agent", executor_id="elsewhere", store=store, **options
+        factory, hosts=lambda c: c == "agent", executor_id="elsewhere", **options
     )
     executor.built = built  # ty: ignore[unresolved-attribute]
     await backend.serve(executor)
@@ -338,7 +338,6 @@ async def test_a_room_s_turn_goes_to_an_executor_defining_its_hooks() -> None:
         lambda channel_id: _agent() if channel_id == "agent" else None,
         hosts={"agent"},
         executor_id="auditor",
-        store=store,
     )
     await backend.serve(auditor)
     kit = await _kit(backend, store=store, declared=True)
@@ -630,7 +629,9 @@ def test_a_fail_closed_room_hook_must_run_in_line() -> None:
 
 async def test_an_executor_refuses_a_turn_whose_room_hooks_it_does_not_define() -> None:
     backend = InMemoryTurnBackend()
-    executor = TurnExecutor(lambda channel_id: _agent(), store=InMemoryStore())
+    executor = TurnExecutor(
+        lambda channel_id: _agent(),
+    )
     await backend.serve(executor)
     client = TurnClient(backend)
     client._room_hooks["r1"] = ["missing"]

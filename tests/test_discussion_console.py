@@ -269,7 +269,9 @@ async def test_the_console_shows_the_tools_an_agent_calls(pipe: PipeInput, apart
     if apart:
         kit.register_channel(ChannelDeclaration(channel_id="dev"))
         executor = TurnExecutor(
-            lambda _channel: agent, hosts={"dev"}, executor_id="elsewhere", store=kit.store
+            lambda _channel: agent,
+            hosts={"dev"},
+            executor_id="elsewhere",
         )
         await backend.serve(executor)
     await kit.create_room(

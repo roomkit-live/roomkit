@@ -1,0 +1,221 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/another-executor-replays-the-tool-calls-of-the-first",
+  "title": "A room's next turn on another executor replays the tool calls the first one ran",
+  "rules": [
+    "§6.4",
+    "§10.6.3"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "fine"
+          },
+          {
+            "name": "other",
+            "description": "Look elsewhere",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "elsewhere"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {
+                    "q": "first"
+                  }
+                },
+                {
+                  "id": "c1",
+                  "name": "other",
+                  "arguments": {
+                    "q": "second"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            },
+            {
+              "text": "again"
+            }
+          ]
+        },
+        "declared": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "agent"
+        ]
+      },
+      {
+        "id": "second",
+        "hosts": [
+          "agent"
+        ],
+        "started": false
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "executor.close",
+      "executor": "first"
+    },
+    {
+      "call": "executor.start",
+      "executor": "second"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "More."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "name": "lookup",
+              "content": "fine",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c1",
+              "name": "other",
+              "content": "{\"error\": \"Tool call 'c1' has not had its result yet\"}",
+              "is_error": true
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Go."
+            },
+            {
+              "role": "assistant",
+              "round": [
+                {
+                  "call": "c1",
+                  "arguments": {
+                    "q": "first"
+                  }
+                },
+                {
+                  "call": "c1",
+                  "arguments": {
+                    "q": "second"
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool"
+            },
+            {
+              "role": "assistant",
+              "text": "done"
+            },
+            {
+              "role": "user",
+              "text": "More."
+            }
+          ],
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "name": "lookup",
+              "content": "fine",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c1",
+              "name": "other",
+              "content": "{\"error\": \"Tool call 'c1' has not had its result yet\"}",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

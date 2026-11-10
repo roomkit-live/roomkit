@@ -61,7 +61,10 @@ async def test_a_declared_agent_s_memory_is_handed_each_message_where_it_runs() 
     memories = {"ana": MockMemoryProvider(), "bob": MockMemoryProvider()}
     agents = {cid: _agent(cid, memory) for cid, memory in memories.items()}
     store, backend = InMemoryStore(), InMemoryTurnBackend()
-    executor = TurnExecutor(agents.get, hosts=lambda cid: cid in agents, store=store)
+    executor = TurnExecutor(
+        agents.get,
+        hosts=lambda cid: cid in agents,
+    )
     await backend.serve(executor)
     kit = RoomKit(store=store, turn_backend=backend)
     kit.register_channel(SimpleChannel("sms"))

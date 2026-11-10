@@ -304,7 +304,7 @@ async def test_the_history_reads_every_row_page_by_page(
     streaming: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Every row of the agent's earlier turns, whatever the store's page."""
-    monkeypatch.setattr("roomkit.turns._wiring._HISTORY_ROWS_PAGE", 2)
+    monkeypatch.setattr("roomkit.turns._wiring.HISTORY_ROWS_PAGE", 2)
     provider = MockAIProvider(
         ai_responses=[
             _round(("c1", "lookup", {"q": "a"}), ("c2", "lookup", {"q": "b"})),

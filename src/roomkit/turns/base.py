@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any
 from roomkit.core.exceptions import TurnLinkError
 
 if TYPE_CHECKING:
+    from roomkit.models.event import RoomEvent
     from roomkit.realtime.base import EphemeralEvent
     from roomkit.turns.executor import TurnExecutor
     from roomkit.turns.wire import (
@@ -194,6 +195,14 @@ class OwnerHost(ABC):
             ValueError: no verb is served between turns here.
         """
         raise ValueError(f"No verb {message.verb!r} is served between turns")
+
+    async def channel_rows(
+        self, room_id: str, channel_id: str, first: int | None
+    ) -> list[RoomEvent]:
+        """What a turn of *channel_id* on an executor reads of the room
+        (RFC §10.6.5), *first* being the index its history starts at.
+        Default: nothing."""
+        return []
 
 
 class OwnerEvents(ABC):

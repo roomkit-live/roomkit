@@ -101,7 +101,10 @@ async def _kit(where: str, agent: Agent) -> tuple[RoomKit, TurnExecutor | None]:
         kit.register_channel(agent)
         return kit, None
     store, backend = InMemoryStore(), InMemoryTurnBackend()
-    executor = TurnExecutor(lambda channel_id: agent, hosts={"agent"}.__contains__, store=store)
+    executor = TurnExecutor(
+        lambda channel_id: agent,
+        hosts={"agent"}.__contains__,
+    )
     await backend.serve(executor)
     kit = RoomKit(store=store, turn_backend=backend)
     kit.register_channel(ChannelDeclaration(channel_id="agent", serializes_room_turns=True))

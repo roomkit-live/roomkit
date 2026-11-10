@@ -26,7 +26,7 @@ from roomkit.turns._executor_channels import ChannelFactory, ExecutorChannels, c
 from roomkit.turns._executor_rooms import ExecutorRooms
 from roomkit.turns._executor_turn import ExecutorTurn
 from roomkit.turns._wiring import TurnWiring
-from roomkit.turns._wiring_env import StoreWiringEnv
+from roomkit.turns._wiring_env import TurnWiringEnv
 from roomkit.turns.base import TurnTimeouts
 from roomkit.turns.wire import ChannelCall, ChannelReleased, ChannelResult, CommittedEvent
 
@@ -35,7 +35,6 @@ if TYPE_CHECKING:
     from roomkit.channels.base import Channel
     from roomkit.core.hooks import AsyncHookFn, SyncHookFn
     from roomkit.models.enums import ChannelType, EventDirection, EventType, HookTrigger
-    from roomkit.store.base import ConversationStore
     from roomkit.telemetry.base import TelemetryProvider
     from roomkit.turns._wiring_env import WiringEnv
     from roomkit.turns.base import ExecutorLink, RoomOwner
@@ -58,8 +57,6 @@ class TurnExecutor:
         executor_id: The id the executor answers with; a random one when
             omitted.
         timeouts: The heartbeat bounds it keeps.
-        store: The shared store its hooks build a room's context from when
-            they fire, and its channels read (RFC §10.6.6, §10.6.9).
         media_resolver: The host's media resolver, given to its AI channels
             as the kit gives the ones it registers (RFC §6.4).
         attached_media: The host's attached-media reader (RFC §6.4).
@@ -82,7 +79,6 @@ class TurnExecutor:
         hosts: Collection[str] | Callable[[str], bool] | None = None,
         executor_id: str | None = None,
         timeouts: TurnTimeouts | None = None,
-        store: ConversationStore | None = None,
         media_resolver: MediaResolver | None = None,
         attached_media: AttachedMedia | None = None,
         telemetry: TelemetryProvider | None = None,
@@ -112,10 +108,8 @@ class TurnExecutor:
         # The owner in this process sets the rooms' hooks itself (its own
         # executor), so a request's copy never overwrites them.
         self._room_hooks_from_owner = False
-        self.store = store
-        """The shared store the executor was given, ``None`` for none."""
         self._owner: RoomOwner | None = None
-        env = StoreWiringEnv(store, media_resolver=media_resolver, attached_media=attached_media)
+        env = TurnWiringEnv(media_resolver=media_resolver, attached_media=attached_media)
         self._wiring = TurnWiring(self._hooks, env)
         self._channels = ExecutorChannels(
             build_channel, owns=owns_channels, wire=self.wire, telemetry=telemetry
@@ -271,6 +265,7 @@ class TurnExecutor:
         stale = self._rooms.enter(
             request.channel_id, request.room_id, request.turn_id, request.previous_turn
         )
+        self._wiring.env.turn_started(request)
         turn = ExecutorTurn(
             link,
             self.executor_id,

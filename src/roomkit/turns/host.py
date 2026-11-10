@@ -1,8 +1,8 @@
 """How code on a turn's executor reaches a room: :class:`TurnHost` (RFC §10.6.5).
 
 A host's tool, or a hook the executor fires, runs where the turn runs, which
-may be another process than the room owner's. It reads the room from the
-store, and changes it only through the turn's host, read with
+may be another process than the room owner's. It holds no store: it reads the
+room and changes it only through the turn's host, read with
 :func:`current_turn_host`: inside a call of a host tool during a turn and
 inside a hook the executor fires during it, and after the turn in work it
 began, for the verbs :data:`BETWEEN_TURNS` names; ``None`` anywhere else, on
@@ -142,6 +142,11 @@ class RoomVision(_Verb):
     note (RFC §12.8.7), a reader of the owner's process."""
 
 
+class ReadRoomContext(_Verb):
+    """``room_context``: the turn's room as the owner builds it now, for a
+    hook on an executor (RFC §10.6.6), a reader of the owner's store."""
+
+
 VERBS: dict[str, type[_Verb]] = {
     "send_event": SendEvent,
     "delegate": Delegate,
@@ -151,10 +156,11 @@ VERBS: dict[str, type[_Verb]] = {
     "add_observation": AddObservation,
     "room_tasks": RoomTasks,
     "room_vision": RoomVision,
+    "room_context": ReadRoomContext,
 }
 """Every verb of a turn's host, by its name, with the record of its arguments."""
 
-READERS = frozenset({"room_tasks", "room_vision"})
+READERS = frozenset({"room_tasks", "room_vision", "room_context"})
 """The verbs that read the owner's process for the turn's room and act for no
 tool call: the owner serves them outside a call's context."""
 
@@ -268,6 +274,10 @@ class TurnHost:
         §12.8.7); ``None`` when no camera of the room has a result."""
         note = await self._verb("room_vision", RoomVision())
         return None if note is None else str(note)
+
+    async def room_context(self) -> dict[str, Any]:
+        """The turn's room as the owner builds it now, as data (RFC §10.6.6)."""
+        return dict(await self._verb("room_context", ReadRoomContext()))
 
     async def call(self, verb: str, arguments: dict[str, Any] | None = None) -> Any:
         """Run *verb*, one the host declared on the room owner

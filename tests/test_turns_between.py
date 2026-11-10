@@ -73,7 +73,8 @@ class _Host:
         )
         self.agent = Agent("ana", provider=provider, tools=[LATER], tool_handler=later.handler)
         self.executor = TurnExecutor(
-            {"ana": self.agent}.get, hosts=lambda cid: cid == "ana", store=self.store
+            {"ana": self.agent}.get,
+            hosts=lambda cid: cid == "ana",
         )
 
     async def kit(self) -> RoomKit:
@@ -414,8 +415,14 @@ async def test_a_publication_from_an_executor_no_longer_holding_the_room_is_drop
     provider_a = MockAIProvider(ai_responses=[_calls_later(), AIResponse(content="A.")])
     agent_a = Agent("ana", provider=provider_a, tools=[LATER], tool_handler=later.handler)
     agent_b = Agent("ana", provider=MockAIProvider(responses=["B."] * 4))
-    first = TurnExecutor({"ana": agent_a}.get, hosts=lambda cid: takes_a[0], store=store)
-    second = TurnExecutor({"ana": agent_b}.get, hosts=lambda cid: cid == "ana", store=store)
+    first = TurnExecutor(
+        {"ana": agent_a}.get,
+        hosts=lambda cid: takes_a[0],
+    )
+    second = TurnExecutor(
+        {"ana": agent_b}.get,
+        hosts=lambda cid: cid == "ana",
+    )
     await backend.serve(first)
     await backend.serve(second)
     kit = RoomKit(store=store, turn_backend=backend)
@@ -484,7 +491,8 @@ async def test_a_committed_event_goes_where_the_room_s_turns_would() -> None:
     for name, memory in memories.items():
         agent = Agent("ana", provider=MockAIProvider(responses=["x"] * 4), memory=memory)
         executors[name] = TurnExecutor(
-            {"ana": agent}.get, hosts=lambda cid: cid == "ana", store=store
+            {"ana": agent}.get,
+            hosts=lambda cid: cid == "ana",
         )
         await backend.serve(executors[name])
 

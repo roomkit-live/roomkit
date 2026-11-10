@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`max_result_chars` on `RoomKit.delegate()` and `DelegateHandler`.** How much of a worker's output its relayed result carries, 4,000 characters by default (RMK-1617). A review that came back cut at 4,000 can now come back whole.
 - **`OpenAIConfig.thinking_field`.** Names the assistant message field a server reads a model's earlier reasoning from, for a server whose documentation asks for it back (`"reasoning_content"` on Z.ai's GLM). A round or an answer that reasoned carries it there. It is absent by default, since strict servers refuse a field they do not know, and the configs of the providers that already send reasoning where their vendor reads it (DeepSeek, MiniMax, Kimi, Cerebras) refuse it.
 
+### Changed
+
+- **BREAKING: an executor has no store** (RFC §10.6.5, §10.6.6, §10.6.9, RMK-1619). The room that calls an executor sends what its turn reads, and a hook on the executor asks the room for its context, so an executor in another process needs only the turn backend. `TurnExecutor` no longer takes `store=`: remove the argument.
+
 ### Fixed
 
 - `DiscussionConsole` no longer says "the discussion waits for a person" when a person has just ended that wait (RMK-1615).

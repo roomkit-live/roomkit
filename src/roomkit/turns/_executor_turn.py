@@ -37,6 +37,7 @@ from roomkit.turns._executor_pulls import PullGate
 from roomkit.turns._executor_steer import steer_turn
 from roomkit.turns._frame_sender import FrameSender
 from roomkit.turns._outlet import TurnOutlet, set_turn_outlet
+from roomkit.turns._wiring_env import set_turn_request
 from roomkit.turns.base import heartbeat_tick
 from roomkit.turns.host import TurnHost, set_turn_host
 from roomkit.turns.wire import (
@@ -343,6 +344,7 @@ class ExecutorTurn:
         context.run(enter_turn, self._request.turn_id)
         context.run(set_turn_owner_tools, self._calls.owner_tools)
         context.run(set_turn_host, self._host)
+        context.run(set_turn_request, self._request)
         context.run(set_turn_inputs, self._inputs)
         context.run(set_turn_outlet, self._outlet)
         context.run(set_turn_room_hooks, self._request.room_id, self._request.room_hooks)

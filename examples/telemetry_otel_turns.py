@@ -21,7 +21,6 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
-import tempfile
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -37,7 +36,6 @@ from roomkit import (
     InboundMessage,
     RedisTurnBackend,
     RoomKit,
-    SQLiteStore,
     TextContent,
     TurnExecutor,
     WebSocketChannel,
@@ -69,15 +67,13 @@ async def main() -> None:
         return
     exporter = InMemorySpanExporter()
     prefix = f"example:trace:{uuid4().hex[:8]}"
-    with tempfile.TemporaryDirectory() as folder:
-        await run(exporter, prefix, os.path.join(folder, "rooms.db"))
+    await run(exporter, prefix)
 
 
-async def run(exporter: Any, prefix: str, rooms: str) -> None:
+async def run(exporter: Any, prefix: str) -> None:
     """The owner and the executor, one turn, then each side's spans."""
     # The owner: the room, the agent by its declaration, its own telemetry.
     kit = RoomKit(
-        store=SQLiteStore(rooms),
         turn_backend=RedisTurnBackend(REDIS_URL, key_prefix=prefix),
         telemetry=otel(exporter, "owner"),
     )
@@ -94,7 +90,6 @@ async def run(exporter: Any, prefix: str, rooms: str) -> None:
             channel_id, provider=MockAIProvider(responses=["Your plan renews on the 1st."])
         ),
         hosts={"assistant"},
-        store=SQLiteStore(rooms),
         telemetry=otel(exporter, "executor"),
     )
     await backend.serve(executor)

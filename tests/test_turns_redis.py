@@ -240,7 +240,6 @@ def _agent_executor(
         hosts=hosts,
         executor_id=executor_id,
         timeouts=TIMEOUTS,
-        store=store,
     )
 
 
@@ -262,7 +261,7 @@ async def test_a_room_s_turns_stay_on_the_executor_holding_it(
 ) -> None:
     """Two executors take ``worker``: the room's turns stay on the one that
     took its first, until it stops (RFC §10.6.7)."""
-    store = InMemoryStore()  # one process: standing for a store they share
+    store = InMemoryStore()
     hosts = []
     executors = []
     for name in ("host-a", "host-b"):
@@ -350,7 +349,6 @@ async def _hosted(
         hosts={channel.channel_id},
         executor_id=name,
         timeouts=timeouts,
-        store=store,
     )
     await backend.serve(executor)
     return backend, executor
@@ -1618,7 +1616,6 @@ async def test_a_live_agent_stays_on_the_kit_s_executor_whoever_holds_the_room(
         lambda channel_id: _Tagged(channel_id, "host", seen),
         hosts={"ai"},
         executor_id="host",
-        store=store,
         timeouts=TIMEOUTS,
     )
     await host_backend.serve(host)
@@ -1858,7 +1855,6 @@ async def test_a_turn_elsewhere_shows_in_the_owner_s_trace(
         hosts={"worker"},
         executor_id="host-a",
         timeouts=TIMEOUTS,
-        store=SQLiteStore(database),
         telemetry=_otel(exporter, "executor"),
     )
     await backend.serve(executor)
@@ -1957,7 +1953,11 @@ async def test_a_released_channel_is_let_go_by_its_executor_elsewhere(
         return built
 
     host = _backend(prefix)
-    executor = TurnExecutor(build, hosts={"worker"}, executor_id="host-a", store=store)
+    executor = TurnExecutor(
+        build,
+        hosts={"worker"},
+        executor_id="host-a",
+    )
     await host.serve(executor)
     kit = await _owner(prefix, "worker", store=store)
     try:

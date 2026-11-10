@@ -716,13 +716,11 @@ class AIContextMixin(_AIChannelContract):
         """
         if standalone or self._tool_history_loader is None:
             return EarlierTurns()
-        answered = _answered_index(event)
-        known = [past.index for past in context.recent_events]
-        known += [] if answered is None else [answered]
-        if not known:
+        first = history_start(event, context)
+        if first is None:
             return EarlierTurns()
         try:
-            rows = await self._tool_history_loader(event.room_id, min(known))
+            rows = await self._tool_history_loader(event.room_id, first)
         except Exception:
             # A store that fails costs the turn its earlier calls, not the turn.
             logger.warning(
@@ -1269,6 +1267,15 @@ def _rounds_before(event: RoomEvent) -> int | None:
     if discussion_turn(event) is not None:
         return None
     return event.index or None
+
+
+def history_start(event: RoomEvent, context: RoomContext) -> int | None:
+    """The index a turn's history starts at: its oldest event, or the event a
+    discussion's turn answers; ``None`` for a history with neither."""
+    answered = _answered_index(event)
+    known = [past.index for past in context.recent_events]
+    known += [] if answered is None else [answered]
+    return min(known) if known else None
 
 
 def _answered_index(event: RoomEvent) -> int | None:

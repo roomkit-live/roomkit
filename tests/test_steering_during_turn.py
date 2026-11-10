@@ -120,7 +120,10 @@ async def _steering_kit(
         return await _kit(provider, tool, steer=True), None
     agent = _agent(provider, tool, steer=True)
     store, backend = InMemoryStore(), InMemoryTurnBackend()
-    executor = TurnExecutor(lambda channel_id: agent, hosts={"agent"}.__contains__, store=store)
+    executor = TurnExecutor(
+        lambda channel_id: agent,
+        hosts={"agent"}.__contains__,
+    )
     await backend.serve(executor)
     kit = RoomKit(store=store, turn_backend=backend)
     kit.register_channel(ChannelDeclaration(channel_id="agent", steers_room_turns=True))

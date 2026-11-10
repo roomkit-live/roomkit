@@ -1,21 +1,24 @@
 """What an executor's wiring reads beside its own hooks (RFC §10.6.2): the
-room's context for a hook, the store a channel reads, and where a channel's
+room's context for a hook, the rows a channel reads, and where a channel's
 publications and framework events go outside a turn.
 
 The kit's own executor reads the kit (``core/_kit_wiring.py``); an executor a
-host builds reads :class:`StoreWiringEnv`, its store and what the host gave it.
+host builds reads :class:`TurnWiringEnv`, what its turn carries and what the host gave it.
 """
 
 from __future__ import annotations
 
+import contextvars
 from abc import ABC, abstractmethod
+from collections import OrderedDict
 from typing import TYPE_CHECKING, Any
 
-from roomkit.core._authors import stored_register
-from roomkit.core.exceptions import RoomNotFoundError
+from roomkit.core._changes import withheld
+from roomkit.core.exceptions import RoomNotFoundError, TurnLinkError
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import EventType
 from roomkit.models.store_filter import EventFilter
+from roomkit.turns.host import current_turn_host
 
 if TYPE_CHECKING:
     from roomkit.channels._author_images import AttachedMedia, MediaResolver
@@ -23,10 +26,37 @@ if TYPE_CHECKING:
     from roomkit.realtime.base import RealtimeBackend
     from roomkit.store.base import ConversationStore
     from roomkit.turns._outlet import FrameworkEmitter
+    from roomkit.turns.wire import TurnRequest
 
-HOOK_HISTORY = 50
-"""Recent events a hook's context carries on an executor a host built, as the
-kit's floor for hooks does."""
+
+TOOL_MEMORY_CALLS = 30
+"""Calls a channel's stored tool rows are read for to rebuild its tool memory
+(the 12 tools re-revealed), after the infra rows are filtered out."""
+
+HISTORY_ROWS_PAGE = 500
+"""A channel's own rows a turn's history reads from the store at a time."""
+
+LAST_CONTEXTS_KEPT = 256
+"""Rooms whose last turn's context an executor keeps for a hook outside any turn."""
+
+_TOOL_ROWS = frozenset({EventType.TOOL_CALL_START, EventType.TOOL_CALL_END})
+
+_TURN_REQUEST: contextvars.ContextVar[TurnRequest | None] = contextvars.ContextVar(
+    "roomkit_turn_request", default=None
+)
+
+
+def set_turn_request(request: TurnRequest) -> None:
+    """The request of the turn the current context runs."""
+    _TURN_REQUEST.set(request)
+
+
+def _carried(room_id: str, channel_id: str) -> list[RoomEvent]:
+    """The rows the current turn brought, when it is *channel_id*'s in *room_id*."""
+    request = _TURN_REQUEST.get()
+    if request is None or (request.room_id, request.channel_id) != (room_id, channel_id):
+        return []
+    return request.channel_rows
 
 
 async def read_tool_rows(
@@ -71,6 +101,28 @@ async def read_message_before(store: ConversationStore, room_id: str, index: int
         event_filter=EventFilter(event_types=[EventType.MESSAGE], include_blocked=True),
     )
     return before[-1].index if before else -1
+
+
+async def read_channel_rows(
+    store: ConversationStore, room_id: str, channel_id: str, first: int | None
+) -> list[RoomEvent]:
+    """What a turn of *channel_id* on an executor reads of the room, as its
+    owner reads it for the turn: the rows, each once, oldest first, deleted
+    ones withheld (RFC §7.5 rule 8). *first* is the index its history starts
+    at, ``None`` for none."""
+    latest = await read_tool_rows(store, room_id, channel_id, TOOL_MEMORY_CALLS * 2)
+    rows = {row.id: row for row in latest}
+    if first is not None:
+        position = await read_message_before(store, room_id, first)
+        while True:
+            page = await read_history_rows(
+                store, room_id, channel_id, after_index=position, limit=HISTORY_ROWS_PAGE
+            )
+            rows.update((row.id, row) for row in page)
+            if len(page) < HISTORY_ROWS_PAGE:
+                break
+            position = page[-1].index
+    return withheld(sorted(rows.values(), key=lambda row: row.index))
 
 
 class WiringEnv(ABC):
@@ -118,6 +170,9 @@ class WiringEnv(ABC):
         nowhere."""
         return None
 
+    def turn_started(self, request: TurnRequest) -> None:  # noqa: B027
+        """A turn of the executor starts: *request* is what it was asked."""
+
     async def room_tasks(self, room_id: str) -> list[dict[str, Any]]:
         """The room's background tasks, outside a turn's host (RFC §23.4)."""
         return []
@@ -127,27 +182,31 @@ class WiringEnv(ABC):
         return None
 
 
-class StoreWiringEnv(WiringEnv):
-    """The wiring environment of an executor a host builds: the shared store,
-    and what the host gave the executor (RFC §10.6.2, §10.6.9).
+class TurnWiringEnv(WiringEnv):
+    """The wiring environment of an executor a host builds: it has no store,
+    so what a turn reads comes with the turn, or from its room's owner (RFC
+    §10.6.3, §10.6.6), and what the host gave the executor.
 
     Args:
-        store: The shared store; ``None`` leaves hooks that need a room's
-            context unable to build one (a ``BEFORE_TOOL_USE`` then denies).
         media_resolver: The host's media resolver (RFC §6.4).
         attached_media: The host's attached-media reader (RFC §6.4).
     """
 
     def __init__(
         self,
-        store: ConversationStore | None,
         *,
         media_resolver: MediaResolver | None = None,
         attached_media: AttachedMedia | None = None,
     ) -> None:
-        self._store = store
         self._media_resolver = media_resolver
         self._attached_media = attached_media
+        self._last_contexts: OrderedDict[str, RoomContext] = OrderedDict()
+
+    def turn_started(self, request: TurnRequest) -> None:
+        self._last_contexts[request.room_id] = request.context
+        self._last_contexts.move_to_end(request.room_id)
+        while len(self._last_contexts) > LAST_CONTEXTS_KEPT:
+            self._last_contexts.popitem(last=False)
 
     @property
     def media_resolver(self) -> MediaResolver | None:
@@ -158,35 +217,33 @@ class StoreWiringEnv(WiringEnv):
         return self._attached_media
 
     async def context(self, room_id: str, *, carrying: RoomContext | None = None) -> RoomContext:
-        store = self._shared_store()
-        async with store.connection():
-            room, bindings, participants = await store.load_room_context(room_id)
-            if room is None:
-                raise RoomNotFoundError(f"Room {room_id} not found")
-            recent = await store.get_conversation(room_id, limit=HOOK_HISTORY)
-            register = await stored_register(store, room)
-        return RoomContext(
-            room=room,
-            bindings=bindings,
-            participants=participants,
-            recent_events=recent,
-            author_register=register,
-        )
+        """The room as its owner builds it now; once the turn is over, or
+        being cut so the owner no longer answers it, as the turn started
+        with it; outside any turn (an external agent's own activity), as the
+        executor's last turn in the room had it. Any other failure is the
+        hook's to fail closed on."""
+        request = _TURN_REQUEST.get()
+        if request is None or request.room_id != room_id:
+            last = self._last_contexts.get(room_id)
+            if last is None:
+                raise RoomNotFoundError(f"No turn of room {room_id} ran here")
+            return last
+        host = current_turn_host()
+        if host is None or not host.open:
+            return request.context
+        try:
+            return RoomContext.model_validate(await host.room_context())
+        except TurnLinkError:
+            return request.context
 
     async def tool_rows(self, room_id: str, channel_id: str, limit: int) -> list[RoomEvent]:
-        return await read_tool_rows(self._shared_store(), room_id, channel_id, limit)
+        return [row for row in _carried(room_id, channel_id) if row.type in _TOOL_ROWS][-limit:]
 
     async def history_rows(
         self, room_id: str, channel_id: str, *, after_index: int, limit: int
     ) -> list[RoomEvent]:
-        return await read_history_rows(
-            self._shared_store(), room_id, channel_id, after_index=after_index, limit=limit
-        )
+        return [row for row in _carried(room_id, channel_id) if row.index > after_index][:limit]
 
     async def message_before(self, room_id: str, index: int) -> int:
-        return await read_message_before(self._shared_store(), room_id, index)
-
-    def _shared_store(self) -> ConversationStore:
-        if self._store is None:
-            raise RuntimeError("This executor was given no store (TurnExecutor(store=...))")
-        return self._store
+        return -1  # what the turn brought is already bounded: a history replays
+        # no round older than its first turn

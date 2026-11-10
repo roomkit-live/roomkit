@@ -31,6 +31,7 @@ from roomkit.tools._open_calls import OpenCalls
 from roomkit.tools._outcome import kept_in_tool_memory
 from roomkit.turns._outlet import TurnRealtime, emit_framework_event
 from roomkit.turns._tool_hooks import ToolHooks
+from roomkit.turns._wiring_env import HISTORY_ROWS_PAGE, TOOL_MEMORY_CALLS
 from roomkit.turns.host import current_turn_host
 
 if TYPE_CHECKING:
@@ -56,13 +57,6 @@ if TYPE_CHECKING:
     from roomkit.turns._wiring_env import WiringEnv
 
 logger = logging.getLogger("roomkit.turns")
-
-TOOL_MEMORY_CALLS = 30
-"""Calls a channel's stored tool rows are read for to rebuild its tool memory
-(the 12 tools re-revealed), after the infra rows are filtered out."""
-
-_HISTORY_ROWS_PAGE = 500
-"""A channel's own rows a turn's history reads from the store at a time."""
 
 
 def _standing_decision(event: SpeakDecisionEvent, result: SyncPipelineResult) -> SpeakDecision:
@@ -304,10 +298,10 @@ class TurnWiring:
             rows: list[RoomEvent] = []
             while True:
                 page = await env.history_rows(
-                    room_id, channel_id, after_index=after, limit=_HISTORY_ROWS_PAGE
+                    room_id, channel_id, after_index=after, limit=HISTORY_ROWS_PAGE
                 )
                 rows += page
-                if len(page) < _HISTORY_ROWS_PAGE:
+                if len(page) < HISTORY_ROWS_PAGE:
                     return withheld(rows)
                 after = page[-1].index
 

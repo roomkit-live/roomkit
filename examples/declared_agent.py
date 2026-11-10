@@ -85,7 +85,8 @@ async def main() -> None:
     store = InMemoryStore()
     backend = InMemoryTurnBackend()
     executor = TurnExecutor(
-        build_agent, hosts=lambda channel_id: channel_id == "meteo", store=store
+        build_agent,
+        hosts=lambda channel_id: channel_id == "meteo",
     )
     await backend.serve(executor)
 

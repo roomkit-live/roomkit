@@ -144,7 +144,6 @@ class Executors:
             hosts=set(spec.get("hosts", [])),
             executor_id=executor_id,
             timeouts=self._bounds,
-            store=self._harness.kit.store,
         )
         self._add_hooks(executor, spec)
         await self._backend.serve(executor)
