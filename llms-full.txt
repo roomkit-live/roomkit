@@ -2336,9 +2336,10 @@ await kit.attach_channel(room_id, "meteo")  # an intelligence binding
   under the same id, its agents attached again, starts from nothing RoomKit
   kept of the earlier one, save what a turn still running at the detach
   stores as it ends. A memory provider of the host's keeps what it learnt:
-  the host clears it (`MemoryProvider.clear(room_id)`, on
-  `ON_CHANNEL_DETACHED` for instance) before it reuses a room id for another
-  conversation.
+  the host clears it (`MemoryProvider.clear(room_id)`) where it is kept
+  before it reuses a room id for another conversation; an owner-side
+  `ON_CHANNEL_DETACHED` hook reaches a store the processes share, not a
+  memory held in a build on an executor elsewhere.
 - Which agents can answer: `await kit.executors()` lists the executors the
   turn backend carries turns to (what each declares, its room hooks, its
   last beat, `online`), and `await kit.agent_presence(room_id)` gives each
