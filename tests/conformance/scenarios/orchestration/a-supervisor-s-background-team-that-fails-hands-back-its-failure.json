@@ -157,7 +157,7 @@
             "action": "pipeline",
             "status": "failed",
             "detail": {
-              "$contains": "researcher"
+              "$contains": "not registered"
             },
             "metadata": {
               "room_id": "r1",
@@ -207,9 +207,7 @@
           },
           "visibility": "sup",
           "content": {
-            "body": {
-              "$contains": "[Your background workers failed: The delegated work could not be completed. Tell the user.]"
-            }
+            "body": "[Your background workers failed: The delegated work could not be completed. Tell the user.]\nThis turn only gives this task's result: give it, without answering anything else that was said; another reply of yours is taking care of that. Say it in the language the conversation is in, whatever the result's."
           }
         },
         {
@@ -221,6 +219,29 @@
             "body": "Sorry, it failed."
           },
           "chain_depth": 2
+        }
+      ]
+    },
+    "models": {
+      "sup": [
+        {},
+        {},
+        {
+          "messages": [
+            {},
+            {},
+            {},
+            {
+              "role": "assistant",
+              "text": "On it."
+            },
+            {
+              "role": "user",
+              "text": {
+                "$starts_with": "[Instruction from the application: nobody in this conversation said it. Act on it now, in your own words, without quoting it.]\n[Your background workers failed: The delegated work could not be completed. Tell the user.]\nThis turn only gives this task's result: give it, without answering anything else that was said; another reply of yours is taking care of that. Say it in the language the conversation is in, whatever the result's."
+              }
+            }
+          ]
         }
       ]
     }
