@@ -9,7 +9,7 @@ from collections.abc import Callable
 from roomkit import Agent, AgentIdentity, ChannelDeclaration, Discussion, RoomKit
 from roomkit.memory.mock import MockMemoryProvider
 from roomkit.models.delivery import InboundMessage
-from roomkit.models.event import TextContent
+from roomkit.models.event import RoomEvent, TextContent
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.speaking.mock import MockSpeakPolicy
 from roomkit.store.memory import InMemoryStore
@@ -107,6 +107,43 @@ async def test_a_silent_discussion_turn_does_not_hand_the_message_again() -> Non
     await kit.close()
 
     assert said.count("@ana are you there?") == 1
+
+
+class _MeetingMemory(MockMemoryProvider):
+    """A memory whose ingest learns only once every agent's memory is
+    learning too: handed one after the other, they would wait for good."""
+
+    def __init__(self, meeting: asyncio.Barrier) -> None:
+        super().__init__()
+        self._meeting = meeting
+
+    async def ingest(
+        self, room_id: str, event: RoomEvent, *, channel_id: str | None = None
+    ) -> None:
+        await self._meeting.wait()
+        await super().ingest(room_id, event, channel_id=channel_id)
+
+
+async def test_a_message_is_handed_to_every_agent_s_memory_at_once() -> None:
+    """The message waits for the slowest memory, not for the sum of them."""
+    meeting = asyncio.Barrier(2)
+    memories = {cid: _MeetingMemory(meeting) for cid in ("ana", "bob")}
+    kit = RoomKit()
+    kit.register_channel(SimpleChannel("sms"))
+    agents = [_agent(cid, memory) for cid, memory in memories.items()]
+    await kit.create_room(room_id="r", orchestration=Discussion(agents=agents))
+    await kit.attach_channel("r", "sms")
+    said = asyncio.ensure_future(_say(kit, "@nobody hello."))
+    try:
+        await asyncio.wait({said}, timeout=2)
+        handed = said.done()
+    finally:
+        await meeting.abort()
+        await asyncio.wait({said})
+        await kit.close()
+
+    assert handed, "each memory waited for the one before"
+    assert all(_ingested(memory) == ["@nobody hello."] for memory in memories.values())
 
 
 async def test_an_agent_no_executor_runs_misses_its_memory_and_the_room_goes_on() -> None:

@@ -368,28 +368,37 @@ class DiscussionRoom:
         as a room with no discussion delivers it (rule 3): a memory that
         learns as messages arrive learns the whole conversation. It reaches
         each agent through the turn backend, where the agent runs (RFC
-        §10.6.3), live or held by its declaration alone; an agent offline,
-        which no executor serves, is handed nothing (RFC §10.6.7)."""
+        §10.6.3), live or held by its declaration alone, every agent at once:
+        the commit waits for the slowest memory, not for the sum of them. An
+        agent offline, which no executor serves, is handed nothing (RFC
+        §10.6.7)."""
         handed_to = [
             agent_id
             for agent_id, agent in self.agents.items()
             if agent is not None and agent_id != event.source.channel_id and agent_id in reach
         ]
         offline = await self.kit._known_offline(self.room_id, handed_to)
-        for agent_id in handed_to:
-            if agent_id in offline:
-                logger.debug("Agent %s is offline: its memory misses an event", agent_id)
-                continue
-            handed = CommittedEvent(channel_id=agent_id, room_id=self.room_id, event=event)
-            try:
-                await self.kit._turns.control(handed)
-            except Exception:
-                logger.warning(
-                    "Agent %s's memory was not handed an event of room %s",
-                    agent_id,
-                    self.room_id,
-                    exc_info=True,
-                )
+        for agent_id in offline:
+            logger.debug("Agent %s is offline: its memory misses an event", agent_id)
+        await asyncio.gather(
+            *(
+                self._hand_to_memory(agent_id, event)
+                for agent_id in handed_to
+                if agent_id not in offline
+            )
+        )
+
+    async def _hand_to_memory(self, agent_id: str, event: RoomEvent) -> None:
+        handed = CommittedEvent(channel_id=agent_id, room_id=self.room_id, event=event)
+        try:
+            await self.kit._turns.control(handed)
+        except Exception:
+            logger.warning(
+                "Agent %s's memory was not handed an event of room %s",
+                agent_id,
+                self.room_id,
+                exc_info=True,
+            )
 
     async def queue_instruction(self, event: RoomEvent) -> None:
         """An instruction addressed to agents: a turn of its own each, at the
