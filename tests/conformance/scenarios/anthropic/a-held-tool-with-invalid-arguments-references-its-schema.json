@@ -1,0 +1,138 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "anthropic/a-held-tool-with-invalid-arguments-references-its-schema",
+  "title": "An invalid call references its held schema so the next round can correct it",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: tests/test_tool_search_called_declaration.py::test_a_held_tool_with_invalid_arguments_references_its_schema. RMK-1306.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look up.",
+            "returns": "ok"
+          },
+          {
+            "name": "track_shipment",
+            "description": "Track a shipment.",
+            "returns": "ok",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "count": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "count"
+              ]
+            }
+          },
+          {
+            "name": "refund",
+            "description": "Refund an order.",
+            "returns": "ok"
+          }
+        ],
+        "model": {
+          "deferred_tools": true,
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c0",
+                  "name": "track_shipment",
+                  "arguments": {
+                    "count": "invalid"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tool_search": true,
+        "tool_search_pinned": [
+          "lookup"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "dev",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "deferred_tools": [
+            "track_shipment",
+            "refund"
+          ]
+        },
+        {
+          "deferred_tools": [
+            "track_shipment",
+            "refund"
+          ],
+          "tool_results": [
+            {
+              "name": "track_shipment",
+              "references": [
+                "track_shipment"
+              ],
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,207 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "anthropic/a-cancel-after-revealing-reports-referenced-tools",
+  "title": "A tool referenced by a served call is reported even if cancellation prevents the next generation",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: tests/test_deferred_tools.py::test_a_held_tool_is_reported_once_referenced. RMK-1306.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "find_tools",
+                  "arguments": {
+                    "query": "send sms"
+                  }
+                },
+                {
+                  "id": "c2",
+                  "name": "widget_1"
+                }
+              ]
+            }
+          ],
+          "deferred_tools": true
+        },
+        "tools": [
+          {
+            "name": "widget_0",
+            "description": "Operate widget number 0.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "widget_1",
+            "description": "Operate widget number 1.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "widget_2",
+            "description": "Operate widget number 2.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "widget_3",
+            "description": "Operate widget number 3.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "widget_4",
+            "description": "Operate widget number 4.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "send_sms",
+            "description": "Send an SMS text message to a phone number.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "to": {
+                  "type": "string"
+                },
+                "body": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "to",
+                "body"
+              ]
+            },
+            "returns": "{\"ok\": true}"
+          }
+        ],
+        "tool_search": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "stop",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "type": "tool_call_end"
+            },
+            "do": [
+              {
+                "call": "steer",
+                "channel_id": "agent",
+                "room_id": "room-1",
+                "directive": {
+                  "type": "cancel",
+                  "reason": "user stopped"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "report",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go 1."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "find_tools": 0,
+            "list_tools": 1
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "report": [
+        {
+          "trigger": "on_ai_response",
+          "response": {
+            "loop_end_reason": "cancelled",
+            "declared_tools": {
+              "find_tools": {
+                "$present": true
+              },
+              "list_tools": {
+                "$present": true
+              },
+              "send_sms": {
+                "$present": true
+              },
+              "widget_1": {
+                "$present": true
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

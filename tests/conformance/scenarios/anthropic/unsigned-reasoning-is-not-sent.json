@@ -1,0 +1,163 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "anthropic/unsigned-reasoning-is-not-sent",
+  "title": "Anthropic omits unsigned reasoning and preserves the text and native tool calls",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: providers/anthropic/request.py::format_content drops reasoning without a signature. RMK-1633.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "get_weather",
+            "description": "The weather.",
+            "returns": "sunny"
+          }
+        ],
+        "model": {
+          "chat_dialect": "anthropic",
+          "rounds": [
+            {
+              "stream": [
+                {
+                  "thinking": "WHY."
+                },
+                {
+                  "text": "Let me look."
+                },
+                {
+                  "call": {
+                    "id": "c1",
+                    "name": "get_weather"
+                  }
+                }
+              ]
+            },
+            {
+              "stream": [
+                {
+                  "call": {
+                    "id": "c2",
+                    "name": "get_weather"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Sunny."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "dev",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {
+          "chat_messages": [
+            {
+              "role": "user",
+              "content": "go"
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Let me look."
+                },
+                {
+                  "type": "tool_use",
+                  "id": "$e1",
+                  "name": "get_weather",
+                  "input": {}
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "tool_result",
+                  "tool_use_id": "$e1",
+                  "content": "sunny"
+                }
+              ]
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "tool_use",
+                  "id": "$e2",
+                  "name": "get_weather",
+                  "input": {}
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "tool_result",
+                  "tool_use_id": "$e2",
+                  "content": "sunny"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

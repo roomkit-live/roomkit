@@ -1,0 +1,170 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "anthropic/a-denied-tool-is-not-held",
+  "title": "A policy-denied tool is absent even from deferred definitions",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: tests/test_deferred_tools.py::test_a_tool_the_policy_denies_is_not_even_held. RMK-1306.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look up.",
+            "returns": "ok"
+          },
+          {
+            "name": "track_shipment",
+            "description": "Track a shipment.",
+            "returns": "ok"
+          },
+          {
+            "name": "refund",
+            "description": "Refund an order.",
+            "returns": "ok"
+          }
+        ],
+        "model": {
+          "deferred_tools": true,
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c0",
+                  "name": "find_tools",
+                  "arguments": {
+                    "query": "track shipment",
+                    "max_results": 1
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "track_shipment"
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tool_search": true,
+        "tool_search_pinned": [
+          "lookup"
+        ],
+        "tool_policy": {
+          "deny": [
+            "refund"
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "dev",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "deferred_tools": [
+            "track_shipment"
+          ],
+          "tools": {
+            "refund": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "deferred_tools": [
+            "track_shipment"
+          ],
+          "tool_results": [
+            {
+              "name": "find_tools",
+              "references": [
+                "track_shipment"
+              ]
+            }
+          ],
+          "tools": {
+            "refund": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "deferred_tools": [
+            "track_shipment"
+          ],
+          "tool_results": [
+            {
+              "name": "find_tools",
+              "references": [
+                "track_shipment"
+              ]
+            },
+            {
+              "name": "track_shipment",
+              "references": []
+            }
+          ],
+          "tools": {
+            "refund": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

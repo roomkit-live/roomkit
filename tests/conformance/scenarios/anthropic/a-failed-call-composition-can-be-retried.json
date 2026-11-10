@@ -1,0 +1,116 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "anthropic/a-failed-call-composition-can-be-retried",
+  "title": "Tool argument fragments alone do not spend the retry budget as delivered output",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: channels/_ai_resilience.py::_StreamEmission.note. RMK-1633.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "retry_policy": {
+          "max_retries": 2,
+          "base_delay_ms": 1
+        },
+        "fallback_model": {
+          "rounds": [
+            {
+              "text": "The fallback's."
+            }
+          ]
+        },
+        "model": {
+          "rounds": [
+            {
+              "refuses": {
+                "status": 503,
+                "message": "busy",
+                "retryable": true
+              },
+              "stream": [
+                {
+                  "tool_call_delta": {
+                    "id": "c",
+                    "name": "lookup",
+                    "arguments_delta": "{\"n\":"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Asked again."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {}
+      ],
+      "agent/fallback": []
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message"
+        },
+        {
+          "index": 1,
+          "type": "message",
+          "content": {
+            "body": "Asked again."
+          }
+        }
+      ]
+    }
+  }
+}

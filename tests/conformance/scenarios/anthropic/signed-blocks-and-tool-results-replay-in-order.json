@@ -1,0 +1,222 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "anthropic/signed-blocks-and-tool-results-replay-in-order",
+  "title": "Anthropic replays each signed or redacted block in order beside calls and native tool results",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: providers/anthropic/request.py::format_content; tests/test_providers/test_anthropic.py::test_thinking_part_round_trip. RMK-1633.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "get_weather",
+            "description": "The weather.",
+            "returns": "sunny"
+          },
+          {
+            "name": "get_time",
+            "description": "The time.",
+            "returns": "noon"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "stream": [
+                {
+                  "thinking": "Weather first.",
+                  "block": 0
+                },
+                {
+                  "thinking": "",
+                  "block": 0,
+                  "signature": "S0"
+                },
+                {
+                  "call": {
+                    "id": "c1",
+                    "name": "get_weather"
+                  }
+                },
+                {
+                  "thinking": "",
+                  "block": 2,
+                  "redacted": "RRR"
+                },
+                {
+                  "thinking": "Now the time.",
+                  "block": 3
+                },
+                {
+                  "thinking": "",
+                  "block": 3,
+                  "signature": "S3"
+                },
+                {
+                  "call": {
+                    "id": "c2",
+                    "name": "get_time"
+                  }
+                }
+              ],
+              "finish_reason": "tool_use"
+            },
+            {
+              "text": "Done."
+            }
+          ],
+          "chat_dialect": "anthropic"
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "go"
+            },
+            {
+              "role": "assistant",
+              "round": [
+                {
+                  "thinking": "Weather first.",
+                  "signature": "S0",
+                  "redacted": {
+                    "$absent": true
+                  }
+                },
+                {
+                  "call": "c1"
+                },
+                {
+                  "thinking": "",
+                  "signature": {
+                    "$absent": true
+                  },
+                  "redacted": "RRR"
+                },
+                {
+                  "thinking": "Now the time.",
+                  "signature": "S3",
+                  "redacted": {
+                    "$absent": true
+                  }
+                },
+                {
+                  "call": "c2"
+                }
+              ]
+            },
+            {
+              "role": "tool"
+            }
+          ],
+          "chat_messages": [
+            {
+              "role": "user",
+              "content": "go"
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "thinking",
+                  "thinking": "Weather first.",
+                  "signature": "S0"
+                },
+                {
+                  "type": "tool_use",
+                  "id": "$e1",
+                  "name": "get_weather",
+                  "input": {}
+                },
+                {
+                  "type": "redacted_thinking",
+                  "data": "RRR"
+                },
+                {
+                  "type": "thinking",
+                  "thinking": "Now the time.",
+                  "signature": "S3"
+                },
+                {
+                  "type": "tool_use",
+                  "id": "$e2",
+                  "name": "get_time",
+                  "input": {}
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "tool_result",
+                  "tool_use_id": "$e1",
+                  "content": "sunny"
+                },
+                {
+                  "type": "tool_result",
+                  "tool_use_id": "$e2",
+                  "content": "noon"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
