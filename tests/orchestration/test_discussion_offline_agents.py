@@ -16,6 +16,7 @@ from roomkit import Agent, AgentIdentity, ChannelDeclaration, RoomKit
 from roomkit.models.enums import EventType, HookExecution, HookTrigger
 from roomkit.models.event import RoomEvent
 from roomkit.orchestration.strategies.discussion import Discussion, SpeakQueueChange
+from roomkit.providers.ai.base import AIResponse
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.turns import (
     InMemoryTurnBackend,
@@ -24,8 +25,11 @@ from roomkit.turns import (
     TurnExecutor,
     TurnTimeouts,
 )
+from tests.orchestration.test_discussion_background import _lines, _starts_task, _until_said
+from tests.orchestration.test_discussion_background import _room as _background_room
 from tests.orchestration.test_discussion_edges import _People, _say
-from tests.orchestration.test_strategy_discussion import _settle
+from tests.orchestration.test_strategy_discussion import _provider, _settle
+from tests.orchestration.test_strategy_discussion import _say as _say_ops
 
 
 class _Unlisting(InMemoryTurnBackend):
@@ -110,7 +114,8 @@ async def test_an_executor_started_since_the_owner_last_read_takes_the_turn() ->
     is checked against the registry read now before its turn is dropped."""
     redis = pytest.importorskip("redis.asyncio")
     prefix = f"roomkit:test:{uuid4().hex[:12]}"
-    timeouts = TurnTimeouts(heartbeat_interval=5.0, heartbeat_timeout=15.0, accept=3.0)
+    # Long enough for the owner's view to miss the executor served right after.
+    timeouts = TurnTimeouts(heartbeat_interval=1.0, heartbeat_timeout=3.0, accept=3.0)
     owner, elsewhere = (
         RedisTurnBackend(os.environ["REDIS_URL"], key_prefix=prefix, timeouts=timeouts)
         for _ in range(2)
@@ -145,3 +150,44 @@ async def test_an_executor_started_since_the_owner_last_read_takes_the_turn() ->
 
 
 _ENDS = {SpeakQueueChange.TURN_ENDED, SpeakQueueChange.TURN_SKIPPED}
+
+
+async def test_a_task_s_result_is_posted_for_an_agent_gone_offline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A posted result needs no executor (rule 19): it is the agent's message
+    whatever its presence, never a turn skipped."""
+    kit = RoomKit()
+    changes: list[Any] = []
+
+    @kit.hook(HookTrigger.ON_SPEAK_QUEUE, execution=HookExecution.ASYNC)
+    async def _queue(event: Any, ctx: Any) -> None:
+        changes.append((event.change, event.channel_ids))
+
+    comms = MockAIProvider(ai_responses=_starts_task("On it."))
+    helper = MockAIProvider(ai_responses=[AIResponse(content="Findings: 12 tickets.")])
+    started = asyncio.Event()
+    helper_generate = helper.generate
+
+    async def held_generate(context: Any) -> Any:
+        await started.wait()
+        return await helper_generate(context)
+
+    monkeypatch.setattr(helper, "generate", held_generate)
+    await _background_room(kit, comms, _provider("sre here"), helper, hand_back="post")
+    try:
+        await _say_ops(kit, "@comms please go through all the support tickets")
+        await _until_said(kit, 1)
+
+        async def offline(room_id: str, channel_ids: Any) -> set[str]:
+            return {c for c in channel_ids if c == "comms"}
+
+        monkeypatch.setattr(kit, "_known_offline", offline)
+        started.set()
+        said = await _until_said(kit, 2)
+    finally:
+        await kit.close()
+
+    assert _lines(said)[-1][0] == "comms"
+    assert "Findings: 12 tickets." in _lines(said)[-1][1]
+    assert (SpeakQueueChange.TURN_SKIPPED, ("comms",)) not in changes
