@@ -7,7 +7,7 @@
     "§17.2",
     "§10.1 step 2"
   ],
-  "notes": "Python: src/roomkit/core/_delivery_keys.py, src/roomkit/core/mixins/inbound.py (cancel_delivery); tests/test_delivery_cancel_turns.py::test_a_scoped_cancel_before_the_commit_reaches_only_its_organization[unread-other-organization] (RMK-1152); its case at the room's read, [room-being-read], comes to the same: the call is located once the read is over.",
+  "notes": "Python: tests/test_delivery_cancel_turns.py::test_a_scoped_cancel_before_the_commit_reaches_only_its_organization[unread-other-organization]. This holds the router before the room is read; it makes no assertion about a held context read.",
   "setup": {
     "kit": {
       "router": {

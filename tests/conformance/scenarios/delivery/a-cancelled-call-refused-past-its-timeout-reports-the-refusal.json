@@ -6,7 +6,7 @@
     "§10.1 Explicit delivery cancellation",
     "§13.6"
   ],
-  "notes": "Python: src/roomkit/core/_delivery_keys.py, src/roomkit/core/mixins/inbound.py (cancel_delivery); tests/test_delivery_cancel_turns.py::test_a_cancelled_call_that_times_out_before_its_commit_names_nothing_after[parsing] (RMK-1152); its [context] and [identity] cases come to the same.",
+  "notes": "Python: tests/test_delivery_cancel_turns.py::test_a_cancelled_call_that_times_out_before_its_commit_names_nothing_after[parsing]. Context and identity expiry require separate proofs. The normalized result omits the completion handle; its actual absence is asserted in native tests.",
   "setup": {
     "kit": {
       "process_timeout_ms": 50

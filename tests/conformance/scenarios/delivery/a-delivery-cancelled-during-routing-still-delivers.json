@@ -1,0 +1,152 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-delivery-cancelled-during-routing-still-delivers",
+  "title": "A delivery cancelled while routing commits its message and delivers it without starting a turn",
+  "rules": [
+    "§10.1 Explicit delivery cancellation",
+    "§17.2",
+    "§10.1 step 2"
+  ],
+  "notes": "Python: tests/test_delivery_cancel_turns.py::test_a_delivery_cancelled_before_its_commit_starts_no_turn[routing]. Routing is held in a scripted router, not a store binding lookup; context-read cancellation has a separate native proof.",
+  "setup": {
+    "kit": {
+      "router": {
+        "room_id": "room-1",
+        "gate": "routing"
+      }
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "on_event": [
+          {
+            "when": {
+              "text": "task A"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer to task A"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "broadcast",
+        "trigger": "after_broadcast",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "task A"
+        },
+        "delivery_key": "t"
+      },
+      "background": true,
+      "as": "a"
+    },
+    {
+      "wait_for": "routing"
+    },
+    {
+      "call": "cancel_delivery",
+      "key": "t",
+      "reason": "stopped",
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "open": "routing"
+    },
+    {
+      "await": "a",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "cancellation_reason": "stopped"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "task A"
+          }
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "ai": []
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "body": "task A"
+            }
+          }
+        ]
+      }
+    },
+    "hooks": {
+      "broadcast": {
+        "$unordered": [
+          {
+            "trigger": "after_broadcast",
+            "room_id": "room-1",
+            "event": {
+              "content": {
+                "body": "task A"
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

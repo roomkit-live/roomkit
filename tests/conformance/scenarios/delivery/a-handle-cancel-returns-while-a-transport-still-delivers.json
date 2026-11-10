@@ -1,0 +1,157 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-handle-cancel-returns-while-a-transport-still-delivers",
+  "title": "Cancelling the handle joins the turn while its transport remains held; the committed message still delivers",
+  "rules": [
+    "§10.1 Explicit delivery cancellation",
+    "§10.2"
+  ],
+  "notes": "Python: tests/test_delivery_cancel_turns.py::test_a_cancel_returns_at_once_while_a_transport_still_delivers, deferred handle path. Both agent and transport are held; cancel returns before the transport is opened.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "deliver": [
+          {
+            "when": {
+              "text": "task A"
+            },
+            "gate": "ws-holds"
+          }
+        ]
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "on_event": [
+          {
+            "when": {
+              "text": "task A"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer to task A"
+                }
+              }
+            ],
+            "gate": "a-runs"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "broadcast",
+        "trigger": "after_broadcast",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "task A"
+        },
+        "delivery_key": "a"
+      },
+      "as": "a",
+      "defer_delivery": true
+    },
+    {
+      "wait_for": "a-runs"
+    },
+    {
+      "wait_for": "ws-holds"
+    },
+    {
+      "call": "delivery.cancel",
+      "of": "a",
+      "timeout_ms": 500,
+      "expect": {
+        "result": {
+          "cancellation_reason": "caller_cancelled"
+        }
+      }
+    },
+    {
+      "open": "ws-holds"
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "task A"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "body": "task A"
+            }
+          }
+        ]
+      }
+    },
+    "turns": {
+      "room-1": {
+        "ai": [
+          {
+            "content": {
+              "body": "task A"
+            }
+          }
+        ]
+      }
+    },
+    "hooks": {
+      "broadcast": {
+        "$unordered": [
+          {
+            "trigger": "after_broadcast",
+            "room_id": "room-1",
+            "event": {
+              "content": {
+                "body": "task A"
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

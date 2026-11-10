@@ -1,0 +1,246 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-locked-hook-cancels-an-already-committed-queued-delivery",
+  "title": "A locked hook cancels committed B behind running A, and B can be joined before A finishes",
+  "rules": [
+    "§10.1 Explicit delivery cancellation",
+    "§9.5.1"
+  ],
+  "notes": "Python: tests/test_delivery_cancel_turns.py::test_a_cancel_under_the_room_lock_returns_at_once. B has committed behind held A before the locked stop hook cancels it. Joining B must return before A is opened.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "on_event": [
+          {
+            "when": {
+              "text": "task A"
+            },
+            "gate": "a-runs"
+          },
+          {
+            "when": {
+              "text": "task B"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer to task B"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "stop",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "stop B"
+            },
+            "do": [
+              {
+                "call": "cancel_delivery",
+                "key": "b",
+                "as": "cancelled"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "broadcast",
+        "trigger": "after_broadcast",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "task A"
+        },
+        "delivery_key": "a"
+      },
+      "defer_delivery": true,
+      "as": "a"
+    },
+    {
+      "wait_for": "a-runs"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "task B"
+        },
+        "delivery_key": "b"
+      },
+      "defer_delivery": true,
+      "as": "b"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "stop B"
+        }
+      },
+      "defer_delivery": true
+    },
+    {
+      "call": "delivery.wait",
+      "of": "b",
+      "expect": {
+        "result": {
+          "cancellation_reason": "caller_cancelled"
+        }
+      }
+    },
+    {
+      "open": "a-runs"
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "task A"
+          }
+        },
+        {
+          "content": {
+            "body": "task B"
+          }
+        },
+        {
+          "content": {
+            "body": "stop B"
+          }
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "ai": [
+          {
+            "content": {
+              "body": "task A"
+            }
+          },
+          {
+            "content": {
+              "body": "stop B"
+            }
+          }
+        ]
+      }
+    },
+    "actions": {
+      "cancelled": [
+        {
+          "result": 1
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "body": "task A"
+            }
+          },
+          {
+            "content": {
+              "body": "task B"
+            }
+          },
+          {
+            "content": {
+              "body": "stop B"
+            }
+          }
+        ]
+      }
+    },
+    "hooks": {
+      "broadcast": {
+        "$unordered": [
+          {
+            "trigger": "after_broadcast",
+            "room_id": "room-1",
+            "event": {
+              "content": {
+                "body": "task A"
+              }
+            }
+          },
+          {
+            "trigger": "after_broadcast",
+            "room_id": "room-1",
+            "event": {
+              "content": {
+                "body": "task B"
+              }
+            }
+          },
+          {
+            "trigger": "after_broadcast",
+            "room_id": "room-1",
+            "event": {
+              "content": {
+                "body": "stop B"
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

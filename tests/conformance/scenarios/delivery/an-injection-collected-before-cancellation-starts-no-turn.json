@@ -1,0 +1,244 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/an-injection-collected-before-cancellation-starts-no-turn",
+  "title": "Cancelling committed B also cuts the turn of its collected injection C while preserving their committed delivery obligations",
+  "rules": [
+    "§10.1 Explicit delivery cancellation",
+    "§9.4"
+  ],
+  "notes": "Python: tests/test_delivery_cancel_turns.py::test_an_event_injected_by_a_cancelled_delivery_starts_no_turn. B is committed and its hook has collected C before cancel, while a preceding transport holds the lane. C need not be committed at cancellation. Neither B nor C starts a turn.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "deliver": [
+          {
+            "when": {
+              "text": "held"
+            },
+            "gate": "held-transport"
+          }
+        ]
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "on_event": [
+          {
+            "when": {
+              "text": "task B"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer to task B"
+                }
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "task C"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer to task C"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "inject",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "task B"
+            },
+            "result": {
+              "action": "allow",
+              "injected_events": [
+                {
+                  "event": {
+                    "content": {
+                      "type": "text",
+                      "body": "task C"
+                    },
+                    "source": {
+                      "channel_id": "sms",
+                      "channel_type": "sms"
+                    }
+                  },
+                  "target_channel_ids": [
+                    "ai"
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "broadcast",
+        "trigger": "after_broadcast",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "held"
+        },
+        "visibility": "transport"
+      },
+      "defer_delivery": true
+    },
+    {
+      "wait_for": "held-transport"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "task B"
+        },
+        "delivery_key": "b"
+      },
+      "defer_delivery": true,
+      "as": "b"
+    },
+    {
+      "call": "cancel_delivery",
+      "key": "b",
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "open": "held-transport"
+    },
+    {
+      "call": "delivery.wait",
+      "of": "b",
+      "expect": {
+        "result": {
+          "cancellation_reason": "caller_cancelled"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "held"
+          }
+        },
+        {
+          "content": {
+            "body": "task B"
+          }
+        },
+        {
+          "content": {
+            "body": "task C"
+          }
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "ai": []
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "body": "held"
+            }
+          },
+          {
+            "content": {
+              "body": "task B"
+            }
+          }
+        ]
+      }
+    },
+    "hooks": {
+      "broadcast": {
+        "$unordered": [
+          {
+            "trigger": "after_broadcast",
+            "room_id": "room-1",
+            "event": {
+              "content": {
+                "body": "held"
+              }
+            }
+          },
+          {
+            "trigger": "after_broadcast",
+            "room_id": "room-1",
+            "event": {
+              "content": {
+                "body": "task B"
+              }
+            }
+          },
+          {
+            "trigger": "after_broadcast",
+            "room_id": "room-1",
+            "event": {
+              "content": {
+                "body": "task C"
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -7,7 +7,7 @@
     "§10.1 step 4",
     "§10.1 step 5"
   ],
-  "notes": "Python: src/roomkit/core/_delivery_keys.py, src/roomkit/core/mixins/inbound.py (cancel_delivery); tests/test_delivery_cancel_turns.py::test_a_delivery_cancelled_before_its_commit_starts_no_turn[parsing] and [identity] (RMK-1152). The other two points of that test, routing and the room's read, are steps a scenario holds at only through a router: delivery/a-scoped-cancel-before-the-room-is-read-waits-for-it.",
+  "notes": "Python: tests/test_delivery_cancel_turns.py::test_a_delivery_cancelled_before_its_commit_starts_no_turn[parsing] and [identity]. Routing is covered separately by a-delivery-cancelled-during-routing-still-delivers; a held context read requires a native store fixture.",
   "setup": {
     "kit": {
       "identity_resolver": {
