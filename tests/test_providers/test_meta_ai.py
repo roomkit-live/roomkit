@@ -1,4 +1,4 @@
-"""Tests for the Meta Muse Spark chat provider."""
+"""Tests for the Meta Muse chat provider."""
 
 from __future__ import annotations
 
@@ -100,10 +100,13 @@ class TestReasoningEffort:
         await provider.generate(_context(reasoning_effort="high"))
         assert _sent(provider)["reasoning_effort"] == "high"
 
-    async def test_effort_rides_tool_turns_too(self) -> None:
-        provider = _provider(reasoning_effort="low")
+    @pytest.mark.parametrize(
+        ("model", "effort"), [("muse-spark-1.3", "low"), ("muse-ember-1.0", "max")]
+    )
+    async def test_effort_rides_tool_turns_too(self, model: str, effort: str) -> None:
+        provider = _provider(model=model, reasoning_effort=effort)
         await provider.generate(_context(tools=[_TOOL]))
-        assert _sent(provider)["reasoning_effort"] == "low"
+        assert _sent(provider)["reasoning_effort"] == effort
 
     async def test_no_effort_leaves_the_service_default(self) -> None:
         provider = _provider()
@@ -112,11 +115,12 @@ class TestReasoningEffort:
 
 
 class TestProvider:
-    async def test_generate(self) -> None:
-        provider = _provider()
+    @pytest.mark.parametrize("model", ["muse-spark-1.3", "muse-ember-1.0"])
+    async def test_generate(self, model: str) -> None:
+        provider = _provider(model=model)
         result = await provider.generate(_context())
         assert result.content == "Québec"
-        assert _sent(provider)["model"] == "muse-spark-1.3"
+        assert _sent(provider)["model"] == model
 
     def test_provider_name_and_vision(self) -> None:
         provider = _provider()
@@ -133,6 +137,7 @@ class TestProvider:
             "muse-voice-transcribe-1.0",
             "muse-spark-1.2-contributor",
             "muse-wonder-1.0",
+            "muse-ember-1.0",
         ]
         provider._client.models.list = AsyncMock(
             return_value=SimpleNamespace(data=[SimpleNamespace(id=i) for i in ids])
@@ -142,9 +147,12 @@ class TestProvider:
             "muse-spark-1.3",
             "muse-spark-1.2-contributor",
             "muse-wonder-1.0",
+            "muse-ember-1.0",
         ]
         assert listed[0].context_window == 1_048_576  # backfilled from the catalog
         assert listed[2].pricing is not None and listed[2].pricing.output_per_million == 20.00
+        assert listed[3].context_window == 1_048_576
+        assert listed[3].pricing is not None and listed[3].pricing.input_per_million == 0.10
 
     async def test_status_errors_carry_the_meta_provider(self) -> None:
         provider = _provider()
@@ -159,6 +167,22 @@ class TestProvider:
 
 
 class TestCatalog:
+    @pytest.mark.parametrize(
+        ("cached_tokens", "cost"), [(100_000, 0.0109), (100_001, 0.032700012)]
+    )
+    def test_ember_prices_the_whole_request_above_200k_including_cache(
+        self, cached_tokens: int, cost: float
+    ) -> None:
+        ember = next(m for m in MODELS if m.id == "muse-ember-1.0")
+        assert ember.pricing is not None
+        assert ember.pricing.cost_for(
+            {
+                "input_tokens": 100_000,
+                "cache_read_input_tokens": cached_tokens,
+                "output_tokens": 1_000,
+            }
+        ) == pytest.approx(cost)
+
     def test_every_model_is_priced_and_reasons(self) -> None:
         for model in MODELS:
             assert model.pricing is not None

@@ -6,7 +6,8 @@ about what Anthropic currently offers. Call
 ``AnthropicAIProvider.list_models()`` for that; it asks the account's API.
 
 Sourced from the Anthropic models overview
-(platform.claude.com/docs/en/about-claude/models), verified 2026-09-03.
+(platform.claude.com/docs/en/about-claude/models), verified 2026-09-03;
+Claude Fable 5.2's model and pricing pages were read on 2026-11-09.
 
 All current Claude models accept image input; context windows are 1M for the
 4.6+/Opus 5/Fable/Mythos tier and Haiku 5.5 on the Claude API and 200K for the
@@ -19,8 +20,9 @@ Prices are the first-party Claude API rates from Anthropic's pricing page
 ``cache_write`` is the 5-minute write (1.25x input) because that is the TTL
 ``AnthropicAIProvider`` asks for — its markers are ``{"type": "ephemeral"}``,
 never the 1-hour variant, which costs 2x. ``cache_read`` is 0.1x input on
-every model but four: Claude Fable 5.1 and Claude Mythos 5.1, where a hit
-bills 0.025x ($0.25 per million), and Claude Opus 5.5 and Claude Sonnet 5.5,
+every model but five: Claude Fable 5.1 and Claude Mythos 5.1, where a hit
+bills 0.025x ($0.25 per million), Claude Fable 5.2 at the same ratio ($0.20),
+and Claude Opus 5.5 and Claude Sonnet 5.5,
 where it bills 0.05x ($0.20 and $0.10 per million; pricing page, read
 2026-09-22 and 2026-10-09). Modifiers that are per-request rather than
 per-model are absent by construction: the Batch API's 50%, fast mode's 2x,
@@ -76,8 +78,8 @@ answer 400 there (Claude Opus 5, Claude Sonnet 5.5, Claude Haiku 5.5)."""
 CANNOT_STOP = "reasoning_floor_low"
 """Cannot stop reasoning: ``disabled`` and ``between_tools`` answer 400, so off
 is the lowest effort, ``low`` (Claude Opus 5.5, Claude Fable 5.1, Claude Fable
-5; the Mythos models as Anthropic documents them, not measured). The shared
-tag :func:`~roomkit.providers.ai.reasoning.reasoning_floor` reads."""
+5; Claude Fable 5.2 and the Mythos models as Anthropic documents them, not
+measured). The shared tag :func:`~roomkit.providers.ai.reasoning.reasoning_floor` reads."""
 
 MODELS: list[ModelInfo] = [
     ModelInfo(
@@ -111,6 +113,20 @@ MODELS: list[ModelInfo] = [
             cache_read_per_million=0.5,
             cache_write_per_million=6.25,
             verified=_VERIFIED,
+        ),
+    ),
+    ModelInfo(
+        id="claude-fable-5-2",
+        display_name="Claude Fable 5.2",
+        context_window=1_000_000,
+        supports_vision=True,
+        capabilities=["thinking", "deferred_tools", CANNOT_STOP],
+        pricing=ModelPricing(
+            input_per_million=8.0,
+            output_per_million=40.0,
+            cache_read_per_million=0.20,
+            cache_write_per_million=10.0,
+            verified=date(2026, 11, 9),
         ),
     ),
     ModelInfo(

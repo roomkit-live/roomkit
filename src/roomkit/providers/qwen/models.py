@@ -32,11 +32,10 @@ hit discount; ``cache_write`` is unset because that 125% charge applies to
 *explicit* cache creation, which this provider never requests — Model Studio's
 caching is implicit here.
 
-``pricing=None`` on two entries is a representation limit, not a free model:
-Alibaba tiers ``qwen3-coder-plus`` across four input-length bands ($1/$5 up to
-$6/$60) and ``qwen3-vl-plus`` across three, while ``ModelPricing`` carries a
-single threshold. Encoding one band would understate a long-context bill by up
-to 12x, so those two report no rate rather than a wrong one.
+``pricing=None`` on ``qwen3-vl-plus`` is a representation limit, not a free
+model: Alibaba tiers it across three input-length bands, while ``ModelPricing``
+carries a single threshold. Encoding one band would understate a long-context
+bill, so it reports no rate rather than a wrong one.
 """
 
 from __future__ import annotations
@@ -100,13 +99,6 @@ MODELS: list[ModelInfo] = [
             long_context_output_multiplier=8 / 3,
             verified=_VERIFIED,
         ),
-    ),
-    ModelInfo(
-        id="qwen3-coder-plus",
-        display_name="Qwen3 Coder Plus",
-        context_window=1_000_000,
-        supports_vision=False,
-        capabilities=["tools"],
     ),
     ModelInfo(
         id="qwen3-vl-plus",

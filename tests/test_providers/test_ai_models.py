@@ -258,6 +258,22 @@ def test_context_window_none_when_model_absent() -> None:
     assert _Bare().context_window is None
 
 
+def test_fable_5_2_has_its_context_and_prices_cached_usage() -> None:
+    fable = next(
+        model for model in AnthropicAIProvider.available_models() if model.id == "claude-fable-5-2"
+    )
+    assert fable.context_window == 1_000_000
+    assert fable.pricing is not None
+    assert fable.pricing.cost_for(
+        {
+            "input_tokens": 1_000,
+            "output_tokens": 2_000,
+            "cache_read_input_tokens": 10_000,
+            "cache_creation_input_tokens": 1_000,
+        }
+    ) == pytest.approx(0.10)
+
+
 def test_merge_curated_backfills_missing_metadata() -> None:
     class _Cat(AIProvider):
         @property

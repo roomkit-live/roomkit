@@ -224,13 +224,13 @@ class TestQwenCatalog:
             assert model.context_window, f"{model.id} has no context window"
 
     def test_unpriced_models_are_the_multi_tier_ones(self) -> None:
-        # Alibaba tiers these across three and four input-length bands, which
+        # Alibaba tiers VL Plus across three input-length bands, which
         # ModelPricing (one threshold) cannot represent; no rate beats a rate
-        # that understates a long-context bill by up to 12x.
+        # that understates a long-context bill.
         from roomkit.providers.qwen.ai import QwenAIProvider
 
         unpriced = {m.id for m in QwenAIProvider.available_models() if m.pricing is None}
-        assert unpriced == {"qwen3-coder-plus", "qwen3-vl-plus"}
+        assert unpriced == {"qwen3-vl-plus"}
 
     def test_priced_models_carry_the_cache_read_rate(self) -> None:
         from roomkit.providers.qwen.ai import QwenAIProvider

@@ -478,6 +478,7 @@ _CLAUDE_OFF = [
     ("claude-haiku-5-5", {"type": "disabled"}, None),
     ("claude-sonnet-5-5", {"type": "between_tools"}, None),
     ("claude-opus-5-5", None, "low"),
+    ("claude-fable-5-2", None, "low"),
     ("claude-fable-5-1", None, "low"),
     ("claude-fable-5", None, "low"),
     ("claude-opus-4-8", None, None),

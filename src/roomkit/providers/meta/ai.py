@@ -14,18 +14,18 @@ _MODELS_BY_ID: dict[str, ModelInfo] = {m.id: m for m in MODELS}
 
 # The chat models among what /v1/models lists next to them (Muse Image, Muse
 # Voice Transcribe, SAM).
-_CHAT_PREFIXES = ("muse-spark", "muse-wonder")
+_CHAT_PREFIXES = ("muse-spark", "muse-wonder", "muse-ember")
 
 
 class MetaAIProvider(OpenAIAIProvider):
-    """AI provider on Meta's Muse Spark and Muse Wonder, through its OpenAI-compatible
-    Chat Completions.
+    """AI provider on Meta's Muse Spark, Wonder and Ember, through its
+    OpenAI-compatible Chat Completions.
 
     Subclasses :class:`~roomkit.providers.openai.ai.OpenAIAIProvider`: message
     building, tool calls, streaming, usage (reasoning and cached tokens
     included) and error mapping are inherited. What is Meta's own:
 
-    * Muse Spark and Muse Wonder always reason, so ``reasoning_effort`` rides every request,
+    * Every Muse chat model always reasons, so ``reasoning_effort`` rides every request,
       tool turns included — it is the only lever over the cost and latency of
       a turn. ``"none"`` is refused by the service and sent as ``"minimal"``
       (3.0 s against 4.6 s at ``"low"`` on a one-line answer, 2026-09-27).

@@ -17,8 +17,7 @@ missing one — the same reason the OpenAI image catalog omits the DALL·E
 models. Read the current per-image amounts from xAI's own pricing page.
 
 ``edit`` is tagged where reference images are documented to be accepted:
-xAI's editing docs name ``grok-imagine-image-2.0``, and its quality-mode
-sibling accepts references through the same endpoint. The base
+xAI's editing docs name ``grok-imagine-image-2.0``. The base
 ``grok-imagine-image`` documents no editing support and carries no tag.
 """
 
@@ -31,12 +30,6 @@ MODELS: list[ModelInfo] = [
     ModelInfo(
         id="grok-imagine-image-2.0",
         display_name="Grok Imagine Image 2.0",
-        supports_vision=True,
-        capabilities=[IMAGE_GEN_CAPABILITY, "edit"],
-    ),
-    ModelInfo(
-        id="grok-imagine-image-quality",
-        display_name="Grok Imagine Image (Quality)",
         supports_vision=True,
         capabilities=[IMAGE_GEN_CAPABILITY, "edit"],
     ),

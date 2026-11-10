@@ -1,4 +1,4 @@
-"""Meta Model API providers — Muse Spark (chat) and Muse Image.
+"""Meta Model API providers — Muse Spark, Wonder and Ember (chat), and Muse Image.
 
 The speech-to-text model (Muse Voice Transcribe) lives beside the STT ABC, in
 :mod:`roomkit.voice.stt.meta`: an implementation sits with the contract it

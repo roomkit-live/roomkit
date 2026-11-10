@@ -1,4 +1,4 @@
-"""Meta Model API provider configuration — chat (Muse Spark) and images (Muse Image)."""
+"""Meta Model API provider configuration — Muse chat and images."""
 
 from __future__ import annotations
 
@@ -67,7 +67,7 @@ class MetaImageConfig(BaseModel):
 
 
 class MetaConfig(OpenAIConfig):
-    """Meta Muse Spark chat provider configuration.
+    """Meta Muse chat provider configuration.
 
     The Meta Model API serves an OpenAI-compatible Chat Completions API at
     ``https://api.meta.ai/v1``, so this subclasses :class:`OpenAIConfig` and
@@ -76,7 +76,7 @@ class MetaConfig(OpenAIConfig):
     endpoint, the model and two defaults change.
 
     ``reasoning_effort`` takes ``minimal``, ``low``, ``medium``, ``high`` or
-    ``xhigh``, and Muse Wonder ``max`` too. Every Muse chat model always
+    ``xhigh``, and Muse Wonder and Ember ``max`` too. Every Muse chat model always
     reasons: ``"none"`` is refused by the service and sent as ``"minimal"``,
     its lightest effort.
 
@@ -91,7 +91,7 @@ class MetaConfig(OpenAIConfig):
     """Meta Model API endpoint. Override only to point at a proxy."""
 
     model: str = "muse-spark-1.3"
-    """Muse Spark or Muse Wonder model id — see :mod:`roomkit.providers.meta.models`."""
+    """Muse chat model id — see :mod:`roomkit.providers.meta.models`."""
 
     use_max_completion_tokens: bool = True
     """Meta documents ``max_completion_tokens`` for Chat Completions."""

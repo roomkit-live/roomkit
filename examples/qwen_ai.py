@@ -97,7 +97,7 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument(
         "--model",
         default=os.environ.get("QWEN_MODEL", "qwen3.7-max"),
-        help="Qwen model id (qwen3.7-plus, qwen3.6-flash, qwen3-coder-plus). Env: QWEN_MODEL.",
+        help="Qwen model id (qwen3.7-plus, qwen3.6-flash, qwen3-vl-plus). Env: QWEN_MODEL.",
     )
     p.add_argument(
         "--base-url",

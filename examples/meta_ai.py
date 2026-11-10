@@ -1,9 +1,9 @@
-"""Interactive Meta Muse Spark CLI — chat with Muse Spark through the full pipeline.
+"""Interactive Meta Muse CLI — chat with Spark, Wonder or Ember through the pipeline.
 
 Wires a :class:`CLIChannel` to an :class:`AIChannel` backed by the Meta Model
 API: your input → room → AIChannel → api.meta.ai → streamed answer → terminal.
 
-Muse Spark serves an OpenAI-compatible Chat Completions API with a 1M-token
+Muse chat models serve an OpenAI-compatible Chat Completions API with a 1M-token
 window, images in, tools, and reasoning it cannot turn off: ``--effort`` tunes
 how long it thinks (``minimal`` answers a one-liner in ~3 s, ``low`` in ~5 s),
 and ``none`` is sent as ``minimal``. The reasoning is counted, not returned.
@@ -21,6 +21,7 @@ Environment:
 Run with:
     META_API_KEY=... uv run python examples/meta_ai.py
     META_API_KEY=... uv run python examples/meta_ai.py --effort minimal
+    META_API_KEY=... uv run python examples/meta_ai.py --model muse-ember-1.0 --effort max
 
 Type a message at the prompt. Type ``quit`` (or Ctrl+D) to exit.
 """
@@ -79,17 +80,17 @@ async def main(args: argparse.Namespace) -> None:
 
 
 def _parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Interactive Meta Muse Spark CLI.")
+    p = argparse.ArgumentParser(description="Interactive Meta Muse CLI.")
     p.add_argument(
         "--model",
         default=os.environ.get("META_MODEL", "muse-spark-1.3"),
-        help="Muse Spark model id (e.g. muse-spark-1.2). Env: META_MODEL.",
+        help="Muse chat model id (e.g. muse-ember-1.0). Env: META_MODEL.",
     )
     p.add_argument(
         "--effort",
         default="low",
-        choices=("none", "minimal", "low", "medium", "high", "xhigh"),
-        help="Reasoning effort. Muse Spark always reasons: none is sent as minimal.",
+        choices=("none", "minimal", "low", "medium", "high", "xhigh", "max"),
+        help="Reasoning effort (max: Wonder/Ember). Muse always reasons: none becomes minimal.",
     )
     return p.parse_args()
 

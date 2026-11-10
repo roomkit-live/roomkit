@@ -50,7 +50,7 @@ class QwenConfig(OpenAIConfig):
 
     model: str
     """Qwen model id — e.g. ``"qwen3.7-max"``, ``"qwen3.7-plus"``,
-    ``"qwen3-coder-plus"``. Required, so upgrading RoomKit cannot silently
+    ``"qwen3.6-flash"``. Required, so upgrading RoomKit cannot silently
     change a caller's model, cost, latency, or behavior. See
     :mod:`roomkit.providers.qwen.models` for the curated catalog."""
 

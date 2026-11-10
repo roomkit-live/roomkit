@@ -252,6 +252,9 @@ MIRROR_ONLY: dict[str, str] = {
     # Same for Muse Wonder: the Meta Model API answers only to muse-wonder-1.0
     # (GET /v1/models and dev.meta.ai/docs/models, 2026-10-12).
     "meta/muse-wonder": "mirror-side slug; Meta's API id is muse-wonder-1.0",
+    # Ember's model page names muse-ember-1.0 (dev.meta.ai/docs/muse-ember,
+    # 2026-11-09); the mirror uses the product slug.
+    "meta/muse-ember": "mirror-side slug; Meta's API id is muse-ember-1.0",
     # Open weights (Apache 2.0) that the mirror hosts; the Meta Model API does
     # not serve them (GET /v1/models, 2026-09-27). roomkit reaches Glimmer
     # through a self-hosted server: vLLM, llama.cpp, Ollama.
@@ -305,6 +308,9 @@ DELIBERATE: dict[str, str] = {
     # Its rates ($4 / $20 / $0.20 cached per million) read on Meta's pricing
     # page (2026-10-12) match the mirror's meta/muse-wonder.
     "muse-wonder-1.0": "Meta's API id; the mirror routes it as meta/muse-wonder",
+    # Window and rates verified against Meta's model and pricing pages,
+    # 2026-11-09, including the 3x tier above 200K input tokens.
+    "muse-ember-1.0": "Meta's API id; the mirror routes it as meta/muse-ember",
 }
 
 # Catalog ids whose *rates* deliberately differ from the mirror's, same rule as
