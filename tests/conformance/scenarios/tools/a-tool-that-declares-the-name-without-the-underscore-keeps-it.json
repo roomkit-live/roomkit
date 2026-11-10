@@ -1,0 +1,144 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-tool-that-declares-the-name-without-the-underscore-keeps-it",
+  "title": "A tool whose own schema declares roomkit_intent keeps it as its argument: its call carries no intent",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: providers/ai/tool_intent.py take_intent, alias_owners; channels/_ai_streaming.py _intent_taker. tests/test_channels/test_tool_call_intents.py test_a_tool_that_declares_the_misspelled_name_keeps_it_as_its_argument.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tool_call_intents": true,
+        "tools": [
+          {
+            "name": "note",
+            "description": "Write a note.",
+            "parameters": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "roomkit_intent": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "kept"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "note",
+                  "arguments": {
+                    "roomkit_intent": "keep"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "tool_events": {
+      "room-1": [
+        {
+          "type": "tool_call_start",
+          "tool_calls": [
+            {
+              "id": "$e1",
+              "name": "note",
+              "arguments": {
+                "roomkit_intent": "keep"
+              }
+            }
+          ],
+          "round": 0,
+          "channel_id": "agent"
+        },
+        {
+          "type": "tool_call_end",
+          "tool_calls": [
+            {
+              "id": "$e1",
+              "name": "note",
+              "result": "kept",
+              "status": "completed"
+            }
+          ],
+          "round": 0,
+          "channel_id": "agent",
+          "duration_ms": {
+            "$present": true
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "$e1",
+              "content": "kept",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

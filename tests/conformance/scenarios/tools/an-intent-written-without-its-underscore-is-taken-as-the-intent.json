@@ -1,0 +1,179 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/an-intent-written-without-its-underscore-is-taken-as-the-intent",
+  "title": "A model that drops the intent property's leading underscore writes roomkit_intent: the loop takes it as the call's intent, so a closed schema runs the call; the exact property wins when both come",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: providers/ai/tool_intent.py take_intent, INTENT_ALIAS; channels/_ai_streaming.py _intent_taker. tests/test_channels/test_tool_call_intents.py test_the_property_written_without_its_underscore_is_taken_as_the_intent, test_the_property_wins_over_its_misspelling_and_neither_reaches_the_tool.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tool_call_intents": true,
+        "tools": [
+          {
+            "name": "shell",
+            "description": "Run a command.",
+            "parameters": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "command"
+              ],
+              "properties": {
+                "command": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "a.txt"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "shell",
+                  "arguments": {
+                    "command": "ls",
+                    "roomkit_intent": "Je liste les fichiers."
+                  }
+                },
+                {
+                  "id": "c2",
+                  "name": "shell",
+                  "arguments": {
+                    "command": "pwd",
+                    "_roomkit_intent": "Je regarde où je suis.",
+                    "roomkit_intent": "Autre chose."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "tool_events": {
+      "room-1": [
+        {
+          "type": "tool_call_start",
+          "tool_calls": [
+            {
+              "id": "$e1",
+              "name": "shell",
+              "arguments": {
+                "command": "ls"
+              },
+              "intent": "Je liste les fichiers."
+            },
+            {
+              "id": "$e2",
+              "name": "shell",
+              "arguments": {
+                "command": "pwd"
+              },
+              "intent": "Je regarde où je suis."
+            }
+          ],
+          "round": 0,
+          "channel_id": "agent"
+        },
+        {
+          "type": "tool_call_end",
+          "tool_calls": [
+            {
+              "id": "$e1",
+              "name": "shell",
+              "result": "a.txt",
+              "status": "completed",
+              "intent": "Je liste les fichiers."
+            },
+            {
+              "id": "$e2",
+              "name": "shell",
+              "result": "a.txt",
+              "status": "completed",
+              "intent": "Je regarde où je suis."
+            }
+          ],
+          "round": 0,
+          "channel_id": "agent",
+          "duration_ms": {
+            "$present": true
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "$e1",
+              "content": "a.txt",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "$e2",
+              "content": "a.txt",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
