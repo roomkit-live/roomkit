@@ -7,7 +7,7 @@ from dataclasses import replace
 
 from roomkit.memory._turn_budget import history_event_costs, turn_history_budget
 from roomkit.memory._wrapper import _MemoryWrapper
-from roomkit.memory.base import MemoryProvider, MemoryResult
+from roomkit.memory.base import MemoryProvider, MemoryResult, _without_current_event
 from roomkit.memory.token_estimator import estimate_event_tokens
 from roomkit.models.context import RoomContext
 from roomkit.models.event import RoomEvent
@@ -78,6 +78,7 @@ class BudgetAwareMemory(_MemoryWrapper):
         inner_result = await self._inner.retrieve(
             room_id, current_event, context, channel_id=channel_id
         )
+        inner_result = _without_current_event(inner_result, current_event)
         budget = turn_history_budget(
             max_context_tokens=self._max_context_tokens,
             safety_margin_ratio=self._safety_margin_ratio,

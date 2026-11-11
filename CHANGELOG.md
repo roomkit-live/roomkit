@@ -36,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Custom memory may return the current event: the channel includes the original input once, and budget-aware, compacting and summarizing memories exclude it before reducing history (RFC §20.1).
+
 - Discussion regeneration retains the first failed lock release in its result, including when target selection refuses the call (RFC §13.5).
 - An agent detached from a room, and attached to it again, no longer reads back the tool results it stored there, nor keeps the approvals to run a served skill's code given there (a realtime voice channel's approvals too). A room created again under an earlier room's id, for another person, could read that person's stored results (RFC §10.6.2, RMK-1645).
 

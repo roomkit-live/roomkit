@@ -58,6 +58,7 @@ class ScriptedMemory(MemoryProvider):
         self._compacted = compacted
         self._compacts = list(spec.get("compacts", []))
         self._window = SlidingWindowMemory(max_events=spec.get("max_events", max_events))
+        self._returns_current_event = spec.get("returns_current_event", False)
         self._messages = [_built(message) for message in spec.get("messages", [])]
         self._notes = list(spec.get("notes", []))
         self._speakers = list(spec.get("speakers", []))
@@ -106,6 +107,18 @@ class ScriptedMemory(MemoryProvider):
         window = await self._window.retrieve(
             room_id, current_event, context, channel_id=channel_id
         )
+        if self._returns_current_event:
+            before = next(
+                (
+                    i
+                    for i, past in enumerate(window.events)
+                    if current_event.index is not None
+                    and past.index is not None
+                    and past.index > current_event.index
+                ),
+                len(window.events),
+            )
+            window.events.insert(before, current_event)
         return MemoryResult(
             messages=list(self._messages),
             events=window.events,

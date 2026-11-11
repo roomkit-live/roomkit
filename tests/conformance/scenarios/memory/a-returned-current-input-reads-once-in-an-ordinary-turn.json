@@ -1,0 +1,90 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "title": "A returned current input reads once in an ordinary turn",
+  "rules": [
+    "§20.1",
+    "§6.4"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": ""
+            }
+          ]
+        },
+        "memory": {
+          "returns_current_event": true,
+          "max_events": 3
+        },
+        "max_tokens": 64
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          },
+          {
+            "channel_id": "a",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "first: what is the error rate?"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "a": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "first: what is the error rate?"
+            }
+          ]
+        }
+      ]
+    },
+    "timeline": {
+      "r1": [
+        {
+          "type": "message",
+          "content": {
+            "body": "first: what is the error rate?"
+          }
+        }
+      ]
+    }
+  },
+  "notes": "The memory returns the ordinary turn input itself. The model must receive exactly one copy.",
+  "id": "memory/a-returned-current-input-reads-once-in-an-ordinary-turn"
+}

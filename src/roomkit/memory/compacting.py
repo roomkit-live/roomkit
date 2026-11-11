@@ -11,7 +11,7 @@ from dataclasses import replace
 from roomkit.memory._summary import SummaryLines, summary_message
 from roomkit.memory._turn_budget import history_event_costs, turn_history_budget
 from roomkit.memory._wrapper import _MemoryWrapper
-from roomkit.memory.base import MemoryProvider, MemoryResult
+from roomkit.memory.base import MemoryProvider, MemoryResult, _without_current_event
 from roomkit.models.context import RoomContext
 from roomkit.models.event import RoomEvent
 from roomkit.providers.ai.base import AIContext, AIMessage, AIProvider
@@ -74,6 +74,7 @@ class CompactingMemory(_MemoryWrapper):
         inner_result = await self._inner.retrieve(
             room_id, current_event, context, channel_id=channel_id
         )
+        inner_result = _without_current_event(inner_result, current_event)
         # What the inner provider carries besides its events (its messages,
         # and the notes that ride the turn's input) is not compacted: it is
         # paid for first, with the rest of the turn.

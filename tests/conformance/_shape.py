@@ -261,6 +261,7 @@ HUMAN_TOOL = {"name", "description", "parameters"}
 POLICY = {"allow", "deny"}
 MEMORY = {
     "max_events",
+    "returns_current_event",
     "messages",
     "notes",
     "speakers",

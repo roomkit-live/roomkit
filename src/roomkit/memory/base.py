@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from roomkit.models.context import RoomContext
 from roomkit.models.event import RoomEvent
@@ -44,6 +44,13 @@ class MemoryResult:
     events: list[RoomEvent] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     speakers: list[str] = field(default_factory=list)
+
+
+def _without_current_event(result: MemoryResult, current_event: RoomEvent) -> MemoryResult:
+    """Leave the input to the channel, before history is trimmed or summarized."""
+    return replace(
+        result, events=[event for event in result.events if event.id != current_event.id]
+    )
 
 
 class MemoryProvider(ABC):
@@ -96,7 +103,9 @@ class MemoryProvider(ABC):
 
         Returns:
             A :class:`MemoryResult` with messages and/or events to include
-            in the AI context.
+            in the AI context. If ``events`` contains ``current_event``,
+            built-in wrappers exclude it from history reductions and the
+            channel supplies the original input once.
         """
         ...
 

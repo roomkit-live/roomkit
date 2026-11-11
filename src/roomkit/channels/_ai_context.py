@@ -76,7 +76,7 @@ from roomkit.channels._turn_notes import (
 )
 from roomkit.channels._user_text import with_leading_text
 from roomkit.core.visibility import visible_events
-from roomkit.memory.base import MemoryResult
+from roomkit.memory.base import MemoryResult, _without_current_event
 from roomkit.memory.token_estimator import (
     estimate_message_tokens,
     estimate_tokens,
@@ -356,12 +356,13 @@ class AIContextMixin(_AIChannelContract):
             with_attached_media(past, self._attached_media)
             for past in visible_events(context, self.channel_id)
         ]
-        return await self._memory.retrieve(
+        result = await self._memory.retrieve(
             event.room_id,
             event,
             context.model_copy(update={"recent_events": visible}),
             channel_id=self.channel_id,
         )
+        return _without_current_event(result, event)
 
     async def _turn_conversation(
         self,

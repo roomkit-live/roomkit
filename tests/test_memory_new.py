@@ -181,6 +181,17 @@ class TestHistoryBudget:
 
 
 class TestBudgetAwareMemory:
+    async def test_a_returned_current_event_is_not_charged_twice(self) -> None:
+        """The input is reserved once, leaving both small history events in budget."""
+        before = make_event(body="a" * 100, index=1)
+        current = make_event(body="q" * 1200, index=2)
+        later = make_event(body="b" * 100, index=3)
+        inner = MockMemoryProvider(events=[before, current, later], notes=["Keep this note."])
+        memory = BudgetAwareMemory(inner, 500, safety_margin_ratio=0, min_events=0)
+        result = await memory.retrieve("r1", current, RoomContext(room=Room(id="r1")))
+        assert [event.id for event in result.events] == [before.id, later.id]
+        assert result.notes == ["Keep this note."]
+
     async def test_returns_all_events_when_under_budget(self) -> None:
         """Events that fit within budget are returned unchanged."""
         events = [make_event(body=f"msg{i}") for i in range(5)]

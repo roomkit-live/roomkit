@@ -18,7 +18,7 @@ from dataclasses import replace
 from roomkit.memory._summary import SummaryLines, is_summary, message_lines, summary_message
 from roomkit.memory._turn_budget import history_event_costs, turn_history_budget
 from roomkit.memory._wrapper import _MemoryWrapper
-from roomkit.memory.base import MemoryProvider, MemoryResult
+from roomkit.memory.base import MemoryProvider, MemoryResult, _without_current_event
 from roomkit.memory.token_estimator import (
     estimate_message_tokens,
     estimate_notes_tokens,
@@ -100,6 +100,7 @@ class SummarizingMemory(_MemoryWrapper):
         inner_result = await self._inner.retrieve(
             room_id, current_event, context, channel_id=channel_id
         )
+        inner_result = _without_current_event(inner_result, current_event)
         events = inner_result.events
         budget = self._history_budget(current_event)
 
