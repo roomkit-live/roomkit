@@ -1,0 +1,91 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "channel-call/a-call-validates-its-room-and-binding",
+  "title": "A call validates the room, then registration, then binding",
+  "rules": [
+    "§10.6.2",
+    "§10.6.3"
+  ],
+  "notes": "Python: ChannelStateMixin.channel_call.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence",
+        "verbs": {
+          "keep": {
+            "keeps": true
+          },
+          "read": {
+            "reads": true
+          },
+          "forget": {
+            "forgets": true,
+            "reads": true
+          },
+          "answer": {
+            "result": {
+              "ok": true
+            }
+          },
+          "nothing": {}
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "channel_call",
+      "channel_id": "missing",
+      "room_id": "missing",
+      "verb": "read",
+      "expect": {
+        "error": "room_not_found"
+      }
+    },
+    {
+      "call": "channel_call",
+      "channel_id": "missing",
+      "room_id": "r1",
+      "verb": "read",
+      "expect": {
+        "error": "channel_not_registered"
+      }
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "r1",
+      "channel_id": "agent"
+    },
+    {
+      "call": "channel_call",
+      "channel_id": "agent",
+      "room_id": "r1",
+      "verb": "read",
+      "expect": {
+        "error": "channel_not_bound"
+      }
+    }
+  ],
+  "expect": {}
+}

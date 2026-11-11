@@ -1,0 +1,79 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "channel-call/a-local-verb-answers-its-result",
+  "title": "A local channel verb returns JSON values and null",
+  "rules": [
+    "§10.6.2",
+    "§10.6.3"
+  ],
+  "notes": "Python: ChannelStateMixin.channel_call.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence",
+        "verbs": {
+          "keep": {
+            "keeps": true
+          },
+          "read": {
+            "reads": true
+          },
+          "forget": {
+            "forgets": true,
+            "reads": true
+          },
+          "answer": {
+            "result": {
+              "ok": true
+            }
+          },
+          "nothing": {}
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "channel_call",
+      "channel_id": "agent",
+      "room_id": "r1",
+      "verb": "answer",
+      "expect": {
+        "result": {
+          "ok": true
+        }
+      }
+    },
+    {
+      "call": "channel_call",
+      "channel_id": "agent",
+      "room_id": "r1",
+      "verb": "nothing",
+      "expect": {
+        "result": null
+      }
+    }
+  ],
+  "expect": {}
+}

@@ -1,0 +1,87 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "channel-call/an-empty-state-is-forgotten",
+  "title": "A verb clearing its state removes the room metadata key",
+  "rules": [
+    "§10.6.2",
+    "§10.6.3"
+  ],
+  "notes": "Python: tests/test_turns_channel_control.py::test_a_channel_call_answers_the_room_s_state_when_the_verb_changed_it.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence",
+        "verbs": {
+          "keep": {
+            "keeps": true
+          },
+          "read": {
+            "reads": true
+          },
+          "forget": {
+            "forgets": true,
+            "reads": true
+          },
+          "answer": {
+            "result": {
+              "ok": true
+            }
+          },
+          "nothing": {}
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "channel_call",
+      "channel_id": "agent",
+      "room_id": "r1",
+      "verb": "keep",
+      "arguments": {
+        "mode": "fast"
+      }
+    },
+    {
+      "call": "channel_call",
+      "channel_id": "agent",
+      "room_id": "r1",
+      "verb": "forget",
+      "expect": {
+        "result": {}
+      }
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "r1": {
+        "metadata": {
+          "roomkit:channel_state:agent": {
+            "$absent": true
+          }
+        }
+      }
+    }
+  }
+}

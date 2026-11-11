@@ -1,0 +1,74 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "channel-call/a-closed-local-executor-takes-no-calls",
+  "title": "An independently closed local executor refuses channel calls",
+  "rules": [
+    "§10.6.2",
+    "§10.6.3"
+  ],
+  "notes": "Python: tests/test_turns_own_executor.py::test_a_live_agent_s_call_and_event_fail_once_the_kit_s_executor_closed.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence",
+        "verbs": {
+          "keep": {
+            "keeps": true
+          },
+          "read": {
+            "reads": true
+          },
+          "forget": {
+            "forgets": true,
+            "reads": true
+          },
+          "answer": {
+            "result": {
+              "ok": true
+            }
+          },
+          "nothing": {}
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "kit_executor.close"
+    },
+    {
+      "call": "channel_call",
+      "channel_id": "agent",
+      "room_id": "r1",
+      "verb": "read",
+      "expect": {
+        "error": {
+          "name": "turn_link",
+          "reason": "no_executor"
+        }
+      }
+    }
+  ],
+  "expect": {}
+}

@@ -1,0 +1,88 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "channel-call/a-failed-detach-still-forgets-the-room-s-state",
+  "title": "A failed intelligence detach callback still forgets stored state",
+  "rules": [
+    "§10.6.2",
+    "§10.6.3"
+  ],
+  "notes": "Python: ChannelStateMixin._on_room_detached.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence",
+        "verbs": {
+          "keep": {
+            "keeps": true
+          },
+          "read": {
+            "reads": true
+          },
+          "forget": {
+            "forgets": true,
+            "reads": true
+          },
+          "answer": {
+            "result": {
+              "ok": true
+            }
+          },
+          "nothing": {}
+        },
+        "on_room_detached": [
+          {
+            "fail": "detach failed"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "channel_call",
+      "channel_id": "agent",
+      "room_id": "r1",
+      "verb": "keep",
+      "arguments": {
+        "mode": "fast"
+      }
+    },
+    {
+      "call": "detach_channel",
+      "channel_id": "agent",
+      "room_id": "r1"
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "r1": {
+        "metadata": {
+          "roomkit:channel_state:agent": {
+            "$absent": true
+          }
+        }
+      }
+    }
+  }
+}

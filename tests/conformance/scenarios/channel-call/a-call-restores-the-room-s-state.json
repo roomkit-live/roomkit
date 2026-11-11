@@ -1,0 +1,85 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "channel-call/a-call-restores-the-room-s-state",
+  "title": "A local call receives the state the room already stores",
+  "rules": [
+    "§10.6.2",
+    "§10.6.3"
+  ],
+  "notes": "Python: tests/test_turns_channel_control.py::test_the_kit_stores_a_channel_call_s_room_state_with_the_room.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence",
+        "verbs": {
+          "keep": {
+            "keeps": true
+          },
+          "read": {
+            "reads": true
+          },
+          "forget": {
+            "forgets": true,
+            "reads": true
+          },
+          "answer": {
+            "result": {
+              "ok": true
+            }
+          },
+          "nothing": {}
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "store_metadata": {
+          "roomkit:channel_state:agent": {
+            "mode": "restored"
+          }
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "channel_call",
+      "channel_id": "agent",
+      "room_id": "r1",
+      "verb": "read",
+      "expect": {
+        "result": {
+          "mode": "restored"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "r1": {
+        "metadata": {
+          "roomkit:channel_state:agent": {
+            "mode": "restored"
+          }
+        }
+      }
+    }
+  }
+}

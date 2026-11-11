@@ -1,0 +1,116 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "channel-call/a-verb-closing-its-executor-keeps-its-calling-turn",
+  "title": "A channel verb inherits its calling turn and can close its executor without cutting that turn",
+  "rules": [
+    "§10.6.3",
+    "§10.6.8"
+  ],
+  "notes": "Python: tests/test_channel_call_contract.py::test_channel_call_can_close_executor_under_its_calling_turn.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence",
+        "verbs": {
+          "close": {
+            "do": [
+              {
+                "call": "kit_executor.close"
+              }
+            ],
+            "result": "closed"
+          }
+        },
+        "on_event": [
+          {
+            "do": [
+              {
+                "call": "channel_call",
+                "channel_id": "agent",
+                "room_id": "$room",
+                "verb": "close",
+                "expect": {
+                  "result": "closed"
+                }
+              }
+            ],
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "finished"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "kit_executor.closed",
+      "expect": {
+        "result": true
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "body": "hello"
+          }
+        },
+        {
+          "content": {
+            "body": "finished"
+          }
+        }
+      ]
+    }
+  }
+}
