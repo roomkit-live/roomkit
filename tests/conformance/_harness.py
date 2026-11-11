@@ -77,6 +77,7 @@ from tests.conformance._locks import LOCK_EVENTS, lock_options, set_lock_release
 from tests.conformance._media import media_options
 from tests.conformance._members import MEMBER_CALLS, store_identities
 from tests.conformance._normalize import Observed, is_lifecycle_record
+from tests.conformance._publications import Publications
 from tests.conformance._routing import ROUTING_CALLS
 from tests.conformance._script import GATE_BOUND_S, Gates, ScriptedFailureError, ScriptedRouter
 from tests.conformance._store import STORE_CALLS
@@ -226,6 +227,8 @@ class Harness:
         self.strategies = strategies(setup, self)
         self.executors = Executors(self)
         self.kit = RoomKit(**self._kit_arguments(setup.get("kit", {}), store))
+        self._publications = Publications()
+        self._publications.watch(self.kit)
         # The other processes of `setup.processes`, by id, and the kits closed.
         self.processes: dict[str, RoomKit] = {}
         self._closed: list[RoomKit] = []
@@ -495,10 +498,9 @@ class Harness:
         await self.kit.realtime.subscribe_to_room(room_id, record)
 
     async def _thinking_read(self) -> None:
-        """Lets the realtime backend's own tasks hand what it was published."""
+        """Finish owner publications before reading ephemeral observations."""
         if any(kind in self.scenario.get("expect", {}) for kind in _EPHEMERALS):
-            for _ in range(20):
-                await asyncio.sleep(0)
+            await self.idle()
 
     async def run(self) -> list[str]:
         """Runs the scenario; returns every mismatch with its expectations."""
@@ -569,6 +571,7 @@ class Harness:
             # would close for all the others (as in the Rust SQLite runner).
             store = SQLiteStore(store._path)
         kit = RoomKit(store=store, lock_manager=self.kit.lock_manager)
+        self._publications.watch(kit)
         for channel in self.scenario.get("setup", {}).get("channels", []):
             register_channel(kit, self, channel, process=True)
         return kit
@@ -737,7 +740,7 @@ class Harness:
     async def _drain_once(self, *, after_turn: bool = True, kit: RoomKit | None = None) -> bool:
         if kit is not None and kit is not self.kit:
             return await self._drain_process(kit)
-        busy = False
+        busy = await self._publications.drain(self.kit)
         for lane in list(self.kit._lanes._lanes.values()):
             if lane._indexed or lane._unindexed or lane._busy:
                 busy = True
@@ -787,7 +790,7 @@ class Harness:
     async def _drain_process(self, kit: RoomKit) -> bool:
         """One pass of the idle wait over another process's kit: its lanes,
         its observers and hook tasks, its discussions."""
-        busy = False
+        busy = await self._publications.drain(kit)
         for lane in list(kit._lanes._lanes.values()):
             if lane._indexed or lane._unindexed or lane._busy:
                 busy = True
