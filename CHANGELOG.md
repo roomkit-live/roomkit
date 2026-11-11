@@ -7,10 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- Keep a deferred discussion turn's answered message whole across memory summaries, tool-round compaction and repeated context overflows (RFC §6.4, §20.1).
-
 ## [0.113.0] — 2026-11-11
 
 ### Added
@@ -46,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **A memory that returns the turn's own message no longer has it sent twice** (RFC §20.1). A custom `MemoryProvider` whose `retrieve()` listed the current event among its `events` had the model read the person's message twice, and `BudgetAwareMemory` charged it twice against the budget, dropping history that fitted. The channel now sends the input once, whole, and `BudgetAwareMemory`, `CompactingMemory` and `SummarizingMemory` set it aside before they trim or summarize the history.
+- **A deferred discussion turn keeps the message it answers whole** (RFC §6.4, §20.1). A turn a discussion runs after later messages arrived answers an earlier one; a memory's summary, the compaction between tool rounds, or a second context overflow could fold that message into the summary with the history before it. It now stays whole: only the history before it is compacted.
 - **A regeneration in a discussion reports a room lock it failed to release** (RFC §13.5, RMK-1474). `kit.regenerate_response()` in a room a discussion holds returned without the error, where the same call in another room carried it; it now carries the first failed release as its result's `error`, a call whose target the discussion refuses included.
 - An agent detached from a room, and attached to it again, no longer reads back the tool results it stored there, nor keeps the approvals to run a served skill's code given there (a realtime voice channel's approvals too). A room created again under an earlier room's id, for another person, could read that person's stored results (RFC §10.6.2, RMK-1645).
 - A discussion hands a committed message to its agents' memories at once, instead of one after the other: the message waited for the sum of their latencies before any agent was queued (RFC §19.7.5 rule 3, RMK-1626).
