@@ -78,7 +78,7 @@ from tests.conformance._media import media_options
 from tests.conformance._members import MEMBER_CALLS, store_identities
 from tests.conformance._normalize import Observed, is_lifecycle_record
 from tests.conformance._routing import ROUTING_CALLS
-from tests.conformance._script import GATE_BOUND_S, Gates, ScriptedRouter
+from tests.conformance._script import GATE_BOUND_S, Gates, ScriptedFailureError, ScriptedRouter
 from tests.conformance._store import STORE_CALLS
 from tests.conformance._strategies import (
     STRATEGY_CALLS,
@@ -234,7 +234,7 @@ class Harness:
         self, kit_setup: Mapping[str, Any], store: ConversationStore | None
     ) -> dict[str, Any]:
         """What the run's kit is built with, read from the setup's ``kit``."""
-        kwargs: dict[str, Any] = {}
+        kwargs: dict[str, Any] = {"error_classes": (ScriptedFailureError,)}
         if "max_chain_depth" in kit_setup:
             kwargs["max_chain_depth"] = kit_setup["max_chain_depth"]
         if "process_timeout_ms" in kit_setup:

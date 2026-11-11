@@ -130,6 +130,7 @@ def _cases() -> list[Any]:
                     "delivery/",
                     "broadcast/",
                     "tool-composition/",
+                    "channel-call/",
                 )
             )
             else ("memory",)

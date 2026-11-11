@@ -75,7 +75,7 @@ EXECUTOR = {
     "gate",
 }
 TURN_TIMEOUTS = {"accept_ms", "heartbeat_interval_ms", "heartbeat_timeout_ms", "cancel_ms"}
-VERB = {"result", "keeps", "reads"}
+VERB = {"result", "keeps", "reads", "forgets", "gate", "fail", "do"}
 KIT = {
     "max_chain_depth",
     "process_timeout_ms",
@@ -660,6 +660,8 @@ def _channel_settings(channel: Mapping[str, Any], path: str, found: list[str]) -
     """The members of a channel's verbs, per-room configs, skills and human input."""
     for verb, spec in channel.get("verbs", {}).items():
         _members(spec, VERB, f"{path}.verbs.{verb}", found)
+        for index, action in enumerate(spec.get("do", [])):
+            _call(action, {"as", "expect"}, f"{path}.verbs.{verb}.do[{index}]", found)
     for room_id, config in channel.get("config_provider", {}).items():
         path_of = f"{path}.config_provider.{room_id}"
         if isinstance(config, list):

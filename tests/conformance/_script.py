@@ -381,8 +381,16 @@ class ScriptedChannel(Channel):
         if verb not in self._verbs:
             return await super().channel_call(room_id, verb, arguments)
         spec = self._verbs[verb]
+        if (gate := spec.get("gate")) is not None:
+            await self._harness.gates.hold(gate)
         if spec.get("keeps"):
             self._kept.setdefault(room_id, {}).update(arguments)
+        if spec.get("forgets"):
+            self._kept.pop(room_id, None)
+        for action in spec.get("do", []):
+            await self._harness.run_action(action, {"room": room_id})
+        if (failure := spec.get("fail")) is not None:
+            raise ScriptedFailureError(failure)
         if spec.get("keeps") or spec.get("reads"):
             return dict(self._kept.get(room_id, {}))
         return spec.get("result")
