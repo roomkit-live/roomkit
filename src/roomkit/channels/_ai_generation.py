@@ -67,7 +67,7 @@ class AIGenerationMixin(_AIChannelContract):
         )
         # Read before the hook runs: it may edit the list in place.
         declared = {tool.name for tool in ai_context.tools or []}
-        messages = tuple(ai_context.messages)
+        answered = _answered_input_snapshot(ai_context.messages)
         sync_result = await self._before_generation_hook(gen_event)
         if not sync_result.allowed:
             logger.info(
@@ -82,11 +82,11 @@ class AIGenerationMixin(_AIChannelContract):
         # a redaction hook replaced (RFC §9.3).
         if isinstance(sync_result.event, AIGenerationEvent):
             gen_event = sync_result.event
-        self._adopt_generation_context(gen_event.ai_context, declared, messages)
+        self._adopt_generation_context(gen_event.ai_context, declared, answered)
         return gen_event.ai_context, False
 
     def _adopt_generation_context(
-        self, context: AIContext, declared: set[str], messages: tuple[AIMessage, ...]
+        self, context: AIContext, declared: set[str], answered: tuple[int, AIMessage] | None
     ) -> None:
         """Keep the hook's record, input and toolset for the rest of the turn."""
         # A hook that REPLACES the context (rather than mutating it) brings a
@@ -100,7 +100,7 @@ class AIGenerationMixin(_AIChannelContract):
             # The input the hook left is the one a compaction keeps whole.
             loop_ctx.turn_input = turn_input(context.messages)
             loop_ctx.answered_input = _retained_input(
-                loop_ctx.answered_input, messages, context.messages
+                loop_ctx.answered_input, answered, context.messages
             )
             _adopt_hook_toolset(
                 loop_ctx,
@@ -111,8 +111,19 @@ class AIGenerationMixin(_AIChannelContract):
             )
 
 
+def _answered_input_snapshot(messages: list[AIMessage]) -> tuple[int, AIMessage] | None:
+    """The answered input's position and value before a hook can mutate either."""
+    loop_ctx = _current_loop_ctx.get()
+    if loop_ctx is None:
+        return None
+    at = next(
+        (i for i, message in enumerate(messages) if message is loop_ctx.answered_input), None
+    )
+    return None if at is None else (at, messages[at].model_copy(deep=True))
+
+
 def _retained_input(
-    answered: AIMessage | None, before: tuple[AIMessage, ...], left: list[AIMessage]
+    answered: AIMessage | None, before: tuple[int, AIMessage] | None, left: list[AIMessage]
 ) -> AIMessage | None:
     """Retain an input a hook copied, at its place or uniquely relocated.
 
@@ -123,12 +134,12 @@ def _retained_input(
     """
     if answered is None or any(message is answered for message in left):
         return answered
-    at = next((i for i, message in enumerate(before) if message is answered), None)
-    if at is None:
+    if before is None:
         return answered
-    if at < len(left) and left[at] == answered:
+    at, value = before
+    if at < len(left) and left[at] == value:
         return left[at]
-    matches = [message for message in left if message == answered]
+    matches = [message for message in left if message == value]
     return matches[0] if len(matches) == 1 else answered
 
 
