@@ -2318,10 +2318,20 @@ await kit.attach_channel(room_id, "meteo")  # an intelligence binding
   the room's next turns go to that executor too while it lives, so every
   executor declaring a prefix must build every agent under it
   (`examples/turns_executor_pool.py`).
-- A prefix is the only scope a declaration carries: `{"*"}` takes the
-  declared agents of every organization the owners serve. A multi-tenant
-  host assigns agent ids itself (one prefix per pool kept apart) and never
-  lets a tenant choose one.
+- An executor serves the organizations it declares:
+  `TurnExecutor(build, hosts={"*"}, organizations={org_id})` takes the turns
+  of the rooms whose `organization_id` it names (exact ids, the host's own;
+  `{"*"}` for every organization). Without `organizations=` it serves the
+  rooms without an organization alone, so an executor started without a
+  declaration never takes a tenant's turns. A room's turns, channel calls
+  and committed events go only to an executor serving its organization,
+  else fail with `no_executor`; the executor refuses one of another, and a
+  room's attach or detach reaches only the executors serving it. The kit's
+  own executor serves every organization. This keeps honest executors
+  apart; it does not authenticate them: any process on the turn backend can
+  declare any organization, so who may join the backend is the host's to
+  control. Agent ids stay unique across the kit: a multi-tenant host assigns
+  them itself and never lets a tenant choose one.
 - One build serves every room its agent is attached to, two turns at once
   included: each turn reads its own room, which its request carries, and
   RoomKit's channels, memories, plans and skill activations keep what they
@@ -2341,10 +2351,11 @@ await kit.attach_channel(room_id, "meteo")  # an intelligence binding
   `ON_CHANNEL_DETACHED` hook reaches a store the processes share, not a
   memory held in a build on an executor elsewhere.
 - Which agents can answer: `await kit.executors()` lists the executors the
-  turn backend carries turns to (what each declares, its room hooks, its
-  last beat, `online`), and `await kit.agent_presence(room_id)` gives each
-  of the room's agents `online` with the executors covering it there (one
-  defining the room's enabled hooks). The kit publishes `presence_online` /
+  turn backend carries turns to (what each declares, its organizations, its
+  room hooks, its last beat, `online`), and `await kit.agent_presence(room_id)`
+  gives each of the room's agents `online` with the executors covering it
+  there (one serving the room's organization and defining its enabled
+  hooks). The kit publishes `presence_online` /
   `presence_offline` for an agent (`user_id` its channel id) in a room as it
   is attached, and in each of its rooms when its covering executors change:
   an executor's process silent past `heartbeat_timeout` reads offline, not
@@ -8126,8 +8137,8 @@ RoomKit exports **348 symbols** from `roomkit`. Providers and voice types import
 | `TurnBackend` | ABC for what carries an intelligence channel's turns between the room owner and an executor (RFC §10.6) |
 | `InMemoryTurnBackend` | Default turn backend: in this process, every message serialized but a request's events, which reach the executor as they are |
 | `RedisTurnBackend` | Turn backend across processes (`pip install roomkit[redis]`): one per process on a shared Redis; an executor declared with `hosts={...}` (ids, or prefixes as `{"acme-*"}`) takes turns from every process, beating from a thread; a killed executor fails its turn with `executor_lost` |
-| `TurnExecutor` | Builds a channel and runs its turns; the kit owns one reading its registered channels. One a host builds (`TurnExecutor(build_channel, hosts={...}, media_resolver=, attached_media=, telemetry=, error_classes=, max_channels=)`, `hosts` the set of channel ids it runs, prefixes ending in `*` among them (`"acme-*"`, `"*"` for every id), or a predicate for its own process only; a channel its factory builds nothing for fails its turn and channel calls with `no_executor`; it builds a channel at its first turn, channel call or committed event, never for a room's attach, and `max_channels` keeps that many built at most, letting go of the one used least recently; with an `OpenTelemetryProvider` as `telemetry=`, a turn from another process continues the owner's trace) builds each channel when first needed, wires it as the kit wires the ones it registers (its hooks fire, what the channel publishes during a turn crosses as `ephemeral` / `framework_event` frames), and closes what it built; `executor.room_hook(name, trigger)(fn)` defines a room hook by name |
-| `ExecutorInfo` / `AgentPresence` | What `kit.executors()` (`TurnBackend.executors()`, none for a custom backend by default, which then has no presence published for declared agents) and `kit.agent_presence(room_id)` return: an executor's `executor_id`, `node`, `hosts` (ids and prefixes; `None` for a predicate), `room_hooks`, `last_beat`, `online`; an agent's `channel_id`, `online` and the `executors` covering it in the room. `TurnBackend.claim_presence(channel_id, room_id, online)` records the presence last published, so one room owner publishes each change (in process by default, in Redis for `RedisTurnBackend`) |
+| `TurnExecutor` | Builds a channel and runs its turns; the kit owns one reading its registered channels. One a host builds (`TurnExecutor(build_channel, hosts={...}, organizations={...}, media_resolver=, attached_media=, telemetry=, error_classes=, max_channels=)`, `hosts` the set of channel ids it runs, prefixes ending in `*` among them (`"acme-*"`, `"*"` for every id), or a predicate for its own process only; `organizations` the organization ids whose rooms it serves, `{"*"}` for every one, the rooms without an organization alone when omitted, a room's work going only to an executor serving its organization; a channel its factory builds nothing for fails its turn and channel calls with `no_executor`; it builds a channel at its first turn, channel call or committed event, never for a room's attach, and `max_channels` keeps that many built at most, letting go of the one used least recently; with an `OpenTelemetryProvider` as `telemetry=`, a turn from another process continues the owner's trace) builds each channel when first needed, wires it as the kit wires the ones it registers (its hooks fire, what the channel publishes during a turn crosses as `ephemeral` / `framework_event` frames), and closes what it built; `executor.room_hook(name, trigger)(fn)` defines a room hook by name |
+| `ExecutorInfo` / `AgentPresence` | What `kit.executors()` (`TurnBackend.executors()`, none for a custom backend by default, which then has no presence published for declared agents) and `kit.agent_presence(room_id)` return: an executor's `executor_id`, `node`, `hosts` (ids and prefixes; `None` for a predicate), `organizations` (`None`: the rooms without an organization alone), `room_hooks`, `last_beat`, `online`; an agent's `channel_id`, `online` and the `executors` covering it in the room (serving its organization). `TurnBackend.claim_presence(channel_id, room_id, online)` records the presence last published, so one room owner publishes each change (in process by default, in Redis for `RedisTurnBackend`) |
 | `ChannelDeclaration` | What the room's owner knows of a channel without its object: `channel_id`, `channel_type`, `category`, `capabilities`, `identity`, `thinks_while_listening`, `recent_events_window`; `channel.declaration()` gives a live channel's |
 | `AgentIdentity` | An agent's identity in its declaration: `name`, `role`, `description`, `scope`, `greeting`, `language`, `auto_greet` |
 | `DeclaredChannel` | The channel the kit holds for a registered declaration: bound and routed to, never run in the kit's process |

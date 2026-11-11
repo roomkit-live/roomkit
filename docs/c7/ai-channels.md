@@ -223,10 +223,20 @@ await kit.attach_channel(room_id, "meteo")  # an intelligence binding
   the room's next turns go to that executor too while it lives, so every
   executor declaring a prefix must build every agent under it
   (`examples/turns_executor_pool.py`).
-- A prefix is the only scope a declaration carries: `{"*"}` takes the
-  declared agents of every organization the owners serve. A multi-tenant
-  host assigns agent ids itself (one prefix per pool kept apart) and never
-  lets a tenant choose one.
+- An executor serves the organizations it declares:
+  `TurnExecutor(build, hosts={"*"}, organizations={org_id})` takes the turns
+  of the rooms whose `organization_id` it names (exact ids, the host's own;
+  `{"*"}` for every organization). Without `organizations=` it serves the
+  rooms without an organization alone, so an executor started without a
+  declaration never takes a tenant's turns. A room's turns, channel calls
+  and committed events go only to an executor serving its organization,
+  else fail with `no_executor`; the executor refuses one of another, and a
+  room's attach or detach reaches only the executors serving it. The kit's
+  own executor serves every organization. This keeps honest executors
+  apart; it does not authenticate them: any process on the turn backend can
+  declare any organization, so who may join the backend is the host's to
+  control. Agent ids stay unique across the kit: a multi-tenant host assigns
+  them itself and never lets a tenant choose one.
 - One build serves every room its agent is attached to, two turns at once
   included: each turn reads its own room, which its request carries, and
   RoomKit's channels, memories, plans and skill activations keep what they
@@ -246,10 +256,11 @@ await kit.attach_channel(room_id, "meteo")  # an intelligence binding
   `ON_CHANNEL_DETACHED` hook reaches a store the processes share, not a
   memory held in a build on an executor elsewhere.
 - Which agents can answer: `await kit.executors()` lists the executors the
-  turn backend carries turns to (what each declares, its room hooks, its
-  last beat, `online`), and `await kit.agent_presence(room_id)` gives each
-  of the room's agents `online` with the executors covering it there (one
-  defining the room's enabled hooks). The kit publishes `presence_online` /
+  turn backend carries turns to (what each declares, its organizations, its
+  room hooks, its last beat, `online`), and `await kit.agent_presence(room_id)`
+  gives each of the room's agents `online` with the executors covering it
+  there (one serving the room's organization and defining its enabled
+  hooks). The kit publishes `presence_online` /
   `presence_offline` for an agent (`user_id` its channel id) in a room as it
   is attached, and in each of its rooms when its covering executors change:
   an executor's process silent past `heartbeat_timeout` reads offline, not
