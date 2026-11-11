@@ -1825,7 +1825,7 @@ class PostgresStore(ConversationStore):
         with self._query_span("list_bindings", "bindings"):
             async with self._acquire() as conn:
                 rows = await conn.fetch(
-                    "SELECT * FROM bindings WHERE room_id = $1",
+                    "SELECT * FROM bindings WHERE room_id = $1 ORDER BY attachment_order",
                     room_id,
                 )
         return [_row_to_binding(r) for r in rows]
@@ -1917,7 +1917,7 @@ class PostgresStore(ConversationStore):
                 if room_row is None:
                     return None, [], []
                 binding_rows = await conn.fetch(
-                    "SELECT * FROM bindings WHERE room_id = $1", room_id
+                    "SELECT * FROM bindings WHERE room_id = $1 ORDER BY attachment_order", room_id
                 )
                 participant_rows = await conn.fetch(
                     "SELECT * FROM participants WHERE room_id = $1", room_id

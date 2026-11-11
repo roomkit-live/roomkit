@@ -438,6 +438,26 @@ CREATE TABLE IF NOT EXISTS bindings (
             },
         ),
         """\
+-- Attachment order survives updates, tied timestamps, and pool restarts.
+-- Existing rows have no insertion ordinal: recover timestamp order, breaking
+-- historical ties by room/channel id. New rows take a sequence value; an
+-- upsert keeps its original value and a reattachment takes a new one.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema() AND table_name = 'bindings'
+        AND column_name = 'attachment_order') THEN
+        ALTER TABLE bindings ADD COLUMN attachment_order BIGSERIAL;
+        WITH ordered AS (
+            SELECT room_id, channel_id,
+                row_number() OVER (ORDER BY attached_at, room_id, channel_id) AS ordinal
+            FROM bindings
+        )
+        UPDATE bindings b SET attachment_order = ordered.ordinal
+        FROM ordered WHERE b.room_id = ordered.room_id AND b.channel_id = ordered.channel_id;
+    END IF;
+END $$;
+
 -- Routing reads the binding of one channel naming one sender (RFC §10.4): on
 -- a number shared by many correspondents every binding has the same channel.
 """,
@@ -446,6 +466,7 @@ CREATE TABLE IF NOT EXISTS bindings (
             {
                 "idx_bindings_channel_id": "(channel_id)",
                 "idx_bindings_channel_participant": "(channel_id, participant_id)",
+                "idx_bindings_attachment_order": "(room_id, attachment_order)",
             },
         ),
         """\

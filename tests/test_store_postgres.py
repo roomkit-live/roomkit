@@ -2187,6 +2187,38 @@ async def test_a_store_from_before_group_bindings_upgrades_its_rows(store) -> No
     assert await store.get_binding("r1", "sms") == grouped
 
 
+async def test_binding_order_is_restored_when_a_legacy_schema_is_upgraded(store) -> None:
+    """Legacy rows keep their data, ordered by time/id once; new inserts follow them."""
+    await store.create_room(Room(id="r1"))
+    at = datetime(2026, 1, 1, tzinfo=UTC)
+    bindings = [
+        ChannelBinding(
+            room_id="r1",
+            channel_id=name,
+            channel_type="sms",
+            attached_at=at + timedelta(seconds=seconds),
+            metadata={"kept": name},
+        )
+        for name, seconds in [("c", 1), ("z", 0), ("a", 0)]
+    ]
+    for binding in bindings:
+        await store.add_binding(binding)
+    async with store._pool.acquire() as conn:
+        await conn.execute("ALTER TABLE bindings DROP COLUMN attachment_order")
+    await store.init()
+    await store.init()
+    assert [b.channel_id for b in await store.list_bindings("r1")] == ["a", "z", "c"]
+    for binding in bindings:
+        assert await store.get_binding("r1", binding.channel_id) == binding
+    # A restored/backdated timestamp is not a new row's attachment position.
+    last = bindings[0].model_copy(update={"channel_id": "b", "attached_at": at})
+    await store.add_binding(last)
+    await store.update_binding(bindings[2].model_copy(update={"muted": True}))
+    await store.close()
+    await store.init()
+    assert [b.channel_id for b in await store.list_bindings("r1")] == ["a", "z", "c", "b"]
+
+
 class TestEventFromRow:
     """A row the host reads with a query of its own maps as the store maps it."""
 

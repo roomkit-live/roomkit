@@ -91,6 +91,37 @@ async def test_binding_round_trip_and_policy_updates(contract_store: Conversatio
         await contract_store.delete_room(room.id)
 
 
+async def test_binding_order_survives_updates_and_reattach(
+    contract_store: ConversationStore,
+) -> None:
+    """The first streaming target is the first attached, even at the same timestamp."""
+    room = await contract_store.create_room(Room(id=uuid4().hex))
+    at = datetime(2026, 1, 1, tzinfo=UTC)
+    first = ChannelBinding(
+        room_id=room.id, channel_id="z", channel_type=ChannelType.SMS, attached_at=at
+    )
+    second = first.model_copy(update={"channel_id": "a"})
+    try:
+        await contract_store.add_binding(first)
+        await contract_store.add_binding(second)
+        for operation in ("initial", "update", "upsert", "reattach"):
+            changed = first.model_copy(update={"muted": True})
+            if operation == "update":
+                await contract_store.update_binding(changed)
+            elif operation == "upsert":
+                await contract_store.add_binding(changed)
+            elif operation == "reattach":
+                assert await contract_store.remove_binding(room.id, "z")
+                await contract_store.add_binding(first)
+            expected = ["a", "z"] if operation == "reattach" else ["z", "a"]
+            bindings = await contract_store.list_bindings(room.id)
+            assert [b.channel_id for b in bindings] == expected, operation
+            _, contextual, _ = await contract_store.load_room_context(room.id)
+            assert [b.channel_id for b in contextual] == expected, operation
+    finally:
+        await contract_store.delete_room(room.id)
+
+
 async def test_binding_exists_answers_as_get_binding_does(
     contract_store: ConversationStore,
 ) -> None:
