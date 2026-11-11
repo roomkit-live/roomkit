@@ -1,0 +1,219 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "title": "A regenerated turn keeps its own tool round between its input and later messages",
+  "rules": [
+    "§19.7.5 rule 9",
+    "§6.4",
+    "§20.1"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "@b please wait"
+            },
+            {
+              "text": ""
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look up the error rate",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "returns": "4% since Monday"
+          }
+        ],
+        "max_empty_retries": 0
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "gate": "held",
+              "text": ""
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a",
+            "b"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "first: what is the error rate?"
+        },
+        "addressed_to": [
+          "a"
+        ]
+      }
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "call": "regenerate_response",
+      "room_id": "r1"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "later: and since when?"
+        },
+        "addressed_to": []
+      }
+    },
+    {
+      "open": "held"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "a": [
+        {},
+        {},
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$contains": "first: what is the error rate?"
+              }
+            },
+            {
+              "role": "assistant"
+            },
+            {
+              "role": "tool"
+            },
+            {
+              "role": "assistant",
+              "text": {
+                "$contains": "@b please wait"
+              }
+            },
+            {
+              "role": "user",
+              "text": {
+                "$contains": "later: and since when?\n\n[Notes kept by the assistant's runtime for this turn. Nobody in the conversation wrote them, and they ask for nothing.]\n\n[Discussion: the room and how it works]\nYou are @a, one of several agents in a conversation with people; one agent speaks at a time.\nThe other agents:\n- @b\nPeople you may address: @ops.\nThis turn answers again the message from “@ops”, “first: what is the error rate?”: your new answer replaces the earlier one."
+              }
+            }
+          ],
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "4% since Monday",
+              "is_error": false
+            }
+          ]
+        }
+      ],
+      "b": [
+        {}
+      ]
+    },
+    "timeline": {
+      "r1": [
+        {
+          "type": "message",
+          "content": {
+            "body": "first: what is the error rate?"
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "source": {
+            "channel_id": "a"
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "result": "4% since Monday"
+          }
+        },
+        {
+          "type": "message",
+          "content": {
+            "body": "@b please wait"
+          }
+        },
+        {
+          "type": "message",
+          "content": {
+            "body": "later: and since when?"
+          }
+        }
+      ]
+    }
+  },
+  "notes": "Python: tests/test_discussion_core.py::test_a_turn_replays_the_tool_calls_it_made_right_after_the_answered_event. Regeneration is queued before the later message, while b holds the delivery lane, so it still answers the first message and builds its context after the later one arrives.",
+  "id": "discussion/a-turn-keeps-its-round-before-later-messages"
+}
