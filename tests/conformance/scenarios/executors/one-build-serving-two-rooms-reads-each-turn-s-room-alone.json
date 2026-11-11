@@ -1,0 +1,281 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/one-build-serving-two-rooms-reads-each-turn-s-room-alone",
+  "title": "One build of an agent serves two rooms of one organization, one turn after the other and two started at once: each turn's model reads its own room alone, and the agent's memory is handed each room's events alone",
+  "rules": [
+    "§10.6.2",
+    "§10.6.5",
+    "§20"
+  ],
+  "notes": "Python: green as it stands on main 4ca4bc061, in tests/conformance and, across a real Redis, in the Redis-mode suite (ROOMKIT_TEST_TURN_BACKEND=redis). An executor builds an agent once and runs it in every room it is attached to (RMK-1632): what a turn reads comes with its request, the room's own (§10.6.5), never from what the build kept of another room. A host verb naming another room or organization is refused owner-side: host/a-turn-s-host-acts-for-its-room-alone and host/work-a-turn-began-acts-for-its-room-and-organization-after-it, which run on the same path. The two turns started at once overlap in Python, in memory and across Redis; an implementation that runs them one after the other passes too.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "support",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "Noted."
+            },
+            {
+              "text": "Noted."
+            },
+            {
+              "text": "Noted."
+            },
+            {
+              "text": "Noted."
+            }
+          ]
+        },
+        "memory": {}
+      }
+    ],
+    "executors": [
+      {
+        "id": "pool",
+        "hosts": [
+          "support"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "alice",
+        "organization_id": "acme",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "support",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "bob",
+        "organization_id": "acme",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "support",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "alice",
+      "organization_id": "acme",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "My card is 4111."
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "bob",
+      "organization_id": "acme",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "bob",
+        "content": {
+          "type": "text",
+          "body": "What was said before?"
+        }
+      }
+    },
+    {
+      "concurrent": [
+        {
+          "call": "process_inbound",
+          "room_id": "alice",
+          "organization_id": "acme",
+          "message": {
+            "channel_id": "ws",
+            "sender_id": "alice",
+            "content": {
+              "type": "text",
+              "body": "My PIN is 1234."
+            }
+          }
+        },
+        {
+          "call": "process_inbound",
+          "room_id": "bob",
+          "organization_id": "acme",
+          "message": {
+            "channel_id": "ws",
+            "sender_id": "bob",
+            "content": {
+              "type": "text",
+              "body": "Anything about a PIN?"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "models": {
+      "support": {
+        "$unordered": [
+          {
+            "messages": [
+              {
+                "role": "user",
+                "text": "My card is 4111."
+              }
+            ]
+          },
+          {
+            "messages": [
+              {
+                "role": "user",
+                "text": "What was said before?"
+              }
+            ]
+          },
+          {
+            "messages": [
+              {
+                "role": "user",
+                "text": "My card is 4111."
+              },
+              {
+                "role": "assistant",
+                "text": "Noted."
+              },
+              {
+                "role": "user",
+                "text": "My PIN is 1234."
+              }
+            ]
+          },
+          {
+            "messages": [
+              {
+                "role": "user",
+                "text": "What was said before?"
+              },
+              {
+                "role": "assistant",
+                "text": "Noted."
+              },
+              {
+                "role": "user",
+                "text": "Anything about a PIN?"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "executors": {
+      "pool": {
+        "$unordered": [
+          {
+            "call": "built",
+            "channel_id": "support",
+            "build": 1
+          },
+          {
+            "call": "on_event",
+            "channel_id": "support",
+            "build": 1,
+            "room_id": "alice"
+          },
+          {
+            "call": "on_event",
+            "channel_id": "support",
+            "build": 1,
+            "room_id": "bob"
+          },
+          {
+            "call": "on_event",
+            "channel_id": "support",
+            "build": 1,
+            "room_id": "alice"
+          },
+          {
+            "call": "on_event",
+            "channel_id": "support",
+            "build": 1,
+            "room_id": "bob"
+          }
+        ]
+      }
+    },
+    "ingested": {
+      "alice": {
+        "support": [
+          {
+            "room_id": "alice",
+            "source": {
+              "channel_id": "ws",
+              "participant_id": "alice"
+            },
+            "content": {
+              "type": "text",
+              "body": "My card is 4111."
+            }
+          },
+          {
+            "room_id": "alice",
+            "source": {
+              "channel_id": "ws",
+              "participant_id": "alice"
+            },
+            "content": {
+              "type": "text",
+              "body": "My PIN is 1234."
+            }
+          }
+        ]
+      },
+      "bob": {
+        "support": [
+          {
+            "room_id": "bob",
+            "source": {
+              "channel_id": "ws",
+              "participant_id": "bob"
+            },
+            "content": {
+              "type": "text",
+              "body": "What was said before?"
+            }
+          },
+          {
+            "room_id": "bob",
+            "source": {
+              "channel_id": "ws",
+              "participant_id": "bob"
+            },
+            "content": {
+              "type": "text",
+              "body": "Anything about a PIN?"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
