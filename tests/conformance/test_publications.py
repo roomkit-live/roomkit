@@ -9,6 +9,7 @@ from pathlib import Path
 from roomkit.channels._mark_copies import compile_mark_patterns
 from roomkit.models.channel import ChannelBinding
 from roomkit.store.sqlite import SQLiteStore
+from tests.conformance._compare import compare
 from tests.conformance._harness import Harness
 
 
@@ -56,9 +57,13 @@ async def test_idle_waits_for_a_terminal_publication_reading_sqlite(tmp_path: Pa
         await asyncio.wait_for(waiting, 2)
         await harness._observe()
         assert not harness._problems, harness._problems
+        problems = compare(scenario["expect"], harness.observed, harness._checks)
+        assert not problems, problems
     finally:
         store.release.set()
         if waiting is not None:
             await asyncio.wait_for(waiting, 2)
         await harness.kit.close()
+        await harness.executors.close_all()
+        harness.auditors.close()
         await reader.close()
