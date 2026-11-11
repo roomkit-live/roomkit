@@ -69,8 +69,10 @@ class TurnExecutor:
             predicate, or no *hosts*, takes the turns of its own process
             alone (RFC §10.6.7).
         organizations: The organizations whose rooms it serves: exact ids,
-            and ``"*"`` for every one. Omitted, it serves the rooms without
-            an organization alone (RFC §10.6.7, §17.2). A room's turn,
+            which leave out the rooms without an organization, and ``"*"``
+            for every organization and the rooms without one. Omitted, it
+            serves the rooms without an organization alone (RFC §10.6.7,
+            §17.2). A room's turn,
             channel call or committed event goes only to an executor serving
             the room's organization, and an executor refuses one of another.
         executor_id: The id the executor answers with; a random one when
@@ -97,7 +99,8 @@ class TurnExecutor:
 
     Raises:
         TypeError: An entry of *error_classes* is not an ``Exception`` class,
-            or *organizations* is one id given as a string.
+            or *organizations* is one id given as a string or holds an entry
+            that is not a string.
         ValueError: An entry of *hosts* holds a ``*`` elsewhere than at its
             end, *organizations* is empty or holds a ``*`` in an id, or
             *max_channels* is below 1.

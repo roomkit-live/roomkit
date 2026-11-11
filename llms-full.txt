@@ -2329,9 +2329,10 @@ await kit.attach_channel(room_id, "meteo")  # an intelligence binding
   go only to an executor serving its organization, else fail with
   `no_executor`; the executor refuses one of another, and a room's attach or
   detach reaches only the executors serving it. The kit's own executor
-  serves every organization. To upgrade without cutting tenant rooms off,
-  start the new executors with `organizations={"*"}`, upgrade every room
-  owner process, then narrow each executor. This keeps honest executors
+  serves every organization. To upgrade without cutting rooms off, start
+  the new executors with `organizations={"*"}` and exact agent ids in
+  `hosts=`, upgrade every room owner process, then narrow each executor
+  (organizations, prefixes). This keeps honest executors
   apart; it does not authenticate them: any process on the turn backend can
   declare any organization, so who may join the backend is the host's to
   control. Agent ids stay unique across the kit: a multi-tenant host assigns
