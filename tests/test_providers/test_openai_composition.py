@@ -217,21 +217,19 @@ async def test_a_failed_wire_keeps_its_fragment_without_a_complete_call() -> Non
     assert events[0].arguments_delta == "{secret"
 
 
-async def test_a_later_malformed_call_keeps_the_first_fragment_of_its_chunk() -> None:
-    provider = _provider(
-        [
-            [
-                _chunk(
-                    {
-                        "tool_calls": [
-                            _fragment(0, "a", "search", "{}"),
-                            _fragment(1, 7, "search", "{}"),
-                        ]
-                    }
-                )
-            ]
-        ]
-    )
+@pytest.mark.parametrize("fault", ["id", "name", "content"])
+async def test_a_later_malformed_call_keeps_the_first_fragment_of_its_chunk(fault: str) -> None:
+    delta: dict[str, Any] = {"tool_calls": [_fragment(0, "a", "search", "{}")]}
+    if fault == "content":
+        delta["content"] = 7
+    else:
+        malformed = _fragment(1, "b", "search", "{}")
+        if fault == "id":
+            malformed["id"] = 7
+        else:
+            malformed["function"]["name"] = 7
+        delta["tool_calls"].append(malformed)
+    provider = _provider([[_chunk(delta)]])
     events = []
     try:
         with pytest.raises(ProviderError):
