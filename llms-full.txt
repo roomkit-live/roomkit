@@ -2319,19 +2319,24 @@ await kit.attach_channel(room_id, "meteo")  # an intelligence binding
   executor declaring a prefix must build every agent under it
   (`examples/turns_executor_pool.py`).
 - An executor serves the organizations it declares:
-  `TurnExecutor(build, hosts={"*"}, organizations={org_id})` takes the turns
-  of the rooms whose `organization_id` it names (exact ids, the host's own;
-  `{"*"}` for every organization). Without `organizations=` it serves the
-  rooms without an organization alone, so an executor started without a
-  declaration never takes a tenant's turns. A room's turns, channel calls
-  and committed events go only to an executor serving its organization,
-  else fail with `no_executor`; the executor refuses one of another, and a
-  room's attach or detach reaches only the executors serving it. The kit's
-  own executor serves every organization. This keeps honest executors
+  `TurnExecutor(build, hosts={"*"}, organizations={org_id})` takes the
+  turns of the rooms whose
+  `organization_id` it names (exact ids, the host's own, which leave out the
+  rooms without an organization; `{"*"}` for every organization and the
+  rooms without one). Without `organizations=` it serves the rooms without
+  an organization alone, so an executor started without a declaration never
+  takes a tenant's turns. A room's turns, channel calls and committed events
+  go only to an executor serving its organization, else fail with
+  `no_executor`; the executor refuses one of another, and a room's attach or
+  detach reaches only the executors serving it. The kit's own executor
+  serves every organization. To upgrade without cutting tenant rooms off,
+  start the new executors with `organizations={"*"}`, upgrade every room
+  owner process, then narrow each executor. This keeps honest executors
   apart; it does not authenticate them: any process on the turn backend can
   declare any organization, so who may join the backend is the host's to
   control. Agent ids stay unique across the kit: a multi-tenant host assigns
-  them itself and never lets a tenant choose one.
+  them itself and never lets a tenant choose one
+  (`examples/turns_executor_organizations.py`).
 - One build serves every room its agent is attached to, two turns at once
   included: each turn reads its own room, which its request carries, and
   RoomKit's channels, memories, plans and skill activations keep what they
@@ -2352,21 +2357,24 @@ await kit.attach_channel(room_id, "meteo")  # an intelligence binding
   memory held in a build on an executor elsewhere.
 - Which agents can answer: `await kit.executors()` lists the executors the
   turn backend carries turns to (what each declares, its organizations, its
-  room hooks, its last beat, `online`), and `await kit.agent_presence(room_id)`
-  gives each of the room's agents `online` with the executors covering it
-  there (one serving the room's organization and defining its enabled
-  hooks). The kit publishes `presence_online` /
-  `presence_offline` for an agent (`user_id` its channel id) in a room as it
-  is attached, and in each of its rooms when its covering executors change:
-  an executor's process silent past `heartbeat_timeout` reads offline, not
-  on one late beat. Of several room owner processes, one publishes each
-  change (`TurnBackend.claim_presence`, kept in Redis by `RedisTurnBackend`
-  so a restart publishes nothing unchanged; in process otherwise). A change
+  room hooks, its last beat, `online`), and
+  `await kit.agent_presence(room_id)` gives each of the room's agents
+  `online` with the executors covering it there (one serving the room's
+  organization and defining its enabled hooks). `kit.executors()` is the
+  platform's view,
+  every executor's organizations included: a host shows a tenant only what
+  is its own. The kit publishes `presence_online` / `presence_offline` for
+  an agent (`user_id` its channel id) in a room as it is attached, and in
+  each of its rooms when its covering executors change: an executor's
+  process silent past `heartbeat_timeout` reads offline, not on one late
+  beat. Of several room owner processes, one publishes each change
+  (`TurnBackend.claim_presence`, kept in Redis by `RedisTurnBackend` so a
+  restart publishes nothing unchanged; in process otherwise). A change
   reaches an agent's 10,000 oldest active or paused rooms at most. A turn
   backend of your own that does not implement `executors()` has nothing
   published for the agents the kit holds by declaration, and
-  `agent_presence` reads them offline. `DiscussionConsole` marks an agent
-  no executor serves `offline` (`examples/agent_presence.py`).
+  `agent_presence` reads them offline. `DiscussionConsole` marks an agent no
+  executor serves `offline` (`examples/agent_presence.py`).
 - The kit holds a `DeclaredChannel` under the id: a binding takes its
   `capabilities`, routing plans its turns, `delegate` / `start_task` name it,
   `send_greeting` and auto-greet read its identity (`auto_greet` defaults to
