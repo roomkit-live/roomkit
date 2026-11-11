@@ -71,5 +71,5 @@
   },
   "id": "discussion/a-closed-kit-refuses-regeneration-before-reading-its-store",
   "title": "Regeneration on a closed kit is refused before reading the store it released",
-  "notes": "Python: core/framework.py::_closing_call and core/mixins/regenerate.py::regenerate_response; tests/conformance/test_processes.py::test_regeneration_uses_the_named_kit_without_closing_the_other. Run on memory and SQLite so a released store cannot mask kit_closed."
+  "notes": "Python: core/framework.py::_work_refused_once_closed and core/mixins/regenerate.py::regenerate_response; tests/conformance/test_processes.py::test_regeneration_uses_the_named_kit_without_closing_the_other. Run on memory and SQLite so a released store cannot mask kit_closed."
 }
