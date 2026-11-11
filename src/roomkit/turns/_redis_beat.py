@@ -99,7 +99,9 @@ class BeatPayload:
         except RuntimeError:
             return self._declared.get(member, "")
         declared = Hosted(executor.hosted)
-        dumped = Declaration(self._node, executor.executor_id, declared, hooks).dump()
+        dumped = Declaration(
+            self._node, executor.executor_id, declared, hooks, executor.organizations
+        ).dump()
         self._declared[member] = dumped
         return dumped
 

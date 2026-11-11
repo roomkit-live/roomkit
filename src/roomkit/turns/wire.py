@@ -413,6 +413,9 @@ class RoomAttached(BaseModel):
     channel_id: str
     room_id: str
     binding: ChannelBinding
+    organization_id: str | None = None
+    """The room's organization (RFC §17.2): it goes only to an executor
+    serving it (RFC §10.6.7)."""
 
 
 class RoomDetached(BaseModel):
@@ -422,6 +425,9 @@ class RoomDetached(BaseModel):
     type: Literal["room_detached"] = "room_detached"
     channel_id: str
     room_id: str
+    organization_id: str | None = None
+    """The room's organization (RFC §17.2): it goes only to an executor
+    serving it (RFC §10.6.7)."""
 
 
 class CommittedEvent(BaseModel):
@@ -432,6 +438,9 @@ class CommittedEvent(BaseModel):
     channel_id: str
     room_id: str
     event: RoomEvent
+    organization_id: str | None = None
+    """The room's organization (RFC §17.2): it goes only to an executor
+    serving it (RFC §10.6.7)."""
     room_hooks: list[str] = Field(default_factory=list)
     """The room's hooks on executor triggers, as a turn's request names them:
     the event goes to an executor that would take the room's turns."""
@@ -447,6 +456,9 @@ class ChannelCall(_HandedOver):
     room_id: str
     verb: str
     arguments: dict[str, Any] = Field(default_factory=dict)
+    organization_id: str | None = None
+    """The room's organization (RFC §17.2): the call goes only to an executor
+    serving it (RFC §10.6.7)."""
     room_state: dict[str, Any] = Field(default_factory=dict)
     """What the room keeps for the channel, as the owner stores it: the
     channel takes it back when it holds none for the room."""

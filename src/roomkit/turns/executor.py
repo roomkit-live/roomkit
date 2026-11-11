@@ -27,6 +27,7 @@ from roomkit.turns._executor_retiring import Retiring
 from roomkit.turns._executor_rooms import ExecutorRooms
 from roomkit.turns._executor_turn import ExecutorTurn
 from roomkit.turns._hosting import Hosted
+from roomkit.turns._organizations import RoomNeeds, served, serves_organization
 from roomkit.turns._wiring import TurnWiring
 from roomkit.turns._wiring_env import TurnWiringEnv
 from roomkit.turns.base import TurnTimeouts
@@ -67,6 +68,11 @@ class TurnExecutor:
             collection is told to the room owners of other processes: a
             predicate, or no *hosts*, takes the turns of its own process
             alone (RFC §10.6.7).
+        organizations: The organizations whose rooms it serves: exact ids,
+            and ``"*"`` for every one. Omitted, it serves the rooms without
+            an organization alone (RFC §10.6.7, §17.2). A room's turn,
+            channel call or committed event goes only to an executor serving
+            the room's organization, and an executor refuses one of another.
         executor_id: The id the executor answers with; a random one when
             omitted.
         timeouts: The heartbeat bounds it keeps.
@@ -90,9 +96,11 @@ class TurnExecutor:
             a ``RemoteTurnError``.
 
     Raises:
-        TypeError: An entry of *error_classes* is not an ``Exception`` class.
+        TypeError: An entry of *error_classes* is not an ``Exception`` class,
+            or *organizations* is one id given as a string.
         ValueError: An entry of *hosts* holds a ``*`` elsewhere than at its
-            end, or *max_channels* is below 1.
+            end, *organizations* is empty or holds a ``*`` in an id, or
+            *max_channels* is below 1.
     """
 
     def __init__(
@@ -100,6 +108,7 @@ class TurnExecutor:
         build_channel: ChannelFactory,
         *,
         hosts: Collection[str] | Callable[[str], bool] | None = None,
+        organizations: Collection[str] | None = None,
         executor_id: str | None = None,
         timeouts: TurnTimeouts | None = None,
         media_resolver: MediaResolver | None = None,
@@ -112,6 +121,7 @@ class TurnExecutor:
         self.executor_id = executor_id or f"executor-{uuid4().hex[:12]}"
         self._errors = ErrorClasses(error_classes)
         self._hosted, self._hosts = _declaration(hosts)
+        self._organizations = served(organizations)
         if max_channels is not None and max_channels < 1:
             raise ValueError(f"max_channels is at least 1, not {max_channels}")
         self._timeouts = timeouts or TurnTimeouts()
@@ -265,6 +275,17 @@ class TurnExecutor:
         return self._hosted
 
     @property
+    def organizations(self) -> frozenset[str] | None:
+        """The organizations whose rooms it serves (``"*"`` every one);
+        ``None`` for the rooms without an organization alone (RFC §10.6.7)."""
+        return self._organizations
+
+    def serves(self, organization_id: str | None) -> bool:
+        """Whether it serves a room of *organization_id*, ``None`` for a room
+        without an organization (RFC §10.6.7)."""
+        return serves_organization(self._organizations, organization_id)
+
+    @property
     def timeouts(self) -> TurnTimeouts:
         """The heartbeat bounds its turns keep (RFC §10.6.8)."""
         return self._timeouts
@@ -280,10 +301,24 @@ class TurnExecutor:
         its host verbs and publications there once the turn ended."""
         self._owner = owner
 
-    def takes(self, channel_id: str, room_hooks: Iterable[str] = ()) -> bool:
+    def takes(
+        self,
+        channel_id: str,
+        room_hooks: Iterable[str] = (),
+        organization_id: str | None = None,
+    ) -> bool:
         """Whether this executor takes a turn of *channel_id* whose room has
-        the hooks named *room_hooks* (RFC §10.6.7)."""
-        return self.declares(channel_id) and self._hooks.defines_room_hooks(room_hooks)
+        the hooks named *room_hooks*, in *organization_id* (``None``: a room
+        without an organization) (RFC §10.6.7)."""
+        return (
+            self.declares(channel_id)
+            and self.serves(organization_id)
+            and self._hooks.defines_room_hooks(room_hooks)
+        )
+
+    def _meets(self, channel_id: str, needs: RoomNeeds) -> bool:
+        """:meth:`takes`, for what a room *needs*."""
+        return self.takes(channel_id, needs.room_hooks, needs.organization_id)
 
     def take(self, link: ExecutorLink) -> None:
         """Start the turn *link* brought; it runs on its own task."""
@@ -380,6 +415,8 @@ class TurnExecutor:
         if isinstance(message, ChannelReleased):
             await self._release(message.channel_id)
             return None
+        if not isinstance(message, RoomDetached) and not self.serves(message.organization_id):
+            return self._refuse_other_organization(message)
         if isinstance(message, RoomDetached):
             self._wiring.env.room_left(message.room_id, message.channel_id)
         with self._channels.use(message.channel_id):
@@ -387,6 +424,31 @@ class TurnExecutor:
                 channel = await self._channels.built(message.channel_id)
                 return await self._rooms.apply(channel, message)
             return await self._apply_on_build(message)
+
+    def _other_organization(self, channel_id: str, organization_id: str | None) -> TurnLinkError:
+        """The refusal of the work of a room of an organization this executor
+        does not serve: placement never sends it, so a backend's defect, or
+        another process's, gets it (RFC §10.6.7)."""
+        room = (
+            f"organization {organization_id!r}"
+            if organization_id is not None
+            else "a room without an organization"
+        )
+        return TurnLinkError(
+            "no_executor",
+            f"Executor {self.executor_id} does not serve {room} (channel {channel_id!r})",
+        )
+
+    def _refuse_other_organization(
+        self, message: RoomAttached | ChannelCall | CommittedEvent
+    ) -> ChannelResult | None:
+        """A channel call of a room of another organization fails; an attach
+        or a committed event is dropped, nothing built for it."""
+        refusal = self._other_organization(message.channel_id, message.organization_id)
+        logger.warning("%s: refused", refusal)
+        if isinstance(message, ChannelCall):
+            return ChannelResult(error=error_record(refusal), executor_id=self.executor_id)
+        return None
 
     async def _apply_on_build(self, message: ChannelCall | CommittedEvent) -> ChannelResult | None:
         """Apply a channel call or a committed event on the channel, built
@@ -433,7 +495,11 @@ class TurnExecutor:
     async def _turn_channel(self, request: TurnRequest, stale: bool) -> Channel | None:
         """The channel of *request*'s turn, readied for its room (RFC §10.6.2)
         and its hooks: a turn whose room hooks this executor does not define
-        fails rather than run without them (RFC §10.6.6)."""
+        fails rather than run without them (RFC §10.6.6), and one of a room
+        of an organization it does not serve fails (RFC §10.6.7)."""
+        organization_id = request.context.room.organization_id
+        if not self.serves(organization_id):
+            raise self._other_organization(request.channel_id, organization_id)
         if not self._hooks.defines_room_hooks(request.room_hooks):
             raise TurnLinkError(
                 "no_executor",

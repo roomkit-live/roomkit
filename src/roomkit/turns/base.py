@@ -14,11 +14,12 @@ import contextlib
 import contextvars
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from roomkit.core.exceptions import TurnLinkError
+from roomkit.turns._organizations import RoomNeeds
 
 logger = logging.getLogger("roomkit.turns")
 
@@ -72,12 +73,13 @@ def response_depth(request: TurnRequest) -> int:
     return request.event.chain_depth + 1
 
 
-def no_executor(channel_id: str, room_hooks: Sequence[str] = ()) -> TurnLinkError:
+def no_executor(channel_id: str, needs: RoomNeeds) -> TurnLinkError:
     """The refusal of a turn, channel call or committed event of *channel_id*
-    that no executor takes, naming the room hooks *room_hooks* it needs
-    (RFC §10.6.7)."""
-    missing = f" with room hooks {list(room_hooks)}" if room_hooks else ""
-    return TurnLinkError("no_executor", f"No executor serves channel {channel_id!r}{missing}")
+    that no executor takes, naming what its room *needs*: the room hooks it
+    defines and the organization it serves (RFC §10.6.7)."""
+    return TurnLinkError(
+        "no_executor", f"No executor serves channel {channel_id!r}{needs.describe()}"
+    )
 
 
 def builds_nothing(channel_id: str, executor_id: str) -> TurnLinkError:

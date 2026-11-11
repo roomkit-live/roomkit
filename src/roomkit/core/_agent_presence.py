@@ -51,7 +51,9 @@ class AgentPresenceWatch:
         self._kit = kit
         # For each agent held by its declaration, the executors covering it
         # at the last look, each with its room hooks.
-        self._covering: dict[str, frozenset[tuple[str, frozenset[str]]]] = {}
+        self._covering: dict[
+            str, frozenset[tuple[str, frozenset[str], frozenset[str] | None]]
+        ] = {}
         # What this owner could not publish yet, by agent and room: the state
         # it claimed (it holds the claim, so no other owner publishes it), or
         # None when the claim itself failed.
@@ -144,7 +146,9 @@ class AgentPresenceWatch:
             await self._publish_unpublished(infos)
             for agent in self._declared():
                 covering = frozenset(
-                    (info.executor_id, info.room_hooks) for info in infos if info.covers(agent)
+                    (info.executor_id, info.room_hooks, info.organizations)
+                    for info in infos
+                    if _declares(info, agent)
                 )
                 if self._covering.get(agent) == covering:
                     continue
@@ -235,7 +239,7 @@ class AgentPresenceWatch:
                 if await kit.store.get_binding(room_id, agent) is None:
                     del self._unpublished[(agent, room_id)]
                     continue
-                presence = kit._presence_of(agent, kit._turns.room_hook_names(room_id), infos)
+                presence = kit._presence_of(agent, await kit._room_needs(room_id), infos)
                 if claimed is not None and presence.online == claimed:
                     await self._send(agent, room_id, claimed)
                     continue
@@ -271,7 +275,7 @@ class AgentPresenceWatch:
         kit = self._kit
         if isinstance(kit.channels.get(agent), DeclaredChannel) and not self._lists_executors():
             return
-        presence = kit._presence_of(agent, kit._turns.room_hook_names(room_id), infos)
+        presence = kit._presence_of(agent, await kit._room_needs(room_id), infos)
         try:
             claimed = await kit._turns.backend.claim_presence(agent, room_id, presence.online)
         except Exception:
@@ -289,3 +293,11 @@ class AgentPresenceWatch:
             self._unpublished[(agent, room_id)] = online
             raise
         self._unpublished.pop((agent, room_id), None)
+
+
+def _declares(info: ExecutorInfo, agent: str) -> bool:
+    """Whether *info*, online, declares *agent* for a room of an organization
+    it serves, the rooms' hooks aside: a change of it, or of its hooks or
+    organizations, may change the agent's presence in some room."""
+    one_served = min(info.organizations) if info.organizations else None
+    return info.covers(agent, organization_id=one_served)

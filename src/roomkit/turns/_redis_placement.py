@@ -12,16 +12,18 @@ restarted in another process is another executor.
 
 from __future__ import annotations
 
-from collections.abc import Collection, Sequence
+from collections.abc import Collection
 from typing import TYPE_CHECKING, Any, NamedTuple
 from urllib.parse import quote
 
+from roomkit.turns._organizations import RoomNeeds, concerns
 from roomkit.turns._redis_presence import Declaration, member_of
 from roomkit.turns.base import no_executor
 
 if TYPE_CHECKING:
     from roomkit.turns._redis_beat import LiveExecutors
     from roomkit.turns.executor import TurnExecutor
+    from roomkit.turns.wire import ChannelReleased, RoomAttached, RoomDetached
 
 # How long a room's holder is kept once no turn renews it.
 _HOLDER_TTL_S = 7 * 24 * 3600
@@ -69,14 +71,14 @@ class Placement:
         self,
         channel_id: str,
         room_id: str,
-        room_hooks: Sequence[str] = (),
+        needs: RoomNeeds,
         *,
         excluded: Collection[str] = (),
     ) -> TurnExecutor | Elsewhere:
         """The executor a room's turn or channel call of *channel_id* goes
         to, but the members *excluded* (refused it), recorded as the one
         holding the room's state from now."""
-        placed = await self._chosen(channel_id, room_id, room_hooks, excluded, spread=True)
+        placed = await self._chosen(channel_id, room_id, needs, excluded, spread=True)
         holder = placed.member if isinstance(placed, Elsewhere) else self._here_member(placed)
         await self._client.set(self._holder_key(channel_id, room_id), holder, ex=_HOLDER_TTL_S)
         return placed
@@ -85,20 +87,20 @@ class Placement:
         self,
         channel_id: str,
         room_id: str,
-        room_hooks: Sequence[str] = (),
+        needs: RoomNeeds,
         *,
         excluded: Collection[str] = (),
     ) -> TurnExecutor | Elsewhere:
         """The executor holding the room's state of *channel_id* while it
         lives and takes it, else the one the room's next turn would go to;
         the holder is left as it was (RFC §10.6.3)."""
-        return await self._chosen(channel_id, room_id, room_hooks, excluded, spread=False)
+        return await self._chosen(channel_id, room_id, needs, excluded, spread=False)
 
     async def _chosen(
         self,
         channel_id: str,
         room_id: str,
-        room_hooks: Sequence[str],
+        needs: RoomNeeds,
         excluded: Collection[str],
         *,
         spread: bool,
@@ -110,13 +112,13 @@ class Placement:
         (a turn or call placed, not an event held)."""
         own = self._owning(channel_id)
         if own is not None:
-            return self._own_taken(own, channel_id, room_hooks, excluded)
+            return self._own_taken(own, channel_id, needs, excluded)
         here = {
             self._here_member(e): e
             for e in self.here
-            if e.takes(channel_id, room_hooks) and self._here_member(e) not in excluded
+            if e._meets(channel_id, needs) and self._here_member(e) not in excluded
         }
-        elsewhere = await self._takers_elsewhere(channel_id, room_hooks, set(here) | set(excluded))
+        elsewhere = await self._takers_elsewhere(channel_id, needs, set(here) | set(excluded))
         stored = await self._client.get(self._holder_key(channel_id, room_id))
         holder = _text(stored) if stored is not None else None
         if self._loop_back and here:
@@ -129,7 +131,7 @@ class Placement:
         if here:
             return next(iter(here.values()))
         if not elsewhere:
-            raise no_executor(channel_id, room_hooks)
+            raise no_executor(channel_id, needs)
         # A room no executor holds yet: its turns spread over the takers.
         members = sorted(elsewhere)
         following = (self._next + 1) % len(members)
@@ -141,32 +143,44 @@ class Placement:
         """The room detached the channel: nothing holds its state any more."""
         await self._client.delete(self._holder_key(channel_id, room_id))
 
-    async def told(self, channel_id: str) -> tuple[list[TurnExecutor], list[Elsewhere]]:
-        """The executors a room's attach or detach of *channel_id* reaches,
-        here and elsewhere: those that may run its turns, the owner's own
-        alone for a channel it hosts (RFC §10.6.3)."""
+    async def told(
+        self, message: RoomAttached | RoomDetached | ChannelReleased
+    ) -> tuple[list[TurnExecutor], list[Elsewhere]]:
+        """The executors a room's attach or detach, or a channel's release,
+        reaches, here and elsewhere: those that may run the channel's turns,
+        serving the room's organization for an attach or a detach; the
+        owner's own alone for a channel it hosts (RFC §10.6.3)."""
+        channel_id = message.channel_id
         own = self._owning(channel_id)
         if own is not None:
-            return ([own] if own.declares(channel_id) else []), []
-        here = [e for e in self.here if e.declares(channel_id)]
-        return here, await self._declaring_elsewhere(channel_id)
+            told = own.declares(channel_id) and concerns(own.organizations, message)
+            return ([own] if told else []), []
+        here = [
+            e for e in self.here if e.declares(channel_id) and concerns(e.organizations, message)
+        ]
+        return here, await self._declaring_elsewhere(message)
 
-    async def _declaring_elsewhere(self, channel_id: str) -> list[Elsewhere]:
-        """The executors of other processes alive that declare *channel_id*."""
+    async def _declaring_elsewhere(
+        self, message: RoomAttached | RoomDetached | ChannelReleased
+    ) -> list[Elsewhere]:
+        """The executors of other processes alive that declare *message*'s
+        channel, and that it concerns."""
         return [
             Elsewhere(declared.executor_id, declared.node)
             for declared in (await self._live.current()).values()
-            if declared.node != self._node and declared.channels.covers(channel_id)
+            if declared.node != self._node
+            and declared.channels.covers(message.channel_id)
+            and concerns(declared.organizations, message)
         ]
 
     async def _takers_elsewhere(
-        self, channel_id: str, room_hooks: Sequence[str], skipped: set[str]
+        self, channel_id: str, needs: RoomNeeds, skipped: set[str]
     ) -> dict[str, Elsewhere]:
         """The executors of other processes alive that take the turn, by
         member: read afresh, so one just started counts and one whose
         process withdrew it on closing does not."""
         alive = await self._live.current()
-        return _takers(alive, channel_id, room_hooks, self._node, skipped)
+        return _takers(alive, channel_id, needs, self._node, skipped)
 
     def _owning(self, channel_id: str) -> TurnExecutor | None:
         """The owner's own executor when it hosts *channel_id*, closed or not:
@@ -179,14 +193,14 @@ class Placement:
         self,
         own: TurnExecutor,
         channel_id: str,
-        room_hooks: Sequence[str],
+        needs: RoomNeeds,
         excluded: Collection[str],
     ) -> TurnExecutor | Elsewhere:
         """*own*, the owner's executor, for a turn of a channel it runs (across
         Redis in the tests' loop back); ``no_executor`` when it refused the
         turn or does not define the room's hooks."""
-        if self._here_member(own) in excluded or not own.takes(channel_id, room_hooks):
-            raise no_executor(channel_id, room_hooks)
+        if self._here_member(own) in excluded or not own._meets(channel_id, needs):
+            raise no_executor(channel_id, needs)
         return Elsewhere(own.executor_id, self._node) if self._loop_back else own
 
     def _here_member(self, executor: TurnExecutor) -> str:
@@ -199,16 +213,14 @@ class Placement:
 def _takers(
     alive: dict[str, Declaration],
     channel_id: str,
-    room_hooks: Sequence[str],
+    needs: RoomNeeds,
     node: str,
     skipped: set[str],
 ) -> dict[str, Elsewhere]:
     return {
         member: Elsewhere(declared.executor_id, declared.node)
         for member, declared in alive.items()
-        if declared.node != node
-        and member not in skipped
-        and declared.takes(channel_id, room_hooks)
+        if declared.node != node and member not in skipped and declared.takes(channel_id, needs)
     }
 
 

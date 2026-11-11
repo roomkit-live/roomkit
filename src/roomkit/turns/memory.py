@@ -16,12 +16,13 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import logging
-from collections.abc import Coroutine, Sequence
+from collections.abc import Coroutine
 from typing import TYPE_CHECKING, Any
 
 from roomkit.core.exceptions import TurnLinkError
 from roomkit.turns._codec import CarriedRequest, control_json
 from roomkit.turns._error_codec import error_record
+from roomkit.turns._organizations import RoomNeeds, concerns
 from roomkit.turns._rooms import RoomRecords
 from roomkit.turns.base import (
     ExecutorLink,
@@ -35,6 +36,7 @@ from roomkit.turns.presence import ExecutorInfo, local_info
 from roomkit.turns.wire import (
     ChannelCall,
     ChannelControlEnvelope,
+    ChannelReleased,
     ChannelResult,
     CommittedEvent,
     ControlEnvelope,
@@ -42,6 +44,7 @@ from roomkit.turns.wire import (
     HostResult,
     OwnerMessageEnvelope,
     Pull,
+    RoomAttached,
     RoomCall,
     RoomDetached,
     RoomPublication,
@@ -173,7 +176,8 @@ class InMemoryTurnBackend(TurnBackend):
     and fail ``no_executor`` once it closed.
     Another channel's turns in a room go to the executor that took its last
     turn or channel call while it serves and declares the channel, else to
-    the first that declares it (RFC §10.6.7). Every executor is in this
+    the first that declares it; only to one serving the room's organization
+    (RFC §10.6.7). Every executor is in this
     process, so a turn none declares fails at once with ``no_executor``.
     """
 
@@ -191,7 +195,7 @@ class InMemoryTurnBackend(TurnBackend):
     async def submit(self, request: TurnRequest) -> TurnLink:
         if self._closed:
             raise TurnLinkError("backend_closed")
-        executor = self._place(request.channel_id, request.room_id, request.room_hooks)
+        executor = self._place(request.channel_id, request.room_id, RoomNeeds.of_turn(request))
         return self._submit_to(executor, request)
 
     def _submit_to(self, executor: TurnExecutor, request: TurnRequest) -> TurnLink:
@@ -233,19 +237,21 @@ class InMemoryTurnBackend(TurnBackend):
             raise TurnLinkError("backend_closed")
         raw = control_json(message)
         if isinstance(message, ChannelCall):
-            executor = self._place(message.channel_id, message.room_id)
+            needs = RoomNeeds(organization_id=message.organization_id)
+            executor = self._place(message.channel_id, message.room_id, needs)
             message.hand_over()
             answer = await executor.control(_crossed(raw))
             if answer is None:
                 return ChannelResult()
             return ChannelResult.model_validate_json(answer.model_dump_json())
         if isinstance(message, CommittedEvent):
-            holder = self._hold(message.channel_id, message.room_id, message.room_hooks)
+            needs = RoomNeeds(tuple(message.room_hooks), message.organization_id)
+            holder = self._hold(message.channel_id, message.room_id, needs)
             await holder.control(_crossed(raw))
             return None
         if isinstance(message, RoomDetached):
             self._holders.pop(message.channel_id, message.room_id)
-        for executor in self._told(message.channel_id):
+        for executor in self._told(message):
             await executor.control(_crossed(raw))
         return None
 
@@ -255,30 +261,26 @@ class InMemoryTurnBackend(TurnBackend):
             turn.shut()
         self._turns.clear()
 
-    def _hold(self, channel_id: str, room_id: str, room_hooks: Sequence[str]) -> TurnExecutor:
-        """The executor that would take the room's turns of *channel_id*, the
-        room's hooks *room_hooks* included; the holder is left as it was (RFC
+    def _hold(self, channel_id: str, room_id: str, needs: RoomNeeds) -> TurnExecutor:
+        """The executor that would take the room's turns of *channel_id*, one
+        that meets what the room *needs*; the holder is left as it was (RFC
         §10.6.3)."""
-        taker = self._taker(channel_id, room_id, room_hooks)
+        taker = self._taker(channel_id, room_id, needs)
         if taker is None:
-            raise no_executor(channel_id, room_hooks)
+            raise no_executor(channel_id, needs)
         return taker
 
-    def _place(
-        self, channel_id: str, room_id: str, room_hooks: Sequence[str] = ()
-    ) -> TurnExecutor:
+    def _place(self, channel_id: str, room_id: str, needs: RoomNeeds) -> TurnExecutor:
         """The executor a room's turn or channel call of *channel_id* goes to,
-        one that defines the room's hooks *room_hooks*, recorded as the one
-        holding the room's state from now."""
-        holder = self._taker(channel_id, room_id, room_hooks)
+        one that meets what the room *needs* (its hooks, its organization),
+        recorded as the one holding the room's state from now."""
+        holder = self._taker(channel_id, room_id, needs)
         if holder is None:
-            raise no_executor(channel_id, room_hooks)
+            raise no_executor(channel_id, needs)
         self._holders.put(channel_id, room_id, holder)
         return holder
 
-    def _taker(
-        self, channel_id: str, room_id: str, room_hooks: Sequence[str]
-    ) -> TurnExecutor | None:
+    def _taker(self, channel_id: str, room_id: str, needs: RoomNeeds) -> TurnExecutor | None:
         """The executor that takes a room's turn of *channel_id*: the owner's
         own alone when it hosts the channel, closed or not, since it runs the
         channels the owner holds live; else the one holding the room's state while it
@@ -287,20 +289,26 @@ class InMemoryTurnBackend(TurnBackend):
         own = self._owning(channel_id)
         if own is not None:
             # Its live channels never run on a copy, even once it closed.
-            return own if own in self._executors and own.takes(channel_id, room_hooks) else None
+            return own if own in self._executors and own._meets(channel_id, needs) else None
         holder = self._holders.get(channel_id, room_id)
-        if holder is not None and holder.takes(channel_id, room_hooks):
+        if holder is not None and holder._meets(channel_id, needs):
             return holder
-        return next((e for e in self._executors if e.takes(channel_id, room_hooks)), None)
+        return next((e for e in self._executors if e._meets(channel_id, needs)), None)
 
-    def _told(self, channel_id: str) -> list[TurnExecutor]:
-        """The executors a room's attach or detach of *channel_id* reaches:
-        those that may run its turns, the owner's own alone for a channel it
-        hosts (RFC §10.6.3)."""
+    def _told(self, message: RoomAttached | RoomDetached | ChannelReleased) -> list[TurnExecutor]:
+        """The executors a room's attach or detach, or a channel's release,
+        reaches: those that may run the channel's turns, serving the room's
+        organization for an attach or a detach; the owner's own alone for a
+        channel it hosts (RFC §10.6.3)."""
+        channel_id = message.channel_id
         own = self._owning(channel_id)
         if own is not None:
-            return [own] if own in self._executors and own.declares(channel_id) else []
-        return [e for e in self._executors if e.declares(channel_id)]
+            candidates = [own] if own in self._executors else []
+        else:
+            candidates = self._executors
+        return [
+            e for e in candidates if e.declares(channel_id) and concerns(e.organizations, message)
+        ]
 
     async def executors(self) -> list[ExecutorInfo]:
         own = self._owner.executor if self._owner is not None else None

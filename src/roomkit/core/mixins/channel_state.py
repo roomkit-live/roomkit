@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 from roomkit.channels.declared import DeclaredChannel
 from roomkit.core.exceptions import ChannelNotFoundError, ChannelNotRegisteredError
 from roomkit.models.enums import ChannelCategory
+from roomkit.turns._organizations import RoomNeeds
 from roomkit.turns._rooms import room_state_key, stored_room_state
 from roomkit.turns.base import lists_executors
 from roomkit.turns.presence import AgentPresence, ExecutorInfo
@@ -79,6 +80,7 @@ class ChannelStateMixin:
             room_id=room_id,
             verb=verb,
             arguments=arguments,
+            organization_id=room.organization_id,
             room_state=stored_room_state(room.metadata, channel_id),
         )
         answer = await self._turns.control(call)
@@ -116,27 +118,38 @@ class ChannelStateMixin:
     ) -> list[AgentPresence]:
         """Each of *room_id*'s agents (its intelligence channels), sorted by
         channel id: online while an executor online covers it in the room,
-        declaring it and defining the room's enabled hooks, with the ids of
-        those executors (RFC §10.6.7); an agent the kit holds live, while
-        the kit's own executor takes its turns there.
+        declaring it, serving the room's organization and defining the
+        room's enabled hooks, with the ids of those executors (RFC §10.6.7);
+        an agent the kit holds live, while the kit's own executor takes its
+        turns there.
 
         *organization_id* scopes the read to one tenant (RFC §17.2).
 
         Raises:
             RoomNotFoundError: no room *room_id*, or another organization's.
         """
-        await self.get_room(room_id, organization_id=organization_id)
-        hooks = self._turns.room_hook_names(room_id)
+        room = await self.get_room(room_id, organization_id=organization_id)
+        needs = RoomNeeds(tuple(self._turns.room_hook_names(room_id)), room.organization_id)
         infos = await self.executors()
         agents = [
             binding.channel_id
             for binding in await self._store.list_bindings(room_id)
             if binding.category == ChannelCategory.INTELLIGENCE
         ]
-        return [self._presence_of(agent, hooks, infos) for agent in sorted(agents)]
+        return [self._presence_of(agent, needs, infos) for agent in sorted(agents)]
 
-    async def _known_offline(self, room_id: str, channel_ids: Iterable[str]) -> set[str]:
-        """The ones of *channel_ids* known offline in *room_id*: held by their
+    async def _room_needs(self, room_id: str) -> RoomNeeds:
+        """What *room_id* asks of the executors taking its work: its enabled
+        hooks, and its organization as the store reads it (RFC §10.6.7)."""
+        room = await self._store.get_room(room_id)
+        organization_id = room.organization_id if room is not None else None
+        return RoomNeeds(tuple(self._turns.room_hook_names(room_id)), organization_id)
+
+    async def _known_offline(
+        self, room_id: str, channel_ids: Iterable[str], organization_id: str | None
+    ) -> set[str]:
+        """The ones of *channel_ids* known offline in *room_id*, of
+        *organization_id*: held by their
         declaration, and no executor online covers them there (RFC §10.6.7).
         A live agent never is, nor any agent on a turn backend that does not
         list its executors, or whose list could not be read: it tells nothing.
@@ -146,12 +159,12 @@ class ChannelStateMixin:
         declared = [c for c in channel_ids if isinstance(self._channels.get(c), DeclaredChannel)]
         if not declared or not lists_executors(backend):
             return set()
-        hooks = self._turns.room_hook_names(room_id)
+        needs = RoomNeeds(tuple(self._turns.room_hook_names(room_id)), organization_id)
         offline = set(declared)
         try:
             for read in (backend.executors, backend._executors_now):
                 infos = await read()
-                offline = {c for c in offline if not self._presence_of(c, hooks, infos).online}
+                offline = {c for c in offline if not self._presence_of(c, needs, infos).online}
                 if not offline:
                     break
         except Exception:
@@ -160,17 +173,21 @@ class ChannelStateMixin:
         return offline
 
     def _presence_of(
-        self, channel_id: str, hooks: list[str], infos: list[ExecutorInfo]
+        self, channel_id: str, needs: RoomNeeds, infos: list[ExecutorInfo]
     ) -> AgentPresence:
-        """Whether *channel_id* can answer in a room with *hooks*: on the
-        kit's own executor for a channel it holds live, else on the executors
-        of *infos* covering it."""
+        """Whether *channel_id* can answer in a room that *needs* its hooks
+        and its organization served: on the kit's own executor for a channel
+        it holds live, else on the executors of *infos* covering it."""
         channel = self._channels.get(channel_id)
         if channel is not None and not isinstance(channel, DeclaredChannel):
             own = self.turn_executor
-            covering = [own.executor_id] if own.takes(channel_id, hooks) else []
+            covering = [own.executor_id] if own._meets(channel_id, needs) else []
         else:
-            covering = sorted(i.executor_id for i in infos if i.covers(channel_id, hooks))
+            covering = sorted(
+                i.executor_id
+                for i in infos
+                if i.covers(channel_id, needs.room_hooks, needs.organization_id)
+            )
         return AgentPresence(channel_id=channel_id, online=bool(covering), executors=covering)
 
     async def _keep_answered_state(
@@ -207,8 +224,14 @@ class ChannelStateMixin:
             if channel is not None:
                 await channel.on_room_detached(room_id)
             return
+        stored = await self._store.get_room(room_id)
+        organization_id = stored.organization_id if stored is not None else None
         try:
-            await self._turns.control(RoomDetached(channel_id=channel_id, room_id=room_id))
+            await self._turns.control(
+                RoomDetached(
+                    channel_id=channel_id, room_id=room_id, organization_id=organization_id
+                )
+            )
         finally:
             room = await self.get_room(room_id)
             if room_state_key(channel_id) in room.metadata:

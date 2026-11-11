@@ -30,6 +30,7 @@ from uuid import uuid4
 from roomkit.core.exceptions import TurnLinkError
 from roomkit.core.task_utils import cancel_and_wait
 from roomkit.turns._codec import control_json, request_json
+from roomkit.turns._organizations import RoomNeeds
 from roomkit.turns._redis_beat import BeatPayload, BeatThread, LiveExecutors
 from roomkit.turns._redis_clients import call_bound, read_block, redis_clients
 from roomkit.turns._redis_inbox import Envelope, Inbox
@@ -157,7 +158,7 @@ class RedisTurnBackend(TurnBackend):
         refused: set[str] = set()
         while True:
             placed = await self._placement.place(
-                request.channel_id, request.room_id, request.room_hooks, excluded=refused
+                request.channel_id, request.room_id, RoomNeeds.of_turn(request), excluded=refused
             )
             if not isinstance(placed, Elsewhere):
                 return self._here._submit_to(placed, request)
@@ -237,6 +238,7 @@ class RedisTurnBackend(TurnBackend):
                 executor_id=declared.executor_id,
                 node=declared.node,
                 hosts=declared.channels.entries,
+                organizations=declared.organizations,
                 room_hooks=declared.room_hooks,
                 last_beat=datetime.fromtimestamp(beat / 1000, UTC),
                 online=online,
@@ -266,21 +268,25 @@ class RedisTurnBackend(TurnBackend):
         raw = control_json(message)
         if isinstance(message, ChannelCall):
             channel_id, room_id = message.channel_id, message.room_id
+            needs = RoomNeeds(organization_id=message.organization_id)
             return await self._applied_once(
                 raw,
-                lambda refused: self._placement.place(channel_id, room_id, excluded=refused),
+                lambda refused: self._placement.place(
+                    channel_id, room_id, needs, excluded=refused
+                ),
                 message,
             )
         if isinstance(message, CommittedEvent):
-            channel_id, room_id, hooks = message.channel_id, message.room_id, message.room_hooks
+            channel_id, room_id = message.channel_id, message.room_id
+            held = RoomNeeds(tuple(message.room_hooks), message.organization_id)
             await self._applied_once(
                 raw,
-                lambda refused: self._placement.hold(channel_id, room_id, hooks, excluded=refused),
+                lambda refused: self._placement.hold(channel_id, room_id, held, excluded=refused),
             )
             return None
         if isinstance(message, RoomDetached):
             await self._placement.forget(message.channel_id, message.room_id)
-        here, elsewhere = await self._placement.told(message.channel_id)
+        here, elsewhere = await self._placement.told(message)
         for executor in here:
             await executor.control(_crossed(raw))
         results = await asyncio.gather(

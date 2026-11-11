@@ -65,6 +65,7 @@ EXECUTOR = {
     "id",
     "hosts",
     "builds",
+    "organizations",
     "max_channels",
     "hooks",
     "room_hooks",

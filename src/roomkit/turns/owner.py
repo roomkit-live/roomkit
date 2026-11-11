@@ -26,6 +26,7 @@ from roomkit.models.pending_input import PendingInputEvent
 from roomkit.models.steering import Cancel as SteeringCancel
 from roomkit.telemetry.context import get_current_span
 from roomkit.turns._error_codec import ErrorClasses, error_record
+from roomkit.turns._organizations import EVERY_ORGANIZATION
 from roomkit.turns._owner_between import answer_room_call, publish_between_turns
 from roomkit.turns._owner_inputs import OwnerInputs
 from roomkit.turns._owner_turn import OwnerTurn
@@ -604,6 +605,9 @@ def registry_turn_client(
         executor=TurnExecutor(
             channels.get,
             hosts=runs_here,
+            # The kit's own channels run in the owner's process: they serve
+            # every organization whose rooms the kit attaches them to.
+            organizations={EVERY_ORGANIZATION},
             owns_channels=False,
             timeouts=backend.timeouts,
             error_classes=error_classes,

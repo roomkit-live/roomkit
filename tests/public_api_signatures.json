@@ -403,7 +403,7 @@
     "sends": ["property"]
   },
   "roomkit.ChannelCall": {
-    "__init__": ["def", "*", "type='channel_call'", "call_id=<factory>", "channel_id", "room_id", "verb", "arguments=<factory>", "room_state=<factory>", "previous_turn=None"],
+    "__init__": ["def", "*", "type='channel_call'", "call_id=<factory>", "channel_id", "room_id", "verb", "arguments=<factory>", "organization_id=None", "room_state=<factory>", "previous_turn=None"],
     "hand_over": ["def"],
     "handed": ["property"],
     "refused": ["def"]
@@ -482,7 +482,7 @@
     "state": ["def", "turn"]
   },
   "roomkit.CommittedEvent": {
-    "__init__": ["def", "*", "type='committed_event'", "channel_id", "room_id", "event", "room_hooks=<factory>"]
+    "__init__": ["def", "*", "type='committed_event'", "channel_id", "room_id", "event", "organization_id=None", "room_hooks=<factory>"]
   },
   "roomkit.ConferenceAccess": {
     "__init__": ["def", "url", "token", "expires_at=None", "provider_data=<factory>"]
@@ -939,8 +939,8 @@
     "TYPING": ["member", "'typing'"]
   },
   "roomkit.ExecutorInfo": {
-    "__init__": ["def", "*", "executor_id", "node=None", "hosts=None", "room_hooks=frozenset([])", "last_beat=None", "online=True"],
-    "covers": ["def", "channel_id", "room_hooks=()"]
+    "__init__": ["def", "*", "executor_id", "node=None", "hosts=None", "organizations=None", "room_hooks=frozenset([])", "last_beat=None", "online=True"],
+    "covers": ["def", "channel_id", "room_hooks=()", "organization_id=None"]
   },
   "roomkit.ExecutorLink": {
     "receive": ["async def"],
@@ -1818,7 +1818,7 @@
   },
   "roomkit.RoomAlreadyExistsError": {},
   "roomkit.RoomAttached": {
-    "__init__": ["def", "*", "type='room_attached'", "channel_id", "room_id", "binding"]
+    "__init__": ["def", "*", "type='room_attached'", "channel_id", "room_id", "binding", "organization_id=None"]
   },
   "roomkit.RoomCall": {
     "__init__": ["def", "*", "type='room_call'", "call_id=<factory>", "channel_id", "room_id", "executor_id", "turn_id", "chain_depth=0", "verb", "arguments=<factory>"]
@@ -1831,7 +1831,7 @@
     "other_channels": ["def", "exclude_channel_id"]
   },
   "roomkit.RoomDetached": {
-    "__init__": ["def", "*", "type='room_detached'", "channel_id", "room_id"]
+    "__init__": ["def", "*", "type='room_detached'", "channel_id", "room_id", "organization_id=None"]
   },
   "roomkit.RoomEvent": {
     "__init__": ["def", "*", "id=<factory>", "room_id", "type=<EventType.MESSAGE: 'message'>", "source", "content", "status=<EventStatus.PENDING: 'pending'>", "blocked_by=None", "visibility=<Visibility.ALL: 'all'>", "addressed_to=None", "response_visibility=None", "index=0", "chain_depth=0", "parent_event_id=None", "responds_to=None", "correlation_id=None", "idempotency_key=None", "created_at=<factory>", "metadata=<factory>", "channel_data=<factory>", "delivery_results=<factory>"]
@@ -2473,7 +2473,7 @@
     "__init__": ["def", "message", "reason"]
   },
   "roomkit.TurnExecutor": {
-    "__init__": ["def", "build_channel", "*", "hosts=None", "executor_id=None", "timeouts=None", "media_resolver=None", "attached_media=None", "telemetry=None", "owns_channels=True", "error_classes=()", "max_channels=None"],
+    "__init__": ["def", "build_channel", "*", "hosts=None", "organizations=None", "executor_id=None", "timeouts=None", "media_resolver=None", "attached_media=None", "telemetry=None", "owns_channels=True", "error_classes=()", "max_channels=None"],
     "close": ["async def"],
     "closed": ["property"],
     "control": ["async def", "message"],
@@ -2482,11 +2482,13 @@
     "hooks": ["property"],
     "hosted": ["property"],
     "hosts_channel": ["def", "channel_id"],
+    "organizations": ["property"],
     "reach_owner": ["def", "owner"],
     "remove_room_hook": ["def", "name"],
     "room_hook": ["def", "name", "trigger", "execution=<HookExecution.SYNC: 'sync'>", "priority=0", "timeout=30.0", "*", "fail_closed=False"],
+    "serves": ["def", "organization_id"],
     "take": ["def", "link"],
-    "takes": ["def", "channel_id", "room_hooks=()"],
+    "takes": ["def", "channel_id", "room_hooks=()", "organization_id=None"],
     "timeouts": ["property"],
     "use_wiring": ["def", "env"],
     "wire": ["def", "channel"],

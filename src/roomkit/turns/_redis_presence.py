@@ -25,6 +25,7 @@ from typing import Any
 from urllib.parse import quote
 
 from roomkit.turns._hosting import Hosted
+from roomkit.turns._organizations import RoomNeeds, serves_organization
 
 logger = logging.getLogger("roomkit.turns")
 
@@ -94,20 +95,27 @@ return cjson.encode(view)
 @dataclass(frozen=True, slots=True)
 class Declaration:
     """What an executor of a process declares to the owners (RFC §10.6.7):
-    its channels, names and prefixes as it was given them."""
+    its channels, names and prefixes as it was given them, its room hooks,
+    and the organizations it serves (``None``: the rooms without one; a
+    beat that names none, an executor of a release before them, reads so)."""
 
     node: str
     executor_id: str
     channels: Hosted
     room_hooks: frozenset[str]
+    organizations: frozenset[str] | None = None
 
     @property
     def member(self) -> str:
         """The executor, as one process runs it."""
         return member_of(self.node, self.executor_id)
 
-    def takes(self, channel_id: str, room_hooks: Iterable[str]) -> bool:
-        return self.channels.covers(channel_id) and all(h in self.room_hooks for h in room_hooks)
+    def takes(self, channel_id: str, needs: RoomNeeds) -> bool:
+        return (
+            self.channels.covers(channel_id)
+            and serves_organization(self.organizations, needs.organization_id)
+            and all(h in self.room_hooks for h in needs.room_hooks)
+        )
 
     def dump(self) -> str:
         return json.dumps(
@@ -116,6 +124,9 @@ class Declaration:
                 "executor_id": self.executor_id,
                 "channels": sorted(self.channels.entries),
                 "room_hooks": sorted(self.room_hooks),
+                "organizations": (
+                    None if self.organizations is None else sorted(self.organizations)
+                ),
             }
         )
 
@@ -127,6 +138,7 @@ class Declaration:
             data["executor_id"],
             Hosted(frozenset(data["channels"])),
             frozenset(data["room_hooks"]),
+            None if data.get("organizations") is None else frozenset(data["organizations"]),
         )
 
 

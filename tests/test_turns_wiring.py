@@ -38,6 +38,7 @@ from roomkit.telemetry.context import get_current_span
 from roomkit.telemetry.mock import MockTelemetryProvider
 from roomkit.tools.human_input import HumanInputToolHandler
 from roomkit.turns import InMemoryTurnBackend, TurnClient, TurnExecutor, memory
+from roomkit.turns._organizations import RoomNeeds
 from roomkit.turns._owner_turn import _of_the_turn
 from roomkit.turns.wire import FrameworkEventFrame
 from tests.test_framework import SimpleChannel
@@ -378,7 +379,7 @@ async def test_a_room_hook_no_executor_defines_leaves_the_room_unanswered() -> N
     timeline = await kit.store.list_events("r1")
     assert not [e for e in timeline if e.source.channel_id == "agent"]
     with pytest.raises(TurnLinkError, match="room hooks"):
-        kit._turns.backend._place("agent", "r1", ["missing"])
+        kit._turns.backend._place("agent", "r1", RoomNeeds(("missing",)))
     await kit.close()
 
 

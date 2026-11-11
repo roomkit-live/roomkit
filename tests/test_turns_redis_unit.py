@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import json
 import sys
 import time
 from typing import Any
@@ -23,6 +24,7 @@ from roomkit.models.room import Room
 from roomkit.turns import InMemoryTurnBackend, TurnExecutor, TurnTimeouts, _redis_routes
 from roomkit.turns._error_codec import ROOMKIT_ERRORS
 from roomkit.turns._hosting import Hosted
+from roomkit.turns._organizations import RoomNeeds
 from roomkit.turns._owner_turn import OwnerTurn
 from roomkit.turns._redis_beat import LiveExecutors
 from roomkit.turns._redis_clients import redis_clients
@@ -65,14 +67,37 @@ def test_a_declaration_takes_its_channels_with_every_room_hook_it_defines() -> N
     declared = Declaration("node-a", "host-a", Hosted(frozenset({"meteo"})), frozenset({"audit"}))
     pool = Declaration("node-b", "pool", Hosted(frozenset({"org-*", "meteo"})), frozenset())
 
-    assert declared.takes("meteo", [])
-    assert declared.takes("meteo", ["audit"])
-    assert not declared.takes("meteo", ["audit", "billing"])
-    assert not declared.takes("other", [])
+    assert declared.takes("meteo", RoomNeeds())
+    assert declared.takes("meteo", RoomNeeds(("audit",)))
+    assert not declared.takes("meteo", RoomNeeds(("audit", "billing")))
+    assert not declared.takes("other", RoomNeeds())
     assert Declaration.load(declared.dump()) == declared
-    assert pool.takes("org-sales", []) and pool.takes("meteo", [])
-    assert not pool.takes("org", []) and not pool.takes("other", [])
+    assert pool.takes("org-sales", RoomNeeds()) and pool.takes("meteo", RoomNeeds())
+    assert not pool.takes("org", RoomNeeds()) and not pool.takes("other", RoomNeeds())
     assert Declaration.load(pool.dump()) == pool
+
+
+def test_a_declaration_takes_the_rooms_of_the_organizations_it_serves() -> None:
+    """RFC §10.6.7: what a beat tells of an executor's organizations is what
+    the room owners of other processes place on; a beat of an executor of an
+    earlier release names none, and serves the rooms without an organization."""
+    hosted, hooks = Hosted(frozenset({"support"})), frozenset[str]()
+    acme = Declaration("node-a", "acme", hosted, hooks, frozenset({"acme"}))
+    every = Declaration("node-a", "every", hosted, hooks, frozenset({"*"}))
+    plain = Declaration("node-a", "plain", hosted, hooks)
+
+    assert acme.takes("support", RoomNeeds(organization_id="acme"))
+    assert not acme.takes("support", RoomNeeds(organization_id="globex"))
+    assert not acme.takes("support", RoomNeeds())
+    assert every.takes("support", RoomNeeds(organization_id="globex"))
+    assert every.takes("support", RoomNeeds())
+    assert plain.takes("support", RoomNeeds())
+    assert not plain.takes("support", RoomNeeds(organization_id="acme"))
+    for declaration in (acme, every, plain):
+        assert Declaration.load(declaration.dump()) == declaration
+    earlier = json.loads(plain.dump())
+    del earlier["organizations"]
+    assert Declaration.load(json.dumps(earlier)) == plain
 
 
 def test_an_executor_given_its_channels_tells_them() -> None:
@@ -978,8 +1003,8 @@ async def test_an_event_held_for_a_room_no_one_holds_goes_where_its_next_turn_go
     )  # type: ignore[arg-type]
 
     for _ in range(3):
-        held = await placement.hold("agent", "room")
-        placed = await placement.place("agent", "room")
+        held = await placement.hold("agent", "room", RoomNeeds())
+        placed = await placement.place("agent", "room", RoomNeeds())
 
         assert held == placed
 

@@ -377,7 +377,7 @@ class DiscussionRoom:
             for agent_id, agent in self.agents.items()
             if agent is not None and agent_id != event.source.channel_id and agent_id in reach
         ]
-        offline = await self.kit._known_offline(self.room_id, handed_to)
+        offline = await self.kit._known_offline(self.room_id, handed_to, self.organization_id)
         for agent_id in offline:
             logger.debug("Agent %s is offline: its memory misses an event", agent_id)
         await asyncio.gather(
@@ -389,7 +389,12 @@ class DiscussionRoom:
         )
 
     async def _hand_to_memory(self, agent_id: str, event: RoomEvent) -> None:
-        handed = CommittedEvent(channel_id=agent_id, room_id=self.room_id, event=event)
+        handed = CommittedEvent(
+            channel_id=agent_id,
+            room_id=self.room_id,
+            event=event,
+            organization_id=self.organization_id,
+        )
         try:
             await self.kit._turns.control(handed)
         except Exception:

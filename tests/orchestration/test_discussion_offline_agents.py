@@ -43,8 +43,11 @@ class _ListFails(InMemoryTurnBackend):
         raise ConnectionError("registry unreachable")
 
 
-async def _discussion(backend: TurnBackend) -> tuple[RoomKit, list[Any], list[str]]:
-    """``ana`` held by its declaration, served by nobody; ``bob`` live."""
+async def _discussion(
+    backend: TurnBackend, organization_id: str | None = None
+) -> tuple[RoomKit, list[Any], list[str]]:
+    """``ana`` held by its declaration, served by nobody in the room; ``bob``
+    live."""
     kit = RoomKit(turn_backend=backend)
     changes: list[Any] = []
     errors: list[str] = []
@@ -60,7 +63,11 @@ async def _discussion(backend: TurnBackend) -> tuple[RoomKit, list[Any], list[st
     kit.register_channel(_People("chat"))
     kit.register_channel(ChannelDeclaration(channel_id="ana", identity=AgentIdentity()))
     bob = Agent("bob", provider=MockAIProvider(responses=["bob here."] * 4))
-    await kit.create_room(room_id="r1", orchestration=Discussion(agents=["ana", bob]))
+    await kit.create_room(
+        room_id="r1",
+        organization_id=organization_id,
+        orchestration=Discussion(agents=["ana", bob]),
+    )
     await kit.attach_channel("r1", "chat")
     return kit, changes, errors
 
@@ -88,8 +95,14 @@ async def test_an_agent_the_kit_cannot_tell_is_offline_still_takes_its_turn(
     assert errors == ["ana"]  # its turn failed: no executor serves it
 
 
-async def test_an_instruction_for_an_offline_agent_is_dropped_and_said_so() -> None:
-    kit, changes, errors = await _discussion(InMemoryTurnBackend())
+@pytest.mark.parametrize("executor", [False, True], ids=["no-executor", "another-organization"])
+async def test_an_instruction_for_an_offline_agent_is_dropped_and_said_so(executor: bool) -> None:
+    """An agent whose only executor serves the rooms without an organization
+    is offline in a room of one, as one no executor declares (RFC §10.6.7)."""
+    backend = InMemoryTurnBackend()
+    if executor:
+        await backend.serve(TurnExecutor(lambda _: None, hosts={"ana"}))
+    kit, changes, errors = await _discussion(backend, "globex" if executor else None)
     try:
         await _say(kit, "summarise", addressed_to=["ana"], event_type=EventType.INSTRUCTION)
         await _settle(kit)

@@ -143,6 +143,7 @@ class Executors:
             bool(spec.get("answers", True)),
             partial(self._harness.gates.reach, spec.get("gate", "")),
             hosts=set(spec.get("hosts", [])),
+            organizations=spec.get("organizations"),
             executor_id=executor_id,
             timeouts=self._bounds,
             **bound,
@@ -321,6 +322,7 @@ async def _executors(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) ->
         {
             "executor_id": info.executor_id,
             "hosts": None if info.hosts is None else sorted(info.hosts),
+            "organizations": (None if info.organizations is None else sorted(info.organizations)),
             "room_hooks": sorted(info.room_hooks),
             "online": info.online,
         }

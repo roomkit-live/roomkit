@@ -422,7 +422,9 @@ class ChannelOpsMixin(HelpersMixin):
             # ON_CHANNEL_ATTACHED hook, the failure would be logged and swallowed
             # (hooks are observation) and the caller would receive a binding to
             # a conference that was never created.
-            await self._on_room_attached(room_id, channel, result, previous)
+            await self._on_room_attached(
+                room_id, channel, result, previous, organization_id=room.organization_id
+            )
             await self._emit_system_event(
                 room_id,
                 EventType.CHANNEL_ATTACHED,
@@ -470,6 +472,8 @@ class ChannelOpsMixin(HelpersMixin):
         channel: Channel,
         binding: ChannelBinding,
         previous: ChannelBinding | None,
+        *,
+        organization_id: str | None,
     ) -> None:
         """Let the channel establish the attachment, or take the binding back.
 
@@ -491,7 +495,10 @@ class ChannelOpsMixin(HelpersMixin):
             if binding.category is ChannelCategory.INTELLIGENCE:
                 # The executors that may run its turns are told (RFC §10.6.3).
                 attached = RoomAttached(
-                    channel_id=channel.channel_id, room_id=room_id, binding=binding
+                    channel_id=channel.channel_id,
+                    room_id=room_id,
+                    binding=binding,
+                    organization_id=organization_id,
                 )
                 await self._turns.control(attached)
             else:

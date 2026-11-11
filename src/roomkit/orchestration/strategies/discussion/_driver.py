@@ -318,7 +318,7 @@ class TurnDriver:
             return self._not_given(state, entry)
         if entry.post:
             return self._handed(state, _Turn(entry, None, {}, posted=answered), answered.id)
-        if await room.kit._known_offline(room.room_id, [entry.agent]):
+        if await room.kit._known_offline(room.room_id, [entry.agent], room.organization_id):
             return self._skipped(state, entry, answered.id)
         answered = _at_ask_depth(answered, entry)
         mark = issue_mark([self._notes(entry, answered, context)])
