@@ -1,0 +1,176 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-worker-cut-before-announcement-reports-only-what-started",
+  "title": "A worker delegation cut before announcement reports a task completion only once the task was announced",
+  "rules": [
+    "§19.7.3",
+    "§23.3",
+    "§10.1 Explicit delivery cancellation"
+  ],
+  "notes": "Python: tests/tasks/test_delegation_ends_failed.py::test_a_task_failing_before_it_is_announced_fires_no_completion; tests/tasks/test_cancelled_delegation.py. A shared transport callback holds child preparation before ON_TASK_DELEGATED, or the worker model holds after it. The caller cancels only after that gate; no timeout orders the cut. The worker run posts its own cancelled entry in either case, but names the task only after announcement. No assertion makes the historical partially prepared child room a completed task.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "on_room_attached": [
+          {
+            "when": {
+              "room_id": "r1"
+            }
+          },
+          {
+            "gate": "preparing"
+          }
+        ]
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "delegate_to_researcher",
+                  "arguments": {
+                    "task": "Find the facts."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "It took too long."
+            }
+          ]
+        }
+      },
+      {
+        "id": "researcher",
+        "type": "ai",
+        "agent": {
+          "role": "Researcher"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Too late.",
+              "gate": "never"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "researcher"
+          ],
+          "share_channels": [
+            "sms"
+          ]
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "delegated",
+        "trigger": "on_task_delegated",
+        "execution": "async"
+      },
+      {
+        "name": "completed",
+        "trigger": "on_task_completed",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Find it."
+        }
+      },
+      "as": "inbound",
+      "defer_delivery": true
+    },
+    {
+      "wait_for": "preparing"
+    },
+    {
+      "call": "delivery.cancel",
+      "of": "inbound",
+      "reason": "stopped",
+      "expect": {
+        "result": {
+          "cancellation_reason": "stopped"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "status.recent",
+      "agent_id": "researcher",
+      "expect": {
+        "result": [
+          {
+            "status": "pending"
+          },
+          {
+            "status": "failed",
+            "detail": "cancelled",
+            "metadata": {
+              "task_run": true,
+              "task_id": {
+                "$absent": true
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "researcher": [],
+      "sup": [
+        {}
+      ]
+    },
+    "hooks": {
+      "delegated": [],
+      "completed": []
+    }
+  }
+}

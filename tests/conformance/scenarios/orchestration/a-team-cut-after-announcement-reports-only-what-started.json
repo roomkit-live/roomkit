@@ -1,0 +1,184 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-team-cut-after-announcement-reports-only-what-started",
+  "title": "A team delegation cut after announcement reports a task completion only once the task was announced",
+  "rules": [
+    "§19.7.3",
+    "§23.3",
+    "§10.1 Explicit delivery cancellation"
+  ],
+  "notes": "Python: tests/tasks/test_delegation_ends_failed.py::test_a_task_failing_before_it_is_announced_fires_no_completion; tests/tasks/test_cancelled_delegation.py. A shared transport callback holds child preparation before ON_TASK_DELEGATED, or the worker model holds after it. The caller cancels only after that gate; no timeout orders the cut. The worker run posts its own cancelled entry in either case, but names the task only after announcement. No assertion makes the historical partially prepared child room a completed task.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "delegate_workers",
+                  "arguments": {
+                    "task": "Acme"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "It took too long."
+            }
+          ]
+        }
+      },
+      {
+        "id": "analyst",
+        "type": "ai",
+        "agent": {
+          "role": "Analyst"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Too late.",
+              "gate": "never"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "analyst"
+          ],
+          "strategy": "parallel"
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "delegated",
+        "trigger": "on_task_delegated",
+        "execution": "async"
+      },
+      {
+        "name": "completed",
+        "trigger": "on_task_completed",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Look into Acme."
+        }
+      },
+      "as": "inbound",
+      "defer_delivery": true
+    },
+    {
+      "wait_for": "never"
+    },
+    {
+      "call": "delivery.cancel",
+      "of": "inbound",
+      "reason": "stopped",
+      "expect": {
+        "result": {
+          "cancellation_reason": "stopped"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "status.recent",
+      "agent_id": "analyst",
+      "expect": {
+        "result": [
+          {
+            "status": "pending"
+          },
+          {
+            "status": "failed",
+            "detail": "cancelled",
+            "metadata": {
+              "task_run": true,
+              "task_id": {
+                "$present": true
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "analyst": [
+        {}
+      ],
+      "sup": [
+        {}
+      ]
+    },
+    "hooks": {
+      "delegated": [
+        {}
+      ],
+      "completed": [
+        {
+          "event": {
+            "metadata": {
+              "task_status": "cancelled"
+            }
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "$r1": {
+        "metadata": {
+          "task_agent_id": "analyst",
+          "task_status": "cancelled"
+        }
+      }
+    }
+  }
+}

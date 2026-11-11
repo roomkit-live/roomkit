@@ -7,7 +7,7 @@
     "§21.6",
     "§23.3"
   ],
-  "notes": "Python: tests/orchestration/test_worker_delegation_bound.py test_a_delegation_its_call_cut_posts_the_worker_failed (the per-worker door). orchestration/_worker_run.py _posted (CancelledError posts failed cancelled); channels/_tool_registry.py (a tool's own bound in tool_timeouts). The worker's model waits at a gate no step opens.",
+  "notes": "Python: tests/orchestration/test_worker_delegation_bound.py test_a_delegation_its_call_cut_posts_the_worker_failed (the per-worker door). orchestration/_worker_run.py _posted (CancelledError posts failed cancelled); channels/_tool_registry.py (a tool's own bound in tool_timeouts). The worker's model waits at a gate no step opens. The worker must reach its model gate before the bounded call ends. The 2 s budget includes database preparation; it is not a deadline on model work alone. Native tests expire bounds at a chosen boundary; the conformance timing regression delays preparation and keeps every expectation.",
   "setup": {
     "channels": [
       {
@@ -40,7 +40,7 @@
           ]
         },
         "tool_timeouts_ms": {
-          "delegate_to_researcher": 50
+          "delegate_to_researcher": 2000
         }
       },
       {
@@ -98,6 +98,14 @@
           "body": "Find it."
         }
       },
+      "background": true,
+      "as": "delegation"
+    },
+    {
+      "wait_for": "never"
+    },
+    {
+      "await": "delegation",
       "expect": {
         "result": {
           "blocked": false,

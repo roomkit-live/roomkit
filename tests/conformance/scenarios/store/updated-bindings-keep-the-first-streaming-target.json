@@ -1,0 +1,166 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "store/updated-bindings-keep-the-first-streaming-target",
+  "title": "Updates and upserts keep attachment order, even when timestamps are equal",
+  "rules": [
+    "§12.2 step 11s",
+    "§6.1",
+    "§14.1"
+  ],
+  "notes": "Python: tests/test_store_binding_contract.py::test_binding_order_survives_updates_and_reattach. The target is observed through the public inbound API. Equal timestamps and reverse lexical ids must not replace insertion order.",
+  "setup": {
+    "channels": [
+      {
+        "id": "src",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "ans",
+                "wer"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": "st1",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "st2",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "src"
+          },
+          {
+            "channel_id": "ai",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-1",
+        "channel_id": "st2",
+        "channel_type": "websocket",
+        "attached_at": "2026-01-01T00:00:00Z"
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-1",
+        "channel_id": "st1",
+        "channel_type": "websocket",
+        "attached_at": "2026-01-01T00:00:00Z"
+      }
+    },
+    {
+      "call": "store.update_binding",
+      "binding": {
+        "room_id": "room-1",
+        "channel_id": "st2",
+        "channel_type": "websocket",
+        "attached_at": "2026-01-01T00:00:00Z",
+        "metadata": {
+          "updated": true
+        }
+      }
+    },
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-1",
+        "channel_id": "st1",
+        "channel_type": "websocket",
+        "attached_at": "2026-01-01T00:00:00Z",
+        "metadata": {
+          "upserted": true
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "src",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "streamed": {
+      "room-1": {
+        "st2": [
+          {
+            "text": "ans"
+          },
+          {
+            "text": "wer"
+          },
+          {
+            "row": {
+              "id": "room-1#1",
+              "content": {
+                "body": "answer"
+              }
+            }
+          }
+        ],
+        "st1": []
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "st2": [
+          {
+            "index": 0
+          }
+        ],
+        "st1": [
+          {
+            "index": 0
+          },
+          {
+            "id": "room-1#1",
+            "content": {
+              "body": "answer"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

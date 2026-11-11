@@ -6,7 +6,7 @@
     "§19.7.3",
     "§23.3"
   ],
-  "notes": "Python: tests/orchestration/test_worker_delegation_bound.py test_a_delegation_its_call_cut_posts_the_worker_failed (the parallel door). orchestration/_worker_run.py _posted (CancelledError posts failed cancelled). The analyst's model waits at a gate no step opens.",
+  "notes": "Python: tests/orchestration/test_worker_delegation_bound.py test_a_delegation_its_call_cut_posts_the_worker_failed (the parallel door). orchestration/_worker_run.py _posted (CancelledError posts failed cancelled). The analyst's model waits at a gate no step opens. The worker must reach its model gate before the bounded call ends. The 2 s budget includes database preparation; it is not a deadline on model work alone. Native tests expire bounds at a chosen boundary; the conformance timing regression delays preparation and keeps every expectation.",
   "setup": {
     "channels": [
       {
@@ -39,7 +39,7 @@
           ]
         },
         "tool_timeouts_ms": {
-          "delegate_workers": 50
+          "delegate_workers": 2000
         }
       },
       {
@@ -98,6 +98,14 @@
           "body": "Look into Acme."
         }
       },
+      "background": true,
+      "as": "delegation"
+    },
+    {
+      "wait_for": "never"
+    },
+    {
+      "await": "delegation",
       "expect": {
         "result": {
           "blocked": false,
