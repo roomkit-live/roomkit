@@ -59,20 +59,28 @@ async def _say(kit: RoomKit, text: str) -> None:
     )
 
 
-async def test_a_declared_agent_s_memory_is_handed_each_message_where_it_runs() -> None:
+@pytest.mark.parametrize("organization", [None, "acme"], ids=["no-organization", "acme"])
+async def test_a_declared_agent_s_memory_is_handed_each_message_where_it_runs(
+    organization: str | None,
+) -> None:
+    """In a room of an organization, each message goes to the executor serving
+    it, as the room's turns do (RFC §10.6.7)."""
     memories = {"ana": MockMemoryProvider(), "bob": MockMemoryProvider()}
     agents = {cid: _agent(cid, memory) for cid, memory in memories.items()}
     store, backend = InMemoryStore(), InMemoryTurnBackend()
     executor = TurnExecutor(
         agents.get,
         hosts=lambda cid: cid in agents,
+        organizations=None if organization is None else {organization},
     )
     await backend.serve(executor)
     kit = RoomKit(store=store, turn_backend=backend)
     kit.register_channel(SimpleChannel("sms"))
     for cid in agents:
         kit.register_channel(ChannelDeclaration(channel_id=cid, identity=AgentIdentity()))
-    await kit.create_room(room_id="r", orchestration=Discussion(agents=["ana", "bob"]))
+    await kit.create_room(
+        room_id="r", organization_id=organization, orchestration=Discussion(agents=["ana", "bob"])
+    )
     await kit.attach_channel("r", "sms")
 
     await _say(kit, "Hello everyone.")

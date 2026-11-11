@@ -322,11 +322,7 @@ class TurnExecutor:
 
     def take(self, link: ExecutorLink) -> None:
         """Start the turn *link* brought; it runs on its own task."""
-        request = link.request
-        stale = self._rooms.enter(
-            request.channel_id, request.room_id, request.turn_id, request.previous_turn
-        )
-        self._wiring.env.turn_started(request)
+        stale = self._enter(link.request)
         turn = ExecutorTurn(
             link,
             self.executor_id,
@@ -344,6 +340,19 @@ class TurnExecutor:
         self._turns[task] = turn
         task.add_done_callback(self._forget)
         task.add_done_callback(partial(_let_go, link))
+
+    def _enter(self, request: TurnRequest) -> bool:
+        """Enter the room of *request*'s turn: whether the state held for the
+        room is stale. A turn of a room of an organization this executor does
+        not serve enters nothing, so nothing of the room is kept; it fails as
+        it starts (RFC §10.6.7)."""
+        if not self.serves(request.context.room.organization_id):
+            return False
+        stale = self._rooms.enter(
+            request.channel_id, request.room_id, request.turn_id, request.previous_turn
+        )
+        self._wiring.env.turn_started(request)
+        return stale
 
     def _spare_turns_run_under(self) -> None:
         """Let the turns the current close runs under run on whatever cuts

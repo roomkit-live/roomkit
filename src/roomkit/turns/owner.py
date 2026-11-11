@@ -119,7 +119,10 @@ class TurnClient(RoomOwner):
     Args:
         backend: The turn backend.
         executor: An executor this client serves on the backend before its
-            first turn (the kit's own), or ``None``.
+            first turn (the kit's own), or ``None``. It runs the channels it
+            hosts in the rooms of the organizations it declares alone (RFC
+            §10.6.7): the kit gives its own ``organizations={"*"}``, and an
+            owner serving rooms of several organizations gives it the same.
         timeouts: The bounds the owner keeps.
         tools: The tools the owner serves its turns (RFC §10.6.5), or ``None``.
         host: What the owner runs for its turns' ``TurnHost`` (RFC §10.6.5),

@@ -28,7 +28,8 @@ def served(organizations: Collection[str] | None) -> frozenset[str] | None:
     declares none.
 
     Raises:
-        TypeError: One id given as a string.
+        TypeError: One id given as a string, or an entry that is not a
+            string (``None`` among them).
         ValueError: An empty collection, or an entry holding a ``*`` but
             ``"*"`` itself (ids are exact, never prefixes).
     """
@@ -37,6 +38,11 @@ def served(organizations: Collection[str] | None) -> frozenset[str] | None:
     if isinstance(organizations, str):
         raise TypeError("organizations is a collection of organization ids, not one id")
     declared = frozenset(organizations)
+    if not all(isinstance(entry, str) for entry in declared):
+        raise TypeError(
+            "organizations entries are organization ids (str); omit organizations "
+            "to serve the rooms without an organization, or declare '*'"
+        )
     if not declared:
         raise ValueError(
             "organizations names at least one organization ('*' for every one); "
