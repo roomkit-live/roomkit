@@ -24,6 +24,7 @@ from tests.conformance._discussion import (
 from tests.conformance._executors import EXECUTOR_ARGUMENTS
 from tests.conformance._handoff import HANDOFF_ARGUMENTS
 from tests.conformance._inputs import INPUT_ARGUMENTS
+from tests.conformance._kit_executor import KIT_EXECUTOR_ARGUMENTS
 from tests.conformance._media import ATTACHED_MEDIA, MEDIA_RESOLVER
 from tests.conformance._members import MEMBER_ARGUMENTS
 from tests.conformance._routing import (
@@ -497,7 +498,7 @@ CALLS |= ROUTING_ARGUMENTS
 CALLS |= HANDOFF_ARGUMENTS
 CALLS |= DELEGATE_TOOL_ARGUMENTS
 CALLS |= DISCUSSION_ARGUMENTS
-CALLS |= EXECUTOR_ARGUMENTS
+CALLS |= EXECUTOR_ARGUMENTS | KIT_EXECUTOR_ARGUMENTS
 STEPS = {"await": {"await", "expect"}, "concurrent": {"concurrent"}, "wait_for": {"wait_for"}}
 STEPS |= {"open": {"open"}, "idle": {"idle"}, "wait_for_lock": {"wait_for_lock", "waiters"}}
 STEPS |= {"lock_releases": {"lock_releases"}}
@@ -863,6 +864,15 @@ def _call(call: Mapping[str, Any], extra: set[str], path: str, found: list[str])
         _channel(call.get("channel", {}), f"{path}.channel", found)
     if name == "register_hook":
         _hook(call.get("hook", {}), f"{path}.hook", found)
+    if name == "kit_executor.hook":
+        _hook(call.get("hook", {}), f"{path}.hook", found, HOOK - {"needs_lock", "router"})
+    if name == "kit_executor.room_hook":
+        _hook(
+            call.get("hook", {}),
+            f"{path}.hook",
+            found,
+            (ROOM_HOOK - {"needs_lock", "router"}) | {"timeout_ms"},
+        )
     if name == "add_room_hook":
         _hook(call.get("hook", {}), f"{path}.hook", found, ROOM_HOOK)
     if name in ("handoff_handler", "install_router"):

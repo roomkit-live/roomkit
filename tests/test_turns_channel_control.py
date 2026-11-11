@@ -742,6 +742,28 @@ async def test_a_turn_no_executor_took_is_no_previous_turn() -> None:
     assert executor.requests[0].previous_turn is None
 
 
+async def test_a_missing_hook_refusal_preserves_the_previous_turn() -> None:
+    backend = InMemoryTurnBackend()
+    executor = _Recording(_Agent(), "a")
+    client = TurnClient(backend)
+    await backend.serve(executor)
+    try:
+        await _turn(client)
+        first = executor.requests[0].turn_id
+        client.enable_room_hook("room", "missing")
+        with pytest.raises(TurnLinkError) as raised:
+            await _turn(client)
+        assert raised.value.reason == "no_executor"
+        assert client.disable_room_hook("room", "missing")
+        await _turn(client)
+        assert len(executor.requests) == 2
+        assert executor.requests[1].previous_turn is not None
+        assert executor.requests[1].previous_turn.turn_id == first
+    finally:
+        await executor.close()
+        await backend.close()
+
+
 async def test_detaching_an_ai_channel_drops_everything_it_kept_for_the_room() -> None:
     kit = RoomKit()
     agent = AIChannel("ai", provider=MockAIProvider(responses=["ok"]), enable_planning=True)

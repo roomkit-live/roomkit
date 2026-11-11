@@ -313,7 +313,9 @@ async def _release_channel(kit: RoomKit, harness: Harness, spec: Mapping[str, An
 
 
 async def _enable_room_hook(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
-    await kit.enable_room_hook(spec["room_id"], spec["name"])
+    await kit.enable_room_hook(
+        spec["room_id"], spec["name"], organization_id=spec.get("organization_id")
+    )
 
 
 async def _executors(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:

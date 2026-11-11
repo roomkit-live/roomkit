@@ -72,6 +72,7 @@ from tests.conformance._executors import EXECUTOR_CALLS, Executors
 from tests.conformance._handoff import HANDOFF_CALLS
 from tests.conformance._identity import kit_options, register_identity_hook
 from tests.conformance._inputs import INPUT_CALLS, request_record
+from tests.conformance._kit_executor import KIT_EXECUTOR_CALLS
 from tests.conformance._locks import LOCK_EVENTS, lock_options, set_lock_releases
 from tests.conformance._media import media_options
 from tests.conformance._members import MEMBER_CALLS, store_identities
@@ -663,7 +664,7 @@ class Harness:
         resolved = await self.resolve(dict(spec), scope)
         calls = CALLS | STORE_CALLS | TASK_CALLS | MEMBER_CALLS | INPUT_CALLS | STRATEGY_CALLS
         calls |= VERIFICATION_CALLS | ROUTING_CALLS | HANDOFF_CALLS | DISCUSSION_CALLS
-        call = (calls | DELEGATE_TOOL_CALLS | EXECUTOR_CALLS)[spec["call"]]
+        call = (calls | DELEGATE_TOOL_CALLS | EXECUTOR_CALLS | KIT_EXECUTOR_CALLS)[spec["call"]]
         try:
             kit = self.kit_of(spec)
             result = await asyncio.wait_for(call(kit, self, resolved), CALL_BOUND_S)
