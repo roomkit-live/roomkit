@@ -116,7 +116,13 @@
               }
             },
             {
-              "role": "assistant"
+              "role": "assistant",
+              "round": [
+                {
+                  "call": "c1",
+                  "arguments": {}
+                }
+              ]
             },
             {
               "role": "tool"
