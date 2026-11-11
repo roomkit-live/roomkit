@@ -34,10 +34,14 @@ discounted rates are the ones stated — and those three need a re-read in
 January, when the increase makes them silently half of what a consumer is
 billed.
 
-``gemini-4-argon`` (read 2026-10-13) has no long-context tier and a scheduled
-increase instead of a discount: $2.00/$10.00/$0.10 through November 30, 2026,
-then $4.00/$20.00/$0.20 from December 1, 2026. The current rates are stated, and
-the entry needs a re-read in December. Its caching is implicit only.
+``gemini-4-argon`` (read 2026-10-13) and ``gemini-4-carbon`` (read 2026-11-11)
+have no long-context tier and a scheduled increase instead of a discount:
+$2.00/$10.00/$0.10 through November 30, 2026, then $4.00/$20.00/$0.20 from
+December 1, 2026. The current rates are stated, and both entries need a re-read
+in December. Their caching is implicit only. Google's thinking page lists both
+at ``low``/``medium``/``high``; Argon's refusal of ``minimal`` and its taking a
+budget of 0 were measured, Carbon's are assumed from Argon's (its account had
+no credit left to probe on 2026-11-11).
 
 Context caching is billed by *storage time* ($1.00–$4.50 per million tokens per
 hour), not per token written — so ``cache_write`` stays unset here rather than
@@ -64,6 +68,20 @@ _LEVELS = [TAKES_LEVELS]
 _LEVELS_MINIMAL = [TAKES_LEVELS, TAKES_MINIMAL]
 
 MODELS: list[ModelInfo] = [
+    ModelInfo(
+        id="gemini-4-carbon",
+        display_name="Gemini 4 Carbon",
+        context_window=_CTX,
+        supports_vision=True,
+        # As Argon: no ``minimal`` on Google's thinking page (2026-11-11).
+        capabilities=["thinking", "audio", "video", *_LEVELS],
+        pricing=ModelPricing(
+            input_per_million=2.0,
+            output_per_million=10.0,
+            cache_read_per_million=0.1,
+            verified=date(2026, 11, 11),
+        ),
+    ),
     ModelInfo(
         id="gemini-4-argon",
         display_name="Gemini 4 Argon",
