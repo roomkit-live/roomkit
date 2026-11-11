@@ -1,0 +1,151 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/an-executor-serving-every-organization-takes-every-room-s-turns",
+  "title": "An executor declaring every organization (`*`) takes the turns of the rooms of any organization, and of those without one",
+  "rules": [
+    "§10.6.7",
+    "§17.2"
+  ],
+  "notes": "Python: tests/test_turns_organizations.py.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "support",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "For the room without one."
+            },
+            {
+              "text": "For acme."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "every_pool",
+        "hosts": [
+          "support"
+        ],
+        "organizations": [
+          "*"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r0",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "support",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "r-acme",
+        "organization_id": "acme",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "support",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r0",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hello."
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r-acme",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hello."
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r0": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "For the room without one."
+          }
+        }
+      ],
+      "r-acme": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "For acme."
+          }
+        }
+      ]
+    },
+    "executors": {
+      "every_pool": [
+        {
+          "call": "built",
+          "channel_id": "support",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "support",
+          "room_id": "r0",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "support",
+          "room_id": "r-acme",
+          "build": 1
+        }
+      ]
+    }
+  }
+}

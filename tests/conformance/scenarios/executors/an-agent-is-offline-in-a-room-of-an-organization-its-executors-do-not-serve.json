@@ -1,0 +1,141 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/an-agent-is-offline-in-a-room-of-an-organization-its-executors-do-not-serve",
+  "title": "An agent is online in a room only while an executor serving the room's organization covers it: attached to a room of an organization no executor serves, it is offline there, and published so; its only executor closing turns it offline in its organization's room",
+  "rules": [
+    "§10.6.7",
+    "§17.2"
+  ],
+  "notes": "Python: tests/test_turns_organizations.py.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "support",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "Unused."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "acme_pool",
+        "hosts": [
+          "support"
+        ],
+        "organizations": [
+          "acme"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r-acme",
+        "organization_id": "acme",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      },
+      {
+        "id": "r-globex",
+        "organization_id": "globex",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "attach_channel",
+      "room_id": "r-acme",
+      "channel_id": "support",
+      "category": "intelligence"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "r-globex",
+      "channel_id": "support",
+      "category": "intelligence"
+    },
+    {
+      "call": "agent_presence",
+      "room_id": "r-acme",
+      "expect": {
+        "result": [
+          {
+            "channel_id": "support",
+            "online": true,
+            "executors": [
+              "acme_pool"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "call": "agent_presence",
+      "room_id": "r-globex",
+      "expect": {
+        "result": [
+          {
+            "channel_id": "support",
+            "online": false,
+            "executors": []
+          }
+        ]
+      }
+    },
+    {
+      "call": "executor.close",
+      "executor": "acme_pool"
+    },
+    {
+      "call": "agent_presence",
+      "room_id": "r-acme",
+      "expect": {
+        "result": [
+          {
+            "channel_id": "support",
+            "online": false,
+            "executors": []
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "presence_events": {
+      "r-acme": [
+        {
+          "type": "presence_online",
+          "user_id": "support"
+        },
+        {
+          "type": "presence_offline",
+          "user_id": "support"
+        }
+      ],
+      "r-globex": [
+        {
+          "type": "presence_offline",
+          "user_id": "support"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,217 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/an-executor-takes-the-turns-of-the-organizations-it-serves-alone",
+  "title": "An executor takes a room's turns and channel calls only when it serves the room's organization: one declaring none serves the rooms without an organization, one declaring an organization serves that one's, and a room of an organization no executor serves gets no_executor",
+  "rules": [
+    "§10.6.7",
+    "§17.2"
+  ],
+  "notes": "Python: tests/test_turns_organizations.py.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "support",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "rounds": [
+            {
+              "text": "For the room without one."
+            },
+            {
+              "text": "For acme."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "default_pool",
+        "hosts": [
+          "support"
+        ]
+      },
+      {
+        "id": "acme_pool",
+        "hosts": [
+          "support"
+        ],
+        "organizations": [
+          "acme"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r0",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "support",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "r-acme",
+        "organization_id": "acme",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "support",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "r-globex",
+        "organization_id": "globex",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "support",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r0",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hello."
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r-acme",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hello."
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r-globex",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hello."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "support"
+          }
+        }
+      }
+    },
+    {
+      "call": "channel_call",
+      "channel_id": "support",
+      "room_id": "r-globex",
+      "verb": "ping",
+      "expect": {
+        "error": {
+          "name": "turn_link",
+          "reason": "no_executor"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r0": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "For the room without one."
+          }
+        }
+      ],
+      "r-acme": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "For acme."
+          }
+        }
+      ],
+      "r-globex": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello."
+          }
+        }
+      ]
+    },
+    "executors": {
+      "default_pool": [
+        {
+          "call": "built",
+          "channel_id": "support",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "support",
+          "room_id": "r0",
+          "build": 1
+        }
+      ],
+      "acme_pool": [
+        {
+          "call": "built",
+          "channel_id": "support",
+          "build": 1
+        },
+        {
+          "call": "on_event",
+          "channel_id": "support",
+          "room_id": "r-acme",
+          "build": 1
+        }
+      ]
+    }
+  }
+}

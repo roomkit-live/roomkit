@@ -43,6 +43,9 @@
         "id": "pool",
         "hosts": [
           "support"
+        ],
+        "organizations": [
+          "acme"
         ]
       }
     ],

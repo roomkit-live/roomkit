@@ -1,7 +1,7 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "executors/the-kit-lists-the-executors-served-and-what-each-declares",
-  "title": "The kit lists the executors served on its turn backend, with what each declares and whether it is online; a closed one is no longer listed, and the kit's own executor never is",
+  "title": "The kit lists the executors served on its turn backend, with what each declares (its agents, its organizations, its room hooks) and whether it is online; a closed one is no longer listed, and the kit's own executor never is",
   "rules": [
     "§10.6.7",
     "§10.6.8"
@@ -44,6 +44,9 @@
         "id": "pool",
         "hosts": [
           "acme-*"
+        ],
+        "organizations": [
+          "acme"
         ]
       },
       {
@@ -82,6 +85,9 @@
               "hosts": [
                 "acme-*"
               ],
+              "organizations": [
+                "acme"
+              ],
               "room_hooks": [],
               "online": true
             },
@@ -90,6 +96,7 @@
               "hosts": [
                 "coder"
               ],
+              "organizations": null,
               "room_hooks": [],
               "online": true
             }
@@ -115,6 +122,9 @@
               "hosts": [
                 "acme-*"
               ],
+              "organizations": [
+                "acme"
+              ],
               "room_hooks": [],
               "online": true
             },
@@ -123,6 +133,7 @@
               "hosts": [
                 "coder"
               ],
+              "organizations": null,
               "room_hooks": [],
               "online": true
             }
