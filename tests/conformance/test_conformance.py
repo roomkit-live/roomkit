@@ -97,6 +97,7 @@ _ANSWERS_AFTER_ITS_CUT = {"tools/a-call-that-returns-once-its-turn-is-cut-ends-a
 
 # Store, routing, tenancy, idempotency and room lifecycle scenarios run on each store that
 # needs no server: the in-memory store, the kit's default, and SQLiteStore.
+# Composition also checks that fragments leave no persisted partial calls.
 _STORES = ("memory", "sqlite")
 
 
@@ -128,6 +129,7 @@ def _cases() -> list[Any]:
                     "tenancy/",
                     "delivery/",
                     "broadcast/",
+                    "tool-composition/",
                 )
             )
             else ("memory",)

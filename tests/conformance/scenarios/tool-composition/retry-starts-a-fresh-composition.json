@@ -1,0 +1,235 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tool-composition/retry-starts-a-fresh-composition",
+  "title": "A retry closes the abandoned composition and restarts its cumulative counts in the same round",
+  "rules": [
+    "§6.4",
+    "§8.4"
+  ],
+  "notes": "Python: tests/test_ai_streaming_tool_events.py (composition, coalescing and attempt closure); tests/test_ai_stream_contract.py (stream lifecycle). Fragments drive the real channel through process_inbound; tool_events are read from the room realtime subscription. No real provider or external executor is involved.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "stream": [
+                {
+                  "tool_call_delta": {
+                    "id": "c1",
+                    "name": "lookup",
+                    "index": 0,
+                    "arguments_delta": "{\"q\":"
+                  }
+                }
+              ],
+              "refuses": {
+                "message": "overloaded",
+                "status": 503,
+                "retryable": true
+              }
+            },
+            {
+              "stream": [
+                {
+                  "tool_call_delta": {
+                    "id": "c1",
+                    "name": "lookup",
+                    "index": 0,
+                    "arguments_delta": "{\"q\":"
+                  }
+                },
+                {
+                  "tool_call_delta": {
+                    "id": "c1",
+                    "name": "lookup",
+                    "index": 0,
+                    "arguments_delta": "\"x\"}"
+                  }
+                },
+                {
+                  "call": {
+                    "id": "c1",
+                    "name": "lookup",
+                    "arguments": {
+                      "q": "x"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look a record up.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "{\"found\": 1}"
+          }
+        ],
+        "thinking_coalesce_ms": 0,
+        "retry_policy": {
+          "max_retries": 1,
+          "base_delay_ms": 1
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Look it up."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "tool_events": {
+      "room-1": [
+        {
+          "type": "tool_call_delta",
+          "tool_calls": [
+            {
+              "id": "$e1",
+              "name": "lookup",
+              "arguments_chars": 5,
+              "arguments": {
+                "$absent": true
+              },
+              "arguments_delta": {
+                "$absent": true
+              }
+            }
+          ],
+          "round": 0,
+          "channel_id": "agent"
+        },
+        {
+          "type": "tool_call_delta",
+          "tool_calls": [],
+          "round": 0,
+          "channel_id": "agent"
+        },
+        {
+          "type": "tool_call_delta",
+          "tool_calls": [
+            {
+              "id": "$e1",
+              "name": "lookup",
+              "arguments_chars": 5,
+              "arguments": {
+                "$absent": true
+              },
+              "arguments_delta": {
+                "$absent": true
+              }
+            }
+          ],
+          "round": 0,
+          "channel_id": "agent"
+        },
+        {
+          "type": "tool_call_delta",
+          "tool_calls": [
+            {
+              "id": "$e1",
+              "name": "lookup",
+              "arguments_chars": 9,
+              "arguments": {
+                "$absent": true
+              },
+              "arguments_delta": {
+                "$absent": true
+              }
+            }
+          ],
+          "round": 0,
+          "channel_id": "agent"
+        },
+        {
+          "type": "tool_call_delta",
+          "tool_calls": [],
+          "round": 0,
+          "channel_id": "agent"
+        },
+        {
+          "type": "tool_call_start",
+          "tool_calls": [
+            {
+              "id": "$e1",
+              "name": "lookup",
+              "arguments": {
+                "q": "x"
+              }
+            }
+          ],
+          "round": 0,
+          "channel_id": "agent"
+        },
+        {
+          "type": "tool_call_end",
+          "tool_calls": [
+            {
+              "id": "$e1",
+              "name": "lookup",
+              "result": "{\"found\": 1}",
+              "status": "completed"
+            }
+          ],
+          "round": 0,
+          "channel_id": "agent",
+          "duration_ms": {
+            "$present": true
+          }
+        }
+      ]
+    }
+  }
+}
