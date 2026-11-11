@@ -263,7 +263,10 @@ async def test_a_summarizing_memory_compacts_a_turn_past_its_threshold_between_r
     assert _contents(compacted[2:]) == ["go", "assistant", "tool"]
 
 
-async def test_editing_a_follower_keeps_the_answered_duplicate(streaming: bool) -> None:
+@pytest.mark.parametrize("copy_messages", [False, True])
+async def test_editing_a_follower_keeps_the_answered_duplicate(
+    streaming: bool, copy_messages: bool
+) -> None:
     """A hook editing a later message cannot move the compaction boundary
     to an older message with the same words as the answered input."""
     history = [
@@ -279,6 +282,14 @@ async def test_editing_a_follower_keeps_the_answered_duplicate(streaming: bool) 
         return "found"
 
     async def hook(event: AIGenerationEvent) -> SyncPipelineResult:
+        if copy_messages:
+            event.ai_context = event.ai_context.model_copy(
+                update={
+                    "messages": [
+                        message.model_copy(deep=True) for message in event.ai_context.messages
+                    ]
+                }
+            )
         last = event.ai_context.messages[-1]
         event.ai_context.messages[-1] = last.model_copy(
             update={"content": f"{last.content} [checked]"}

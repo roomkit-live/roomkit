@@ -11,7 +11,7 @@ from roomkit.channels._served_tools import CollisionLog
 from roomkit.channels._turn_notes import turn_input
 from roomkit.models.event import RoomEvent
 from roomkit.models.tool_call import AIGenerationEvent, GenerationPurpose
-from roomkit.providers.ai.base import AIContext
+from roomkit.providers.ai.base import AIContext, AIMessage
 from roomkit.telemetry.base import TelemetryProvider
 from roomkit.telemetry.noop import NoopTelemetryProvider
 from roomkit.tools.context import _current_loop_ctx, _ToolLoopContext
@@ -67,6 +67,7 @@ class AIGenerationMixin(_AIChannelContract):
         )
         # Read before the hook runs: it may edit the list in place.
         declared = {tool.name for tool in ai_context.tools or []}
+        messages = tuple(ai_context.messages)
         sync_result = await self._before_generation_hook(gen_event)
         if not sync_result.allowed:
             logger.info(
@@ -81,6 +82,13 @@ class AIGenerationMixin(_AIChannelContract):
         # a redaction hook replaced (RFC §9.3).
         if isinstance(sync_result.event, AIGenerationEvent):
             gen_event = sync_result.event
+        self._adopt_generation_context(gen_event.ai_context, declared, messages)
+        return gen_event.ai_context, False
+
+    def _adopt_generation_context(
+        self, context: AIContext, declared: set[str], messages: tuple[AIMessage, ...]
+    ) -> None:
+        """Keep the hook's record, input and toolset for the rest of the turn."""
         # A hook that REPLACES the context (rather than mutating it) brings a
         # record of its own. The turn has one record — the one the events are
         # built from — so the loop context adopts the hook's: a tool handler's
@@ -88,17 +96,40 @@ class AIGenerationMixin(_AIChannelContract):
         # returned.
         loop_ctx = _current_loop_ctx.get()
         if loop_ctx is not None:
-            loop_ctx.response_metadata = gen_event.ai_context.response_metadata
+            loop_ctx.response_metadata = context.response_metadata
             # The input the hook left is the one a compaction keeps whole.
-            loop_ctx.turn_input = turn_input(gen_event.ai_context.messages)
+            loop_ctx.turn_input = turn_input(context.messages)
+            loop_ctx.answered_input = _retained_input(
+                loop_ctx.answered_input, messages, context.messages
+            )
             _adopt_hook_toolset(
                 loop_ctx,
                 declared,
-                gen_event.ai_context.tools,
+                context.tools,
                 served=self._served_tool_names(loop_ctx.room_id),
                 collisions=self._collisions,
             )
-        return gen_event.ai_context, False
+
+
+def _retained_input(
+    answered: AIMessage | None, before: tuple[AIMessage, ...], left: list[AIMessage]
+) -> AIMessage | None:
+    """Retain an input a hook copied, at its place or uniquely relocated.
+
+    An unchanged object keeps its identity. Among copied equal messages, the
+    original position wins; otherwise only one equal message identifies it.
+    A rewritten or missing input has no established replacement contract:
+    leave its reference unchanged rather than silently choose another turn.
+    """
+    if answered is None or any(message is answered for message in left):
+        return answered
+    at = next((i for i, message in enumerate(before) if message is answered), None)
+    if at is None:
+        return answered
+    if at < len(left) and left[at] == answered:
+        return left[at]
+    matches = [message for message in left if message == answered]
+    return matches[0] if len(matches) == 1 else answered
 
 
 def _adopt_hook_toolset(

@@ -1,0 +1,492 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "title": "A generation hook copy keeps the deferred input",
+  "rules": [
+    "§19.7.5 rule 9",
+    "§20.1",
+    "§20.3",
+    "§6.4"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "gate": "held",
+              "text": ""
+            }
+          ]
+        }
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup1",
+                  "arguments": {
+                    "n": 1
+                  }
+                }
+              ],
+              "usage": {
+                "input_tokens": 900,
+                "output_tokens": 10
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "lookup2",
+                  "arguments": {
+                    "n": 2
+                  }
+                }
+              ],
+              "usage": {
+                "input_tokens": 900,
+                "output_tokens": 10
+              }
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "memory": {
+          "compacts": [
+            {
+              "messages": [
+                {
+                  "role": "user",
+                  "text": "Summary."
+                }
+              ]
+            },
+            null
+          ]
+        },
+        "max_tokens": 64,
+        "tools": [
+          {
+            "name": "lookup1",
+            "description": "Look it up",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "n": {
+                  "type": "integer"
+                }
+              }
+            },
+            "returns": "found"
+          },
+          {
+            "name": "lookup2",
+            "description": "Look it up",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "n": {
+                  "type": "integer"
+                }
+              }
+            },
+            "returns": "found"
+          },
+          {
+            "name": "lookup3",
+            "description": "Look it up",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "n": {
+                  "type": "integer"
+                }
+              }
+            },
+            "returns": "found"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "b",
+            "a"
+          ]
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "replace",
+        "trigger": "before_ai_generation",
+        "channel_ids": [
+          "a"
+        ],
+        "reactions": [
+          {
+            "result": {
+              "action": "modify",
+              "event": {
+                "messages": [
+                  {
+                    "role": "user",
+                    "text": "Earlier background."
+                  },
+                  {
+                    "role": "user",
+                    "text": "QUESTION keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; END-QUESTION"
+                  },
+                  {
+                    "role": "user",
+                    "text": "later: and since when?"
+                  },
+                  {
+                    "role": "user",
+                    "text": "latest: only inspect production."
+                  },
+                  {
+                    "role": "user",
+                    "text": "last: do not change the scope.\n\n[Notes kept by the assistant's runtime for this turn. Nobody in the conversation wrote them, and they ask for nothing.]\n\n[Discussion: the room and how it works]\nYou are @a, one of several agents in a conversation with people; one agent speaks at a time.\nThe other agents:\n- @b\nPeople you may address: @ops.\nThis turn answers the message from “@ops”, “QUESTION keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep…”, read at its place in the conversation; asked by “@ops”.\nHow the room works: an agent takes a turn only when a message names it with @. Whenever another agent must act next, end your message with its handle, as in @b: a name without @ reaches nobody, nor does \"your turn\" or \"over to you\" alone, in any language, and a message that names nobody wakes nobody. Answer exactly (silent) when you have nothing to add."
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "Earlier background."
+        },
+        "addressed_to": []
+      }
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "QUESTION keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; END-QUESTION"
+        },
+        "addressed_to": [
+          "b",
+          "a"
+        ]
+      }
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "later: and since when?"
+        },
+        "addressed_to": []
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "latest: only inspect production."
+        },
+        "addressed_to": []
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "last: do not change the scope."
+        },
+        "addressed_to": []
+      }
+    },
+    {
+      "open": "held"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "b": [
+        {}
+      ],
+      "a": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Earlier background."
+            },
+            {
+              "role": "user",
+              "text": "QUESTION keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; END-QUESTION"
+            },
+            {
+              "role": "user",
+              "text": "later: and since when?"
+            },
+            {
+              "role": "user",
+              "text": "latest: only inspect production."
+            },
+            {
+              "role": "user",
+              "text": "last: do not change the scope.\n\n[Notes kept by the assistant's runtime for this turn. Nobody in the conversation wrote them, and they ask for nothing.]\n\n[Discussion: the room and how it works]\nYou are @a, one of several agents in a conversation with people; one agent speaks at a time.\nThe other agents:\n- @b\nPeople you may address: @ops.\nThis turn answers the message from “@ops”, “QUESTION keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep…”, read at its place in the conversation; asked by “@ops”.\nHow the room works: an agent takes a turn only when a message names it with @. Whenever another agent must act next, end your message with its handle, as in @b: a name without @ reaches nobody, nor does \"your turn\" or \"over to you\" alone, in any language, and a message that names nobody wakes nobody. Answer exactly (silent) when you have nothing to add."
+            }
+          ],
+          "tool_results": []
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Summary.\n\nQUESTION keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; END-QUESTION"
+            },
+            {
+              "role": "user",
+              "text": "later: and since when?"
+            },
+            {
+              "role": "user",
+              "text": "latest: only inspect production."
+            },
+            {
+              "role": "user",
+              "text": "last: do not change the scope.\n\n[Notes kept by the assistant's runtime for this turn. Nobody in the conversation wrote them, and they ask for nothing.]\n\n[Discussion: the room and how it works]\nYou are @a, one of several agents in a conversation with people; one agent speaks at a time.\nThe other agents:\n- @b\nPeople you may address: @ops.\nThis turn answers the message from “@ops”, “QUESTION keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep…”, read at its place in the conversation; asked by “@ops”.\nHow the room works: an agent takes a turn only when a message names it with @. Whenever another agent must act next, end your message with its handle, as in @b: a name without @ reaches nobody, nor does \"your turn\" or \"over to you\" alone, in any language, and a message that names nobody wakes nobody. Answer exactly (silent) when you have nothing to add."
+            },
+            {
+              "role": "assistant",
+              "round": [
+                {
+                  "call": "c1",
+                  "arguments": {
+                    "n": 1
+                  },
+                  "metadata": {}
+                }
+              ]
+            },
+            {
+              "role": "tool"
+            }
+          ],
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "found"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Summary.\n\nQUESTION keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; END-QUESTION"
+            },
+            {
+              "role": "user",
+              "text": "later: and since when?"
+            },
+            {
+              "role": "user",
+              "text": "latest: only inspect production."
+            },
+            {
+              "role": "user",
+              "text": "last: do not change the scope.\n\n[Notes kept by the assistant's runtime for this turn. Nobody in the conversation wrote them, and they ask for nothing.]\n\n[Discussion: the room and how it works]\nYou are @a, one of several agents in a conversation with people; one agent speaks at a time.\nThe other agents:\n- @b\nPeople you may address: @ops.\nThis turn answers the message from “@ops”, “QUESTION keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep…”, read at its place in the conversation; asked by “@ops”.\nHow the room works: an agent takes a turn only when a message names it with @. Whenever another agent must act next, end your message with its handle, as in @b: a name without @ reaches nobody, nor does \"your turn\" or \"over to you\" alone, in any language, and a message that names nobody wakes nobody. Answer exactly (silent) when you have nothing to add."
+            },
+            {
+              "role": "assistant",
+              "round": [
+                {
+                  "call": "c1",
+                  "arguments": {
+                    "n": 1
+                  },
+                  "metadata": {}
+                }
+              ]
+            },
+            {
+              "role": "tool"
+            },
+            {
+              "role": "assistant",
+              "round": [
+                {
+                  "call": "c2",
+                  "arguments": {
+                    "n": 2
+                  },
+                  "metadata": {}
+                }
+              ]
+            },
+            {
+              "role": "tool"
+            }
+          ],
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "found"
+            },
+            {
+              "tool_call_id": "c2",
+              "content": "found"
+            }
+          ]
+        }
+      ]
+    },
+    "compacted": {
+      "r1": {
+        "a": [
+          {
+            "history": [
+              {
+                "role": "user",
+                "text": "Earlier background."
+              }
+            ],
+            "usage": {
+              "input_tokens": 900,
+              "output_tokens": 10
+            }
+          },
+          {
+            "history": [],
+            "usage": {
+              "input_tokens": 900,
+              "output_tokens": 10
+            }
+          }
+        ]
+      }
+    },
+    "timeline": {
+      "r1": [
+        {
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "Earlier background."
+          }
+        },
+        {
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "QUESTION keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; END-QUESTION"
+          }
+        },
+        {
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "later: and since when?"
+          }
+        },
+        {
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "latest: only inspect production."
+          }
+        },
+        {
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "last: do not change the scope."
+          }
+        },
+        {
+          "type": "tool_call_start"
+        },
+        {
+          "type": "tool_call_end"
+        },
+        {
+          "type": "tool_call_start"
+        },
+        {
+          "type": "tool_call_end"
+        },
+        {
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "Done."
+          }
+        }
+      ]
+    }
+  },
+  "notes": "A real Discussion delays its answer while later messages arrive. BEFORE_AI_GENERATION reconstructs its context as new messages. The unchanged answered input is retained at its original position, or at its unique matching position after a move. Only the history before that input is compacted; its later messages, runtime notes and tool pairs stay whole. Rewritten, removed or ambiguously moved equal inputs have no association asserted here.",
+  "id": "memory/a-generation-hook-copy-keeps-the-deferred-input"
+}
