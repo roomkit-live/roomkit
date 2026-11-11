@@ -432,6 +432,7 @@ class _ToolLoopContext:
             # The input _build_context gave the turn, which a compaction in
             # the loop keeps whole.
             ctx.turn_input = parent.turn_input
+            ctx.answered_input = parent.answered_input
             ctx.standalone = parent.standalone
             ctx.turn_budget = parent.turn_budget
             ctx.provider = parent.provider

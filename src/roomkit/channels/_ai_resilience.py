@@ -362,6 +362,8 @@ class AIResilienceMixin(_AIChannelContract):
         compacted = with_leading_text(summary, kept)
         if kept and kept[0] is loop_ctx.turn_input:
             loop_ctx.turn_input = compacted[0]
+        if kept and kept[0] is loop_ctx.answered_input:
+            loop_ctx.answered_input = compacted[0]
         context.messages[:] = compacted
         return context
 

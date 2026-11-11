@@ -388,6 +388,9 @@ class AIContextMixin(_AIChannelContract):
         messages, attribute_speakers, requester = self._turn_messages(
             event, context, memory_result, loop_ctx, people, earlier
         )
+        answered = next(
+            (i for i, message in enumerate(messages) if message is loop_ctx.answered_input), None
+        )
         # Who a task this turn delegates names as having asked (RFC §19.7).
         loop_ctx.requester = requester
         messages = conversation_without_header_copies(messages)
@@ -401,7 +404,10 @@ class AIContextMixin(_AIChannelContract):
         messages = with_turn_notes(messages, notes)
         # The latest images the room's tools returned, after the notes: a
         # replayed result only says what they showed in its tool's words.
-        return with_turn_images(messages, self._turn_images(loop_ctx))
+        messages = with_turn_images(messages, self._turn_images(loop_ctx))
+        if answered is not None:
+            loop_ctx.answered_input = messages[answered]
+        return messages
 
     async def _author_images(self, event: RoomEvent, memory_result: MemoryResult) -> AuthorImages:
         """What the images the turn's history and input carry become (RFC §6.4);
@@ -592,7 +598,7 @@ class AIContextMixin(_AIChannelContract):
 
         if current is not None:
             messages.append(current)
-        conversation = _conversation(messages, len(memory))
+        conversation = _conversation(messages, len(memory), loop_ctx)
         return conversation, attribute_speakers, current_label
 
     def _own_turns(self, memory_result: MemoryResult) -> dict[int, str]:
@@ -1371,15 +1377,24 @@ def _runtime_or_cleaned(message: AIMessage) -> AIMessage:
     )
 
 
-def _conversation(messages: list[AIMessage], built: int) -> list[AIMessage]:
+def _conversation(
+    messages: list[AIMessage], built: int, loop_ctx: _ToolLoopContext
+) -> list[AIMessage]:
     """*messages*, the first *built* of them a memory's, as the model reads
     them: a copy of a mark split over consecutive user messages cut, the
     memory's last message and the turn after it included, then the memory's
     user text joined to that turn (RFC §6.4)."""
+    answered = next(
+        (i for i, message in enumerate(messages) if message is loop_ctx.answered_input), None
+    )
     cut, emptied = cut_split_copies(messages)
     kept = [message for i, message in enumerate(cut) if i not in emptied]
     built -= sum(1 for i in emptied if i < built)
-    return _after_memory(kept[:built], kept[built:])
+    conversation = _after_memory(kept[:built], kept[built:])
+    if answered is not None:
+        at = answered - sum(i < answered for i in emptied) + len(conversation) - len(kept)
+        loop_ctx.answered_input = None if answered in emptied else conversation[at]
+    return conversation
 
 
 def _after_memory(memory: list[AIMessage], rest: list[AIMessage]) -> list[AIMessage]:

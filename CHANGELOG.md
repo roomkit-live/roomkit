@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Keep a deferred discussion turn's answered message whole across memory summaries, tool-round compaction and repeated context overflows (RFC §6.4, §20.1).
+
 ## [0.113.0] — 2026-11-11
 
 ### Added
