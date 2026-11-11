@@ -1,0 +1,186 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executor-close/closing-refuses-new-turns-and-keeps-transports",
+  "title": "Closing the local executor refuses later agent turns while transport operations remain usable",
+  "rules": [
+    "§10.6.7",
+    "§10.6.8"
+  ],
+  "notes": "Python: tests/test_turns_own_executor.py::test_a_live_agent_s_turn_fails_once_the_kit_s_executor_closed; TurnExecutor.close and declares.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "answer"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "transport",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "kit_executor.closed",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "kit_executor.close",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "kit_executor.close",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "kit_executor.closed",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "later"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$present": true
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "transport",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "still here"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "answer"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "later"
+          }
+        }
+      ],
+      "transport": [
+        {
+          "content": {
+            "type": "text",
+            "body": "still here"
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {}
+      ]
+    }
+  }
+}

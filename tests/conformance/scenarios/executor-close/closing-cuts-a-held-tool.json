@@ -1,0 +1,161 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executor-close/closing-cuts-a-held-tool",
+  "title": "Closing the local executor ends a streaming turn and settles its pending tool",
+  "rules": [
+    "§10.6.7",
+    "§10.6.8"
+  ],
+  "notes": "Python: conformance/scenarios/executors/an-executor-closed-during-a-turn-ends-it.json, restricted to the kit's borrowed local executor; _executor_turn.py::_serve_stream closes its cancelled stream.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Looking.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "slow",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "Back."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "slow",
+            "gate": "tool",
+            "returns": "ok"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "transport",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "background": true,
+      "as": "turn"
+    },
+    {
+      "wait_for": "tool"
+    },
+    {
+      "call": "kit_executor.close",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "await": "turn",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$present": true
+          }
+        }
+      }
+    },
+    {
+      "call": "kit_executor.closed",
+      "expect": {
+        "result": true
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Looking."
+          }
+        },
+        {
+          "content": {
+            "type": "tool_call",
+            "tool_name": "slow",
+            "status": "pending"
+          }
+        },
+        {
+          "content": {
+            "type": "tool_call",
+            "tool_name": "slow",
+            "status": "failed"
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {}
+      ]
+    }
+  }
+}

@@ -1,0 +1,169 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executor-close/closing-from-another-delivery-cuts-its-waiter",
+  "title": "A turn in another delivery has its own scope; closing its executor cuts the waiting first turn",
+  "rules": [
+    "§10.6.7",
+    "§10.6.8"
+  ],
+  "notes": "Python: tests/test_executor_close_contract.py::test_nested_inbound_has_a_separate_turn_scope. A process_inbound in a turn starts another delivery with its own turn scope, not a directly nested backend turn. Closing from that delivery cuts the first turn; cancellation of its waiting call also ends the second delivery.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "nested"
+            },
+            {
+              "text": "outer"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "transport",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "kit_executor.hook",
+      "hook": {
+        "name": "lifecycle",
+        "trigger": "before_ai_generation",
+        "reactions": [
+          {
+            "when": {
+              "room_id": "r1"
+            },
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "r2",
+                "message": {
+                  "channel_id": "ws",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "hello"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "when": {
+              "room_id": "r2"
+            },
+            "do": [
+              {
+                "call": "kit_executor.close",
+                "expect": {
+                  "result": null
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$present": true
+          }
+        }
+      }
+    },
+    {
+      "call": "kit_executor.closed",
+      "expect": {
+        "result": true
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          }
+        }
+      ],
+      "r2": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": []
+    },
+    "hooks": {
+      "lifecycle": [
+        {
+          "room_id": "r1"
+        },
+        {
+          "room_id": "r2"
+        }
+      ]
+    }
+  }
+}

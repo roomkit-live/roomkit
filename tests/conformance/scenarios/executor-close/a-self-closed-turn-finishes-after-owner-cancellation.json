@@ -1,0 +1,198 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executor-close/a-self-closed-turn-finishes-after-owner-cancellation",
+  "title": "A turn spared by its own executor close continues after its owner cancelled the delivery",
+  "rules": [
+    "§10.6.7",
+    "§10.6.8"
+  ],
+  "notes": "Python: TurnExecutor._spare_turns_run_under calls ExecutorTurn.spare; a later owner cancellation lets the owner go but leaves the work running. An independent external executor close still cancels that work. Continuation is observed by a transport-only call from the spared hook; no model generation is promised after owner cancellation.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "answer"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "transport",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "continued",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "room_id": "transport"
+            },
+            "gate": "continued"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "kit_executor.hook",
+      "hook": {
+        "name": "lifecycle",
+        "trigger": "before_ai_generation",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "kit_executor.close",
+                "expect": {
+                  "result": null
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "call": "kit_executor.hook",
+      "hook": {
+        "name": "after-close",
+        "trigger": "before_ai_generation",
+        "priority": 10,
+        "reactions": [
+          {
+            "gate": "closed-inside",
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "transport",
+                "message": {
+                  "channel_id": "ws",
+                  "sender_id": "alice",
+                  "content": {
+                    "type": "text",
+                    "body": "continued"
+                  }
+                },
+                "expect": {
+                  "result": {
+                    "blocked": false,
+                    "error": null
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        },
+        "delivery_key": "delivery"
+      },
+      "background": true,
+      "as": "turn"
+    },
+    {
+      "wait_for": "closed-inside"
+    },
+    {
+      "call": "cancel_delivery",
+      "key": "delivery",
+      "reason": "caller_cancelled",
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "await": "turn",
+      "expect": {
+        "result": {
+          "cancellation_reason": "caller_cancelled"
+        }
+      }
+    },
+    {
+      "open": "closed-inside"
+    },
+    {
+      "wait_for": "continued"
+    },
+    {
+      "open": "continued"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "hello"
+          }
+        }
+      ],
+      "transport": [
+        {
+          "content": {
+            "type": "text",
+            "body": "continued"
+          }
+        }
+      ]
+    }
+  }
+}
