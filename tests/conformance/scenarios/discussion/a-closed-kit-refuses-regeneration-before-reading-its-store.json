@@ -1,0 +1,75 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "rules": [
+    "§12.10.4"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "watch",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          },
+          {
+            "channel_id": "watch"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "close"
+    },
+    {
+      "call": "regenerate_response",
+      "room_id": "r1",
+      "expect": {
+        "error": {
+          "name": "kit_closed"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "a": []
+    },
+    "timeline": {
+      "r1": []
+    }
+  },
+  "id": "discussion/a-closed-kit-refuses-regeneration-before-reading-its-store",
+  "title": "Regeneration on a closed kit is refused before reading the store it released",
+  "notes": "Python: core/framework.py::_closing_call and core/mixins/regenerate.py::regenerate_response; tests/conformance/test_processes.py::test_regeneration_uses_the_named_kit_without_closing_the_other. Run on memory and SQLite so a released store cannot mask kit_closed."
+}

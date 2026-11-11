@@ -1,0 +1,223 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "rules": [
+    "§19.7.5 rule 7"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "watch",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "@b @c please look"
+            },
+            {
+              "text": "a regenerated"
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "gate": "b-turn",
+              "text": "b first"
+            }
+          ]
+        }
+      },
+      {
+        "id": "c",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "c first"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          },
+          {
+            "channel_id": "watch"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a",
+            "b",
+            "c"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@a hello"
+        }
+      }
+    },
+    {
+      "wait_for": "b-turn"
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "speaking": "b",
+          "queue": [
+            "c"
+          ]
+        }
+      }
+    },
+    {
+      "call": "regenerate_response",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "event": {
+            "id": "r1#0"
+          },
+          "blocked": false,
+          "reason": null,
+          "error": null,
+          "response_events": []
+        }
+      }
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "speaking": "b",
+          "queue": [
+            "a",
+            "c"
+          ]
+        }
+      }
+    },
+    {
+      "open": "b-turn"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "speaking": null,
+          "queue": []
+        }
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "a": [
+        {},
+        {}
+      ],
+      "b": [
+        {}
+      ],
+      "c": [
+        {}
+      ]
+    },
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "@a hello"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "body": "@b @c please look"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "b"
+          },
+          "content": {
+            "body": "b first"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "body": "a regenerated"
+          },
+          "responds_to": "r1#0"
+        },
+        {
+          "source": {
+            "channel_id": "c"
+          },
+          "content": {
+            "body": "c first"
+          },
+          "responds_to": "r1#1"
+        }
+      ]
+    }
+  },
+  "id": "discussion/regenerated-turns-run-before-ordinary-pending-turns",
+  "title": "A regenerated turn precedes an ordinary turn already queued by an agent",
+  "notes": "Python: tests/test_discussion_queue.py::test_a_regenerated_answer_is_not_merged_into_a_pending_turn; discussion/_queue.py::queue_regeneration and ordered, exercised through regenerate_response. The pending agent request is ordinary; a person-addressed front request would retain its earlier place."
+}

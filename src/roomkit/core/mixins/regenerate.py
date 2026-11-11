@@ -272,10 +272,11 @@ class RegenerateMixin(HelpersMixin):
         if room is not None:
             self._follow_discussion(room)
         discussion = self._discussions.get(room_id)
-        if discussion is not None:
-            return await self._regenerate_in_discussion(discussion, room_id, trigger_id)
         with collecting_release_failures() as failed_releases:
-            result = await self._regenerate_alone(room_id, trigger_id, change.budget)
+            if discussion is not None:
+                result = await self._regenerate_in_discussion(discussion, room_id, trigger_id)
+            else:
+                result = await self._regenerate_alone(room_id, trigger_id, change.budget)
         if result is not None and result.error is None and failed_releases:
             # A failed release of the room lock, as on the inbound path (RFC §13.5).
             result.error = failed_releases[0]

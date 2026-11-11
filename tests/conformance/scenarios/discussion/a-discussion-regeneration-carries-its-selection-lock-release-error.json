@@ -1,0 +1,122 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "rules": [
+    "§13.5 A release that fails",
+    "§19.7.5 rule 7"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "watch",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "first"
+            },
+            {
+              "text": "again"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          },
+          {
+            "channel_id": "watch"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a"
+          ]
+        }
+      }
+    ],
+    "kit": {
+      "lock_manager": {
+        "release_error": "selection lease expired"
+      }
+    }
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@a hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "lock_releases": "fail"
+    },
+    {
+      "call": "regenerate_response",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "reason": null,
+          "event": {
+            "id": "r1#0"
+          },
+          "error": {
+            "$contains": "selection lease expired"
+          },
+          "response_events": []
+        }
+      }
+    },
+    {
+      "lock_releases": "succeed"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "a": [
+        {},
+        {}
+      ]
+    }
+  },
+  "id": "discussion/a-discussion-regeneration-carries-its-selection-lock-release-error",
+  "title": "A discussion regeneration retains a failed selection lock release without undoing its outcome",
+  "notes": "Python: core/mixins/regenerate.py::regenerate_response. Regression: the discussion branch returned before collecting_release_failures, violating RFC §13.5; ordinary regeneration already collected it."
+}

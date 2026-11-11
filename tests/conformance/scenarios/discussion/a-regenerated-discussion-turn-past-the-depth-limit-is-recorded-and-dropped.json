@@ -1,0 +1,155 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "rules": [
+    "§19.7.5 rule 7",
+    "§19.7.5 rule 11"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "watch",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          },
+          {
+            "channel_id": "watch"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a"
+          ],
+          "max_depth": 3
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "set_access",
+      "room_id": "r1",
+      "channel_id": "a",
+      "access": "none"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        },
+        "addressed_to": [
+          "a"
+        ],
+        "chain_depth": 2
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "set_access",
+      "room_id": "r1",
+      "channel_id": "a",
+      "access": "read_write"
+    },
+    {
+      "call": "regenerate_response",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "event": {
+            "id": "r1#0"
+          },
+          "blocked": false,
+          "reason": null,
+          "error": null,
+          "response_events": []
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "speaking": null,
+          "queue": []
+        }
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "a": []
+    },
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "hello"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "status": "blocked",
+          "blocked_by": "event_chain_depth_limit"
+        }
+      ]
+    },
+    "observations": {
+      "r1": [
+        {
+          "metadata": {
+            "max_chain_depth": 3,
+            "chain_depth": 3
+          }
+        }
+      ]
+    }
+  },
+  "id": "discussion/a-regenerated-discussion-turn-past-the-depth-limit-is-recorded-and-dropped",
+  "title": "A regenerated turn at the Discussion depth limit is recorded once and dropped instead of waiting",
+  "notes": "Python: tests/test_discussion_queue.py::test_a_turn_of_its_own_past_the_depth_limit_is_set_aside_not_kept; core/mixins/regenerate.py::_regenerate_in_discussion and discussion/_driver.py depth handling."
+}

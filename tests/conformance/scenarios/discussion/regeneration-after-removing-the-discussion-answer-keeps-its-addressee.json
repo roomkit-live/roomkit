@@ -1,0 +1,179 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "rules": [
+    "§19.7.5 rule 7"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "watch",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "first answer"
+            },
+            {
+              "text": "second answer"
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          },
+          {
+            "channel_id": "watch"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a",
+            "b"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@a hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "regenerate_target",
+      "room_id": "r1",
+      "as": "trigger"
+    },
+    {
+      "call": "store.delete_event",
+      "room_id": "r1",
+      "event_id": "r1#1"
+    },
+    {
+      "call": "regenerate_response",
+      "room_id": "r1",
+      "trigger_id": "$trigger",
+      "expect": {
+        "result": {
+          "event": {
+            "id": "r1#0"
+          },
+          "blocked": false,
+          "reason": null,
+          "error": null,
+          "response_events": []
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "a": [
+        {},
+        {}
+      ],
+      "b": []
+    },
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "@a hello"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "body": "second answer"
+          },
+          "responds_to": "r1#0"
+        }
+      ]
+    },
+    "deliveries": {
+      "r1": {
+        "watch": [
+          {
+            "source": {
+              "channel_id": "ops"
+            },
+            "content": {
+              "body": "@a hello"
+            }
+          },
+          {
+            "source": {
+              "channel_id": "a"
+            },
+            "content": {
+              "body": "first answer"
+            }
+          },
+          {
+            "source": {
+              "channel_id": "a"
+            },
+            "content": {
+              "body": "second answer"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "id": "discussion/regeneration-after-removing-the-discussion-answer-keeps-its-addressee",
+  "title": "After an answer is removed the Discussion regenerates for the trigger addressee",
+  "notes": "Python: tests/orchestration/test_discussion_edges.py::test_regenerating_after_removing_the_answer_regenerates."
+}

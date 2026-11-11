@@ -34,6 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Discussion regeneration retains the first failed lock release in its result, including when target selection refuses the call (RFC §13.5).
+
 - A discussion hands a committed message to its agents' memories at once, instead of one after the other: the message waited for the sum of their latencies before any agent was queued (RFC §19.7.5 rule 3, RMK-1626).
 - `DiscussionConsole` no longer says "the discussion waits for a person" when a person has just ended that wait (RMK-1615).
 - `DiscussionConsole` shows a room whose agents run on another executor, and a turn that failed reads as failed instead of "has nothing to add" (RMK-1612).

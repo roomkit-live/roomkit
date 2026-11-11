@@ -1,0 +1,161 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "rules": [
+    "§19.7.5 rule 7"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "watch",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "a first"
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "b first"
+            },
+            {
+              "text": "b again"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          },
+          {
+            "channel_id": "watch"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a",
+            "b"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        },
+        "addressed_to": [
+          "a",
+          "b"
+        ]
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "store.delete_event",
+      "room_id": "r1",
+      "event_id": "r1#1"
+    },
+    {
+      "call": "regenerate_response",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "event": {
+            "id": "r1#0"
+          },
+          "blocked": false,
+          "reason": null,
+          "error": null,
+          "response_events": []
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "a": [
+        {}
+      ],
+      "b": [
+        {},
+        {}
+      ]
+    },
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "hello"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "b"
+          },
+          "content": {
+            "body": "b first"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "b"
+          },
+          "content": {
+            "body": "b again"
+          },
+          "responds_to": "r1#0"
+        }
+      ]
+    }
+  },
+  "id": "discussion/a-discussion-regenerates-the-remaining-answerer-before-its-original-addressees",
+  "title": "A retained answer selects its agent for regeneration instead of every originally addressed agent",
+  "notes": "Python: core/mixins/regenerate.py::_regenerate_in_discussion selects unique answer sources before falling back to discussion.asked_by; RFC rule 7."
+}

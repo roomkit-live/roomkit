@@ -1,0 +1,180 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "rules": [
+    "§19.7.5 rule 7",
+    "§19.7.5 rule 15",
+    "§5.1",
+    "§13.6"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "watch",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "only answer"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          },
+          {
+            "channel_id": "watch"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a"
+          ],
+          "max_turns": 1
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "regenerate_response",
+      "room_id": "r1",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "regenerate_response",
+      "room_id": "r1",
+      "trigger_id": "missing",
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "trigger_moved",
+          "event": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@a hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "over": true
+        }
+      }
+    },
+    {
+      "call": "regenerate_response",
+      "room_id": "r1",
+      "trigger_id": "missing",
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "trigger_moved",
+          "event": null
+        }
+      }
+    },
+    {
+      "call": "regenerate_response",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "discussion_over",
+          "event": null
+        }
+      }
+    },
+    {
+      "call": "close_room",
+      "room_id": "r1"
+    },
+    {
+      "call": "regenerate_response",
+      "room_id": "r1",
+      "trigger_id": "missing",
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "room_closed",
+          "event": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "a": [
+        {}
+      ]
+    },
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "@a hello"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "body": "only answer"
+          }
+        }
+      ]
+    }
+  },
+  "id": "discussion/discussion-regeneration-preserves-refusal-order-in-a-loaded-room",
+  "title": "A loaded Discussion preserves absent trigger, moved trigger, completed Discussion and closed room precedence",
+  "notes": "Python: core/mixins/regenerate.py::_refuse_regeneration and _regenerate_in_discussion; tests/test_discussion_core.py::test_a_discussion_stored_over_refuses_a_regeneration_at_the_rooms_first_call supplies the stored-over counterpart."
+}
