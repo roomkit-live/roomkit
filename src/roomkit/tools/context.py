@@ -196,6 +196,9 @@ class _ToolLoopContext:
     # the turn started, then the one a retry handed a generation to, which
     # every later round stays on; the channel's own without a router (RFC §6.4).
     provider: AIProvider | None = None
+    # The provider the turn started on, whatever a retry handed over since:
+    # whether the turn holds tools unseen, and its budget's rate, are its.
+    started_on: AIProvider | None = None
     # The channel whose turn ``provider`` is: a loop of another channel that
     # inherits this context routes its own turn.
     provider_of: str | None = None
@@ -432,6 +435,7 @@ class _ToolLoopContext:
             ctx.standalone = parent.standalone
             ctx.turn_budget = parent.turn_budget
             ctx.provider = parent.provider
+            ctx.started_on = parent.started_on
             ctx.provider_of = parent.provider_of
             ctx.route_request = parent.route_request
         ctx.room = room if room is not None else (parent.room if parent else None)

@@ -171,7 +171,9 @@ class AIResilienceMixin(_AIChannelContract):
         attempt = 0
         while attempt <= policy.max_retries:
             shown = _Shown()
-            stream = self._structured_stream(provider, context, received)
+            # A provider the turn moved to that cannot hold a tool unseen
+            # receives what the turn made callable declared plainly (RFC §6.4).
+            stream = self._structured_stream(provider, declared_for(provider, context), received)
             try:
                 async for event in stream:
                     shown.note(event)

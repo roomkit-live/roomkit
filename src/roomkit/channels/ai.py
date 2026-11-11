@@ -570,6 +570,15 @@ class AIChannel(
             raise RuntimeError(f"AIChannel {self.channel_id!r}: no turn is routed here")
         return self._provider
 
+    def _turn_started_on(self) -> AIProvider:
+        """The provider the running turn started on (RFC §6.4): the one the
+        router picked at its start, else the channel's own. Whether the turn
+        holds tools unseen is its, whichever provider serves a later round."""
+        loop_ctx = _current_loop_ctx.get()
+        if loop_ctx is not None and self._routed(loop_ctx) and loop_ctx.started_on is not None:
+            return loop_ctx.started_on
+        return self._turn_provider()
+
     def _routed(self, loop_ctx: _ToolLoopContext) -> bool:
         """Whether *loop_ctx* holds a provider this channel's turn runs on."""
         return loop_ctx.provider is not None and loop_ctx.provider_of == self.channel_id
@@ -587,7 +596,7 @@ class AIChannel(
             if provider is None:
                 raise ValueError(f"router {self._router.name!r} named no provider for a turn")
             self._telemetry_to(provider)
-        loop_ctx.provider = provider
+        loop_ctx.provider = loop_ctx.started_on = provider
         loop_ctx.provider_of = self.channel_id
         return provider
 

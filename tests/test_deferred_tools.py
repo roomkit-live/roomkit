@@ -378,6 +378,72 @@ async def test_a_fallback_that_cannot_hold_receives_what_the_turn_shows(streamin
     assert "refund" not in {name for name, _ in declared}  # held, never referenced
 
 
+class _HoldsThenRefuses(HoldingProvider):
+    """Answers its first round, then refuses every request as worth another try."""
+
+    async def generate(self, context: AIContext) -> AIResponse:
+        if self.calls:
+            raise ProviderError("down", provider="holding", retryable=True, status_code=503)
+        return await super().generate(context)
+
+
+async def test_the_rounds_after_a_hand_over_reach_the_new_provider_without_references(
+    streaming: bool,
+) -> None:
+    # The turn starts on a provider that holds tools: find_tools reveals
+    # track_shipment by reference. Its next round is handed to one that
+    # cannot hold them, and every round after stays on it (RFC §6.4).
+    reveal = _round("c0", "find_tools", {"query": "track shipment", "max_results": 1})
+    fallback = MockAIProvider(
+        ai_responses=[_round("c1", "track_shipment"), _DONE], streaming=streaming
+    )
+    ch = _searching(
+        _HoldsThenRefuses(ai_responses=[reveal], streaming=streaming),
+        fallback=fallback,
+        retry_policy=RetryPolicy(max_retries=0),
+    )
+
+    run = await _turn(ch, _CATALOGUE)
+
+    assert run.reason == "completed"
+    assert len(fallback.calls) == 2
+    for request in fallback.calls:
+        assert all(not held for _, held in _declaration(request))
+        assert all(part.references == [] for part in _results(request))
+    assert "track_shipment" in {name for name, _ in _declaration(fallback.calls[1])}
+
+
+class _AnswersThenRefuses(MockAIProvider):
+    """A model that cannot hold a tool: answers its first round, then refuses."""
+
+    async def generate(self, context: AIContext) -> AIResponse:
+        if self.calls:
+            raise ProviderError("down", provider="plain", retryable=True, status_code=503)
+        return await super().generate(context)
+
+
+async def test_a_turn_handed_to_a_provider_that_holds_keeps_its_plain_declaration(
+    streaming: bool,
+) -> None:
+    # Whether a turn holds tools unseen is the provider it started on's: one
+    # that holds, handed the turn later, gets the declaration the turn began
+    # with, never tools held from the middle of the turn (RFC §6.4).
+    reveal = _round("c0", "find_tools", {"query": "track shipment", "max_results": 1})
+    holding = HoldingProvider(ai_responses=[_round("c1", "track_shipment"), _DONE])
+    ch = _searching(
+        _AnswersThenRefuses(ai_responses=[reveal], streaming=streaming),
+        fallback=holding,
+        retry_policy=RetryPolicy(max_retries=0),
+    )
+
+    run = await _turn(ch, _CATALOGUE)
+
+    assert run.reason == "completed"
+    assert len(holding.calls) == 2
+    for request in holding.calls:
+        assert all(not held for _, held in _declaration(request))
+
+
 def test_a_compaction_shows_the_tools_whose_references_it_summarized() -> None:
     ch = _searching(HoldingProvider())
     loop_ctx = _ToolLoopContext(room_id="r1")

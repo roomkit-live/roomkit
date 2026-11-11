@@ -20,6 +20,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from roomkit import HookExecution, HookResult, HookTrigger, RoomKit
+from roomkit.channels import FallbackRouter
 from roomkit.channels._realtime_delegation import (
     FALLBACK_FAILED,
     FALLBACK_NO_BACKEND,
@@ -853,6 +854,27 @@ class TestAgentBackendAsAnAgent:
             _ = [o async for o in backend.run(self._request())]
 
         assert cut.value.reason == "budget_exceeded"
+
+    async def test_an_agent_with_a_router_serves_a_delegation_under_its_budget(self) -> None:
+        """A delegation is routed on its request (RFC §6.4): the agent's router
+        picks the provider, and the turn's budget holds on it."""
+        rounds = [
+            AIResponse(
+                content="",
+                tool_calls=[AIToolCall(id=c, name="lookup", arguments={"flight": "X"})],
+                usage={"input_tokens": 1000, "output_tokens": 10},
+            )
+            for c in ("a", "b", "c")
+        ]
+        primary = MockAIProvider(ai_responses=[*rounds, AIResponse(content="done")])
+        fallback = MockAIProvider(responses=["never"])
+        agent = Agent("reasoner", router=FallbackRouter(primary, fallback), turn_budget_tokens=500)
+
+        with pytest.raises(ReasoningCutShortError) as cut:
+            _ = [o async for o in AgentReasoningBackend(agent).run(self._request())]
+
+        assert cut.value.reason == "budget_exceeded"
+        assert (len(primary.calls), fallback.calls) == (1, [])
 
     async def test_a_result_it_stores_can_be_read_back(self) -> None:
         """A result past the agent's eviction threshold is stored, and the

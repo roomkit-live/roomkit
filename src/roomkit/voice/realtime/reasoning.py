@@ -357,7 +357,7 @@ class AgentReasoningBackend(ReasoningBackend):
                 content=render_transcript_request(request.transcript, first=request.first),
             ),
         ]
-        context, loop_ctx = self._turn_context(request, messages)
+        context, loop_ctx = await self._turn_context(request, messages)
         text: list[str] = []
         reason: str | None = None
         try:
@@ -390,7 +390,7 @@ class AgentReasoningBackend(ReasoningBackend):
         if answer := "".join(text).strip():
             yield ReasoningOutput(answer, spoken=True, is_final=True)
 
-    def _turn_context(
+    async def _turn_context(
         self, request: ReasoningRequest, messages: list[AIMessage]
     ) -> tuple[AIContext, _ToolLoopContext]:
         """The turn's context, as the agent builds a turn it does not read
@@ -417,7 +417,7 @@ class AgentReasoningBackend(ReasoningBackend):
         # A call to a session tool the model was not offered reads the voice
         # gate's cause, not "not declared" (RFC §21.1).
         loop_ctx.unavailable_tools = dict(request.unavailable)
-        return agent._driven_turn(binding, loop_ctx, messages, tools), loop_ctx
+        return await agent._driven_turn(binding, loop_ctx, messages, tools), loop_ctx
 
     async def _serve_through_gate(self, name: str, arguments: dict[str, Any]) -> str:
         """Serve one of the agent's calls through the voice channel's gate.

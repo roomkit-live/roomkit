@@ -176,8 +176,10 @@ class AIToolPolicyMixin(_AIChannelContract):
 
     def _holds_tools(self, loop_ctx: _ToolLoopContext) -> bool:
         """Whether this turn declares tools held unseen: a loop built with its
-        context, on a provider that can hold a tool (RFC §6.4)."""
-        holds = self._turn_provider().supports_deferred_tools
+        context, started on a provider that can hold a tool (RFC §6.4). A
+        provider a retry is handed to that cannot receives them declared
+        plainly (``declared_for``)."""
+        holds = self._turn_started_on().supports_deferred_tools
         return loop_ctx.all_context_tools is not None and holds
 
     def _declaration_origin(self, name: str, loop_ctx: _ToolLoopContext) -> ToolDeclarationOrigin:

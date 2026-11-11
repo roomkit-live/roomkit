@@ -193,7 +193,7 @@ async def test_a_realtime_call_lists_the_tools_that_escape_the_policy(tmp_path: 
     await kit.close()
 
 
-def test_a_driven_turn_lists_what_the_agents_policy_admits() -> None:
+async def test_a_driven_turn_lists_what_the_agents_policy_admits() -> None:
     """The toolset a reasoning backend drives its agent with (RFC §12.4.1)."""
     agent = Agent(
         "reasoner",
@@ -201,7 +201,7 @@ def test_a_driven_turn_lists_what_the_agents_policy_admits() -> None:
         tool_policy=DENY_DELETE,
     )
     loop_ctx = _ToolLoopContext(room_id="r1")
-    agent._driven_turn(_binding(), loop_ctx, [], [AITool(**tool) for tool in TOOLS])
+    await agent._driven_turn(_binding(), loop_ctx, [], [AITool(**tool) for tool in TOOLS])
 
     token = _current_loop_ctx.set(loop_ctx)
     try:

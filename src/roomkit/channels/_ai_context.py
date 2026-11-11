@@ -11,7 +11,7 @@ from pydantic import ValidationError
 from roomkit._media import content_text, media_label, text_form
 from roomkit.channels._ai_cuts import CUT_NOTE, cut_answers, cut_mark, cut_records
 from roomkit.channels._ai_policy import policy_check
-from roomkit.channels._ai_router import turn_request
+from roomkit.channels._ai_router import messages_request, turn_request
 from roomkit.channels._author_images import (
     AuthorImages,
     RefusedImages,
@@ -114,6 +114,7 @@ if TYPE_CHECKING:
     from roomkit.models.channel import ChannelBinding
     from roomkit.models.context import RoomContext
     from roomkit.models.event import RoomEvent
+    from roomkit.providers.ai.base import AIProvider
     from roomkit.sandbox.executor import SandboxExecutor
     from roomkit.skills.executor import ScriptExecutor
     from roomkit.skills.registry import SkillRegistry
@@ -245,8 +246,8 @@ class AIContextMixin(_AIChannelContract):
 
         loop_ctx = self._get_loop_ctx()
         # The context is built for the provider the turn runs on (RFC §6.4).
-        await self._route_turn(loop_ctx, turn_request(event, binding.room_id))
-        loop_ctx.turn_budget = self._turn_budget(binding, turn)
+        provider = await self._route_turn(loop_ctx, turn_request(event, binding.room_id))
+        loop_ctx.turn_budget = self._turn_budget(binding, turn, provider)
         loop_ctx.tool_handler = turn.tool_handler if turn is not None else None
         loop_ctx.skills = self._given_turn_skills(turn)
         loop_ctx.tool_timeouts = self._given_turn_timeouts(turn)
@@ -950,7 +951,7 @@ class AIContextMixin(_AIChannelContract):
             return None
         return given
 
-    def _driven_turn(
+    async def _driven_turn(
         self,
         binding: ChannelBinding,
         loop_ctx: _ToolLoopContext,
@@ -962,8 +963,12 @@ class AIContextMixin(_AIChannelContract):
         and turn budget as a turn with no room override starts from, the
         conversation's orphaned calls answered as a room turn's are, its MCP
         servers' instructions after its prompt (RFC §21.2), and *tools* as the
-        turn's resolved toolset."""
-        loop_ctx.turn_budget = self._turn_budget(binding, None)
+        turn's resolved toolset. The turn is routed on its last user message
+        first (RFC §6.4), so its budget is priced on the provider it runs on."""
+        provider = await self._route_turn(
+            loop_ctx, messages_request(messages, binding.room_id or None)
+        )
+        loop_ctx.turn_budget = self._turn_budget(binding, None, provider)
         self._stamp_toolset(loop_ctx, tools)
         settings = self._turn_settings(binding, None)
         prompt = settings["system_prompt"]
@@ -1074,13 +1079,14 @@ class AIContextMixin(_AIChannelContract):
         return _CHANNEL_LEVEL, getattr(self, f"_{key}")
 
     def _turn_budget(
-        self, binding: ChannelBinding, turn: AIChannelTurnConfig | None
+        self, binding: ChannelBinding, turn: AIChannelTurnConfig | None, provider: AIProvider
     ) -> TurnBudget | None:
         """What this turn may spend, each budget resolved like the turn's
-        other settings (RFC §6.4)."""
+        other settings, priced on *provider*, the one the turn starts on
+        (RFC §6.4)."""
         tokens = self._turn_value("turn_budget_tokens", binding, turn)
         usd = self._turn_value("turn_budget_usd", binding, turn)
-        return turn_budget(tokens, usd, self._turn_provider())
+        return turn_budget(tokens, usd, provider)
 
     async def _hydrate_room_memories(
         self, usage_room_id: str, activation_room_id: str | None

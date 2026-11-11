@@ -244,6 +244,24 @@ def test_a_schema_turn_stopped_by_its_budget_has_no_document() -> None:
         require_schema_answer(context, "budget_exceeded")
 
 
+@pytest.mark.parametrize(("picked", "fails"), [("unpriced", True), ("priced", False)])
+async def test_a_cost_budget_is_checked_on_the_model_the_router_picks(
+    picked: str, fails: bool, streaming: bool
+) -> None:
+    # The channel has no provider to price at construction: each turn checks
+    # the one its router picks (RFC §6.4).
+    model = (MockAIProvider if picked == "unpriced" else _Priced)(
+        ai_responses=[_DONE], streaming=streaming
+    )
+    ch = AIChannel("ai1", router=FallbackRouter(model, MockAIProvider()), turn_budget_usd=1.0)
+
+    if fails:
+        with pytest.raises(ValueError, match="turn_budget_usd needs a model with a known price"):
+            await _turn(ch)
+    else:
+        assert (await _turn(ch)).reason == "completed"
+
+
 async def test_a_generation_handed_to_a_model_priced_otherwise_is_logged_once(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
