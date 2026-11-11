@@ -186,6 +186,6 @@
       ]
     }
   },
-  "notes": "A real Discussion queues a behind b. An older background predates the strategy; two messages arrive while a waits. The model sees the answered event exactly once, before the later events the memory keeps. Exact message lists expose duplicates and missing events; exact summarizer input excludes the answered event and later messages.",
+  "notes": "A real Discussion queues a behind b. An older background predates the strategy; two messages arrive while a waits. The model sees the answered event exactly once, before the later events the memory keeps. Exact message lists expose duplicates and missing events.",
   "id": "memory/a-queued-turn-keeps-its-question-outside-the-window"
 }

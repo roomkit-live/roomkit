@@ -232,6 +232,6 @@
       ]
     }
   },
-  "notes": "A real Discussion queues a behind b. An older background predates the strategy; two messages arrive while a waits. The model sees the answered event exactly once, before the later events the memory keeps. Exact message lists expose duplicates and missing events; exact summarizer input excludes the answered event and later messages. A private message for b arrives while a waits. The summarizer receives only the visible older background, never that private message.",
+  "notes": "A real Discussion queues a behind b. An older background predates the strategy; two messages arrive while a waits. The model sees the answered event exactly once, before the later events the memory keeps. Exact message lists expose duplicates and missing events. A private message for b arrives while a waits. The summarizer receives only the visible older background: its exact request excludes the answered event, later messages and that private message.",
   "id": "memory/a-queued-turn-keeps-its-question-out-of-compaction"
 }
