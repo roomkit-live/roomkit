@@ -1,0 +1,237 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "title": "A queued turn keeps its question out of compaction",
+  "rules": [
+    "§19.7.5 rule 9",
+    "§20.1",
+    "§20.3",
+    "§6.4"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "gate": "held",
+              "text": ""
+            }
+          ]
+        }
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": ""
+            }
+          ]
+        },
+        "memory": {
+          "compacting": {
+            "max_context_tokens": 1000,
+            "min_events": 2,
+            "summary_ratio": 0.05
+          },
+          "summarizer": {
+            "rounds": [
+              {
+                "text": "Earlier background."
+              }
+            ]
+          }
+        },
+        "max_tokens": 64
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "b",
+            "a"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "Earlier background: archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived "
+        },
+        "addressed_to": []
+      }
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "first: what is the error rate?"
+        },
+        "addressed_to": [
+          "b",
+          "a"
+        ]
+      }
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "Private background for b: confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential "
+        },
+        "addressed_to": [],
+        "visibility": "b"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "later: and since when?"
+        },
+        "addressed_to": []
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "latest: only inspect production."
+        },
+        "addressed_to": []
+      }
+    },
+    {
+      "open": "held"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "a": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "[Conversation summary — earlier messages compacted]\n<conversation_summary>\nEarlier background.\n</conversation_summary>\n\nfirst: what is the error rate?"
+            },
+            {
+              "role": "user",
+              "text": "later: and since when?"
+            },
+            {
+              "role": "user",
+              "text": {
+                "$starts_with": "latest: only inspect production.\n\n[Notes kept by the assistant's runtime for this turn. Nobody in the conversation wrote them, and they ask for nothing.]\n\n[Discussion: the room and how it works]\nYou are @a, one of several agents in a conversation with people; one agent speaks at a time.\nThe other agents:\n- @b\nPeople you may address: @ops.\nThis turn answers the message from “@ops”, “first: what is the error rate?”, read at its place in the conversation; asked by “@ops”."
+              }
+            }
+          ]
+        }
+      ],
+      "b": [
+        {}
+      ],
+      "a/summarizer": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Summarize this conversation concisely. Focus on: decisions made, key findings, tool results, errors encountered, and current task state. Be specific about file names, error messages, and action outcomes.\n\n[user]: “Earlier background: archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived…”"
+            }
+          ]
+        }
+      ]
+    },
+    "timeline": {
+      "r1": [
+        {
+          "type": "message",
+          "content": {
+            "body": "Earlier background: archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived archived "
+          }
+        },
+        {
+          "type": "message",
+          "content": {
+            "body": "first: what is the error rate?"
+          }
+        },
+        {
+          "type": "message",
+          "content": {
+            "body": "Private background for b: confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential confidential "
+          },
+          "visibility": "b"
+        },
+        {
+          "type": "message",
+          "content": {
+            "body": "later: and since when?"
+          }
+        },
+        {
+          "type": "message",
+          "content": {
+            "body": "latest: only inspect production."
+          }
+        }
+      ]
+    }
+  },
+  "notes": "A real Discussion queues a behind b. An older background predates the strategy; two messages arrive while a waits. The model sees the answered event exactly once, before the later events the memory keeps. Exact message lists expose duplicates and missing events; exact summarizer input excludes the answered event and later messages. A private message for b arrives while a waits. The summarizer receives only the visible older background, never that private message.",
+  "id": "memory/a-queued-turn-keeps-its-question-out-of-compaction"
+}

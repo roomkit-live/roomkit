@@ -114,17 +114,23 @@ async def test_offer_asks_to_offer_rather_than_answer() -> None:
     assert OFFER_NOTE in _last_input(provider)
 
 
-async def test_the_policy_reads_the_conversation_before_the_event_and_who_is_there() -> None:
+@pytest.mark.parametrize("with_later_message", [False, True])
+async def test_the_policy_reads_the_conversation_when_the_turn_starts_and_who_is_there(
+    with_later_message: bool,
+) -> None:
     policy = MockSpeakPolicy(["speak"])
     channel, _ = _channel(policy)
     before = make_event(body="Hello", channel_id="sms1", room_id="r1")
     event = make_event(body="Nova, a question", channel_id="sms1", room_id="r1")
-
-    await respond(channel, event, _BINDING, _context(before, event, people=("Sylvain", "Paul")))
+    later = make_event(body="Clarification", channel_id="sms1", room_id="r1")
+    recent = [before, event, later] if with_later_message else [before, event]
+    await respond(channel, event, _BINDING, _context(*recent, people=("Sylvain", "Paul")))
 
     [turn] = policy.turns
     assert turn.event is event
-    assert [e.id for e in turn.recent] == [before.id]
+    assert [e.id for e in turn.recent] == (
+        [before.id, later.id] if with_later_message else [before.id]
+    )
     assert turn.people == ("Sylvain", "Paul")
 
 

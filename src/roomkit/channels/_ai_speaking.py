@@ -129,8 +129,9 @@ def speak_notes(decision: SpeakDecision | None) -> tuple[str, ...]:
 def _speak_turn(
     event: RoomEvent, context: RoomContext, channel_id: str, thought: Thought | None = None
 ) -> SpeakTurn:
-    """What the policy judges: the room's messages before *event* that the channel
-    may know (RFC §7.5 rule 8: a policy may send them to a classifier outside),
+    """What the policy judges: the room's messages available when the turn starts,
+    excluding *event*, that the channel may know (RFC §7.5 rule 8: a policy may
+    send them to a classifier outside),
     who said each, and the people taking part besides the agent."""
     recent = tuple(
         e
