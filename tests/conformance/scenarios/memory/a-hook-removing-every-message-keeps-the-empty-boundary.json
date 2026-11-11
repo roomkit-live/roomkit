@@ -1,0 +1,423 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "title": "A hook removing every message keeps the empty compaction boundary",
+  "rules": [
+    "§19.7.5 rule 9",
+    "§20.1",
+    "§20.3",
+    "§6.4"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "gate": "held",
+              "text": ""
+            }
+          ]
+        }
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup1",
+                  "arguments": {
+                    "n": 1
+                  }
+                }
+              ],
+              "usage": {
+                "input_tokens": 900,
+                "output_tokens": 10
+              }
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "lookup2",
+                  "arguments": {
+                    "n": 2
+                  }
+                }
+              ],
+              "usage": {
+                "input_tokens": 900,
+                "output_tokens": 10
+              }
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "memory": {
+          "compacts": [
+            {
+              "messages": [
+                {
+                  "role": "user",
+                  "text": "Summary."
+                }
+              ]
+            },
+            {
+              "messages": []
+            }
+          ]
+        },
+        "max_tokens": 64,
+        "tools": [
+          {
+            "name": "lookup1",
+            "description": "Look it up",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "n": {
+                  "type": "integer"
+                }
+              }
+            },
+            "returns": "found"
+          },
+          {
+            "name": "lookup2",
+            "description": "Look it up",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "n": {
+                  "type": "integer"
+                }
+              }
+            },
+            "returns": "found"
+          },
+          {
+            "name": "lookup3",
+            "description": "Look it up",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "n": {
+                  "type": "integer"
+                }
+              }
+            },
+            "returns": "found"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "b",
+            "a"
+          ]
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "replace",
+        "trigger": "before_ai_generation",
+        "channel_ids": [
+          "a"
+        ],
+        "reactions": [
+          {
+            "result": {
+              "action": "modify",
+              "event": {
+                "messages": []
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "Earlier background."
+        },
+        "addressed_to": []
+      }
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "QUESTION keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; END-QUESTION"
+        },
+        "addressed_to": [
+          "b",
+          "a"
+        ]
+      }
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "later: and since when?"
+        },
+        "addressed_to": []
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "latest: only inspect production."
+        },
+        "addressed_to": []
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "last: do not change the scope."
+        },
+        "addressed_to": []
+      }
+    },
+    {
+      "open": "held"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "b": [
+        {}
+      ],
+      "a": [
+        {
+          "messages": [],
+          "tool_results": []
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Summary."
+            },
+            {
+              "role": "assistant",
+              "round": [
+                {
+                  "call": "c1",
+                  "arguments": {
+                    "n": 1
+                  },
+                  "metadata": {}
+                }
+              ]
+            },
+            {
+              "role": "tool"
+            }
+          ],
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "found"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Summary."
+            },
+            {
+              "role": "assistant",
+              "round": [
+                {
+                  "call": "c1",
+                  "arguments": {
+                    "n": 1
+                  },
+                  "metadata": {}
+                }
+              ]
+            },
+            {
+              "role": "tool"
+            },
+            {
+              "role": "assistant",
+              "round": [
+                {
+                  "call": "c2",
+                  "arguments": {
+                    "n": 2
+                  },
+                  "metadata": {}
+                }
+              ]
+            },
+            {
+              "role": "tool"
+            }
+          ],
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "found"
+            },
+            {
+              "tool_call_id": "c2",
+              "content": "found"
+            }
+          ]
+        }
+      ]
+    },
+    "compacted": {
+      "r1": {
+        "a": [
+          {
+            "history": [],
+            "usage": {
+              "input_tokens": 900,
+              "output_tokens": 10
+            }
+          },
+          {
+            "history": [],
+            "usage": {
+              "input_tokens": 900,
+              "output_tokens": 10
+            }
+          }
+        ]
+      }
+    },
+    "timeline": {
+      "r1": [
+        {
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "Earlier background."
+          }
+        },
+        {
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "QUESTION keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; keep this detail; END-QUESTION"
+          }
+        },
+        {
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "later: and since when?"
+          }
+        },
+        {
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "latest: only inspect production."
+          }
+        },
+        {
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "last: do not change the scope."
+          }
+        },
+        {
+          "type": "tool_call_start"
+        },
+        {
+          "type": "tool_call_end"
+        },
+        {
+          "type": "tool_call_start"
+        },
+        {
+          "type": "tool_call_end"
+        },
+        {
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "Done."
+          }
+        }
+      ]
+    }
+  },
+  "notes": "A Discussion answers a deferred input. If the full pre-hook message is no longer at its position and has no unique equal match, every message the generation hook left is protected from reduction. Memory compaction receives an empty history; a returned summary joins ahead of the protected context. Redacted input is never reconstructed.",
+  "id": "memory/a-hook-removing-every-message-keeps-the-empty-boundary"
+}
