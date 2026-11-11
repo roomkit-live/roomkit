@@ -190,6 +190,9 @@ class _ToolLoopContext:
     # The message a discussion's turn answers, read at its place in the history
     # (RFC §19.7.5): what a compaction keeps however it cuts (RFC §20.1).
     answered_input: AIMessage | None = None
+    # If a hook made the answered input ambiguous, every message it left is
+    # protected. Only results appended after this prefix may be shortened.
+    protected_prefix: int | None = None
     # What the turn may spend, resolved with its other settings (RFC §6.4).
     turn_budget: TurnBudget | None = None
     # The provider the turn runs on: the one its channel's router picked when
@@ -433,6 +436,7 @@ class _ToolLoopContext:
             # the loop keeps whole.
             ctx.turn_input = parent.turn_input
             ctx.answered_input = parent.answered_input
+            ctx.protected_prefix = parent.protected_prefix
             ctx.standalone = parent.standalone
             ctx.turn_budget = parent.turn_budget
             ctx.provider = parent.provider

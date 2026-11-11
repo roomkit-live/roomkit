@@ -99,9 +99,7 @@ class AIGenerationMixin(_AIChannelContract):
             loop_ctx.response_metadata = context.response_metadata
             # The input the hook left is the one a compaction keeps whole.
             loop_ctx.turn_input = turn_input(context.messages)
-            loop_ctx.answered_input = _retained_input(
-                loop_ctx.answered_input, answered, context.messages
-            )
+            _adopt_answered_input(loop_ctx, answered, context.messages)
             _adopt_hook_toolset(
                 loop_ctx,
                 declared,
@@ -122,25 +120,32 @@ def _answered_input_snapshot(messages: list[AIMessage]) -> tuple[int, AIMessage]
     return None if at is None else (at, messages[at].model_copy(deep=True))
 
 
-def _retained_input(
-    answered: AIMessage | None, before: tuple[int, AIMessage] | None, left: list[AIMessage]
-) -> AIMessage | None:
-    """Retain an input a hook copied, at its place or uniquely relocated.
+def _adopt_answered_input(
+    loop_ctx: _ToolLoopContext, before: tuple[int, AIMessage] | None, left: list[AIMessage]
+) -> None:
+    """Retain an unchanged input, or protect all the context the hook left."""
+    if loop_ctx.answered_input is None and loop_ctx.protected_prefix is None:
+        return
+    loop_ctx.answered_input = _retained_input(before, left)
+    if loop_ctx.answered_input is None:
+        loop_ctx.protected_prefix = len(left)
 
-    An unchanged object keeps its identity. Among copied equal messages, the
-    original position wins; otherwise only one equal message identifies it.
-    A rewritten or missing input has no established replacement contract:
-    leave its reference unchanged rather than silently choose another turn.
+
+def _retained_input(
+    before: tuple[int, AIMessage] | None, left: list[AIMessage]
+) -> AIMessage | None:
+    """Retain an input at its original place or uniquely relocated.
+
+    Compare pre-hook values, including for objects mutated in place: object
+    identity cannot establish which question the hook now means.
     """
-    if answered is None or any(message is answered for message in left):
-        return answered
     if before is None:
-        return answered
+        return None
     at, value = before
     if at < len(left) and left[at] == value:
         return left[at]
     matches = [message for message in left if message == value]
-    return matches[0] if len(matches) == 1 else answered
+    return matches[0] if len(matches) == 1 else None
 
 
 def _adopt_hook_toolset(

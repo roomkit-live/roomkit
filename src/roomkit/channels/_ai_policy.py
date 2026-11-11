@@ -383,6 +383,8 @@ class AIToolPolicyMixin(_AIChannelContract):
         )
         if not exchanges or not insert_before(context.messages, loop_ctx.turn_input, exchanges):
             return opened
+        if loop_ctx.protected_prefix is not None:
+            loop_ctx.protected_prefix += len(exchanges)
         return left
 
     def _mark_referenced(self, loop_ctx: _ToolLoopContext, tools: list[AITool]) -> None:

@@ -63,6 +63,18 @@ def _past_results(messages: list[AIMessage], index: int) -> int:
     return index
 
 
+def compact_protected(
+    messages: list[AIMessage], prefix: int, eviction: ToolEviction
+) -> list[AIMessage]:
+    """Shorten only new results in the older half of a protected context."""
+    end = max(prefix, _past_results(messages, len(messages) // 2))
+    return [
+        *messages[:prefix],
+        *with_results_stored(messages[prefix:end], eviction),
+        *messages[end:],
+    ]
+
+
 def summary_text(messages: list[AIMessage]) -> str | None:
     """The summary of *messages*, one line each, or ``None`` when there are none."""
     if not messages:
@@ -156,7 +168,12 @@ def _stored(part: _ContentPart, eviction: ToolEviction) -> _ContentPart:
 
 
 def with_compacted_history(
-    messages: list[AIMessage], at: int, compacted: list[AIMessage], eviction: ToolEviction
+    messages: list[AIMessage],
+    at: int,
+    compacted: list[AIMessage],
+    eviction: ToolEviction,
+    *,
+    protected_prefix: int | None = None,
 ) -> list[AIMessage]:
     """*messages* with *compacted*, the history a memory returned between two
     tool rounds, in place of the messages before the turn's input at *at*.
@@ -171,10 +188,11 @@ def with_compacted_history(
     the turn's start (RFC §6.4).
     """
     history = messages[:at]
-    last = _last_round(messages, at)
+    start = at + 1 if protected_prefix is None else protected_prefix
+    last = _last_round(messages, start - 1)
     rest = [
-        messages[at],
-        *with_results_stored(messages[at + 1 : last], eviction),
+        *messages[at:start],
+        *with_results_stored(messages[start:last], eviction),
         *messages[last:],
     ]
     placed = [m if m in history else _runtime_or_cleaned(m) for m in compacted]

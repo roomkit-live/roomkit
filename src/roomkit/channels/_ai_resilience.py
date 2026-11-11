@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 from roomkit.channels._ai_policy import declared_for
 from roomkit.channels._ai_router import RouteRequest
 from roomkit.channels._compaction import (
+    compact_protected,
     compaction_cut,
     summary_text,
     with_compacted_history,
@@ -347,6 +348,8 @@ class AIResilienceMixin(_AIChannelContract):
                 retryable=False,
             )
         loop_ctx = self._get_loop_ctx()
+        if loop_ctx.protected_prefix is not None:
+            return self._compact_protected_context(context, loop_ctx.protected_prefix)
         # A discussion's turn keeps the message it answers, wherever it reads.
         kept = loop_ctx.answered_input or loop_ctx.turn_input
         summarized, shortened = compaction_cut(messages, kept)
@@ -367,6 +370,17 @@ class AIResilienceMixin(_AIChannelContract):
         context.messages[:] = compacted
         return context
 
+    def _compact_protected_context(self, context: AIContext, prefix: int) -> AIContext:
+        """An ambiguous input permits no summary of the hook's context."""
+        compacted = compact_protected(context.messages, prefix, self._eviction)
+        if not _gains([], context.messages, compacted):
+            raise ProviderError(
+                "Context too large but nothing left to compact before the turn's input",
+                retryable=False,
+            )
+        context.messages[:] = compacted
+        return context
+
     async def _compact_after_round(
         self, context: AIContext, room_id: str | None, usage: dict[str, Any] | None
     ) -> None:
@@ -380,19 +394,38 @@ class AIResilienceMixin(_AIChannelContract):
         loop_ctx = self._get_loop_ctx()
         kept = loop_ctx.answered_input or loop_ctx.turn_input
         at = next((i for i, message in enumerate(context.messages) if message is kept), None)
+        if loop_ctx.protected_prefix is not None:
+            at = 0
         if at is None or room_id is None or usage is None:
             return
         history = context.messages[:at]
         compacted = await self._compacted_history(room_id, history, usage)
         if compacted is None:
             return
+        self._place_compacted_history(context, at, compacted, kept)
+
+    def _place_compacted_history(
+        self, context: AIContext, at: int, compacted: list[AIMessage], kept: AIMessage | None
+    ) -> None:
+        """Adopt a memory's history while retaining the protected turn boundary."""
+        loop_ctx = self._get_loop_ctx()
+        history = context.messages[:at]
         self._show_summarized_references([m for m in history if m not in compacted])
-        messages = with_compacted_history(context.messages, at, compacted, self._eviction)
-        moved = messages[len(messages) - (len(context.messages) - at)]
-        if loop_ctx.turn_input is kept:
-            loop_ctx.turn_input = moved
-        if loop_ctx.answered_input is kept:
-            loop_ctx.answered_input = moved
+        messages = with_compacted_history(
+            context.messages,
+            at,
+            compacted,
+            self._eviction,
+            protected_prefix=loop_ctx.protected_prefix,
+        )
+        if loop_ctx.protected_prefix is not None:
+            loop_ctx.protected_prefix += len(messages) - len(context.messages)
+        else:
+            moved = messages[len(messages) - (len(context.messages) - at)]
+            if loop_ctx.turn_input is kept:
+                loop_ctx.turn_input = moved
+            if loop_ctx.answered_input is kept:
+                loop_ctx.answered_input = moved
         context.messages[:] = messages
 
     async def _compacted_history(

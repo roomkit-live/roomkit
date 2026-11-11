@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Protect every message left by a generation hook when a deferred input can no longer be identified; only new tool results may be shortened, and an unsafe overflow fails explicitly (RMK-1576).
+
 - A generation hook that copies or uniquely moves a deferred turn’s unchanged input keeps its compaction boundary, including among identical questions kept in place (RMK-1576).
 
 ## [0.113.0] — 2026-11-11
