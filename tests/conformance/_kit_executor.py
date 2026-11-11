@@ -48,13 +48,25 @@ async def _disable(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> b
     )
 
 
+async def _close(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None:
+    await kit.turn_executor.close()
+
+
+async def _closed(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> bool:
+    return kit.turn_executor.closed
+
+
 KIT_EXECUTOR_CALLS: dict[str, Call] = {
+    "kit_executor.close": _close,
+    "kit_executor.closed": _closed,
     "kit_executor.hook": _hook,
     "kit_executor.room_hook": _hook,
     "kit_executor.remove_room_hook": _remove,
     "disable_room_hook": _disable,
 }
 KIT_EXECUTOR_ARGUMENTS = {
+    "kit_executor.close": set(),
+    "kit_executor.closed": set(),
     "kit_executor.hook": {"hook"},
     "kit_executor.room_hook": {"hook"},
     "kit_executor.remove_room_hook": {"name"},
