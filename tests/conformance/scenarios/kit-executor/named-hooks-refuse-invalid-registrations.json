@@ -1,0 +1,220 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "kit-executor/named-hooks-refuse-invalid-registrations",
+  "title": "Invalid definitions leave the valid named hook unchanged",
+  "rules": [
+    "§9.1",
+    "§10.6.6",
+    "§17.2",
+    "§19.7"
+  ],
+  "notes": "Python: HookEngine.define_room_hook, tests/test_turn_hooks.py::test_an_executor_refuses_an_owners_trigger_on_every_door and tests/test_hook_rules.py.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "lookup_order",
+                  "arguments": {
+                    "order": "1"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "answer-1"
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup_order",
+            "description": "Find an order by its number",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "order": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "{\"order\": \"1\", \"status\": \"ready\"}"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "kit_executor.room_hook",
+      "hook": {
+        "name": "audit",
+        "trigger": "before_tool_use"
+      }
+    },
+    {
+      "call": "kit_executor.room_hook",
+      "hook": {
+        "name": "",
+        "trigger": "before_tool_use"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "kit_executor.room_hook",
+      "hook": {
+        "name": "source_muted",
+        "trigger": "before_tool_use"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "kit_executor.room_hook",
+      "hook": {
+        "name": "audit",
+        "trigger": "before_broadcast"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "kit_executor.room_hook",
+      "hook": {
+        "name": "audit",
+        "trigger": "before_tool_use",
+        "execution": "async",
+        "fail_closed": true
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "kit_executor.hook",
+      "hook": {
+        "name": "owner",
+        "trigger": "before_broadcast"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "enable_room_hook",
+      "room_id": "room-1",
+      "name": "audit"
+    },
+    {
+      "call": "add_room_hook",
+      "room_id": "room-1",
+      "hook": {
+        "name": "audit",
+        "trigger": "before_tool_use"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "add_room_hook",
+      "room_id": "room-1",
+      "hook": {
+        "name": "given",
+        "trigger": "before_tool_use"
+      }
+    },
+    {
+      "call": "enable_room_hook",
+      "room_id": "room-1",
+      "name": "given",
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "audit": [
+        {
+          "room_id": "room-1",
+          "tool_call": {
+            "tool_call_id": "call-1"
+          }
+        }
+      ],
+      "given": [
+        {
+          "room_id": "room-1"
+        }
+      ],
+      "source_muted": [],
+      "owner": []
+    },
+    "models": {
+      "agent": [
+        {},
+        {}
+      ]
+    }
+  }
+}

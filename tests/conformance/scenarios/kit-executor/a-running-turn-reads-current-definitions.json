@@ -1,0 +1,191 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "kit-executor/a-running-turn-reads-current-definitions",
+  "title": "A running turn keeps its name selection but reads a replacement definition when the hook fires",
+  "rules": [
+    "§9.1",
+    "§10.6.6",
+    "§17.2"
+  ],
+  "notes": "Python: HookEngine._hooks_of_room and _defined_under resolve the requested names when firing; the gate synchronizes replacement before tool use.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "lookup_order",
+                  "arguments": {
+                    "order": "1"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "answer-1"
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup_order",
+            "description": "Find an order by its number",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "order": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "{\"order\": \"1\", \"status\": \"ready\"}"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "kit_executor.hook",
+      "hook": {
+        "name": "hold",
+        "trigger": "before_ai_generation",
+        "reactions": [
+          {
+            "gate": "entered"
+          }
+        ]
+      }
+    },
+    {
+      "call": "kit_executor.room_hook",
+      "hook": {
+        "name": "audit",
+        "trigger": "before_tool_use",
+        "reactions": [
+          {
+            "result": {
+              "action": "block",
+              "reason": "old"
+            },
+            "repeat": true
+          }
+        ]
+      }
+    },
+    {
+      "call": "enable_room_hook",
+      "room_id": "room-1",
+      "name": "audit"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "background": true,
+      "as": "first"
+    },
+    {
+      "wait_for": "entered"
+    },
+    {
+      "call": "kit_executor.room_hook",
+      "hook": {
+        "name": "audit",
+        "trigger": "before_tool_use",
+        "reactions": [
+          {
+            "result": {
+              "action": "block",
+              "reason": "new"
+            },
+            "repeat": true
+          }
+        ]
+      }
+    },
+    {
+      "open": "entered"
+    },
+    {
+      "await": "first",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "audit": [
+        {
+          "trigger": "before_tool_use",
+          "room_id": "room-1",
+          "tool_call": {
+            "tool_call_id": "call-1"
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "tool_results": []
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "call-1",
+              "content": "{\"error\": \"new\"}"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

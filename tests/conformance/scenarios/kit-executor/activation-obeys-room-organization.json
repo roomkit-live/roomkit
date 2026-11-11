@@ -1,0 +1,180 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "kit-executor/activation-obeys-room-organization",
+  "title": "A foreign organization cannot change a room hook selection",
+  "rules": [
+    "§9.1",
+    "§10.6.6",
+    "§17.2"
+  ],
+  "notes": "Python: tests/test_room_org_scoping.py::TestScopedRoomHooks. An unscoped call remains permitted.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "lookup_order",
+                  "arguments": {
+                    "order": "1"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "answer-1"
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup_order",
+            "description": "Find an order by its number",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "order": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "{\"order\": \"1\", \"status\": \"ready\"}"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "organization_id": "acme"
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "organization_id": "other"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "kit_executor.room_hook",
+      "hook": {
+        "name": "audit",
+        "trigger": "before_tool_use"
+      }
+    },
+    {
+      "call": "enable_room_hook",
+      "room_id": "room-1",
+      "name": "audit",
+      "organization_id": "other",
+      "expect": {
+        "error": "room_not_found"
+      }
+    },
+    {
+      "call": "enable_room_hook",
+      "room_id": "room-1",
+      "name": "audit",
+      "organization_id": "acme"
+    },
+    {
+      "call": "disable_room_hook",
+      "room_id": "room-1",
+      "name": "audit",
+      "organization_id": "other",
+      "expect": {
+        "error": "room_not_found"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "disable_room_hook",
+      "room_id": "room-1",
+      "name": "audit",
+      "expect": {
+        "result": true
+      },
+      "organization_id": "acme"
+    },
+    {
+      "call": "enable_room_hook",
+      "room_id": "room-1",
+      "name": "audit"
+    },
+    {
+      "call": "disable_room_hook",
+      "room_id": "room-1",
+      "name": "audit",
+      "expect": {
+        "result": true
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "audit": [
+        {
+          "trigger": "before_tool_use",
+          "room_id": "room-1",
+          "tool_call": {
+            "tool_call_id": "call-1"
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {},
+        {}
+      ]
+    }
+  }
+}

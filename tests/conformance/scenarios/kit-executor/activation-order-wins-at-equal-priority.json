@@ -1,0 +1,268 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "kit-executor/activation-order-wins-at-equal-priority",
+  "title": "At equal priority named hooks follow activation order, before hooks given by the kit for that room",
+  "rules": [
+    "§9.1",
+    "§10.6.6",
+    "§17.2"
+  ],
+  "notes": "Python: HookEngine._hooks_of_room, _defined_under and _get_hooks. Definitions and owner hooks were registered in the opposite order.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "lookup_order",
+                  "arguments": {
+                    "order": "1"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "answer-1"
+            },
+            {
+              "calls": [
+                {
+                  "id": "call-2",
+                  "name": "lookup_order",
+                  "arguments": {
+                    "order": "1"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "answer-2"
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup_order",
+            "description": "Find an order by its number",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "order": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "{\"order\": \"1\", \"status\": \"ready\"}"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "kit_executor.room_hook",
+      "hook": {
+        "name": "first",
+        "trigger": "before_tool_use",
+        "reactions": [
+          {
+            "result": {
+              "action": "block",
+              "reason": "first"
+            },
+            "repeat": true
+          }
+        ]
+      }
+    },
+    {
+      "call": "kit_executor.room_hook",
+      "hook": {
+        "name": "second",
+        "trigger": "before_tool_use",
+        "reactions": [
+          {
+            "result": {
+              "action": "block",
+              "reason": "second"
+            },
+            "repeat": true
+          }
+        ]
+      }
+    },
+    {
+      "call": "add_room_hook",
+      "room_id": "room-1",
+      "hook": {
+        "name": "owner",
+        "trigger": "before_tool_use",
+        "reactions": [
+          {
+            "result": {
+              "action": "block",
+              "reason": "owner"
+            },
+            "repeat": true
+          }
+        ]
+      }
+    },
+    {
+      "call": "enable_room_hook",
+      "room_id": "room-1",
+      "name": "second"
+    },
+    {
+      "call": "enable_room_hook",
+      "room_id": "room-1",
+      "name": "first"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "disable_room_hook",
+      "room_id": "room-1",
+      "name": "second",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "enable_room_hook",
+      "room_id": "room-1",
+      "name": "second"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "second": [
+        {
+          "trigger": "before_tool_use",
+          "room_id": "room-1",
+          "tool_call": {
+            "tool_call_id": "call-1"
+          }
+        }
+      ],
+      "first": [
+        {
+          "trigger": "before_tool_use",
+          "room_id": "room-1",
+          "tool_call": {
+            "tool_call_id": "call-2"
+          }
+        }
+      ],
+      "owner": []
+    },
+    "models": {
+      "agent": [
+        {
+          "tool_results": []
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "call-1",
+              "content": "{\"error\": \"second\"}"
+            }
+          ]
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "call-1",
+              "content": "{\"error\": \"second\"}"
+            }
+          ]
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "call-1",
+              "content": "{\"error\": \"second\"}"
+            },
+            {
+              "tool_call_id": "call-2",
+              "content": "{\"error\": \"first\"}"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
