@@ -287,6 +287,7 @@ jobs:
         run: >-
           uv run --with fastapi --with httpx2 pytest -v
           tests/test_store_postgres.py
+          tests/conformance/test_postgres.py
           tests/test_postgres_multiprocess.py
           tests/test_verification_release_cancel.py
           tests/test_webrtc_offer_auth.py

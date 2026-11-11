@@ -100,6 +100,12 @@ _ANSWERS_AFTER_ITS_CUT = {"tools/a-call-that-returns-once-its-turn-is-cut-ends-a
 # Composition also checks that fragments leave no persisted partial calls.
 _STORES = ("memory", "sqlite")
 
+_WORKER_DEADLINES = {
+    "orchestration/a-delegation-its-call-bound-cuts-posts-the-worker-cancelled",
+    "orchestration/a-team-call-its-bound-cuts-posts-each-worker-cancelled",
+    "orchestration/a-worker-past-its-task-timeout-is-cut-and-read-as-timed-out",
+}
+
 
 def _cases() -> list[Any]:
     cases = []
@@ -131,8 +137,11 @@ def _cases() -> list[Any]:
                     "broadcast/",
                     "tool-composition/",
                     "channel-call/",
+                    "orchestration/a-worker-cut-",
+                    "orchestration/a-team-cut-",
                 )
             )
+            or scenario_id in _WORKER_DEADLINES
             else ("memory",)
         )
         for store in stores:

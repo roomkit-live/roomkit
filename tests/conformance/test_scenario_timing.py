@@ -5,14 +5,60 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from roomkit.channels._mark_copies import compile_mark_patterns
+from roomkit.models.room import Room
 from roomkit.store.sqlite import SQLiteStore
 from tests.conformance._harness import Harness
 
 _SCENARIOS = Path(__file__).parent / "scenarios/orchestration"
+
+WORKER_BOUNDS = [
+    "a-delegation-its-call-bound-cuts-posts-the-worker-cancelled",
+    "a-team-call-its-bound-cuts-posts-each-worker-cancelled",
+    "a-worker-past-its-task-timeout-is-cut-and-read-as-timed-out",
+]
+
+
+def delay_child_preparation(harness: Harness, monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Delay a real delegation's room creation while its call budget is running."""
+    create = harness.kit.create_room
+    prepared: list[str] = []
+
+    async def delayed(**kwargs: Any) -> Room:
+        if worker := kwargs.get("metadata", {}).get("task_agent_id"):
+            prepared.append(worker)
+            await asyncio.sleep(0.25)
+        return await create(**kwargs)
+
+    monkeypatch.setattr(harness.kit, "create_room", delayed)
+    return prepared
+
+
+@pytest.mark.wallclock
+@pytest.mark.parametrize("store", ["memory", "sqlite"])
+@pytest.mark.parametrize("scenario_name", WORKER_BOUNDS)
+async def test_a_worker_timeout_leaves_room_for_preparation(
+    store: str, tmp_path: Path, scenario_name: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The full contract includes reaching the worker, before its deadline cuts it."""
+    path = _SCENARIOS / f"{scenario_name}.json"
+    scenario = json.loads(await asyncio.to_thread(path.read_text, encoding="utf-8"))
+    await compile_mark_patterns()
+    on = SQLiteStore(tmp_path / "store.db") if store == "sqlite" else None
+    reader = SQLiteStore(tmp_path / "store.db") if store == "sqlite" else None
+    harness = Harness(scenario, on, observation_store=reader)
+    prepared = delay_child_preparation(harness, monkeypatch)
+    try:
+        problems = await harness.run()
+        assert len(prepared) == 1
+        assert not problems, "\n".join(problems)
+    finally:
+        if reader is not None:
+            await reader.close()
 
 
 @pytest.mark.wallclock
