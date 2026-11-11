@@ -16,14 +16,18 @@ from typing import Any
 
 import pytest
 
+from roomkit.channels._discussion_turn import DISCUSSION_TURN, issue_mark, retire_mark
 from roomkit.channels._tool_eviction import is_eviction_placeholder
 from roomkit.channels.ai import AIChannel
+from roomkit.core.hooks import SyncPipelineResult
 from roomkit.memory.mock import MockMemoryProvider
 from roomkit.memory.summarizing import SummarizingMemory
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.context import RoomContext
 from roomkit.models.enums import ChannelCategory, ChannelType
+from roomkit.models.event import RoomEvent
 from roomkit.models.room import Room
+from roomkit.models.tool_call import AIGenerationEvent
 from roomkit.providers.ai.base import (
     AIContext,
     AIMessage,
@@ -48,8 +52,14 @@ class _CompactingMemory(MockMemoryProvider):
     a history, or an exception it raises; each compaction it is asked is
     kept."""
 
-    def __init__(self, reactions: list[Any], messages: list[AIMessage]) -> None:
-        super().__init__(messages=messages)
+    def __init__(
+        self,
+        reactions: list[Any],
+        messages: list[AIMessage],
+        *,
+        events: list[RoomEvent] | None = None,
+    ) -> None:
+        super().__init__(messages=messages, events=events)
         self._reactions = list(reactions)
         self.compactions: list[tuple[str, list[AIMessage], dict[str, int], str | None]] = []
 
@@ -251,3 +261,58 @@ async def test_a_summarizing_memory_compacts_a_turn_past_its_threshold_between_r
     assert compacted[0].content.endswith(f"\n\n{history[6].content}")
     assert compacted[1].content == history[7].content
     assert _contents(compacted[2:]) == ["go", "assistant", "tool"]
+
+
+async def test_editing_a_follower_keeps_the_answered_duplicate(streaming: bool) -> None:
+    """A hook editing a later message cannot move the compaction boundary
+    to an older message with the same words as the answered input."""
+    history = [
+        make_event(room_id="r1", channel_id="sms1", body="Same question.", index=0),
+        make_event(room_id="r1", channel_id="sms1", body="Later detail.", index=2),
+    ]
+    memory = _CompactingMemory([None], messages=[], events=history)
+    provider = _Recorded(
+        ai_responses=[_calls("c1"), AIResponse(content="done")], streaming=streaming
+    )
+
+    async def handler(name: str, arguments: dict[str, Any]) -> str:
+        return "found"
+
+    async def hook(event: AIGenerationEvent) -> SyncPipelineResult:
+        last = event.ai_context.messages[-1]
+        event.ai_context.messages[-1] = last.model_copy(
+            update={"content": f"{last.content} [checked]"}
+        )
+        return SyncPipelineResult(allowed=True)
+
+    channel = AIChannel("ai1", provider=provider, tool_handler=handler, memory=memory)
+    channel._before_generation_hook = hook
+    binding = ChannelBinding(
+        channel_id="ai1",
+        room_id="r1",
+        channel_type=ChannelType.AI,
+        category=ChannelCategory.INTELLIGENCE,
+        metadata={"tools": [{"name": "lookup", "description": "Look it up."}]},
+    )
+    mark = issue_mark([])
+    try:
+        run = await respond(
+            channel,
+            make_event(
+                room_id="r1",
+                channel_id="sms1",
+                body="Same question.",
+                index=1,
+                metadata={DISCUSSION_TURN: mark},
+            ),
+            binding,
+            RoomContext(room=Room(id="r1"), recent_events=history),
+        )
+        assert run.text == "done"
+        assert len(memory.compactions) == 1
+        assert _contents(memory.compactions[0][1]) == ["Same question."]
+        assert len(provider.sent) == 2
+        assert str(provider.sent[1][2].content).endswith("[checked]")
+    finally:
+        retire_mark(mark)
+        await channel.close()
