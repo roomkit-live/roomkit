@@ -11,6 +11,7 @@ handler path, and the non-streaming tool loop.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import json
 from typing import Any
 from unittest.mock import AsyncMock
@@ -21,6 +22,7 @@ from roomkit import HookExecution, HookResult, HookTrigger, RoomContext, ToolCal
 from roomkit.channels import FallbackRouter
 from roomkit.channels._ai_coalescers import _ToolCallDeltaCoalescer
 from roomkit.channels.ai import AIChannel
+from roomkit.core._turn_scope import cut_turn_stream
 from roomkit.core.framework import RoomKit
 from roomkit.models.channel import ChannelBinding, RetryPolicy
 from roomkit.models.delivery import InboundMessage
@@ -28,7 +30,7 @@ from roomkit.models.enums import ChannelCategory, ChannelType
 from roomkit.models.event import RoomEvent, TextContent
 from roomkit.models.room import Room
 from roomkit.models.steering import Cancel
-from roomkit.models.streaming import LoopEndMarker, ThinkingDeltaMarker
+from roomkit.models.streaming import LoopEndMarker, ThinkingDeltaMarker, ToolCallEndMarker
 from roomkit.providers.ai.base import (
     AIContext,
     AIResponse,
@@ -1347,3 +1349,107 @@ async def test_a_turn_cancelled_while_a_tool_runs_closes_its_start(streaming: bo
     assert [c["id"] for e in starts for c in e.data["tool_calls"]] == ["c1"]
     assert [c["id"] for e in ends for c in e.data["tool_calls"]] == ["c1"]
     assert "aborted" in ends[0].data["tool_calls"][0]["result"]
+
+
+async def test_a_turn_cut_while_its_handler_decides_a_call_closes_its_start() -> None:
+    """A call the provider serves, its external handler still deciding (an
+    approval awaited) when the turn is cut: its START gets its END, aborted
+    (RFC §6.4)."""
+    deciding = asyncio.Event()
+
+    class _Awaits(PolicyExternalToolHandler):
+        async def process_tool_call(self, *args: Any, **kwargs: Any) -> Any:
+            deciding.set()
+            await asyncio.Event().wait()
+
+    provider = MockAIProvider(
+        streaming=True,
+        ai_responses=[
+            AIResponse(
+                content="", tool_calls=[AIToolCall(id="c1", name="Bash", arguments={"cmd": "ls"})]
+            )
+        ],
+    )
+    kit = RoomKit(realtime=InMemoryRealtime())
+    kit.register_channel(SimpleChannel("sms1"))
+    kit.register_channel(AIChannel("ai1", provider=provider, external_tool_handler=_Awaits()))
+    await kit.create_room(room_id="r1")
+    await kit.attach_channel("r1", "sms1")
+    await kit.attach_channel("r1", "ai1", category=ChannelCategory.INTELLIGENCE)
+    ended = asyncio.Event()
+    received: list[EphemeralEvent] = []
+
+    async def on_event(ev: EphemeralEvent) -> None:
+        received.append(ev)
+        if ev.type == EphemeralEventType.TOOL_CALL_END:
+            ended.set()
+
+    await kit.realtime.subscribe_to_room("r1", on_event)
+    turn = asyncio.create_task(
+        kit.process_inbound(
+            InboundMessage(channel_id="sms1", sender_id="u1", content=TextContent(body="go"))
+        )
+    )
+    await asyncio.wait_for(deciding.wait(), 1)
+
+    turn.cancel()
+    await asyncio.gather(turn, return_exceptions=True)
+    await asyncio.wait_for(ended.wait(), 1)
+
+    starts, ends = _tool_events(received)
+    assert [c["id"] for e in starts for c in e.data["tool_calls"]] == ["c1"]
+    assert [(c["id"], c["status"], c["result"]) for e in ends for c in e.data["tool_calls"]] == [
+        ("c1", "failed", '{"error": "Tool call aborted"}')
+    ]
+    await kit.close()
+
+
+@pytest.mark.parametrize("cut", [False, True], ids=["stopped", "cut"])
+@pytest.mark.parametrize("served", [False, True], ids=["channel-s-tool", "provider-s-call"])
+async def test_a_stream_closed_on_a_call_s_end_still_publishes_it(served: bool, cut: bool) -> None:
+    """A stream closed once it handed out a call's end, before its reader came
+    back for more, still publishes the call's TOOL_CALL_END (RFC §6.4): as
+    the call ended when its reader stopped, having taken it; aborted when its
+    turn was cut, whose owner stores the call failed (RFC §12.2 step 13s)."""
+
+    async def search(name: str, arguments: dict[str, Any]) -> str:
+        return "found"
+
+    call = AIToolCall(
+        id="c1", name="search", arguments={}, served=ServedCall(result="found") if served else None
+    )
+    provider = MockAIProvider(
+        streaming=True,
+        ai_responses=[AIResponse(content="", tool_calls=[call]), AIResponse(content="never")],
+    )
+    channel = AIChannel("ai1", provider=provider, tool_handler=search)
+    ends: list[tuple[list[Any], int | None]] = []
+
+    async def publish_tool(event_type: Any, room_id: Any, calls: Any, round_idx: int, **kw: Any):
+        if event_type == EphemeralEventType.TOOL_CALL_END:
+            ends.append((calls, kw.get("duration_ms")))
+
+    channel._publish_tool_event = publish_tool  # type: ignore[method-assign]
+    binding = ChannelBinding(
+        channel_id="ai1",
+        room_id="r1",
+        channel_type=ChannelType.AI,
+        category=ChannelCategory.INTELLIGENCE,
+        metadata={"tools": _TOOLS},
+    )
+    output = await channel.on_event(
+        make_event(room_id="r1"), binding, RoomContext(room=Room(id="r1"))
+    )
+    assert output.response_stream is not None
+    async for item in output.response_stream:
+        if isinstance(item, ToolCallEndMarker):
+            break
+    closing = contextvars.copy_context()
+    if cut:
+        closing.run(cut_turn_stream)
+    await asyncio.get_running_loop().create_task(output.response_stream.aclose(), context=closing)
+
+    assert [[(p.result, p.is_error) for p in parts] for parts, _ in ends] == [
+        [('{"error": "Tool call aborted"}', True) if cut else ("found", False)]
+    ]
+    assert (ends[0][1] is None) is cut

@@ -34,7 +34,7 @@ from roomkit.channels.agent import Agent
 from roomkit.core.exceptions import TurnLinkError
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import ChannelCategory, ChannelType, EventType
-from roomkit.models.event import EventSource, RoomEvent, TextContent
+from roomkit.models.event import EventSource, RoomEvent, TextContent, ToolCallContent
 from roomkit.models.steering import Cancel
 from roomkit.providers.ai.base import AIResponse, AITool, AIToolCall, StreamTextDelta
 from roomkit.providers.ai.mock import MockAIProvider
@@ -556,6 +556,71 @@ async def test_a_steering_cancel_reaches_a_turn_elsewhere(prefix: str, redis_cli
 
         assert reached == 1
         assert dict(result.response_metadata)["turns"]["worker"]["loop_end_reason"] == "cancelled"
+    finally:
+        await kit.close()
+        await host.close()
+        await executor.close()
+
+
+async def test_a_call_answering_once_its_turn_elsewhere_is_cut_ends_aborted(
+    prefix: str, redis_client: Any
+) -> None:
+    """A tool that answers right after its turn's cut, before the cut reached
+    the executor: the room's realtime gets the call's TOOL_CALL_END, failed
+    and aborted as its stored end row reads it, not only its start (RFC §6.4)."""
+    store = InMemoryStore()
+    running, answer = asyncio.Event(), asyncio.Event()
+
+    async def wait(name: str, arguments: dict[str, Any]) -> str:
+        running.set()
+        await answer.wait()
+        return "late"
+
+    call = AIToolCall(id="c1", name="wait", arguments={})
+    agent = Agent(
+        "worker",
+        provider=MockAIProvider(
+            ai_responses=[AIResponse(content="", tool_calls=[call]), AIResponse(content="never")],
+            streaming=True,
+        ),
+        tools=[AITool(name="wait", description="Wait.")],
+        tool_handler=wait,
+    )
+    host, executor = await _hosted(prefix, store, agent)
+    kit = await _owner(prefix, "worker", store=store)
+    ended = asyncio.Event()
+    published: list[EphemeralEvent] = []
+
+    async def on(event: EphemeralEvent) -> None:
+        published.append(event)
+        if event.type == EphemeralEventType.TOOL_CALL_END:
+            ended.set()
+
+    await kit.realtime.subscribe_to_room("r", on)
+    try:
+        message = _said("Go.").model_copy(update={"delivery_key": "k"})
+        turn = asyncio.ensure_future(kit.process_inbound(message, room_id="r"))
+        await asyncio.wait_for(running.wait(), 5)
+        assert await kit.cancel_delivery("k", reason="stopped") == 1
+        answer.set()
+        await asyncio.wait_for(turn, 5)
+        await asyncio.wait_for(ended.wait(), 5)
+
+        ends = [
+            call
+            for event in published
+            if event.type == EphemeralEventType.TOOL_CALL_END
+            for call in event.data["tool_calls"]
+        ]
+        assert [(c["id"], c["status"], c["result"]) for c in ends] == [
+            ("c1", "failed", '{"error": "Tool call aborted"}')
+        ]
+        stored = [
+            e.content.status
+            for e in await store.list_events("r")
+            if e.type == EventType.TOOL_CALL_END and isinstance(e.content, ToolCallContent)
+        ]
+        assert stored == ["failed"]
     finally:
         await kit.close()
         await host.close()

@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any, NoReturn
 from roomkit.channels._discussion_turn import DISCUSSION_TURN, issue_mark, retire_mark
 from roomkit.channels._strategy_turn import strategy_turn
 from roomkit.channels._tool_registry import set_turn_owner_tools
-from roomkit.core._turn_scope import enter_turn
+from roomkit.core._turn_scope import cut_turn_stream, enter_turn
 from roomkit.core.exceptions import TurnLinkError
 from roomkit.core.hooks import set_turn_room_hooks
 from roomkit.models.streaming import UsageMarker
@@ -323,7 +323,11 @@ class ExecutorTurn:
         return False
 
     async def _close(self, stream: AsyncIterator[Any], context: contextvars.Context) -> None:
-        """Close the stream as a local reader's close would."""
+        """Close the stream as a local reader's close would. Unless its
+        reader closed it, the stream closes as a cut's: the owner took
+        nothing more of what it handed out (RFC §6.4)."""
+        if not self._pulls.closing:
+            context.run(cut_turn_stream)
         self._cleaning = True
         try:
             await self._run_work(_close_stream(stream), context)

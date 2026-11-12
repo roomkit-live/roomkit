@@ -302,10 +302,17 @@ class _ToolLoopState:
             logger.warning("%s reached %d tool rounds, still running", self.log_label, rounds)
 
 
+ABORTED_CALL_RESULT = json.dumps({"error": "Tool call aborted"})
+"""The result the TOOL_CALL_END of a call its turn cut carries on the room's
+realtime (RFC §6.4)."""
+
+
 def _aborted_results(tool_calls: list[Any]) -> list[AIToolResultPart]:
     """A failed result for each call of a round that was aborted mid-run."""
-    body = json.dumps({"error": "Tool call aborted"})
-    return [ToolOutcome(OutcomeKind.CANCELLED, body).as_part(tc.id, tc.name) for tc in tool_calls]
+    return [
+        ToolOutcome(OutcomeKind.CANCELLED, ABORTED_CALL_RESULT).as_part(tc.id, tc.name)
+        for tc in tool_calls
+    ]
 
 
 class AIToolLoopRulesMixin(_AIChannelContract):

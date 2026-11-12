@@ -18,6 +18,7 @@ from roomkit.channels._ai_coalescers import (
 )
 from roomkit.channels._ai_loop_rules import (
     AIToolLoopRulesMixin,
+    _aborted_results,
     _ToolLoopState,
     final_round_reason,
     interrupts_turn,
@@ -33,7 +34,7 @@ from roomkit.channels._instruction import kept_instruction
 from roomkit.channels._mark_copies import compile_mark_patterns, without_mark_copies
 from roomkit.channels._note_blocks import add_turn_note
 from roomkit.channels._turn_notes import carries_turn_images
-from roomkit.core._turn_scope import current_turn_id
+from roomkit.core._turn_scope import current_turn_id, turn_stream_cut
 from roomkit.core.task_utils import shielded
 from roomkit.models.channel import ChannelOutput
 from roomkit.models.event import RoomEvent
@@ -563,24 +564,64 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
             answered=answered,
         )
         turn.count_round(calls)
-        for call, marker, result in zip(calls, markers, results, strict=False):
+        ends = [
             # Each call's end was set on its start as it finished; one is
             # built here only if it was not, so every start gets its end.
-            if marker.ended is not None:
-                yield marker.ended
-            else:
-                yield call_end_marker(call, marker, result, duration_ms)
-        if turn.room_id:
-            await self._publish_tool_event(
-                EphemeralEventType.TOOL_CALL_END,
-                turn.room_id,
-                results,
-                index,
-                duration_ms=duration_ms,
-                for_calls=calls,
-            )
+            marker.ended
+            if marker.ended is not None
+            else call_end_marker(call, marker, result, duration_ms)
+            for call, marker, result in zip(calls, markers, results, strict=False)
+        ]
+        handed = self._hand_round_ends(ends, calls, results, turn.room_id, index, duration_ms)
+        async with aclosing(handed) as deltas:
+            async for delta in deltas:
+                yield delta
         await self._after_tool_round(context, calls, results, answered, turn, index)
         await self._compact_after_round(context, turn.room_id, turn.last_usage)
+
+    async def _hand_round_ends(
+        self,
+        ends: list[ToolCallEndMarker],
+        calls: list[Any],
+        results: list[AIToolResultPart],
+        room_id: str | None,
+        index: int,
+        duration_ms: int,
+    ) -> AsyncGenerator[StreamDelta, None]:
+        """Yield a round's end markers, then publish its TOOL_CALL_END once
+        the reader came back for more: it took them (RFC §6.4).
+
+        A stream closed before then (its reader stopped, or its turn was cut)
+        publishes it all the same, or the round's starts stay open on the
+        room's realtime. A reader that stopped took the ends it was handed,
+        each call ending as it did; a cut turn's owner stores each call whose
+        end it had not taken as failed (RFC §12.2 step 13s), and its END says
+        so, aborted.
+        """
+        taken = 0
+        try:
+            for end in ends:
+                yield end
+                taken += 1
+        except BaseException:
+            cut = turn_stream_cut()
+            await self._publish_tool_event(
+                EphemeralEventType.TOOL_CALL_END,
+                room_id,
+                [*results[:taken], *_aborted_results(calls[taken:])] if cut else results,
+                index,
+                duration_ms=None if cut else duration_ms,
+                for_calls=calls,
+            )
+            raise
+        await self._publish_tool_event(
+            EphemeralEventType.TOOL_CALL_END,
+            room_id,
+            results,
+            index,
+            duration_ms=duration_ms,
+            for_calls=calls,
+        )
 
     async def _after_tool_round(
         self,

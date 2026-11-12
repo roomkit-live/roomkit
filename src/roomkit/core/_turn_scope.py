@@ -40,3 +40,23 @@ def current_turn_id() -> str | None:
     addresses within its room. ``None`` outside a turn."""
     turns = _TURNS_RUN_UNDER.get()
     return turns[-1] if turns else None
+
+
+_STREAM_CUT: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "roomkit_turn_stream_cut", default=False
+)
+
+
+def cut_turn_stream() -> None:
+    """The turn's stream is closed by a cut, not by its reader: its reader
+    takes nothing more of what the stream handed out (RFC §6.4)."""
+    _STREAM_CUT.set(True)
+
+
+def turn_stream_cut() -> bool:
+    """Whether the stream the current code closes was cut rather than
+    stopped by its reader. A reader that stops took what it was handed; a
+    cut turn's owner stores each call whose end it had not taken as failed
+    (RFC §12.2 step 13s). ``False`` outside a turn: a reader that closes a
+    stream it reads itself stops it."""
+    return _STREAM_CUT.get()
