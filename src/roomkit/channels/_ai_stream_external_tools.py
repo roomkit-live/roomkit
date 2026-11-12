@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from functools import partial
 from typing import Any, Protocol
 
-from roomkit.channels._ai_loop_rules import ABORTED_CALL_RESULT
+from roomkit.channels._ai_loop_rules import _aborted_results, end_part
 from roomkit.core._turn_scope import turn_stream_cut
 from roomkit.models.enums import ChannelType
 from roomkit.models.streaming import StreamDelta, ToolCallEndMarker, ToolCallStartMarker
@@ -25,7 +25,7 @@ from roomkit.models.tool_call import ToolCallEvent, ToolCallObserver
 from roomkit.providers.ai.base import StreamToolCall
 from roomkit.providers.ai.tool_calls import partial_call_error
 from roomkit.realtime.base import EphemeralEventType
-from roomkit.tools._outcome import OutcomeKind, ToolOutcome
+from roomkit.tools._outcome import OutcomeKind
 from roomkit.tools._turn_calls import AnnouncedCall, reporting
 from roomkit.tools.context import _ToolLoopContext
 from roomkit.tools.external import ExternalToolHandler, detail_keyword, handler_reported
@@ -121,14 +121,14 @@ class _ExternalStreamTools:
         await self._publish_start(call, arguments, round_idx)
         undecided = _Decided(arguments, result, kind)
         try:
-            end, ended_as = await self._decided_end(
-                call, entry, start, undecided, pending, started_at
-            )
+            end = await self._decided_end(call, entry, start, undecided, pending, started_at)
         except BaseException:
-            # Cut while its handler decides or its report runs (RFC §6.4).
-            await self._publish_end(call, ABORTED_CALL_RESULT, OutcomeKind.CANCELLED, round_idx)
+            # Cut while its handler decides, or while its report runs once
+            # its end rode its start, which the turn's owner closes it with
+            # (RFC §6.4, §10.6.4).
+            await self._publish_end(call, start.ended, round_idx)
             raise
-        async with aclosing(self._hand_end(call, end, ended_as, round_idx)) as deltas:
+        async with aclosing(self._hand_end(call, end, round_idx)) as deltas:
             async for delta in deltas:
                 yield delta
 
@@ -140,9 +140,8 @@ class _ExternalStreamTools:
         undecided: _Decided,
         pending: bool,
         started_at: float,
-    ) -> tuple[ToolCallEndMarker, OutcomeKind]:
-        """The call's end marker and outcome, decided and reported, the end
-        riding its start."""
+    ) -> ToolCallEndMarker:
+        """The call's end marker, decided and reported, riding its start."""
         decided: _Decided | None = undecided
         if pending and self.handler is not None:
             decided = await self._settle(entry, self.handler, undecided)
@@ -150,7 +149,7 @@ class _ExternalStreamTools:
             # The channel's close cut the decision: the call is the turn
             # end's to report, through the handler, as any cut call.
             start.ended = self._cut_end(call, undecided.arguments, started_at)
-            return start.ended, OutcomeKind.CANCELLED
+            return start.ended
         duration_ms = int((time.monotonic() - started_at) * 1000)
         # The model reads it bounded, as any outcome, and so does its END row;
         # the report heard it whole (RFC §21.5).
@@ -161,29 +160,25 @@ class _ExternalStreamTools:
         start.ran_with, start.ended = dict(decided.arguments), end
         if pending:
             await self._report(entry, decided)
-        return end, decided.kind
+        return end
 
     async def _hand_end(
-        self, call: StreamToolCall, end: ToolCallEndMarker, kind: OutcomeKind, round_idx: int
+        self, call: StreamToolCall, end: ToolCallEndMarker, round_idx: int
     ) -> AsyncGenerator[StreamDelta, None]:
         """Yield the call's end marker, then publish its TOOL_CALL_END once
         the reader came back for more: it took it (RFC §6.4).
 
         A stream closed before then publishes it all the same: as the call
         ended for a reader that stopped, which took it; aborted for a cut
-        turn, whose owner stores the call failed (RFC §12.2 step 13s).
+        turn, whose owner dropped the end handed out at the cut (RFC
+        §10.6.4).
         """
         try:
             yield end
         except BaseException:
-            if turn_stream_cut():
-                await self._publish_end(
-                    call, ABORTED_CALL_RESULT, OutcomeKind.CANCELLED, round_idx
-                )
-            else:
-                await self._publish_end(call, end.result, kind, round_idx, end.duration_ms)
+            await self._publish_end(call, None if turn_stream_cut() else end, round_idx)
             raise
-        await self._publish_end(call, end.result, kind, round_idx, end.duration_ms)
+        await self._publish_end(call, end, round_idx)
 
     async def _publish_start(
         self, call: StreamToolCall, arguments: dict[str, Any], round_idx: int
@@ -197,20 +192,18 @@ class _ExternalStreamTools:
             )
 
     async def _publish_end(
-        self,
-        call: StreamToolCall,
-        result: str,
-        kind: OutcomeKind,
-        round_idx: int,
-        duration_ms: int | None = None,
+        self, call: StreamToolCall, end: ToolCallEndMarker | None, round_idx: int
     ) -> None:
+        """Publish the call's TOOL_CALL_END: as *end* says, or aborted when
+        there is none (a turn cut before the call's end reached its owner)."""
         if self.room_id:
+            part = end_part(end) if end is not None else _aborted_results([call])[0]
             await self.publish(
                 EphemeralEventType.TOOL_CALL_END,
                 self.room_id,
-                [ToolOutcome(kind, result).as_part(call.id, call.name)],
+                [part],
                 round_idx,
-                duration_ms=duration_ms,
+                duration_ms=end.duration_ms if end is not None else None,
             )
 
     def _announce(self, call: StreamToolCall, *, pending: bool) -> AnnouncedCall:

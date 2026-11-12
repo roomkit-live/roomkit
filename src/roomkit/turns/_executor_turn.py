@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any, NoReturn
 from roomkit.channels._discussion_turn import DISCUSSION_TURN, issue_mark, retire_mark
 from roomkit.channels._strategy_turn import strategy_turn
 from roomkit.channels._tool_registry import set_turn_owner_tools
-from roomkit.core._turn_scope import cut_turn_stream, enter_turn
+from roomkit.core._turn_scope import enter_turn, set_turn_stream_cut
 from roomkit.core.exceptions import TurnLinkError
 from roomkit.core.hooks import set_turn_room_hooks
 from roomkit.models.streaming import UsageMarker
@@ -325,12 +325,10 @@ class ExecutorTurn:
     async def _close(self, stream: AsyncIterator[Any], context: contextvars.Context) -> None:
         """Close the stream as a local reader's close would. Unless its
         reader closed it, the stream closes as a cut's: the owner took
-        nothing more of what it handed out (RFC §6.4)."""
-        if not self._pulls.closing:
-            context.run(cut_turn_stream)
+        nothing more of what it handed out (RFC §10.6.4)."""
         self._cleaning = True
         try:
-            await self._run_work(_close_stream(stream), context)
+            await self._run_work(_close_stream(stream), context, cut=not self._pulls.closing)
         except asyncio.CancelledError:
             if self._cut is None:
                 raise
@@ -340,10 +338,14 @@ class ExecutorTurn:
             self._cleaning = False
         await self._changes.report()
 
-    async def _run_work(self, work: Coroutine[Any, Any, Any], context: contextvars.Context) -> Any:
+    async def _run_work(
+        self, work: Coroutine[Any, Any, Any], context: contextvars.Context, *, cut: bool = False
+    ) -> Any:
         """Run one piece of the turn's work as a task the owner can cancel,
-        the code under it knowing it runs under this turn."""
+        the code under it knowing it runs under this turn, and whether it
+        closes the turn's stream as a cut's (*cut*)."""
         context.run(enter_turn, self._request.turn_id)
+        context.run(set_turn_stream_cut, cut)
         context.run(set_turn_owner_tools, self._calls.owner_tools)
         context.run(set_turn_host, self._host)
         context.run(set_turn_request, self._request)

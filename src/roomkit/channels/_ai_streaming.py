@@ -18,8 +18,8 @@ from roomkit.channels._ai_coalescers import (
 )
 from roomkit.channels._ai_loop_rules import (
     AIToolLoopRulesMixin,
-    _aborted_results,
     _ToolLoopState,
+    cut_results,
     final_round_reason,
     interrupts_turn,
     require_schema_answer,
@@ -205,6 +205,19 @@ async def _unrun_call_ends(calls: list[Any]) -> AsyncGenerator[StreamDelta, None
             outcome="cancelled",
             intent=call.intent,
         )
+
+
+def _reached_ends(
+    ends: list[ToolCallEndMarker], markers: list[ToolCallStartMarker], taken: int
+) -> list[ToolCallEndMarker | None]:
+    """The ends of a round its turn cut that reached the turn's owner (RFC
+    §10.6.4): those its reader took, before *taken*, and the later ones that
+    rode their starts; the one handed out at the cut, an item the owner
+    dropped, did not."""
+    return [
+        end if index < taken or (index > taken and marker.ended is not None) else None
+        for index, (end, marker) in enumerate(zip(ends, markers, strict=False))
+    ]
 
 
 def _answered_end(
@@ -564,15 +577,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
             answered=answered,
         )
         turn.count_round(calls)
-        ends = [
-            # Each call's end was set on its start as it finished; one is
-            # built here only if it was not, so every start gets its end.
-            marker.ended
-            if marker.ended is not None
-            else call_end_marker(call, marker, result, duration_ms)
-            for call, marker, result in zip(calls, markers, results, strict=False)
-        ]
-        handed = self._hand_round_ends(ends, calls, results, turn.room_id, index, duration_ms)
+        handed = self._hand_round_ends(calls, markers, results, turn.room_id, index, duration_ms)
         async with aclosing(handed) as deltas:
             async for delta in deltas:
                 yield delta
@@ -581,23 +586,33 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
 
     async def _hand_round_ends(
         self,
-        ends: list[ToolCallEndMarker],
         calls: list[Any],
+        markers: list[ToolCallStartMarker],
         results: list[AIToolResultPart],
         room_id: str | None,
         index: int,
         duration_ms: int,
     ) -> AsyncGenerator[StreamDelta, None]:
-        """Yield a round's end markers, then publish its TOOL_CALL_END once
-        the reader came back for more: it took them (RFC §6.4).
+        """Yield each call's end marker, then publish the round's
+        TOOL_CALL_END once the reader came back for more: it took them (RFC
+        §6.4).
 
         A stream closed before then (its reader stopped, or its turn was cut)
         publishes it all the same, or the round's starts stay open on the
         room's realtime. A reader that stopped took the ends it was handed,
-        each call ending as it did; a cut turn's owner stores each call whose
-        end it had not taken as failed (RFC §12.2 step 13s), and its END says
-        so, aborted.
+        each call ending as it did. A cut turn's owner closes each call as
+        its end reached it (RFC §10.6.4): read by its reader, or riding its
+        start; the end handed out when the cut came reached it as an item it
+        dropped, and that call ends aborted.
         """
+        ends = [
+            # Each call's end was set on its start as it finished; one is
+            # built here only if it was not, so every start gets its end.
+            marker.ended
+            if marker.ended is not None
+            else call_end_marker(call, marker, result, duration_ms)
+            for call, marker, result in zip(calls, markers, results, strict=False)
+        ]
         taken = 0
         try:
             for end in ends:
@@ -608,7 +623,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
             await self._publish_tool_event(
                 EphemeralEventType.TOOL_CALL_END,
                 room_id,
-                [*results[:taken], *_aborted_results(calls[taken:])] if cut else results,
+                cut_results(calls, _reached_ends(ends, markers, taken)) if cut else results,
                 index,
                 duration_ms=None if cut else duration_ms,
                 for_calls=calls,

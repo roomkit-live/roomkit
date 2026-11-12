@@ -22,12 +22,12 @@ from roomkit import HookExecution, HookResult, HookTrigger, RoomContext, ToolCal
 from roomkit.channels import FallbackRouter
 from roomkit.channels._ai_coalescers import _ToolCallDeltaCoalescer
 from roomkit.channels.ai import AIChannel
-from roomkit.core._turn_scope import cut_turn_stream
+from roomkit.core._turn_scope import set_turn_stream_cut
 from roomkit.core.framework import RoomKit
 from roomkit.models.channel import ChannelBinding, RetryPolicy
 from roomkit.models.delivery import InboundMessage
-from roomkit.models.enums import ChannelCategory, ChannelType
-from roomkit.models.event import RoomEvent, TextContent
+from roomkit.models.enums import ChannelCategory, ChannelType, EventType
+from roomkit.models.event import RoomEvent, TextContent, ToolCallContent
 from roomkit.models.room import Room
 from roomkit.models.steering import Cancel
 from roomkit.models.streaming import LoopEndMarker, ThinkingDeltaMarker, ToolCallEndMarker
@@ -47,7 +47,7 @@ from roomkit.providers.ai.base import (
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.realtime.base import EphemeralEvent, EphemeralEventType
 from roomkit.realtime.memory import InMemoryRealtime
-from roomkit.tools.external import PolicyExternalToolHandler
+from roomkit.tools.external import PolicyExternalToolHandler, ToolDecision
 from tests.conftest import make_event
 from tests.test_framework import SimpleChannel
 
@@ -1351,31 +1351,17 @@ async def test_a_turn_cancelled_while_a_tool_runs_closes_its_start(streaming: bo
     assert "aborted" in ends[0].data["tool_calls"][0]["result"]
 
 
-async def test_a_turn_cut_while_its_handler_decides_a_call_closes_its_start() -> None:
-    """A call the provider serves, its external handler still deciding (an
-    approval awaited) when the turn is cut: its START gets its END, aborted
-    (RFC §6.4)."""
-    deciding = asyncio.Event()
+_ABORTED = '{"error": "Tool call aborted"}'
 
-    class _Awaits(PolicyExternalToolHandler):
-        async def process_tool_call(self, *args: Any, **kwargs: Any) -> Any:
-            deciding.set()
-            await asyncio.Event().wait()
 
-    provider = MockAIProvider(
-        streaming=True,
-        ai_responses=[
-            AIResponse(
-                content="", tool_calls=[AIToolCall(id="c1", name="Bash", arguments={"cmd": "ls"})]
-            )
-        ],
-    )
+async def _ends_of_a_cut_turn(
+    ai: AIChannel, running: asyncio.Event
+) -> tuple[list[tuple[str, str, str]], list[tuple[str, str]]]:
+    """Cut a turn of *ai* once *running* is set: the TOOL_CALL_END calls the
+    room's realtime got, and the stored TOOL_CALL_END rows."""
     kit = RoomKit(realtime=InMemoryRealtime())
     kit.register_channel(SimpleChannel("sms1"))
-    kit.register_channel(AIChannel("ai1", provider=provider, external_tool_handler=_Awaits()))
-    await kit.create_room(room_id="r1")
-    await kit.attach_channel("r1", "sms1")
-    await kit.attach_channel("r1", "ai1", category=ChannelCategory.INTELLIGENCE)
+    kit.register_channel(ai)
     ended = asyncio.Event()
     received: list[EphemeralEvent] = []
 
@@ -1384,24 +1370,96 @@ async def test_a_turn_cut_while_its_handler_decides_a_call_closes_its_start() ->
         if ev.type == EphemeralEventType.TOOL_CALL_END:
             ended.set()
 
-    await kit.realtime.subscribe_to_room("r1", on_event)
-    turn = asyncio.create_task(
-        kit.process_inbound(
-            InboundMessage(channel_id="sms1", sender_id="u1", content=TextContent(body="go"))
+    try:
+        await kit.create_room(room_id="r1")
+        await kit.attach_channel("r1", "sms1")
+        await kit.attach_channel(
+            "r1", "ai1", category=ChannelCategory.INTELLIGENCE, metadata={"tools": _TOOLS}
         )
+        await kit.realtime.subscribe_to_room("r1", on_event)
+        message = InboundMessage(channel_id="sms1", sender_id="u1", content=TextContent(body="go"))
+        turn = asyncio.create_task(kit.process_inbound(message))
+        await asyncio.wait_for(running.wait(), 1)
+        turn.cancel()
+        await asyncio.gather(turn, return_exceptions=True)
+        await asyncio.wait_for(ended.wait(), 1)
+        _, ends = _tool_events(received)
+        stored = [
+            (e.content.tool_id, e.content.status)
+            for e in await kit.store.list_events("r1")
+            if e.type == EventType.TOOL_CALL_END and isinstance(e.content, ToolCallContent)
+        ]
+    finally:
+        await kit.close()
+    return [
+        (c["id"], c["status"], c["result"]) for e in ends for c in e.data["tool_calls"]
+    ], stored
+
+
+@pytest.mark.parametrize(
+    ("reporting", "ended"),
+    [(False, ("c1", "failed", _ABORTED)), (True, ("c1", "completed", "decided"))],
+    ids=["deciding", "reporting"],
+)
+async def test_a_call_its_handler_decides_ends_as_stored_when_its_turn_is_cut(
+    reporting: bool, ended: tuple[str, str, str]
+) -> None:
+    """A call the provider serves, its turn cut while its external handler
+    decides it (an approval awaited), or once decided, while it reports it:
+    its START gets its END, which reads as the stored row (RFC §6.4): aborted
+    undecided, as decided once its end rode its start (RFC §10.6.4)."""
+    running = asyncio.Event()
+
+    class _Waits(PolicyExternalToolHandler):
+        async def process_tool_call(self, *args: Any, **kwargs: Any) -> Any:
+            if reporting:
+                return ToolDecision(approved=True, result="decided")
+            running.set()
+            await asyncio.Event().wait()
+
+        async def on_tool_result(self, *args: Any, **kwargs: Any) -> None:
+            running.set()
+            await asyncio.Event().wait()
+
+    call = AIToolCall(id="c1", name="Bash", arguments={"cmd": "ls"})
+    provider = MockAIProvider(
+        streaming=True, ai_responses=[AIResponse(content="", tool_calls=[call])]
     )
-    await asyncio.wait_for(deciding.wait(), 1)
+    ai = AIChannel("ai1", provider=provider, external_tool_handler=_Waits())
 
-    turn.cancel()
-    await asyncio.gather(turn, return_exceptions=True)
-    await asyncio.wait_for(ended.wait(), 1)
+    published, stored = await _ends_of_a_cut_turn(ai, running)
 
-    starts, ends = _tool_events(received)
-    assert [c["id"] for e in starts for c in e.data["tool_calls"]] == ["c1"]
-    assert [(c["id"], c["status"], c["result"]) for e in ends for c in e.data["tool_calls"]] == [
-        ("c1", "failed", '{"error": "Tool call aborted"}')
+    assert published == [ended]
+    assert stored == [ended[:2]]
+
+
+async def test_a_call_that_ended_before_its_turn_was_cut_ends_as_it_did() -> None:
+    """A round cut while one of its calls runs: the call that had ended keeps
+    its end on the room's realtime, as its stored row does, and only the
+    running one ends aborted (RFC §6.4, §10.6.4)."""
+    running = asyncio.Event()
+
+    async def handler(name: str, arguments: dict[str, Any]) -> str:
+        if name == "slow":
+            running.set()
+            await asyncio.Event().wait()
+        return "found"
+
+    calls = [
+        AIToolCall(id="c1", name="search", arguments={}),
+        AIToolCall(id="c2", name="slow", arguments={}),
     ]
-    await kit.close()
+    provider = MockAIProvider(
+        streaming=True,
+        ai_responses=[AIResponse(content="", tool_calls=calls), AIResponse(content="never")],
+    )
+    tools = [AITool(name=name, description=name) for name in ("search", "slow")]
+    ai = AIChannel("ai1", provider=provider, tool_handler=handler, tools=tools)
+
+    published, stored = await _ends_of_a_cut_turn(ai, running)
+
+    assert published == [("c1", "completed", "found"), ("c2", "failed", _ABORTED)]
+    assert stored == [("c1", "completed"), ("c2", "failed")]
 
 
 @pytest.mark.parametrize("cut", [False, True], ids=["stopped", "cut"])
@@ -1446,7 +1504,7 @@ async def test_a_stream_closed_on_a_call_s_end_still_publishes_it(served: bool, 
             break
     closing = contextvars.copy_context()
     if cut:
-        closing.run(cut_turn_stream)
+        closing.run(set_turn_stream_cut, True)
     await asyncio.get_running_loop().create_task(output.response_stream.aclose(), context=closing)
 
     assert [[(p.result, p.is_error) for p in parts] for parts, _ in ends] == [

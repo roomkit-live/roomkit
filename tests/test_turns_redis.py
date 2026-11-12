@@ -562,29 +562,46 @@ async def test_a_steering_cancel_reaches_a_turn_elsewhere(prefix: str, redis_cli
         await executor.close()
 
 
-async def test_a_call_answering_once_its_turn_elsewhere_is_cut_ends_aborted(
-    prefix: str, redis_client: Any
+_ABORTED = '{"error": "Tool call aborted"}'
+
+
+@pytest.mark.parametrize(
+    ("names", "ends"),
+    [
+        (["wait"], [("c1", "failed", _ABORTED)]),
+        # The first end crosses as the item the owner drops at the cut; the
+        # second rides its start before it, and is closed as it ended.
+        (["quick", "wait"], [("c1", "failed", _ABORTED), ("c2", "completed", "late")]),
+    ],
+    ids=["one-call", "two-calls"],
+)
+async def test_calls_answering_once_their_turn_elsewhere_is_cut_end_as_stored(
+    prefix: str, redis_client: Any, names: list[str], ends: list[tuple[str, str, str]]
 ) -> None:
-    """A tool that answers right after its turn's cut, before the cut reached
-    the executor: the room's realtime gets the call's TOOL_CALL_END, failed
-    and aborted as its stored end row reads it, not only its start (RFC §6.4)."""
+    """Tools that answer right after their turn's cut, before the cut reached
+    the executor: each call's TOOL_CALL_END reaches the room's realtime and
+    reads as its stored row (RFC §6.4), aborted for an end the owner had not
+    received at the cut, as it ended for one that rode its start (§10.6.4)."""
     store = InMemoryStore()
     running, answer = asyncio.Event(), asyncio.Event()
+    answered: list[str] = []
 
-    async def wait(name: str, arguments: dict[str, Any]) -> str:
-        running.set()
-        await answer.wait()
-        return "late"
+    async def handler(name: str, arguments: dict[str, Any]) -> str:
+        if name == "wait":
+            running.set()
+            await answer.wait()
+        answered.append(name)
+        return "late" if name == "wait" else "quick"
 
-    call = AIToolCall(id="c1", name="wait", arguments={})
+    calls = [AIToolCall(id=f"c{i}", name=name, arguments={}) for i, name in enumerate(names, 1)]
     agent = Agent(
         "worker",
         provider=MockAIProvider(
-            ai_responses=[AIResponse(content="", tool_calls=[call]), AIResponse(content="never")],
+            ai_responses=[AIResponse(content="", tool_calls=calls), AIResponse(content="never")],
             streaming=True,
         ),
-        tools=[AITool(name="wait", description="Wait.")],
-        tool_handler=wait,
+        tools=[AITool(name=name, description=name) for name in names],
+        tool_handler=handler,
     )
     host, executor = await _hosted(prefix, store, agent)
     kit = await _owner(prefix, "worker", store=store)
@@ -606,21 +623,20 @@ async def test_a_call_answering_once_its_turn_elsewhere_is_cut_ends_aborted(
         await asyncio.wait_for(turn, 5)
         await asyncio.wait_for(ended.wait(), 5)
 
-        ends = [
-            call
+        # Every tool answered: the cut reached the executor after them.
+        assert sorted(answered) == sorted(names)
+        assert [
+            (c["id"], c["status"], c["result"])
             for event in published
             if event.type == EphemeralEventType.TOOL_CALL_END
-            for call in event.data["tool_calls"]
-        ]
-        assert [(c["id"], c["status"], c["result"]) for c in ends] == [
-            ("c1", "failed", '{"error": "Tool call aborted"}')
-        ]
+            for c in event.data["tool_calls"]
+        ] == ends
         stored = [
-            e.content.status
+            (e.content.tool_id, e.content.status)
             for e in await store.list_events("r")
             if e.type == EventType.TOOL_CALL_END and isinstance(e.content, ToolCallContent)
         ]
-        assert stored == ["failed"]
+        assert stored == [(call_id, status) for call_id, status, _ in ends]
     finally:
         await kit.close()
         await host.close()

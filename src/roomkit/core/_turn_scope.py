@@ -47,16 +47,18 @@ _STREAM_CUT: contextvars.ContextVar[bool] = contextvars.ContextVar(
 )
 
 
-def cut_turn_stream() -> None:
-    """The turn's stream is closed by a cut, not by its reader: its reader
-    takes nothing more of what the stream handed out (RFC §6.4)."""
-    _STREAM_CUT.set(True)
+def set_turn_stream_cut(cut: bool) -> None:
+    """Whether the turn's work now running closes its stream as a cut's (the
+    turn was cut, its executor closes, a frame could not cross), not as its
+    reader's: the owner then takes nothing more of what the stream handed out
+    (RFC §10.6.4). Set by the turn backend for each piece of a turn's work."""
+    _STREAM_CUT.set(cut)
 
 
 def turn_stream_cut() -> bool:
     """Whether the stream the current code closes was cut rather than
     stopped by its reader. A reader that stops took what it was handed; a
-    cut turn's owner stores each call whose end it had not taken as failed
-    (RFC §12.2 step 13s). ``False`` outside a turn: a reader that closes a
+    cut turn's owner closes as cancelled each call whose end had not reached
+    it (RFC §10.6.4). ``False`` outside a turn: a reader that closes a
     stream it reads itself stops it."""
     return _STREAM_CUT.get()

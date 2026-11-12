@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from roomkit.channels._tool_eviction import REREAD_TOOL, ToolEviction
 from roomkit.channels._turn_budget import TurnBudget
-from roomkit.models.streaming import LoopEndReason, add_usage
+from roomkit.models.streaming import LoopEndReason, ToolCallEndMarker, add_usage
 from roomkit.providers.ai.base import (
     AIContext,
     AIMessage,
@@ -315,6 +315,30 @@ def _aborted_results(tool_calls: list[Any]) -> list[AIToolResultPart]:
     ]
 
 
+def end_part(end: ToolCallEndMarker) -> AIToolResultPart:
+    """The result part a call's end marker carries, as a TOOL_CALL_END reads it."""
+    return AIToolResultPart(
+        tool_call_id=end.tool_id,
+        name=end.tool_name,
+        result=end.result,
+        is_error=end.status == "failed",
+        structured_content=end.structured_content,
+        outcome=end.outcome,
+    )
+
+
+def cut_results(
+    tool_calls: list[Any], ends: Sequence[ToolCallEndMarker | None]
+) -> list[AIToolResultPart]:
+    """What the TOOL_CALL_END of calls their turn cut says, as the turn's
+    owner stores them (RFC §6.4, §10.6.4): a call whose end reached the owner,
+    in *ends* at its place, closed with its own outcome; any other aborted."""
+    return [
+        end_part(end) if end is not None else _aborted_results([tc])[0]
+        for tc, end in zip(tool_calls, ends, strict=True)
+    ]
+
+
 class AIToolLoopRulesMixin(_AIChannelContract):
     """The tool loop's rules, each defined once.
 
@@ -529,12 +553,14 @@ class AIToolLoopRulesMixin(_AIChannelContract):
             )
         except BaseException:
             # Aborted mid-round (a turn cancelled while a tool ran): the START
-            # published above gets its END, or a live surface spins forever.
+            # published above gets its END, or a live surface spins forever. A
+            # call that finished first had its end ride its start, which its
+            # turn's owner closes it with (RFC §10.6.4); the others are aborted.
             if room_id:
                 await self._publish_tool_event(
                     EphemeralEventType.TOOL_CALL_END,
                     room_id,
-                    _aborted_results(tool_calls),
+                    cut_results(tool_calls, self._ends_on_their_starts(tool_calls)),
                     round_idx,
                     for_calls=tool_calls,
                 )
@@ -542,3 +568,15 @@ class AIToolLoopRulesMixin(_AIChannelContract):
         duration_ms = int((time.monotonic() - t0) * 1000)
         context.messages.append(AIMessage(role="tool", content=[*answered, *result_parts]))
         return result_parts, duration_ms
+
+    def _ends_on_their_starts(self, tool_calls: list[Any]) -> list[ToolCallEndMarker | None]:
+        """Each call's end where it rode the call's start marker, the call
+        having finished; ``None`` for a call still running, never run, or
+        with no start marker (a loop that streams none)."""
+        announced = self._get_loop_ctx().calls
+        ends: list[ToolCallEndMarker | None] = []
+        for tc in tool_calls:
+            entry = announced.entry_of(tc)
+            marker = entry.marker if entry is not None else None
+            ends.append(marker.ended if marker is not None else None)
+        return ends

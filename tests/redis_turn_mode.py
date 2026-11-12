@@ -79,8 +79,13 @@ async def handled_across(kit: RoomKit) -> bool:
     ref = uuid4().hex
     marker = asyncio.get_running_loop().create_future()
     backend._routes._answers[ref] = marker
+
+    def failed(error: Exception) -> None:
+        if not marker.done():
+            marker.set_exception(error)
+
     try:
-        backend._post(backend.node_id, "answer", "", "", ref)
+        backend._post(backend.node_id, "answer", "", "", ref, failed=failed)
         await marker
     finally:
         backend._routes._answers.pop(ref, None)
