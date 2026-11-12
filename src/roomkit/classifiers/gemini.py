@@ -10,7 +10,10 @@ documents the probabilities as calibrated; a yes/no one stays within
 
 The call goes through google-genai's ``decisions`` resource, on the client
 every Gemini provider here shares (``providers/gemini/sdk.py``), and always
-names v1beta: the API has no other version.
+names v1beta: the API has no other version. The client it builds does not
+retry: a 429 or a 5xx fails at once with the status and message the API gave,
+rather than spending the bounded wait on retries and ending as a timeout. A
+client passed in keeps its own retry settings.
 
 Requires the ``gemini`` extra::
 
@@ -40,6 +43,7 @@ from roomkit.classifiers.base import (
     YesNoQuestion,
     check_answers,
 )
+from roomkit.providers.ai.base import server_status
 from roomkit.providers.gemini.sdk import (
     DEVELOPER_API_VERSION,
     build_genai_client,
@@ -50,19 +54,16 @@ DEFAULT_MODEL = "gemini-decision-1"
 """The one model the Decisions API takes."""
 
 
-def _sdk_error() -> type[Exception]:
-    """What google-genai raises for a failed decisions call, or a clear error
-    naming the extra. The Decisions API, like the Interactions API, raises its
-    own error root, which the SDK exposes only under ``_interactions``; the
-    transport's errors arrive wrapped in it."""
+def _require_decisions() -> None:
+    """google-genai with its Decisions API (3.2 or later), or a clear error
+    naming the extra."""
     try:
-        from google.genai._interactions import GeminiNextGenAPIClientError
+        import google.genai.decisions  # noqa: F401 - the 3.2 resource's types
     except ImportError as exc:
         raise ImportError(
             "google-genai 3.2 or later is required for GeminiClassifier. "
             "Install it with: pip install roomkit[gemini]"
         ) from exc
-    return GeminiNextGenAPIClientError
 
 
 @dataclass
@@ -91,12 +92,12 @@ class GeminiClassifier(Classifier):
         api_key: The Gemini API key. Never read from the environment;
             required unless ``client`` is given.
         model: A model the Decisions API takes.
-        timeout: Seconds the whole call may take, retries included, before
-            ``ClassifierError``.
+        timeout: Seconds the whole call may take before ``ClassifierError``.
         client: A ``google.genai.Client`` for the Gemini Developer API to use
             instead of one made here (it is then the caller's to close). Its
-            calls name v1beta whatever version it was built for; a Vertex AI
-            client has no Decisions API.
+            calls name v1beta whatever version it was built for, and keep its
+            retry settings; a Vertex AI client has no Decisions API. The
+            client made here does not retry.
     """
 
     def __init__(
@@ -107,7 +108,7 @@ class GeminiClassifier(Classifier):
         timeout: float = 3.0,
         client: Any | None = None,
     ) -> None:
-        self._error = _sdk_error()
+        _require_decisions()
         self._model = model
         self._timeout = timeout
         self._http: Any = None
@@ -115,7 +116,10 @@ class GeminiClassifier(Classifier):
             self._client = client
         elif api_key:
             built = build_genai_client(
-                _Budget(timeout, timeout), provider="GeminiClassifier", api_key=api_key
+                _Budget(timeout, timeout),
+                provider="GeminiClassifier",
+                api_key=api_key,
+                disable_retries=True,
             )
             self._client, self._http = built.client, built.http
         else:
@@ -133,13 +137,33 @@ class GeminiClassifier(Classifier):
             response = await asyncio.wait_for(call, self._timeout)
         except TimeoutError as exc:
             raise ClassifierError(f"no answer within {self._timeout} s") from exc
-        except self._error as exc:
-            raise ClassifierError(str(exc)) from exc
+        except Exception as exc:
+            # The SDK's error classes for this resource are private: whatever
+            # the call raised is reported with the status the server gave.
+            raise ClassifierError(_failure(exc)) from exc
         return check_answers(questions, _answers(questions, response))
 
     async def close(self) -> None:
         if self._owns_client:
             await close_genai_client(self._client, self._http)
+
+
+def _failure(exc: Exception) -> str:
+    """What a failed call says: the HTTP status the server gave and its
+    message, or the failure's type when no server answered."""
+    status = server_status(exc)
+    if status is not None:
+        return f"the Decisions API answered HTTP {status}: {_server_message(exc)}"
+    return f"the Decisions API call failed: {type(exc).__name__}: {exc}"
+
+
+def _server_message(exc: Exception) -> str:
+    """The message in the API's error body (``{"error": {"message": ...}}``),
+    else what the exception says."""
+    body = getattr(exc, "body", None)
+    error = body.get("error") if isinstance(body, dict) else None
+    message = error.get("message") if isinstance(error, dict) else None
+    return message if isinstance(message, str) and message else str(exc)
 
 
 def _question(question: Question) -> dict[str, Any]:

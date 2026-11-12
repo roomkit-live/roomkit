@@ -224,6 +224,32 @@ async def test_a_refused_call_is_a_classifier_error(
         await classify("x")
 
 
+@pytest.mark.parametrize(
+    ("status", "error"),
+    [(429, "HTTP 429: The model is overloaded$"), (503, "HTTP 503: The model is overloaded$")],
+    ids=["rate-limited", "overloaded"],
+)
+async def test_a_server_error_fails_at_once_with_its_status(
+    wire: Any, status: int, error: str
+) -> None:
+    # Retried in the wait, it read "no answer within 1.0 s" and hid the status.
+    seen: list[httpx.Request] = []
+    body = {"error": {"code": status, "message": "The model is overloaded"}}
+    wire(answering(status=status, body=body, seen=seen))
+    with pytest.raises(ClassifierError, match=error):
+        await classify("x", timeout=1.0)
+    assert len(seen) == 1
+
+
+async def test_a_connection_failure_is_a_classifier_error(wire: Any) -> None:
+    def refuse(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused", request=request)
+
+    wire(refuse)
+    with pytest.raises(ClassifierError, match="connection"):
+        await classify("x", timeout=1.0)
+
+
 async def test_the_wait_is_bounded(wire: Any) -> None:
     async def never(request: httpx.Request) -> httpx.Response:
         await asyncio.Event().wait()
@@ -240,6 +266,6 @@ def test_it_needs_a_key_or_a_client() -> None:
 
 
 def test_without_the_sdk_it_names_the_extra(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setitem(sys.modules, "google.genai._interactions", None)
+    monkeypatch.setitem(sys.modules, "google.genai.decisions", None)
     with pytest.raises(ImportError, match=r"roomkit\[gemini\]"):
         GeminiClassifier("k")

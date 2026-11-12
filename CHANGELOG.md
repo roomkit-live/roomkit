@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **`GeminiClassifier`, on Gemini's Decisions API.** `GeminiClassifier(api_key)` answers RoomKit's yes/no, choice and score questions on `gemini-decision-1` (`POST /v1beta/decisions`), with probabilities Google documents as calibrated, ~250-450 ms a call measured with the network; a structured state goes as its JSON, and an input the API's filters block fails the call with `ClassifierError`. `client=` takes a `google.genai.Client` of the caller's. `CLASSIFIER=gemini` in `examples/classifier_judgments.py`, `speaking_judgments.py` and `discussion_dispatch.py` (RFC §6.8).
+- **`GeminiClassifier`, on Gemini's Decisions API.** `GeminiClassifier(api_key)` answers RoomKit's yes/no, choice and score questions on `gemini-decision-1` (`POST /v1beta/decisions`), with probabilities Google documents as calibrated, ~250-450 ms a call measured with the network; a structured state goes as its JSON, and an input the API's filters block fails the call with `ClassifierError`. The client it builds does not retry: a 429 or a 5xx fails at once with the HTTP status and message the API gave, rather than as a timeout; a client passed as `client=` keeps its own retry settings. `client=` takes a `google.genai.Client` of the caller's. `CLASSIFIER=gemini` in `examples/classifier_judgments.py`, `speaking_judgments.py` and `discussion_dispatch.py` (RFC §6.8).
 
 ### Changed
 
