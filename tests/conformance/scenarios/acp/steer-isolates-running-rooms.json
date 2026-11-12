@@ -1,0 +1,212 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/steer-isolates-running-rooms",
+  "title": "Steering Cancel reaches only the selected room while another ACP prompt runs",
+  "rules": [
+    "§6.4",
+    "§10.6.8",
+    "§21.3"
+  ],
+  "notes": "Python: tests/test_channels/test_acp_backend.py steering tests. Public kit steering reaches a turn, preserving the remote outcome; idle sessions are not cancelled. Exact ordered RPC trace. Direct turn-id addressing has a native test; the context_contributor boundary, standalone turns and publications remain separate.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "gate": "prompt",
+                "stop_reason": "cancelled"
+              },
+              {
+                "gate": "prompt-2",
+                "stop_reason": "end_turn"
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "response",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "background": true,
+      "as": "turn"
+    },
+    {
+      "wait_for": "prompt"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "background": true,
+      "as": "other"
+    },
+    {
+      "wait_for": "prompt-2"
+    },
+    {
+      "call": "steer",
+      "channel_id": "claude",
+      "room_id": "room-1",
+      "expect": {
+        "result": 1
+      },
+      "directive": {
+        "type": "cancel",
+        "reason": "hold"
+      }
+    },
+    {
+      "open": "prompt"
+    },
+    {
+      "await": "turn",
+      "expect": {
+        "result": {
+          "error": null,
+          "response_metadata": {
+            "acp": {
+              "prompt_returned": true,
+              "stop_reason": "cancelled",
+              "interrupted": {
+                "$absent": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "open": "prompt-2"
+    },
+    {
+      "await": "other",
+      "expect": {
+        "result": {
+          "error": null,
+          "response_metadata": {
+            "acp": {
+              "prompt_returned": true,
+              "stop_reason": {
+                "$absent": true
+              },
+              "interrupted": {
+                "$absent": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "acp_wire": {
+      "claude": [
+        {
+          "method": "initialize"
+        },
+        {
+          "method": "session/new"
+        },
+        {
+          "method": "session/prompt",
+          "params": {
+            "sessionId": "session-1"
+          }
+        },
+        {
+          "method": "session/new"
+        },
+        {
+          "method": "session/prompt",
+          "params": {
+            "sessionId": "session-2"
+          }
+        },
+        {
+          "method": "session/cancel",
+          "params": {
+            "sessionId": "session-1"
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "response": [
+        {
+          "response": {
+            "loop_end_reason": "cancelled"
+          }
+        },
+        {
+          "response": {
+            "loop_end_reason": "completed"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,166 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/steer-running-prompt-keeps-its-outcome",
+  "title": "Steering Cancel preserves the ACP prompt outcome and session",
+  "rules": [
+    "§6.4",
+    "§10.6.8",
+    "§21.3"
+  ],
+  "notes": "Python: tests/test_channels/test_acp_backend.py steering tests. Public kit steering reaches a turn, preserving the remote outcome; idle sessions are not cancelled. Exact ordered RPC trace. Direct turn-id addressing has a native test; the context_contributor boundary, standalone turns and publications remain separate.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "gate": "prompt",
+                "stop_reason": "cancelled"
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "response",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "background": true,
+      "as": "turn"
+    },
+    {
+      "wait_for": "prompt"
+    },
+    {
+      "call": "steer",
+      "channel_id": "claude",
+      "room_id": "room-1",
+      "expect": {
+        "result": 1
+      },
+      "directive": {
+        "type": "cancel",
+        "reason": "hold"
+      }
+    },
+    {
+      "open": "prompt"
+    },
+    {
+      "await": "turn",
+      "expect": {
+        "result": {
+          "error": null,
+          "response_metadata": {
+            "acp": {
+              "prompt_returned": true,
+              "stop_reason": "cancelled",
+              "interrupted": {
+                "$absent": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Again"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "acp_wire": {
+      "claude": [
+        {
+          "method": "initialize"
+        },
+        {
+          "method": "session/new"
+        },
+        {
+          "method": "session/prompt",
+          "params": {
+            "sessionId": "session-1"
+          }
+        },
+        {
+          "method": "session/cancel",
+          "params": {
+            "sessionId": "session-1"
+          }
+        },
+        {
+          "method": "session/prompt",
+          "params": {
+            "sessionId": "session-1"
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "response": [
+        {
+          "response": {
+            "loop_end_reason": "cancelled"
+          }
+        },
+        {
+          "response": {
+            "loop_end_reason": "completed"
+          }
+        }
+      ]
+    }
+  }
+}
