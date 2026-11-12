@@ -1,0 +1,188 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/tools-failed-result",
+  "title": "An ACP failed tool preserves its result and reports a failed call",
+  "rules": [
+    "§6.4",
+    "§9.3",
+    "Appendix A.9.1"
+  ],
+  "notes": "Python: channels/_acp_events.py::_merge_tool, _emit_tool_start, _emit_tool_end, _close_open_tools; channels/_acp_turn.py::_stream and _report_response; tests/test_channels/test_acp.py tools, abandoned calls, persisted markers and end-of-turn reports. Active room turns without an external permission handler; no permission-policy, plan, media or out-of-turn claim.",
+  "setup": {
+    "channels": [
+      {
+        "id": "web",
+        "type": "webhook",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "call-1",
+                    "title": "Read",
+                    "status": "in_progress",
+                    "rawInput": {
+                      "path": "missing"
+                    }
+                  },
+                  {
+                    "sessionUpdate": "tool_call_update",
+                    "toolCallId": "call-1",
+                    "status": "failed",
+                    "rawOutput": "Not found"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "response",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      },
+      {
+        "name": "tools",
+        "trigger": "on_tool_call",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "web",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello"
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "content": {
+            "type": "tool_call",
+            "tool_name": "Read"
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "content": {
+            "type": "tool_call",
+            "tool_name": "Read",
+            "status": "failed",
+            "outcome": "failed",
+            "result": "Not found",
+            "error": "Not found"
+          }
+        }
+      ]
+    },
+    "tool_events": {
+      "room-1": [
+        {
+          "type": "tool_call_start",
+          "round": 0,
+          "channel_id": "claude",
+          "tool_calls": [
+            {
+              "name": "Read"
+            }
+          ]
+        },
+        {
+          "type": "tool_call_end",
+          "round": 0,
+          "channel_id": "claude",
+          "tool_calls": [
+            {
+              "name": "Read",
+              "result": "Not found",
+              "status": "failed"
+            }
+          ]
+        }
+      ]
+    },
+    "hooks": {
+      "tools": [
+        {
+          "room_id": "room-1",
+          "tool_call": {
+            "name": "Read",
+            "arguments": {
+              "path": "missing"
+            },
+            "result": "Not found",
+            "is_error": true,
+            "cancelled": false,
+            "refused": false,
+            "error_detail": null
+          }
+        }
+      ],
+      "response": [
+        {
+          "room_id": "room-1",
+          "response": {
+            "channel_id": "claude",
+            "segments": [],
+            "response_content": "",
+            "tool_calls_count": 1,
+            "streaming": true
+          }
+        }
+      ]
+    }
+  }
+}
