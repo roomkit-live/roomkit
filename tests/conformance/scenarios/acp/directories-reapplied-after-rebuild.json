@@ -1,0 +1,184 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/directories-reapplied-after-rebuild",
+  "title": "An authorized session rebuild declares the same additional directories",
+  "rules": [
+    "§6.4",
+    "Appendix A.9.1"
+  ],
+  "notes": "Python: ACPChannel.__init__ and ACPSessionsMixin._new_session. There was no direct additional_directories test in the source inventory; these cases add the public wire proof. Native test_acp_directories.py covers path validation. This scenario concerns room sessions and their declaration, not access to the remote filesystem. Standalone remains a separate contract.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "transport": {
+            "refuse_prompt": [
+              {
+                "reason": "unusable",
+                "recovery_authorized": true
+              }
+            ]
+          },
+          "agent": {
+            "prompts": [
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "Recovered"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "additional_directories": [
+            "/srv/shared library",
+            "/srv/reference"
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "response",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "error": null,
+          "response_metadata": {
+            "acp": {
+              "protocol_version": 1,
+              "prompt_returned": true,
+              "interrupted": {
+                "$absent": true
+              },
+              "stop_reason": {
+                "$absent": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "acp_wire": {
+      "claude": [
+        {
+          "method": "initialize"
+        },
+        {
+          "method": "session/new",
+          "params": {
+            "cwd": "/srv/project",
+            "additionalDirectories": [
+              "/srv/shared library",
+              "/srv/reference"
+            ],
+            "_meta": {
+              "roomkit.live/roomId": "room-1",
+              "roomkit.live/sessionScope": "room"
+            }
+          }
+        },
+        {
+          "method": "session/close",
+          "params": {
+            "sessionId": "session-1"
+          }
+        },
+        {
+          "method": "session/new",
+          "params": {
+            "cwd": "/srv/project",
+            "additionalDirectories": [
+              "/srv/shared library",
+              "/srv/reference"
+            ],
+            "_meta": {
+              "roomkit.live/roomId": "room-1",
+              "roomkit.live/sessionScope": "room"
+            }
+          }
+        },
+        {
+          "method": "session/prompt",
+          "params": {
+            "sessionId": "session-2"
+          }
+        }
+      ]
+    },
+    "acp_prompts": {
+      "claude": [
+        {
+          "session_id": "session-1",
+          "event_id": "room-1#0",
+          "text": {
+            "$contains": "Hello"
+          }
+        },
+        {
+          "session_id": "session-2",
+          "event_id": "room-1#0",
+          "text": {
+            "$contains": "Hello"
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "response": [
+        {
+          "response": {
+            "loop_end_reason": "completed"
+          }
+        }
+      ]
+    }
+  }
+}

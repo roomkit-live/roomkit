@@ -1,0 +1,227 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/directories-shared-by-room",
+  "title": "Additional directories are declared for every room while cwd stays unchanged",
+  "rules": [
+    "§6.4",
+    "Appendix A.9.1"
+  ],
+  "notes": "Python: ACPChannel.__init__ and ACPSessionsMixin._new_session. There was no direct additional_directories test in the source inventory; these cases add the public wire proof. Native test_acp_directories.py covers path validation. This scenario concerns room sessions and their declaration, not access to the remote filesystem. Standalone remains a separate contract.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "For one."
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "For two."
+                    }
+                  }
+                ]
+              }
+            ],
+            "initialize": {
+              "agent_info": {
+                "name": "scripted-agent",
+                "version": "1.0.0"
+              }
+            }
+          },
+          "additional_directories": [
+            "/srv/shared library",
+            "/srv/reference"
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "In one"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "In two"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0
+        },
+        {
+          "index": 1,
+          "content": {
+            "body": "For one."
+          }
+        }
+      ],
+      "room-2": [
+        {
+          "index": 0
+        },
+        {
+          "index": 1,
+          "content": {
+            "body": "For two."
+          }
+        }
+      ]
+    },
+    "acp_wire": {
+      "claude": [
+        {
+          "method": "initialize",
+          "params": {
+            "protocolVersion": 1,
+            "clientCapabilities": {
+              "$absent": true
+            },
+            "clientInfo": {
+              "name": "roomkit",
+              "title": "RoomKit",
+              "version": {
+                "$present": true
+              }
+            }
+          }
+        },
+        {
+          "method": "session/new",
+          "params": {
+            "cwd": "/srv/project",
+            "mcpServers": [],
+            "_meta": {
+              "roomkit.live/roomId": "room-1",
+              "roomkit.live/sessionScope": "room"
+            },
+            "additionalDirectories": [
+              "/srv/shared library",
+              "/srv/reference"
+            ]
+          }
+        },
+        {
+          "method": "session/prompt",
+          "params": {
+            "sessionId": "session-1",
+            "prompt": [
+              {
+                "type": "text",
+                "text": {
+                  "$contains": "In one"
+                }
+              }
+            ],
+            "_meta": {
+              "roomkit.live/eventId": "room-1#0"
+            }
+          }
+        },
+        {
+          "method": "session/new",
+          "params": {
+            "cwd": "/srv/project",
+            "mcpServers": [],
+            "_meta": {
+              "roomkit.live/roomId": "room-2",
+              "roomkit.live/sessionScope": "room"
+            },
+            "additionalDirectories": [
+              "/srv/shared library",
+              "/srv/reference"
+            ]
+          }
+        },
+        {
+          "method": "session/prompt",
+          "params": {
+            "sessionId": "session-2",
+            "prompt": [
+              {
+                "type": "text",
+                "text": {
+                  "$contains": "In two"
+                }
+              }
+            ],
+            "_meta": {
+              "roomkit.live/eventId": "room-2#0"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
