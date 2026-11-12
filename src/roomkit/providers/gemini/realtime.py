@@ -30,6 +30,7 @@ from roomkit.providers.gemini.realtime_state import (  # noqa: F401 - tests read
 )
 from roomkit.providers.gemini.realtime_tools import GeminiLiveToolsMixin
 from roomkit.providers.gemini.realtime_transcription import GeminiLiveTranscriptionMixin
+from roomkit.providers.gemini.sdk import DEVELOPER_API_VERSION
 from roomkit.providers.gemini.voices import VOICES as _VOICES
 from roomkit.telemetry.noop import NoopTelemetryProvider
 from roomkit.voice.base import VoiceSession, VoiceSessionState
@@ -86,10 +87,11 @@ class GeminiLiveProvider(
         self._client = _genai.Client(
             api_key=self._api_key.get_secret_value(),
             http_options=_types.HttpOptions(
+                api_version=DEVELOPER_API_VERSION,
                 async_client_args={
                     "ping_interval": 10,
                     "ping_timeout": 10,
-                }
+                },
             ),
         )
         self._model = model

@@ -1956,13 +1956,13 @@ wheels = [
 
 [[package]]
 name = "google-genai"
-version = "2.28.0"
+version = "3.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
     { name = "distro" },
     { name = "google-auth", extra = ["requests"] },
-    { name = "httpx" },
+    { name = "httpx2" },
     { name = "pydantic" },
     { name = "requests" },
     { name = "sniffio" },
@@ -1970,9 +1970,14 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "websockets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/59/16/4af15d65cb72ebc21a99c5e64f09072e97334c05a48d4cede19c347e6ad2/google_genai-2.28.0.tar.gz", hash = "sha256:970cb2eaf1951949851c3e0a5b70265cfea8a408fb7361c7c980a84d90672bf2", size = 707359, upload-time = "2026-10-02T17:58:14.454Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/6b/fa/041ef12c71d6e150d8fb99049847388aa0d349d98a7c67614746a7b6ef65/google_genai-3.2.0.tar.gz", hash = "sha256:b848937937b7b72594e75c57f01618ca201275afaedbfd717c004434ebf592f5", size = 826292, upload-time = "2026-11-11T17:49:09.168Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ad/4b/47278c34757293ba8d9156090d38e1c45fac9a47c50176acff7f77ae9a66/google_genai-2.28.0-py3-none-any.whl", hash = "sha256:cdee15e2fbfea08ea61bce6e5bfbb3301db4bd13a52dccfa8c8d1167e37ca1cc", size = 1168554, upload-time = "2026-10-02T17:58:12.585Z" },
+    { url = "https://files.pythonhosted.org/packages/72/23/28319604be07dfce63a2ed84453fb6528011fe20ed1fc2b14514c88ce285/google_genai-3.2.0-py3-none-any.whl", hash = "sha256:4d7289b050ae2fec5cf1e2b4775f59de1730a9bacd714b4b33a11075f929f0da", size = 1363836, upload-time = "2026-11-11T17:49:07.352Z" },
+]
+
+[package.optional-dependencies]
+httpx = [
+    { name = "httpx" },
 ]
 
 [[package]]
@@ -5890,7 +5895,7 @@ all = [
     { name = "discord-py" },
     { name = "elevenlabs" },
     { name = "fastapi" },
-    { name = "google-genai" },
+    { name = "google-genai", extra = ["httpx"], marker = "extra == 'extra-7-roomkit-all' or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-asr') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-neutts' and extra == 'extra-7-roomkit-smart-turn') or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-qwen-tts') or (extra == 'extra-7-roomkit-qwen-asr' and extra == 'extra-7-roomkit-smart-turn') or (extra == 'extra-7-roomkit-qwen-tts' and extra == 'extra-7-roomkit-smart-turn')" },
     { name = "gradium" },
     { name = "httpx" },
     { name = "httpx-sse" },
@@ -5963,7 +5968,7 @@ dev = [
     { name = "botbuilder-core" },
     { name = "discord-py" },
     { name = "elevenlabs" },
-    { name = "google-genai" },
+    { name = "google-genai", extra = ["httpx"] },
     { name = "gradium" },
     { name = "httpx" },
     { name = "httpx-sse" },
@@ -6030,7 +6035,7 @@ fluxions = [
     { name = "httpx" },
 ]
 gemini = [
-    { name = "google-genai" },
+    { name = "google-genai", extra = ["httpx"] },
 ]
 gradium = [
     { name = "gradium" },
@@ -6118,7 +6123,7 @@ providers = [
     { name = "botbuilder-core" },
     { name = "discord-py" },
     { name = "elevenlabs" },
-    { name = "google-genai" },
+    { name = "google-genai", extra = ["httpx"] },
     { name = "gradium" },
     { name = "httpx" },
     { name = "mistralai" },
@@ -6153,7 +6158,7 @@ realtime-elevenlabs = [
     { name = "elevenlabs" },
 ]
 realtime-gemini = [
-    { name = "google-genai" },
+    { name = "google-genai", extra = ["httpx"] },
 ]
 realtime-openai = [
     { name = "openai" },
@@ -6300,11 +6305,11 @@ requires-dist = [
     { name = "elevenlabs", marker = "extra == 'realtime-elevenlabs'", specifier = ">=2.40,<2.72" },
     { name = "fastapi", marker = "extra == 'all'", specifier = ">=0.115" },
     { name = "fastapi", marker = "extra == 'fastrtc'", specifier = ">=0.115" },
-    { name = "google-genai", marker = "extra == 'all'", specifier = ">=2.25.0,<3" },
-    { name = "google-genai", marker = "extra == 'dev'", specifier = ">=2.25.0,<3" },
-    { name = "google-genai", marker = "extra == 'gemini'", specifier = ">=2.25.0,<3" },
-    { name = "google-genai", marker = "extra == 'providers'", specifier = ">=2.25.0,<3" },
-    { name = "google-genai", marker = "extra == 'realtime-gemini'", specifier = ">=2.25.0,<3" },
+    { name = "google-genai", extras = ["httpx"], marker = "extra == 'all'", specifier = ">=3.2,<4" },
+    { name = "google-genai", extras = ["httpx"], marker = "extra == 'dev'", specifier = ">=3.2,<4" },
+    { name = "google-genai", extras = ["httpx"], marker = "extra == 'gemini'", specifier = ">=3.2,<4" },
+    { name = "google-genai", extras = ["httpx"], marker = "extra == 'providers'", specifier = ">=3.2,<4" },
+    { name = "google-genai", extras = ["httpx"], marker = "extra == 'realtime-gemini'", specifier = ">=3.2,<4" },
     { name = "gradium", marker = "extra == 'all'", specifier = ">=0.5.7" },
     { name = "gradium", marker = "extra == 'dev'", specifier = ">=0.5.7" },
     { name = "gradium", marker = "extra == 'gradium'", specifier = ">=0.5.7" },

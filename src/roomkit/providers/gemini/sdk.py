@@ -29,6 +29,10 @@ in one specific way for the connect/read split to survive the SDK:
 
 The SDK does not close a client it was given, so the caller owns both
 objects and closes them together.
+
+A Developer API client names its version, :data:`DEVELOPER_API_VERSION`:
+google-genai 3.0 made v1 the default, and the Live API, the voices endpoint
+and the Decisions API answer 404 there.
 """
 
 from __future__ import annotations
@@ -44,6 +48,9 @@ if TYPE_CHECKING:
     import httpx
 
 logger = logging.getLogger("roomkit.providers.gemini.sdk")
+
+DEVELOPER_API_VERSION = "v1beta"
+"""The Gemini Developer API version every client RoomKit builds for it calls."""
 
 
 class GenaiClient(NamedTuple):
@@ -132,7 +139,13 @@ def build_genai_client(
     bounds the TCP connect. *provider* names the caller in the ImportError
     raised when google-genai is not installed.
     """
-    return _build_client(timeouts, provider, api_key=api_key, disable_retries=disable_retries)
+    return _build_client(
+        timeouts,
+        provider,
+        api_version=DEVELOPER_API_VERSION,
+        api_key=api_key,
+        disable_retries=disable_retries,
+    )
 
 
 def build_vertex_genai_client(
@@ -163,10 +176,14 @@ def _build_client(
     timeouts: HTTPTimeouts,
     provider: str,
     *,
+    api_version: str | None = None,
     disable_retries: bool = False,
     **client_kwargs: Any,
 ) -> GenaiClient:
-    """Build the pair behind both entry points; *client_kwargs* go to ``genai.Client``."""
+    """Build the pair behind both entry points; *client_kwargs* go to ``genai.Client``.
+
+    *api_version* ``None`` keeps the SDK's default (Vertex AI's ``v1beta1``).
+    """
     # Both optional: google-genai brings httpx along, and the package root
     # reaches this module (through the video vision providers), so neither
     # may be imported at module level — a base install has to import.
@@ -193,12 +210,13 @@ def _build_client(
         client = genai.Client(
             **client_kwargs,
             http_options=genai.types.HttpOptions(
+                api_version=api_version,
                 # The sync client is built by the SDK regardless; same budget.
                 client_args={"timeout": timeout},
                 httpx_async_client=http,
-                # Interactions interprets attempts as retries, while the parent
-                # client changes zero to one. Use an impossible HTTP status to
-                # disable status retries, including successful paid POSTs.
+                # One attempt, so no retry, on the classic and the Interactions
+                # paths alike; an impossible HTTP status keeps any status from
+                # being retried, so a paid POST is never sent twice.
                 **(
                     {"retry_options": {"attempts": 1, "http_status_codes": [0]}}
                     if disable_retries
