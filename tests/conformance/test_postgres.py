@@ -18,6 +18,8 @@ from tests.test_store_postgres import store as store
 pytestmark = pytest.mark.skipif(POSTGRES_DSN is None, reason="POSTGRES_DSN not set")
 
 SCENARIOS = [
+    "regenerate/a-regenerated-turn-reads-no-message-committed-after-the-choice",
+    "regenerate/a-regenerated-turn-past-the-first-event-reads-no-message-committed-after-the-choice",
     "hooks/an-injection-takes-its-own-lock-after-its-blocked-cause",
     "hooks/an-injection-takes-its-own-lock-after-its-delivered-cause",
     "delivery/a-keyed-delivery-whose-transport-is-detached-before-its-section-writes-nothing",
