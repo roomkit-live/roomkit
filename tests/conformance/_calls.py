@@ -561,6 +561,13 @@ async def _cancel_delivery(kit: RoomKit, harness: Harness, spec: Mapping[str, An
     return await kit.cancel_delivery(spec["key"], **reason, **_org(spec))
 
 
+async def _acp_close(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> None:
+    channel = kit.get_channel(spec["channel_id"])
+    if not isinstance(channel, ACPChannel):
+        raise UnreadableError("acp.close requires an ACP channel")
+    await channel.close()
+
+
 async def _acp_cancel(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> bool:
     channel = kit.get_channel(spec["channel_id"])
     if not isinstance(channel, ACPChannel):
@@ -632,6 +639,7 @@ CALLS: dict[str, Call] = {
     "delivery.wait": _delivery_wait,
     "steer": _steer,
     "acp.cancel": _acp_cancel,
+    "acp.close": _acp_close,
 }
 
 
