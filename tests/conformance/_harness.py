@@ -283,6 +283,14 @@ class Harness:
         kits = [self.kit, *self.processes.values()]
         return [kit for kit in kits if all(kit is not closed for closed in self._closed)]
 
+    def store_of(self, kit: RoomKit) -> ConversationStore:
+        """The store a call on *kit* reaches: its own, or once a ``close`` call
+        closed the kit, the run's reader of the same database, since the
+        kit's close released a store it opened (RFC §12.10.4)."""
+        if self._observation_store is not None and any(kit is c for c in self._closed):
+            return self._observation_store
+        return kit.store
+
     def strategy(self, strategy_id: str) -> Orchestration:
         """The scripted strategy *strategy_id* names (README, \"Setup\")."""
         if strategy_id not in self.strategies:
@@ -734,7 +742,7 @@ class Harness:
         """What the store holds of each room that the processes move: its
         latest index and its discussion's queue version."""
         read = []
-        for room in await self.kit.store.list_rooms(limit=1000):
+        for room in await self.store_of(self.kit).list_rooms(limit=1000):
             queue = (room.metadata or {}).get("_speak_queue") or {}
             stored = "_discussion" in (room.metadata or {})
             read.append((room.id, room.latest_index, queue.get("version"), stored))

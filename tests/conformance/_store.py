@@ -161,7 +161,7 @@ async def _store_call(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -
     arguments = {
         name: _argument(name, spec) for name in STORE_ARGUMENTS[spec["call"]] if name in spec
     }
-    return await getattr(kit.store, operation)(**arguments)
+    return await getattr(harness.store_of(kit), operation)(**arguments)
 
 
 async def _read_marker_call(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
