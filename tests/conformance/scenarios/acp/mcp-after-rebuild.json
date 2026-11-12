@@ -1,0 +1,234 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/mcp-after-rebuild",
+  "title": "The MCP supplier is asked again after rebuild",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: tests/test_channels/test_acp_session_setup.py::TestMCPServersPerRoom::test_the_function_is_asked_again_for_a_reopened_session (rebuild boundary). Exact callback inputs and ordered session/new descriptors are observed through public APIs. Standalone is a separate contract.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "transport": {
+            "refuse_prompt": [
+              {
+                "reason": "unusable",
+                "recovery_authorized": true
+              }
+            ]
+          },
+          "agent": {
+            "prompts": [
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "Recovered"
+                    }
+                  }
+                ]
+              }
+            ],
+            "initialize": {
+              "mcp_capabilities": {
+                "http": true,
+                "sse": true
+              }
+            }
+          },
+          "mcp_servers": {
+            "mode": "async",
+            "responses": [
+              {
+                "servers": [
+                  {
+                    "name": "workspace",
+                    "command": "/usr/local/bin/workspace-mcp",
+                    "args": [
+                      "--room",
+                      "room-1"
+                    ],
+                    "env": [
+                      {
+                        "name": "ROOM_ID",
+                        "value": "room-1"
+                      },
+                      {
+                        "name": "MODE",
+                        "value": "text"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "servers": []
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "response",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "error": null,
+          "response_metadata": {
+            "acp": {
+              "protocol_version": 1,
+              "prompt_returned": true,
+              "interrupted": {
+                "$absent": true
+              },
+              "stop_reason": {
+                "$absent": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "acp_wire": {
+      "claude": [
+        {
+          "method": "initialize"
+        },
+        {
+          "method": "session/new",
+          "params": {
+            "cwd": "/srv/project",
+            "_meta": {
+              "roomkit.live/roomId": "room-1",
+              "roomkit.live/sessionScope": "room"
+            },
+            "mcpServers": [
+              {
+                "name": "workspace",
+                "command": "/usr/local/bin/workspace-mcp",
+                "args": [
+                  "--room",
+                  "room-1"
+                ],
+                "env": [
+                  {
+                    "name": "ROOM_ID",
+                    "value": "room-1"
+                  },
+                  {
+                    "name": "MODE",
+                    "value": "text"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "method": "session/close",
+          "params": {
+            "sessionId": "session-1"
+          }
+        },
+        {
+          "method": "session/new",
+          "params": {
+            "cwd": "/srv/project",
+            "_meta": {
+              "roomkit.live/roomId": "room-1",
+              "roomkit.live/sessionScope": "room"
+            },
+            "mcpServers": []
+          }
+        },
+        {
+          "method": "session/prompt",
+          "params": {
+            "sessionId": "session-2"
+          }
+        }
+      ]
+    },
+    "acp_prompts": {
+      "claude": [
+        {
+          "session_id": "session-1",
+          "event_id": "room-1#0",
+          "text": {
+            "$contains": "Hello"
+          }
+        },
+        {
+          "session_id": "session-2",
+          "event_id": "room-1#0",
+          "text": {
+            "$contains": "Hello"
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "response": [
+        {
+          "response": {
+            "loop_end_reason": "completed"
+          }
+        }
+      ]
+    },
+    "acp_mcp_requests": {
+      "claude": [
+        "room-1",
+        "room-1"
+      ]
+    }
+  }
+}

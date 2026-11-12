@@ -1,0 +1,250 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/mcp-reuse",
+  "title": "Reusing an ACP session does not call the MCP supplier again",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: tests/test_channels/test_acp_session_setup.py::TestMCPServersPerRoom::test_a_function_gives_each_room_its_servers (reuse boundary). Exact callback inputs and ordered session/new descriptors are observed through public APIs. Standalone is a separate contract.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "One."
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "Two."
+                    }
+                  }
+                ]
+              }
+            ],
+            "initialize": {
+              "agent_info": {
+                "name": "scripted-agent",
+                "version": "1.0.0"
+              },
+              "mcp_capabilities": {
+                "http": true,
+                "sse": true
+              }
+            }
+          },
+          "mcp_servers": {
+            "mode": "async",
+            "responses": [
+              {
+                "servers": [
+                  {
+                    "name": "workspace",
+                    "command": "/usr/local/bin/workspace-mcp",
+                    "args": [
+                      "--room",
+                      "room-1"
+                    ],
+                    "env": [
+                      {
+                        "name": "ROOM_ID",
+                        "value": "room-1"
+                      },
+                      {
+                        "name": "MODE",
+                        "value": "text"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "First"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Second"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "First"
+          }
+        },
+        {
+          "index": 1,
+          "content": {
+            "body": "One."
+          }
+        },
+        {
+          "index": 2,
+          "content": {
+            "body": "Second"
+          }
+        },
+        {
+          "index": 3,
+          "content": {
+            "body": "Two."
+          }
+        }
+      ]
+    },
+    "acp_wire": {
+      "claude": [
+        {
+          "method": "initialize",
+          "params": {
+            "protocolVersion": 1,
+            "clientCapabilities": {
+              "$absent": true
+            },
+            "clientInfo": {
+              "name": "roomkit",
+              "title": "RoomKit",
+              "version": {
+                "$present": true
+              }
+            }
+          }
+        },
+        {
+          "method": "session/new",
+          "params": {
+            "cwd": "/srv/project",
+            "mcpServers": [
+              {
+                "name": "workspace",
+                "command": "/usr/local/bin/workspace-mcp",
+                "args": [
+                  "--room",
+                  "room-1"
+                ],
+                "env": [
+                  {
+                    "name": "ROOM_ID",
+                    "value": "room-1"
+                  },
+                  {
+                    "name": "MODE",
+                    "value": "text"
+                  }
+                ]
+              }
+            ],
+            "_meta": {
+              "roomkit.live/roomId": "room-1",
+              "roomkit.live/sessionScope": "room"
+            }
+          }
+        },
+        {
+          "method": "session/prompt",
+          "params": {
+            "sessionId": "session-1",
+            "prompt": [
+              {
+                "type": "text",
+                "text": {
+                  "$contains": "First"
+                }
+              }
+            ],
+            "_meta": {
+              "roomkit.live/eventId": "room-1#0"
+            }
+          }
+        },
+        {
+          "method": "session/prompt",
+          "params": {
+            "sessionId": "session-1",
+            "prompt": [
+              {
+                "type": "text",
+                "text": {
+                  "$contains": "Second"
+                }
+              }
+            ],
+            "_meta": {
+              "roomkit.live/eventId": "room-1#2"
+            }
+          }
+        }
+      ]
+    },
+    "acp_mcp_requests": {
+      "claude": [
+        "room-1"
+      ]
+    }
+  }
+}

@@ -1,0 +1,324 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/mcp-fixed-list",
+  "title": "Each room receives the same complete MCP server list",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: tests/test_channels/test_acp_session_setup.py::TestMCPServersPerRoom::test_a_list_goes_to_every_room. Exact callback inputs and ordered session/new descriptors are observed through public APIs. Standalone is a separate contract.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "For one."
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "For two."
+                    }
+                  }
+                ]
+              }
+            ],
+            "initialize": {
+              "agent_info": {
+                "name": "scripted-agent",
+                "version": "1.0.0"
+              },
+              "mcp_capabilities": {
+                "http": true,
+                "sse": true
+              }
+            }
+          },
+          "mcp_servers": [
+            {
+              "name": "workspace",
+              "command": "/usr/local/bin/workspace-mcp",
+              "args": [
+                "--room",
+                "shared"
+              ],
+              "env": [
+                {
+                  "name": "ROOM_ID",
+                  "value": "shared"
+                },
+                {
+                  "name": "MODE",
+                  "value": "text"
+                }
+              ]
+            },
+            {
+              "type": "http",
+              "name": "remote",
+              "url": "https://tools.example.test/mcp",
+              "headers": [
+                {
+                  "name": "X-Scope",
+                  "value": "shared"
+                },
+                {
+                  "name": "X-Mode",
+                  "value": "text"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "In one"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "In two"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0
+        },
+        {
+          "index": 1,
+          "content": {
+            "body": "For one."
+          }
+        }
+      ],
+      "room-2": [
+        {
+          "index": 0
+        },
+        {
+          "index": 1,
+          "content": {
+            "body": "For two."
+          }
+        }
+      ]
+    },
+    "acp_wire": {
+      "claude": [
+        {
+          "method": "initialize",
+          "params": {
+            "protocolVersion": 1,
+            "clientCapabilities": {
+              "$absent": true
+            },
+            "clientInfo": {
+              "name": "roomkit",
+              "title": "RoomKit",
+              "version": {
+                "$present": true
+              }
+            }
+          }
+        },
+        {
+          "method": "session/new",
+          "params": {
+            "cwd": "/srv/project",
+            "mcpServers": [
+              {
+                "name": "workspace",
+                "command": "/usr/local/bin/workspace-mcp",
+                "args": [
+                  "--room",
+                  "shared"
+                ],
+                "env": [
+                  {
+                    "name": "ROOM_ID",
+                    "value": "shared"
+                  },
+                  {
+                    "name": "MODE",
+                    "value": "text"
+                  }
+                ]
+              },
+              {
+                "type": "http",
+                "name": "remote",
+                "url": "https://tools.example.test/mcp",
+                "headers": [
+                  {
+                    "name": "X-Scope",
+                    "value": "shared"
+                  },
+                  {
+                    "name": "X-Mode",
+                    "value": "text"
+                  }
+                ]
+              }
+            ],
+            "_meta": {
+              "roomkit.live/roomId": "room-1",
+              "roomkit.live/sessionScope": "room"
+            }
+          }
+        },
+        {
+          "method": "session/prompt",
+          "params": {
+            "sessionId": "session-1",
+            "prompt": [
+              {
+                "type": "text",
+                "text": {
+                  "$contains": "In one"
+                }
+              }
+            ],
+            "_meta": {
+              "roomkit.live/eventId": "room-1#0"
+            }
+          }
+        },
+        {
+          "method": "session/new",
+          "params": {
+            "cwd": "/srv/project",
+            "mcpServers": [
+              {
+                "name": "workspace",
+                "command": "/usr/local/bin/workspace-mcp",
+                "args": [
+                  "--room",
+                  "shared"
+                ],
+                "env": [
+                  {
+                    "name": "ROOM_ID",
+                    "value": "shared"
+                  },
+                  {
+                    "name": "MODE",
+                    "value": "text"
+                  }
+                ]
+              },
+              {
+                "type": "http",
+                "name": "remote",
+                "url": "https://tools.example.test/mcp",
+                "headers": [
+                  {
+                    "name": "X-Scope",
+                    "value": "shared"
+                  },
+                  {
+                    "name": "X-Mode",
+                    "value": "text"
+                  }
+                ]
+              }
+            ],
+            "_meta": {
+              "roomkit.live/roomId": "room-2",
+              "roomkit.live/sessionScope": "room"
+            }
+          }
+        },
+        {
+          "method": "session/prompt",
+          "params": {
+            "sessionId": "session-2",
+            "prompt": [
+              {
+                "type": "text",
+                "text": {
+                  "$contains": "In two"
+                }
+              }
+            ],
+            "_meta": {
+              "roomkit.live/eventId": "room-2#0"
+            }
+          }
+        }
+      ]
+    },
+    "acp_mcp_requests": {
+      "claude": []
+    }
+  }
+}
