@@ -94,7 +94,7 @@ KIT = {
     "persistence_policy",
     "turn_timeouts",
 }
-LOCK_MANAGER = {"release_error"}
+LOCK_MANAGER = {"kind", "release_error"}
 RATE_LIMIT = {"max_per_second", "max_per_minute", "max_per_hour"}
 PERSISTENCE_POLICY = {"persist_types", "exclude_types"}
 DELIVERY_BACKEND = {

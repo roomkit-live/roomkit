@@ -45,7 +45,12 @@ def lock_options(kit: Mapping[str, Any]) -> dict[str, Any]:
     """The kit's ``lock_manager`` and ``delivery_gap_timeout`` keywords a
     scenario's ``setup.kit`` names."""
     kwargs: dict[str, Any] = {}
-    if "lock_manager" in kit:
+    if (
+        kit.get("lock_manager", {}).get("kind") == "memory"
+        and "release_error" not in kit["lock_manager"]
+    ):
+        kwargs["lock_manager"] = InMemoryLockManager()
+    elif "lock_manager" in kit:
         kwargs["lock_manager"] = ScriptedLockManager(kit["lock_manager"]["release_error"])
     if "delivery_gap_timeout_ms" in kit:
         kwargs["delivery_gap_timeout"] = kit["delivery_gap_timeout_ms"] / 1000

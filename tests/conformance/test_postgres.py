@@ -18,6 +18,10 @@ from tests.test_store_postgres import store as store
 pytestmark = pytest.mark.skipif(POSTGRES_DSN is None, reason="POSTGRES_DSN not set")
 
 SCENARIOS = [
+    "hooks/an-injection-takes-its-own-lock-after-its-blocked-cause",
+    "hooks/an-injection-takes-its-own-lock-after-its-delivered-cause",
+    "delivery/a-keyed-delivery-whose-transport-is-detached-before-its-section-writes-nothing",
+    "delivery/a-keyed-delivery-from-an-off-lock-hook-waits-for-the-lock-in-its-queue",
     "delivery/a-hook-waiting-on-an-adopted-call-whose-answer-sends-into-the-room-ends-at-the-timeout",
     "tasks/a-failed-inline-preparation-keeps-its-child-and-reports-no-task",
     "tasks/a-failed-background-preparation-keeps-its-child-and-reports-no-task",
