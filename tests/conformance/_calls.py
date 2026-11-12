@@ -129,6 +129,8 @@ class ChannelNotBoundError(Exception):
 
 def error_of(error: Exception) -> dict[str, Any]:
     """The suite's name of *error*, with its reason when it has one."""
+    if getattr(error, "kind", "").endswith(":RequestError"):
+        return {"name": "acp_request_refused"}
     if (
         isinstance(error, RuntimeError)
         and str(error).startswith("ACP session for room ")
