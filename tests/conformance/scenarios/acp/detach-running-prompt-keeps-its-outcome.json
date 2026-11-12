@@ -1,0 +1,203 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/detach-running-prompt-keeps-its-outcome",
+  "title": "Detaching returns before a running prompt and closes its session after the prompt ends",
+  "rules": [
+    "§6.4",
+    "§10.6.3"
+  ],
+  "notes": "Python: tests/test_channels/test_acp_backend.py::test_a_detach_never_waits_for_the_room_s_running_turn. RPC gates prove ordering without sleeps or runner state mutation. Standalone and remote turn-backend control failures are separate contracts.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "gate": "prompt"
+              }
+            ],
+            "close_sessions": [
+              {
+                "gate": "closing"
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "background": true,
+      "as": "turn"
+    },
+    {
+      "wait_for": "prompt"
+    },
+    {
+      "call": "detach_channel",
+      "channel_id": "claude",
+      "room_id": "room-1"
+    },
+    {
+      "call": "get_room",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "metadata": {
+            "roomkit:channel_state:claude": {
+              "$absent": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "open": "prompt"
+    },
+    {
+      "wait_for": "closing"
+    },
+    {
+      "open": "closing"
+    },
+    {
+      "await": "turn",
+      "expect": {
+        "result": {
+          "error": null,
+          "response_metadata": {
+            "acp": {
+              "protocol_version": 1,
+              "interrupted": {
+                "$absent": true
+              },
+              "prompt_returned": true,
+              "stop_reason": {
+                "$absent": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "attach_channel",
+      "channel_id": "claude",
+      "room_id": "room-1",
+      "category": "intelligence"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "error": null,
+          "response_metadata": {
+            "acp": {
+              "protocol_version": 1,
+              "interrupted": {
+                "$absent": true
+              },
+              "prompt_returned": true,
+              "stop_reason": {
+                "$absent": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "acp_wire": {
+      "claude": [
+        {
+          "method": "initialize"
+        },
+        {
+          "method": "session/new",
+          "params": {
+            "cwd": "/srv/project",
+            "_meta": {
+              "roomkit.live/roomId": "room-1",
+              "roomkit.live/sessionScope": "room"
+            }
+          }
+        },
+        {
+          "method": "session/prompt",
+          "params": {
+            "sessionId": "session-1"
+          }
+        },
+        {
+          "method": "session/close",
+          "params": {
+            "sessionId": "session-1"
+          }
+        },
+        {
+          "method": "session/new",
+          "params": {
+            "cwd": "/srv/project",
+            "_meta": {
+              "roomkit.live/roomId": "room-1",
+              "roomkit.live/sessionScope": "room"
+            }
+          }
+        },
+        {
+          "method": "session/prompt",
+          "params": {
+            "sessionId": "session-2"
+          }
+        }
+      ]
+    }
+  }
+}
