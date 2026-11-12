@@ -230,16 +230,25 @@ async def test_a_detach_never_waits_for_an_agent_that_does_not_answer(tmp_path: 
     await kit.close()
 
 
-async def test_a_turn_started_before_a_detach_never_prompts_after_it(tmp_path: Any) -> None:
+@pytest.mark.parametrize("fresh_session", [False, True])
+async def test_a_turn_started_before_a_detach_never_prompts_after_it(
+    tmp_path: Any, fresh_session: bool
+) -> None:
     channel, connection, _ = _channel(tmp_path, emit_updates=False)
     event = make_event(room_id="room-1", body="hello", index=0)
     output = await channel.on_event(event, _binding(), _context(event))
     assert output.response_stream is not None
 
     await channel.on_room_detached("room-1")
+    if fresh_session:
+        await channel.set_config_option("room-1", "model", "sonnet")
+    session = channel.session_id("room-1")
     items = [item async for item in output.response_stream]
 
-    assert items == [] and connection.prompt_calls == [] and connection.new_session_calls == []
+    assert items == [] and connection.prompt_calls == []
+    assert len(connection.new_session_calls) == int(fresh_session)
+    assert connection.closed_sessions == []
+    assert channel.session_id("room-1") == session
     assert output.response_metadata is not None
     assert output.response_metadata["acp"]["interrupted"] is True
     await channel.close()
