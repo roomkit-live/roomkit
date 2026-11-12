@@ -756,3 +756,34 @@ async def test_each_room_s_tool_hooks_and_permissions_see_that_room_s_host(
             ("tool", "room-2", "room-2"),
         ]
         await kit.close()
+
+
+async def test_interrupted_close_stops_detached_session_cleanup(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    channel, connection, transport = _channel(tmp_path, emit_updates=False)
+    for room in ("r1", "r2"):
+        await channel.set_config_option(room, "model", "sonnet")
+    first, second, first_stopped = asyncio.Event(), asyncio.Event(), asyncio.Event()
+
+    async def close_session(session_id: str) -> None:
+        if session_id == "session-1":
+            first.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                first_stopped.set()
+        else:
+            second.set()
+            await asyncio.Event().wait()
+
+    monkeypatch.setattr(connection, "close_session", close_session)
+    await channel.on_room_detached("r1")
+    await asyncio.wait_for(first.wait(), 5)
+    closing = asyncio.create_task(channel.close())
+    await asyncio.wait_for(second.wait(), 5)
+    closing.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await closing
+    await asyncio.wait_for(first_stopped.wait(), 5)
+    assert transport.exited
