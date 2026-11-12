@@ -123,6 +123,23 @@ _ON_EACH_STORE = (
     "discussion/a-discussion-regeneration-carries-its-selection-lock-release-error",
 )
 
+# Of those, the ones that run on PostgreSQL too (tests/conformance/test_postgres.py),
+# each case on a schema of its own: the idempotency key read under the lock (§13.4),
+# the room a message routes to (§10.4 step 1), the delivery a closing kit abandons or
+# runs whatever the store (§12.10.4), a channel's state kept with its room (§10.6.2),
+# the lock releases and the delivery cursor (§13.5), identity verification (§11.7),
+# and every scenario with other processes, whose kits each open their own store and
+# advisory lock manager there.
+_ON_POSTGRES = (
+    "idempotency/",
+    "routing/",
+    "delivery/",
+    "channel-call/",
+    "locks/",
+    "verification/",
+    "discussion/a-discussion-regeneration-carries-its-selection-lock-release-error",
+)
+
 _WORKER_DEADLINES = {
     "orchestration/a-delegation-its-call-bound-cuts-posts-the-worker-cancelled",
     "orchestration/a-team-call-its-bound-cuts-posts-each-worker-cancelled",
@@ -151,16 +168,15 @@ def _runs_in_processes(scenario: dict[str, Any]) -> bool:
 def _stores(scenario_id: str, scenario: dict[str, Any]) -> tuple[str, ...]:
     if scenario_id in _MEMORY_ONLY:
         return ("memory",)
-    if (
-        scenario_id.startswith(_ON_EACH_STORE)
-        or scenario_id in _WORKER_DEADLINES
-        or _runs_in_processes(scenario)
-    ):
+    if scenario_id.startswith(_ON_POSTGRES) or _runs_in_processes(scenario):
+        return (*_STORES, "postgres")
+    if scenario_id.startswith(_ON_EACH_STORE) or scenario_id in _WORKER_DEADLINES:
         return _STORES
     return ("memory",)
 
 
-def _cases() -> list[Any]:
+def _cases(stores: tuple[str, ...] = _STORES) -> list[Any]:
+    """The cases of every scenario on each of *stores* it runs on."""
     cases = []
     for path in _scenarios():
         scenario_id = path.relative_to(SCENARIOS).with_suffix("").as_posix()
@@ -178,7 +194,7 @@ def _cases() -> list[Any]:
                     reason=KNOWN_FAILURES[scenario_id], strict=True, raises=AssertionError
                 )
             )
-        for store in _stores(scenario_id, scenario):
+        for store in (s for s in _stores(scenario_id, scenario) if s in stores):
             name = scenario_id if store == "memory" else f"{scenario_id}[{store}]"
             cases.append(pytest.param(path, store, id=name, marks=marks))
     return cases

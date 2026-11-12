@@ -10,12 +10,12 @@ from __future__ import annotations
 
 import asyncio
 import re
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 
 from pydantic_core import to_jsonable_python
 
-from roomkit import RoomKit, ThinkingEvent, current_turn_host
+from roomkit import RoomKit, RoomLockManager, ThinkingEvent, current_turn_host
 from roomkit.models.channel import ChannelBinding, RateLimit
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import DeliveryHandle, DeliveryStatus
@@ -190,6 +190,11 @@ KIT_CALLS = frozenset(
 )
 
 
+# What another process of ``setup.processes`` opens on the run's database:
+# a store of its own and a lock manager of its own, both initialized.
+OpenProcess = Callable[[], Awaitable[tuple[ConversationStore, RoomLockManager]]]
+
+
 class Harness:
     """One run of one scenario."""
 
@@ -199,11 +204,18 @@ class Harness:
         store: ConversationStore | None = None,
         *,
         observation_store: ConversationStore | None = None,
+        lock_manager: RoomLockManager | None = None,
+        open_process: OpenProcess | None = None,
     ) -> None:
         self.scenario = scenario
         # A separate reader can inspect persistent records after the scenario
         # closes its kit and its store. The caller owns this reader's lifetime.
         self._observation_store = observation_store
+        # The run's kit's lock manager when the scenario scripts none, and what
+        # each other process opens. Without them the kit has its default lock
+        # manager, and the processes share it and the run's store.
+        self._lock_manager = lock_manager
+        self._open_process = open_process
         self.gates = Gates()
         self.observed = Observed(literal_rooms=_literal_rooms(scenario))
         self._recording = False
@@ -249,6 +261,8 @@ class Harness:
             kwargs["persistence_policy"] = PersistencePolicy(**kit_setup["persistence_policy"])
         if store is not None:
             kwargs["store"] = store
+        if self._lock_manager is not None:
+            kwargs["lock_manager"] = self._lock_manager
         if "router" in kit_setup:
             router = kit_setup["router"]
             kwargs["inbound_router"] = ScriptedRouter(router["room_id"], self, router.get("gate"))
@@ -567,19 +581,23 @@ class Harness:
         for hook in setup.get("identity_hooks", []):
             register_identity_hook(self.kit, self, hook)
         for process in setup.get("processes", []):
-            self.processes[process["id"]] = self._process()
+            self.processes[process["id"]] = await self._process()
         await start_backend(self.kit)
         await self.idle()
 
-    def _process(self) -> RoomKit:
+    async def _process(self) -> RoomKit:
         """Another process serving the rooms: a kit over the run's store and
-        lock manager, holding the setup's channels as objects of its own."""
-        store = self.kit.store
-        if isinstance(store, SQLiteStore):
-            # Processes share the file, never a connection that one's close
-            # would close for all the others (as in the Rust SQLite runner).
-            store = SQLiteStore(store._path)
-        kit = RoomKit(store=store, lock_manager=self.kit.lock_manager)
+        lock manager, or what the caller opens for it, holding the setup's
+        channels as objects of its own."""
+        if self._open_process is not None:
+            store, lock_manager = await self._open_process()
+        else:
+            store, lock_manager = self.kit.store, self.kit.lock_manager
+            if isinstance(store, SQLiteStore):
+                # Processes share the file, never a connection that one's close
+                # would close for all the others (as in the Rust SQLite runner).
+                store = SQLiteStore(store._path)
+        kit = RoomKit(store=store, lock_manager=lock_manager)
         self._publications.watch(kit)
         for channel in self.scenario.get("setup", {}).get("channels", []):
             register_channel(kit, self, channel, process=True)
