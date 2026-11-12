@@ -1,0 +1,124 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/rebuild-unauthorized-is-terminal",
+  "title": "A recovery refusal terminates without an extra prompt: unauthorized-is-terminal",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: tests/test_channels/test_acp_recovery.py. Host-native refusal, never wire authorization. Standalone and public cancel are separate follow-ups.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "transport": {
+            "refuse_prompt": [
+              {
+                "reason": "unusable"
+              }
+            ]
+          },
+          "agent": {}
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "response",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "error": "acp: unusable",
+          "response_metadata": {
+            "acp": {
+              "protocol_version": 1,
+              "prompt_returned": {
+                "$absent": true
+              },
+              "interrupted": true,
+              "stop_reason": {
+                "$absent": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "channel_call",
+      "room_id": "room-1",
+      "channel_id": "claude",
+      "verb": "config_options",
+      "arguments": {},
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "acp_wire": {
+      "claude": [
+        {
+          "method": "initialize"
+        },
+        {
+          "method": "session/new"
+        }
+      ]
+    },
+    "acp_prompts": {
+      "claude": [
+        {
+          "session_id": "session-1",
+          "event_id": "room-1#0",
+          "text": {
+            "$contains": "Hello"
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "response": []
+    }
+  }
+}

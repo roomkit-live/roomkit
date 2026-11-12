@@ -1,0 +1,140 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/rebuild-permission-before-answer-forbids-replay",
+  "title": "A permission sent before the prompt answer forbids a late authorized replay",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: tests/test_channels/test_acp_recovery.py::test_activity_makes_even_an_authorized_signal_terminal[permission], exercised through the real wire callback scheduling. The scripted agent sends a permission and the prompt answer without waiting for the permission result; the host wrapper then raises an authorized invalidation. Full permission policy and tool reporting are separate contracts.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "transport": {
+            "refuse_prompt": [
+              {
+                "reason": "unusable",
+                "recovery_authorized": true,
+                "after_prompt": true
+              }
+            ]
+          },
+          "agent": {
+            "prompts": [
+              {
+                "permission": {
+                  "toolCall": {
+                    "toolCallId": "tool-1",
+                    "title": "Write"
+                  },
+                  "options": [
+                    {
+                      "optionId": "no",
+                      "name": "No",
+                      "kind": "reject_once"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "response",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "error": "ACP session invalidated after turn activity; recovery refused",
+          "response_metadata": {
+            "acp": {
+              "protocol_version": 1,
+              "prompt_returned": {
+                "$absent": true
+              },
+              "interrupted": true,
+              "stop_reason": {
+                "$absent": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "acp_wire": {
+      "claude": [
+        {
+          "method": "initialize"
+        },
+        {
+          "method": "session/new"
+        },
+        {
+          "method": "session/prompt",
+          "params": {
+            "sessionId": "session-1"
+          }
+        }
+      ]
+    },
+    "acp_prompts": {
+      "claude": [
+        {
+          "session_id": "session-1",
+          "event_id": "room-1#0",
+          "text": {
+            "$contains": "Hello"
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "response": []
+    }
+  }
+}

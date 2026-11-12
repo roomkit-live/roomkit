@@ -1,0 +1,157 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/rebuild-authorized-once-same-event",
+  "title": "A host-authorized refusal rebuilds once and replays the same event",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: tests/test_channels/test_acp_recovery.py. Host-native refusal, never wire authorization. Standalone and public cancel are separate follow-ups.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "transport": {
+            "refuse_prompt": [
+              {
+                "reason": "unusable",
+                "recovery_authorized": true
+              }
+            ]
+          },
+          "agent": {
+            "prompts": [
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "Recovered"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "response",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "error": null,
+          "response_metadata": {
+            "acp": {
+              "protocol_version": 1,
+              "prompt_returned": true,
+              "interrupted": {
+                "$absent": true
+              },
+              "stop_reason": {
+                "$absent": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "acp_wire": {
+      "claude": [
+        {
+          "method": "initialize"
+        },
+        {
+          "method": "session/new"
+        },
+        {
+          "method": "session/close",
+          "params": {
+            "sessionId": "session-1"
+          }
+        },
+        {
+          "method": "session/new"
+        },
+        {
+          "method": "session/prompt",
+          "params": {
+            "sessionId": "session-2"
+          }
+        }
+      ]
+    },
+    "acp_prompts": {
+      "claude": [
+        {
+          "session_id": "session-1",
+          "event_id": "room-1#0",
+          "text": {
+            "$contains": "Hello"
+          }
+        },
+        {
+          "session_id": "session-2",
+          "event_id": "room-1#0",
+          "text": {
+            "$contains": "Hello"
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "response": [
+        {
+          "response": {
+            "loop_end_reason": "completed"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,296 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/rebuild-refused-configuration-never-prompts",
+  "title": "Refused configuration closes the rebuilt session without prompting it",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: tests/test_channels/test_acp_recovery.py. Host-native refusal, never wire authorization. Standalone and public cancel are separate follow-ups.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "transport": {
+            "refuse_prompt": [
+              {
+                "reason": "unusable",
+                "recovery_authorized": true
+              }
+            ]
+          },
+          "agent": {
+            "new_sessions": [
+              {
+                "result": {
+                  "configOptions": [
+                    {
+                      "id": "model",
+                      "name": "Model",
+                      "type": "select",
+                      "currentValue": "opus",
+                      "options": [
+                        {
+                          "value": "opus",
+                          "name": "Opus"
+                        },
+                        {
+                          "value": "sonnet",
+                          "name": "Sonnet"
+                        },
+                        {
+                          "value": "default",
+                          "name": "Default"
+                        }
+                      ]
+                    },
+                    {
+                      "id": "mode",
+                      "name": "Mode",
+                      "type": "select",
+                      "currentValue": "auto",
+                      "options": [
+                        {
+                          "value": "auto",
+                          "name": "Auto"
+                        },
+                        {
+                          "value": "default",
+                          "name": "Default"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "result": {
+                  "configOptions": [
+                    {
+                      "id": "model",
+                      "name": "Model",
+                      "type": "select",
+                      "currentValue": "opus",
+                      "options": [
+                        {
+                          "value": "opus",
+                          "name": "Opus"
+                        },
+                        {
+                          "value": "sonnet",
+                          "name": "Sonnet"
+                        },
+                        {
+                          "value": "default",
+                          "name": "Default"
+                        }
+                      ]
+                    },
+                    {
+                      "id": "mode",
+                      "name": "Mode",
+                      "type": "select",
+                      "currentValue": "auto",
+                      "options": [
+                        {
+                          "value": "auto",
+                          "name": "Auto"
+                        },
+                        {
+                          "value": "default",
+                          "name": "Default"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            ],
+            "set_config_options": [
+              {
+                "result": {
+                  "configOptions": [
+                    {
+                      "id": "model",
+                      "name": "Model",
+                      "type": "select",
+                      "currentValue": "opus",
+                      "options": [
+                        {
+                          "value": "opus",
+                          "name": "Opus"
+                        },
+                        {
+                          "value": "sonnet",
+                          "name": "Sonnet"
+                        },
+                        {
+                          "value": "default",
+                          "name": "Default"
+                        }
+                      ]
+                    },
+                    {
+                      "id": "mode",
+                      "name": "Mode",
+                      "type": "select",
+                      "currentValue": "default",
+                      "options": [
+                        {
+                          "value": "auto",
+                          "name": "Auto"
+                        },
+                        {
+                          "value": "default",
+                          "name": "Default"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "error": {
+                  "code": -32000,
+                  "message": "refused"
+                }
+              }
+            ]
+          },
+          "session_config": {
+            "mode": "default"
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "response",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "error": "ACP session for room 'room-1' could not take mode='default' (claude); it is not prompted. Set another value with set_config_option, or close_session to forget the room's",
+          "response_metadata": {
+            "acp": {
+              "protocol_version": 1,
+              "prompt_returned": {
+                "$absent": true
+              },
+              "interrupted": true,
+              "stop_reason": {
+                "$absent": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "channel_call",
+      "room_id": "room-1",
+      "channel_id": "claude",
+      "verb": "config_options",
+      "arguments": {},
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "acp_wire": {
+      "claude": [
+        {
+          "method": "initialize"
+        },
+        {
+          "method": "session/new"
+        },
+        {
+          "method": "session/set_config_option",
+          "params": {
+            "configId": "mode",
+            "value": "default",
+            "sessionId": "session-1"
+          }
+        },
+        {
+          "method": "session/close",
+          "params": {
+            "sessionId": "session-1"
+          }
+        },
+        {
+          "method": "session/new"
+        },
+        {
+          "method": "session/set_config_option",
+          "params": {
+            "configId": "mode",
+            "value": "default",
+            "sessionId": "session-2"
+          }
+        },
+        {
+          "method": "session/close",
+          "params": {
+            "sessionId": "session-2"
+          }
+        }
+      ]
+    },
+    "acp_prompts": {
+      "claude": [
+        {
+          "session_id": "session-1",
+          "event_id": "room-1#0",
+          "text": {
+            "$contains": "Hello"
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "response": []
+    }
+  }
+}
