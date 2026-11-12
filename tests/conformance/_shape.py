@@ -15,6 +15,7 @@ from typing import Any
 from tests.conformance._acp import AGENT as ACP_AGENT
 from tests.conformance._acp import INITIALIZE as ACP_INITIALIZE
 from tests.conformance._acp import PROMPT as ACP_PROMPT
+from tests.conformance._acp import SESSION_REPLY as ACP_SESSION_REPLY
 from tests.conformance._delegate_tool import DELEGATE_TOOL_ARGUMENTS
 from tests.conformance._discussion import (
     DISCUSSION_ARGUMENTS,
@@ -612,12 +613,15 @@ def _members(value: Any, known: set[str], path: str, found: list[str]) -> None:
 
 
 def _acp(spec: Mapping[str, Any], path: str, found: list[str]) -> None:
-    _members(spec, {"cwd", "agent"}, path, found)
+    _members(spec, {"cwd", "agent", "session_config"}, path, found)
     agent = spec.get("agent", {})
     _members(agent, ACP_AGENT, f"{path}.agent", found)
     _members(agent.get("initialize", {}), ACP_INITIALIZE, f"{path}.agent.initialize", found)
     for index, prompt in enumerate(agent.get("prompts", [])):
         _members(prompt, ACP_PROMPT, f"{path}.agent.prompts[{index}]", found)
+    for kind in ("new_sessions", "set_config_options", "close_sessions"):
+        for index, reply in enumerate(agent.get(kind, [])):
+            _members(reply, ACP_SESSION_REPLY, f"{path}.agent.{kind}[{index}]", found)
 
 
 def _channel(channel: Mapping[str, Any], path: str, found: list[str]) -> None:

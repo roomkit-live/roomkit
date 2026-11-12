@@ -17,9 +17,15 @@ import acp
 from roomkit import ACPChannel, ACPTransport
 from tests.conformance._script import Gates
 
-AGENT = {"initialize", "prompts"}
+AGENT = {"initialize", "prompts", "new_sessions", "set_config_options", "close_sessions"}
 INITIALIZE = {"protocol_version", "closes_sessions", "agent_info"}
 PROMPT = {"gate", "updates", "stop_reason", "usage", "error"}
+SESSION_REPLY = {"gate", "result", "error"}
+SESSION_METHODS = {
+    "session/new": "new_sessions",
+    "session/set_config_option": "set_config_options",
+    "session/close": "close_sessions",
+}
 
 
 class ScriptedACPAgent:
@@ -31,6 +37,7 @@ class ScriptedACPAgent:
         self.received: list[dict[str, Any]] = []
         self._sessions = 0
         self._prompts = 0
+        self._reply_counts: dict[str, int] = {}
         self._answering: set[asyncio.Task[None]] = set()
 
     async def serve(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
@@ -49,6 +56,12 @@ class ScriptedACPAgent:
                 prompt = None
                 if method == "session/prompt":
                     prompt = self._next_prompt()
+                elif method in SESSION_METHODS:
+                    kind = SESSION_METHODS[method]
+                    index = self._reply_counts.get(kind, 0)
+                    self._reply_counts[kind] = index + 1
+                    replies = self._spec.get(kind, [])
+                    prompt = replies[index] if index < len(replies) else {}
                 task = asyncio.create_task(self._answer(message, prompt, writer))
                 self._answering.add(task)
                 task.add_done_callback(self._answering.discard)
@@ -75,9 +88,8 @@ class ScriptedACPAgent:
         result: Any = None
         if method == "initialize":
             result = self._initialized(params)
-        elif method == "session/new":
-            self._sessions += 1
-            result = {"sessionId": f"session-{self._sessions}"}
+        elif method in SESSION_METHODS:
+            result, error = await self._session_reply(method, prompt or {})
         elif method == "session/prompt" and prompt is not None:
             if "gate" in prompt:
                 await self._gates.hold(prompt["gate"])
@@ -96,8 +108,6 @@ class ScriptedACPAgent:
                 result = {"stopReason": prompt.get("stop_reason", "end_turn")}
                 if "usage" in prompt:
                     result["usage"] = prompt["usage"]
-        elif method == "session/close":
-            result = {}
         else:
             error = {"code": -32601, "message": "Method not found", "data": {"method": method}}
         answer: dict[str, Any] = {"jsonrpc": "2.0", "id": message["id"]}
@@ -106,6 +116,20 @@ class ScriptedACPAgent:
         else:
             answer["result"] = result
         _send(writer, answer)
+
+    async def _session_reply(
+        self, method: str, reply: Mapping[str, Any]
+    ) -> tuple[dict[str, Any], Mapping[str, Any] | None]:
+        result: dict[str, Any] = {}
+        if method == "session/new":
+            self._sessions += 1
+            result["sessionId"] = f"session-{self._sessions}"
+        elif method == "session/set_config_option":
+            result["configOptions"] = []
+        if "gate" in reply:
+            await self._gates.hold(reply["gate"])
+        result.update(reply.get("result", {}))
+        return result, reply.get("error")
 
     def _initialized(self, params: Mapping[str, Any]) -> dict[str, Any]:
         spec = self._spec.get("initialize", {})
@@ -164,6 +188,11 @@ def scripted_acp_channel(
     spec = channel["acp"]
     agent = ScriptedACPAgent(spec["agent"], gates)
     return (
-        ACPChannel(channel["id"], transport=ScriptedACPTransport(agent), cwd=spec["cwd"]),
+        ACPChannel(
+            channel["id"],
+            transport=ScriptedACPTransport(agent),
+            cwd=spec["cwd"],
+            session_config=spec.get("session_config"),
+        ),
         agent,
     )

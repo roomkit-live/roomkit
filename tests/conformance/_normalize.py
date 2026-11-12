@@ -130,8 +130,12 @@ class Normalizer:
     def _object(self, value: dict[str, Any]) -> dict[str, Any]:
         indexes = self._indexes_of(value)
         # A participant's or an identity's id is the scenario's own (§5.5,
-        # §5.6), never an event's: kept as written.
-        own_id = "identification" in value or "channel_addresses" in value
+        # §5.6), and an ACP option's id, are not event ids.
+        own_id = (
+            "identification" in value
+            or "channel_addresses" in value
+            or (value.get("type") in ("select", "boolean") and "currentValue" in value)
+        )
         result: dict[str, Any] = {}
         for key, item in value.items():
             if key in indexes and isinstance(item, int) and not isinstance(item, bool):

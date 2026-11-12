@@ -129,6 +129,12 @@ class ChannelNotBoundError(Exception):
 
 def error_of(error: Exception) -> dict[str, Any]:
     """The suite's name of *error*, with its reason when it has one."""
+    if (
+        isinstance(error, RuntimeError)
+        and str(error).startswith("ACP session for room ")
+        and "it is not prompted. Set another value with set_config_option" in str(error)
+    ):
+        return {"name": "acp_setup_refused"}
     if isinstance(error, RuntimeError) and (
         "setup_handoff() already called" in str(error)
         or "setup_delegation() already called" in str(error)
