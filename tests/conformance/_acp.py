@@ -222,6 +222,7 @@ def scripted_acp_channel(
             channel["id"],
             transport=transport,
             cwd=spec["cwd"],
+            additional_directories=spec.get("additional_directories"),
             session_config=spec.get("session_config"),
         ),
         agent,

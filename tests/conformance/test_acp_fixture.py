@@ -1,4 +1,4 @@
-"""Recovery fixture typos must fail, not silently change replay authorization."""
+"""Malformed ACP fixtures fail rather than silently changing their behavior."""
 
 from __future__ import annotations
 
@@ -43,3 +43,23 @@ async def test_scripted_transport_closes_its_sdk_tasks() -> None:
     await connection.initialize(protocol_version=1)
     await transport.close()
     assert not (asyncio.all_tasks() - before)
+
+
+@pytest.mark.parametrize("directories", [None, "/srv/shared", {}, [1], ["/srv/shared", False]])
+def test_directory_fixture_rejects_malformed_lists(directories: Any) -> None:
+    scenario = {
+        "setup": {
+            "channels": [
+                {
+                    "id": "agent",
+                    "type": "ai",
+                    "acp": {
+                        "cwd": "/srv/project",
+                        "agent": {},
+                        "additional_directories": directories,
+                    },
+                }
+            ]
+        }
+    }
+    assert any("additional_directories" in problem for problem in unknown_members(scenario))

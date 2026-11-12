@@ -616,8 +616,22 @@ def _members(value: Any, known: set[str], path: str, found: list[str]) -> None:
     found.extend(f"{path}: {member}" for member in value if member not in known)
 
 
+def _acp_directories(spec: Mapping[str, Any], path: str, found: list[str]) -> None:
+    directories = spec.get("additional_directories")
+    if "additional_directories" in spec and (
+        not isinstance(directories, list) or any(not isinstance(item, str) for item in directories)
+    ):
+        found.append(f"{path}.additional_directories: expected an array of strings")
+
+
 def _acp(spec: Mapping[str, Any], path: str, found: list[str]) -> None:
-    _members(spec, {"cwd", "agent", "session_config", "transport"}, path, found)
+    _members(
+        spec,
+        {"cwd", "agent", "session_config", "transport", "additional_directories"},
+        path,
+        found,
+    )
+    _acp_directories(spec, path, found)
     transport = spec.get("transport", {})
     _members(transport, {"refuse_prompt"}, f"{path}.transport", found)
     for index, refusal in enumerate(transport.get("refuse_prompt", [])):
