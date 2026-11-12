@@ -6,7 +6,7 @@
     "§22.1",
     "§13.5"
   ],
-  "notes": "The lookup, the transport's check and the commit run in one section under the room lock: the detach, ahead of the delivery in the lock's queue, is seen by the check. No record is stored under the key, so the retry is a first publication.",
+  "notes": "The lookup, the transport's check and the commit run in one section under the room lock: the detach, ahead of the delivery in the lock's queue, is seen by the check. No record is stored under the key, so the retry is a first publication. This fixture explicitly uses the in-memory lock manager so wait_for_lock establishes a FIFO queue before the held section opens. The store remains the runner's store. A distributed manager may still be connecting when the framework counts a waiter; this scenario makes no promise about that manager's queue order.",
   "setup": {
     "channels": [
       {
@@ -47,7 +47,12 @@
           }
         ]
       }
-    ]
+    ],
+    "kit": {
+      "lock_manager": {
+        "kind": "memory"
+      }
+    }
   },
   "steps": [
     {

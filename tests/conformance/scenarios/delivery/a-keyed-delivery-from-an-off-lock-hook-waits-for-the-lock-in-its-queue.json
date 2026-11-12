@@ -7,7 +7,7 @@
     "§9.5.1",
     "§13.5"
   ],
-  "notes": "A call in the room's admission order takes the publication's section as any caller does: it waits for the room lock behind the calls queued for it before, here the detach of its transport, which its check then sees. No record is stored under the key, so the retry is a first publication.",
+  "notes": "A call in the room's admission order takes the publication's section as any caller does: it waits for the room lock behind the calls queued for it before, here the detach of its transport, which its check then sees. No record is stored under the key, so the retry is a first publication. This fixture explicitly uses the in-memory lock manager so wait_for_lock establishes a FIFO queue before the held section opens. The store remains the runner's store. A distributed manager may still be connecting when the framework counts a waiter; this scenario makes no promise about that manager's queue order.",
   "setup": {
     "channels": [
       {
@@ -73,7 +73,12 @@
           }
         ]
       }
-    ]
+    ],
+    "kit": {
+      "lock_manager": {
+        "kind": "memory"
+      }
+    }
   },
   "steps": [
     {
