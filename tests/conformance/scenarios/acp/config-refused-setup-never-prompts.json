@@ -125,7 +125,9 @@
           },
           "response_metadata": {
             "acp": {
-              "interrupted": {"$absent": true},
+              "interrupted": {
+                "$absent": true
+              },
               "prompt_returned": {
                 "$absent": true
               }

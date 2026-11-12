@@ -1,0 +1,180 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/config-invalid-value-on-opening-releases-the-session",
+  "title": "An invalid setting during setup fails the opening and closes its unconfigured session",
+  "rules": [
+    "§6.4",
+    "§10.6.3"
+  ],
+  "notes": "Python: tests/test_channels/test_acp_session_setup.py::TestARefusedValueFailsClosed::test_set_config_option_fails_when_it_opens_the_session; ACPChannel.set_config_option and ACPSessionsMixin._configure_session. Sequential room-session contract; standalone turns, recovery and notifications are separate lots.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "new_sessions": [
+              {
+                "result": {
+                  "configOptions": [
+                    {
+                      "id": "model",
+                      "name": "Model",
+                      "type": "select",
+                      "currentValue": "opus",
+                      "options": [
+                        {
+                          "value": "opus",
+                          "name": "Opus"
+                        },
+                        {
+                          "value": "sonnet",
+                          "name": "Sonnet"
+                        },
+                        {
+                          "value": "default",
+                          "name": "Default"
+                        }
+                      ]
+                    },
+                    {
+                      "id": "mode",
+                      "name": "Mode",
+                      "type": "select",
+                      "currentValue": "auto",
+                      "options": [
+                        {
+                          "value": "auto",
+                          "name": "Auto"
+                        },
+                        {
+                          "value": "default",
+                          "name": "Default"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "channel_call",
+      "channel_id": "claude",
+      "room_id": "room-1",
+      "verb": "set_config_option",
+      "arguments": {
+        "config_id": "model",
+        "value": 3
+      },
+      "expect": {
+        "error": "acp_setup_refused"
+      }
+    },
+    {
+      "call": "channel_call",
+      "channel_id": "claude",
+      "room_id": "room-1",
+      "verb": "session_config",
+      "arguments": {},
+      "expect": {
+        "result": {
+          "model": {
+            "$absent": true
+          },
+          "mode": {
+            "$absent": true
+          },
+          "fast": {
+            "$absent": true
+          }
+        }
+      }
+    },
+    {
+      "call": "channel_call",
+      "channel_id": "claude",
+      "room_id": "room-1",
+      "verb": "close_session",
+      "arguments": {},
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "acp_wire": {
+      "claude": [
+        {
+          "method": "initialize"
+        },
+        {
+          "method": "session/new",
+          "params": {
+            "cwd": "/srv/project",
+            "_meta": {
+              "roomkit.live/roomId": "room-1",
+              "roomkit.live/sessionScope": "room"
+            }
+          }
+        },
+        {
+          "method": "session/close",
+          "params": {
+            "sessionId": "session-1"
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "room-1": {
+        "metadata": {
+          "roomkit:channel_state:claude": {
+            "$absent": true
+          }
+        }
+      }
+    }
+  }
+}
