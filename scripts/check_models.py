@@ -368,6 +368,15 @@ PRICE_DELIBERATE: dict[str, str] = {
     # scheduled re-read in providers/gemini/models.py; this entry blinds the
     # gate to any other repricing until then.
     "gemini-3.8-flash": "mirror quotes 10% over Google's rate; catalog carries Google's own",
+    # The mirror's top-level quote for gpt-5.6-sol ($4.4/$22/$0.44/$5.5) is a
+    # regional endpoint's: Azure US and EU and Bedrock us-east-1 bill OpenAI's
+    # 10% data-residency uplift, while OpenRouter's own OpenAI endpoint, Azure
+    # global and Bedrock global bill $4/$20/$0.40/$5 (its /endpoints listing,
+    # 2026-11-12), the Standard rate on OpenAI's pricing page the same day.
+    # RoomKit's openai provider calls OpenAI's API and OpenRouter routes to the
+    # global endpoints, so both catalogs keep the Standard rate.
+    "gpt-5.6-sol": "mirror quotes a regional host's 10% uplift; catalog carries Standard",
+    "openai/gpt-5.6-sol": "mirror quotes a regional host's 10% uplift; catalog carries Standard",
 }
 
 # Per-field suppressions: a normalization where the upstream pricing object
