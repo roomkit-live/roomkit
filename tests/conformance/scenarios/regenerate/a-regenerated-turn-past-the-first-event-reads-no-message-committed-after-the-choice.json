@@ -6,7 +6,7 @@
     "§13.6",
     "§6.4"
   ],
-  "notes": "Python: core/mixins/regenerate.py _plan_regeneration builds the context under the room lock and _enqueue_regeneration plans the re-broadcast with it; the agent serializes its room turns, so the regenerated turn waits for the turn on the message, then reads the room less what came after it was asked, its own answers kept (RFC §6.4). The room is written through the store, so no lifecycle record takes index 0.",
+  "notes": "Python: core/mixins/regenerate.py _plan_regeneration builds the context under the room lock and _enqueue_regeneration plans the re-broadcast with it; the agent serializes its room turns, so the regenerated turn waits for the turn on the message, then reads the room less what came after it was asked, its own answers kept (RFC §6.4). The room is written through the store, so no lifecycle record takes index 0. This fixture explicitly uses the in-memory lock manager so the regeneration queued before a later message chooses its trigger first. The store remains the runner's store. A counted waiter on a distributed manager may still be connecting; this scenario makes no promise about that manager's queue order.",
   "setup": {
     "channels": [
       {
@@ -60,7 +60,12 @@
           }
         ]
       }
-    ]
+    ],
+    "kit": {
+      "lock_manager": {
+        "kind": "memory"
+      }
+    }
   },
   "steps": [
     {
