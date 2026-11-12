@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import os
 from collections.abc import Iterator
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 import pytest
@@ -25,6 +26,9 @@ except ImportError:  # this mode only runs with the redis extra
     redis = None  # type: ignore[assignment]
 from roomkit.turns.base import TurnTimeouts
 from roomkit.turns.redis import RedisTurnBackend
+
+if TYPE_CHECKING:
+    from roomkit import RoomKit
 
 ENABLED = os.environ.get("ROOMKIT_TEST_TURN_BACKEND") == "redis"
 # This session's keys: another session on the same Redis keeps its own.
@@ -55,6 +59,41 @@ async def close_left_open() -> None:
     loop = asyncio.get_running_loop()
     while _built:
         await _built.pop()._close_within(loop.time())
+
+
+async def handled_across(kit: RoomKit) -> bool:
+    """Wait until what *kit*'s backend posted across Redis before now was
+    handled here: work a turn began, which reaches its owner once the turn
+    ended (RFC §10.6.3), as an ASYNC hook's ``hook_timeout``. Whether any
+    was still being handled.
+
+    It reads the backend's internals, as a test's idle wait reads the kit's:
+    a marker this process posts to its own inbox is read after what was
+    posted there before it (one writer per inbox, one reader), so once its
+    answer came back, what came before is handled or being handled.
+    """
+    backend = kit._turns.backend
+    if not isinstance(backend, RedisTurnBackend) or not backend._started or backend._closed:
+        # Its inbox is read only once it started: nothing reached it before.
+        return False
+    ref = uuid4().hex
+    marker = asyncio.get_running_loop().create_future()
+    backend._routes._answers[ref] = marker
+    try:
+        backend._post(backend.node_id, "answer", "", "", ref)
+        await marker
+    finally:
+        backend._routes._answers.pop(ref, None)
+    # Only the work's handlers: a channel control or a room call is waited
+    # for by what asked it.
+    handling = [
+        task
+        for task in backend._tasks
+        if not task.done() and task.get_name().startswith("roomkit-turns-owner-work-")
+    ]
+    if handling:
+        await asyncio.wait(handling)
+    return bool(handling)
 
 
 def clean_up() -> None:

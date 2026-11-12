@@ -37,6 +37,7 @@ from roomkit.realtime import EphemeralEvent, EphemeralEventType, InMemoryRealtim
 from roomkit.store.base import ConversationStore
 from roomkit.store.sqlite import SQLiteStore
 from roomkit.tasks import DelegatedTask, DelegateHandler
+from tests import redis_turn_mode
 from tests.conformance._acp import ScriptedACPAgent, ScriptedACPTransport
 from tests.conformance._acp_mcp import ScriptedMCPServers
 from tests.conformance._agent import ScriptedAIRouter, ScriptedModel, tool_call_record
@@ -757,6 +758,10 @@ class Harness:
             busy = await self._drain_once(kit=kit)
             await asyncio.sleep(0)
             quiet = 0 if busy else quiet + 1
+            # Across Redis, work a turn began reaches its owner after the
+            # turn, through the inbox: none may still be on its way.
+            if quiet == 3 and await redis_turn_mode.handled_across(kit or self.kit):
+                quiet = 0
 
     async def _rooms_read(self) -> list[tuple[str, int | None, Any, bool]]:
         """What the store holds of each room that the processes move: its
