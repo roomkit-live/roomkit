@@ -20,7 +20,7 @@ from tests.conformance._script import Gates
 
 AGENT = {"initialize", "prompts", "new_sessions", "set_config_options", "close_sessions"}
 INITIALIZE = {"protocol_version", "closes_sessions", "agent_info", "mcp_capabilities"}
-PROMPT = {"gate", "updates", "permission", "stop_reason", "usage", "error"}
+PROMPT = {"gate", "updates", "after_updates_gate", "permission", "stop_reason", "usage", "error"}
 SESSION_REPLY = {"gate", "result", "error"}
 REFUSAL = {"reason", "recovery_authorized", "after_prompt"}
 SESSION_METHODS = {
@@ -107,6 +107,7 @@ class ScriptedACPAgent:
                         "params": {"sessionId": params.get("sessionId"), "update": update},
                     },
                 )
+            await self._after_updates(prompt)
             if "permission" in prompt:
                 _send(
                     writer,
@@ -131,6 +132,11 @@ class ScriptedACPAgent:
         else:
             answer["result"] = result
         _send(writer, answer)
+
+    async def _after_updates(self, prompt: Mapping[str, Any]) -> None:
+        """Keep the prompt active after its updates have reached the pipe."""
+        if "after_updates_gate" in prompt:
+            await self._gates.hold(prompt["after_updates_gate"])
 
     async def _session_reply(
         self, method: str, reply: Mapping[str, Any]
@@ -229,6 +235,7 @@ def scripted_acp_channel(
             additional_directories=spec.get("additional_directories"),
             mcp_servers=mcp.source(),
             session_config=spec.get("session_config"),
+            publish_thinking_text=spec.get("publish_thinking_text", False),
         ),
         agent,
         transport,

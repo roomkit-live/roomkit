@@ -63,3 +63,27 @@ def test_directory_fixture_rejects_malformed_lists(directories: Any) -> None:
         }
     }
     assert any("additional_directories" in problem for problem in unknown_members(scenario))
+
+
+@pytest.mark.parametrize(
+    "patch",
+    [
+        {"publish_thinking_text": "false"},
+        {"publish_thinking_text": None},
+        {"agent": {"prompts": [{"after_updates_gate": True}]}},
+        {"agent": {"prompts": [{"after_updates_gate": None}]}},
+    ],
+)
+def test_thinking_fixture_rejects_malformed_controls(patch: dict[str, Any]) -> None:
+    scenario = {
+        "setup": {
+            "channels": [
+                {
+                    "id": "agent",
+                    "type": "ai",
+                    "acp": {"cwd": "/srv/project", "agent": {}, **patch},
+                }
+            ]
+        }
+    }
+    assert unknown_members(scenario)

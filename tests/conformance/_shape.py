@@ -627,14 +627,31 @@ def _acp_directories(spec: Mapping[str, Any], path: str, found: list[str]) -> No
         found.append(f"{path}.additional_directories: expected an array of strings")
 
 
+def _acp_thinking(spec: Mapping[str, Any], path: str, found: list[str]) -> None:
+    if "publish_thinking_text" in spec and not isinstance(spec["publish_thinking_text"], bool):
+        found.append(f"{path}.publish_thinking_text: expected a boolean")
+    for index, prompt in enumerate(spec.get("agent", {}).get("prompts", [])):
+        if "after_updates_gate" in prompt and not isinstance(prompt["after_updates_gate"], str):
+            found.append(f"{path}.agent.prompts[{index}].after_updates_gate: expected a gate name")
+
+
 def _acp(spec: Mapping[str, Any], path: str, found: list[str]) -> None:
     _members(
         spec,
-        {"cwd", "agent", "session_config", "transport", "additional_directories", "mcp_servers"},
+        {
+            "cwd",
+            "agent",
+            "session_config",
+            "transport",
+            "additional_directories",
+            "mcp_servers",
+            "publish_thinking_text",
+        },
         path,
         found,
     )
     _acp_directories(spec, path, found)
+    _acp_thinking(spec, path, found)
     if "mcp_servers" in spec:
         found.extend(mcp_problems(spec["mcp_servers"], f"{path}.mcp_servers"))
     transport = spec.get("transport", {})
