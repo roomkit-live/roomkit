@@ -29,9 +29,16 @@
                     "body": "echo"
                   }
                 },
-                "as": "routed"
+                "as": "routed",
+                "expect": {
+                  "result": {
+                    "blocked": false,
+                    "reason": null
+                  }
+                }
               }
-            ]
+            ],
+            "delay_ms": 1000
           }
         ]
       },
@@ -100,7 +107,7 @@
       }
     ],
     "kit": {
-      "process_timeout_ms": 300
+      "process_timeout_ms": 2000
     }
   },
   "steps": [
@@ -153,5 +160,5 @@
       ]
     }
   },
-  "notes": "Python: src/roomkit/models/delivery.py DeliveryHandle.wait, cancel and report_cascade, src/roomkit/core/mixins/inbound.py (a call the admission work makes, adopted with a cascade of its own) (RMK-1322, RMK-1329; found by the lot's review)."
+  "notes": "Python: src/roomkit/models/delivery.py DeliveryHandle.wait, cancel and report_cascade, src/roomkit/core/mixins/inbound.py (a call the admission work makes, adopted with a cascade of its own) (RMK-1322, RMK-1329; found by the lot's review). The transport waits 1000 ms before echo starts its own 2000 ms deadline: after the outer deadline releases the admission ticket, echo still has a separate window to commit on durable stores. Raising the shared timeout alone would leave the two deadlines almost simultaneous."
 }
