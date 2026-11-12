@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve state changes reported by overlapping channel calls, including a session close that clears a configuration saved while it waited (RFC §10.6.3).
+
 - Keep a delegation's partially prepared child room and mark its task failed or cancelled before announcement, preserving its records without reporting a task completion (RFC §23.3).
 
 - PostgreSQL preserves channel attachment order across updates and restarts, keeping the first streaming target stable; reattaching a removed channel places it last.

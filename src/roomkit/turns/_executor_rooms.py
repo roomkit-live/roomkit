@@ -19,6 +19,7 @@ from collections.abc import Awaitable, Callable
 from contextlib import AbstractContextManager
 from typing import TYPE_CHECKING
 
+from roomkit.turns._call_state import CallStates
 from roomkit.turns._error_codec import error_record
 from roomkit.turns._rooms import RoomRecords, stored_room_state
 from roomkit.turns.base import builds_nothing
@@ -58,6 +59,7 @@ class ExecutorRooms:
         # The drops of states whose record fell out, still running: a turn or
         # call of that room waits for its own.
         self._dropping: dict[tuple[str, str], asyncio.Task[None]] = {}
+        self._call_states = CallStates()
 
     def enter(
         self, channel_id: str, room_id: str, entry_id: str, previous: PreviousTurn | None
@@ -138,19 +140,27 @@ class ExecutorRooms:
             return ChannelResult(error=error_record(missing), executor_id=executor_id)
         room_id, channel_id = message.room_id, message.channel_id
         stale = self.enter(channel_id, room_id, message.call_id, message.previous_turn)
-        before: dict[str, object] | None = None
         try:
             await self._ready(channel, channel_id, room_id, message.room_state, stale=stale)
-            before = channel.room_state(room_id)
-            result = await channel.channel_call(room_id, message.verb, message.arguments)
+            return await self._answer_call(channel, message)
         except Exception as exc:
-            changed = None if before is None else _changed(channel, room_id, before)
-            return ChannelResult(
-                error=error_record(exc), room_state=changed, executor_id=executor_id
+            return ChannelResult(error=error_record(exc), executor_id=executor_id)
+
+    async def _answer_call(self, channel: Channel, message: ChannelCall) -> ChannelResult:
+        """Answer a verb with the state it changed, including concurrent reports."""
+        executor_id = self._executor_id
+        with self._call_states.track(channel, message.room_id) as state:
+            try:
+                result = await channel.channel_call(
+                    message.room_id, message.verb, message.arguments
+                )
+            except Exception as exc:
+                return ChannelResult(
+                    error=error_record(exc), room_state=state.changed(), executor_id=executor_id
+                )
+            answer = ChannelResult(
+                result=result, room_state=state.changed(), executor_id=executor_id
             )
-        answer = ChannelResult(
-            result=result, room_state=_changed(channel, room_id, before), executor_id=executor_id
-        )
         try:
             answer.model_dump_json()
         except (TypeError, ValueError) as exc:
@@ -186,14 +196,3 @@ class ExecutorRooms:
                 key[0],
                 exc_info=failure,
             )
-
-
-def _changed(
-    channel: Channel, room_id: str, before: dict[str, object]
-) -> dict[str, object] | None:
-    """What the room keeps for the channel once a verb ran, when the verb
-    changed it from *before*: a copy the channel held apart from the room's
-    (a value set on the channel object directly) is not stored by a verb
-    that changed nothing."""
-    state = channel.room_state(room_id)
-    return state if state != before else None
