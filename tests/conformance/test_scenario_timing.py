@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 
 from roomkit.channels._mark_copies import compile_mark_patterns
+from roomkit.models.framework_event import FrameworkEvent
 from roomkit.models.room import Room
 from roomkit.store.sqlite import SQLiteStore
 from tests.conformance._harness import Harness
@@ -21,6 +22,38 @@ WORKER_BOUNDS = [
     "a-team-call-its-bound-cuts-posts-each-worker-cancelled",
     "a-worker-past-its-task-timeout-is-cut-and-read-as-timed-out",
 ]
+
+
+@pytest.mark.wallclock
+@pytest.mark.parametrize("store", ["memory", "sqlite"])
+async def test_nested_deadlines_leave_room_for_post_timeout_reads(
+    store: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The echo can still commit after the outer call releases its ticket."""
+    name = "a-hook-waiting-on-an-adopted-call-whose-answer-sends-into-the-room-ends-at-the-timeout"
+    path = _SCENARIOS.parent / "delivery" / f"{name}.json"
+    scenario = json.loads(await asyncio.to_thread(path.read_text, encoding="utf-8"))
+    on = SQLiteStore(tmp_path / "store.db") if store == "sqlite" else None
+    harness = Harness(scenario, on)
+    outer_ended = asyncio.Event()
+    delayed = False
+    get_room = harness.kit.store.get_room
+
+    @harness.kit.on("process_timeout")
+    async def timed_out(_event: FrameworkEvent) -> None:
+        outer_ended.set()
+
+    async def slow_read(room_id: str) -> Room:
+        nonlocal delayed
+        if outer_ended.is_set() and not delayed:
+            delayed = True
+            await asyncio.sleep(0.25)
+        return await get_room(room_id)
+
+    monkeypatch.setattr(harness.kit.store, "get_room", slow_read)
+    problems = await harness.run()
+    assert delayed
+    assert not problems, "\n".join(problems)
 
 
 def delay_child_preparation(harness: Harness, monkeypatch: pytest.MonkeyPatch) -> list[str]:

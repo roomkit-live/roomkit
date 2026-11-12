@@ -18,6 +18,9 @@ from tests.test_store_postgres import store as store
 pytestmark = pytest.mark.skipif(POSTGRES_DSN is None, reason="POSTGRES_DSN not set")
 
 SCENARIOS = [
+    "delivery/a-hook-waiting-on-an-adopted-call-whose-answer-sends-into-the-room-ends-at-the-timeout",
+    "tasks/a-failed-inline-preparation-keeps-its-child-and-reports-no-task",
+    "tasks/a-failed-background-preparation-keeps-its-child-and-reports-no-task",
     "streaming/the-stream-goes-to-the-first-streaming-transport-bound",
     "store/updated-bindings-keep-the-first-streaming-target",
     "store/reattached-binding-moves-behind-existing-streaming-targets",

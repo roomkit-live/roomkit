@@ -125,10 +125,12 @@ def message_subject(message: InboundMessage, room_id: str) -> dict[str, Any]:
 
 
 async def perform(harness: Harness, reaction: Mapping[str, Any], scope: Mapping[str, str]) -> None:
-    """Hold at the reaction's gate, run its actions, leave those for after
+    """Hold at the reaction's gate, wait its delay, run its actions, leave those for after
     the turn to work it began, then raise its failure."""
     if (gate := reaction.get("gate")) is not None:
         await harness.gates.hold(gate)
+    if delay := reaction.get("delay_ms"):
+        await asyncio.sleep(delay / 1000)
     for action in reaction.get("do", []):
         await harness.run_action(action, scope)
     if (later := reaction.get("after_turn")) is not None:
