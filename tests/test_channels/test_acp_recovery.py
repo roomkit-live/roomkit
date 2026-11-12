@@ -403,6 +403,7 @@ async def test_finished_preparation_is_not_cancelled_again_during_release(tmp_pa
         consuming = asyncio.create_task(_consume(output))
         await asyncio.wait_for(reached.wait(), 5)
         assert channel.session_id(ROOM) is None
+        assert channel.active_turns == 0
         assert await channel.cancel(ROOM) is False
         release.set()
         assert await asyncio.wait_for(consuming, 5) == []
