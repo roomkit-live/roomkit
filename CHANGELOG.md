@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.114.0] — 2026-11-12
+
 ### Added
 
 - **`GeminiClassifier`, on Gemini's Decisions API.** `GeminiClassifier(api_key)` answers RoomKit's yes/no, choice and score questions on `gemini-decision-1` (`POST /v1beta/decisions`), with probabilities Google documents as calibrated, ~250-450 ms a call measured with the network; a structured state goes as its JSON, and an input the API's filters block fails the call with `ClassifierError`. The client it builds does not retry: a 429 or a 5xx fails at once with the HTTP status and message the API gave, rather than as a timeout; a client passed as `client=` keeps its own retry settings. `client=` takes a `google.genai.Client` of the caller's. `CLASSIFIER=gemini` in `examples/classifier_judgments.py`, `speaking_judgments.py` and `discussion_dispatch.py` (RFC §6.8).
@@ -19,15 +21,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Preserve state changes reported by overlapping channel calls, including a session close that clears a configuration saved while it waited (RFC §10.6.3).
+- **A channel call that restores a room's state reports it, even when another call changed that state meanwhile** (RFC §10.6.3, RMK-1429). Two calls of one agent in one room could run at once on its executor: a session close, and a configuration saved while the close waited. The room stored the configuration, then the close cleared it, but the close found the same empty state before and after and reported no change: the room kept a configuration the agent no longer held, and an executor building the agent again restored it. A call now measures its change against what the calls that answered meanwhile reported, so the close reports the state it left; a call that changed nothing still reports nothing.
 
-- Keep a delegation's partially prepared child room and mark its task failed or cancelled before announcement, preserving its records without reporting a task completion (RFC §23.3).
+- **A delegation interrupted before its task was announced no longer leaves its child room pending** (RFC §23.3). A `kit.delegate()` whose preparation failed or was cancelled once the child room existed left that room with `task_status: "pending"` for good, and a store still writing the room when the caller was cancelled could create it after the cleanup had run. The child room is now kept, with its records and bindings, and its task marked `failed` or `cancelled` with no result; no task completion is reported, since none was announced. The kit waits for the room's creation to land before that cleanup, through repeated cancellation and up to the close's grace, and the caller still gets the error that interrupted the preparation.
 
-- PostgreSQL preserves channel attachment order across updates and restarts, keeping the first streaming target stable; reattaching a removed channel places it last.
+- **`PostgresStore` keeps a room's channels in the order they were attached.** It read a room's bindings in no stated order, so updating one (muting it, changing its access) could move that channel last, and the room's first streaming-capable channel, the one an AI answer streams to, could change after an update or a restart. Bindings now keep their attachment order across updates, upserts and restarts, and a channel removed and attached again goes last. The schema gains an `attachment_order` column at the store's first start, filled once from `attached_at`.
 
-- Protect every message left by a generation hook when a deferred input can no longer be identified; only new tool results may be shortened, and an unsafe overflow fails explicitly (RMK-1576).
-
-- A generation hook that copies or uniquely moves a deferred turn’s unchanged input keeps its compaction boundary, including among identical questions kept in place (RMK-1576).
+- **A generation hook that rewrites a deferred turn's context no longer lets compaction fold the message the turn answers** (RFC §6.4, §20.1, RMK-1576). 0.113.0 kept that message whole only while the context held it unchanged in place: a `BEFORE_AI_GENERATION` hook that copied the messages, moved the input or edited it lost that protection, and a memory's summary or the compaction between tool rounds could fold it into the history. A copy or a move of the unchanged input now keeps it whole, identical questions included. When the hook rewrote or removed it, so that the input can no longer be told apart, every message the hook left stays whole, only the tool results added after it may be shortened, and a context still too large fails the generation with a non-retryable `ProviderError` instead of being summarized.
 
 ## [0.113.0] — 2026-11-11
 
@@ -20376,7 +20376,8 @@ See entries `0.7.0a1` through `0.7.0a18` below.
 - `STTProvider.transcribe()` returns `TranscriptionResult` (Phase 3.1)
 - Framework event names enriched with payloads (Phase 4)
 
-[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.113.0...HEAD
+[Unreleased]: https://github.com/roomkit-live/roomkit/compare/v0.114.0...HEAD
+[0.114.0]: https://github.com/roomkit-live/roomkit/compare/v0.113.0...v0.114.0
 [0.113.0]: https://github.com/roomkit-live/roomkit/compare/v0.112.0...v0.113.0
 [0.112.0]: https://github.com/roomkit-live/roomkit/compare/v0.111.0...v0.112.0
 [0.111.0]: https://github.com/roomkit-live/roomkit/compare/v0.110.0...v0.111.0
