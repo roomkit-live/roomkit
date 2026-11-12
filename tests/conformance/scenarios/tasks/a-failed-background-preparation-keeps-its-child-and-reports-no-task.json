@@ -1,0 +1,173 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-failed-background-preparation-keeps-its-child-and-reports-no-task",
+  "title": "A failed background preparation retains its child data and marks its task failed without announcing a task",
+  "rules": [
+    "§23.3",
+    "§6.1"
+  ],
+  "notes": "Python: tests/tasks/test_delegation_preparation.py. A shared transport refuses the preparation after another transport stored a child record. The caller receives that refusal, the child task is failed, and its existing history, bindings and application metadata survive; no task was announced.",
+  "setup": {
+    "channels": [
+      {
+        "id": "worker",
+        "type": "ai",
+        "category": "intelligence"
+      },
+      {
+        "id": "shared",
+        "type": "sms",
+        "on_room_attached": [
+          {
+            "when": {
+              "room_id": "parent"
+            }
+          },
+          {
+            "do": [
+              {
+                "call": "commit_event",
+                "room_id": "$room",
+                "event": {
+                  "source": {
+                    "channel_id": "worker",
+                    "channel_type": "ai"
+                  },
+                  "content": {
+                    "type": "text",
+                    "body": "Keep this preparation record."
+                  },
+                  "metadata": {
+                    "audit": "kept"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "broken",
+        "type": "sms",
+        "on_room_attached": [
+          {
+            "when": {
+              "room_id": "parent"
+            }
+          },
+          {
+            "fail": "preparation refused"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "parent",
+        "organization_id": "acme",
+        "metadata": {
+          "_child_metadata": {
+            "audit_tag": "keep"
+          }
+        },
+        "bindings": [
+          {
+            "channel_id": "shared",
+            "metadata": {
+              "audit": "kept"
+            }
+          },
+          {
+            "channel_id": "broken"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "delegated",
+        "trigger": "on_task_delegated",
+        "execution": "async"
+      },
+      {
+        "name": "completed",
+        "trigger": "on_task_completed",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "parent",
+      "agent_id": "worker",
+      "task": "Find it.",
+      "wait": false,
+      "share_channels": [
+        "shared",
+        "broken"
+      ],
+      "expect": {
+        "error": "channel_failed"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "status.recent",
+      "expect": {
+        "result": []
+      }
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "$r1": {
+        "organization_id": "acme",
+        "status": "active",
+        "metadata": {
+          "parent_room_id": "parent",
+          "task_status": "failed",
+          "task_result": null,
+          "audit_tag": "keep"
+        }
+      }
+    },
+    "bindings": {
+      "$r1": {
+        "worker": {
+          "category": "intelligence"
+        },
+        "shared": {
+          "metadata": {
+            "audit": "kept"
+          }
+        },
+        "broken": null
+      }
+    },
+    "timeline": {
+      "parent": [],
+      "$r1": [
+        {
+          "content": {
+            "body": "Keep this preparation record."
+          },
+          "metadata": {
+            "audit": "kept"
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "delegated": [],
+      "completed": []
+    },
+    "turns": {
+      "$r1": {
+        "worker": []
+      }
+    }
+  }
+}

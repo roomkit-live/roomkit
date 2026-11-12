@@ -7,7 +7,7 @@
     "§23.3",
     "§10.1 Explicit delivery cancellation"
   ],
-  "notes": "Python: tests/tasks/test_delegation_ends_failed.py::test_a_task_failing_before_it_is_announced_fires_no_completion; tests/tasks/test_cancelled_delegation.py. A shared transport callback holds child preparation before ON_TASK_DELEGATED, or the worker model holds after it. The caller cancels only after that gate; no timeout orders the cut. The worker run posts its own cancelled entry in either case, but names the task only after announcement. No assertion makes the historical partially prepared child room a completed task.",
+  "notes": "Python: tests/tasks/test_delegation_ends_failed.py::test_a_task_failing_before_it_is_announced_fires_no_completion; tests/tasks/test_cancelled_delegation.py. A shared transport callback holds child preparation before ON_TASK_DELEGATED, or the worker model holds after it. The caller cancels only after that gate; no timeout orders the cut. The worker run posts its own cancelled entry in either case, but names the task only after announcement. An interrupted preparation retains its child and marks its task cancelled without announcing a task completion.",
   "setup": {
     "channels": [
       {
@@ -73,7 +73,12 @@
           {
             "channel_id": "sms"
           }
-        ]
+        ],
+        "metadata": {
+          "_child_metadata": {
+            "audit_tag": "keep"
+          }
+        }
       }
     ],
     "strategies": [
@@ -172,6 +177,24 @@
     "hooks": {
       "delegated": [],
       "completed": []
+    },
+    "rooms": {
+      "$r1": {
+        "status": "active",
+        "metadata": {
+          "task_status": "cancelled",
+          "task_result": null,
+          "audit_tag": "keep"
+        }
+      }
+    },
+    "bindings": {
+      "$r1": {
+        "analyst": {
+          "category": "intelligence",
+          "access": "read_write"
+        }
+      }
     }
   }
 }
