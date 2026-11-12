@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Keep a delegation's partially prepared child room and mark its task failed or cancelled before announcement, preserving its records without reporting a task completion (RFC §23.3).
+
 - PostgreSQL preserves channel attachment order across updates and restarts, keeping the first streaming target stable; reattaching a removed channel places it last.
 
 - Protect every message left by a generation hook when a deferred input can no longer be identified; only new tool results may be shortened, and an unsafe overflow fails explicitly (RMK-1576).

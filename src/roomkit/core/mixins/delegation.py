@@ -12,7 +12,8 @@ from roomkit._text import bounded_text, identifier, one_line, quoted
 from roomkit.channels._discussion_turn import agent_handle
 from roomkit.channels._realtime_context import get_current_voice_session
 from roomkit.core._failure_log import log_failure
-from roomkit.core.exceptions import ChannelNotRegisteredError, RoomNotFoundError
+from roomkit.core._preparing_room import preparing_child
+from roomkit.core.exceptions import ChannelNotRegisteredError, KitClosedError, RoomNotFoundError
 
 # _persist_child_stream and _run_with_structured_result are re-exported (self-
 # aliased) for the test suite, which imports them from this module.
@@ -31,6 +32,7 @@ from roomkit.core.task_utils import (
     await_interruptible,
     check_open,
     hold_task,
+    run_to_its_end,
     shielded,
 )
 from roomkit.core.visibility import normal_visibility
@@ -365,6 +367,11 @@ class DelegationMixin(HelpersMixin):
         any shared channels, then either runs the agent inline or submits
         the task for background execution.
 
+        If preparation fails or is cancelled before announcement, its existing
+        child is kept with task status failed or cancelled and no result.
+        Its records and bindings remain; no task completion is reported
+        (RFC §23.3).
+
         Args:
             room_id: Parent room ID.
             agent_id: Channel ID of the agent to run the task.
@@ -503,8 +510,7 @@ class DelegationMixin(HelpersMixin):
             )
         except BaseException as exc:
             if not started:
-                cut = self._end_cut(handle, exc, context, on_complete, span, start)
-                await shielded(cut)
+                await self._end_preparation(handle, exc, context, on_complete, span, start)
             raise
 
     async def _check_hand_back(
@@ -542,6 +548,35 @@ class DelegationMixin(HelpersMixin):
         )
         return conversation_block(context, readers, count)
 
+    async def _end_preparation(
+        self,
+        handle: DelegatedTask,
+        cut: BaseException,
+        context: dict[str, Any] | None,
+        on_complete: Any | None,
+        span: _DelegationSpan,
+        start: float,
+    ) -> None:
+        """Finish preparation before returning its error. An unannounced
+        child's terminal write survives repeated caller cancellation and is
+        held until the kit's close finishes its grace (RFC §23.3, §12.10.4)."""
+        ending = self._end_cut(handle, cut, context, on_complete, span, start)
+        if handle._announced:
+            await shielded(ending)
+        else:
+            try:
+                await run_to_its_end(
+                    ending,
+                    held=self._decided_writes,
+                    name=f"roomkit-preparation-end-{handle.id}",
+                )
+            except KitClosedError:
+                # The close's budget is final, but its cut of cleanup is
+                # not the error that interrupted this preparation.
+                _tasks_logger.warning(
+                    "Task %s: close cut the unannounced child's terminal write", handle.id
+                )
+
     async def _end_cut(
         self,
         handle: DelegatedTask,
@@ -556,7 +591,7 @@ class DelegationMixin(HelpersMixin):
         before it ran (its runner refusing it included) or its run (RFC
         §23.3): cancelled, or failed with *cut* and the record of the turn it
         ran (*turns*); once announced, as an inline task ends, before that,
-        only its span."""
+        its span and any child it created, without reporting a task end."""
         ended = _result_from_handle(
             handle,
             duration_ms=(time.monotonic() - start) * 1000,
@@ -566,6 +601,7 @@ class DelegationMixin(HelpersMixin):
             await self._complete_inline(handle, ended, on_complete, span)
         else:
             span.end(ended)
+            await record_task_end(self, ended, unannounced=True)  # ty: ignore[invalid-argument-type]
 
     async def _open_child_room(
         self,
@@ -591,21 +627,22 @@ class DelegationMixin(HelpersMixin):
         inherited_metadata = parent_room.metadata.get("_child_metadata") or {}
         # The child room is the parent's organization's (RFC §17.2, §23.3 step
         # 1): what acts in it reads its tenant from the room, as in the parent.
-        await self.create_room(
-            room_id=child_room_id,
-            organization_id=parent_room.organization_id,
-            metadata={
-                **inherited_metadata,
-                "_child_metadata": inherited_metadata,
-                "parent_room_id": room_id,
-                "task_id": handle.id,
-                "task_agent_id": agent_id,
-                "task_input": task,
-                "task_context": context or {},
-                "task_status": "pending",
-            },
-            orchestration=None,
-        )
+        with preparing_child(self._store, child_room_id):
+            await self.create_room(
+                room_id=child_room_id,
+                organization_id=parent_room.organization_id,
+                metadata={
+                    **inherited_metadata,
+                    "_child_metadata": inherited_metadata,
+                    "parent_room_id": room_id,
+                    "task_id": handle.id,
+                    "task_agent_id": agent_id,
+                    "task_input": task,
+                    "task_context": context or {},
+                    "task_status": "pending",
+                },
+                orchestration=None,
+            )
 
         # Attach agent as intelligence
         await self.attach_channel(

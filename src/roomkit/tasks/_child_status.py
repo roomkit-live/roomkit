@@ -14,12 +14,19 @@ if TYPE_CHECKING:
 logger = logging.getLogger("roomkit.tasks")
 
 
-async def record_task_end(kit: RoomKit, result: DelegatedTaskResult) -> None:
+async def record_task_end(
+    kit: RoomKit, result: DelegatedTaskResult, *, unannounced: bool = False
+) -> None:
     """Stamp the child room with how its task ended, and the worker's answer
     when it completed; a failure to write it is logged, never raised."""
     try:
-        room = await kit.get_room(result.child_room_id)
+        read_room = kit.store.get_room if unannounced else kit.get_room
+        room = await read_room(result.child_room_id)
         if room is None:
+            return
+        # A refused creation may have found another room under that id.
+        # Preparation only owns the child stamped with this task's identity.
+        if unannounced and room.metadata.get("task_id") != result.task_id:
             return
         completed = result.status == TaskStatus.COMPLETED
         # Its keys alone: a full room write would undo what was written since

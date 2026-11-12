@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from uuid import uuid4
 
 from roomkit.core._participant_channels import channels_reached, warn_cross_channel
+from roomkit.core._preparing_room import write_created_room
 from roomkit.core._room_metadata import without_framework_keys
 from roomkit.core.exceptions import (
     IdentityNotFoundError,
@@ -196,7 +197,7 @@ class RoomLifecycleMixin(HelpersMixin):
         """
         started = self._room_recorder_mgr.start(room.id, recorders)
         try:
-            stored = await self._store.create_room(room)
+            stored = await write_created_room(self._store, room, self._decided_writes)
         except BaseException:
             self._room_recorder_mgr.discard(started)
             raise
