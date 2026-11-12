@@ -283,13 +283,24 @@ jobs:
       # fastapi is a peer dep (WebRTC signaling). The project's fastrtc stack
       # imports the httpx2 compatibility package explicitly, so both transient
       # test dependencies must be present during collection.
+      # A file's POSTGRES_DSN cases run only here: the Redis pass below unsets
+      # the DSN and the `test` job has none, so a file left out of this list
+      # runs them nowhere. The JUnit report keeps one result per test for the
+      # receipts.
       - name: Run integration tests
         run: >-
           uv run --with fastapi --with httpx2 pytest -v
+          --junitxml=test-results/integration.xml
           tests/test_store_postgres.py
           tests/conformance/test_postgres.py
           tests/test_postgres_multiprocess.py
           tests/test_verification_release_cancel.py
+          tests/test_store_room_contract.py
+          tests/test_store_identity_scoping.py
+          tests/test_identity_verification.py
+          tests/test_kit_close.py
+          tests/test_kit_close_doors.py
+          tests/test_inbound_connection_budget.py
           tests/test_webrtc_offer_auth.py
           tests/test_webrtc_rtc_configuration.py
           tests/test_store_binding_contract.py
@@ -301,6 +312,22 @@ jobs:
           tests/test_fastrtc_audio_session.py
           tests/test_fastrtc_playback.py
           tests/test_fastrtc_realtime_transport.py
+
+      # Writers of one room racing on the server's row locks: deadlock and
+      # starvation. Marked stress, so every default pass deselects them;
+      # `-m stress` selects them here, on the one server they are about.
+      - name: Run the PostgreSQL stress tests
+        run: >-
+          uv run pytest -v -m stress
+          --junitxml=test-results/postgres-stress.xml
+          tests/test_store_postgres.py
+
+      - name: Upload the JUnit reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: integration-junit
+          path: test-results/
 
       # Every kit built without a turn backend gets one across Redis, its own
       # executor reached there as one elsewhere (tests/redis_turn_mode.py); a
