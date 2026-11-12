@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import TypeAdapter, ValidationError
 
-from roomkit import HostChannel, RoomKit
+from roomkit import ACPChannel, HostChannel, RoomKit
 from roomkit.channels.base import Channel
 from roomkit.core.exceptions import (
     ChangeRefusedError,
@@ -560,6 +560,13 @@ async def _cancel_delivery(kit: RoomKit, harness: Harness, spec: Mapping[str, An
     return await kit.cancel_delivery(spec["key"], **reason, **_org(spec))
 
 
+async def _acp_cancel(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> bool:
+    channel = kit.get_channel(spec["channel_id"])
+    if not isinstance(channel, ACPChannel):
+        raise UnreadableError("acp.cancel requires an ACP channel")
+    return await channel.cancel(spec["room_id"])
+
+
 async def _steer(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
     directive = _DIRECTIVE.validate_python(spec["directive"])
     return await kit.steer(spec["room_id"], spec["channel_id"], directive, **_org(spec))
@@ -623,6 +630,7 @@ CALLS: dict[str, Call] = {
     "delivery.cancel": _delivery_cancel,
     "delivery.wait": _delivery_wait,
     "steer": _steer,
+    "acp.cancel": _acp_cancel,
 }
 
 

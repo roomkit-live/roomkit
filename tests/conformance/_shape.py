@@ -492,6 +492,7 @@ CALLS: dict[str, set[str]] = {
     },
     "cancel_delivery": {"key", "reason"},
     "steer": {"channel_id", "directive", "room_id"},
+    "acp.cancel": {"channel_id", "room_id"},
     "close": set(),
 }
 CALLS |= STORE_ARGUMENTS | READ_MARKER_ARGUMENTS | TASK_ARGUMENTS | MEMBER_ARGUMENTS

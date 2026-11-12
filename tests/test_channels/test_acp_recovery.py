@@ -368,3 +368,43 @@ async def test_public_cancel_stops_reconstruction_before_prompt(tmp_path: Any, s
     assert channel._turns == channel._prompted_index == channel._room_locks == {}
     await asyncio.wait_for(_consume(await _output(channel)), 1)
     await channel.close()
+
+
+async def test_finished_preparation_is_not_cancelled_again_during_release(tmp_path: Any) -> None:
+    """Cleanup holds the room after the cancelled preparation has left its registry."""
+    channel, connection, _ = _channel(tmp_path, emit_updates=False)
+    reached, release = asyncio.Event(), asyncio.Event()
+    opener, closer = connection.new_session, connection.close_session
+    opened = 0
+
+    async def refuses(*args: Any, **kwargs: Any) -> Any:
+        raise _refusal()
+
+    async def opens(**kwargs: Any) -> Any:
+        nonlocal opened
+        result = await opener(**kwargs)
+        opened += 1
+        if opened == 2:
+            assert await channel.cancel(ROOM) is True
+        return result
+
+    async def closes(session_id: str) -> None:
+        if session_id == "session-2":
+            reached.set()
+            await release.wait()
+        await closer(session_id)
+
+    with (
+        patch.object(connection, "prompt", refuses),
+        patch.object(connection, "new_session", opens),
+        patch.object(connection, "close_session", closes),
+    ):
+        output = await _output(channel)
+        consuming = asyncio.create_task(_consume(output))
+        await asyncio.wait_for(reached.wait(), 5)
+        assert channel.session_id(ROOM) is None
+        assert await channel.cancel(ROOM) is False
+        release.set()
+        assert await asyncio.wait_for(consuming, 5) == []
+        assert output.response_metadata["acp"]["interrupted"] is True
+    await channel.close()
