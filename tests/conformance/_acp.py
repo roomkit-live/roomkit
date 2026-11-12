@@ -14,13 +14,14 @@ from typing import Any
 
 import acp
 
-from roomkit import ACPChannel, ACPTransport
+from roomkit import ACPChannel, ACPSessionInvalidatedError, ACPTransport
 from tests.conformance._script import Gates
 
 AGENT = {"initialize", "prompts", "new_sessions", "set_config_options", "close_sessions"}
 INITIALIZE = {"protocol_version", "closes_sessions", "agent_info"}
-PROMPT = {"gate", "updates", "stop_reason", "usage", "error"}
+PROMPT = {"gate", "updates", "permission", "stop_reason", "usage", "error"}
 SESSION_REPLY = {"gate", "result", "error"}
+REFUSAL = {"reason", "recovery_authorized", "after_prompt"}
 SESSION_METHODS = {
     "session/new": "new_sessions",
     "session/set_config_option": "set_config_options",
@@ -35,6 +36,7 @@ class ScriptedACPAgent:
         self._spec = spec
         self._gates = gates
         self.received: list[dict[str, Any]] = []
+        self.attempts: list[dict[str, Any]] = []
         self._sessions = 0
         self._prompts = 0
         self._reply_counts: dict[str, int] = {}
@@ -104,6 +106,16 @@ class ScriptedACPAgent:
                         "params": {"sessionId": params.get("sessionId"), "update": update},
                     },
                 )
+            if "permission" in prompt:
+                _send(
+                    writer,
+                    {
+                        "jsonrpc": "2.0",
+                        "id": f"permission-{message['id']}",
+                        "method": "session/request_permission",
+                        "params": {**prompt["permission"], "sessionId": params.get("sessionId")},
+                    },
+                )
             if "error" in prompt:
                 error = prompt["error"]
             else:
@@ -154,10 +166,12 @@ def _send(writer: asyncio.StreamWriter, message: Mapping[str, Any]) -> None:
 class ScriptedACPTransport(ACPTransport):
     """The transport that hands the channel a connection to its scripted agent."""
 
-    def __init__(self, agent: ScriptedACPAgent) -> None:
+    def __init__(self, agent: ScriptedACPAgent, spec: Mapping[str, Any]) -> None:
         self._agent = agent
+        self._refusals = iter(spec.get("refuse_prompt", []))
         self._serving: asyncio.Task[None] | None = None
         self._writer: asyncio.StreamWriter | None = None
+        self._connection: Any = None
 
     @property
     def name(self) -> str:
@@ -178,9 +192,14 @@ class ScriptedACPTransport(ACPTransport):
         self._writer = writer
         self._serving = asyncio.create_task(self._agent.serve(agent_reader, agent_writer))
         kwargs = {} if queue is None else {"queue": queue}
-        return acp.connect_to_agent(client, writer, reader, **kwargs)
+        connection = acp.connect_to_agent(client, writer, reader, **kwargs)
+        self._connection = connection
+        return _RefusingConnection(connection, self._agent, self._refusals)
 
     async def close(self) -> None:
+        connection, self._connection = self._connection, None
+        if connection is not None:
+            await connection.close()
         writer, self._writer = self._writer, None
         if writer is not None:
             writer.close()
@@ -197,7 +216,7 @@ def scripted_acp_channel(
     """The channel a scenario's `acp` member describes, and its agent."""
     spec = channel["acp"]
     agent = ScriptedACPAgent(spec["agent"], gates)
-    transport = ScriptedACPTransport(agent)
+    transport = ScriptedACPTransport(agent, spec.get("transport", {}))
     return (
         ACPChannel(
             channel["id"],
@@ -208,3 +227,32 @@ def scripted_acp_channel(
         agent,
         transport,
     )
+
+
+class _RefusingConnection:
+    """A host refusal is a native exception, never an agent's wire error."""
+
+    def __init__(self, connection: Any, agent: ScriptedACPAgent, refusals: Any) -> None:
+        self._connection = connection
+        self._agent = agent
+        self._refusals = refusals
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._connection, name)
+
+    async def prompt(self, session_id: str, prompt: Any, **kwargs: Any) -> Any:
+        self._agent.attempts.append(
+            {
+                "session_id": session_id,
+                "event_id": kwargs.get("roomkit.live/eventId"),
+                "text": "".join(getattr(block, "text", "") for block in prompt),
+            }
+        )
+        refusal = next(self._refusals, None)
+        if refusal is None or refusal.get("after_prompt", False):
+            result = await self._connection.prompt(session_id, prompt, **kwargs)
+            if refusal is None:
+                return result
+        raise ACPSessionInvalidatedError(
+            refusal["reason"], recovery_authorized=refusal.get("recovery_authorized", False)
+        )

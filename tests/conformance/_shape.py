@@ -15,6 +15,7 @@ from typing import Any
 from tests.conformance._acp import AGENT as ACP_AGENT
 from tests.conformance._acp import INITIALIZE as ACP_INITIALIZE
 from tests.conformance._acp import PROMPT as ACP_PROMPT
+from tests.conformance._acp import REFUSAL as ACP_REFUSAL
 from tests.conformance._acp import SESSION_REPLY as ACP_SESSION_REPLY
 from tests.conformance._delegate_tool import DELEGATE_TOOL_ARGUMENTS
 from tests.conformance._discussion import (
@@ -375,6 +376,7 @@ EXPECT = {
     "models",
     "ai_routes",
     "acp_wire",
+    "acp_prompts",
     "thinking_events",
     "tool_events",
     "presence_events",
@@ -614,7 +616,12 @@ def _members(value: Any, known: set[str], path: str, found: list[str]) -> None:
 
 
 def _acp(spec: Mapping[str, Any], path: str, found: list[str]) -> None:
-    _members(spec, {"cwd", "agent", "session_config"}, path, found)
+    _members(spec, {"cwd", "agent", "session_config", "transport"}, path, found)
+    transport = spec.get("transport", {})
+    _members(transport, {"refuse_prompt"}, f"{path}.transport", found)
+    for index, refusal in enumerate(transport.get("refuse_prompt", [])):
+        if refusal is not None:
+            _members(refusal, ACP_REFUSAL, f"{path}.transport.refuse_prompt[{index}]", found)
     agent = spec.get("agent", {})
     _members(agent, ACP_AGENT, f"{path}.agent", found)
     _members(agent.get("initialize", {}), ACP_INITIALIZE, f"{path}.agent.initialize", found)

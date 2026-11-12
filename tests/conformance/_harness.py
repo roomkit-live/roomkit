@@ -903,6 +903,9 @@ class Harness:
         self.observed.acp_wire = {
             channel_id: list(agent.received) for channel_id, agent in self.acp_agents.items()
         }
+        self.observed.acp_prompts = {
+            channel_id: list(agent.attempts) for channel_id, agent in self.acp_agents.items()
+        }
         self.observed.executors = {
             executor_id: list(calls) for executor_id, calls in self.executors.calls.items()
         }

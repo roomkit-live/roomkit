@@ -14,10 +14,23 @@ from roomkit import ACPSessionInvalidatedError
 from roomkit.models.delivery import STANDALONE
 from roomkit.models.enums import EventType
 from roomkit.providers.ai.base import ProviderError
+from roomkit.turns._error_codec import error_record
 from tests.conftest import make_event
 from tests.test_channels.test_acp import _binding, _channel, _context, _prompt
 
 ROOM = "room-1"
+
+
+def test_invalidation_retains_provider_attributes() -> None:
+    refusal = ACPSessionInvalidatedError("unusable")
+    assert error_record(refusal).attributes == {
+        "retryable": False,
+        "provider": "acp",
+        "status_code": None,
+        "context_overflow": None,
+        "before_request": False,
+        "recovery_authorized": False,
+    }
 
 
 def _refusal(*, authorized: bool = True) -> ACPSessionInvalidatedError:

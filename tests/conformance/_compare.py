@@ -145,6 +145,9 @@ class _Comparison:
         for channel_id, expected in self.expect.get("acp_wire", {}).items():
             actual = self.observed.acp_wire.get(channel_id, [])
             self._check(expected, actual, f"acp_wire.{channel_id}")
+        for channel_id, expected in self.expect.get("acp_prompts", {}).items():
+            actual = self.observed.acp_prompts.get(channel_id, [])
+            self._check(expected, actual, f"acp_prompts.{channel_id}")
         for executor_id, expected in self.expect.get("executors", {}).items():
             actual = self.observed.executors.get(executor_id, [])
             self._check(expected, actual, f"executors.{executor_id}")
