@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `pip install roomkit[gemini]` and `roomkit[realtime-gemini]` stay on google-genai 2.x: 3.0 makes the Gemini API's default version v1, where the Live API and the voices endpoint answer 404, so Gemini Live, Gemini transcription and the TTS voice library failed on a fresh install.
+
 - PostgreSQL preserves channel attachment order across updates and restarts, keeping the first streaming target stable; reattaching a removed channel places it last.
 
 - Protect every message left by a generation hook when a deferred input can no longer be identified; only new tool results may be shortened, and an unsafe overflow fails explicitly (RMK-1576).
