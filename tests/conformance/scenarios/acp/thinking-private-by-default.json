@@ -1,0 +1,196 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/thinking-private-by-default",
+  "title": "ACP thought deltas are private by default; the stream and completed report retain every full chunk",
+  "rules": [
+    "§6.4",
+    "Appendix A.9.1"
+  ],
+  "notes": "Python: channels/_acp_events.py::_on_thought_chunk, channels/_acp_turn.py::_stream and _report_response; tests/test_channels/test_acp.py::TestACPChannel::test_streams_updates_and_reuses_room_session, TestEndOfTurnReport::test_a_finished_turn_reports_what_it_produced; test_acp_backend.py thinking privacy and per-room cases. This case covers thoughts only, not tool or plan updates.",
+  "setup": {
+    "channels": [
+      {
+        "id": "web",
+        "type": "webhook",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "agent_thought_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "First "
+                    }
+                  },
+                  {
+                    "sessionUpdate": "agent_thought_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "réflexion"
+                    }
+                  },
+                  {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "Done."
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "response",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "web",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "thinking_events": {
+      "room-1": [
+        {
+          "type": "thinking_start",
+          "thinking": "",
+          "round": 0,
+          "channel_id": "claude"
+        },
+        {
+          "type": "thinking_delta",
+          "thinking": {
+            "$absent": true
+          },
+          "thinking_length": 6,
+          "round": 0,
+          "channel_id": "claude"
+        },
+        {
+          "type": "thinking_delta",
+          "thinking": {
+            "$absent": true
+          },
+          "thinking_length": 9,
+          "round": 0,
+          "channel_id": "claude"
+        },
+        {
+          "type": "thinking_end",
+          "thinking": "",
+          "round": 0,
+          "channel_id": "claude"
+        }
+      ]
+    },
+    "hooks": {
+      "response": [
+        {
+          "room_id": "room-1",
+          "response": {
+            "channel_id": "claude",
+            "thinking": "First réflexion",
+            "response_content": "Done.",
+            "segments": [
+              "Done."
+            ],
+            "tool_calls_count": 0,
+            "streaming": true,
+            "loop_end_reason": "completed"
+          }
+        }
+      ]
+    },
+    "streamed": {
+      "room-1": {
+        "ws": [
+          {
+            "thinking": "First "
+          },
+          {
+            "thinking": "réflexion"
+          },
+          {
+            "text": "Done."
+          },
+          {
+            "row": {
+              "index": 1,
+              "type": "message",
+              "content": {
+                "body": "Done."
+              }
+            }
+          }
+        ]
+      }
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "Hello"
+          }
+        },
+        {
+          "index": 1,
+          "content": {
+            "body": "Done."
+          }
+        }
+      ]
+    }
+  }
+}
