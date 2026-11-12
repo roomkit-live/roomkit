@@ -15,10 +15,11 @@ from typing import Any
 import acp
 
 from roomkit import ACPChannel, ACPSessionInvalidatedError, ACPTransport
+from tests.conformance._acp_mcp import ScriptedMCPServers
 from tests.conformance._script import Gates
 
 AGENT = {"initialize", "prompts", "new_sessions", "set_config_options", "close_sessions"}
-INITIALIZE = {"protocol_version", "closes_sessions", "agent_info"}
+INITIALIZE = {"protocol_version", "closes_sessions", "agent_info", "mcp_capabilities"}
 PROMPT = {"gate", "updates", "permission", "stop_reason", "usage", "error"}
 SESSION_REPLY = {"gate", "result", "error"}
 REFUSAL = {"reason", "recovery_authorized", "after_prompt"}
@@ -150,6 +151,8 @@ class ScriptedACPAgent:
         capabilities: dict[str, Any] = {}
         if spec.get("closes_sessions", True):
             capabilities["sessionCapabilities"] = {"close": {}}
+        if "mcp_capabilities" in spec:
+            capabilities["mcpCapabilities"] = spec["mcp_capabilities"]
         result: dict[str, Any] = {
             "protocolVersion": spec.get("protocol_version", params.get("protocolVersion")),
             "agentCapabilities": capabilities,
@@ -212,9 +215,10 @@ class ScriptedACPTransport(ACPTransport):
 
 def scripted_acp_channel(
     channel: Mapping[str, Any], gates: Gates
-) -> tuple[ACPChannel, ScriptedACPAgent, ScriptedACPTransport]:
+) -> tuple[ACPChannel, ScriptedACPAgent, ScriptedACPTransport, ScriptedMCPServers]:
     """The channel a scenario's `acp` member describes, and its agent."""
     spec = channel["acp"]
+    mcp = ScriptedMCPServers(spec.get("mcp_servers", []), gates)
     agent = ScriptedACPAgent(spec["agent"], gates)
     transport = ScriptedACPTransport(agent, spec.get("transport", {}))
     return (
@@ -223,10 +227,12 @@ def scripted_acp_channel(
             transport=transport,
             cwd=spec["cwd"],
             additional_directories=spec.get("additional_directories"),
+            mcp_servers=mcp.source(),
             session_config=spec.get("session_config"),
         ),
         agent,
         transport,
+        mcp,
     )
 
 

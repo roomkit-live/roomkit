@@ -142,18 +142,19 @@ class _Comparison:
         for channel_id, expected in self.expect.get("ai_routes", {}).items():
             actual = self.observed.ai_routes.get(channel_id, [])
             self._check(expected, actual, f"ai_routes.{channel_id}")
-        for channel_id, expected in self.expect.get("acp_wire", {}).items():
-            actual = self.observed.acp_wire.get(channel_id, [])
-            self._check(expected, actual, f"acp_wire.{channel_id}")
-        for channel_id, expected in self.expect.get("acp_prompts", {}).items():
-            actual = self.observed.acp_prompts.get(channel_id, [])
-            self._check(expected, actual, f"acp_prompts.{channel_id}")
+        self.acp()
         for executor_id, expected in self.expect.get("executors", {}).items():
             actual = self.observed.executors.get(executor_id, [])
             self._check(expected, actual, f"executors.{executor_id}")
         for kind in ("tool_audit", "session_audit"):
             if kind in self.expect:
                 self._check(self.expect[kind], getattr(self.observed, kind), kind)
+
+    def acp(self) -> None:
+        for kind in ("acp_wire", "acp_prompts", "acp_mcp_requests"):
+            recorded = getattr(self.observed, kind)
+            for channel_id, expected in self.expect.get(kind, {}).items():
+                self._check(expected, recorded.get(channel_id, []), f"{kind}.{channel_id}")
 
     def side_effects(self) -> None:
         for kind in (

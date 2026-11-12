@@ -17,6 +17,7 @@ from tests.conformance._acp import INITIALIZE as ACP_INITIALIZE
 from tests.conformance._acp import PROMPT as ACP_PROMPT
 from tests.conformance._acp import REFUSAL as ACP_REFUSAL
 from tests.conformance._acp import SESSION_REPLY as ACP_SESSION_REPLY
+from tests.conformance._acp_mcp import mcp_problems
 from tests.conformance._delegate_tool import DELEGATE_TOOL_ARGUMENTS
 from tests.conformance._discussion import (
     DISCUSSION_ARGUMENTS,
@@ -376,6 +377,7 @@ EXPECT = {
     "models",
     "ai_routes",
     "acp_wire",
+    "acp_mcp_requests",
     "acp_prompts",
     "thinking_events",
     "tool_events",
@@ -627,11 +629,13 @@ def _acp_directories(spec: Mapping[str, Any], path: str, found: list[str]) -> No
 def _acp(spec: Mapping[str, Any], path: str, found: list[str]) -> None:
     _members(
         spec,
-        {"cwd", "agent", "session_config", "transport", "additional_directories"},
+        {"cwd", "agent", "session_config", "transport", "additional_directories", "mcp_servers"},
         path,
         found,
     )
     _acp_directories(spec, path, found)
+    if "mcp_servers" in spec:
+        found.extend(mcp_problems(spec["mcp_servers"], f"{path}.mcp_servers"))
     transport = spec.get("transport", {})
     _members(transport, {"refuse_prompt"}, f"{path}.transport", found)
     for index, refusal in enumerate(transport.get("refuse_prompt", [])):
@@ -640,6 +644,12 @@ def _acp(spec: Mapping[str, Any], path: str, found: list[str]) -> None:
     agent = spec.get("agent", {})
     _members(agent, ACP_AGENT, f"{path}.agent", found)
     _members(agent.get("initialize", {}), ACP_INITIALIZE, f"{path}.agent.initialize", found)
+    capabilities = agent.get("initialize", {}).get("mcp_capabilities", {})
+    if not isinstance(capabilities, dict) or any(
+        key not in {"http", "sse"} or not isinstance(value, bool)
+        for key, value in capabilities.items()
+    ):
+        found.append(f"{path}.agent.initialize.mcp_capabilities: expected http/sse booleans")
     for index, prompt in enumerate(agent.get("prompts", [])):
         _members(prompt, ACP_PROMPT, f"{path}.agent.prompts[{index}]", found)
     for kind in ("new_sessions", "set_config_options", "close_sessions"):

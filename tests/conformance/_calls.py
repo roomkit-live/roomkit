@@ -443,11 +443,12 @@ def scripted_channel(
     if channel["type"] == ChannelType.HOST:
         return HostChannel(channel["id"])
     if "acp" in channel:
-        acp_channel, acp_agent, transport = read(
+        acp_channel, acp_agent, transport, mcp = read(
             lambda: scripted_acp_channel(channel, harness.gates)
         )
         harness.acp_agents[channel["id"]] = acp_agent
         harness.acp_transports[channel["id"]] = transport
+        harness.acp_mcp[channel["id"]] = mcp
         return acp_channel
     if "model" in channel:
         agent, models = read(

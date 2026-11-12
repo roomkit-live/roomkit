@@ -38,6 +38,7 @@ from roomkit.store.base import ConversationStore
 from roomkit.store.sqlite import SQLiteStore
 from roomkit.tasks import DelegatedTask, DelegateHandler
 from tests.conformance._acp import ScriptedACPAgent, ScriptedACPTransport
+from tests.conformance._acp_mcp import ScriptedMCPServers
 from tests.conformance._agent import ScriptedAIRouter, ScriptedModel, tool_call_record
 from tests.conformance._ai_hooks import generation_record, response_record, tool_round_record
 from tests.conformance._audits import Auditors
@@ -231,6 +232,7 @@ class Harness:
         self.models: dict[str, ScriptedModel] = {}
         self.ai_routers: dict[str, ScriptedAIRouter] = {}
         self.acp_agents: dict[str, ScriptedACPAgent] = {}
+        self.acp_mcp: dict[str, ScriptedMCPServers] = {}
         self.acp_transports: dict[str, ScriptedACPTransport] = {}
         self.auditors = Auditors()
         self.handoff_handlers: dict[str, HandoffHandler] = {}
@@ -932,12 +934,20 @@ class Harness:
         self.observed.acp_prompts = {
             channel_id: list(agent.attempts) for channel_id, agent in self.acp_agents.items()
         }
+        self._collect_acp_mcp()
         self.observed.executors = {
             executor_id: list(calls) for executor_id, calls in self.executors.calls.items()
         }
         tools, sessions, problems = self.auditors.observe()
         self.observed.tool_audit, self.observed.session_audit = tools, sessions
         self._problems.extend(problems)
+
+    def _collect_acp_mcp(self) -> None:
+        self.observed.acp_mcp_requests = {
+            channel_id: list(source.requests) for channel_id, source in self.acp_mcp.items()
+        }
+        for source in self.acp_mcp.values():
+            self._problems.extend(source.problems)
 
 
 def _literal_rooms(scenario: Mapping[str, Any]) -> set[str]:
