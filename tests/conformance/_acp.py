@@ -66,8 +66,10 @@ class ScriptedACPAgent:
                 self._answering.add(task)
                 task.add_done_callback(self._answering.discard)
         finally:
-            for task in list(self._answering):
+            answering = list(self._answering)
+            for task in answering:
                 task.cancel()
+            await asyncio.gather(*answering, return_exceptions=True)
             writer.close()
 
     def _next_prompt(self) -> Mapping[str, Any]:
@@ -161,6 +163,14 @@ class ScriptedACPTransport(ACPTransport):
     def name(self) -> str:
         return "scripted"
 
+    def is_alive(self) -> bool:
+        return (
+            self._writer is not None
+            and not self._writer.is_closing()
+            and self._serving is not None
+            and not self._serving.done()
+        )
+
     async def open(self, client: Any, *, queue: Any) -> Any:
         ours, theirs = socket.socketpair()
         reader, writer = await asyncio.open_connection(sock=ours)
@@ -183,16 +193,18 @@ class ScriptedACPTransport(ACPTransport):
 
 def scripted_acp_channel(
     channel: Mapping[str, Any], gates: Gates
-) -> tuple[ACPChannel, ScriptedACPAgent]:
+) -> tuple[ACPChannel, ScriptedACPAgent, ScriptedACPTransport]:
     """The channel a scenario's `acp` member describes, and its agent."""
     spec = channel["acp"]
     agent = ScriptedACPAgent(spec["agent"], gates)
+    transport = ScriptedACPTransport(agent)
     return (
         ACPChannel(
             channel["id"],
-            transport=ScriptedACPTransport(agent),
+            transport=transport,
             cwd=spec["cwd"],
             session_config=spec.get("session_config"),
         ),
         agent,
+        transport,
     )

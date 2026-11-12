@@ -37,7 +37,7 @@ from roomkit.realtime import EphemeralEvent, EphemeralEventType, InMemoryRealtim
 from roomkit.store.base import ConversationStore
 from roomkit.store.sqlite import SQLiteStore
 from roomkit.tasks import DelegatedTask, DelegateHandler
-from tests.conformance._acp import ScriptedACPAgent
+from tests.conformance._acp import ScriptedACPAgent, ScriptedACPTransport
 from tests.conformance._agent import ScriptedAIRouter, ScriptedModel, tool_call_record
 from tests.conformance._ai_hooks import generation_record, response_record, tool_round_record
 from tests.conformance._audits import Auditors
@@ -219,6 +219,7 @@ class Harness:
         self.models: dict[str, ScriptedModel] = {}
         self.ai_routers: dict[str, ScriptedAIRouter] = {}
         self.acp_agents: dict[str, ScriptedACPAgent] = {}
+        self.acp_transports: dict[str, ScriptedACPTransport] = {}
         self.auditors = Auditors()
         self.handoff_handlers: dict[str, HandoffHandler] = {}
         self.delegate_handlers: dict[str, DelegateHandler] = {}
@@ -613,6 +614,8 @@ class Harness:
                 self._problems.append(f"{path}: {waiters} calls never waited for {room_id}'s lock")
         elif "lock_releases" in step:
             set_lock_releases(self.kit, step["lock_releases"])
+        elif "acp_disconnect" in step:
+            await self.acp_transports[step["acp_disconnect"]].close()
         elif "open" in step:
             self.gates.open(step["open"])
         elif "idle" in step:

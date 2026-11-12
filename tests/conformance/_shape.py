@@ -504,6 +504,7 @@ CALLS |= EXECUTOR_ARGUMENTS | KIT_EXECUTOR_ARGUMENTS
 STEPS = {"await": {"await", "expect"}, "concurrent": {"concurrent"}, "wait_for": {"wait_for"}}
 STEPS |= {"open": {"open"}, "idle": {"idle"}, "wait_for_lock": {"wait_for_lock", "waiters"}}
 STEPS |= {"lock_releases": {"lock_releases"}}
+STEPS |= {"acp_disconnect": {"acp_disconnect"}}
 
 
 def unknown_members(scenario: Mapping[str, Any]) -> list[str]:

@@ -1,0 +1,465 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/session-reconnect-refusal-never-prompts-and-can-be-replaced",
+  "title": "A refused saved value prevents prompting until the host replaces it",
+  "rules": [
+    "§6.4",
+    "§10.6.3"
+  ],
+  "notes": "Python: tests/test_channels/test_acp_session_setup.py::TestARefusedValueFailsClosed::test_a_refused_host_value_fails_the_rooms_next_session; tests/test_channels/test_acp_session_setup.py::TestSessionConfig::test_setting_another_value_replaces_one_the_agent_refuses. Gates and a closed transport pipe establish the ordering; no session state is changed by the runner. Authorized invalidation/rebuild, standalone and notifications are separate contracts.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "new_sessions": [
+              {
+                "result": {
+                  "configOptions": [
+                    {
+                      "id": "model",
+                      "name": "Model",
+                      "type": "select",
+                      "currentValue": "opus",
+                      "options": [
+                        {
+                          "value": "opus",
+                          "name": "Opus"
+                        },
+                        {
+                          "value": "sonnet",
+                          "name": "Sonnet"
+                        },
+                        {
+                          "value": "default",
+                          "name": "Default"
+                        }
+                      ]
+                    },
+                    {
+                      "id": "mode",
+                      "name": "Mode",
+                      "type": "select",
+                      "currentValue": "auto",
+                      "options": [
+                        {
+                          "value": "auto",
+                          "name": "Auto"
+                        },
+                        {
+                          "value": "default",
+                          "name": "Default"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "result": {
+                  "configOptions": [
+                    {
+                      "id": "model",
+                      "name": "Model",
+                      "type": "select",
+                      "currentValue": "opus",
+                      "options": [
+                        {
+                          "value": "opus",
+                          "name": "Opus"
+                        },
+                        {
+                          "value": "sonnet",
+                          "name": "Sonnet"
+                        },
+                        {
+                          "value": "default",
+                          "name": "Default"
+                        }
+                      ]
+                    },
+                    {
+                      "id": "mode",
+                      "name": "Mode",
+                      "type": "select",
+                      "currentValue": "auto",
+                      "options": [
+                        {
+                          "value": "auto",
+                          "name": "Auto"
+                        },
+                        {
+                          "value": "default",
+                          "name": "Default"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "result": {
+                  "configOptions": [
+                    {
+                      "id": "model",
+                      "name": "Model",
+                      "type": "select",
+                      "currentValue": "opus",
+                      "options": [
+                        {
+                          "value": "opus",
+                          "name": "Opus"
+                        },
+                        {
+                          "value": "sonnet",
+                          "name": "Sonnet"
+                        },
+                        {
+                          "value": "default",
+                          "name": "Default"
+                        }
+                      ]
+                    },
+                    {
+                      "id": "mode",
+                      "name": "Mode",
+                      "type": "select",
+                      "currentValue": "auto",
+                      "options": [
+                        {
+                          "value": "auto",
+                          "name": "Auto"
+                        },
+                        {
+                          "value": "default",
+                          "name": "Default"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            ],
+            "set_config_options": [
+              {
+                "result": {
+                  "configOptions": [
+                    {
+                      "id": "model",
+                      "name": "Model",
+                      "type": "select",
+                      "currentValue": "sonnet",
+                      "options": [
+                        {
+                          "value": "opus",
+                          "name": "Opus"
+                        },
+                        {
+                          "value": "sonnet",
+                          "name": "Sonnet"
+                        },
+                        {
+                          "value": "default",
+                          "name": "Default"
+                        }
+                      ]
+                    },
+                    {
+                      "id": "mode",
+                      "name": "Mode",
+                      "type": "select",
+                      "currentValue": "auto",
+                      "options": [
+                        {
+                          "value": "auto",
+                          "name": "Auto"
+                        },
+                        {
+                          "value": "default",
+                          "name": "Default"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "error": {
+                  "code": -32602,
+                  "message": "model refused"
+                }
+              },
+              {
+                "result": {
+                  "configOptions": [
+                    {
+                      "id": "model",
+                      "name": "Model",
+                      "type": "select",
+                      "currentValue": "default",
+                      "options": [
+                        {
+                          "value": "opus",
+                          "name": "Opus"
+                        },
+                        {
+                          "value": "sonnet",
+                          "name": "Sonnet"
+                        },
+                        {
+                          "value": "default",
+                          "name": "Default"
+                        }
+                      ]
+                    },
+                    {
+                      "id": "mode",
+                      "name": "Mode",
+                      "type": "select",
+                      "currentValue": "auto",
+                      "options": [
+                        {
+                          "value": "auto",
+                          "name": "Auto"
+                        },
+                        {
+                          "value": "default",
+                          "name": "Default"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "channel_call",
+      "channel_id": "claude",
+      "room_id": "room-1",
+      "verb": "set_config_option",
+      "arguments": {
+        "config_id": "model",
+        "value": "sonnet"
+      }
+    },
+    {
+      "acp_disconnect": "claude"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go"
+        }
+      },
+      "expect": {
+        "result": {
+          "error": {
+            "$contains": "could not take model='sonnet'"
+          },
+          "response_metadata": {
+            "acp": {
+              "prompt_returned": {
+                "$absent": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "channel_call",
+      "channel_id": "claude",
+      "room_id": "room-1",
+      "verb": "config_options",
+      "arguments": {},
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "call": "channel_call",
+      "channel_id": "claude",
+      "room_id": "room-1",
+      "verb": "set_config_option",
+      "arguments": {
+        "config_id": "model",
+        "value": "default"
+      },
+      "expect": {
+        "result": {
+          "model": "default",
+          "mode": "auto"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Allowed"
+        }
+      }
+    },
+    {
+      "call": "channel_call",
+      "channel_id": "claude",
+      "room_id": "room-1",
+      "verb": "session_config",
+      "arguments": {},
+      "expect": {
+        "result": {
+          "model": "default",
+          "mode": "auto"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "acp_wire": {
+      "claude": [
+        {
+          "method": "initialize"
+        },
+        {
+          "method": "session/new",
+          "params": {
+            "cwd": "/srv/project",
+            "_meta": {
+              "roomkit.live/roomId": "room-1",
+              "roomkit.live/sessionScope": "room"
+            }
+          }
+        },
+        {
+          "method": "session/set_config_option",
+          "params": {
+            "sessionId": "session-1",
+            "configId": "model",
+            "value": "sonnet"
+          }
+        },
+        {
+          "method": "initialize"
+        },
+        {
+          "method": "session/new",
+          "params": {
+            "cwd": "/srv/project",
+            "_meta": {
+              "roomkit.live/roomId": "room-1",
+              "roomkit.live/sessionScope": "room"
+            }
+          }
+        },
+        {
+          "method": "session/set_config_option",
+          "params": {
+            "sessionId": "session-2",
+            "configId": "model",
+            "value": "sonnet"
+          }
+        },
+        {
+          "method": "session/close",
+          "params": {
+            "sessionId": "session-2"
+          }
+        },
+        {
+          "method": "session/new",
+          "params": {
+            "cwd": "/srv/project",
+            "_meta": {
+              "roomkit.live/roomId": "room-1",
+              "roomkit.live/sessionScope": "room"
+            }
+          }
+        },
+        {
+          "method": "session/set_config_option",
+          "params": {
+            "sessionId": "session-3",
+            "configId": "model",
+            "value": "default"
+          }
+        },
+        {
+          "method": "session/prompt",
+          "params": {
+            "sessionId": "session-3",
+            "prompt": [
+              {
+                "text": {
+                  "$contains": "Allowed"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "room-1": {
+        "metadata": {
+          "roomkit:channel_state:claude": {
+            "config": {
+              "model": "default"
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -129,6 +129,10 @@ class ChannelNotBoundError(Exception):
 
 def error_of(error: Exception) -> dict[str, Any]:
     """The suite's name of *error*, with its reason when it has one."""
+    if isinstance(error, ConnectionError) or getattr(error, "kind", "").endswith(
+        ":ConnectionError"
+    ):
+        return {"name": "acp_connection_closed"}
     if getattr(error, "kind", "").endswith(":RequestError"):
         return {"name": "acp_request_refused"}
     if (
@@ -439,8 +443,11 @@ def scripted_channel(
     if channel["type"] == ChannelType.HOST:
         return HostChannel(channel["id"])
     if "acp" in channel:
-        acp_channel, acp_agent = read(lambda: scripted_acp_channel(channel, harness.gates))
+        acp_channel, acp_agent, transport = read(
+            lambda: scripted_acp_channel(channel, harness.gates)
+        )
         harness.acp_agents[channel["id"]] = acp_agent
+        harness.acp_transports[channel["id"]] = transport
         return acp_channel
     if "model" in channel:
         agent, models = read(
