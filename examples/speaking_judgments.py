@@ -31,6 +31,8 @@ The classifier is chosen by ``CLASSIFIER``:
   ``TYPESAFE_API_KEY``);
 - ``openai``: OpenAI's Decisions API on ``gpt-6-luna``, with probabilities
   (``pip install roomkit[openai]``, ``OPENAI_API_KEY``);
+- ``gemini``: Gemini's Decisions API on ``gemini-decision-1``, calibrated
+  (``pip install roomkit[gemini]``, ``GEMINI_API_KEY``);
 - ``anthropic``: Claude Haiku under a JSON schema (``ANTHROPIC_API_KEY``),
   with probabilities 0 or 1; a generation takes about a second, so the channel
   waits up to 5 s for a decision rather than its default 2 s.
@@ -57,6 +59,7 @@ from roomkit import (
     ChannelCategory,
     Classifier,
     ClassifierSpeakPolicy,
+    GeminiClassifier,
     HookExecution,
     HookTrigger,
     InboundMessage,
@@ -114,6 +117,8 @@ def make_classifier(kind: str) -> Classifier:
         return JevClassifier(require_env("TYPESAFE_API_KEY")["TYPESAFE_API_KEY"])
     if kind == "openai":
         return OpenAIClassifier(require_env("OPENAI_API_KEY")["OPENAI_API_KEY"])
+    if kind == "gemini":
+        return GeminiClassifier(require_env("GEMINI_API_KEY")["GEMINI_API_KEY"])
     if kind == "anthropic":
         key = require_env("ANTHROPIC_API_KEY")["ANTHROPIC_API_KEY"]
         config = AnthropicConfig(api_key=key, model="claude-haiku-5-5")

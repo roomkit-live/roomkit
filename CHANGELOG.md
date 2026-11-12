@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`GeminiClassifier`, on Gemini's Decisions API.** `GeminiClassifier(api_key)` answers RoomKit's yes/no, choice and score questions on `gemini-decision-1` (`POST /v1beta/decisions`), with probabilities Google documents as calibrated, ~250-450 ms a call measured with the network; a structured state goes as its JSON, and an input the API's filters block fails the call with `ClassifierError`. `client=` takes a `google.genai.Client` of the caller's. `CLASSIFIER=gemini` in `examples/classifier_judgments.py`, `speaking_judgments.py` and `discussion_dispatch.py` (RFC §6.8).
+
 ### Changed
 
 - **The `gemini` and `realtime-gemini` extras install google-genai 3.2 or later, below 4, with its `httpx` extra.** RoomKit hands the SDK its own httpx client, which 3.x installs only with that extra, and every Gemini Developer API client RoomKit builds calls v1beta: 3.0 made v1 the default, where the Live API and the voices endpoint answer 404, so a Live session would not open and a stored voice would read as missing. An application that pins google-genai below 3.2 has to lift that pin.

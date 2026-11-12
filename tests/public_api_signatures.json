@@ -990,6 +990,11 @@
   "roomkit.FrameworkEvent": {
     "__init__": ["def", "*", "type", "room_id=None", "channel_id=None", "event_id=None", "timestamp=<factory>", "data=<factory>"]
   },
+  "roomkit.GeminiClassifier": {
+    "__init__": ["def", "api_key=None", "*", "model='gemini-decision-1'", "timeout=3.0", "client=None"],
+    "classify": ["async def", "state", "questions"],
+    "close": ["async def"]
+  },
   "roomkit.HTTPChannel": {
     "__call__": ["def", "channel_id", "*", "provider=None"]
   },

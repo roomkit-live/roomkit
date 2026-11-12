@@ -15,6 +15,7 @@ from roomkit.classifiers.base import (
     YesNoQuestion,
     check_answers,
 )
+from roomkit.classifiers.gemini import GeminiClassifier
 from roomkit.classifiers.jev import JevClassifier
 from roomkit.classifiers.llamacpp import LlamaCppClassifier
 from roomkit.classifiers.llm import LLMClassifier
@@ -29,6 +30,7 @@ __all__ = [
     "ChoiceQuestion",
     "Classifier",
     "ClassifierError",
+    "GeminiClassifier",
     "JevClassifier",
     "LLMClassifier",
     "LlamaCppClassifier",

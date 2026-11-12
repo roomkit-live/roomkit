@@ -5953,7 +5953,7 @@ Discussion(
   the message, the candidates, the `DispatchDecision` with its `reason` and
   `judgments`, `duration_ms`).
 - `ClassifierDispatchPolicy` asks one yes/no question per candidate in one
-  classifier call (`JevClassifier`, `OpenAIClassifier`, `SystemOneClassifier` for any
+  classifier call (`JevClassifier`, `OpenAIClassifier`, `GeminiClassifier`, `SystemOneClassifier` for any
   `/v1/systemone` server such as Ollama or a LiteLLM proxy, `LlamaCppClassifier` for a
   decision model RoomKit runs through llama.cpp, `LLMClassifier`); `MockDispatchPolicy` scripts decisions for tests; any
   `DispatchPolicy.decide(DispatchTurn) -> DispatchDecision` will do.

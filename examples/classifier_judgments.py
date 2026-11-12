@@ -19,6 +19,9 @@ The classifier is chosen by ``CLASSIFIER``:
   (``pip install roomkit[typesafe]``, ``TYPESAFE_API_KEY``);
 - ``openai``: OpenAI's Decisions API on ``gpt-6-luna``, probabilities, ~150-450 ms
   a call (``pip install roomkit[openai]``, ``OPENAI_API_KEY``);
+- ``gemini``: Gemini's Decisions API on ``gemini-decision-1``, calibrated
+  probabilities, ~250-450 ms a call (``pip install roomkit[gemini]``,
+  ``GEMINI_API_KEY``);
 - ``anthropic``: Claude Haiku answering under a JSON schema, every probability 0
   or 1 (``ANTHROPIC_API_KEY``);
 - ``system-one``: any server with a System One API, an Ollama, a LiteLLM proxy,
@@ -31,6 +34,7 @@ The classifier is chosen by ``CLASSIFIER``:
 Run with:
     uv run python examples/classifier_judgments.py
     CLASSIFIER=jev TYPESAFE_API_KEY=... uv run python examples/classifier_judgments.py
+    CLASSIFIER=gemini GEMINI_API_KEY=... uv run python examples/classifier_judgments.py
     CLASSIFIER=system-one SYSTEM_ONE_URL=http://localhost:11434 SYSTEM_ONE_MODEL=d3:2b \
         uv run python examples/classifier_judgments.py
     CLASSIFIER=llamacpp uv run python examples/classifier_judgments.py
@@ -52,6 +56,7 @@ from roomkit import (
     ChoiceAnswer,
     ChoiceQuestion,
     Classifier,
+    GeminiClassifier,
     JevClassifier,
     LlamaCppClassifier,
     LLMClassifier,
@@ -124,6 +129,8 @@ def make_classifier() -> Classifier:
         return JevClassifier(require_env("TYPESAFE_API_KEY")["TYPESAFE_API_KEY"])
     if kind == "openai":
         return OpenAIClassifier(require_env("OPENAI_API_KEY")["OPENAI_API_KEY"])
+    if kind == "gemini":
+        return GeminiClassifier(require_env("GEMINI_API_KEY")["GEMINI_API_KEY"])
     if kind == "anthropic":
         key = require_env("ANTHROPIC_API_KEY")["ANTHROPIC_API_KEY"]
         config = AnthropicConfig(api_key=key, model="claude-haiku-5-5")
