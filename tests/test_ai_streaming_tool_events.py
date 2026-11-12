@@ -1511,3 +1511,62 @@ async def test_a_stream_closed_on_a_call_s_end_still_publishes_it(served: bool, 
         [('{"error": "Tool call aborted"}', True) if cut else ("found", False)]
     ]
     assert (ends[0][1] is None) is cut
+
+
+@pytest.mark.parametrize(
+    ("handed", "ended"),
+    [
+        (0, [(_ABORTED, True), ("found", False)]),
+        (1, [("found", False), ("found", False)]),
+    ],
+    ids=["first-end", "second-end"],
+)
+async def test_a_round_cut_as_an_end_is_handed_out_ends_its_calls_as_stored(
+    handed: int, ended: list[tuple[str, bool]]
+) -> None:
+    """A round of two calls whose turn is cut as one of its ends is handed
+    out: only the round's first end, an item its owner drops at the cut,
+    ends aborted; the second rode its start before that item, and its call
+    ends as it did, as the owner stores both (RFC §6.4, §10.6.4)."""
+
+    async def search(name: str, arguments: dict[str, Any]) -> str:
+        return "found"
+
+    calls = [
+        AIToolCall(id="c1", name="search", arguments={}),
+        AIToolCall(id="c2", name="search", arguments={}),
+    ]
+    provider = MockAIProvider(
+        streaming=True,
+        ai_responses=[AIResponse(content="", tool_calls=calls), AIResponse(content="never")],
+    )
+    channel = AIChannel("ai1", provider=provider, tool_handler=search)
+    ends: list[list[Any]] = []
+
+    async def publish_tool(event_type: Any, room_id: Any, parts: Any, round_idx: int, **kw: Any):
+        if event_type == EphemeralEventType.TOOL_CALL_END:
+            ends.append(parts)
+
+    channel._publish_tool_event = publish_tool  # type: ignore[method-assign]
+    binding = ChannelBinding(
+        channel_id="ai1",
+        room_id="r1",
+        channel_type=ChannelType.AI,
+        category=ChannelCategory.INTELLIGENCE,
+        metadata={"tools": _TOOLS},
+    )
+    output = await channel.on_event(
+        make_event(room_id="r1"), binding, RoomContext(room=Room(id="r1"))
+    )
+    assert output.response_stream is not None
+    seen = 0
+    async for item in output.response_stream:
+        if isinstance(item, ToolCallEndMarker):
+            seen += 1
+            if seen > handed:
+                break
+    closing = contextvars.copy_context()
+    closing.run(set_turn_stream_cut, True)
+    await asyncio.get_running_loop().create_task(output.response_stream.aclose(), context=closing)
+
+    assert [[(p.result, p.is_error) for p in parts] for parts in ends] == [ended]

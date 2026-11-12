@@ -211,11 +211,12 @@ def _reached_ends(
     ends: list[ToolCallEndMarker], markers: list[ToolCallStartMarker], taken: int
 ) -> list[ToolCallEndMarker | None]:
     """The ends of a round its turn cut that reached the turn's owner (RFC
-    §10.6.4): those its reader took, before *taken*, and the later ones that
-    rode their starts; the one handed out at the cut, an item the owner
-    dropped, did not."""
+    §10.6.4): those its reader took, before *taken*, and every other that
+    rode its start. Each call of the round ended before its first end was
+    handed out, so the others' ends rode their starts ahead of that first
+    end's item; only that item, handed out at the cut, the owner dropped."""
     return [
-        end if index < taken or (index > taken and marker.ended is not None) else None
+        end if index < taken or (index > 0 and marker.ended is not None) else None
         for index, (end, marker) in enumerate(zip(ends, markers, strict=False))
     ]
 
@@ -602,8 +603,8 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         room's realtime. A reader that stopped took the ends it was handed,
         each call ending as it did. A cut turn's owner closes each call as
         its end reached it (RFC §10.6.4): read by its reader, or riding its
-        start; the end handed out when the cut came reached it as an item it
-        dropped, and that call ends aborted.
+        start; the round's first end, handed out as an item when the cut
+        came, it dropped, and that call ends aborted.
         """
         ends = [
             # Each call's end was set on its start as it finished; one is
