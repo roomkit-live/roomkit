@@ -1,0 +1,153 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/mcp-close-during-callback",
+  "title": "Closing the ACP channel stops a held initial MCP callback before session/new",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: ACPChannel.close/_say_goodbye cancel a preparing turn. The native full-review reproduction used kit.process_inbound and public channel.close; Rust previously left the initial MCP callback pending after closing the transport. acp.close invokes public channel.close directly, so kit shutdown cannot mask an orphaned preparation. The callback gate is never released.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "initialize": {
+              "mcp_capabilities": {
+                "http": true,
+                "sse": true
+              }
+            }
+          },
+          "mcp_servers": {
+            "mode": "async",
+            "responses": [
+              {
+                "servers": [
+                  {
+                    "name": "workspace",
+                    "command": "/usr/local/bin/workspace-mcp",
+                    "args": [
+                      "--room",
+                      "room-1"
+                    ],
+                    "env": [
+                      {
+                        "name": "ROOM_ID",
+                        "value": "room-1"
+                      },
+                      {
+                        "name": "MODE",
+                        "value": "text"
+                      }
+                    ]
+                  }
+                ],
+                "gate": "held"
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "response",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "background": true,
+      "as": "turn"
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "call": "acp.close",
+      "channel_id": "claude"
+    },
+    {
+      "await": "turn",
+      "expect": {
+        "result": {
+          "error": "The turn ended in the middle of its stream",
+          "response_metadata": {
+            "acp": {
+              "interrupted": {
+                "$absent": true
+              },
+              "prompt_returned": {
+                "$absent": true
+              },
+              "stop_reason": {
+                "$absent": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "acp.close",
+      "channel_id": "claude",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "acp_wire": {
+      "claude": [
+        {
+          "method": "initialize"
+        }
+      ]
+    },
+    "acp_mcp_requests": {
+      "claude": [
+        "room-1"
+      ]
+    },
+    "hooks": {
+      "response": []
+    }
+  }
+}
