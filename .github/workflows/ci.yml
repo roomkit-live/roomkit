@@ -284,15 +284,14 @@ jobs:
       # imports the httpx2 compatibility package explicitly, so both transient
       # test dependencies must be present during collection.
       # A file's POSTGRES_DSN cases run only here: the Redis pass below unsets
-      # the DSN and the `test` job has none, so a file left out of this list
-      # runs them nowhere. The JUnit report keeps one result per test for the
-      # receipts.
+      # the DSN and the `test` job has none, so a file left out of this list,
+      # or of the shared scenarios' step below, runs them nowhere. The JUnit
+      # report keeps one result per test for the receipts.
       - name: Run integration tests
         run: >-
           uv run --with fastapi --with httpx2 pytest -v
           --junitxml=test-results/integration.xml
           tests/test_store_postgres.py
-          tests/conformance/test_postgres.py
           tests/test_postgres_multiprocess.py
           tests/test_verification_release_cancel.py
           tests/test_store_room_contract.py
@@ -321,6 +320,14 @@ jobs:
           uv run pytest -v -m stress
           --junitxml=test-results/postgres-stress.xml
           tests/test_store_postgres.py
+
+      # The shared scenarios on PostgreSQL: each case runs on a schema of its
+      # own, created before it and dropped after it, so they run in parallel.
+      - name: Run the shared scenarios on PostgreSQL
+        run: >-
+          uv run pytest -v -n auto --dist worksteal
+          --junitxml=test-results/postgres-scenarios.xml
+          tests/conformance/test_postgres.py
 
       - name: Upload the JUnit reports
         if: ${{ !cancelled() }}
