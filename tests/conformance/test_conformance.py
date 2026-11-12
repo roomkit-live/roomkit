@@ -95,10 +95,33 @@ _ORDER_OF_ITS_CUT = (
 _ANSWERS_AFTER_ITS_CUT = {"tools/a-call-that-returns-once-its-turn-is-cut-ends-aborted"}
 
 
-# Store, routing, tenancy, idempotency and room lifecycle scenarios run on each store that
-# needs no server: the in-memory store, the kit's default, and SQLiteStore.
-# Composition also checks that fragments leave no persisted partial calls.
+# The scenarios whose contract the store carries run on each store that needs no
+# server: the in-memory store, the kit's default, and SQLiteStore. Store, routing,
+# tenancy, idempotency and room lifecycle; composition, which leaves no persisted
+# partial calls; locks, where a failed release undoes nothing the store holds and the
+# delivery cursor is a store write (§13.5), with the two discussion regenerations that
+# carry their selection lock's failed release; identity verification, whose requests,
+# verifications and held messages are stored (§11.7); and every scenario with other
+# processes, whose kits share only the store and the lock manager: a discussion keeps
+# its state, queue and lease in its room (§19.7.5 rule 16).
 _STORES = ("memory", "sqlite")
+
+_ON_EACH_STORE = (
+    "store/",
+    "rooms/",
+    "idempotency/",
+    "routing/",
+    "tenancy/",
+    "delivery/",
+    "broadcast/",
+    "tool-composition/",
+    "channel-call/",
+    "orchestration/a-worker-cut-",
+    "orchestration/a-team-cut-",
+    "locks/",
+    "verification/",
+    "discussion/a-discussion-regeneration-carries-its-selection-lock-release-error",
+)
 
 _WORKER_DEADLINES = {
     "orchestration/a-delegation-its-call-bound-cuts-posts-the-worker-cancelled",
@@ -106,15 +129,46 @@ _WORKER_DEADLINES = {
     "orchestration/a-worker-past-its-task-timeout-is-cut-and-read-as-timed-out",
 }
 
+# Scenario id → why it runs in memory only, and its card. Each passes there only
+# because the in-memory store never yields; each entry goes once its card is fixed.
+_MEMORY_ONLY = {
+    "locks/a-room-taken-from-its-message-leaves-its-failed-release-out": (
+        "RMK-1661: its two ON_ROOM_CREATED hooks run in parallel, and on SQLite the "
+        "attach's release fails after the scenario set releases failing"
+    ),
+    "verification/a-release-from-a-hook-that-closes-the-room-is-answered-by-no-agent": (
+        "RMK-1660: the released answer leaves the lane before the hook's work is over, "
+        "while close_room waits on the file"
+    ),
+}
+
+
+def _runs_in_processes(scenario: dict[str, Any]) -> bool:
+    """Whether other processes serve the scenario's rooms too (``setup.processes``)."""
+    return bool(scenario.get("setup", {}).get("processes"))
+
+
+def _stores(scenario_id: str, scenario: dict[str, Any]) -> tuple[str, ...]:
+    if scenario_id in _MEMORY_ONLY:
+        return ("memory",)
+    if (
+        scenario_id.startswith(_ON_EACH_STORE)
+        or scenario_id in _WORKER_DEADLINES
+        or _runs_in_processes(scenario)
+    ):
+        return _STORES
+    return ("memory",)
+
 
 def _cases() -> list[Any]:
     cases = []
     for path in _scenarios():
         scenario_id = path.relative_to(SCENARIOS).with_suffix("").as_posix()
+        scenario = _load(path)
         marks = []
-        if _turn_calls_the_kit(_load(path)):
+        if _turn_calls_the_kit(scenario):
             marks.append(pytest.mark.in_process(_IN_PROCESS))
-        if _times_out_after_its_turn(_load(path)):
+        if _times_out_after_its_turn(scenario):
             marks.append(pytest.mark.in_process(_AFTER_ITS_TURN))
         if scenario_id in _ANSWERS_AFTER_ITS_CUT:
             marks.append(pytest.mark.in_process(_ORDER_OF_ITS_CUT))
@@ -124,27 +178,7 @@ def _cases() -> list[Any]:
                     reason=KNOWN_FAILURES[scenario_id], strict=True, raises=AssertionError
                 )
             )
-        stores = (
-            _STORES
-            if scenario_id.startswith(
-                (
-                    "store/",
-                    "rooms/",
-                    "idempotency/",
-                    "routing/",
-                    "tenancy/",
-                    "delivery/",
-                    "broadcast/",
-                    "tool-composition/",
-                    "channel-call/",
-                    "orchestration/a-worker-cut-",
-                    "orchestration/a-team-cut-",
-                )
-            )
-            or scenario_id in _WORKER_DEADLINES
-            else ("memory",)
-        )
-        for store in stores:
+        for store in _stores(scenario_id, scenario):
             name = scenario_id if store == "memory" else f"{scenario_id}[{store}]"
             cases.append(pytest.param(path, store, id=name, marks=marks))
     return cases
