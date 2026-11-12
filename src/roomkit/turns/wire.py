@@ -302,6 +302,20 @@ class CallContext(BaseModel):
     allowed_names: list[str] | None = None
     """The names the turn admits; ``None`` before its toolset was resolved."""
     requester: str | None = None
+    response_metadata: dict[str, Any] | None = None
+    """The turn's response-metadata record as the call left the executor,
+    which the handler reads and writes a copy of on the owner; ``None`` for a
+    call made outside the turn (RFC §10.6.5)."""
+
+
+class RecordChanges(BaseModel):
+    """What an owner-served handler changed of the turn's record, measured
+    against the copy its call carried (RFC §10.6.5)."""
+
+    written: dict[str, Any] = Field(default_factory=dict)
+    """Each key it set to another value, with that value."""
+    removed: list[str] = Field(default_factory=list)
+    """Each key the call carried that it removed."""
 
 
 class ToolCall(BaseModel):
@@ -391,6 +405,8 @@ class ToolResult(BaseModel):
     error: ErrorRecord | None = None
     structured_content: dict[str, Any] | None = None
     """The structured copy the handler wrote on its call (RFC §21.4)."""
+    record_changes: RecordChanges | None = None
+    """What the handler changed of the turn's record, whatever its outcome."""
 
 
 class HostResult(BaseModel):
@@ -401,6 +417,8 @@ class HostResult(BaseModel):
     call_id: str
     result: Any = None
     error: ErrorRecord | None = None
+    record_changes: RecordChanges | None = None
+    """What the verb changed of the turn's record, whatever its outcome."""
 
 
 # -- Channel control: owner to executor, outside any turn ----------------------

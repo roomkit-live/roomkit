@@ -20,7 +20,7 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import logging
-from collections.abc import Callable, Coroutine, Generator
+from collections.abc import Callable, Coroutine, Generator, Mapping
 from contextlib import contextmanager
 from functools import partial
 from typing import TYPE_CHECKING, Any
@@ -31,6 +31,7 @@ from roomkit.core.exceptions import ToolRefusedError, UnservedToolCallError
 from roomkit.core.task_utils import acting_tasks, close_callers
 from roomkit.tools.context import ToolCallContext, owner_served_call
 from roomkit.tools.result import as_tool_result
+from roomkit.turns._call_record import changes_of
 from roomkit.turns._codec import encode_result
 from roomkit.turns._error_codec import error_record
 from roomkit.turns.base import response_depth
@@ -41,7 +42,7 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable
 
     from roomkit.turns.base import OwnerHost, OwnerTools
-    from roomkit.turns.wire import CallContext, Control, TurnRequest
+    from roomkit.turns.wire import CallContext, Control, RecordChanges, TurnRequest
 
 logger = logging.getLogger("roomkit.turns")
 
@@ -137,29 +138,42 @@ class OwnerCalls:
 
     async def _tool_result(self, call: ToolCall) -> ToolResult:
         """What the tool's handler made of *call*, as it crosses back."""
+        served = _Served(call.context.response_metadata)
         try:
-            with self._serving(call.context) as record:
+            with self._serving(call.context, served) as record:
                 if self._tools is None:
                     raise UnservedToolCallError(
                         f"No tool {call.name!r} is served by the room owner"
                     )
                 answer = await self._tools.serve(self._request, call)
         except UnservedToolCallError as exc:
-            return ToolResult(call_id=call.call_id, outcome="unserved", error=error_record(exc))
+            return ToolResult(
+                call_id=call.call_id,
+                outcome="unserved",
+                error=error_record(exc),
+                record_changes=served.changes(),
+            )
         except ToolRefusedError as exc:
-            return ToolResult(call_id=call.call_id, outcome="refused", error=error_record(exc))
+            return ToolResult(
+                call_id=call.call_id,
+                outcome="refused",
+                error=error_record(exc),
+                record_changes=served.changes(),
+            )
         except Exception as exc:
             logger.debug("Owner-served call %s failed", call.name, exc_info=True)
-            return _tool_failed(call.call_id, exc)
+            return _tool_failed(call.call_id, exc, served.changes())
         return ToolResult(
             call_id=call.call_id,
             outcome="served",
             result=encode_result(as_tool_result(answer)),
             structured_content=record.structured_content,
+            record_changes=served.changes(),
         )
 
     async def _verb_result(self, call: HostCall) -> HostResult:
         """What the verb of *call* made, as it crosses back."""
+        served = _Served(call.context.response_metadata)
         try:
             if self._host is None:
                 raise ValueError(f"No verb {call.verb!r} is served by the room owner")
@@ -168,17 +182,18 @@ class OwnerCalls:
                 # input: no tool call's context is its.
                 value = await self._host.call(self._request, call.verb, call.arguments)
             else:
-                with self._serving(call.context):
+                with self._serving(call.context, served):
                     value = await self._host.call(self._request, call.verb, call.arguments)
         except Exception as exc:
             logger.debug("Host call %s failed", call.verb, exc_info=True)
-            return _verb_failed(call.call_id, exc)
-        return HostResult(call_id=call.call_id, result=value)
+            return _verb_failed(call.call_id, exc, served.changes())
+        return HostResult(call_id=call.call_id, result=value, record_changes=served.changes())
 
     @contextmanager
-    def _serving(self, context: CallContext) -> Generator[ToolCallContext]:
+    def _serving(self, context: CallContext, served: _Served) -> Generator[ToolCallContext]:
         """Run the enclosed call under what the turn gave it, the room and
-        the channel being the request's; a call naming others is refused."""
+        the channel being the request's, the turn's record a copy *served*
+        keeps; a call naming others is refused."""
         request = self._request
         if context.room_id not in ("", request.room_id) or context.channel_id not in (
             "",
@@ -204,13 +219,36 @@ class OwnerCalls:
             # as deep as its response.
             chain_depth=max(context.chain_depth, response_depth(request)),
             allowed_names=context.allowed_names,
-        ):
+            response_metadata=context.response_metadata,
+        ) as worked:
+            served.worked = worked
             yield record
 
 
-def _tool_failed(call_id: str, exc: BaseException) -> ToolResult:
-    return ToolResult(call_id=call_id, outcome="failed", error=error_record(exc))
+class _Served:
+    """The turn's record of one served call: the copy it carried, and the
+    one its handler worked on."""
+
+    def __init__(self, carried: dict[str, Any] | None) -> None:
+        self.carried = carried
+        self.worked: Mapping[str, Any] | None = None
+
+    def changes(self) -> RecordChanges | None:
+        """What the handler changed of what the call carried."""
+        if self.carried is None or self.worked is None:
+            return None
+        return changes_of(self.carried, self.worked)
 
 
-def _verb_failed(call_id: str, exc: BaseException) -> HostResult:
-    return HostResult(call_id=call_id, error=error_record(exc))
+def _tool_failed(
+    call_id: str, exc: BaseException, changes: RecordChanges | None = None
+) -> ToolResult:
+    return ToolResult(
+        call_id=call_id, outcome="failed", error=error_record(exc), record_changes=changes
+    )
+
+
+def _verb_failed(
+    call_id: str, exc: BaseException, changes: RecordChanges | None = None
+) -> HostResult:
+    return HostResult(call_id=call_id, error=error_record(exc), record_changes=changes)

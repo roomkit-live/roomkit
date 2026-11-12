@@ -16,7 +16,7 @@ import pytest
 from roomkit import RoomKit
 from roomkit.channels._tool_registry import orchestration_tool
 from roomkit.channels.agent import Agent
-from roomkit.core.exceptions import UnservedToolCallError
+from roomkit.core.exceptions import ToolRefusedError, UnservedToolCallError
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import ChannelCategory, HookExecution, HookTrigger
 from roomkit.models.event import TextContent
@@ -155,14 +155,42 @@ async def test_a_handler_runs_on_the_owner_under_what_the_turn_gave_its_call(
     assert seen["depth"] == 1
     assert seen["actor"] == "alice"
     assert "probe" in seen["allowed"]
-    # The turn's record is the executor's.
-    assert seen["record"] is None
+    # The handler reads a copy of the turn's record (RFC §10.6.5).
+    assert seen["record"] is not None
     [report] = reports
     assert report.result == '{"ok": 1}'
     assert report.structured_content == {"rows": 2}
     assert not report.is_error
     # The model read the answer and the turn went on.
     assert len(agent.provider.calls) == 2
+    await kit.close()
+
+
+@pytest.mark.parametrize("refuses", [False, True], ids=["served", "refused"])
+async def test_what_a_handler_writes_on_the_turns_record_reaches_the_turns_end(
+    refuses: bool,
+) -> None:
+    """A fact of the turn the owner's handler learns reaches the turn's
+    record as a local handler's would, whether it answered or refused
+    (RFC §10.6.5)."""
+
+    async def serve(arguments: dict[str, Any]) -> str:
+        record = current_response_metadata()
+        assert record is not None
+        record["read"] = {"doc-1": "page 3"}
+        if refuses:
+            raise ToolRefusedError("not this one")
+        return "found"
+
+    agent = _agent("agent", _call("probe", {}), "done")
+    kit = await _kit(agent, attach=("agent",))
+    kit._owner_tools.of("agent").register(
+        orchestration_tool(PROBE, serve), room_id="r1", owner=object()
+    )
+
+    result = await _say(kit, "go")
+
+    assert result.response_metadata["read"] == {"doc-1": "page 3"}
     await kit.close()
 
 

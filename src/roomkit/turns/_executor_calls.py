@@ -6,7 +6,8 @@ owner answers once. A verb of the turn's ``TurnHost`` is a ``host_call``,
 answered the same way. The call keeps the bound the channel gives it; a call cut
 (its bound expired, its turn cancelled) is withdrawn with ``call_cancel``.
 The handler on the owner reads what a local one would read of the turn,
-carried in the call's context.
+carried in the call's context, the turn's response-metadata record included:
+what it changed of that record is applied to the turn's when its answer comes.
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from uuid import uuid4
 
 from roomkit.channels._tool_registry import TurnOwnerTools, orchestration_tool
 from roomkit.tools.context import (
+    current_response_metadata,
     current_tool_actor_id,
     current_tool_allowed_names,
     current_tool_call,
@@ -26,6 +28,7 @@ from roomkit.tools.context import (
     current_tool_requester,
     current_tool_room_id,
 )
+from roomkit.turns._call_record import apply_changes, carried_record
 from roomkit.turns._codec import decode_result
 from roomkit.turns.wire import CallCancel, CallContext, HostCall, HostResult, ToolCall
 
@@ -33,7 +36,7 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
     from roomkit.turns._error_codec import ErrorClasses
-    from roomkit.turns.wire import Frame, ToolResult, TurnRequest
+    from roomkit.turns.wire import Frame, RecordChanges, ToolResult, TurnRequest
 
 
 class ExecutorCalls:
@@ -88,6 +91,7 @@ class ExecutorCalls:
         result = await self._ask(call, f"verb {verb!r}")
         if not isinstance(result, HostResult):
             raise RuntimeError("The room owner answered a verb with a tool's result")
+        _take_changes(call.context, result.record_changes)
         if result.error is not None:
             raise self._errors.rebuild(result.error, where="the room owner")
         return result.result
@@ -100,6 +104,7 @@ class ExecutorCalls:
         result = await self._ask(call, f"tool {name!r}")
         if isinstance(result, HostResult):
             raise RuntimeError("The room owner answered a tool call with a verb's result")
+        _take_changes(call.context, result.record_changes)
         return _answer(result, self._errors)
 
     async def _ask(self, call: ToolCall | HostCall, what: str) -> ToolResult | HostResult:
@@ -139,7 +144,16 @@ def _call_context() -> CallContext:
         actor_id=current_tool_actor_id(),
         allowed_names=None if allowed is None else sorted(allowed),
         requester=current_tool_requester(),
+        response_metadata=carried_record(),
     )
+
+
+def _take_changes(context: CallContext, changes: RecordChanges | None) -> None:
+    """Apply to the turn's record what the owner's handler changed of the
+    copy *context* carried, before the call returns (RFC §10.6.5)."""
+    record = current_response_metadata()
+    if record is not None and context.response_metadata is not None:
+        apply_changes(record, context.response_metadata, changes)
 
 
 def _answer(result: ToolResult, errors: ErrorClasses) -> Any:

@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **An owner-served call reads and writes the turn's response-metadata record.** A tool the room owner serves and a verb a host declared (`kit.declare_host_verb`) ran with `current_response_metadata()` answering `None`, so a fact of the turn a handler learned there (a document it read, a value it protected) never reached the turn's messages nor `InboundResult.response_metadata`. A `tool_call` and a `host_call` made during the turn now carry the record; the handler works on a copy of its own, and its `tool_result` or `host_result` carries what it changed (`RecordChanges`: the keys written, the carried keys removed), which the executor applies to the turn's record before the call returns, whether the handler answered, refused or failed. Changes are measured against what the call carried: a key a concurrent call wrote is never removed, and a mapping two calls at once each add entries to keeps both; any other value takes the one answered last. A call between turns still reads `None`. A message without the new fields reads as carrying no record and changing nothing (RFC §10.6.5).
+
 - **The `gemini` and `realtime-gemini` extras install google-genai 3.2 or later, below 4, with its `httpx` extra.** RoomKit hands the SDK its own httpx client, which 3.x installs only with that extra, and every Gemini Developer API client RoomKit builds calls v1beta: 3.0 made v1 the default, where the Live API and the voices endpoint answer 404, so a Live session would not open and a stored voice would read as missing. An application that pins google-genai below 3.2 has to lift that pin.
 
 ### Fixed

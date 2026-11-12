@@ -7,6 +7,7 @@ backend and runs on the room owner, in a task of its own.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -27,6 +28,7 @@ from roomkit.providers.ai.base import AIResponse, AITool, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.speaking.always import AlwaysSpeak
 from roomkit.tools.context import (
+    current_response_metadata,
     current_tool_actor_id,
     current_tool_call,
     current_tool_chain_depth,
@@ -621,6 +623,91 @@ async def test_a_declared_verb_runs_on_the_owner_under_what_the_turn_gave_the_ca
         "arguments": {"page": "/boards"},
     }
     assert _on_owner(verbs, "app.where")
+    await kit.close()
+
+
+async def test_a_declared_verb_reads_and_writes_the_turns_record() -> None:
+    """The verb reads the turn's record as the call left it, and what it
+    writes is the turn's before the call returns (RFC §10.6.5)."""
+    on_executor: dict[str, Any] = {}
+
+    async def use(host: TurnHost) -> Any:
+        record = current_response_metadata()
+        assert record is not None
+        record["asked"] = "boards"
+        answer = await host.call("app.answer")
+        on_executor["after"] = dict(record)
+        return answer
+
+    async def answer(arguments: dict[str, Any]) -> None:
+        record = current_response_metadata()
+        assert record is not None
+        record["answered"] = f"read {record['asked']}"
+
+    kit, _, _ = await _kit(use)
+    kit.declare_host_verb("app.answer", answer)
+
+    result = await _say(kit)
+
+    assert on_executor["after"]["answered"] == "read boards"
+    assert result.response_metadata["asked"] == "boards"
+    assert result.response_metadata["answered"] == "read boards"
+    await kit.close()
+
+
+async def test_a_verb_that_raises_still_leaves_what_it_wrote_on_the_turns_record() -> None:
+    async def use(host: TurnHost) -> Any:
+        with contextlib.suppress(PermissionError):
+            await host.call("app.refuse")
+
+    async def refuse(arguments: dict[str, Any]) -> None:
+        record = current_response_metadata()
+        assert record is not None
+        record["refused"] = True
+        raise PermissionError("not this member")
+
+    kit, _, _ = await _kit(use)
+    kit.declare_host_verb("app.refuse", refuse)
+
+    result = await _say(kit)
+
+    assert result.response_metadata["refused"] is True
+    await kit.close()
+
+
+async def test_two_verbs_served_at_once_keep_both_entries_they_add_to_one_mapping() -> None:
+    """Each call carries the record as it stood; the entries both add to one
+    mapping stay, and a key one removed goes (RFC §10.6.5)."""
+    both_running = asyncio.Event()
+    running: list[str] = []
+
+    async def use(host: TurnHost) -> Any:
+        record = current_response_metadata()
+        assert record is not None
+        record["names"] = {"a": 1}
+        record["stale"] = True
+        await asyncio.gather(
+            host.call("app.add", {"name": "b"}), host.call("app.add", {"name": "c", "drop": True})
+        )
+
+    async def add(arguments: dict[str, Any]) -> None:
+        record = current_response_metadata()
+        assert record is not None
+        running.append(arguments["name"])
+        if len(running) == 2:
+            both_running.set()
+        await both_running.wait()
+        record["names"][arguments["name"]] = 1
+        if arguments.get("drop"):
+            del record["stale"]
+
+    kit, _, _ = await _kit(use)
+    kit.declare_host_verb("app.add", add)
+
+    result = await asyncio.wait_for(_say(kit), 10)
+
+    assert result.response_metadata["names"] == {"a": 1, "b": 1, "c": 1}
+    assert "stale" not in result.response_metadata
     await kit.close()
 
 

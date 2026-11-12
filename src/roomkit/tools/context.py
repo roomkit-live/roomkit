@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import copy
 from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -702,12 +703,16 @@ def owner_served_call(
     requester: str | None,
     chain_depth: int,
     allowed_names: Iterable[str] | None,
-) -> Generator[None, None, None]:
+    response_metadata: Mapping[str, Any] | None = None,
+) -> Generator[ResponseMetadata | None, None, None]:
     """Run a call the room owner serves under what the turn on its executor
     gave it (RFC §10.6.5): the accessors of this module answer for that turn.
 
-    The turn's response-metadata record is the executor's: a handler here
-    reads ``None`` from :func:`current_response_metadata`.
+    *response_metadata* is the turn's record as the call carried it: the
+    handler reads and writes a copy of its own through
+    :func:`current_response_metadata`, which the block yields so the caller
+    can tell what the handler changed. A call made outside the turn carries
+    none, and a handler there reads ``None``, the block yielding ``None``.
     """
     ctx = _ToolLoopContext.for_loop(None, call.room_id or None, room)
     ctx.channel_id = call.channel_id
@@ -715,9 +720,12 @@ def owner_served_call(
     ctx.requester = requester
     ctx.chain_depth = chain_depth
     ctx.allowed_names = None if allowed_names is None else frozenset(allowed_names)
-    ctx.has_turn = False
+    if response_metadata is None:
+        ctx.has_turn = False
+    else:
+        ctx.response_metadata = ResponseMetadata(copy.deepcopy(dict(response_metadata)))
     with _installed(ctx, call):
-        yield
+        yield ctx.response_metadata if ctx.has_turn else None
 
 
 def _check_one_room(room_id: str | None, room: Room | None, call: ToolCallContext | None) -> None:
