@@ -16,8 +16,6 @@ from roomkit.turns.wire import PreviousTurn
 from tests.test_framework import SimpleChannel
 from tests.test_turns_channel_control import _Agent, _kit
 
-pytestmark = pytest.mark.in_process("Exercises the kit's local executor context and cancellation.")
-
 
 async def test_cancelled_detach_forgets_stored_state() -> None:
     kit, agent = await _kit()
@@ -40,6 +38,10 @@ async def test_cancelled_detach_forgets_stored_state() -> None:
         await kit.close()
 
 
+@pytest.mark.in_process(
+    "its turn calls the kit it holds, from the context an in-memory turn shares with "
+    "the owner (RFC §10.6.5); across Redis a turn has none"
+)
 async def test_channel_call_can_close_executor_under_its_calling_turn() -> None:
     kit, agent = await _kit()
     kit.register_channel(SimpleChannel("sms"))
