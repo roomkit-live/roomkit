@@ -300,6 +300,7 @@ jobs:
           tests/test_store_room_contract.py
           tests/test_store_identity_scoping.py
           tests/test_identity_verification.py
+          tests/test_lanes_multiworker.py
           tests/test_kit_close.py
           tests/test_kit_close_doors.py
           tests/test_inbound_connection_budget.py
