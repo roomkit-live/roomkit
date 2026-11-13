@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
+import time
+from pathlib import Path
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -15,9 +18,12 @@ from roomkit.delivery.redis import RedisDeliveryBackend
 from roomkit.delivery.worker import _settle_item, execute_delivery
 from roomkit.models.delivery import DeliveryError, DeliveryOutcome
 from roomkit.store.sqlite import SQLiteStore
+from tests.test_framework import SimpleChannel
 from tests.test_proactive_delivery_voice import voice_room
 
 pytestmark = pytest.mark.skipif(not os.environ.get("REDIS_URL"), reason="REDIS_URL not set")
+
+WORKER = Path(__file__).parents[1] / "redis_delivery_worker.py"
 
 
 @pytest.fixture
@@ -57,6 +63,85 @@ async def test_abandoned_batch_is_reclaimed_after_worker_restart(backends) -> No
     await second.ack(recovered.id)
     assert await second.get_queue_depth() == 0
     assert (await client.xpending(first._pending_key, first._group))["pending"] == 0
+
+
+async def _line_starting(process: asyncio.subprocess.Process, prefix: str) -> str:
+    """The next line *process* prints that starts with *prefix*."""
+    assert process.stdout is not None
+    while True:
+        got = await asyncio.wait_for(process.stdout.readline(), 20)
+        assert got, f"the worker process ended before printing {prefix!r}"
+        line = got.decode().strip()
+        if line.startswith(prefix):
+            return line
+
+
+async def test_a_killed_worker_s_batch_is_taken_back_and_delivered_by_another_process(
+    tmp_path: Path,
+) -> None:
+    """Queue delivery remains at least once (RFC §22.1, §22.2). A worker of
+    another process (tests/redis_delivery_worker.py) takes a batch and is
+    killed before it acks any item of it. Once no worker renews the items and
+    their idle time passes ``claim_idle_seconds``, a worker of this process
+    takes them back on its own and delivers each: an item delivered twice is
+    allowed, an item lost is not."""
+    redis = pytest.importorskip("redis.asyncio")
+    client = redis.from_url(os.environ["REDIS_URL"])
+    prefix = f"roomkit:test:{uuid4().hex}"
+    database = tmp_path / "rooms.db"
+    claim_idle = 1.0
+    backend = RedisDeliveryBackend(
+        client=client, stream_prefix=prefix, claim_idle_seconds=claim_idle, retry_delay=0
+    )
+    kit = RoomKit(store=SQLiteStore(database), delivery_backend=backend)
+    kit.register_channel(SimpleChannel("out"))
+    await kit.create_room(room_id="r1")
+    await kit.attach_channel("r1", "out")
+    sent = [f"item {n}" for n in range(3)]
+    worker: asyncio.subprocess.Process | None = None
+    try:
+        for body in sent:
+            assert (await kit.deliver("r1", body, channel_id="out")).status == "queued"
+        worker = await asyncio.create_subprocess_exec(
+            sys.executable,
+            str(WORKER),
+            os.environ["REDIS_URL"],
+            prefix,
+            str(claim_idle),
+            str(database),
+            stdout=asyncio.subprocess.PIPE,
+        )
+        await _line_starting(worker, "delivering ")
+        # Its worker holds the whole batch: every item pending, to it alone.
+        held = await client.xpending(backend._pending_key, backend._group)
+        assert held["pending"] == len(sent)
+        assert [consumer["pending"] for consumer in held["consumers"]] == [len(sent)]
+
+        async with kit:  # this process's worker starts
+            worker.kill()
+            await worker.wait()
+            killed = time.monotonic()
+            while (await client.xpending(backend._pending_key, backend._group))[
+                "pending"
+            ] or await backend.get_queue_depth():
+                assert time.monotonic() - killed < claim_idle + 10
+                await asyncio.sleep(0.05)
+            delivered = [
+                e.content.body
+                for e in await kit.store.list_events("r1")
+                if e.source.channel_id == "out"
+            ]
+            dead = await backend.get_dead_letter_items()
+    finally:
+        if worker is not None and worker.returncode is None:
+            worker.kill()
+            await worker.wait()
+        await kit.close()
+        await client.delete(backend._pending_key, backend._dl_key, backend._delayed_key)
+        await client.aclose()
+
+    assert sorted(set(delivered)) == sent
+    assert dead == []
 
 
 @pytest.mark.parametrize("uncertain", [False, True])
