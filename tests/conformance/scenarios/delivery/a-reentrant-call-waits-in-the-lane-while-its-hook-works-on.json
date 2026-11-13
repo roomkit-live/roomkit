@@ -1,0 +1,220 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-reentrant-call-waits-in-the-lane-while-its-hook-works-on",
+  "title": "A message sent under the room's lock waits in the lane behind the hook that sent it, while that hook works on (a call into another room that takes 50 ms) before it cancels by key: the key still names that delivery, whose turn never starts once cancelled",
+  "rules": [
+    "§9.5.1 Reentrance",
+    "§10.1 Explicit delivery cancellation"
+  ],
+  "notes": "The variant of a-reentrant-call-s-key-names-its-delivery-until-it-runs where the hook yields between its call and its cancel: its own work, a message into room-2 whose hook waits 50 ms (delay_ms), as an HTTP call would. \"Made under the lock, its delivery waits in the lane behind the work that made it\": the hook's body, whatever it awaits after the call returned. Python: src/roomkit/core/locks.py (lending_hook, _Call.until_over), src/roomkit/core/mixins/lane_execution.py (_enqueue_committed, DeliveryPlan.behind_hook), src/roomkit/core/lanes.py (RoomDeliveryLane._behind_its_hook); tests/test_delivery_cancel_turns.py::test_a_reentrant_call_s_key_names_its_delivery_until_it_runs (RMK-1682). Rust: crates/roomkit-core/src/ops/inbound/adoption.rs (Adoptions::holds_back), crates/roomkit/tests/reentrancy.rs a_locked_hook::that_sends_then_works_on_holds_its_message_s_delivery_until_it_returns (RMK-1679).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "on_event": [
+          {
+            "when": {
+              "text": "task B"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer to task B"
+                }
+              }
+            ]
+          },
+          {
+            "when": {
+              "text": "lead"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer to lead"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "post",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "lead"
+            },
+            "do": [
+              {
+                "call": "process_inbound",
+                "room_id": "$room",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "+15551234567",
+                  "content": {
+                    "type": "text",
+                    "body": "task B"
+                  },
+                  "delivery_key": "b"
+                }
+              },
+              {
+                "call": "process_inbound",
+                "room_id": "room-2",
+                "message": {
+                  "channel_id": "sms",
+                  "sender_id": "+15551234567",
+                  "content": {
+                    "type": "text",
+                    "body": "ping"
+                  }
+                }
+              },
+              {
+                "call": "cancel_delivery",
+                "key": "b",
+                "as": "cancelled"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "work",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "ping"
+            },
+            "delay_ms": 50
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "lead"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "task B"
+          },
+          "index": 0
+        },
+        {
+          "content": {
+            "body": "lead"
+          },
+          "index": 1
+        },
+        {
+          "content": {
+            "body": "answer to lead"
+          },
+          "index": 2
+        }
+      ],
+      "room-2": [
+        {
+          "content": {
+            "body": "ping"
+          },
+          "index": 0
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "ai": [
+          {
+            "content": {
+              "body": "lead"
+            }
+          }
+        ]
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "body": "task B"
+            }
+          },
+          {
+            "content": {
+              "body": "lead"
+            }
+          },
+          {
+            "content": {
+              "body": "answer to lead"
+            }
+          }
+        ]
+      }
+    },
+    "actions": {
+      "cancelled": [
+        {
+          "result": 1
+        }
+      ]
+    }
+  }
+}
