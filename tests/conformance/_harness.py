@@ -39,6 +39,7 @@ from roomkit.store.sqlite import SQLiteStore
 from roomkit.tasks import DelegatedTask, DelegateHandler
 from tests import redis_turn_mode
 from tests.conformance._acp import ScriptedACPAgent, ScriptedACPTransport
+from tests.conformance._acp_handler import ScriptedExternalHandler
 from tests.conformance._acp_mcp import ScriptedMCPServers
 from tests.conformance._agent import ScriptedAIRouter, ScriptedModel, tool_call_record
 from tests.conformance._ai_hooks import generation_record, response_record, tool_round_record
@@ -233,6 +234,7 @@ class Harness:
         self.models: dict[str, ScriptedModel] = {}
         self.ai_routers: dict[str, ScriptedAIRouter] = {}
         self.acp_agents: dict[str, ScriptedACPAgent] = {}
+        self.acp_handlers: dict[str, ScriptedExternalHandler] = {}
         self.acp_mcp: dict[str, ScriptedMCPServers] = {}
         self.acp_transports: dict[str, ScriptedACPTransport] = {}
         self.auditors = Auditors()
@@ -949,6 +951,11 @@ class Harness:
         self._problems.extend(problems)
 
     def _collect_acp_permissions(self) -> None:
+        self.observed.acp_handlers = {
+            channel_id: list(handler.calls) for channel_id, handler in self.acp_handlers.items()
+        }
+        for handler in self.acp_handlers.values():
+            self._problems.extend(handler.problems)
         self.observed.acp_permissions = {
             channel_id: list(agent.permissions.received)
             for channel_id, agent in self.acp_agents.items()

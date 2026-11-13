@@ -151,7 +151,13 @@ class _Comparison:
                 self._check(self.expect[kind], getattr(self.observed, kind), kind)
 
     def acp(self) -> None:
-        for kind in ("acp_wire", "acp_prompts", "acp_mcp_requests", "acp_permissions"):
+        for kind in (
+            "acp_wire",
+            "acp_prompts",
+            "acp_mcp_requests",
+            "acp_permissions",
+            "acp_handlers",
+        ):
             recorded = getattr(self.observed, kind)
             for channel_id, expected in self.expect.get(kind, {}).items():
                 self._check(expected, recorded.get(channel_id, []), f"{kind}.{channel_id}")

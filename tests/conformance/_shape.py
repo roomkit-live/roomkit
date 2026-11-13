@@ -17,6 +17,7 @@ from tests.conformance._acp import INITIALIZE as ACP_INITIALIZE
 from tests.conformance._acp import PROMPT as ACP_PROMPT
 from tests.conformance._acp import REFUSAL as ACP_REFUSAL
 from tests.conformance._acp import SESSION_REPLY as ACP_SESSION_REPLY
+from tests.conformance._acp_handler import handler_problems
 from tests.conformance._acp_mcp import mcp_problems
 from tests.conformance._acp_permissions import permission_problems
 from tests.conformance._delegate_tool import DELEGATE_TOOL_ARGUMENTS
@@ -379,6 +380,7 @@ EXPECT = {
     "ai_routes",
     "acp_wire",
     "acp_permissions",
+    "acp_handlers",
     "acp_mcp_requests",
     "acp_prompts",
     "thinking_events",
@@ -648,10 +650,15 @@ def _acp(spec: Mapping[str, Any], path: str, found: list[str]) -> None:
             "additional_directories",
             "mcp_servers",
             "publish_thinking_text",
+            "external_tool_handler",
         },
         path,
         found,
     )
+    if "external_tool_handler" in spec:
+        found.extend(
+            handler_problems(spec["external_tool_handler"], f"{path}.external_tool_handler")
+        )
     _acp_directories(spec, path, found)
     _acp_thinking(spec, path, found)
     if "mcp_servers" in spec:
