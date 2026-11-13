@@ -1,0 +1,263 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/handler-rewrite-empty",
+  "title": "External handler rewrite empty",
+  "rules": [
+    "§6.4",
+    "§9.3",
+    "Appendix A.9.1"
+  ],
+  "notes": "Python: tests/test_external_tool_handler.py, tests/test_channels/test_acp_decided_calls.py, tests/test_refused_reports.py, tests/test_handler_report_raise.py; channels/_acp_events.py. Actual permission replies, handler callbacks, stored rows and hook reports. Active ACP room turns only; no standalone or lifecycle coverage is inferred.",
+  "setup": {
+    "channels": [
+      {
+        "id": "web",
+        "type": "webhook",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "call-1",
+                    "title": "Read",
+                    "status": "in_progress",
+                    "rawInput": {
+                      "path": "notes.txt"
+                    }
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "call-1",
+                        "title": "Read",
+                        "rawInput": {
+                          "path": "notes.txt"
+                        }
+                      },
+                      "options": [
+                        {
+                          "kind": "reject_always",
+                          "name": "reject_always",
+                          "optionId": "reject_always"
+                        },
+                        {
+                          "kind": "allow_always",
+                          "name": "allow_always",
+                          "optionId": "allow_always"
+                        },
+                        {
+                          "kind": "reject_once",
+                          "name": "reject_once",
+                          "optionId": "reject_once"
+                        },
+                        {
+                          "kind": "allow_once",
+                          "name": "allow_once",
+                          "optionId": "allow_once"
+                        }
+                      ]
+                    },
+                    "updates": []
+                  }
+                ]
+              }
+            ]
+          },
+          "external_tool_handler": {}
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "response",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      },
+      {
+        "name": "tools",
+        "trigger": "on_tool_call",
+        "execution": "async"
+      },
+      {
+        "name": "sync-tools",
+        "trigger": "on_tool_call",
+        "execution": "sync"
+      },
+      {
+        "name": "before",
+        "trigger": "before_tool_use",
+        "execution": "sync",
+        "reactions": [
+          {
+            "result": {
+              "action": "allow",
+              "metadata": {
+                "arguments": {}
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "web",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello"
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "content": {
+            "type": "tool_call",
+            "tool_name": "Read",
+            "tool_id": "call-1"
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "content": {
+            "type": "tool_call",
+            "tool_name": "Read",
+            "tool_id": "call-1",
+            "status": "failed",
+            "outcome": "refused",
+            "refused_but_ran": false,
+            "result": null,
+            "error": "{\"error\": \"ACP cannot apply an approval that rewrites the call's input or result\"}"
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "tools": [
+        {
+          "room_id": "room-1",
+          "tool_call": {
+            "name": "Read",
+            "arguments": {
+              "path": "notes.txt"
+            },
+            "result": "{\"error\": \"ACP cannot apply an approval that rewrites the call's input or result\"}",
+            "is_error": true,
+            "cancelled": false,
+            "refused": true,
+            "error_detail": null,
+            "refused_but_ran": false
+          }
+        }
+      ],
+      "response": [
+        {
+          "room_id": "room-1",
+          "response": {
+            "channel_id": "claude",
+            "segments": [],
+            "response_content": "",
+            "tool_calls_count": 1,
+            "streaming": true
+          }
+        }
+      ],
+      "sync-tools": [],
+      "before": [
+        {
+          "room_id": "room-1",
+          "tool_call": {
+            "name": "Read",
+            "arguments": {
+              "path": "notes.txt"
+            },
+            "result": null
+          }
+        }
+      ]
+    },
+    "acp_permissions": {
+      "claude": [
+        {
+          "session_id": "session-1",
+          "tool_call_id": "call-1",
+          "result": {
+            "outcome": {
+              "outcome": "selected",
+              "optionId": "reject_once"
+            }
+          }
+        }
+      ]
+    },
+    "acp_handlers": {
+      "claude": [
+        {
+          "method": "start",
+          "channel_id": "claude"
+        },
+        {
+          "method": "process_tool_call",
+          "channel_id": "claude",
+          "name": "Read",
+          "arguments": {
+            "path": "notes.txt"
+          },
+          "tool_call_id": "call-1",
+          "room_id": "room-1",
+          "session_id": "session-1"
+        }
+      ]
+    }
+  }
+}
