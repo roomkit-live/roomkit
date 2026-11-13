@@ -642,6 +642,9 @@ def _acp_thinking(spec: Mapping[str, Any], path: str, found: list[str]) -> None:
 
 
 def _acp_context(spec: Mapping[str, Any], path: str, found: list[str]) -> None:
+    for key in ("name", "role", "description"):
+        if spec.get(key) is not None and not isinstance(spec[key], str):
+            found.append(f"{path}.{key}: expected a string or null")
     if spec.get("instructions") is not None and not isinstance(spec["instructions"], str):
         found.append(f"{path}.instructions: expected a string or null")
     if "room_history" in spec and (
@@ -667,6 +670,9 @@ def _acp(spec: Mapping[str, Any], path: str, found: list[str]) -> None:
             "room_history",
             "context_contributor",
             "instructions",
+            "name",
+            "role",
+            "description",
         },
         path,
         found,
