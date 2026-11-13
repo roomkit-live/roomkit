@@ -1,0 +1,216 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/a-release-whose-pass-goes-on-before-a-later-hook-closes-the-room-is-answered-by-no-agent",
+  "title": "A SYNC hook completes a verification and lets its event through; a later SYNC hook of the same pass waits, then closes the room: the released answer leaves its place in the lane once the pass's work under the room's lock is over, and the closed room refuses it before any agent runs",
+  "rules": [
+    "§11.7.6",
+    "§5.1",
+    "§13.6",
+    "§9.5.1 Reentrance"
+  ],
+  "notes": "The variant of a-release-from-a-hook-that-closes-the-room-is-answered-by-no-agent where the work under the room's lock yields between the release and the close (the later hook's delay_ms, as an HTTP call would). Python: src/roomkit/core/mixins/lane_execution.py (_execute_plan waits for the end of the room-lock hold the rerun was placed under, DeliveryPlan.under_lock) and src/roomkit/core/locks.py (held_lease: the pass's hold of the lock, not the hook body's), RMK-1660. Rust: crates/roomkit/src/driver/holds.rs (await_place waits for the section's lease).",
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "when": {
+              "sender_id": "+15551234567"
+            },
+            "repeat": true,
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "alice-id"
+              }
+            }
+          }
+        ]
+      },
+      "verification_policy": {}
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "on_event": [
+          {
+            "when": {
+              "text": "Wire 500 to Bob"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer to Wire 500 to Bob"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "console",
+        "trigger": "before_broadcast",
+        "priority": 0,
+        "reactions": [
+          {
+            "when": {
+              "text": "Verified by phone, closing"
+            },
+            "do": [
+              {
+                "call": "complete_verification",
+                "request_id": "$req",
+                "secret": "$req.secret"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "closer",
+        "trigger": "before_broadcast",
+        "priority": 1,
+        "reactions": [
+          {
+            "when": {
+              "text": "Verified by phone, closing"
+            },
+            "delay_ms": 50,
+            "do": [
+              {
+                "call": "close_room",
+                "room_id": "$room"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Wire 500 to Bob"
+        }
+      }
+    },
+    {
+      "call": "request_verification",
+      "identity_id": "alice-id",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "as": "req",
+      "window_start": "2000-01-01T00:00:00Z"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "advisor",
+        "content": {
+          "type": "text",
+          "body": "Verified by phone, closing"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "room_closed",
+          "event": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "Wire 500 to Bob"
+          },
+          "visibility": "all",
+          "metadata": {
+            "roomkit:verification_held": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "room-1": {
+        "status": "closed"
+      }
+    },
+    "turns": {
+      "room-1": {
+        "ai": []
+      }
+    },
+    "framework_events": {
+      "room-1": [
+        "identity_resolved",
+        {
+          "event": "delivery_succeeded",
+          "channel_id": "ws",
+          "event_id": "room-1#0"
+        },
+        {
+          "event": "event_processed",
+          "event_id": "room-1#0"
+        },
+        "verification_requested",
+        "verification_completed",
+        "room_closed",
+        {
+          "event": "room_refused_event",
+          "status": "closed",
+          "operation": "inbound",
+          "event_type": "message"
+        },
+        {
+          "event": "room_refused_event",
+          "status": "closed",
+          "operation": "regenerate",
+          "event_type": "message",
+          "event_id": "room-1#0"
+        }
+      ]
+    }
+  }
+}
