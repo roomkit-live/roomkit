@@ -404,10 +404,15 @@ HOLDER = Path(__file__).with_name("postgres_lock_holder.py")
 _HOLDER_APP = "roomkit_killed_holder"
 
 
+def _with(dsn: str, parameter: str) -> str:
+    """*dsn* with *parameter* (``name=value``) in its query."""
+    separator = "&" if "?" in dsn else "?"
+    return f"{dsn}{separator}{parameter}"
+
+
 def _in_schema(dsn: str, schema: str) -> str:
     """*dsn* with its sessions writing to *schema*."""
-    separator = "&" if "?" in dsn else "?"
-    return f"{dsn}{separator}options=-csearch_path%3D{schema}"
+    return _with(dsn, f"options=-csearch_path%3D{schema}")
 
 
 @pytest.fixture
@@ -436,19 +441,23 @@ async def schema_dsn() -> AsyncIterator[str]:
 
 
 class _HolderProcess:
-    """tests/postgres_lock_holder.py, sending one message to a room."""
+    """tests/postgres_lock_holder.py, sending one message to a room. Its
+    standard input is this process's: it ends with it, killed or not."""
 
     def __init__(self, process: asyncio.subprocess.Process) -> None:
         self.process = process
 
     @classmethod
     async def start(cls, dsn: str, room_id: str, hold: str) -> _HolderProcess:
+        # The DSN in the environment, where ps does not show its password.
+        holder_dsn = _with(dsn, f"application_name={_HOLDER_APP}")
         process = await asyncio.create_subprocess_exec(
             sys.executable,
             str(HOLDER),
-            f"{dsn}{'&' if '?' in dsn else '?'}application_name={_HOLDER_APP}",
             room_id,
             hold,
+            env={**os.environ, "ROOMKIT_TEST_HOLDER_DSN": holder_dsn},
+            stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
         )
         return cls(process)
@@ -506,10 +515,15 @@ async def _waiting_on(key: int) -> list[asyncpg.Record]:
 
 
 async def _gone(pid: int) -> bool:
-    """Whether the server lists no lock of the session *pid* any more."""
+    """Whether the server ended the session *pid*: it lists neither the
+    session nor any lock of it."""
     conn = await asyncpg.connect(POSTGRES_DSN)
     try:
-        return not await conn.fetch("SELECT 1 FROM pg_locks WHERE pid = $1", pid)
+        return not await conn.fetch(
+            "SELECT pid FROM pg_locks WHERE pid = $1"
+            " UNION SELECT pid FROM pg_stat_activity WHERE pid = $1",
+            pid,
+        )
     finally:
         await conn.close()
 
@@ -571,7 +585,7 @@ async def test_a_room_lock_a_killed_process_held_is_released_and_the_room_goes_o
 
         await holder.kill()
         result = await asyncio.wait_for(sent, 10)
-        await _until(lambda: _gone(holder_pid), "the killed session's locks gone")
+        await _until(lambda: _gone(holder_pid), "the killed session ended")
         events = await store.list_events(room_id, limit=50)
     finally:
         if holder is not None:
@@ -586,15 +600,15 @@ async def test_a_room_lock_a_killed_process_held_is_released_and_the_room_goes_o
     assert await _sessions_on(key) == []
 
 
-@pytest.mark.wallclock
 async def test_a_delivery_claim_a_killed_process_held_leaves_its_index_skipped(
     schema_dsn: str,
 ) -> None:
     """A process committed index N and holds the room's delivery claim,
-    delivering N, when it is killed. The server drops the claim with its
-    sessions; this process's next message, N+1, waits on the hole at N for
-    ``delivery_gap_timeout``, skips it with ``delivery_skipped``, and is
-    delivered once, the cursor at N+1 (RK-13.5-005)."""
+    delivering N. This process's next message, N+1, waits on the hole at N
+    for ``delivery_gap_timeout``, then on the claim on the server: a live
+    owner's delivery is never skipped. The holder killed, the server drops
+    the claim with its sessions; the lane skips N with ``delivery_skipped``,
+    and N+1 is delivered once, the cursor at N+1 (RK-13.5-005)."""
     room_id = f"room-{uuid4().hex}"
     gap = 0.3
     delivered: list[int] = []
@@ -616,15 +630,21 @@ async def test_a_delivery_claim_a_killed_process_held_leaves_its_index_skipped(
         lost = int((await holder.wait_for("delivering ")).split()[1])
         claim = _advisory_key(f"{_OTHER_KIND}{delivery_claim_key(room_id)}")
         holder_pid = await _held_by_the_holder(claim)
-
-        await holder.kill()
-        await _until(lambda: _gone(holder_pid), "the killed session's locks gone")
         before = await store.get_room(room_id)
         started = time.monotonic()
-        result = await asyncio.wait_for(
-            kit.process_inbound(_said("after the kill"), room_id=room_id), 10
-        )
+        sent = asyncio.ensure_future(kit.process_inbound(_said("after the kill"), room_id=room_id))
+        waiting = await _until(lambda: _waiting_on(claim), "this kit waiting on the claim")
+        # The holder's session holds it, one of this kit's waits on it.
+        assert [(r["pid"] == holder_pid, r["granted"]) for r in waiting] == [
+            (True, True),
+            (False, False),
+        ]
+        assert not sent.done()
+
+        await holder.kill()
+        result = await asyncio.wait_for(sent, 10)
         waited = time.monotonic() - started
+        await _until(lambda: _gone(holder_pid), "the killed session ended")
         after = await store.get_room(room_id)
     finally:
         if holder is not None:
