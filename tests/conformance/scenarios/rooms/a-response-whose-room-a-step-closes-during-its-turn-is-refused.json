@@ -1,0 +1,139 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "rooms/a-response-whose-room-a-step-closes-during-its-turn-is-refused",
+  "title": "An answer whose room is closed while its turn runs, the agent calling nothing, is refused at its commit, nothing of it stored, and room_refused_event says so",
+  "rules": [
+    "§5.1",
+    "§8.2",
+    "§10.1 step 14",
+    "§10.6.1",
+    "§26.1"
+  ],
+  "notes": "The turn's channel calls no kit: it holds at a gate, a step closes the room, then it answers. So the refusal reads the room as the owner holds it whatever executor ran the turn, one of another process included (§10.6.1), where rooms/a-response-the-room-refuses closes the room from inside the turn.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "gate": "answer",
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Too late"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "background": true,
+      "as": "a"
+    },
+    {
+      "wait_for": "answer"
+    },
+    {
+      "call": "close_room",
+      "room_id": "room-1",
+      "expect": {
+        "result": {
+          "status": "closed"
+        }
+      }
+    },
+    {
+      "open": "answer"
+    },
+    {
+      "await": "a",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "status": "delivered"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello"
+          }
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": []
+      }
+    },
+    "rooms": {
+      "room-1": {
+        "status": "closed"
+      }
+    },
+    "framework_events": {
+      "room-1": [
+        "room_closed",
+        {
+          "$unordered": [
+            {
+              "event": "room_refused_event",
+              "status": "closed",
+              "operation": "reentry",
+              "event_type": "message"
+            },
+            {
+              "event": "event_processed",
+              "event_id": "room-1#0"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
