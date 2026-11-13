@@ -76,6 +76,7 @@ async def _line_starting(process: asyncio.subprocess.Process, prefix: str) -> st
             return line
 
 
+@pytest.mark.wallclock
 async def test_a_killed_worker_s_batch_is_taken_back_and_delivered_by_another_process(
     tmp_path: Path,
 ) -> None:
@@ -117,10 +118,10 @@ async def test_a_killed_worker_s_batch_is_taken_back_and_delivered_by_another_pr
         assert held["pending"] == len(sent)
         assert [consumer["pending"] for consumer in held["consumers"]] == [len(sent)]
 
-        async with kit:  # this process's worker starts
-            worker.kill()
-            await worker.wait()
-            killed = time.monotonic()
+        worker.kill()
+        await worker.wait()
+        killed = time.monotonic()
+        async with kit:  # this process's worker starts once the other died
             while (await client.xpending(backend._pending_key, backend._group))[
                 "pending"
             ] or await backend.get_queue_depth():
