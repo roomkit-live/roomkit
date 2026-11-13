@@ -4,6 +4,7 @@ and a cancelled one is released with no answer (RFC §10.1, §11.7.6)."""
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
@@ -25,6 +26,8 @@ from roomkit.channels import SMSChannel, WebSocketChannel
 from roomkit.channels.ai import AIChannel
 from roomkit.core.mixins.verification import HELD_KEY
 from roomkit.identity.mock import MockIdentityResolver
+from roomkit.models.delivery import InboundResult
+from roomkit.models.framework_event import FrameworkEvent
 from roomkit.models.identity import Identity
 from roomkit.providers.ai.base import AIContext, AIResponse
 from roomkit.providers.ai.mock import MockAIProvider
@@ -374,6 +377,108 @@ async def test_a_release_from_a_hook_keeps_its_answer_named() -> None:
     assert counted == [1]
     assert ai.calls == []
     assert _named_nothing(kit)
+    await kit.close()
+
+
+class _AskedAgent(MockAIProvider):
+    """An agent that sets *asked* as it is asked."""
+
+    def __init__(self, asked: asyncio.Event) -> None:
+        super().__init__(responses=["answer"] * 20)
+        self.asked = asked
+
+    async def generate(self, context: AIContext) -> AIResponse:
+        self.asked.set()
+        return await super().generate(context)
+
+
+async def _a_hook_releases(
+    store: str, tmp_path: Path, *, closes: bool
+) -> tuple[RoomKit, _AskedAgent, RoomEvent, InboundResult, list[str]]:
+    """A held message, then a console note whose sync hook completes its
+    sender's request, goes on with its own work (an await, as an HTTP call,
+    until the released answer's end or 20 ms), closes the room when *closes*,
+    and lets the note through. The kit, its agent, the held message and the
+    note's result, and the operations refused in their order; the agent
+    asked or the release's answer refused ends the answer."""
+    over = asyncio.Event()
+    agent = _AskedAgent(over)
+    kit, _, _ = _kit(
+        store=SQLiteStore(tmp_path / "rooms.db") if store == "sqlite" else None, ai=agent
+    )
+    held = await kit.process_inbound(_message("Wire 500 to Bob"))
+    room_id = held.event.room_id
+    request, secret = await kit.request_verification(
+        _identity(ALICE), room_id=room_id, channel_id="sms", window_start=held.event.created_at
+    )
+    refused: list[str] = []
+
+    @kit.on("room_refused_event")
+    async def on_refused(event: FrameworkEvent) -> None:
+        refused.append(event.data["operation"])
+        if event.data["operation"] == "regenerate":
+            over.set()
+
+    @kit.hook(HookTrigger.BEFORE_BROADCAST)
+    async def console(event: RoomEvent, ctx: Any) -> HookResult:
+        if event.source.channel_id == "bank":
+            await kit.complete_verification(request.id, secret)
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(over.wait(), 0.02)
+            if closes:
+                await kit.close_room(room_id)
+        return HookResult.allow()
+
+    note = InboundMessage(
+        channel_id="bank", sender_id="advisor", content=TextContent(body="Verified by phone")
+    )
+    result = await kit.process_inbound(note, room_id=room_id)
+    await asyncio.wait_for(over.wait(), 2)
+    return kit, agent, held.event, result, refused
+
+
+STORES = ["memory", "sqlite"]
+
+
+@pytest.mark.parametrize("store", STORES)
+async def test_a_release_from_a_hook_whose_work_then_closes_the_room_is_answered_by_no_agent(
+    store: str, tmp_path: Path
+) -> None:
+    """The released answer leaves its place in the lane once the hook's work
+    is over, on the room as that work left it: closed, it refuses the answer
+    before any agent runs (RFC §11.7.6)."""
+    kit, agent, _, result, refused = await _a_hook_releases(store, tmp_path, closes=True)
+
+    assert (result.blocked, result.reason) == (True, "room_closed")
+    assert agent.calls == []
+    assert refused == ["inbound", "regenerate"]
+    await kit.close()
+
+
+@pytest.mark.parametrize("store", STORES)
+async def test_a_release_from_a_hook_whose_work_then_lets_its_event_through_is_answered_first(
+    store: str, tmp_path: Path
+) -> None:
+    """The released answer's place in the lane is ahead of the hook's event's
+    delivery: the released message is answered first (RFC §11.7.6). The shared
+    scenario ``a-release-from-a-hook-that-allows-its-event-is-answered-first``
+    has no await in its hook; here the lane reaches the answer while the
+    hook's work goes on, and the answer keeps its place all the same."""
+    kit, agent, held, result, refused = await _a_hook_releases(store, tmp_path, closes=False)
+    room_id = held.room_id
+
+    async def both_answered() -> bool:
+        return len(await _replies(kit, room_id)) == 2
+
+    await _until(both_answered)
+    assert not result.blocked and result.event is not None
+    first, second = (call.messages[-1].content for call in agent.calls)
+    assert first == "Wire 500 to Bob"
+    assert "Verified by phone" in second
+    replies = await _replies(kit, room_id)
+    assert [reply.responds_to for reply in replies] == [held.id, result.event.id]
+    assert result.event.index < replies[0].index
+    assert refused == []
     await kit.close()
 
 

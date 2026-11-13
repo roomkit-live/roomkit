@@ -751,6 +751,11 @@ class LaneExecutionMixin(HelpersMixin):
     async def _execute_plan(self, plan: DeliveryPlan, cascade: DeliveryCascade) -> BroadcastResult:
         """Execute one plan's delivery set (called by the lane executor), its
         intelligence targets' turns as *cascade*'s turn work (RFC §10.1)."""
+        if plan.under_lock is not None:
+            # Placed by work under the room's lock (a release from a hook):
+            # its turn comes once that work is over, the lane holding its
+            # place ahead of what the work commits after it (RFC §11.7.6).
+            await plan.under_lock.until_over()
         if plan.rerun and await self._refuse_closed_rerun(plan):
             return BroadcastResult()
         return await self._get_router().execute_plan(plan, cascade=cascade)

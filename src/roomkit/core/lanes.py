@@ -48,7 +48,7 @@ from roomkit.turns.owner import drop_unread_streams
 
 if TYPE_CHECKING:
     from roomkit.core.event_router import StreamingResponse
-    from roomkit.core.locks import RoomLockManager
+    from roomkit.core.locks import RoomLockManager, _LockLease
     from roomkit.models.channel import ChannelBinding
     from roomkit.models.context import RoomContext
     from roomkit.models.delivery import InboundResult
@@ -134,6 +134,10 @@ class DeliveryPlan:
     # when the lane takes it; ``refusal`` is what refused it then.
     rerun: bool = False
     refusal: InboundResult | None = None
+    # The hold of the room's lock a rerun was placed under (a release from a
+    # hook, RFC §11.7.6): its place in the lane is ahead of what that work
+    # commits after it, and its turn comes once that work is over.
+    under_lock: _LockLease | None = None
     # A discussion takes the room's turns (RFC §19.7.5): its plans ask no agent
     # at broadcast, and a turn it gives is a rerun planned for one agent alone,
     # bounded by the discussion's own depth limit.
@@ -991,7 +995,10 @@ class RoomDeliveryLane:
         Post-plan effects and reentry passes run AFTER the claim is
         released — the reentry pass takes the room lock, and holding claim
         and room lock together is the two-connection deadlock this design
-        forbids (a lane never holds both).
+        forbids (a lane never holds both). A rerun placed under the room
+        lock (``DeliveryPlan.under_lock``) waits, under the claim, for the
+        work holding that lock to end: no locked section ever waits for a
+        claim, so the wait ends with that work.
         """
         delivered = await self._read_cursor()
         progressed = self._drop_stale(delivered)

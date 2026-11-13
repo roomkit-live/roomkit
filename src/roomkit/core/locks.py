@@ -30,6 +30,22 @@ class _LockLease:
     manager: RoomLockManager
     room_id: str
     active: bool = True
+    _ended: asyncio.Event | None = field(default=None, compare=False, repr=False)
+
+    def end(self) -> None:
+        """The hold is over: revoked for every copy of the context, and the
+        work waiting for its end woken."""
+        self.active = False
+        if self._ended is not None:
+            self._ended.set()
+
+    async def until_over(self) -> None:
+        """Return once the hold is over."""
+        if not self.active:
+            return
+        if self._ended is None:
+            self._ended = asyncio.Event()
+        await self._ended.wait()
 
 
 @dataclass(eq=False, slots=True)
@@ -184,6 +200,23 @@ def lent_call(room_id: str, manager: RoomLockManager) -> _Call | None:
     return None
 
 
+def held_lease(room_id: str, manager: RoomLockManager) -> _LockLease | None:
+    """The hold of the room lock on *room_id* of *manager* this context holds
+    a live lease on, also when it is lent to a call (a hook's body): the work
+    under that lock is over with it (RFC §11.7.6). ``None`` when the context
+    holds no such lock."""
+    if not _has_room_lock(room_id, manager):
+        return None
+    if isinstance(manager, ReleaseTolerantLockManager):
+        manager = manager.inner
+    for lease in reversed(_held_leases.get()):
+        if lease.active and lease.room_id == room_id and lease.manager is manager:
+            while isinstance(lease, _LentLease):
+                lease = lease.lease
+            return lease
+    return None
+
+
 @contextmanager
 def _mark_room_locked(manager: RoomLockManager, room_id: str) -> Generator[None, None, None]:
     lease = _LockLease(manager, room_id)
@@ -193,7 +226,7 @@ def _mark_room_locked(manager: RoomLockManager, room_id: str) -> Generator[None,
         yield
     finally:
         # Children keep copies of the context, but share this revocable lease.
-        lease.active = False
+        lease.end()
         _held_leases.reset(leases_token)
         _held_rooms.reset(rooms_token)
 

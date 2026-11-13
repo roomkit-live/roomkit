@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **The kit's close returns within its bound while an `SQLiteStore` operation still holds the file** (RFC §12.10.4, RMK-1671). The close shut the store's connection behind the operation already on it, so a write waiting for another process's lock on the file held the close up to SQLite's 5-second busy timeout past its unwind. The operation now gets one second, the bound a PostgreSQL pool's connections get; past it the close returns and says so in the log; the operation runs on, and the file closes once it ends.
 
+- **A message released from a hook is answered once the hook's work is over, on the room as it left it** (RFC §11.7.6, RMK-1660). The answer kept its place in the room's lane ahead of the hook's event, but ran as soon as the lane reached it: a hook that awaited anything between `complete_verification()` and `close_room()` had the agent answer in the room it then closed, and on `SQLiteStore` the refusal came before `room_closed`. The answer now waits for the end of the work that holds the room's lock, then runs, or is refused by the room that work closed.
+
 ## [0.114.0] — 2026-11-12
 
 ### Added

@@ -15,7 +15,7 @@ from roomkit.core._room_timers import due_transitions
 from roomkit.core.event_router import CHAIN_DEPTH_LIMIT
 from roomkit.core.exceptions import RoomClosedError
 from roomkit.core.lanes import DeliveryCascade, DeliveryPlan, anchor_index
-from roomkit.core.locks import collecting_release_failures, failed_release
+from roomkit.core.locks import collecting_release_failures, failed_release, held_lease
 from roomkit.core.mixins.helpers import _REFUSING_STATUSES, HelpersMixin
 from roomkit.core.visibility import intersect_visibility
 from roomkit.models.delivery import InboundResult
@@ -26,7 +26,7 @@ from roomkit.models.response_metadata import merge_caller_record
 if TYPE_CHECKING:
     from roomkit.core._delivery_keys import NamedDelivery
     from roomkit.core._reentrance import RoomWork
-    from roomkit.core.locks import RoomLockManager
+    from roomkit.core.locks import RoomLockManager, _LockLease
     from roomkit.models.channel import ChannelBinding
     from roomkit.models.context import RoomContext
     from roomkit.store.base import ConversationStore
@@ -317,7 +317,13 @@ class RegenerateMixin(HelpersMixin):
         result as a regenerate. *named* is the delivery whose key names the
         run, until it is over (RFC §10.1). Its caller, a release, reads no
         result: a failed turn is logged at its own level (RFC §15.2).
+
+        Made under the room's lock (a release from a hook), the run's place
+        in the lane is ahead of what that work commits after it, and its turn
+        comes once that work is over, on the room as it left it (RFC
+        §11.7.6): a room the work closed refuses it before any agent runs.
         """
+        under_lock = held_lease(room_id, self._lock_manager)
         cascade = self._cascades.new(room_id, reentry_budget=self._max_chain_depth * 10)
         if named is not None:
             named.attach(cascade)
@@ -349,7 +355,9 @@ class RegenerateMixin(HelpersMixin):
                     or not source.can_write
                 ):
                     return None
-                plan = self._enqueue_regeneration(room_id, trigger, source, context, cascade)
+                plan = self._enqueue_regeneration(
+                    room_id, trigger, source, context, cascade, under_lock=under_lock
+                )
             return await self._finish_regeneration(
                 room_id, trigger, plan, cascade, caller_logs=False
             )
@@ -474,9 +482,13 @@ class RegenerateMixin(HelpersMixin):
         source_binding: ChannelBinding,
         context: RoomContext,
         cascade: DeliveryCascade,
+        *,
+        under_lock: _LockLease | None = None,
     ) -> DeliveryPlan:
         """Put *trigger*'s re-broadcast in the room's lane, behind every
-        event committed so far, as a rerun (``DeliveryPlan.rerun``); its plan."""
+        event committed so far, as a rerun (``DeliveryPlan.rerun``); its plan.
+        *under_lock* is the hold of the room's lock it was placed under, whose
+        end its turn waits for (``DeliveryPlan.under_lock``)."""
         # Scope the re-broadcast to intelligence channels: only the agent
         # regenerates, no transport re-delivery of the user's message. The
         # trigger's stored scope still holds (RFC §7.3): a message no agent
@@ -497,6 +509,7 @@ class RegenerateMixin(HelpersMixin):
         plan = self._get_router().plan(intel_trigger, source_binding, context)
         plan.rerun = True
         plan.response_visibility = trigger.response_visibility
+        plan.under_lock = under_lock
         cascade.retain()
         self._enqueue_exec(
             room_id, plan, cascade, index=None, after_index=anchor_index(context.room.latest_index)

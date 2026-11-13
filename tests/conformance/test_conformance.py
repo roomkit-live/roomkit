@@ -132,10 +132,6 @@ _MEMORY_ONLY = {
         "RMK-1661: its two ON_ROOM_CREATED hooks run in parallel, and on SQLite the "
         "attach's release fails after the scenario set releases failing"
     ),
-    "verification/a-release-from-a-hook-that-closes-the-room-is-answered-by-no-agent": (
-        "RMK-1660: the released answer leaves the lane before the hook's work is over, "
-        "while close_room waits on the file"
-    ),
 }
 
 
