@@ -15,6 +15,7 @@ from typing import Any
 import acp
 
 from roomkit import ACPChannel, ACPSessionInvalidatedError, ACPTransport
+from tests.conformance._acp_context import ScriptedContextContributor
 from tests.conformance._acp_handler import ScriptedExternalHandler
 from tests.conformance._acp_mcp import ScriptedMCPServers
 from tests.conformance._acp_permissions import PermissionExchanges
@@ -253,12 +254,18 @@ def scripted_acp_channel(
     ScriptedACPTransport,
     ScriptedMCPServers,
     ScriptedExternalHandler | None,
+    ScriptedContextContributor | None,
 ]:
     """The channel a scenario's `acp` member describes, and its agent."""
     spec = channel["acp"]
     handler = (
         ScriptedExternalHandler(spec["external_tool_handler"])
         if "external_tool_handler" in spec
+        else None
+    )
+    context = (
+        ScriptedContextContributor(spec["context_contributor"], gates)
+        if "context_contributor" in spec
         else None
     )
     mcp = ScriptedMCPServers(spec.get("mcp_servers", []), gates)
@@ -274,11 +281,14 @@ def scripted_acp_channel(
             session_config=spec.get("session_config"),
             publish_thinking_text=spec.get("publish_thinking_text", False),
             external_tool_handler=handler,
+            room_history=spec.get("room_history", 20),
+            context_contributor=context,
         ),
         agent,
         transport,
         mcp,
         handler,
+        context,
     )
 
 

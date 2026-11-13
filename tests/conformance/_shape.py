@@ -17,6 +17,7 @@ from tests.conformance._acp import INITIALIZE as ACP_INITIALIZE
 from tests.conformance._acp import PROMPT as ACP_PROMPT
 from tests.conformance._acp import REFUSAL as ACP_REFUSAL
 from tests.conformance._acp import SESSION_REPLY as ACP_SESSION_REPLY
+from tests.conformance._acp_context import context_problems
 from tests.conformance._acp_handler import handler_problems
 from tests.conformance._acp_mcp import mcp_problems
 from tests.conformance._acp_permissions import permission_problems
@@ -382,6 +383,7 @@ EXPECT = {
     "acp_permissions",
     "acp_handlers",
     "acp_mcp_requests",
+    "acp_context_requests",
     "acp_prompts",
     "thinking_events",
     "tool_events",
@@ -639,6 +641,15 @@ def _acp_thinking(spec: Mapping[str, Any], path: str, found: list[str]) -> None:
             found.append(f"{path}.agent.prompts[{index}].after_updates_gate: expected a gate name")
 
 
+def _acp_context(spec: Mapping[str, Any], path: str, found: list[str]) -> None:
+    if "room_history" in spec and (
+        type(spec["room_history"]) is not int or spec["room_history"] < 0
+    ):
+        found.append(f"{path}.room_history: expected a nonnegative integer")
+    if "context_contributor" in spec:
+        found.extend(context_problems(spec["context_contributor"], f"{path}.context_contributor"))
+
+
 def _acp(spec: Mapping[str, Any], path: str, found: list[str]) -> None:
     _members(
         spec,
@@ -651,6 +662,8 @@ def _acp(spec: Mapping[str, Any], path: str, found: list[str]) -> None:
             "mcp_servers",
             "publish_thinking_text",
             "external_tool_handler",
+            "room_history",
+            "context_contributor",
         },
         path,
         found,
@@ -659,6 +672,7 @@ def _acp(spec: Mapping[str, Any], path: str, found: list[str]) -> None:
         found.extend(
             handler_problems(spec["external_tool_handler"], f"{path}.external_tool_handler")
         )
+    _acp_context(spec, path, found)
     _acp_directories(spec, path, found)
     _acp_thinking(spec, path, found)
     if "mcp_servers" in spec:

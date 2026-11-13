@@ -155,6 +155,7 @@ class _Comparison:
             "acp_wire",
             "acp_prompts",
             "acp_mcp_requests",
+            "acp_context_requests",
             "acp_permissions",
             "acp_handlers",
         ):
