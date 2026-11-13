@@ -1,0 +1,81 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/context-first-prompt-default-policy",
+  "title": "Lifecycle records before the first message are not missing conversation",
+  "rules": [
+    "§6.4",
+    "§19.3.2"
+  ],
+  "notes": "RMK-1447, approved by HITL ad545591 and ffa81e17: default persistence includes lifecycle records in Python. The complete conversation starts at zero regardless of those records.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {},
+          "context_contributor": {
+            "responses": [
+              {
+                "blocks": []
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "Hello"
+      },
+      "addressed_to": [
+        "claude"
+      ]
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "acp_prompts": {
+      "claude": [
+        {
+          "text": "Hello"
+        }
+      ]
+    },
+    "acp_context_requests": {
+      "claude": [
+        {
+          "history_start_index": 0
+        }
+      ]
+    }
+  }
+}

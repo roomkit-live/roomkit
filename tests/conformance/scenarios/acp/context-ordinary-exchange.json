@@ -1,0 +1,89 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/context-ordinary-exchange",
+  "title": "An acknowledged request is not repeated on the next turn",
+  "rules": [
+    "§6.4",
+    "§19.3.2"
+  ],
+  "notes": "Python: tests/test_channels/test_acp.py::TestRoomCatchUp::test_nothing_missed_sends_the_request_alone. Exact public ACP prompt attempts. Explicit message-only persistence isolates conversation indices; RMK-1447 separately tracks the default-policy lifecycle gap.",
+  "setup": {
+    "kit": {
+      "persistence_policy": {
+        "persist_types": [
+          "message"
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {}
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "first"
+      },
+      "addressed_to": [
+        "claude"
+      ]
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "second"
+      },
+      "addressed_to": [
+        "claude"
+      ]
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "acp_prompts": {
+      "claude": [
+        {
+          "text": "first"
+        },
+        {
+          "text": "second"
+        }
+      ]
+    }
+  }
+}

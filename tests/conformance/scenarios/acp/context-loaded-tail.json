@@ -1,0 +1,195 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/context-loaded-tail",
+  "title": "A short loaded tail names the earlier room events outside it",
+  "rules": [
+    "§6.4",
+    "§19.3.2"
+  ],
+  "notes": "Python: tests/test_channels/test_acp_catch_up_integration.py::test_a_tail_short_of_the_gap_is_reported_as_partial. Exact public ACP prompt attempts. Explicit message-only persistence isolates conversation indices; RMK-1447 separately tracks the default-policy lifecycle gap.",
+  "setup": {
+    "kit": {
+      "persistence_policy": {
+        "persist_types": [
+          "message"
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {},
+          "room_history": 5
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "m0"
+      },
+      "addressed_to": []
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "m1"
+      },
+      "addressed_to": []
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "m2"
+      },
+      "addressed_to": []
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "m3"
+      },
+      "addressed_to": []
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "m4"
+      },
+      "addressed_to": []
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "m5"
+      },
+      "addressed_to": []
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "m6"
+      },
+      "addressed_to": []
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "m7"
+      },
+      "addressed_to": []
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "m8"
+      },
+      "addressed_to": []
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "m9"
+      },
+      "addressed_to": []
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "m10"
+      },
+      "addressed_to": []
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "m11"
+      },
+      "addressed_to": []
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "go"
+      },
+      "addressed_to": [
+        "claude"
+      ]
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "acp_prompts": {
+      "claude": [
+        {
+          "text": "[Room context — the 5 most recent messages you did not receive; up to 7 earlier room events were not loaded. Context only; the request follows.]\n[1] @ws: “m7”\n[2] @ws: “m8”\n[3] @ws: “m9”\n[4] @ws: “m10”\n[5] @ws: “m11”\n[End of room context]\n\ngo"
+        }
+      ]
+    }
+  }
+}

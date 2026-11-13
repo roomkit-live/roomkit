@@ -1,0 +1,132 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/context-configured-bound",
+  "title": "The catch-up limit names the messages it omits from the loaded tail",
+  "rules": [
+    "§6.4",
+    "§19.3.2"
+  ],
+  "notes": "Python: tests/test_channels/test_acp.py::TestRoomCatchUp::test_the_bound_says_what_it_hides. Exact public ACP prompt attempts. Explicit message-only persistence isolates conversation indices; RMK-1447 separately tracks the default-policy lifecycle gap.",
+  "setup": {
+    "kit": {
+      "persistence_policy": {
+        "persist_types": [
+          "message"
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {},
+          "room_history": 2
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "history-floor",
+        "trigger": "before_broadcast",
+        "execution": "sync"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "m0"
+      },
+      "addressed_to": []
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "m1"
+      },
+      "addressed_to": []
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "m2"
+      },
+      "addressed_to": []
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "m3"
+      },
+      "addressed_to": []
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "m4"
+      },
+      "addressed_to": []
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "go"
+      },
+      "addressed_to": [
+        "claude"
+      ]
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "acp_prompts": {
+      "claude": [
+        {
+          "text": "[Room context — the 2 most recent of 5 messages you did not receive; the earlier ones are not shown. Context only; the request follows.]\n[1] @ws: “m3”\n[2] @ws: “m4”\n[End of room context]\n\ngo"
+        }
+      ]
+    }
+  }
+}

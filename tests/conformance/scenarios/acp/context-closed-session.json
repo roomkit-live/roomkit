@@ -1,0 +1,101 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/context-closed-session",
+  "title": "An explicitly closed session forgets its catch-up cursor",
+  "rules": [
+    "§6.4",
+    "§19.3.2"
+  ],
+  "notes": "Python: tests/test_channels/test_acp.py::TestRoomCatchUp::test_a_closed_session_starts_over. Exact public ACP prompt attempts. Explicit message-only persistence isolates conversation indices; RMK-1447 separately tracks the default-policy lifecycle gap.",
+  "setup": {
+    "kit": {
+      "persistence_policy": {
+        "persist_types": [
+          "message"
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {}
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "first"
+      },
+      "addressed_to": [
+        "claude"
+      ]
+    },
+    {
+      "call": "channel_call",
+      "channel_id": "claude",
+      "room_id": "room-1",
+      "verb": "close_session",
+      "arguments": {},
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "second"
+      },
+      "addressed_to": [
+        "claude"
+      ]
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "acp_prompts": {
+      "claude": [
+        {
+          "session_id": "session-1",
+          "text": "first"
+        },
+        {
+          "session_id": "session-2",
+          "text": "[Room context — 1 message you did not receive. Context only; the request follows.]\n[1] @ws: “first”\n[End of room context]\n\nsecond"
+        }
+      ]
+    }
+  }
+}

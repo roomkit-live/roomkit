@@ -1,0 +1,138 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/context-host-every-turn",
+  "title": "Each eligible turn calls the host with its own request and room tail",
+  "rules": [
+    "§6.4",
+    "§19.3.2"
+  ],
+  "notes": "Python: tests/test_channels/test_acp.py::TestHostContext::test_it_reads_the_room_and_the_event_that_asked. Exact public ACP prompt attempts. Explicit message-only persistence isolates conversation indices; RMK-1447 separately tracks the default-policy lifecycle gap.",
+  "setup": {
+    "kit": {
+      "persistence_policy": {
+        "persist_types": [
+          "message"
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {},
+          "context_contributor": {
+            "responses": [
+              {
+                "blocks": [
+                  "One"
+                ]
+              },
+              {
+                "blocks": [
+                  "Two"
+                ]
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "first"
+      },
+      "addressed_to": [
+        "claude"
+      ]
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "second"
+      },
+      "addressed_to": [
+        "claude"
+      ]
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "acp_prompts": {
+      "claude": [
+        {
+          "text": "One\n\nfirst"
+        },
+        {
+          "text": "Two\n\nsecond"
+        }
+      ]
+    },
+    "acp_context_requests": {
+      "claude": [
+        {
+          "room_id": "room-1",
+          "event": {
+            "id": "room-1#0",
+            "content": {
+              "body": "first"
+            }
+          },
+          "recent_events": [
+            {
+              "id": "room-1#0"
+            }
+          ]
+        },
+        {
+          "room_id": "room-1",
+          "event": {
+            "id": "room-1#1",
+            "content": {
+              "body": "second"
+            }
+          },
+          "recent_events": [
+            {
+              "id": "room-1#0"
+            },
+            {
+              "id": "room-1#1"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
