@@ -10,6 +10,7 @@ proves through ``process_inbound``.
 from __future__ import annotations
 
 import asyncio
+from uuid import uuid4
 
 import pytest
 
@@ -26,8 +27,9 @@ from roomkit.models.enums import ChannelType
 from roomkit.models.event import TextContent
 from roomkit.models.room import Room
 from roomkit.store.memory import InMemoryStore
+from roomkit.store.postgres_lock import PostgresAdvisoryLockManager
 from tests.test_framework import AILikeChannel, SimpleChannel
-from tests.test_locks import MarkingLockManager, SharedLockManager
+from tests.test_locks import MarkingLockManager, SharedLockManager, a_lock_manager
 
 
 class RecordingChannel(SimpleChannel):
@@ -176,14 +178,18 @@ async def test_delivery_runs_outside_the_room_lock(locks: type[InMemoryLockManag
     await kit.close()
 
 
-@pytest.mark.parametrize("locks", [InMemoryLockManager, SharedLockManager])
+@pytest.mark.parametrize(
+    "locks", [InMemoryLockManager, SharedLockManager, PostgresAdvisoryLockManager]
+)
 async def test_a_room_named_like_a_delivery_claim_holds_no_claim(
     locks: type[RoomLockManager],
 ) -> None:
     """A room's delivery claim is in a key space of its own (RFC §13.5): a
     section of the room ``__delivery__:r1`` leaves r1's deliveries free,
-    with the in-memory manager or one shared across processes."""
-    kit = RoomKit(lock_manager=locks())
+    with the in-memory manager, one shared across processes, or
+    PostgreSQL's advisory locks."""
+    kit = RoomKit(lock_manager=await a_lock_manager(locks))
+    room = f"r-{uuid4().hex[:8]}"
     delivered = asyncio.Event()
 
     class Recorder(SimpleChannel):
@@ -193,10 +199,10 @@ async def test_a_room_named_like_a_delivery_claim_holds_no_claim(
 
     kit.register_channel(SimpleChannel("src"))
     kit.register_channel(Recorder("out"))
-    await kit.create_room(room_id="r1")
-    await kit.attach_channel("r1", "src")
-    await kit.attach_channel("r1", "out")
-    async with kit.lock_manager.locked("__delivery__:r1"):
+    await kit.create_room(room_id=room)
+    await kit.attach_channel(room, "src")
+    await kit.attach_channel(room, "out")
+    async with kit.lock_manager.locked(f"__delivery__:{room}"):
         await asyncio.wait_for(
             kit.process_inbound(
                 InboundMessage(channel_id="src", sender_id="u", content=TextContent(body="hi"))
@@ -207,27 +213,44 @@ async def test_a_room_named_like_a_delivery_claim_holds_no_claim(
     await kit.close()
 
 
-async def test_a_stored_room_whose_id_holds_nul_takes_no_room_lock() -> None:
+@pytest.mark.parametrize("locks", [SharedLockManager, PostgresAdvisoryLockManager])
+async def test_a_stored_room_whose_id_holds_nul_takes_no_room_lock(
+    locks: type[RoomLockManager],
+) -> None:
     """A room id holding a NUL character that no ``create_room`` made (a
     room written to the store straight) takes no room lock (RFC §13.5): in
     a shared manager, the room ``\\x00__delivery__:r1``'s lock would be r1's
-    delivery claim."""
-    nul_room = "\x00__delivery__:r1"
+    delivery claim, which another holds meanwhile."""
+    nul_room = f"\x00__delivery__:r-{uuid4().hex[:8]}"
     store = InMemoryStore()
-    locks = SharedLockManager()
-    kit = RoomKit(store=store, lock_manager=locks)
+    manager = await a_lock_manager(locks)
+    kit = RoomKit(store=store, lock_manager=manager)
     kit.register_channel(SimpleChannel("src"))
     await store.create_room(Room(id=nul_room))
-    with pytest.raises(ValueError, match="NUL"):
-        await kit.attach_channel(nul_room, "src")
-    await store.add_binding(
-        ChannelBinding(channel_id="src", room_id=nul_room, channel_type=ChannelType.SMS)
-    )
-    with pytest.raises(ValueError, match="NUL") as refused:
-        await kit.send_event(nul_room, "src", TextContent(body="hi"))
+    held, done = asyncio.Event(), asyncio.Event()
+
+    async def claimed() -> None:
+        # Another kit's claim of the room r-...: what the NUL room's lock
+        # would wait for.
+        async with manager.locked(nul_room):
+            held.set()
+            await done.wait()
+
+    holder = asyncio.create_task(claimed())
+    await held.wait()
+    try:
+        with pytest.raises(ValueError, match="NUL"):
+            await asyncio.wait_for(kit.attach_channel(nul_room, "src"), 1.0)
+        await store.add_binding(
+            ChannelBinding(channel_id="src", room_id=nul_room, channel_type=ChannelType.SMS)
+        )
+        with pytest.raises(ValueError, match="NUL") as refused:
+            await asyncio.wait_for(kit.send_event(nul_room, "src", TextContent(body="hi")), 1.0)
+    finally:
+        done.set()
+        await holder
     # A delivery's error code reads the class's name: no private name there.
     assert type(refused.value).__name__ == "ValueError"
-    assert nul_room not in locks.keys
     await kit.close()
 
 

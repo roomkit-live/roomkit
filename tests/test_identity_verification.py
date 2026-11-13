@@ -30,8 +30,9 @@ from roomkit.core.mixins import verification as verification_mixin
 from roomkit.models.verification import Verification
 from roomkit.store.base import ConversationStore
 from roomkit.store.memory import InMemoryStore
+from roomkit.store.postgres_lock import PostgresAdvisoryLockManager
 from roomkit.store.sqlite import SQLiteStore
-from tests.test_locks import SharedLockManager
+from tests.test_locks import SharedLockManager, a_lock_manager
 
 # The production work factor, ~55 ms a hash: what a leaked store's codes cost.
 _PRODUCTION_SCRYPT_N = verification_mixin._SCRYPT_N
@@ -114,20 +115,23 @@ async def test_a_completed_request_verifies_the_identity(store: ConversationStor
     await kit.close()
 
 
-@pytest.mark.parametrize("locks", [InMemoryLockManager, SharedLockManager])
+@pytest.mark.parametrize(
+    "locks", [InMemoryLockManager, SharedLockManager, PostgresAdvisoryLockManager]
+)
 async def test_a_room_named_like_a_verification_key_holds_no_verification(
     locks: type[RoomLockManager],
 ) -> None:
     """An identity's verification lock is in a key space of its own (RFC
     §13.5): a section of the room ``verification::alice`` leaves alice's
-    transitions free, with the in-memory manager or one shared across
-    processes."""
-    kit = RoomKit(lock_manager=locks())
+    transitions free, with the in-memory manager, one shared across
+    processes, or PostgreSQL's advisory locks."""
+    kit = RoomKit(lock_manager=await a_lock_manager(locks))
     room = await _room(kit)
+    alice = _identity()
     held, done = asyncio.Event(), asyncio.Event()
 
     async def section() -> None:
-        async with kit.lock_manager.locked("verification::alice"):
+        async with kit.lock_manager.locked(f"verification::{alice}"):
             held.set()
             await done.wait()
 
@@ -135,12 +139,12 @@ async def test_a_room_named_like_a_verification_key_holds_no_verification(
     await held.wait()
     try:
         request, _ = await asyncio.wait_for(
-            kit.request_verification("alice", room_id=room, channel_id="sms"), 1.0
+            kit.request_verification(alice, room_id=room, channel_id="sms"), 1.0
         )
     finally:
         done.set()
         await holder
-    assert request.identity_id == "alice"
+    assert request.identity_id == alice
     await kit.close()
 
 

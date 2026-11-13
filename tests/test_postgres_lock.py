@@ -5,12 +5,14 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
 from roomkit.core.locks import InMemoryLockManager
 from roomkit.store.postgres_lock import PostgresAdvisoryLockManager, _advisory_key
+from roomkit.store.sqlite import SQLiteStore
 
 
 class _FakeConn:
@@ -87,14 +89,29 @@ async def test_close_skips_external_pool() -> None:
 # ── Multiprocess-safety warning ─────────────────────────────────
 
 
-def test_warns_persistent_store_with_in_memory_lock(caplog: pytest.LogCaptureFixture) -> None:
+@pytest.mark.parametrize("lock_manager", [InMemoryLockManager, None], ids=["given", "default"])
+@pytest.mark.parametrize("store", ["PostgresStore", "SQLiteStore"])
+def test_warns_persistent_store_with_in_memory_lock(
+    store: str,
+    lock_manager: type[InMemoryLockManager] | None,
+    caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+) -> None:
+    """A store other processes may share, PostgreSQL's or an SQLite file,
+    paired with an in-process lock, given or by default, is told at the
+    kit's construction (RFC §13.5). No connection is opened."""
     from roomkit import RoomKit
     from roomkit.store.postgres import PostgresStore
 
-    pg = PostgresStore(pool=MagicMock())
+    shared = (
+        PostgresStore(pool=MagicMock())
+        if store == "PostgresStore"
+        else SQLiteStore(tmp_path / "rooms.db")
+    )
     with caplog.at_level(logging.WARNING, logger="roomkit.framework"):
-        RoomKit(store=pg, lock_manager=InMemoryLockManager())
-    assert any("InMemoryLockManager" in r.message for r in caplog.records)
+        RoomKit(store=shared, lock_manager=lock_manager() if lock_manager else None)
+    told = f"{store} is paired with InMemoryLockManager"
+    assert [r for r in caplog.records if r.getMessage().startswith(told)] != []
 
 
 def test_no_warning_for_in_memory_store(caplog: pytest.LogCaptureFixture) -> None:

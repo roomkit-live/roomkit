@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
@@ -10,6 +11,7 @@ import pytest
 
 from roomkit import RoomKit
 from roomkit.core.locks import InMemoryLockManager, RoomLockManager, _has_room_lock, _held_rooms
+from roomkit.store.postgres_lock import PostgresAdvisoryLockManager
 
 
 class TestInMemoryLockManager:
@@ -190,6 +192,20 @@ class SharedLockManager(RoomLockManager):
         self.keys.append(room_id)
         async with self.locks.setdefault(room_id, asyncio.Lock()):
             yield
+
+
+async def a_lock_manager(kind: type[RoomLockManager]) -> RoomLockManager:
+    """A manager of *kind*; a ``PostgresAdvisoryLockManager`` on a pool of
+    its own, which the kit's close closes, on the server ``POSTGRES_DSN``
+    names: its keys are the database's, every kind in one space."""
+    if kind is not PostgresAdvisoryLockManager:
+        return kind()
+    dsn = os.environ.get("POSTGRES_DSN")
+    if not dsn:
+        pytest.skip("POSTGRES_DSN not set")
+    manager = PostgresAdvisoryLockManager(dsn, max_size=4)
+    await manager.init()
+    return manager
 
 
 async def test_a_room_id_with_a_nul_character_is_refused() -> None:
