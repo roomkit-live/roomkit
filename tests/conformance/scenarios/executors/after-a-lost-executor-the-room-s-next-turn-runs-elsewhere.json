@@ -11,7 +11,7 @@
     "kit": {
       "turn_timeouts": {
         "heartbeat_interval_ms": 10,
-        "heartbeat_timeout_ms": 60,
+        "heartbeat_timeout_ms": 1000,
         "accept_ms": 1000,
         "cancel_ms": 100
       }
