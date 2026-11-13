@@ -10,6 +10,7 @@ from typing import Any
 
 import pytest
 
+from roomkit import ToolHandler
 from roomkit.channels.ai import AIChannel
 from roomkit.channels.base import Channel
 from roomkit.channels.realtime_voice import RealtimeVoiceChannel
@@ -539,14 +540,21 @@ class TestLLMTelemetry:
         assert mock.get_active_spans() == []
 
     async def test_a_stream_a_cut_left_unread_opens_no_llm_span(self) -> None:
-        """The first agent's stream is read while its tool holds, the delivery
-        is cancelled there, and the second agent's is closed unread."""
-        held, release = asyncio.Event(), asyncio.Event()
+        """The stream read first is read while its tool holds, the delivery is
+        cancelled there, and the other agent's is closed unread. The streams
+        are read in the order their turns came back (RFC §10.1 step 14):
+        across Redis either agent's may come first, so both hold."""
+        held: list[str] = []
+        holding, release = asyncio.Event(), asyncio.Event()
 
-        async def hold(_name: str, _arguments: dict[str, Any]) -> str:
-            held.set()
-            await release.wait()
-            return "42"
+        def hold_for(channel_id: str) -> ToolHandler:
+            async def hold(_name: str, _arguments: dict[str, Any]) -> str:
+                held.append(channel_id)
+                holding.set()
+                await release.wait()
+                return "42"
+
+            return hold
 
         mock = MockTelemetryProvider()
         kit = RoomKit(telemetry=mock)
@@ -555,15 +563,17 @@ class TestLLMTelemetry:
             finish_reason="tool_calls",
             tool_calls=[AIToolCall(id="c1", name="held", arguments={})],
         )
-        kit.register_channel(
-            AIChannel(
-                "first",
-                provider=MockAIProvider(ai_responses=[calling, AIResponse(content="Done.")]),
-                tool_handler=hold,
-                tools=[AITool(name="held", description="Holds.", parameters={"type": "object"})],
+        for channel_id in ("first", "second"):
+            kit.register_channel(
+                AIChannel(
+                    channel_id,
+                    provider=MockAIProvider(ai_responses=[calling, AIResponse(content="Done.")]),
+                    tool_handler=hold_for(channel_id),
+                    tools=[
+                        AITool(name="held", description="Holds.", parameters={"type": "object"})
+                    ],
+                )
             )
-        )
-        kit.register_channel(AIChannel("second", provider=MockAIProvider(responses=["Never."])))
         kit.register_channel(SimpleChannel("ch1"))
         room = await kit.create_room()
         await kit.attach_channel(room.id, "ch1")
@@ -572,13 +582,14 @@ class TestLLMTelemetry:
 
         msg = InboundMessage(channel_id="ch1", sender_id="user1", content=TextContent(body="hi"))
         result = await kit.process_inbound(msg, room_id=room.id, defer_delivery=True)
-        await asyncio.wait_for(held.wait(), 5)
+        await asyncio.wait_for(holding.wait(), 5)
         await result.delivery.cancel(reason="stopped")
         release.set()
         await result.delivery.wait()
         await kit.close()
 
-        assert [s.channel_id for s in mock.get_spans(SpanKind.LLM_GENERATE)] == ["first"]
+        assert len(held) == 1
+        assert [s.channel_id for s in mock.get_spans(SpanKind.LLM_GENERATE)] == held
         assert mock.get_active_spans() == []
 
     async def test_ai_channel_tool_call_span(self, streaming: bool) -> None:
