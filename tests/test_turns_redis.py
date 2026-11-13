@@ -32,6 +32,7 @@ from roomkit import (
 )
 from roomkit.channels.agent import Agent
 from roomkit.core.exceptions import TurnLinkError
+from roomkit.core.task_utils import cancel_reason
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import ChannelCategory, ChannelType, EventType
 from roomkit.models.event import EventSource, RoomEvent, TextContent, ToolCallContent
@@ -63,6 +64,7 @@ pytestmark = pytest.mark.skipif(not os.environ.get("REDIS_URL"), reason="REDIS_U
 
 TIMEOUTS = TurnTimeouts(heartbeat_interval=0.2, heartbeat_timeout=1.0, accept=3.0, cancel=1.0)
 EXECUTOR = Path(__file__).with_name("redis_turn_executor.py")
+OWNER = Path(__file__).with_name("redis_turn_owner.py")
 
 
 @pytest.fixture
@@ -301,6 +303,125 @@ async def test_a_killed_executor_fails_its_turn_and_the_room_goes_on(
         await kit.close()
         if second is not None:
             await second.stop()
+
+
+# -- A room owner in another process ------------------------------------------------
+
+
+class _OwnerProcess:
+    """A room owner in a subprocess (tests/redis_turn_owner.py): its room r
+    binds the agent ``worker``, which an executor elsewhere serves, and it
+    sends r one message."""
+
+    def __init__(self, process: asyncio.subprocess.Process, node: str) -> None:
+        self.process = process
+        self.node = node
+        """The owner's process on the backend, whose inbox the executor writes to."""
+
+    @classmethod
+    async def start(cls, prefix: str) -> _OwnerProcess:
+        process = await asyncio.create_subprocess_exec(
+            sys.executable,
+            str(OWNER),
+            os.environ["REDIS_URL"],
+            prefix,
+            stdout=asyncio.subprocess.PIPE,
+        )
+        owner = cls(process, "")
+        owner.node = (await owner.line_starting("owner ")).removeprefix("owner ")
+        return owner
+
+    async def line_starting(self, prefix: str) -> str:
+        """The next line the process prints that starts with *prefix*."""
+        assert self.process.stdout is not None
+        while True:
+            got = await asyncio.wait_for(self.process.stdout.readline(), 20)
+            assert got, f"the owner process ended before printing {prefix!r}"
+            line = got.decode().strip()
+            if line.startswith(prefix):
+                return line
+
+    async def kill(self) -> None:
+        if self.process.returncode is None:
+            self.process.kill()
+        await self.process.wait()
+
+
+def _holding_agent(calls: list[asyncio.Task[Any]], cut: list[str | None]) -> Agent:
+    """An agent whose one tool sends the owner's verb ``app.hold`` from a task
+    of its own, kept in *calls*, then runs until its turn is cut, the cut's
+    reason kept in *cut*."""
+
+    async def hold(name: str, arguments: dict[str, Any]) -> str:
+        host = current_turn_host()
+        assert host is not None
+        # The cut cancels the tool, never this task: only the owner's loss
+        # ends its call.
+        calls.append(asyncio.ensure_future(host.call("app.hold")))
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError as cancelled:
+            cut.append(cancel_reason(cancelled))
+            raise
+        return "held"
+
+    calling = AIResponse(content="", tool_calls=[AIToolCall(id="c1", name="hold", arguments={})])
+    return Agent(
+        "worker",
+        provider=MockAIProvider(ai_responses=[calling, AIResponse(content="Released.")]),
+        tools=[AITool(name="hold", description="Hold.", parameters={"type": "object"})],
+        tool_handler=hold,
+    )
+
+
+@pytest.mark.wallclock
+async def test_a_turn_whose_owner_s_process_died_is_cut_owner_lost(
+    prefix: str, redis_client: Any
+) -> None:
+    """An executor of this process runs a turn of an owner of another, a call
+    of the turn's waiting on the owner. The owner's process is killed: silent
+    for the heartbeat timeout, it is taken for lost (RFC §10.6.8). The
+    executor cuts the turn with ``owner_lost``, fails the call the owner will
+    never answer, and the turn ends having sent the dead owner nothing but the
+    beats of that silence: no ``end``, no ``error``."""
+    calls: list[asyncio.Task[Any]] = []
+    cut: list[str | None] = []
+    host, executor = await _hosted(prefix, InMemoryStore(), _holding_agent(calls, cut))
+    keys = Keys(prefix)
+    running = keys.running(host.node_id)
+    owner = await _OwnerProcess.start(prefix)
+    try:
+        # The owner holds the turn: its verb runs the turn's call, it beats as
+        # a room owner, and the executor's process beats the turn as running.
+        await owner.line_starting("called")
+        assert owner.node.encode() in await redis_client.zrange(keys.owners, 0, -1)
+        started = time.monotonic()
+        while not (turn := await redis_client.smembers(running)):
+            assert time.monotonic() - started < 5 * TIMEOUTS.heartbeat_interval
+            await asyncio.sleep(TIMEOUTS.heartbeat_interval / 4)
+        inbox = keys.inbox(owner.node)
+        await owner.kill()
+        killed = time.monotonic()
+        last_before = (await redis_client.xinfo_stream(inbox))["last-generated-id"]
+
+        [call] = calls
+        with pytest.raises(TurnLinkError) as failed:
+            await asyncio.wait_for(call, 3 * TIMEOUTS.heartbeat_timeout)
+        silent_for = time.monotonic() - killed
+        while turn & await redis_client.smembers(running):
+            assert time.monotonic() - killed < 5 * TIMEOUTS.heartbeat_timeout
+            await asyncio.sleep(TIMEOUTS.heartbeat_interval / 4)
+        written = await redis_client.xrange(inbox, min=b"(" + last_before)
+    finally:
+        await owner.kill()
+        await host.close()
+        await executor.close()
+
+    assert failed.value.reason == "owner_lost"
+    assert cut == ["owner_lost"]
+    assert silent_for >= TIMEOUTS.heartbeat_timeout - TIMEOUTS.heartbeat_interval
+    sent = [json.loads(fields[b"body"])["message"]["type"] for _, fields in written]
+    assert set(sent) <= {"heartbeat"}, sent
 
 
 # -- Several processes, as backends of this one --------------------------------------
