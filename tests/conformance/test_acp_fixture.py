@@ -87,3 +87,34 @@ def test_thinking_fixture_rejects_malformed_controls(patch: dict[str, Any]) -> N
         }
     }
     assert unknown_members(scenario)
+
+
+@pytest.mark.parametrize(
+    "steps",
+    [
+        None,
+        {},
+        [None],
+        [{}],
+        [{"request": {}}],
+        [{"request": {"toolCall": {}, "options": []}}],
+        [{"request": {"toolCall": {"toolCallId": "t"}, "options": [{}]}}],
+        [{"request": {"toolCall": {"toolCallId": "t"}, "options": []}, "updates": None}],
+    ],
+)
+def test_permission_fixture_rejects_malformed_steps(steps: Any) -> None:
+    scenario = {
+        "setup": {
+            "channels": [
+                {
+                    "id": "agent",
+                    "type": "ai",
+                    "acp": {
+                        "cwd": "/srv/project",
+                        "agent": {"prompts": [{"permission_steps": steps}]},
+                    },
+                }
+            ]
+        },
+    }
+    assert any("permission_steps" in problem for problem in unknown_members(scenario))

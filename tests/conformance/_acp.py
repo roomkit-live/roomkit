@@ -16,11 +16,21 @@ import acp
 
 from roomkit import ACPChannel, ACPSessionInvalidatedError, ACPTransport
 from tests.conformance._acp_mcp import ScriptedMCPServers
+from tests.conformance._acp_permissions import PermissionExchanges
 from tests.conformance._script import Gates
 
 AGENT = {"initialize", "prompts", "new_sessions", "set_config_options", "close_sessions"}
 INITIALIZE = {"protocol_version", "closes_sessions", "agent_info", "mcp_capabilities"}
-PROMPT = {"gate", "updates", "after_updates_gate", "permission", "stop_reason", "usage", "error"}
+PROMPT = {
+    "gate",
+    "updates",
+    "after_updates_gate",
+    "permission",
+    "stop_reason",
+    "usage",
+    "error",
+    "permission_steps",
+}
 SESSION_REPLY = {"gate", "result", "error"}
 REFUSAL = {"reason", "recovery_authorized", "after_prompt"}
 SESSION_METHODS = {
@@ -37,6 +47,7 @@ class ScriptedACPAgent:
         self._spec = spec
         self._gates = gates
         self.received: list[dict[str, Any]] = []
+        self.permissions = PermissionExchanges()
         self.attempts: list[dict[str, Any]] = []
         self._sessions = 0
         self._prompts = 0
@@ -52,6 +63,7 @@ class ScriptedACPAgent:
                 message = json.loads(line)
                 method = message.get("method")
                 if method is None:
+                    self.permissions.accept(message)
                     continue
                 self.received.append({"method": method, "params": message.get("params")})
                 if "id" not in message:
@@ -96,34 +108,7 @@ class ScriptedACPAgent:
         elif method in SESSION_METHODS:
             result, error = await self._session_reply(method, prompt or {})
         elif method == "session/prompt" and prompt is not None:
-            if "gate" in prompt:
-                await self._gates.hold(prompt["gate"])
-            for update in prompt.get("updates", []):
-                _send(
-                    writer,
-                    {
-                        "jsonrpc": "2.0",
-                        "method": "session/update",
-                        "params": {"sessionId": params.get("sessionId"), "update": update},
-                    },
-                )
-            await self._after_updates(prompt)
-            if "permission" in prompt:
-                _send(
-                    writer,
-                    {
-                        "jsonrpc": "2.0",
-                        "id": f"permission-{message['id']}",
-                        "method": "session/request_permission",
-                        "params": {**prompt["permission"], "sessionId": params.get("sessionId")},
-                    },
-                )
-            if "error" in prompt:
-                error = prompt["error"]
-            else:
-                result = {"stopReason": prompt.get("stop_reason", "end_turn")}
-                if "usage" in prompt:
-                    result["usage"] = prompt["usage"]
+            result, error = await self._prompt_reply(message, prompt, writer)
         else:
             error = {"code": -32601, "message": "Method not found", "data": {"method": method}}
         answer: dict[str, Any] = {"jsonrpc": "2.0", "id": message["id"]}
@@ -132,6 +117,46 @@ class ScriptedACPAgent:
         else:
             answer["result"] = result
         _send(writer, answer)
+
+    async def _prompt_reply(
+        self, message: Mapping[str, Any], prompt: Mapping[str, Any], writer: asyncio.StreamWriter
+    ) -> tuple[dict[str, Any] | None, Mapping[str, Any] | None]:
+        session = message["params"]["sessionId"]
+        if "gate" in prompt:
+            await self._gates.hold(prompt["gate"])
+        self._updates(session, prompt.get("updates", []), writer)
+        await self._after_updates(prompt)
+        if "permission" in prompt:
+            _send(
+                writer,
+                {
+                    "jsonrpc": "2.0",
+                    "id": f"permission-{message['id']}",
+                    "method": "session/request_permission",
+                    "params": {**prompt["permission"], "sessionId": session},
+                },
+            )
+        for step in prompt.get("permission_steps", []):
+            await self.permissions.exchange(session, step["request"], writer)
+            self._updates(session, step.get("updates", []), writer)
+        if "error" in prompt:
+            return None, prompt["error"]
+        result = {"stopReason": prompt.get("stop_reason", "end_turn")}
+        if "usage" in prompt:
+            result["usage"] = prompt["usage"]
+        return result, None
+
+    @staticmethod
+    def _updates(session: str, updates: list[Any], writer: asyncio.StreamWriter) -> None:
+        for update in updates:
+            _send(
+                writer,
+                {
+                    "jsonrpc": "2.0",
+                    "method": "session/update",
+                    "params": {"sessionId": session, "update": update},
+                },
+            )
 
     async def _after_updates(self, prompt: Mapping[str, Any]) -> None:
         """Keep the prompt active after its updates have reached the pipe."""

@@ -910,6 +910,7 @@ def tool_call_record(payload: ToolCallEvent) -> dict[str, Any]:
         "result": result_content(payload.result),
         "is_error": payload.is_error,
         "refused": payload.refused,
+        "refused_but_ran": payload.refused_but_ran,
         "cancelled": payload.cancelled,
         "error_detail": payload.error_detail,
     }

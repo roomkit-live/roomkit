@@ -18,6 +18,7 @@ from tests.conformance._acp import PROMPT as ACP_PROMPT
 from tests.conformance._acp import REFUSAL as ACP_REFUSAL
 from tests.conformance._acp import SESSION_REPLY as ACP_SESSION_REPLY
 from tests.conformance._acp_mcp import mcp_problems
+from tests.conformance._acp_permissions import permission_problems
 from tests.conformance._delegate_tool import DELEGATE_TOOL_ARGUMENTS
 from tests.conformance._discussion import (
     DISCUSSION_ARGUMENTS,
@@ -377,6 +378,7 @@ EXPECT = {
     "models",
     "ai_routes",
     "acp_wire",
+    "acp_permissions",
     "acp_mcp_requests",
     "acp_prompts",
     "thinking_events",
@@ -670,6 +672,7 @@ def _acp(spec: Mapping[str, Any], path: str, found: list[str]) -> None:
         found.append(f"{path}.agent.initialize.mcp_capabilities: expected http/sse booleans")
     for index, prompt in enumerate(agent.get("prompts", [])):
         _members(prompt, ACP_PROMPT, f"{path}.agent.prompts[{index}]", found)
+        found.extend(permission_problems(prompt, f"{path}.agent.prompts[{index}]"))
     for kind in ("new_sessions", "set_config_options", "close_sessions"):
         for index, reply in enumerate(agent.get(kind, [])):
             _members(reply, ACP_SESSION_REPLY, f"{path}.agent.{kind}[{index}]", found)

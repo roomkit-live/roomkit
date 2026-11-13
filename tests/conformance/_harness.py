@@ -939,6 +939,7 @@ class Harness:
         self.observed.acp_prompts = {
             channel_id: list(agent.attempts) for channel_id, agent in self.acp_agents.items()
         }
+        self._collect_acp_permissions()
         self._collect_acp_mcp()
         self.observed.executors = {
             executor_id: list(calls) for executor_id, calls in self.executors.calls.items()
@@ -946,6 +947,12 @@ class Harness:
         tools, sessions, problems = self.auditors.observe()
         self.observed.tool_audit, self.observed.session_audit = tools, sessions
         self._problems.extend(problems)
+
+    def _collect_acp_permissions(self) -> None:
+        self.observed.acp_permissions = {
+            channel_id: list(agent.permissions.received)
+            for channel_id, agent in self.acp_agents.items()
+        }
 
     def _collect_acp_mcp(self) -> None:
         self.observed.acp_mcp_requests = {
