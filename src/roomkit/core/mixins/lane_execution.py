@@ -29,6 +29,7 @@ from roomkit.core.event_router import (
 )
 from roomkit.core.exceptions import KitClosedError, RoomNotFoundError, error_type_name
 from roomkit.core.lanes import anchor_index
+from roomkit.core.locks import lending_hook
 from roomkit.core.mixins.helpers import (
     _RECENT_EVENTS_LIMIT,
     HelpersMixin,
@@ -321,7 +322,7 @@ class LaneExecutionMixin(HelpersMixin):
                     room = await self._store.get_room(room_id)
                     anchor = anchor_index(None if room is None else room.latest_index)
                     cascade.retain()
-                    self._enqueue_exec(room_id, plan, cascade, index=None, after_index=anchor)
+                    self._enqueue_committed(room_id, plan, cascade, index=None, after_index=anchor)
             return None
         committed = await self._commit(
             room_id, event, target=target, activity=True, snapshot=snapshot
@@ -333,7 +334,7 @@ class LaneExecutionMixin(HelpersMixin):
             await self._note_committed_index(room_id, committed.index)
         else:
             cascade.retain()
-            self._enqueue_exec(room_id, plan, cascade, index=committed.index)
+            self._enqueue_committed(room_id, plan, cascade, index=committed.index)
         if discussion is not None:
             await self._queue_for_discussion(discussion, committed, plan)
         return committed
@@ -575,6 +576,24 @@ class LaneExecutionMixin(HelpersMixin):
             room_id,
             ExecEntry(plan=plan, cascade=cascade, index=index, after_index=after_index),
         )
+
+    def _enqueue_committed(
+        self,
+        room_id: str,
+        plan: DeliveryPlan,
+        cascade: DeliveryCascade,
+        *,
+        index: int | None,
+        after_index: int = -1,
+    ) -> None:
+        """Place a committed event's delivery set in the room's lane. Committed
+        by a call a hook's body made under the room's lock, it waits there
+        behind that body, until the hook is answered or given up (RFC §9.5.1
+        Reentrance: "Made under the lock, its delivery waits in the lane
+        behind the work that made it"), whatever the body awaits after the
+        call returned; and so do the sets behind it."""
+        plan.behind_hook = lending_hook(room_id, self._lock_manager)
+        self._enqueue_exec(room_id, plan, cascade, index=index, after_index=after_index)
 
     def _consume_streams_when_cascade_completes(
         self, cascade: DeliveryCascade, room_id: str

@@ -57,6 +57,35 @@ class _Call:
     waits for it (:mod:`roomkit.core._nested_calls`)."""
     nested: set[NestedCall] = field(default_factory=set)
     """The calls its tasks nested under its section, not over yet."""
+    lender: _Call | None = None
+    """For a call a task of a hook's body nested under its section, the
+    locks relent to it (:func:`relent_to`): that body's call."""
+    _answered: asyncio.Event | None = field(default=None, repr=False)
+
+    @property
+    def answered(self) -> bool:
+        """Whether the call is over, and the calls its tasks nested under its
+        section too: a hook's outcome is handed on, or the hook given up (its
+        timeout, its event's caller gone, the kit's close's cut)."""
+        return not self.running and not self.nested
+
+    def end(self) -> None:
+        """The call is over: the locks lent to it are lent no more."""
+        self.running = False
+        self.wake()
+
+    def wake(self) -> None:
+        """Wake the work waiting for the call to be answered, once it is."""
+        if self._answered is not None and self.answered:
+            self._answered.set()
+
+    async def until_over(self) -> None:
+        """Return once the call is answered."""
+        if self.answered:
+            return
+        if self._answered is None:
+            self._answered = asyncio.Event()
+        await self._answered.wait()
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,7 +182,7 @@ def lent_while_it_runs() -> Generator[_Call | None, None, None]:
     try:
         yield call
     finally:
-        call.running = False
+        call.end()
         _held_leases.reset(token)
 
 
@@ -164,7 +193,7 @@ def relent_to(call: _Call) -> Generator[None, None, None]:
     for as long as it runs: it keeps them once the body is over, while a
     later call of that task finds them lent no more (RFC §9.5.1
     Reentrance)."""
-    own = _Call(task=asyncio.current_task())
+    own = _Call(task=asyncio.current_task(), lender=call.lender or call)
     leases = tuple(
         _LentLease(lease.lease, own)
         if isinstance(lease, _LentLease) and lease.call is call
@@ -175,7 +204,7 @@ def relent_to(call: _Call) -> Generator[None, None, None]:
     try:
         yield
     finally:
-        own.running = False
+        own.end()
         _held_leases.reset(token)
 
 
@@ -214,6 +243,27 @@ def held_lease(room_id: str, manager: RoomLockManager) -> _LockLease | None:
             while isinstance(lease, _LentLease):
                 lease = lease.lease
             return lease
+    return None
+
+
+def lending_hook(room_id: str, manager: RoomLockManager) -> _Call | None:
+    """The call (a hook's body) the room lock on *room_id* of *manager* this
+    context holds is lent to, while it runs: what the context commits into
+    the room then is that hook's work, whose delivery waits in the room's
+    lane until the hook is answered (:attr:`_Call.answered`, RFC §9.5.1
+    Reentrance). For a call a task of the body nested under its section,
+    the body's. ``None`` when the context holds no such lock lent to a
+    call that runs: the section's own work, a call made outside the lock."""
+    if isinstance(manager, ReleaseTolerantLockManager):
+        manager = manager.inner
+    for lease in reversed(_held_leases.get()):
+        if (
+            isinstance(lease, _LentLease)
+            and lease.active
+            and lease.room_id == room_id
+            and lease.manager is manager
+        ):
+            return lease.call.lender or lease.call
     return None
 
 

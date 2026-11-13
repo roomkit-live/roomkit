@@ -109,6 +109,7 @@ def nested_in(
         _current.reset(token)
         call.nested.discard(nested)
         nested.over.set_result(None)
+        call.wake()
 
 
 async def nested_calls_over(call: _Call | None) -> None:

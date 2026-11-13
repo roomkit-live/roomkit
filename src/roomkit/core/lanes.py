@@ -48,7 +48,7 @@ from roomkit.turns.owner import drop_unread_streams
 
 if TYPE_CHECKING:
     from roomkit.core.event_router import StreamingResponse
-    from roomkit.core.locks import RoomLockManager, _LockLease
+    from roomkit.core.locks import RoomLockManager, _Call, _LockLease
     from roomkit.models.channel import ChannelBinding
     from roomkit.models.context import RoomContext
     from roomkit.models.delivery import InboundResult
@@ -138,6 +138,10 @@ class DeliveryPlan:
     # hook, RFC §11.7.6): its place in the lane is ahead of what that work
     # commits after it, and its turn comes once that work is over.
     under_lock: _LockLease | None = None
+    # The hook whose body made, under the room's lock, the call whose event
+    # the plan delivers (RFC §9.5.1 Reentrance): the lane runs the plan, and
+    # those behind it, once that hook is answered or given up.
+    behind_hook: _Call | None = None
     # A discussion takes the room's turns (RFC §19.7.5): its plans ask no agent
     # at broadcast, and a turn it gives is a rerun planned for one agent alone,
     # bounded by the discussion's own depth limit.
@@ -582,6 +586,10 @@ class ExecEntry:
     placed_under: frozenset[asyncio.Task[Any]] = field(default_factory=_placing_work)
     """The work whose call placed it: a ``close()`` from that work drops it
     as it starts when the lane still keeps it (:meth:`RoomDeliveryLane.drop_kept`)."""
+    placed_idle: bool = False
+    """Whether it was placed first in its idle lane, and no entry placed
+    later took the lead: its set runs from its placement, which the kit's
+    close does not drop (RFC §12.10.4)."""
 
 
 @dataclass(slots=True)
@@ -756,6 +764,7 @@ class RoomDeliveryLane:
         # Set by seal(): the reason the entries it drops, and the ones a cut
         # round took, end with.
         self._reason = "lane_cancelled"
+        self._sealed = asyncio.Event()
         self._cut = False
         # The highest index this lane delivered whose cursor write failed, or
         # one behind it: the lane reads the room's cursor as having passed it,
@@ -825,11 +834,14 @@ class RoomDeliveryLane:
         fills never costs the noted entry its place."""
         if not self._sending and not self._indexed and not self._unindexed:
             self._placed_idle = entry if isinstance(entry, ExecEntry) else None
+            if isinstance(entry, ExecEntry):
+                entry.placed_idle = True
         elif (
             isinstance(entry, ExecEntry)
             and self._placed_idle is not None
             and _runs_before(entry, self._placed_idle)
         ):
+            self._placed_idle.placed_idle = False
             self._placed_idle = None
 
     @property
@@ -859,6 +871,7 @@ class RoomDeliveryLane:
         self._closed = True
         self._reason = reason
         self._wakeup.set()
+        self._sealed.set()
         self._abort_pending(reason, keep=self._placed_idle)
 
     def cut(self) -> None:
@@ -998,7 +1011,9 @@ class RoomDeliveryLane:
         forbids (a lane never holds both). A rerun placed under the room
         lock (``DeliveryPlan.under_lock``) waits, under the claim, for the
         work holding that lock to end: no locked section ever waits for a
-        claim, so the wait ends with that work.
+        claim, so the wait ends with that work. So does a plan behind the
+        hook that made its call (``DeliveryPlan.behind_hook``), or until
+        the kit's close seals the lane.
         """
         delivered = await self._read_cursor()
         progressed = self._drop_stale(delivered)
@@ -1265,6 +1280,9 @@ class RoomDeliveryLane:
         they send into the room draws on its budget (RFC §9.5.1).
         """
         try:
+            if not await self._behind_its_hook(entry):
+                self._drop_held(entry)
+                return None
             with delivering(self.room_id, entry.cascade.budget):
                 return await self._host._execute_plan(entry.plan, entry.cascade)
         except asyncio.CancelledError:
@@ -1275,6 +1293,37 @@ class RoomDeliveryLane:
             )
             entry.cascade.record_error(exc)
             return None
+
+    async def _behind_its_hook(self, entry: ExecEntry) -> bool:
+        """Wait, *entry* taken, for the hook whose body made its call under
+        the room's lock (``DeliveryPlan.behind_hook``) to be answered or
+        given up, the entries behind it waiting with it (RFC §9.5.1
+        Reentrance); whether its set runs. The kit's close sealing the lane
+        ends the wait: the set runs from its placement when it was placed
+        first in its idle lane, and is dropped otherwise, as any set queued
+        behind another (RFC §12.10.4)."""
+        hook = entry.plan.behind_hook
+        if hook is None:
+            return True
+        answered = asyncio.ensure_future(hook.until_over())
+        sealed = asyncio.ensure_future(self._sealed.wait())
+        try:
+            done, _ = await asyncio.wait((answered, sealed), return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            answered.cancel()
+            sealed.cancel()
+        return answered in done or entry.placed_idle
+
+    def _drop_held(self, entry: ExecEntry) -> None:
+        """Drop *entry*, taken but held behind its hook when the kit's close
+        sealed the lane, as the close drops a set queued behind another (RFC
+        §12.10.4): its cascade cancelled with the seal's reason, what its
+        event's hooks gave stored; the round releases its unit."""
+        logger.info(
+            "Delivery dropped (%s) for room %s index %s", self._reason, self.room_id, entry.index
+        )
+        _keep_side_effects(self._host, entry)
+        entry.cascade.cancel(self._reason)
 
     async def _finish(self, entry: ExecEntry, result: Any) -> None:
         """Post-claim aftermath of one executed plan, then the unit release.

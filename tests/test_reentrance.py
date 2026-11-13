@@ -24,6 +24,7 @@ import pytest
 from roomkit import (
     ConferenceRealtimeConfig,
     FrameworkEvent,
+    HostChannel,
     MockConferenceBackend,
     ProcessTimeoutError,
     ReentrantCallError,
@@ -266,6 +267,177 @@ class TestACallFromATaskALockedHookStarted:
         outcome = (result.blocked, _order(await _messages(kit)), started[0].cancelled())
         assert outcome == (False, ["2:sms"], True)
         await kit.close()
+
+
+class _Noting(SimpleChannel):
+    """A transport that notes its first delivery as it starts."""
+
+    def __init__(self, channel_id: str) -> None:
+        super().__init__(channel_id)
+        self.reached = asyncio.Event()
+
+    async def deliver(
+        self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
+    ) -> ChannelOutput:
+        self.reached.set()
+        return await super().deliver(event, binding, context)
+
+
+class _Gated(SimpleChannel):
+    """A transport whose delivery of "first" waits until let go."""
+
+    def __init__(self, channel_id: str) -> None:
+        super().__init__(channel_id)
+        self.sending, self.go = asyncio.Event(), asyncio.Event()
+
+    async def deliver(
+        self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
+    ) -> ChannelOutput:
+        if _body(event) == "first":
+            self.sending.set()
+            await self.go.wait()
+        return await super().deliver(event, binding, context)
+
+
+CALLS = ["process_inbound", "send_event", "post", "send_greeting"]
+
+
+async def _heads_up_room(call: str) -> tuple[RoomKit, _Noting]:
+    """A room where a locked hook can send "Heads up" through *call*: a
+    host channel for a post, an agent for a greeting."""
+    ws = _Noting("ws")
+    kit = await _room(RoomKit(), ws)
+    if call == "post":
+        kit.register_channel(HostChannel("host"))
+        await kit.attach_channel("r1", "host")
+    if call == "send_greeting":
+        kit.register_channel(Agent("ai", provider=MockAIProvider(responses=["Hello."])))
+        await kit.attach_channel("r1", "ai", category=ChannelCategory.INTELLIGENCE)
+    return kit, ws
+
+
+async def _heads_up(kit: RoomKit, call: str) -> None:
+    """Send "Heads up" into the room through *call*."""
+    if call == "process_inbound":
+        await kit.process_inbound(_message("Heads up"), room_id="r1")
+    elif call == "send_event":
+        await kit.send_event("r1", "sms", TextContent(body="Heads up"))
+    elif call == "post":
+        await kit.post("r1", "Heads up")
+    else:
+        await kit.send_greeting("r1", greeting="Heads up")
+
+
+class TestACallALockedHookMakes:
+    """§9.5.1 Reentrance (RMK-1682): made under the lock, a call's delivery
+    waits in the lane behind the hook's body that made it, until the hook
+    is answered or given up, or the kit's close seals the lane."""
+
+    @pytest.mark.parametrize("call", CALLS)
+    async def test_is_delivered_once_the_hook_is_over(self, call: str) -> None:
+        """The hook sends, then works: nothing of its message is delivered
+        while it works, and the message is delivered once it is over, ahead
+        of the event the hook decides on."""
+        kit, ws = await _heads_up_room(call)
+        reached_while_working: list[bool] = []
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST, name="notifier")
+        async def notifier(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            if _body(event) == "hello":
+                await _heads_up(kit, call)
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(ws.reached.wait(), timeout=0.02)
+                reached_while_working.append(ws.reached.is_set())
+            return HookResult.allow()
+
+        await kit.process_inbound(_message("hello"))
+        assert reached_while_working == [False]
+        assert [_body(e) for e in ws.delivered][:2] == ["Heads up", "hello"]
+        await kit.close()
+
+    async def test_is_delivered_while_the_section_s_next_hook_works(self) -> None:
+        """The work that made it is the hook's body, not the section: once
+        the body returned, its delivery runs at its turn, while the
+        section's next hook still works."""
+        kit, ws = await _heads_up_room("process_inbound")
+        reached_while_next: list[bool] = []
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST, name="notifier")
+        async def notifier(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            if _body(event) == "hello":
+                await _heads_up(kit, "process_inbound")
+            return HookResult.allow()
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST, name="next", priority=10)
+        async def next_hook(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            if _body(event) == "hello":
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(ws.reached.wait(), timeout=1)
+                reached_while_next.append(ws.reached.is_set())
+            return HookResult.allow()
+
+        await kit.process_inbound(_message("hello"))
+        assert reached_while_next == [True]
+        assert [_body(e) for e in ws.delivered] == ["Heads up", "hello"]
+        await kit.close()
+
+    async def test_one_whose_hook_hangs_is_delivered_by_the_kit_s_close(
+        self, close_grace: float
+    ) -> None:
+        """The hook sends, then never returns. The kit's close seals the
+        room's lane: the message's delivery set, which waited behind the
+        hook, placed first in its idle lane, runs from its placement, and
+        the message is delivered within the close's grace (RFC §12.10.4)."""
+        kit, ws = await _heads_up_room("process_inbound")
+        sent = asyncio.Event()
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST, name="notifier")
+        async def notifier(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            if _body(event) == "hello":
+                await _heads_up(kit, "process_inbound")
+                sent.set()
+                await asyncio.Event().wait()
+            return HookResult.allow()
+
+        call = asyncio.create_task(kit.process_inbound(_message("hello")))
+        await asyncio.wait_for(sent.wait(), timeout=1)
+        await kit.close()
+        result = await asyncio.wait_for(call, timeout=1)
+        assert result.reason == "kit_closed"
+        assert [_body(e) for e in ws.delivered] == ["Heads up"]
+
+    async def test_one_queued_behind_another_is_dropped_by_the_kit_s_close(
+        self, close_grace: float
+    ) -> None:
+        """Its delivery set placed behind another set, still running, the
+        message waits behind its hook once that set is over. The hook never
+        returns, and the kit's close seals the lane: the set, queued behind
+        another at its placement, is dropped, as any (RFC §12.10.4)."""
+        ws = _Gated("ws")
+        kit = await _room(RoomKit(), ws)
+        sent = asyncio.Event()
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST, name="notifier")
+        async def notifier(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            if _body(event) == "hello":
+                await _heads_up(kit, "process_inbound")
+                sent.set()
+                await asyncio.Event().wait()
+            return HookResult.allow()
+
+        await kit.process_inbound(_message("first"), defer_delivery=True)
+        await asyncio.wait_for(ws.sending.wait(), timeout=1)
+        call = asyncio.create_task(kit.process_inbound(_message("hello")))
+        await asyncio.wait_for(sent.wait(), timeout=1)
+        ws.go.set()
+        lane = kit._lanes.lane("r1")
+        async with asyncio.timeout(1):
+            while lane._indexed:  # until the lane took "Heads up", held behind the hook
+                await asyncio.sleep(0.001)
+        await kit.close()
+        result = await asyncio.wait_for(call, timeout=1)
+        assert result.reason == "kit_closed"
+        assert [_body(e) for e in ws.delivered] == ["first"]
 
 
 class TestAnAdoptedCallBeforeItsCommit:

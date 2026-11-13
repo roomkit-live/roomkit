@@ -36,6 +36,7 @@ from roomkit.models.hook import InjectedEvent
 from roomkit.providers.ai.base import AIContext, AIResponse
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.store.memory import InMemoryStore
+from roomkit.store.sqlite import SQLiteStore
 from roomkit.turns import InMemoryTurnBackend
 from roomkit.turns.base import TurnLink
 from roomkit.turns.wire import TurnRequest
@@ -631,10 +632,18 @@ async def test_an_event_injected_by_a_cancelled_delivery_starts_no_turn(
 # -- the key: held while the delivery is in flight, scoped to its organization --------
 
 
-async def test_a_reentrant_call_s_key_names_its_delivery_until_it_runs(tmp_path: Path) -> None:
+@pytest.mark.parametrize("work", [0, 0.05], ids=["yield", "work"])
+@pytest.mark.parametrize("store", ["memory", "sqlite"])
+async def test_a_reentrant_call_s_key_names_its_delivery_until_it_runs(
+    store: str, work: float, tmp_path: Path
+) -> None:
     """A call made under the room's lock (a sync hook) returns before its
-    delivery starts, which follows in the lane: its key still names it."""
-    room = await _room("agent", tmp_path)
+    delivery starts, which waits in the lane behind the hook's body, whatever
+    the body awaits after the call: its key still names it, and the agent's
+    turn on it never starts once cancelled (RFC §9.5.1 Reentrance). The
+    message itself is delivered all the same, ahead of the hook's event."""
+    sqlite = SQLiteStore(tmp_path / "rooms.db") if store == "sqlite" else None
+    room = await _room("agent", tmp_path, store=sqlite)
     counts: list[int] = []
 
     @room.kit.hook(HookTrigger.BEFORE_BROADCAST)
@@ -647,6 +656,7 @@ async def test_a_reentrant_call_s_key_names_its_delivery_until_it_runs(tmp_path:
                 delivery_key="b",
             )
             await room.kit.process_inbound(inner, room_id="r")
+            await asyncio.sleep(work)  # the hook's own work, e.g. an HTTP call
             counts.append(await room.kit.cancel_delivery("b"))
         return HookResult.allow()
 
@@ -658,8 +668,8 @@ async def test_a_reentrant_call_s_key_names_its_delivery_until_it_runs(tmp_path:
         await room.until_broadcast("task B")
         await _no_turn_follows()
 
-        assert counts == [1]
-        assert "task B" not in room.seen.started
+        assert (counts, room.seen.started) == ([1], ["lead"])
+        assert room.delivered()[:2] == ["task B", "lead"]
         await _settled(lambda: not room.kit._delivery_keys._named)
     finally:
         await _closed(room)
