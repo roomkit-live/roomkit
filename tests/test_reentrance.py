@@ -328,6 +328,15 @@ async def _heads_up(kit: RoomKit, call: str) -> None:
         await kit.send_greeting("r1", greeting="Heads up")
 
 
+async def _until_held(kit: RoomKit) -> None:
+    """Until r1's lane, having taken a delivery set, waits behind the hook
+    that made its call: its wait on the lane's seal has begun."""
+    lane = kit._lanes.lane("r1")
+    async with asyncio.timeout(1):
+        while not lane._sealed._waiters:
+            await asyncio.sleep(0.001)
+
+
 class TestACallALockedHookMakes:
     """§9.5.1 Reentrance (RMK-1682): made under the lock, a call's delivery
     waits in the lane behind the hook's body that made it, until the hook
@@ -401,6 +410,7 @@ class TestACallALockedHookMakes:
 
         call = asyncio.create_task(kit.process_inbound(_message("hello")))
         await asyncio.wait_for(sent.wait(), timeout=1)
+        await _until_held(kit)
         await kit.close()
         result = await asyncio.wait_for(call, timeout=1)
         assert result.reason == "kit_closed"
@@ -430,10 +440,7 @@ class TestACallALockedHookMakes:
         call = asyncio.create_task(kit.process_inbound(_message("hello")))
         await asyncio.wait_for(sent.wait(), timeout=1)
         ws.go.set()
-        lane = kit._lanes.lane("r1")
-        async with asyncio.timeout(1):
-            while lane._indexed:  # until the lane took "Heads up", held behind the hook
-                await asyncio.sleep(0.001)
+        await _until_held(kit)
         await kit.close()
         result = await asyncio.wait_for(call, timeout=1)
         assert result.reason == "kit_closed"
