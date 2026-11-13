@@ -333,13 +333,6 @@ jobs:
           --junitxml=test-results/postgres-scenarios.xml
           tests/conformance/test_postgres.py
 
-      - name: Upload the JUnit reports
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: integration-junit
-          path: test-results/
-
       # Every kit built without a turn backend gets one across Redis, its own
       # executor reached there as one elsewhere (tests/redis_turn_mode.py); a
       # test that assumes the kit's process is marked in_process and skipped.
@@ -347,4 +340,13 @@ jobs:
       - name: Run the suite with the kit's turns across Redis
         env:
           ROOMKIT_TEST_TURN_BACKEND: redis
-        run: env -u POSTGRES_DSN uv run --with fastapi --with httpx2 pytest -q -n auto --dist worksteal
+        run: env -u POSTGRES_DSN uv run --with fastapi --with httpx2 pytest -q -n auto --dist worksteal --junitxml=test-results/redis-turns.xml
+
+      # After the Redis pass, so that its report goes too: the conformance
+      # receipts are imported from these files.
+      - name: Upload the JUnit reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: integration-junit
+          path: test-results/
