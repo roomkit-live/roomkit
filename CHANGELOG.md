@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Every tool call started on the room's realtime gets its `TOOL_CALL_END`, whatever the turn backend** (RFC §6.4, RMK-1664). A round's end went out only once the reader came back after its end markers, so a stream closed there left the start open: across Redis, a tool that answered right after its turn was cut; on any backend, a reader that stopped once a running call ended, and a turn cut while an external tool handler decided a call. The end now goes out all the same and reads as the stored row: as the call ended for a reader that stopped; for a cut turn, as it ended when its end had reached the room's owner, else `failed` with `{"error": "Tool call aborted"}`. A call of a cut round that had ended while another ran was published aborted too; it now ends as it did.
 
+- **The kit's close returns within its bound while an `SQLiteStore` operation still holds the file** (RFC §12.10.4, RMK-1671). The close shut the store's connection behind the operation already on it, so a write waiting for another process's lock on the file held the close up to SQLite's 5-second busy timeout past its unwind. The operation now gets one second, the bound a PostgreSQL pool's connections get; past it the close returns and says so in the log; the operation runs on, and the file closes once it ends.
+
 ## [0.114.0] — 2026-11-12
 
 ### Added

@@ -28,7 +28,7 @@ import logging
 import re
 import sqlite3
 from collections.abc import Generator
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 from contextlib import closing, contextmanager
 from datetime import UTC, datetime
 from functools import partial
@@ -777,6 +777,8 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
 class SQLiteStore(ConversationStore):
     """Single-file persistent store backed by stdlib ``sqlite3`` + FTS5."""
 
+    _close_timeout: float = 1.0
+
     def __init__(self, path: str | Path = "roomkit.db") -> None:
         self._path = str(path)
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="roomkit-sqlite")
@@ -881,15 +883,36 @@ class SQLiteStore(ConversationStore):
         if self._closed:
             return
         self._closed = True
-
-        def _shut() -> None:
-            if self._conn is not None:
-                self._conn.close()
-                self._conn = None
-
         loop = asyncio.get_running_loop()
-        await loop.run_in_executor(self._executor, _shut)
+        await loop.run_in_executor(self._executor, self._shut)
         self._executor.shutdown(wait=False)
+
+    async def _close_bounded(self) -> None:
+        """:meth:`close` as the kit's close runs it (RFC §12.10.4): the
+        operation still on the connection (a write waiting for another
+        process's lock on the file) gets ``_close_timeout`` seconds to end;
+        past it, the close returns, and the file closes once the operation
+        ends, behind it on the store's thread. Idempotent."""
+        if self._closed:
+            return
+        self._closed = True
+        shut = self._executor.submit(self._shut)
+        self._executor.shutdown(wait=False)
+        done, _ = await asyncio.to_thread(wait, [shut], self._close_timeout)
+        if done:
+            shut.result()
+        else:
+            logger.warning(
+                "SQLiteStore closed with an operation still running on its connection "
+                "after %.1f s: the file closes once it ends",
+                self._close_timeout,
+            )
+
+    def _shut(self) -> None:
+        """Close the connection. Worker thread only."""
+        if self._conn is not None:
+            self._conn.close()
+            self._conn = None
 
     def _row_to_room(self, row: sqlite3.Row) -> Room:
         room = Room.model_validate_json(row["data"])

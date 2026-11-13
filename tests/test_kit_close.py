@@ -30,6 +30,7 @@ import inspect
 import json
 import logging
 import os
+import sqlite3
 from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
 from typing import Any
@@ -1664,6 +1665,50 @@ async def test_a_connection_held_past_the_unwind_does_not_hold_the_close_of_the_
     finally:
         work.release.set()
         await asyncio.gather(call, return_exceptions=True)
+
+
+async def test_a_write_held_past_the_unwind_does_not_hold_the_close_of_the_kit_s_sqlite_file(
+    close_grace: float,
+    cut_unwind: float,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A commit waiting for the SQLite file's write lock, which another
+    process holds, holds the store's connection past its cut: the close
+    gives it a moment, names it, and returns; the file the store opened
+    closes once the write ends (RFC §12.10.4)."""
+    monkeypatch.setattr(SQLiteStore, "_close_timeout", cut_unwind)
+    path = tmp_path / "rooms.db"
+    committing = asyncio.Event()
+
+    class Committing(SQLiteStore):
+        async def commit_event(self, room_id: str, event: RoomEvent, **kw: Any) -> RoomEvent:
+            if getattr(event.content, "body", "") == "held":
+                committing.set()
+            return await super().commit_event(room_id, event, **kw)
+
+    kit = await _kit(_Transport("ws"), store=Committing(path))
+    # Another process's write in progress: the commit waits for the file's
+    # lock, its busy timeout 5 s.
+    other = sqlite3.connect(path, isolation_level=None)
+    other.execute("BEGIN IMMEDIATE")
+    call = asyncio.ensure_future(kit.process_inbound(_message("held"), room_id="r"))
+    try:
+        await asyncio.wait_for(committing.wait(), 2)
+        with caplog.at_level(logging.WARNING, logger="roomkit.store"):
+            await asyncio.wait_for(kit.close(), 2)
+    finally:
+        other.close()
+        await asyncio.gather(call, return_exceptions=True)
+
+    named = "SQLiteStore closed with an operation still running"
+    assert [r for r in caplog.records if r.getMessage().startswith(named)] != []
+    # The last connection to a file in write-ahead mode removes its log as
+    # it closes.
+    async with asyncio.timeout(2):
+        while (tmp_path / "rooms.db-wal").exists():
+            await asyncio.sleep(0.005)
 
 
 async def test_a_room_lock_held_past_the_unwind_does_not_hold_the_close_of_its_pool(
