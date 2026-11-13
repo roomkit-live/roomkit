@@ -83,7 +83,7 @@
       }
     ],
     "kit": {
-      "process_timeout_ms": 200
+      "process_timeout_ms": 2000
     }
   },
   "steps": [
