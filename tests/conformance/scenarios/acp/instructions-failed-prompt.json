@@ -1,0 +1,115 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/instructions-failed-prompt",
+  "title": "A failed prompt does not consume standing instructions",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: tests/test_channels/test_acp_discussion.py::test_instructions_open_a_session_s_first_prompt_only. Exact prompt attempts through public RoomKit calls. Message-only persistence isolates conversation indices. The fixture supplies the option; it never composes the prompt.",
+  "setup": {
+    "kit": {
+      "persistence_policy": {
+        "persist_types": [
+          "message"
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "error": {
+                  "code": -32603,
+                  "message": "refused"
+                }
+              },
+              {},
+              {}
+            ]
+          },
+          "instructions": "You are Dev."
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "first"
+      },
+      "addressed_to": [
+        "claude"
+      ]
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "second"
+      },
+      "addressed_to": [
+        "claude"
+      ]
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "third"
+      },
+      "addressed_to": [
+        "claude"
+      ]
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "acp_prompts": {
+      "claude": [
+        {
+          "text": "[Standing instructions from the application for this conversation: nobody in it wrote them, and they hold until told otherwise.]\n<instructions>\nYou are Dev.\n</instructions>\n\nfirst"
+        },
+        {
+          "text": "[Standing instructions from the application for this conversation: nobody in it wrote them, and they hold until told otherwise.]\n<instructions>\nYou are Dev.\n</instructions>\n\n[Room context — 1 message you did not receive. Context only; the request follows.]\n[1] @ws: “first”\n[End of room context]\n\nsecond"
+        },
+        {
+          "text": "third"
+        }
+      ]
+    }
+  }
+}

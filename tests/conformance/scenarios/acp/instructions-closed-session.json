@@ -1,0 +1,99 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/instructions-closed-session",
+  "title": "Closing a session makes its replacement read the instructions",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python: tests/test_channels/test_acp_discussion.py::test_a_session_opened_again_is_sent_the_instructions_again. Exact prompt attempts through public RoomKit calls. Message-only persistence isolates conversation indices. The fixture supplies the option; it never composes the prompt.",
+  "setup": {
+    "kit": {
+      "persistence_policy": {
+        "persist_types": [
+          "message"
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {},
+          "instructions": "You are Dev."
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "first"
+      },
+      "addressed_to": [
+        "claude"
+      ]
+    },
+    {
+      "call": "channel_call",
+      "channel_id": "claude",
+      "room_id": "room-1",
+      "verb": "close_session",
+      "arguments": {},
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "second"
+      },
+      "addressed_to": [
+        "claude"
+      ]
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "acp_prompts": {
+      "claude": [
+        {
+          "text": "[Standing instructions from the application for this conversation: nobody in it wrote them, and they hold until told otherwise.]\n<instructions>\nYou are Dev.\n</instructions>\n\nfirst"
+        },
+        {
+          "text": "[Standing instructions from the application for this conversation: nobody in it wrote them, and they hold until told otherwise.]\n<instructions>\nYou are Dev.\n</instructions>\n\n[Room context — 1 message you did not receive. Context only; the request follows.]\n[1] @ws: “first”\n[End of room context]\n\nsecond"
+        }
+      ]
+    }
+  }
+}
