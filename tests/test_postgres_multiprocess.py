@@ -442,7 +442,8 @@ async def schema_dsn() -> AsyncIterator[str]:
 
 class _HolderProcess:
     """tests/postgres_lock_holder.py, sending one message to a room. Its
-    standard input is this process's: it ends with it, killed or not."""
+    standard input is a pipe from this process: it ends with it, killed or
+    not."""
 
     def __init__(self, process: asyncio.subprocess.Process) -> None:
         self.process = process
@@ -639,7 +640,12 @@ async def test_a_delivery_claim_a_killed_process_held_leaves_its_index_skipped(
             (True, True),
             (False, False),
         ]
+        assert waiting[1]["application_name"] != _HOLDER_APP
+        # Its gap timeout past, the lane skipped nothing of the live owner's.
         assert not sent.done()
+        assert skipped == []
+        held = await store.get_room(room_id)
+        assert held is not None and held.delivered_index == lost - 1
 
         await holder.kill()
         result = await asyncio.wait_for(sent, 10)
