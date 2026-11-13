@@ -142,6 +142,7 @@
           "content": {
             "type": "tool_call",
             "tool_name": "Read",
+            "tool_id": "call-1",
             "status": "pending",
             "arguments": {
               "path": "README.md"
@@ -153,6 +154,7 @@
           "content": {
             "type": "tool_call",
             "tool_name": "Read",
+            "tool_id": "call-1",
             "status": "completed",
             "outcome": "served",
             "arguments": {
@@ -189,6 +191,7 @@
           "channel_id": "claude",
           "tool_calls": [
             {
+              "id": "$e1",
               "name": "Read",
               "arguments": {
                 "path": "README.md"
@@ -202,6 +205,7 @@
           "channel_id": "claude",
           "tool_calls": [
             {
+              "id": "$e1",
               "name": "Read",
               "result": "{\"content\": \"RoomKit\"}",
               "status": "completed"
@@ -261,7 +265,8 @@
               "type": "tool_call_start",
               "content": {
                 "type": "tool_call",
-                "tool_name": "Read"
+                "tool_name": "Read",
+                "tool_id": "call-1"
               }
             }
           },
@@ -271,6 +276,7 @@
               "content": {
                 "type": "tool_call",
                 "tool_name": "Read",
+                "tool_id": "call-1",
                 "status": "completed",
                 "outcome": "served",
                 "arguments": {

@@ -112,7 +112,8 @@
           "type": "tool_call_start",
           "content": {
             "type": "tool_call",
-            "tool_name": "Read"
+            "tool_name": "Read",
+            "tool_id": "call-1"
           }
         },
         {
@@ -120,6 +121,7 @@
           "content": {
             "type": "tool_call",
             "tool_name": "Read",
+            "tool_id": "call-1",
             "status": "failed",
             "outcome": "failed",
             "result": "Not found",
@@ -136,6 +138,7 @@
           "channel_id": "claude",
           "tool_calls": [
             {
+              "id": "$e1",
               "name": "Read"
             }
           ]
@@ -146,6 +149,7 @@
           "channel_id": "claude",
           "tool_calls": [
             {
+              "id": "$e1",
               "name": "Read",
               "result": "Not found",
               "status": "failed"

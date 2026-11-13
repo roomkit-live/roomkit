@@ -1,0 +1,153 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/tools-observer-post-depth",
+  "title": "A post made by an ACP tool observer adds no AI-loop depth and can ask its agent again",
+  "rules": [
+    "§6.4",
+    "§9.3",
+    "Appendix A.9.1"
+  ],
+  "notes": "Python: channels/_acp_events.py::_merge_tool, _emit_tool_start, _emit_tool_end, _close_open_tools; channels/_acp_turn.py::_stream and _report_response; tests/test_channels/test_acp.py tools, abandoned calls, persisted markers and end-of-turn reports. Active room turns without an external permission handler; no permission-policy, plan, media or out-of-turn claim. Source: TestACPChannel::test_an_observer_posting_per_tool_call_the_agent_answers_stops, ON_TOOL_CALL variant only; no permission or BEFORE_TOOL_USE claim.",
+  "setup": {
+    "channels": [
+      {
+        "id": "web",
+        "type": "webhook",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "call-1",
+                    "title": "Read",
+                    "status": "in_progress"
+                  },
+                  {
+                    "sessionUpdate": "tool_call_update",
+                    "toolCallId": "call-1",
+                    "status": "completed",
+                    "rawOutput": "done"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "bot",
+        "type": "webhook",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "bot"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "response",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      },
+      {
+        "name": "tools",
+        "trigger": "on_tool_call",
+        "execution": "async",
+        "reactions": [
+          {
+            "repeat": false,
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "bot",
+                "content": {
+                  "type": "text",
+                  "body": "next"
+                },
+                "as": "posted"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "kit": {
+      "max_chain_depth": 2
+    }
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "web",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "actions": {
+      "posted": [
+        {
+          "result": {
+            "chain_depth": 0,
+            "blocked_by": null
+          }
+        }
+      ]
+    },
+    "acp_prompts": {
+      "claude": [
+        {
+          "text": {
+            "$contains": "Hello"
+          }
+        },
+        {
+          "text": {
+            "$contains": "next"
+          }
+        }
+      ]
+    }
+  }
+}

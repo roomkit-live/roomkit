@@ -106,6 +106,7 @@
           "content": {
             "type": "tool_call",
             "tool_name": "read",
+            "tool_id": "call-1",
             "arguments": {
               "value": "README.md"
             }
@@ -116,6 +117,7 @@
           "content": {
             "type": "tool_call",
             "tool_name": "read",
+            "tool_id": "call-1",
             "status": "completed",
             "outcome": "served",
             "arguments": {
@@ -134,6 +136,7 @@
           "channel_id": "claude",
           "tool_calls": [
             {
+              "id": "$e1",
               "name": "read",
               "arguments": {
                 "value": "README.md"
@@ -147,6 +150,7 @@
           "channel_id": "claude",
           "tool_calls": [
             {
+              "id": "$e1",
               "name": "read",
               "result": "found",
               "status": "completed"

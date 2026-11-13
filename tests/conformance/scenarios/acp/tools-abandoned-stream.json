@@ -112,6 +112,7 @@
           "channel_id": "claude",
           "tool_calls": [
             {
+              "id": "$e1",
               "name": "Read"
             }
           ]
@@ -122,6 +123,7 @@
           "channel_id": "claude",
           "tool_calls": [
             {
+              "id": "$e1",
               "name": "Read",
               "status": "failed",
               "result": "The ACP turn ended before the tool reported a result"
