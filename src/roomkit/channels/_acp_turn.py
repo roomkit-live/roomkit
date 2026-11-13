@@ -51,6 +51,7 @@ from roomkit.models.streaming import StreamDelta
 from roomkit.models.tool_call import AfterResponseCallback, AIResponseEvent, response_transcript
 from roomkit.providers.ai.base import ProviderError
 from roomkit.realtime.base import EphemeralEventType
+from roomkit.tools.context import _with_response_record
 
 if TYPE_CHECKING:
     from roomkit.channels.acp_transport import ACPTransport
@@ -71,6 +72,12 @@ _CLEAN_STOP_REASON = "end_turn"
 
 _UNSEEN = -1
 """No prompt has left for this room yet — event indices start at 0."""
+
+
+async def _within_record[T](record: ResponseMetadata, work: Awaitable[T]) -> T:
+    """Run a closing callback with its turn's record in this consumer's task."""
+    with _with_response_record(record):
+        return await work
 
 
 class ACPTurnMixin:
@@ -325,6 +332,29 @@ class ACPTurnMixin:
         )
         return prompt, labelled, instructed
 
+    def _turn_state(
+        self, room_id: str, session_id: str, event_id: str, metadata: ResponseMetadata
+    ) -> _TurnState:
+        """Capture the prompt's context and record for the session callbacks."""
+        prompt_source: dict[str, Any] = {"source": "session/prompt", "scope": "unspecified"}
+        model = self.session_config(room_id).get("model")
+        if isinstance(model, str):
+            prompt_source["model_at_start"] = model
+        with _with_response_record(metadata):
+            turn = _TurnState(
+                room_id=room_id,
+                usage_metadata={
+                    "protocol": "acp",
+                    "transport": self._transport.name,
+                    "session_id": session_id,
+                    "event_id": event_id,
+                    "prompt": prompt_source,
+                },
+            )
+        if self._agent_info is not None:
+            turn.usage_metadata["adapter_info"] = deepcopy(self._agent_info)
+        return turn
+
     async def _turn_stream(
         self,
         room_id: str,
@@ -342,22 +372,7 @@ class ACPTurnMixin:
         standalone: bool,
     ) -> AsyncGenerator[StreamDelta]:
         """One prompt in *session_id*, streamed until the agent ends it."""
-        prompt_source: dict[str, Any] = {"source": "session/prompt", "scope": "unspecified"}
-        model = self.session_config(room_id).get("model")
-        if isinstance(model, str):
-            prompt_source["model_at_start"] = model
-        turn = _TurnState(
-            room_id=room_id,
-            usage_metadata={
-                "protocol": "acp",
-                "transport": self._transport.name,
-                "session_id": session_id,
-                "event_id": event_id,
-                "prompt": prompt_source,
-            },
-        )
-        if self._agent_info is not None:
-            turn.usage_metadata["adapter_info"] = deepcopy(self._agent_info)
+        turn = self._turn_state(room_id, session_id, event_id, metadata)
         self._turns[session_id] = turn
         prompt_text, turn.labelled, turn.instructed = self._prompt_text(
             room_id, blocks, context, trigger, text, notes=notes, standalone=standalone
@@ -377,7 +392,8 @@ class ACPTurnMixin:
                 room_id,
                 None if standalone else seen_index,
                 metadata,
-            )
+            ),
+            context=turn.scope.copy(),
         )
 
         try:
@@ -391,7 +407,9 @@ class ACPTurnMixin:
                     # through the same queue, so the terminal item is put
                     # back to be read after them; the second pass finds
                     # nothing open and falls through.
-                    if await self._close_open_tools(turn, room_id, stream=True):
+                    if await _within_record(
+                        metadata, self._close_open_tools(turn, room_id, stream=True)
+                    ):
                         turn.queue.put_nowait(item)
                         continue
                     if item.error is not None:
@@ -433,11 +451,11 @@ class ACPTurnMixin:
             # terminal item above. Its tools still have to stop spinning
             # for live surfaces; the stored row is beyond reach from here,
             # nothing can be yielded into a generator already closing.
-            await self._close_open_tools(turn, room_id, stream=False)
+            await _within_record(metadata, self._close_open_tools(turn, room_id, stream=False))
             if self._turns.get(session_id) is turn:
                 self._turns.pop(session_id, None)
             if turn.completed:
-                await self._report_response(turn, metadata)
+                await _within_record(metadata, self._report_response(turn, metadata))
 
     async def _report_response(self, turn: _TurnState, metadata: Mapping[str, Any]) -> None:
         """Announce a finished turn to whatever observes agent responses.

@@ -652,6 +652,26 @@ def current_turn_footprint() -> TurnFootprint | None:
     return ctx.turn_footprint if ctx is not None else None
 
 
+_external_record: contextvars.ContextVar[
+    tuple[_ToolLoopContext | None, ResponseMetadata] | None
+] = contextvars.ContextVar("_external_response_record", default=None)
+
+
+@contextmanager
+def _with_response_record(record: ResponseMetadata) -> Generator[None, None, None]:
+    """Lend an external turn's record without installing a local tool loop.
+
+    A nested local loop supplies its own record; returning to the enclosing
+    loop restores this one. Tokens stay within one callback, never across a
+    stream's yields, whose next consumer may run in another context.
+    """
+    token = _external_record.set((_current_loop_ctx.get(), record))
+    try:
+        yield
+    finally:
+        _external_record.reset(token)
+
+
 def current_response_metadata() -> ResponseMetadata | None:
     """The response-metadata record of the turn the caller is executing under.
 
@@ -666,7 +686,10 @@ def current_response_metadata() -> ResponseMetadata | None:
     document it read is a fact about the turn, not about the tool's string
     result.
 
-    Returns ``None`` when no loop context is set (a direct call) and on a
+    An ACP callback reads the external turn's same record, without becoming
+    a local tool loop or changing its inherited chain depth.
+
+    Returns ``None`` outside a turn or its callbacks (a direct call) and on a
     realtime tool call, where no turn merges the record: the guard
     ``if record is not None`` then skips a write nothing would carry. A loop
     started without a turn — no ``handle_event`` above it — carries a record
@@ -674,6 +697,9 @@ def current_response_metadata() -> ResponseMetadata | None:
     and go nowhere.
     """
     ctx = _current_loop_ctx.get()
+    external = _external_record.get()
+    if external is not None and ctx is external[0]:
+        return external[1]
     return ctx.response_metadata if ctx is not None and ctx.has_turn else None
 
 

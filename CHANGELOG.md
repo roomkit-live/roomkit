@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- ACP tool and response hooks share their turn's response-metadata record, including interrupted tool reports, without borrowing a parent turn's record or changing its chain depth.
+
 - **Every tool call started on the room's realtime gets its `TOOL_CALL_END`, whatever the turn backend** (RFC §6.4, RMK-1664). A round's end went out only once the reader came back after its end markers, so a stream closed there left the start open: across Redis, a tool that answered right after its turn was cut; on any backend, a reader that stopped once a running call ended, and a turn cut while an external tool handler decided a call. The end now goes out all the same and reads as the stored row: as the call ended for a reader that stopped; for a cut turn, as it ended when its end had reached the room's owner, else `failed` with `{"error": "Tool call aborted"}`. A call of a cut round that had ended while another ran was published aborted too; it now ends as it did.
 
 ## [0.114.0] — 2026-11-12
