@@ -85,6 +85,9 @@ class ACPTurnMixin:
 
     channel_id: str
     _transport: ACPTransport
+    _connection: Any
+    _connection_generation: int
+    _sessions: dict[str, str]
     _agent_info: dict[str, Any] | None
     _turns: dict[str, _TurnState]
     _prompted_index: dict[str, int]
@@ -392,6 +395,7 @@ class ACPTurnMixin:
                 room_id,
                 None if standalone else seen_index,
                 metadata,
+                self._connection_generation,
             ),
             context=turn.scope.copy(),
         )
@@ -488,6 +492,35 @@ class ACPTurnMixin:
         except Exception:
             logger.debug("After-response hook failed (acp)", exc_info=True)
 
+    def _acknowledge_prompt(
+        self,
+        connection: Any,
+        generation: int,
+        session_id: str,
+        turn: _TurnState,
+        seen_index: int | None,
+    ) -> None:
+        """A reply acknowledges only the connection and room session it read.
+
+        A custom transport may reuse its connection object or session IDs.
+        The generation captured before prompting distinguishes its reopenings.
+        Standalone prompts never acknowledge the room's session.
+        """
+        if (
+            seen_index is None
+            or self._closed
+            or self._connection is not connection
+            or self._connection_generation != generation
+            or self._sessions.get(turn.room_id) != session_id
+        ):
+            return
+        room_id = turn.room_id
+        self._prompted_index[room_id] = max(seen_index, self._prompted_index.get(room_id, _UNSEEN))
+        if turn.labelled:
+            self._labelled_rooms.add(room_id)
+        if turn.instructed:
+            self._instructed_rooms.add(room_id)
+
     async def _run_prompt(
         self,
         connection: Any,
@@ -498,6 +531,7 @@ class ACPTurnMixin:
         room_id: str,
         seen_index: int | None,
         metadata: ResponseMetadata,
+        connection_generation: int,
     ) -> None:
         """Run one prompt to its end, recording how that end came about.
 
@@ -521,15 +555,9 @@ class ACPTurnMixin:
             # The evidence the turn ran to its end: a turn never prompted (a
             # transport that read nothing) names no end (RFC §6.4).
             acp_meta["prompt_returned"] = True
-            # A standalone turn told the room's session nothing: its cursor stays.
-            if seen_index is not None:
-                self._prompted_index[room_id] = max(
-                    seen_index, self._prompted_index.get(room_id, _UNSEEN)
-                )
-                if turn.labelled:
-                    self._labelled_rooms.add(room_id)
-                if turn.instructed:
-                    self._instructed_rooms.add(room_id)
+            self._acknowledge_prompt(
+                connection, connection_generation, session_id, turn, seen_index
+            )
             # The turn's own accounting, and the only place it is offered:
             # the usage notifications describe the context window, not what
             # answering cost.

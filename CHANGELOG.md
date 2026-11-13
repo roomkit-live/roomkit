@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A completed ACP prompt from a replaced connection no longer advances the replacement session's history cursor or marks its instructions and speaker labels as already read; the old prompt keeps its result.
+
 - ACP catch-up no longer reports lifecycle or hidden events as missing conversation when the loaded history is complete; contexts carry their history boundary across filtering and turn execution (RMK-1447).
 
 - ACP tool and response hooks share their turn's response-metadata record, including interrupted tool reports, without borrowing a parent turn's record or changing its chain depth.

@@ -373,6 +373,7 @@ class ACPConnectionMixin:
     _external_tool_handler: ExternalToolHandler | None
     _loaded_sdk: _SDK | None
     _connection: Any
+    _connection_generation: int
     _message_queue: Any
     _connect_lock: asyncio.Lock
     _sessions: dict[str, str]
@@ -477,6 +478,7 @@ class ACPConnectionMixin:
                 raise
 
             self._connection = connection
+            self._connection_generation += 1
             agent_info = getattr(response, "agent_info", None)
             self._agent_info = _model_dump(agent_info) if agent_info is not None else None
             self._agent_closes_sessions = _closes_sessions(response)

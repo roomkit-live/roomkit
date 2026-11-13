@@ -277,6 +277,7 @@ class ACPChannel(ACPConnectionMixin, ACPSessionsMixin, ACPTurnMixin, ACPEventsMi
         self._loaded_sdk: _SDK | None = None
         self._client = _ACPClient(self)
         self._connection: Any = None
+        self._connection_generation = 0
         self._message_queue: Any = None
         self._connect_lock = asyncio.Lock()
         self._room_locks: dict[str, asyncio.Lock] = {}
