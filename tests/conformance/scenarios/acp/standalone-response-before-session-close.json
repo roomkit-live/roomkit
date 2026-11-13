@@ -1,0 +1,155 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/standalone-response-before-session-close",
+  "title": "A completed standalone response is reported while its temporary session close is pending",
+  "rules": [
+    "§6.4",
+    "§10.1.1 step 7"
+  ],
+  "notes": "Review regression: complete prompt and text; retain only the session/close answer. The response observer must run before release, as Python _turn_stream finalization precedes _prompt_stream session cleanup.",
+  "setup": {
+    "kit": {
+      "persistence_policy": {
+        "persist_types": [
+          "message"
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "Summary."
+                    }
+                  }
+                ]
+              }
+            ],
+            "close_sessions": [
+              {
+                "gate": "closing"
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "response",
+        "trigger": "on_ai_response",
+        "execution": "async",
+        "reactions": [
+          {
+            "gate": "response"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "Summarize."
+      },
+      "addressed_to": [
+        "claude"
+      ],
+      "event_type": "instruction",
+      "standalone": true,
+      "background": true,
+      "as": "turn"
+    },
+    {
+      "wait_for": "response"
+    },
+    {
+      "open": "response"
+    },
+    {
+      "wait_for": "closing"
+    },
+    {
+      "open": "closing"
+    },
+    {
+      "await": "turn"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "response": [
+        {
+          "room_id": "room-1",
+          "response": {
+            "response_content": "Summary.",
+            "loop_end_reason": "completed"
+          }
+        }
+      ]
+    },
+    "acp_wire": {
+      "claude": [
+        {
+          "method": "initialize"
+        },
+        {
+          "method": "session/new",
+          "params": {
+            "_meta": {
+              "roomkit.live/sessionScope": "turn"
+            }
+          }
+        },
+        {
+          "method": "session/prompt",
+          "params": {
+            "sessionId": "session-1"
+          }
+        },
+        {
+          "method": "session/close",
+          "params": {
+            "sessionId": "session-1"
+          }
+        }
+      ]
+    }
+  }
+}
