@@ -47,6 +47,17 @@ _IN_PROCESS = (
     "shares with the owner; across Redis it goes through its TurnHost"
 )
 
+# Like the source ACP test, this observer calls the kit it holds and
+# therefore shares the delivery cascade only in the local process.
+_LOCAL_TURN_CONTEXT = {
+    "acp/tools-observer-reentry-bound": (
+        "the ACP tool observer calls its captured kit: its posts draw the local "
+        "delivery cascade's budget; across Redis it must call through TurnHost "
+        "(tests/test_channels/test_acp.py::"
+        "TestACPChannel::test_an_observer_posting_per_tool_call_the_agent_answers_stops)"
+    ),
+}
+
 
 def _turn_calls_the_kit(scenario: dict[str, Any]) -> bool:
     """Whether an intelligence channel's turn makes a kit call while it runs;
@@ -150,6 +161,8 @@ def _cases(stores: tuple[str, ...] = _STORES) -> list[Any]:
         scenario_id = path.relative_to(SCENARIOS).with_suffix("").as_posix()
         scenario = _load(path)
         marks = []
+        if scenario_id in _LOCAL_TURN_CONTEXT:
+            marks.append(pytest.mark.in_process(_LOCAL_TURN_CONTEXT[scenario_id]))
         if _turn_calls_the_kit(scenario):
             marks.append(pytest.mark.in_process(_IN_PROCESS))
         if scenario_id in KNOWN_FAILURES:
