@@ -9,7 +9,7 @@ queue are stored with the room, and a store both processes read and a lock
 manager both take are what several processes need; an in-memory lock manager
 coordinates no other process (RFC §13.5). Each test writes to a schema of its
 own and names a room of its own, advisory locks being the database's whatever
-the schema, so the tests run in parallel.
+the schema, so the tests can run in parallel.
 """
 
 from __future__ import annotations
@@ -19,19 +19,17 @@ import os
 import sys
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 import pytest
 
-from roomkit import AIChannel, Discussion, RoomKit
+from roomkit import AIChannel, Discussion, EventType, InboundMessage, RoomKit, TextContent
 from roomkit.channels._mark_copies import compile_mark_patterns
-from roomkit.models.delivery import InboundMessage
-from roomkit.models.enums import EventType
-from roomkit.models.event import TextContent
 from roomkit.orchestration.strategies.discussion import _driver, _shared
-from roomkit.orchestration.strategies.discussion._config import DiscussionConfig
 from roomkit.orchestration.strategies.discussion._queue import SpeakQueueState
 from roomkit.providers.ai import AIContext, AIResponse, MockAIProvider
 from roomkit.store import PostgresAdvisoryLockManager, PostgresStore
@@ -150,68 +148,121 @@ async def _say(kit: RoomKit, room_id: str, body: str) -> Any:
     )
 
 
-@pytest.mark.wallclock
-async def test_a_killed_pilot_s_discussion_is_taken_over_once_its_lease_expires(
-    schema_dsn: str,
-) -> None:
-    """The pilot is killed during its turn, another agent queued behind it.
-    Once the lease it stored has expired, this process takes it (rule 16):
-    the pilot's turn has ended (rule 6) and is given to no one again, and this
-    process gives the queued turn, from the queue and the state the room
-    stores."""
+@dataclass
+class _Room:
+    """A room whose discussion the pilot gives the turns of, and this
+    process's kit, which installed the discussion too."""
+
+    room_id: str
+    store: PostgresStore
+    kit: RoomKit
+    pilot: _Pilot
+    holder: str
+    """The pilot's process, as the lease names it."""
+    generated: list[tuple[str, float]] = field(default_factory=list)
+    """The turns this process generated: agent, when it started."""
+
+
+@asynccontextmanager
+async def _piloted(dsn: str) -> AsyncIterator[_Room]:
+    """The room, investigator's turn running in the pilot's process."""
     room_id = f"r-{uuid4().hex}"
     generated: list[tuple[str, float]] = []
-    store = PostgresStore(dsn=schema_dsn)
+    store = PostgresStore(dsn=dsn)
     await store.init(min_size=1, max_size=3)
-    locks = PostgresAdvisoryLockManager(schema_dsn, max_size=8)
+    locks = PostgresAdvisoryLockManager(dsn, max_size=8)
     await locks.init()
     kit = RoomKit(store=store, lock_manager=locks)
     kit.register_channel(SimpleChannel("ops"))
-    pilot = await _Pilot.start(schema_dsn, room_id)
+    pilot: _Pilot | None = None
     try:
-        holder = (await pilot.line_starting("installed ")).removeprefix("installed ")
+        pilot = await _Pilot.start(dsn, room_id)
+        holder = (await pilot.line_starting("holding ")).removeprefix("holding ")
+        assert (await _stored(store, room_id)).lease_holder == holder
         agents = [AIChannel(name, provider=_Answering(name, generated)) for name in AGENTS]
         await kit.install_strategy(room_id, Discussion(agents))
         await _say(kit, room_id, "@investigator what do the logs say?")
         await pilot.line_starting("generating investigator")
-        await _say(kit, room_id, "@sre and the metrics?")
-
-        async def sre_queued() -> SpeakQueueState | None:
-            state = await _stored(store, room_id)
-            return state if [e.agent for e in state.entries] == ["sre"] else None
-
-        # The pilot holds the lease and runs investigator's turn, sre queued.
-        held = await _until(sre_queued, "sre queued in the stored queue")
-        assert (held.lease_holder, held.speaking, held.turns_given) == (holder, "investigator", 1)
-        # Compiled once per process, about a second: the bound below is the lease's.
+        # Compiled once per process, about a second: the bounds after the
+        # kill are the lease's.
         await compile_mark_patterns()
-        await pilot.kill()
-        killed_at = time.time()
-        expires = (await _stored(store, room_id)).lease_expires
-
-        async def at_rest() -> bool:
-            queue = kit.speak_queue(room_id)
-            return bool(generated) and queue is not None and not queue.queue and not queue.speaking
-
-        await _until(at_rest, "the queued turn given and ended", within=3 * LEASE + 10)
-        after = await _stored(store, room_id)
-        answers = [
-            e.source.channel_id
-            for e in await store.list_events(room_id, limit=100)
-            if e.type == EventType.MESSAGE and e.source.channel_id in AGENTS
-        ]
-        room = await store.get_room(room_id)
+        yield _Room(room_id, store, kit, pilot, holder, generated)
     finally:
-        await pilot.kill()
+        if pilot is not None:
+            await pilot.kill()
         await kit.close()
         await locks.close()
         await store.close()
 
-    # Killed holding the lease; its turn ended, given to no one again.
-    assert expires > killed_at
-    [(agent, started)] = generated
+
+async def _killed(room: _Room) -> SpeakQueueState:
+    """Kill the pilot: the room as it stores the queue and the lease then,
+    the lease the pilot's and not expired when it died."""
+    await room.pilot.kill()
+    killed_at = time.time()
+    state = await _stored(room.store, room.room_id)
+    assert state.lease_holder == room.holder
+    assert state.lease_expires > killed_at
+    return state
+
+
+@pytest.mark.wallclock
+async def test_a_killed_pilot_s_queued_turn_is_given_once_its_lease_expires(
+    schema_dsn: str,
+) -> None:
+    """The pilot is killed during its turn, another agent queued behind it.
+    Once the lease it stored has expired, and not before, this process takes
+    it and gives the queued turn, from the queue and the state the room
+    stores (rule 16); the pilot's turn is given to no one again (rule 6)."""
+    async with _piloted(schema_dsn) as room:
+        await _say(room.kit, room.room_id, "@sre and the metrics?")
+
+        async def sre_queued() -> SpeakQueueState | None:
+            state = await _stored(room.store, room.room_id)
+            return state if [e.agent for e in state.entries] == ["sre"] else None
+
+        held = await _until(sre_queued, "sre queued in the stored queue")
+        assert (held.speaking, held.turns_given) == ("investigator", 1)
+        expires = (await _killed(room)).lease_expires
+
+        async def at_rest() -> bool:
+            queue = room.kit.speak_queue(room.room_id)
+            idle = queue is not None and not queue.queue and not queue.speaking
+            return bool(room.generated) and idle
+
+        await _until(at_rest, "the queued turn given and ended", within=3 * LEASE + 10)
+        after = await _stored(room.store, room.room_id)
+        answers = [
+            e.source.channel_id
+            for e in await room.store.list_events(room.room_id, limit=100)
+            if e.type == EventType.MESSAGE and e.source.channel_id in AGENTS
+        ]
+
+    [(agent, started)] = room.generated
     assert agent == "sre"
     assert expires <= started < expires + 3 * LEASE
     assert answers == ["sre"]
-    assert (after.lease_holder, after.turns_given, after.entries) == (kit._instance_id, 2, [])
-    assert room is not None and DiscussionConfig.stored(room.metadata) is not None
+    assert (after.lease_holder, after.turns_given, after.entries) == (room.kit._instance_id, 2, [])
+
+
+@pytest.mark.wallclock
+async def test_a_killed_pilot_s_running_turn_has_ended_once_its_lease_is_taken(
+    schema_dsn: str,
+) -> None:
+    """The pilot is killed during its turn, nothing queued behind it. Once
+    the lease expired, this process takes it, and the room stores no running
+    turn: the pilot's has ended (rules 6 and 16), its agent neither queued
+    again nor given a turn here."""
+    async with _piloted(schema_dsn) as room:
+        held = await _stored(room.store, room.room_id)
+        assert (held.speaking, held.turns_given, held.entries) == ("investigator", 1, [])
+        await _killed(room)
+
+        async def taken() -> SpeakQueueState | None:
+            state = await _stored(room.store, room.room_id)
+            return state if state.lease_holder == room.kit._instance_id else None
+
+        after = await _until(taken, "this process holding the lease", within=3 * LEASE + 10)
+
+    assert (after.speaking, after.turns_given, after.entries) == (None, 1, [])
+    assert room.generated == []

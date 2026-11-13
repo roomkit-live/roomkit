@@ -5,10 +5,10 @@ tests/orchestration/test_discussion_process_death.py.
 PostgresStore and a PostgresAdvisoryLockManager on *dsn*, as another process
 of the deployment does, creates the room with a Discussion of
 ``investigator`` and ``sre``, binds the transport ``ops``, and prints
-``installed <process id>``: the holder its lease names. The lease lasts
-``LEASE`` seconds and the queue is read again every ``POLL`` seconds, the
-test's time scale. A turn it gives prints ``generating <agent>`` and never
-ends, until the process is killed.
+``holding <process id>`` once the room stores it as the lease's holder.
+The lease lasts ``LEASE`` seconds and the queue is read again every
+``POLL`` seconds, the test's time scale. A turn it gives prints
+``generating <agent>`` and never ends, until the process is killed.
 """
 
 from __future__ import annotations
@@ -81,8 +81,16 @@ async def main(dsn: str, room_id: str) -> None:
     discussion = Discussion([AIChannel(name, provider=_Holding(name)) for name in AGENTS])
     await kit.create_room(room_id=room_id, orchestration=discussion)
     await kit.attach_channel(room_id, "ops")
-    print(f"installed {kit._instance_id}", flush=True)
+    while not await _holds_lease(store, room_id, kit._instance_id):
+        await asyncio.sleep(POLL)
+    print(f"holding {kit._instance_id}", flush=True)
     await asyncio.Event().wait()
+
+
+async def _holds_lease(store: PostgresStore, room_id: str, me: str) -> bool:
+    room = await store.get_room(room_id)
+    stored = (room.metadata if room is not None else {}).get(_shared.STATE_KEY) or {}
+    return stored.get("lease_holder") == me
 
 
 if __name__ == "__main__":
