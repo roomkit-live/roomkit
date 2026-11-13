@@ -699,7 +699,7 @@ class InboundMixin(HelpersMixin):
             # A deleted event's content is withheld from it (RFC §10.3).
             for_channels(context)
             if context.get_binding(message.channel_id) is not None
-            else context.model_copy(update={"recent_events": []})
+            else context.model_copy(update={"recent_events": [], "history_start_index": None})
         )
         # The parse stands in its message's admission order (RFC §9.5.1): a
         # call it makes into the room is adopted beside, on its budget.

@@ -126,10 +126,12 @@ def room_context_block(
     believes it holds the whole room cannot. The count is taken over the tail
     the framework loaded (``recent_events``), which may stop short of the
     cursor: on a room with no hook the framework loads exactly the window the
-    channels declare (RMK-103). The indices say so without loading more — a
-    tail whose oldest event sits past ``after_index + 1`` left events of the
-    room unread, and the header reports that gap as an upper bound (it counts
-    room events, some of which the agent would not have been shown).
+    channels declare (RMK-103). The loader's ``history_start_index`` records
+    that boundary before visibility filtering. Zero means complete, even
+    when lifecycle or hidden events precede the first visible message.
+    Older or hand-built contexts without it fall back to the oldest loaded
+    index. A gap is an upper bound in room events, not a count of messages
+    this agent would have been allowed to see.
     """
     if limit <= 0:
         return ""
@@ -143,7 +145,9 @@ def room_context_block(
         and event.type not in _SKIPPED_TYPES
         and acp_event_text(event).strip()
     ]
-    oldest = min((event.index for event in context.recent_events), default=after_index + 1)
+    oldest = context.history_start_index
+    if oldest is None:
+        oldest = min((event.index for event in context.recent_events), default=after_index + 1)
     unloaded = max(0, oldest - after_index - 1)
     if not missed:
         # Nothing loaded is new to the agent (its own turn's tool calls and

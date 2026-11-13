@@ -1830,7 +1830,7 @@
   },
   "roomkit.RoomClosedError": {},
   "roomkit.RoomContext": {
-    "__init__": ["def", "*", "room", "bindings=<factory>", "participants=<factory>", "recent_events=<factory>", "author_register=None"],
+    "__init__": ["def", "*", "room", "bindings=<factory>", "participants=<factory>", "recent_events=<factory>", "history_start_index=None", "author_register=None"],
     "channels_by_type": ["def", "channel_type"],
     "get_binding": ["def", "channel_id"],
     "other_channels": ["def", "exclude_channel_id"]

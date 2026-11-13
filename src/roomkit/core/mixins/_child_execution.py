@@ -18,6 +18,7 @@ from uuid import uuid4
 from roomkit.channels.base import Channel
 from roomkit.core._authors import stored_register
 from roomkit.core._failure_log import log_failure, mark_reported
+from roomkit.core._history_boundary import bounded_history
 from roomkit.core._publication_keys import without_reserved_key
 from roomkit.core.event_router import responder_turn_entries, stream_record
 from roomkit.core.exceptions import TaskCutShortError, TaskTurnFailedError, TurnCutShortError
@@ -274,13 +275,18 @@ async def _child_context(kit: RoomKit, room: Room, bindings: list[ChannelBinding
     recent = await kit.store.list_events(
         room.id,
         offset=0,
-        limit=50,
+        limit=51,
         newest_first=True,
         event_filter=EventFilter(include_blocked=True),
     )
+    recent, history_start = bounded_history(recent, 50)
     register = await stored_register(kit.store, room)
     return RoomContext(
-        room=room, bindings=bindings, recent_events=recent, author_register=register
+        room=room,
+        bindings=bindings,
+        recent_events=recent,
+        author_register=register,
+        history_start_index=history_start,
     )
 
 

@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.core._changes import with_target
 from roomkit.core._failure_log import needs_reporting
+from roomkit.core._history_boundary import with_history_tail
 from roomkit.core._observed import Observed, observed_once_over
 from roomkit.core._queued_injections import QueuedInjections
 from roomkit.core._reentrance import ReentryBudget, section
@@ -543,13 +544,10 @@ class LaneExecutionMixin(HelpersMixin):
             plan = router.plan(
                 committed,
                 source.binding,
-                source.context.model_copy(
-                    update={
-                        "recent_events": [
-                            *source.context.recent_events[-(_RECENT_EVENTS_LIMIT - 1) :],
-                            committed,
-                        ]
-                    }
+                with_history_tail(
+                    source.context,
+                    [*source.context.recent_events, committed],
+                    _RECENT_EVENTS_LIMIT,
                 ),
                 exclude_delivery=exclude_delivery,
             )
@@ -1460,9 +1458,7 @@ def provisional(event: RoomEvent, context: RoomContext) -> tuple[RoomEvent, Room
     the newest event: what a pass's hooks read, as on the main inbound path.
     The authoritative index is assigned at commit."""
     event = event.model_copy(update={"index": context.room.event_count})
-    return event, context.model_copy(
-        update={"recent_events": [*context.recent_events[-(_RECENT_EVENTS_LIMIT - 1) :], event]}
-    )
+    return event, with_history_tail(context, [*context.recent_events, event], _RECENT_EVENTS_LIMIT)
 
 
 def record_buffered_reply(

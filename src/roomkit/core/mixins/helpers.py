@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 from uuid import uuid4
 
 from roomkit.core._authors import own_record_id, reached, stored_register, with_author
+from roomkit.core._history_boundary import bounded_history
 from roomkit.core._participant_channels import channels_reached, warn_cross_channel
 from roomkit.core.exceptions import RoomNotFoundError
 from roomkit.core.hooks import SyncPipelineResult
@@ -899,27 +900,32 @@ class HelpersMixin:
                     recent_limit = self._resolve_recent_events_limit(
                         bindings, reads_history=reads_history
                     )
-                if recent_limit <= 0:
-                    # Nothing bound reads history and no hook is registered:
-                    # no query, no deserialisation.
-                    recent: list[RoomEvent] = []
-                else:
-                    carried = self._carried_history(carrying, room, recent_limit)
-                    if carried is None:
-                        carried = await self._store.get_conversation(room_id, limit=recent_limit)
-                    recent = carried
+                recent, history_start = await self._context_history(room, recent_limit, carrying)
                 register = await stored_register(self._store, room)
         return RoomContext(
             room=room,
             bindings=bindings,
             participants=participants,
             recent_events=recent,
+            history_start_index=history_start,
             author_register=register,
         )
 
+    async def _context_history(
+        self, room: Room, limit: int, carrying: RoomContext | None
+    ) -> tuple[list[RoomEvent], int | None]:
+        """One bounded read, or the equivalent carried tail; no read at zero."""
+        if limit <= 0:
+            return [], None
+        carried = self._carried_history(carrying, room, limit)
+        if carried is not None:
+            return carried
+        events = await self._store.get_conversation(room.id, limit=limit + 1)
+        return bounded_history(events, limit)
+
     def _carried_history(
         self, carrying: RoomContext | None, room: Room, recent_limit: int
-    ) -> list[RoomEvent] | None:
+    ) -> tuple[list[RoomEvent], int | None] | None:
         """The history *carrying* may hand over as-is, or ``None`` to read it.
 
         The window is carried only when it is provably identical to what a fresh
@@ -956,7 +962,7 @@ class HelpersMixin:
             return None
         if recent_limit > self._resolve_recent_events_limit(carrying.bindings):
             return None
-        return carrying.recent_events[-recent_limit:]
+        return bounded_history(carrying.recent_events, recent_limit, carrying.history_start_index)
 
     def _resolve_recent_events_limit(
         self, bindings: list[ChannelBinding], *, reads_history: bool = False

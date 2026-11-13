@@ -34,6 +34,16 @@ class RoomContext(BaseModel):
     bindings: list[ChannelBinding] = Field(default_factory=list)
     participants: list[Participant] = Field(default_factory=list)
     recent_events: list[RoomEvent] = Field(default_factory=list)
+    history_start_index: int | None = Field(default=None, ge=0)
+    """Lower index from which the loaded conversation tail is complete.
+
+    Zero means the whole conversation was loaded, even when lifecycle records
+    precede its first message. A positive value marks a bounded read's oldest
+    retained conversation event. Visibility filtering preserves this boundary:
+    removing a hidden message does not make the loaded window smaller.
+    ``None`` means its producer supplied no boundary (older or hand-built
+    contexts); readers may retain their conservative index-based fallback.
+    """
     author_register: dict[str, Any] | None = None
     """The room's register of authors (RFC §6.4, §10.1 step 12), which the
     labels of its turns read their ranks from, as the store keeps it apart

@@ -30,6 +30,7 @@ from roomkit.core._changes import (
     target_refusal,
     with_target,
 )
+from roomkit.core._history_boundary import with_history_tail
 from roomkit.core._observed import Observed, observed_once_over
 from roomkit.core._queued_injections import QueuedInjections
 from roomkit.core._reentrance import section
@@ -882,13 +883,8 @@ class InboundLockedMixin(HelpersMixin):
             broadcast_ctx = (
                 context
                 if committed.type == EventType.INSTRUCTION
-                else context.model_copy(
-                    update={
-                        "recent_events": [
-                            *context.recent_events[-(_RECENT_EVENTS_LIMIT - 1) :],
-                            committed,
-                        ]
-                    }
+                else with_history_tail(
+                    context, [*context.recent_events, committed], _RECENT_EVENTS_LIMIT
                 )
             )
             plan = router.plan(committed, source_binding, broadcast_ctx)
@@ -1007,8 +1003,7 @@ def committed_in(context: RoomContext, committed: RoomEvent) -> RoomContext:
     committed index and as its hooks left it, which its delivery set and a
     change's mutation trigger read (RFC §10.3, §9.2)."""
     history = [event for event in context.recent_events if event.id != committed.id]
-    recent = [*history[-(_RECENT_EVENTS_LIMIT - 1) :], committed]
-    return context.model_copy(update={"recent_events": recent})
+    return with_history_tail(context, [*history, committed], _RECENT_EVENTS_LIMIT)
 
 
 def with_counters(context: RoomContext, committed: RoomEvent) -> RoomContext:
