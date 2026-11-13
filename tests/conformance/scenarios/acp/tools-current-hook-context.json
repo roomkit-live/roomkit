@@ -1,0 +1,136 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/tools-current-hook-context",
+  "title": "An ACP report hook reads the room changed while the agent was held",
+  "rules": [
+    "§6.4",
+    "§9.3",
+    "Appendix A.9.1"
+  ],
+  "notes": "Python: turns/_tool_hooks.py::run_tool_call_chain and report_tool_call rebuild the room context when a report fires. The room is changed through the public API while the agent is held before its tool update. Both hook modes read that current room. Active room tools only; no permission handler or out-of-turn claim.",
+  "setup": {
+    "channels": [
+      {
+        "id": "web",
+        "type": "webhook",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call_update",
+                    "toolCallId": "call-1",
+                    "kind": "read",
+                    "rawInput": "README.md",
+                    "status": "completed",
+                    "rawOutput": "found"
+                  }
+                ],
+                "gate": "agent-held"
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "audit",
+        "trigger": "on_tool_call",
+        "execution": "sync"
+      },
+      {
+        "name": "observer",
+        "trigger": "on_tool_call",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "web",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "background": true,
+      "as": "turn"
+    },
+    {
+      "wait_for": "agent-held"
+    },
+    {
+      "call": "update_room_metadata",
+      "room_id": "room-1",
+      "metadata": {
+        "phase": "after-start"
+      }
+    },
+    {
+      "open": "agent-held"
+    },
+    {
+      "await": "turn"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "audit": [
+        {
+          "context_room": {
+            "metadata": {
+              "phase": "after-start"
+            }
+          }
+        }
+      ],
+      "observer": [
+        {
+          "context_room": {
+            "metadata": {
+              "phase": "after-start"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
