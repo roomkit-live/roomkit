@@ -5,7 +5,8 @@ whose turns go across Redis, the room ``r`` binding the transport ``tx`` and
 the agent ``worker``, which an executor of another process serves. It
 declares the host verb ``app.hold``, which prints ``called`` and never
 answers, prints ``owner <node id>``, then sends the room one message and
-waits on the turn it gives ``worker``, until it is killed.
+waits on the turn it gives ``worker``; it prints ``returned`` if that turn
+ever ends, which it does not before the process is killed.
 """
 
 from __future__ import annotations
@@ -29,8 +30,7 @@ from roomkit import (
     RoomKit,
     TextContent,
 )
-from roomkit.turns import TurnTimeouts
-from roomkit.turns.redis import RedisTurnBackend
+from roomkit.turns import RedisTurnBackend, TurnTimeouts
 
 # As tests/test_turns_redis.py's TIMEOUTS: the executor hears this owner beat
 # every interval, and takes it for lost after the timeout.

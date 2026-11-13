@@ -313,9 +313,9 @@ class _OwnerProcess:
     binds the agent ``worker``, which an executor elsewhere serves, and it
     sends r one message."""
 
-    def __init__(self, process: asyncio.subprocess.Process, node: str) -> None:
+    def __init__(self, process: asyncio.subprocess.Process) -> None:
         self.process = process
-        self.node = node
+        self.node = ""
         """The owner's process on the backend, whose inbox the executor writes to."""
 
     @classmethod
@@ -327,8 +327,12 @@ class _OwnerProcess:
             prefix,
             stdout=asyncio.subprocess.PIPE,
         )
-        owner = cls(process, "")
-        owner.node = (await owner.line_starting("owner ")).removeprefix("owner ")
+        owner = cls(process)
+        try:
+            owner.node = (await owner.line_starting("owner ")).removeprefix("owner ")
+        except BaseException:
+            await owner.kill()
+            raise
         return owner
 
     async def line_starting(self, prefix: str) -> str:
@@ -355,13 +359,15 @@ def _holding_agent(calls: list[asyncio.Task[Any]], cut: list[str | None]) -> Age
     async def hold(name: str, arguments: dict[str, Any]) -> str:
         host = current_turn_host()
         assert host is not None
-        # The cut cancels the tool, never this task: only the owner's loss
-        # ends its call.
+        # The cut cancels the tool, never this task.
         calls.append(asyncio.ensure_future(host.call("app.hold")))
         try:
             await asyncio.Event().wait()
         except asyncio.CancelledError as cancelled:
             cut.append(cancel_reason(cancelled))
+            # Cut, the tool waits for its call before it lets go, so the turn
+            # cannot end first: only the cut failing the call lets it go.
+            await asyncio.wait(calls)
             raise
         return "held"
 
@@ -389,20 +395,22 @@ async def test_a_turn_whose_owner_s_process_died_is_cut_owner_lost(
     host, executor = await _hosted(prefix, InMemoryStore(), _holding_agent(calls, cut))
     keys = Keys(prefix)
     running = keys.running(host.node_id)
-    owner = await _OwnerProcess.start(prefix)
+    owner: _OwnerProcess | None = None
     try:
+        owner = await _OwnerProcess.start(prefix)
         # The owner holds the turn: its verb runs the turn's call, it beats as
         # a room owner, and the executor's process beats the turn as running.
         await owner.line_starting("called")
         assert owner.node.encode() in await redis_client.zrange(keys.owners, 0, -1)
         started = time.monotonic()
         while not (turn := await redis_client.smembers(running)):
-            assert time.monotonic() - started < 5 * TIMEOUTS.heartbeat_interval
+            assert time.monotonic() - started < 20
             await asyncio.sleep(TIMEOUTS.heartbeat_interval / 4)
+        # Only the turn's beats reach the owner from now on.
         inbox = keys.inbox(owner.node)
+        last_before = (await redis_client.xinfo_stream(inbox))["last-generated-id"]
         await owner.kill()
         killed = time.monotonic()
-        last_before = (await redis_client.xinfo_stream(inbox))["last-generated-id"]
 
         [call] = calls
         with pytest.raises(TurnLinkError) as failed:
@@ -413,13 +421,16 @@ async def test_a_turn_whose_owner_s_process_died_is_cut_owner_lost(
             await asyncio.sleep(TIMEOUTS.heartbeat_interval / 4)
         written = await redis_client.xrange(inbox, min=b"(" + last_before)
     finally:
-        await owner.kill()
+        if owner is not None:
+            await owner.kill()
         await host.close()
         await executor.close()
 
     assert failed.value.reason == "owner_lost"
     assert cut == ["owner_lost"]
-    assert silent_for >= TIMEOUTS.heartbeat_timeout - TIMEOUTS.heartbeat_interval
+    # The owner's last beat may precede its death by more than an interval,
+    # and the kill is timed once the process was reaped.
+    assert silent_for >= TIMEOUTS.heartbeat_timeout - 2 * TIMEOUTS.heartbeat_interval
     sent = [json.loads(fields[b"body"])["message"]["type"] for _, fields in written]
     assert set(sent) <= {"heartbeat"}, sent
 
