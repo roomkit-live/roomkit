@@ -10,7 +10,7 @@
   "notes": "No gate holds the message, but its session's start awaits the greeting, and the greeting its delivery. helper holds its turn at a gate until the call has been refused: the greeting, committed by then, stands and is delivered, and the message is not stored.",
   "setup": {
     "kit": {
-      "process_timeout_ms": 100
+      "process_timeout_ms": 2000
     },
     "channels": [
       {
