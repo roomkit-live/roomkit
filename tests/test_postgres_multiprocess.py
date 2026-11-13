@@ -2,7 +2,9 @@
 
 These exercise behaviour that mocks cannot: the UNIQUE(room_id, index)
 constraint and PostgreSQL advisory locks under genuine cross-connection
-concurrency. Require a running PostgreSQL:
+concurrency. Most stand for several processes with several pools in this
+one; the last two kill a real process holding a room's lock or its delivery
+claim. Require a running PostgreSQL:
 
     POSTGRES_DSN=postgresql://user:pass@localhost/roomkit_test \
     pytest tests/test_postgres_multiprocess.py -v
@@ -12,22 +14,29 @@ from __future__ import annotations
 
 import asyncio
 import os
+import signal
+import sys
+import time
+from collections.abc import AsyncIterator, Awaitable, Callable
+from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import asyncpg
 import pytest
 
 from roomkit import RoomKit
 from roomkit.channels.base import Channel
-from roomkit.core.locks import InMemoryLockManager
+from roomkit.core.lanes import delivery_claim_key
+from roomkit.core.locks import _OTHER_KIND, InMemoryLockManager
 from roomkit.models.channel import ChannelBinding, ChannelOutput
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import ChannelType, EventType
 from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.models.room import Room
-from roomkit.store.postgres import PostgresStore
-from roomkit.store.postgres_lock import PostgresAdvisoryLockManager
+from roomkit.store.postgres import _MIGRATION_LOCK_KEY, PostgresStore
+from roomkit.store.postgres_lock import PostgresAdvisoryLockManager, _advisory_key
 
 POSTGRES_DSN = os.environ.get("POSTGRES_DSN")
 
@@ -379,3 +388,257 @@ async def test_an_event_added_beside_the_kit_holds_its_next_delivery_and_loses_n
     assert delivered == sent
     assert skipped
     assert {index for hole in skipped for index in hole} <= added
+
+
+# ── A process killed holding a room's lock or its delivery claim (RFC §13.5) ──
+#
+# The kits above stand for processes inside this one. Here the holder is a real
+# process (tests/postgres_lock_holder.py), killed by SIGKILL: it closes nothing,
+# so only the server, ending the sessions of the dead process, lets its locks
+# go (RK-13.5-003, RK-13.5-005). Each test writes to a schema of its own and
+# names a room of its own: advisory locks are the database's, whatever the
+# schema.
+
+HOLDER = Path(__file__).with_name("postgres_lock_holder.py")
+# The application name of the holder's sessions, by which pg_locks tells its locks.
+_HOLDER_APP = "roomkit_killed_holder"
+
+
+def _in_schema(dsn: str, schema: str) -> str:
+    """*dsn* with its sessions writing to *schema*."""
+    separator = "&" if "?" in dsn else "?"
+    return f"{dsn}{separator}options=-csearch_path%3D{schema}"
+
+
+@pytest.fixture
+async def schema_dsn() -> AsyncIterator[str]:
+    """The connection string of a schema of the test's own, created before the
+    test and dropped after it."""
+    assert POSTGRES_DSN is not None
+    name = f"rk_death_{uuid4().hex}"
+    conn = await asyncpg.connect(POSTGRES_DSN)
+    try:
+        await conn.execute(f"CREATE SCHEMA {name}")
+    finally:
+        await conn.close()
+    try:
+        yield _in_schema(POSTGRES_DSN, name)
+    finally:
+        conn = await asyncpg.connect(POSTGRES_DSN)
+        try:
+            # Under the lock PostgresStore.init() takes first: init reads
+            # catalogs a concurrent DROP makes it fail on.
+            async with conn.transaction():
+                await conn.execute("SELECT pg_advisory_xact_lock($1)", _MIGRATION_LOCK_KEY)
+                await conn.execute(f"DROP SCHEMA {name} CASCADE")
+        finally:
+            await conn.close()
+
+
+class _HolderProcess:
+    """tests/postgres_lock_holder.py, sending one message to a room."""
+
+    def __init__(self, process: asyncio.subprocess.Process) -> None:
+        self.process = process
+
+    @classmethod
+    async def start(cls, dsn: str, room_id: str, hold: str) -> _HolderProcess:
+        process = await asyncio.create_subprocess_exec(
+            sys.executable,
+            str(HOLDER),
+            f"{dsn}{'&' if '?' in dsn else '?'}application_name={_HOLDER_APP}",
+            room_id,
+            hold,
+            stdout=asyncio.subprocess.PIPE,
+        )
+        return cls(process)
+
+    async def wait_for(self, prefix: str) -> str:
+        """The first line the process prints that starts with *prefix*."""
+        assert self.process.stdout is not None
+        while True:
+            got = await asyncio.wait_for(self.process.stdout.readline(), 20)
+            assert got, f"the holder process ended before printing {prefix!r}"
+            line = got.decode().strip()
+            if line.startswith(prefix):
+                return line
+
+    async def kill(self) -> None:
+        if self.process.returncode is None:
+            self.process.kill()
+        await self.process.wait()
+
+
+async def _sessions_on(key: int) -> list[asyncpg.Record]:
+    """pg_locks' rows on the advisory lock *key* of this database: each
+    session's pid, whether it holds the lock or waits on it, and its
+    application name."""
+    unsigned = key & 0xFFFF_FFFF_FFFF_FFFF
+    conn = await asyncpg.connect(POSTGRES_DSN)
+    try:
+        return await conn.fetch(
+            "SELECT l.pid, l.granted, a.application_name FROM pg_locks l"
+            " JOIN pg_stat_activity a ON a.pid = l.pid"
+            " WHERE l.locktype = 'advisory' AND l.objsubid = 1"
+            " AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database())"
+            " AND l.classid = $1 AND l.objid = $2",
+            unsigned >> 32,
+            unsigned & 0xFFFF_FFFF,
+        )
+    finally:
+        await conn.close()
+
+
+async def _until[T](check: Callable[[], Awaitable[T]], what: str, within: float = 10.0) -> T:
+    """*check*'s first truthy answer, polled: the server's views can't be awaited."""
+    deadline = time.monotonic() + within
+    while not (found := await check()):
+        assert time.monotonic() < deadline, f"not seen within {within} s: {what}"
+        await asyncio.sleep(0.01)
+    return found
+
+
+async def _waiting_on(key: int) -> list[asyncpg.Record]:
+    """pg_locks' rows on the advisory lock *key*, the holder's first, once a
+    session waits on it; none before."""
+    rows = sorted(await _sessions_on(key), key=lambda r: not r["granted"])
+    return rows if any(not r["granted"] for r in rows) else []
+
+
+async def _gone(pid: int) -> bool:
+    """Whether the server lists no lock of the session *pid* any more."""
+    conn = await asyncpg.connect(POSTGRES_DSN)
+    try:
+        return not await conn.fetch("SELECT 1 FROM pg_locks WHERE pid = $1", pid)
+    finally:
+        await conn.close()
+
+
+async def _held_by_the_holder(key: int) -> int:
+    """The pid of the holder's session granted the advisory lock *key*, the
+    only session listed on it."""
+    rows = await _sessions_on(key)
+    assert [(r["granted"], r["application_name"]) for r in rows] == [(True, _HOLDER_APP)]
+    return rows[0]["pid"]
+
+
+async def _own_kit(
+    dsn: str, out: Channel, **kit_kwargs: Any
+) -> tuple[RoomKit, PostgresStore, PostgresAdvisoryLockManager]:
+    """A kit with its own store and advisory lock manager on *dsn*, as another
+    process of the deployment opens them."""
+    store = PostgresStore(dsn=dsn)
+    await store.init(min_size=1, max_size=3)
+    locks = PostgresAdvisoryLockManager(dsn, max_size=4)
+    await locks.init()
+    kit = RoomKit(store=store, lock_manager=locks, **kit_kwargs)
+    kit.register_channel(_Transport("src"))
+    kit.register_channel(out)
+    return kit, store, locks
+
+
+def _said(body: str) -> InboundMessage:
+    return InboundMessage(channel_id="src", sender_id="u1", content=TextContent(body=body))
+
+
+async def test_a_room_lock_a_killed_process_held_is_released_and_the_room_goes_on(
+    schema_dsn: str,
+) -> None:
+    """A process holds a room's lock in a hook before its commit, and this
+    process's kit waits on it on the server. The holder killed, the server
+    ends its sessions and drops its lock: the kit takes the lock and commits,
+    and the killed process's message was never stored (RK-13.5-003)."""
+    room_id = f"room-{uuid4().hex}"
+    kit, store, locks = await _own_kit(schema_dsn, _Transport("out"))
+    holder: _HolderProcess | None = None
+    try:
+        await kit.create_room(room_id=room_id)
+        await kit.attach_channel(room_id, "src")
+        await kit.attach_channel(room_id, "out")
+        holder = await _HolderProcess.start(schema_dsn, room_id, "room-lock")
+        await holder.wait_for("holding")
+        key = _advisory_key(room_id)
+        holder_pid = await _held_by_the_holder(key)
+        sent = asyncio.ensure_future(kit.process_inbound(_said("after the kill"), room_id=room_id))
+        waiting = await _until(lambda: _waiting_on(key), "this kit waiting on the room's lock")
+        # The holder's session holds it, one of this kit's waits on it.
+        assert [(r["pid"] == holder_pid, r["granted"]) for r in waiting] == [
+            (True, True),
+            (False, False),
+        ]
+        assert waiting[1]["application_name"] != _HOLDER_APP
+        assert not sent.done()
+
+        await holder.kill()
+        result = await asyncio.wait_for(sent, 10)
+        await _until(lambda: _gone(holder_pid), "the killed session's locks gone")
+        events = await store.list_events(room_id, limit=50)
+    finally:
+        if holder is not None:
+            await holder.kill()
+        await kit.close()
+        await store.close()
+        await locks.close()
+
+    assert holder.process.returncode == -signal.SIGKILL
+    assert result.blocked is False and result.event is not None
+    assert [e.content.body for e in events if e.type == EventType.MESSAGE] == ["after the kill"]
+    assert await _sessions_on(key) == []
+
+
+@pytest.mark.wallclock
+async def test_a_delivery_claim_a_killed_process_held_leaves_its_index_skipped(
+    schema_dsn: str,
+) -> None:
+    """A process committed index N and holds the room's delivery claim,
+    delivering N, when it is killed. The server drops the claim with its
+    sessions; this process's next message, N+1, waits on the hole at N for
+    ``delivery_gap_timeout``, skips it with ``delivery_skipped``, and is
+    delivered once, the cursor at N+1 (RK-13.5-005)."""
+    room_id = f"room-{uuid4().hex}"
+    gap = 0.3
+    delivered: list[int] = []
+    kit, store, locks = await _own_kit(
+        schema_dsn, _Recording("out", delivered), delivery_gap_timeout=gap
+    )
+    skipped: list[dict[str, Any]] = []
+
+    @kit.on("delivery_skipped")
+    async def record(event: Any) -> None:
+        skipped.append(event.data)
+
+    holder: _HolderProcess | None = None
+    try:
+        await kit.create_room(room_id=room_id)
+        await kit.attach_channel(room_id, "src")
+        await kit.attach_channel(room_id, "out")
+        holder = await _HolderProcess.start(schema_dsn, room_id, "delivery-claim")
+        lost = int((await holder.wait_for("delivering ")).split()[1])
+        claim = _advisory_key(f"{_OTHER_KIND}{delivery_claim_key(room_id)}")
+        holder_pid = await _held_by_the_holder(claim)
+
+        await holder.kill()
+        await _until(lambda: _gone(holder_pid), "the killed session's locks gone")
+        before = await store.get_room(room_id)
+        started = time.monotonic()
+        result = await asyncio.wait_for(
+            kit.process_inbound(_said("after the kill"), room_id=room_id), 10
+        )
+        waited = time.monotonic() - started
+        after = await store.get_room(room_id)
+    finally:
+        if holder is not None:
+            await holder.kill()
+        await kit.close()
+        await store.close()
+        await locks.close()
+
+    assert holder.process.returncode == -signal.SIGKILL
+    assert before is not None and (before.latest_index, before.delivered_index) == (lost, lost - 1)
+    assert result.event is not None and result.event.index == lost + 1
+    assert waited >= gap
+    assert skipped == [{"from_index": lost, "to_index": lost}]
+    assert delivered == [lost + 1]
+    assert after is not None
+    assert (after.latest_index, after.delivered_index) == (lost + 1, lost + 1)
+    assert await _sessions_on(claim) == []
