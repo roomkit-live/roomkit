@@ -455,6 +455,10 @@ async def test_a_release_from_a_hook_whose_work_then_closes_the_room_is_answered
     await kit.close()
 
 
+@pytest.mark.in_process(
+    "RMK-1683: across Redis the two answers' turns come back in either order, and "
+    "the hook's event's answer may be stored first"
+)
 @pytest.mark.parametrize("store", STORES)
 async def test_a_release_from_a_hook_whose_work_then_lets_its_event_through_is_answered_first(
     store: str, tmp_path: Path
