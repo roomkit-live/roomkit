@@ -64,3 +64,8 @@ def test_malformed_history_window_is_a_fixture_failure(value: Any) -> None:
 async def test_callback_exhaustion_is_not_a_successful_fail_open_turn() -> None:
     problems = await Harness(_scenario(context_contributor={"responses": []})).run()
     assert any("context_contributor: callback script exhausted" in problem for problem in problems)
+
+
+@pytest.mark.parametrize("value", [True, 4, [], {}])
+def test_malformed_instructions_are_a_fixture_failure(value: Any) -> None:
+    assert any("instructions" in error for error in unknown_members(_scenario(instructions=value)))

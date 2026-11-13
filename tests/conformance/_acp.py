@@ -283,6 +283,7 @@ def scripted_acp_channel(
             external_tool_handler=handler,
             room_history=spec.get("room_history", 20),
             context_contributor=context,
+            instructions=spec.get("instructions"),
         ),
         agent,
         transport,

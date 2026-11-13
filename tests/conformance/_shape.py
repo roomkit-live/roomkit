@@ -642,6 +642,8 @@ def _acp_thinking(spec: Mapping[str, Any], path: str, found: list[str]) -> None:
 
 
 def _acp_context(spec: Mapping[str, Any], path: str, found: list[str]) -> None:
+    if spec.get("instructions") is not None and not isinstance(spec["instructions"], str):
+        found.append(f"{path}.instructions: expected a string or null")
     if "room_history" in spec and (
         type(spec["room_history"]) is not int or spec["room_history"] < 0
     ):
@@ -664,6 +666,7 @@ def _acp(spec: Mapping[str, Any], path: str, found: list[str]) -> None:
             "external_tool_handler",
             "room_history",
             "context_contributor",
+            "instructions",
         },
         path,
         found,
