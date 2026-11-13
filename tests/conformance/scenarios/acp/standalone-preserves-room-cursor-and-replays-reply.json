@@ -1,0 +1,218 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/standalone-preserves-room-cursor-and-replays-reply",
+  "title": "A standalone turn sees no room history and leaves the room cursor to catch up on missed messages and its own separate-session reply",
+  "rules": [
+    "§6.4",
+    "§10.1.1 step 7"
+  ],
+  "notes": "Python: tests/test_channels/test_acp_instruction.py; test_acp_session_setup.py; test_acp_recovery.py::test_standalone_never_rebuilds_or_changes_the_room_session (RMK-1655); test_acp_backend.py::test_a_detach_during_a_standalone_turn_closes_the_room_s_session. Actual public calls and ordered ACP RPCs. Native tests cover reader abandonment, exact cancellation boundaries and logs; no Discussion or model-output guarantee is inferred.",
+  "setup": {
+    "kit": {
+      "persistence_policy": {
+        "persist_types": [
+          "message"
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {},
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "The summary."
+                    }
+                  }
+                ]
+              },
+              {}
+            ]
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "first"
+      },
+      "addressed_to": [
+        "claude"
+      ]
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "missed"
+      },
+      "addressed_to": []
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "Summarize."
+      },
+      "addressed_to": [
+        "claude"
+      ],
+      "event_type": "instruction",
+      "standalone": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "next"
+      },
+      "addressed_to": [
+        "claude"
+      ]
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "acp_wire": {
+      "claude": [
+        {
+          "method": "initialize"
+        },
+        {
+          "method": "session/new",
+          "params": {
+            "_meta": {
+              "roomkit.live/roomId": "room-1",
+              "roomkit.live/sessionScope": "room"
+            }
+          }
+        },
+        {
+          "method": "session/prompt",
+          "params": {
+            "sessionId": "session-1",
+            "prompt": [
+              {
+                "type": "text",
+                "text": "first"
+              }
+            ]
+          }
+        },
+        {
+          "method": "session/new",
+          "params": {
+            "_meta": {
+              "roomkit.live/roomId": "room-1",
+              "roomkit.live/sessionScope": "turn"
+            }
+          }
+        },
+        {
+          "method": "session/prompt",
+          "params": {
+            "sessionId": "session-2",
+            "prompt": [
+              {
+                "type": "text",
+                "text": "[Instruction from the application: nobody in this conversation said it. Act on it now, in your own words, without quoting it.]\nSummarize."
+              }
+            ]
+          }
+        },
+        {
+          "method": "session/close",
+          "params": {
+            "sessionId": "session-2"
+          }
+        },
+        {
+          "method": "session/prompt",
+          "params": {
+            "sessionId": "session-1",
+            "prompt": [
+              {
+                "type": "text",
+                "text": "[Room context — 2 messages you did not receive. Context only; the request follows.]\n[1] @ws: “missed”\n[2] you (in a separate session): “The summary.”\n[End of room context]\n\nnext"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "first"
+          }
+        },
+        {
+          "content": {
+            "body": "missed"
+          }
+        },
+        {
+          "content": {
+            "body": "The summary."
+          },
+          "source": {
+            "channel_id": "claude"
+          },
+          "metadata": {
+            "acp": {
+              "standalone": true
+            }
+          }
+        },
+        {
+          "content": {
+            "body": "next"
+          }
+        }
+      ]
+    }
+  }
+}
