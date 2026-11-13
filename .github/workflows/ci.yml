@@ -240,6 +240,8 @@ jobs:
   # shared store contracts and native video decoding are also exercised here,
   # and the turn backend across Redis: its own tests (an executor in another
   # process), then the whole suite with every kit's turns carried by Redis.
+  # Processes killed by SIGKILL stand for a real death here: an executor, a
+  # room owner, a discussion's pilot, a delivery worker.
   integration:
     name: Integration (real Postgres + WebRTC)
     runs-on: ubuntu-latest
@@ -293,6 +295,7 @@ jobs:
           --junitxml=test-results/integration.xml
           tests/test_store_postgres.py
           tests/test_postgres_multiprocess.py
+          tests/orchestration/test_discussion_process_death.py
           tests/test_verification_release_cancel.py
           tests/test_store_room_contract.py
           tests/test_store_identity_scoping.py
