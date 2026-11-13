@@ -1711,6 +1711,26 @@ async def test_a_write_held_past_the_unwind_does_not_hold_the_close_of_the_kit_s
             await asyncio.sleep(0.005)
 
 
+async def test_an_sqlite_file_failing_to_close_fails_the_kit_s_close(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The SQLite file's failure to close is raised by the kit's close, as by
+    the store's own ``close()``: a close that returned would report the file
+    let go."""
+
+    shut = SQLiteStore._shut
+
+    def fail(store: SQLiteStore) -> None:
+        shut(store)
+        raise sqlite3.OperationalError("disk I/O error")
+
+    kit = await _kit(store=SQLiteStore(tmp_path / "rooms.db"))
+    monkeypatch.setattr(SQLiteStore, "_shut", fail)
+
+    with pytest.raises(sqlite3.OperationalError, match="disk I/O error"):
+        await kit.close()
+
+
 async def test_a_room_lock_held_past_the_unwind_does_not_hold_the_close_of_its_pool(
     close_grace: float, cut_unwind: float, monkeypatch: pytest.MonkeyPatch
 ) -> None:
