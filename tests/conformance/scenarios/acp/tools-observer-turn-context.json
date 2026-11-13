@@ -1,0 +1,382 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/tools-observer-turn-context",
+  "title": "ACP hooks share the current turn record, which reaches its answer and does not leak into the next turn",
+  "rules": [
+    "§6.4",
+    "§6.7",
+    "§9.3",
+    "Appendix A.9.1"
+  ],
+  "notes": "The shared response record of RFC §6.7 also belongs to ACP hooks (maintainer decision 0a3b774c). Python source: tools/context.py::current_response_metadata; channels/_acp_client.py::_TurnState and _acp_turn.py::_turn_stream. Source tests: test_tool_turn_context.py::TestWhatTheHandlerWritesBack::test_the_response_record_is_the_turns_one; test_response_metadata.py::TestInboundResultResponseMetadata. The observer writes before prompt completion; a first room opens the connection without writing. No remote executor or late write after turn completion is claimed.",
+  "setup": {
+    "channels": [
+      {
+        "id": "web",
+        "type": "webhook",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "updates": []
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "call-1",
+                    "title": "Read",
+                    "status": "in_progress"
+                  },
+                  {
+                    "sessionUpdate": "tool_call_update",
+                    "toolCallId": "call-1",
+                    "status": "completed",
+                    "rawOutput": "done"
+                  },
+                  {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "Answer"
+                    }
+                  }
+                ],
+                "after_updates_gate": "prompt-held"
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "Fresh"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "response",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      },
+      {
+        "name": "tools",
+        "trigger": "on_tool_call",
+        "execution": "async",
+        "reactions": [
+          {
+            "writes_record": {
+              "tool_observed": true
+            },
+            "gate": "observed"
+          }
+        ]
+      },
+      {
+        "name": "sync",
+        "trigger": "on_tool_call",
+        "execution": "sync",
+        "reactions": [
+          {
+            "writes_record": {
+              "sync_observed": true
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "web",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "response_metadata": {
+            "tool_observed": {
+              "$absent": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "web",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "background": true,
+      "as": "second"
+    },
+    {
+      "wait_for": "observed"
+    },
+    {
+      "open": "observed"
+    },
+    {
+      "wait_for": "prompt-held"
+    },
+    {
+      "open": "prompt-held"
+    },
+    {
+      "await": "second",
+      "expect": {
+        "result": {
+          "response_metadata": {
+            "tool_observed": true,
+            "sync_observed": true
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "web",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "response_metadata": {
+            "tool_observed": {
+              "$absent": true
+            },
+            "sync_observed": {
+              "$absent": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello"
+          }
+        }
+      ],
+      "room-2": [
+        {
+          "content": {
+            "body": "Hello"
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "content": {
+            "type": "tool_call",
+            "tool_name": "Read",
+            "tool_id": "call-1"
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "content": {
+            "type": "tool_call",
+            "tool_name": "Read",
+            "tool_id": "call-1",
+            "result": "done"
+          }
+        },
+        {
+          "content": {
+            "body": "Answer"
+          },
+          "metadata": {
+            "tool_observed": true,
+            "sync_observed": true
+          }
+        },
+        {
+          "content": {
+            "body": "Hello"
+          }
+        },
+        {
+          "content": {
+            "body": "Fresh"
+          },
+          "metadata": {
+            "tool_observed": {
+              "$absent": true
+            },
+            "sync_observed": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    },
+    "tool_events": {
+      "room-1": [],
+      "room-2": [
+        {
+          "type": "tool_call_start",
+          "round": 0,
+          "channel_id": "claude",
+          "tool_calls": [
+            {
+              "id": "$e1",
+              "name": "Read"
+            }
+          ]
+        },
+        {
+          "type": "tool_call_end",
+          "round": 0,
+          "channel_id": "claude",
+          "tool_calls": [
+            {
+              "id": "$e1",
+              "name": "Read",
+              "result": "done"
+            }
+          ]
+        }
+      ]
+    },
+    "hooks": {
+      "tools": [
+        {
+          "room_id": "room-2",
+          "tool_call": {
+            "name": "Read",
+            "arguments": {},
+            "result": "done",
+            "is_error": false,
+            "cancelled": false,
+            "refused": false,
+            "error_detail": null
+          }
+        }
+      ],
+      "response": [
+        {
+          "room_id": "room-1",
+          "response": {
+            "channel_id": "claude",
+            "segments": [],
+            "response_content": "",
+            "tool_calls_count": 0,
+            "streaming": true
+          }
+        },
+        {
+          "room_id": "room-2",
+          "response": {
+            "channel_id": "claude",
+            "segments": [
+              "Answer"
+            ],
+            "response_content": "Answer",
+            "tool_calls_count": 1,
+            "streaming": true
+          }
+        },
+        {
+          "room_id": "room-2",
+          "response": {
+            "segments": [
+              "Fresh"
+            ],
+            "response_content": "Fresh",
+            "tool_calls_count": 0
+          }
+        }
+      ],
+      "sync": [
+        {
+          "room_id": "room-2",
+          "tool_call": {
+            "name": "Read",
+            "arguments": {},
+            "result": "done",
+            "is_error": false,
+            "cancelled": false,
+            "refused": false,
+            "error_detail": null
+          }
+        }
+      ]
+    }
+  }
+}

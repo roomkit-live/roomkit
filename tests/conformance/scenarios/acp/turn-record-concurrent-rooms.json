@@ -1,0 +1,317 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/turn-record-concurrent-rooms",
+  "title": "Two active ACP rooms share one connection and keep their hook records separate",
+  "rules": [
+    "§6.4",
+    "§6.7",
+    "§9.3",
+    "Appendix A.9.1"
+  ],
+  "notes": "The shared response record of RFC §6.7 also belongs to ACP hooks (maintainer decision 0a3b774c). Python source: tools/context.py::current_response_metadata; channels/_acp_client.py::_TurnState and _acp_turn.py::_turn_stream. Source tests: test_tool_turn_context.py::TestWhatTheHandlerWritesBack::test_the_response_record_is_the_turns_one; test_response_metadata.py::TestInboundResultResponseMetadata. Each room writes its own values while both prompts are active on the same connection. No remote executor or late write after turn completion is claimed. Both prompts are held after their callbacks; the second room completes before the first.",
+  "setup": {
+    "channels": [
+      {
+        "id": "web",
+        "type": "webhook",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "call-1",
+                    "title": "Read",
+                    "status": "in_progress"
+                  },
+                  {
+                    "sessionUpdate": "tool_call_update",
+                    "toolCallId": "call-1",
+                    "status": "completed",
+                    "rawOutput": "done"
+                  },
+                  {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "Answer"
+                    }
+                  }
+                ],
+                "after_updates_gate": "prompt-one"
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "call-1",
+                    "title": "Read",
+                    "status": "in_progress"
+                  },
+                  {
+                    "sessionUpdate": "tool_call_update",
+                    "toolCallId": "call-1",
+                    "status": "completed",
+                    "rawOutput": "done"
+                  },
+                  {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "Answer"
+                    }
+                  }
+                ],
+                "after_updates_gate": "prompt-two"
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "sync",
+        "trigger": "on_tool_call",
+        "execution": "sync",
+        "reactions": [
+          {
+            "when": {
+              "room_id": "room-1"
+            },
+            "writes_record": {
+              "sync_room": "one"
+            }
+          },
+          {
+            "when": {
+              "room_id": "room-2"
+            },
+            "writes_record": {
+              "sync_room": "two"
+            }
+          }
+        ]
+      },
+      {
+        "name": "tools",
+        "trigger": "on_tool_call",
+        "execution": "async",
+        "reactions": [
+          {
+            "when": {
+              "room_id": "room-1"
+            },
+            "writes_record": {
+              "async_room": "one"
+            },
+            "gate": "observed-one"
+          },
+          {
+            "when": {
+              "room_id": "room-2"
+            },
+            "writes_record": {
+              "async_room": "two"
+            },
+            "gate": "observed-two"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "web",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "background": true,
+      "as": "one"
+    },
+    {
+      "wait_for": "observed-one"
+    },
+    {
+      "open": "observed-one"
+    },
+    {
+      "wait_for": "prompt-one"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "web",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "background": true,
+      "as": "two"
+    },
+    {
+      "wait_for": "observed-two"
+    },
+    {
+      "open": "observed-two"
+    },
+    {
+      "wait_for": "prompt-two"
+    },
+    {
+      "open": "prompt-two"
+    },
+    {
+      "await": "two",
+      "expect": {
+        "result": {
+          "response_metadata": {
+            "sync_room": "two",
+            "async_room": "two"
+          }
+        }
+      }
+    },
+    {
+      "open": "prompt-one"
+    },
+    {
+      "await": "one",
+      "expect": {
+        "result": {
+          "response_metadata": {
+            "sync_room": "one",
+            "async_room": "one"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "Hello"
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "content": {
+            "type": "tool_call",
+            "tool_name": "Read",
+            "tool_id": "call-1"
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "content": {
+            "type": "tool_call",
+            "tool_name": "Read",
+            "tool_id": "call-1",
+            "result": "done"
+          }
+        },
+        {
+          "content": {
+            "body": "Answer"
+          },
+          "metadata": {
+            "sync_room": "one",
+            "async_room": "one"
+          }
+        }
+      ],
+      "room-2": [
+        {
+          "content": {
+            "body": "Hello"
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "content": {
+            "type": "tool_call",
+            "tool_name": "Read",
+            "tool_id": "call-1"
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "content": {
+            "type": "tool_call",
+            "tool_name": "Read",
+            "tool_id": "call-1",
+            "result": "done"
+          }
+        },
+        {
+          "content": {
+            "body": "Answer"
+          },
+          "metadata": {
+            "sync_room": "two",
+            "async_room": "two"
+          }
+        }
+      ]
+    }
+  }
+}
