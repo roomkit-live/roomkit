@@ -349,6 +349,10 @@ filterwarnings = [
     # here can fix it, and without the ignore any test file that imports
     # google.genai first fails to collect on 3.14.
     "ignore:'_UnionGenericAlias' is deprecated:DeprecationWarning",
+    # google-genai 3.2's generated types contain an invalid escape in a
+    # description string. Ignore that SDK warning on a cold import only;
+    # project syntax warnings still fail collection.
+    "ignore:.*invalid escape sequence.*:SyntaxWarning:.*google[./]genai[./]types$",
     # starlette.testclient reads anyio.abc.BlockingPortal at import, an alias
     # anyio 4.15 deprecates. Third-party, and it stops fastapi's TestClient
     # (the WebRTC offer tests) from collecting at all.
