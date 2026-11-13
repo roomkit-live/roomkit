@@ -16,6 +16,7 @@ import tempfile
 import threading
 import time
 from collections.abc import AsyncIterator, Coroutine
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -205,6 +206,12 @@ async def test_a_turn_whose_cpu_stalls_its_executor_keeps_beating(
         await executor.stop()
 
 
+async def _redis_now(client: Any) -> datetime:
+    """Redis's clock, which stamps the beats, read now."""
+    seconds, microseconds = await client.time()
+    return datetime.fromtimestamp(seconds, UTC) + timedelta(microseconds=microseconds)
+
+
 @pytest.mark.wallclock
 async def test_an_executor_whose_process_died_goes_offline_at_the_heartbeat_timeout(
     prefix: str, redis_client: Any, database: Path
@@ -212,7 +219,13 @@ async def test_an_executor_whose_process_died_goes_offline_at_the_heartbeat_time
     """The kit lists an executor of another process with its node and last
     beat. Its process killed, it stays online, the agent it covers with it,
     until the heartbeat timeout passes without a beat: then both read
-    offline (RFC §10.6.8)."""
+    offline (RFC §10.6.8).
+
+    The silence counts from the last beat the dead process wrote, on Redis's
+    clock: under load the beat thread falls behind, so that beat may be more
+    than one interval old at the kill, and the kill waits for the process to
+    exit; a clock started after it misses part of the silence."""
+    timeout = timedelta(seconds=TIMEOUTS.heartbeat_timeout)
     executor = await _ExecutorProcess.start(prefix, "host-1", database)
     kit = await _owner(prefix, "worker", store=SQLiteStore(database))
     try:
@@ -220,10 +233,12 @@ async def test_an_executor_whose_process_died_goes_offline_at_the_heartbeat_time
         await executor.kill()
         killed = time.monotonic()
         [just_after] = await kit.executors()
-        while (await kit.executors())[0].online:
+        read_after_kill = await _redis_now(redis_client)
+        while (listed := await kit.executors())[0].online:
             assert time.monotonic() - killed < 3 * TIMEOUTS.heartbeat_timeout
             await asyncio.sleep(TIMEOUTS.heartbeat_interval / 4)
-        silent_for = time.monotonic() - killed
+        seen_offline = await _redis_now(redis_client)
+        stamped = await redis_client.zscore(Keys(prefix).alive, f"{listed[0].node}:host-1")
         presence = await kit.agent_presence("r")
     finally:
         await kit.close()
@@ -231,8 +246,16 @@ async def test_an_executor_whose_process_died_goes_offline_at_the_heartbeat_time
 
     assert (before.executor_id, before.hosts, before.online) == ("host-1", {"worker"}, True)
     assert before.node is not None and before.last_beat is not None
-    assert just_after.online
-    assert silent_for >= TIMEOUTS.heartbeat_timeout - TIMEOUTS.heartbeat_interval
+    # Read once offline: the listing keeps the last beat of the dead process,
+    # as Redis stamped it.
+    [offline] = listed
+    assert offline.last_beat is not None and offline.last_beat >= before.last_beat
+    assert offline.last_beat == datetime.fromtimestamp(int(stamped) / 1000, UTC)
+    # Read before the timeout passed since that beat, it was online: only a
+    # kill slower than the timeout leaves nothing to check there.
+    if read_after_kill - offline.last_beat < timeout:
+        assert just_after.online
+    assert seen_offline - offline.last_beat >= timeout
     assert [(p.channel_id, p.online, p.executors) for p in presence] == [("worker", False, [])]
 
 
