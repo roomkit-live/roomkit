@@ -1,0 +1,90 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "channel-release/a-closed-local-executor-can-release-a-live-channel",
+  "title": "A closed local executor leaves release of a registered live channel harmless",
+  "rules": [
+    "§10.6.3"
+  ],
+  "notes": "Python: tests/test_turns_channel_release.py local registry cases; ChannelStateMixin.release_channel checks registration before backend control. No separately served executor is needed.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence",
+        "verbs": {
+          "keep": {
+            "keeps": true
+          },
+          "read": {
+            "reads": true
+          },
+          "forget": {
+            "forgets": true,
+            "reads": true
+          },
+          "answer": {
+            "result": {
+              "ok": true
+            }
+          },
+          "nothing": {}
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "kit_executor.close"
+    },
+    {
+      "call": "release_channel",
+      "channel_id": "agent",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "release_channel",
+      "channel_id": "nobody",
+      "expect": {
+        "error": "channel_not_registered"
+      }
+    },
+    {
+      "call": "kit_executor.closed",
+      "expect": {
+        "result": true
+      }
+    }
+  ],
+  "expect": {}
+}
