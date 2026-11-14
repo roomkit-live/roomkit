@@ -149,6 +149,7 @@ def response_record(payload: AIResponseEvent) -> dict[str, Any]:
         "round_count": payload.round_count,
         "loop_end_reason": payload.loop_end_reason,
         "usage": dict(payload.usage),
+        "usage_metadata": dict(payload.usage_metadata),
         "streaming": payload.streaming,
         "thinking": payload.thinking,
         "declared_tools": {

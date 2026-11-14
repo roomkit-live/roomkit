@@ -687,7 +687,9 @@ def _acp(spec: Mapping[str, Any], path: str, found: list[str]) -> None:
     if "mcp_servers" in spec:
         found.extend(mcp_problems(spec["mcp_servers"], f"{path}.mcp_servers"))
     transport = spec.get("transport", {})
-    _members(transport, {"refuse_prompt"}, f"{path}.transport", found)
+    _members(transport, {"refuse_prompt", "provides_usage_metadata"}, f"{path}.transport", found)
+    if not isinstance(transport.get("provides_usage_metadata", False), bool):
+        found.append(f"{path}.transport.provides_usage_metadata: expected a boolean")
     for index, refusal in enumerate(transport.get("refuse_prompt", [])):
         if refusal is not None:
             _members(refusal, ACP_REFUSAL, f"{path}.transport.refuse_prompt[{index}]", found)
@@ -702,6 +704,8 @@ def _acp(spec: Mapping[str, Any], path: str, found: list[str]) -> None:
         found.append(f"{path}.agent.initialize.mcp_capabilities: expected http/sse booleans")
     for index, prompt in enumerate(agent.get("prompts", [])):
         _members(prompt, ACP_PROMPT, f"{path}.agent.prompts[{index}]", found)
+        if "meta" in prompt and not isinstance(prompt["meta"], dict):
+            found.append(f"{path}.agent.prompts[{index}].meta: expected an object")
         found.extend(permission_problems(prompt, f"{path}.agent.prompts[{index}]"))
     for kind in ("new_sessions", "set_config_options", "close_sessions"):
         for index, reply in enumerate(agent.get(kind, [])):

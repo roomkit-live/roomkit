@@ -118,3 +118,27 @@ def test_permission_fixture_rejects_malformed_steps(steps: Any) -> None:
         },
     }
     assert any("permission_steps" in problem for problem in unknown_members(scenario))
+
+
+@pytest.mark.parametrize(
+    "patch",
+    [
+        {"transport": {"provides_usage_metadata": "false"}},
+        {"transport": {"provides_usage_metadata": None}},
+        {"agent": {"prompts": [{"meta": []}]}},
+        {"agent": {"prompts": [{"meta": None}]}},
+    ],
+)
+def test_usage_fixture_rejects_malformed_controls(patch: dict[str, Any]) -> None:
+    scenario = {
+        "setup": {
+            "channels": [
+                {
+                    "id": "agent",
+                    "type": "ai",
+                    "acp": {"cwd": "/srv/project", "agent": {}, **patch},
+                }
+            ]
+        }
+    }
+    assert unknown_members(scenario)

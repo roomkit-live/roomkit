@@ -30,6 +30,7 @@ PROMPT = {
     "permission",
     "stop_reason",
     "usage",
+    "meta",
     "error",
     "permission_steps",
 }
@@ -146,6 +147,8 @@ class ScriptedACPAgent:
         result = {"stopReason": prompt.get("stop_reason", "end_turn")}
         if "usage" in prompt:
             result["usage"] = prompt["usage"]
+        if "meta" in prompt:
+            result["_meta"] = prompt["meta"]
         return result, None
 
     @staticmethod
@@ -205,6 +208,7 @@ class ScriptedACPTransport(ACPTransport):
     def __init__(self, agent: ScriptedACPAgent, spec: Mapping[str, Any]) -> None:
         self._agent = agent
         self._refusals = iter(spec.get("refuse_prompt", []))
+        self._provides_usage_metadata = spec.get("provides_usage_metadata", False)
         self._serving: asyncio.Task[None] | None = None
         self._writer: asyncio.StreamWriter | None = None
         self._connection: Any = None
@@ -212,6 +216,10 @@ class ScriptedACPTransport(ACPTransport):
     @property
     def name(self) -> str:
         return "scripted"
+
+    @property
+    def provides_usage_metadata(self) -> bool:
+        return self._provides_usage_metadata
 
     def is_alive(self) -> bool:
         return (
