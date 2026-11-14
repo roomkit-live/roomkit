@@ -55,6 +55,22 @@ def _fast(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(_shared, "_RENEW_BEFORE", 0.4)
 
 
+class _Log(list[str]):
+    """The agents' log across processes, with when each line first came by
+    the wall clock, the lease's clock unless a test stops it."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._first: dict[str, float] = {}
+
+    def append(self, line: str) -> None:
+        self._first.setdefault(line, time.time())
+        super().append(line)
+
+    def first(self, line: str) -> float | None:
+        return self._first.get(line)
+
+
 class _Slow(MockAIProvider):
     """Answers after a while, and logs when it generates, across processes:
     ``+name`` as it starts, ``-name`` as it answers, ``xname`` once its turn
@@ -97,7 +113,7 @@ class _Cluster:
     def __init__(self) -> None:
         self.store = InMemoryStore()
         self.locks = InMemoryLockManager()
-        self.log: list[str] = []
+        self.log = _Log()
         self.kits: list[RoomKit] = []
         self.release = asyncio.Event()
 
@@ -332,15 +348,21 @@ def _turns_ended(kit: RoomKit) -> list[str]:
 
 
 @pytest.mark.wallclock
-@pytest.mark.parametrize("failing", [False, True], ids=["held", "failing"])
+@pytest.mark.parametrize(
+    ("method", "failing"),
+    [("editing", False), ("editing", True), ("read", False)],
+    ids=["held", "failing", "read_held"],
+)
 async def test_a_turn_whose_lease_ends_unrenewed_is_cut_before_another_process_takes_it(
-    failing: bool, monkeypatch: pytest.MonkeyPatch
+    method: str, failing: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A cannot renew its lease while investigator's turn runs: the turn is
-    # cut once the lease ends, then B takes the lease and gives investigator
-    # a turn again. One turn at a time, only B's commits, and the end of A's
-    # turn, recorded once A can, leaves B's as the one speaking (rules 6, 7
-    # and 16).
+    # A cannot renew its lease while investigator's turn runs: its edits of
+    # the queue are held or their writes fail, or its reads of the queue are
+    # held. The turn is cut by the lease's end, before another process may
+    # take the lease over one read later; then B takes it and gives
+    # investigator a turn again. One turn at a time, only B's commits, and
+    # the end of A's turn, recorded once A can, leaves B's as the one
+    # speaking (rules 6, 7 and 16).
     _shorter_lease(monkeypatch)
     cluster = _Cluster()
     a = await cluster.process(install=True, create=True, delay=2.0)
@@ -348,7 +370,9 @@ async def test_a_turn_whose_lease_ends_unrenewed_is_cut_before_another_process_t
     ended = _turns_ended(a)
     await _say(a, "@investigator what do the logs say?")
     await _turn_started(cluster)
-    release, _ = _hold(monkeypatch, a, "editing", failing=failing)
+    release, entered = _hold(monkeypatch, a, method, failing=failing)
+    await asyncio.wait_for(entered.wait(), 2.0)  # A's renewals stop: the lease is as stored
+    expires = (await _stored_queue(cluster))["lease_expires"]
 
     await _say(b, "@investigator anything new?")
 
@@ -366,6 +390,11 @@ async def test_a_turn_whose_lease_ends_unrenewed_is_cut_before_another_process_t
     cluster.release.set()
     await _turn_over(cluster, b._discussions["r1"].driver)
     assert log == ["+investigator", "xinvestigator", "+investigator"]
+    # Cut by the lease's end, no read before it: not at the end of a read
+    # bounded more tightly than the lease (rule 7).
+    cut_at = cluster.log.first("xinvestigator")
+    poll = _driver.POLL_SECONDS
+    assert cut_at is not None and expires - poll < cut_at < expires + poll, (cut_at, expires)
     assert (queue["lease_holder"], queue["speaking"]) == (b._instance_id, "investigator")
     assert await cluster.answers() == ["investigator"]
     await cluster.close()
@@ -452,6 +481,58 @@ async def test_an_expired_lease_is_taken_over_one_read_past_its_end(
     await _until(b_holds)
     release.set()
     assert within_a_read == a._instance_id
+    await cluster.close()
+
+
+def _held_between_reads(
+    monkeypatch: pytest.MonkeyPatch, kit: RoomKit, clock: _Clock, moves: list[float]
+) -> asyncio.Event:
+    """As each read of the queue *kit* makes while a turn runs ends, the
+    lease's clock moves to the next of *moves*: the process held until then
+    (its loop blocked, the process paused) before it reads again. The event
+    returned is set once the read after the last move has ended."""
+    driver = kit._discussions["r1"].driver
+    look = driver._look
+    left = list(moves)
+    read_after = asyncio.Event()
+
+    async def look_then_hold(turn: Any) -> None:
+        await look(turn)
+        if left:
+            clock.now = left.pop(0)
+        else:
+            read_after.set()
+
+    monkeypatch.setattr(driver, "_look", look_then_hold)
+    return read_after
+
+
+async def test_a_process_held_less_than_its_lease_keeps_its_turn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The process giving a turn renews its lease at each read, not only
+    # once under 10 s of its 15 s are left: held from a read 4 s into the
+    # lease until 16.5 s into it, past its end had that read not renewed it,
+    # it reads again with the lease its own and keeps its turn (rules 7 and
+    # 16). The lease's clock stands still but for those moves.
+    monkeypatch.setattr(_shared, "LEASE_SECONDS", 15.0)
+    monkeypatch.setattr(_shared, "_RENEW_BEFORE", 10.0)
+    monkeypatch.setattr(_driver, "POLL_SECONDS", 0.01)  # the lease's clock stands still
+    clock = _Clock()
+    start = clock.now = float(int(time.time()))
+    monkeypatch.setattr(_shared, "time", clock)
+    monkeypatch.setattr(_driver, "time", clock)
+    cluster = _Cluster()
+    a = await cluster.process(install=True, create=True, delay=5.0)
+    await _say(a, "@investigator what do the logs say?")
+    await _turn_started(cluster)
+    held = _held_between_reads(monkeypatch, a, clock, [start + 4.0, start + 16.5])
+
+    await asyncio.wait_for(held.wait(), 2.0)
+    cluster.release.set()
+    await _turn_over(cluster, a._discussions["r1"].driver)
+    assert cluster.log == ["+investigator", "-investigator"]
+    assert await cluster.answers() == ["investigator"]
     await cluster.close()
 
 
