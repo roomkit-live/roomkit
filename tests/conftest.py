@@ -144,6 +144,12 @@ def pytest_configure(config: pytest.Config) -> None:
     postgres_worker.install()
 
 
+def pytest_sessionfinish(session: pytest.Session) -> None:
+    # Before a worker reports its end: the controller then stops the
+    # workers, which could cut a drop made at unconfigure.
+    postgres_worker.clean_up()
+
+
 def pytest_unconfigure(config: pytest.Config) -> None:
     if redis_turn_mode.ENABLED:
         redis_turn_mode.clean_up()
