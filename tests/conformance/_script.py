@@ -35,6 +35,7 @@ from tests.conformance._ai_hooks import patched_generation, patched_tool_round
 from tests.conformance._routing import router_hook
 
 if TYPE_CHECKING:
+    from roomkit.models.framework_event import FrameworkEvent
     from tests.conformance._harness import Harness
 
 # How long a step waits for a call to reach a gate before the scenario fails.
@@ -534,6 +535,24 @@ def hook_handler(spec: Mapping[str, Any], harness: Harness) -> HookHandler:
         if "result" in reaction:
             resolved["result"] = await harness.resolve(reaction["result"], scope)
         return _scripted_hook_result(resolved, payload, room_id)
+
+    return handler
+
+
+def event_handler(
+    spec: Mapping[str, Any], harness: Harness
+) -> Callable[[FrameworkEvent], Awaitable[None]]:
+    """The handler of a scripted framework-event handler (README,
+    ``event_handlers``): it reacts to each event of its type, in the context
+    the kit runs it in."""
+    reactions = Reactions(spec.get("reactions"))
+
+    async def handler(event: FrameworkEvent) -> None:
+        reaction = reactions.pick({"room_id": event.room_id})
+        if reaction is None:
+            return
+        scope = {"room": event.room_id} if event.room_id is not None else {}
+        await perform(harness, reaction, scope)
 
     return handler
 

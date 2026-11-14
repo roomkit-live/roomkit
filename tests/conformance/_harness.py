@@ -83,7 +83,13 @@ from tests.conformance._members import MEMBER_CALLS, store_identities
 from tests.conformance._normalize import Observed, is_lifecycle_record
 from tests.conformance._publications import Publications
 from tests.conformance._routing import ROUTING_CALLS
-from tests.conformance._script import GATE_BOUND_S, Gates, ScriptedFailureError, ScriptedRouter
+from tests.conformance._script import (
+    GATE_BOUND_S,
+    Gates,
+    ScriptedFailureError,
+    ScriptedRouter,
+    event_handler,
+)
 from tests.conformance._store import STORE_CALLS
 from tests.conformance._strategies import (
     STRATEGY_CALLS,
@@ -592,6 +598,8 @@ class Harness:
             register_hook(self.kit, self, hook)
         for hook in setup.get("identity_hooks", []):
             register_identity_hook(self.kit, self, hook)
+        for handler in setup.get("event_handlers", []):
+            self.kit.on(handler["event"])(event_handler(handler, self))
         for process in setup.get("processes", []):
             self.processes[process["id"]] = await self._process()
         await start_backend(self.kit)

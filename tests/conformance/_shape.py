@@ -66,8 +66,11 @@ SETUP = {
     "session_auditor",
     "processes",
     "executors",
+    "event_handlers",
 }
 PROCESS = {"id"}
+EVENT_HANDLER = {"event", "reactions"}
+EVENT_HANDLER_REACTION = {"when", "repeat", "gate", "do"}
 EXECUTOR = {
     "id",
     "hosts",
@@ -542,6 +545,7 @@ def unknown_members(scenario: Mapping[str, Any]) -> list[str]:
     for position, process in enumerate(setup.get("processes", [])):
         _members(process, PROCESS, f"setup.processes[{position}]", found)
     _executors(setup, found)
+    _event_handlers(setup, found)
     for position, step in enumerate(scenario.get("steps", [])):
         _step(step, f"steps[{position}]", found)
     expect = scenario.get("expect", {})
@@ -578,6 +582,20 @@ def _executors(setup: Mapping[str, Any], found: list[str]) -> None:
         for member in ("hooks", "room_hooks"):
             for index, hook in enumerate(executor.get(member, [])):
                 _hook(hook, f"{path}.{member}[{index}]", found)
+
+
+def _event_handlers(setup: Mapping[str, Any], found: list[str]) -> None:
+    """The members of the setup's framework-event handlers, and of their
+    reactions."""
+    for position, handler in enumerate(setup.get("event_handlers", [])):
+        path = f"setup.event_handlers[{position}]"
+        _members(handler, EVENT_HANDLER, path, found)
+        for index, reaction in enumerate(handler.get("reactions", [])):
+            at = f"{path}.reactions[{index}]"
+            _members(reaction, EVENT_HANDLER_REACTION, at, found)
+            _members(reaction.get("when", {}), {"room_id"}, f"{at}.when", found)
+            for number, action in enumerate(reaction.get("do", [])):
+                _call(action, {"as", "expect"}, f"{at}.do[{number}]", found)
 
 
 def _strategy(strategy: Mapping[str, Any], path: str, found: list[str]) -> None:
