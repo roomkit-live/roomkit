@@ -5,7 +5,7 @@
   "rules": [
     "§6.4"
   ],
-  "notes": "Python: tests/test_channels/test_acp.py::TestACPChannel::test_a_refusal_is_named_on_the_turn, test_a_truncated_turn_is_named_too; tests/test_inbound_turns_record.py::test_an_acp_turn_names_its_stop_reason.",
+  "notes": "Python: tests/test_channels/test_acp.py::TestTurnOutcomeMetadata::test_a_refusal_is_named_on_the_turn; tests/test_inbound_turns_record.py::test_an_acp_turn_names_its_stop_reason. The max_tokens variant is covered separately by a-truncated-turn-preserves-max-tokens.",
   "setup": {
     "channels": [
       {
