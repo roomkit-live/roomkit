@@ -1,0 +1,235 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "reentrancy/a-turn-s-framework-event-handler-sends-while-it-runs",
+  "title": "A handler of a framework event a turn emits that sends into the turn's room while the turn is held is not held behind the delivery set that runs the turn: its send returns, and is stored once, before the turn ends",
+  "rules": [
+    "§8.2",
+    "§10.1 step 14",
+    "§10.1 step 18",
+    "§10.2",
+    "§10.5",
+    "§10.6.3",
+    "§10.6.4"
+  ],
+  "notes": "The RFC does not say how deep a framework-event handler's send is, nor whether it is the turn's work (RMK-1694, RMK-1699): no depth is asserted. Python: turns/_owner_turn.py _read_frames hands the turn's framework_event frames to turns/_owner_publish.py publish_later, whose one task per turn runs in a copy of the context of the call waiting on the turn when its first frame came (before_ai_generation, while the delivery set's target awaited the output). The agent hands its stream before its tool loop runs, which runs only as the stream is read, after the trigger's delivery set: by then that call has returned, and the room's lane is free. The agent's tool is held at 'tool-held' after its gate emitted before_tool_use. The handler sends into the turn's room, then into room-2, whose BEFORE_BROADCAST hook holds at 'handled': reached only once the first send returned, while the turn is held.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up.",
+            "gate": "tool-held",
+            "returns": "found"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ]
+            },
+            {
+              "text": "answer"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "hold",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "room_id": "room-2"
+            },
+            "gate": "handled"
+          }
+        ]
+      }
+    ],
+    "event_handlers": [
+      {
+        "event": "before_tool_use",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "ai",
+                "content": {
+                  "type": "text",
+                  "body": "from the handler"
+                },
+                "as": "sent"
+              },
+              {
+                "call": "send_event",
+                "room_id": "room-2",
+                "channel_id": "sms",
+                "content": {
+                  "type": "text",
+                  "body": "elsewhere"
+                },
+                "as": "elsewhere"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "background": true,
+      "as": "inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      }
+    },
+    {
+      "wait_for": "handled"
+    },
+    {
+      "open": "tool-held"
+    },
+    {
+      "open": "handled"
+    },
+    {
+      "await": "inbound",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "id": "room-1#0"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": {
+        "$unordered": [
+          {
+            "type": "message",
+            "content": {
+              "type": "text",
+              "body": "go"
+            }
+          },
+          {
+            "type": "tool_call_start",
+            "source": {
+              "channel_id": "ai"
+            }
+          },
+          {
+            "type": "message",
+            "source": {
+              "channel_id": "ai"
+            },
+            "content": {
+              "type": "text",
+              "body": "from the handler"
+            }
+          },
+          {
+            "type": "tool_call_end",
+            "source": {
+              "channel_id": "ai"
+            }
+          },
+          {
+            "type": "message",
+            "responds_to": "room-1#0",
+            "source": {
+              "channel_id": "ai"
+            },
+            "content": {
+              "type": "text",
+              "body": "answer"
+            }
+          }
+        ]
+      },
+      "room-2": [
+        {
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "elsewhere"
+          }
+        }
+      ]
+    },
+    "actions": {
+      "sent": [
+        {
+          "result": {
+            "room_id": "room-1",
+            "content": {
+              "type": "text",
+              "body": "from the handler"
+            }
+          }
+        }
+      ],
+      "elsewhere": [
+        {
+          "result": {
+            "room_id": "room-2",
+            "content": {
+              "type": "text",
+              "body": "elsewhere"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
