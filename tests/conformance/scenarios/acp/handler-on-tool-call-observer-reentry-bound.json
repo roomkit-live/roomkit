@@ -1,0 +1,1376 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/handler-on-tool-call-observer-reentry-bound",
+  "title": "An on_tool_call observer with an ACP policy handler stops at the local reentry cap",
+  "rules": [
+    "§6.4",
+    "§9.3",
+    "Appendix A.9.1",
+    "§8.3"
+  ],
+  "notes": "Python: tests/test_channels/test_acp.py::test_an_observer_posting_per_tool_call_the_agent_answers_stops[on_tool_call]. In-process owner/executor context only, as the source marker requires; the captured kit does not claim this across Redis.",
+  "setup": {
+    "channels": [
+      {
+        "id": "web",
+        "type": "webhook",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-0",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-0",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-0",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-1",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-1",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-1",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-2",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-2",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-2",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-3",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-3",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-3",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-4",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-4",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-4",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-5",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-5",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-5",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-6",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-6",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-6",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-7",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-7",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-7",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-8",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-8",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-8",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-9",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-9",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-9",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-10",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-10",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-10",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-11",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-11",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-11",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-12",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-12",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-12",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-13",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-13",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-13",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-14",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-14",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-14",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-15",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-15",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-15",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-16",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-16",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-16",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-17",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-17",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-17",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-18",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-18",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-18",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-19",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-19",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-19",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-20",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-20",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-20",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-21",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-21",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-21",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-22",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-22",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-22",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-23",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-23",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-23",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-24",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-24",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-24",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "external_tool_handler": {}
+        }
+      },
+      {
+        "id": "bot",
+        "type": "webhook",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "bot"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "response",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      },
+      {
+        "name": "tools",
+        "trigger": "on_tool_call",
+        "execution": "async",
+        "reactions": [
+          {
+            "repeat": true,
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "bot",
+                "content": {
+                  "type": "text",
+                  "body": "next"
+                },
+                "as": "posted"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "kit": {
+      "max_chain_depth": 2
+    }
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "web",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "actions": {
+      "posted": {
+        "$unordered": [
+          {
+            "result": {
+              "blocked_by": null
+            }
+          },
+          {
+            "result": {
+              "blocked_by": null
+            }
+          },
+          {
+            "result": {
+              "blocked_by": null
+            }
+          },
+          {
+            "result": {
+              "blocked_by": null
+            }
+          },
+          {
+            "result": {
+              "blocked_by": null
+            }
+          },
+          {
+            "result": {
+              "blocked_by": null
+            }
+          },
+          {
+            "result": {
+              "blocked_by": null
+            }
+          },
+          {
+            "result": {
+              "blocked_by": null
+            }
+          },
+          {
+            "result": {
+              "blocked_by": null
+            }
+          },
+          {
+            "result": {
+              "blocked_by": null
+            }
+          },
+          {
+            "result": {
+              "blocked_by": null
+            }
+          },
+          {
+            "result": {
+              "blocked_by": null
+            }
+          },
+          {
+            "result": {
+              "blocked_by": null
+            }
+          },
+          {
+            "result": {
+              "blocked_by": null
+            }
+          },
+          {
+            "result": {
+              "blocked_by": null
+            }
+          },
+          {
+            "result": {
+              "blocked_by": null
+            }
+          },
+          {
+            "result": {
+              "blocked_by": null
+            }
+          },
+          {
+            "result": {
+              "blocked_by": null
+            }
+          },
+          {
+            "result": {
+              "blocked_by": null
+            }
+          },
+          {
+            "result": {
+              "blocked_by": null
+            }
+          },
+          {
+            "result": {
+              "blocked_by": "reentry_loop_cap"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
