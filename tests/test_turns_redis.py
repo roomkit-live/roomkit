@@ -56,7 +56,7 @@ from roomkit.turns._redis_routes import REFUSED
 from roomkit.turns.redis import RedisTurnBackend
 from roomkit.turns.wire import CommittedEvent, End, HostResult, RoomCall
 from tests import redis_turn_mode
-from tests.redis_silencing import Silencing, redis_address
+from tests.redis_silencing import Silencing, redis_address, redis_db
 from tests.test_framework import SimpleChannel
 from tests.test_turns_channel_control import _Agent, _Recording, _turn
 from tests.test_turns_own_executor import _Tagged
@@ -1215,7 +1215,7 @@ async def test_a_request_a_client_writes_twice_runs_its_turn_once(
 
     host, executor = await _hosted(prefix, store, _Worker("worker", _Counts(streaming=True)))
     proxy = _CutAfterWrite([b"XADD", b"request"])
-    client = redis.Redis(host="127.0.0.1", port=await proxy.start())
+    client = redis.Redis(host="127.0.0.1", port=await proxy.start(), db=redis_db())
     backend = RedisTurnBackend(
         os.environ["REDIS_URL"], client=client, key_prefix=prefix, timeouts=TIMEOUTS
     )

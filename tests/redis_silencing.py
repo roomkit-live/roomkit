@@ -14,6 +14,12 @@ def redis_address() -> tuple[str, int]:
     return url.hostname or "localhost", url.port or 6379
 
 
+def redis_db() -> int:
+    """The database REDIS_URL names: a client of a proxy reaches the keys the
+    rest of the test reads there."""
+    return int(urlparse(os.environ["REDIS_URL"]).path.strip("/") or 0)
+
+
 class Silencing:
     """A proxy to Redis that, once told, drops every byte of the connections
     already open and keeps them open: a NAT or a load balancer that forgot
