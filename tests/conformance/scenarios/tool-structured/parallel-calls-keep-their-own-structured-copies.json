@@ -1,0 +1,210 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tool-structured/parallel-calls-keep-their-own-structured-copies",
+  "title": "Parallel calls keep their own structured copies",
+  "rules": [
+    "§5.3",
+    "§9.3",
+    "§21.4"
+  ],
+  "notes": "Python: tests/test_tool_context.py::TestCurrentToolCall and tests/test_tool_call_structured_copy.py; the handler writes the actual current_tool_call record before the result hook reads it.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "first",
+                  "arguments": {}
+                },
+                {
+                  "id": "c2",
+                  "name": "second",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ],
+          "streaming": true
+        },
+        "tools": [
+          {
+            "name": "first",
+            "description": "Find an order.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "model text",
+            "writes_structured_content": {
+              "page": 3
+            },
+            "gate": "first-held"
+          },
+          {
+            "name": "second",
+            "description": "Find an order.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "model text",
+            "writes_structured_content": {
+              "page": 9
+            },
+            "gate": "second-held"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "audit",
+        "trigger": "on_tool_call",
+        "execution": "sync",
+        "reactions": [
+          {
+            "result": {
+              "action": "allow"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Where is my order?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      },
+      "defer_delivery": true,
+      "as": "turn"
+    },
+    {
+      "wait_for": "first-held"
+    },
+    {
+      "wait_for": "second-held"
+    },
+    {
+      "open": "second-held"
+    },
+    {
+      "open": "first-held"
+    },
+    {
+      "call": "delivery.wait",
+      "of": "turn"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "audit": {
+        "$unordered": [
+          {
+            "tool_call": {
+              "tool_call_id": "c1",
+              "structured_content": {
+                "page": 3
+              }
+            }
+          },
+          {
+            "tool_call": {
+              "tool_call_id": "c2",
+              "structured_content": {
+                "page": 9
+              }
+            }
+          }
+        ]
+      }
+    },
+    "timeline": {
+      "room-1": {
+        "$unordered": [
+          {
+            "type": "message"
+          },
+          {
+            "type": "tool_call_start",
+            "content": {
+              "tool_id": "c1"
+            }
+          },
+          {
+            "type": "tool_call_start",
+            "content": {
+              "tool_id": "c2"
+            }
+          },
+          {
+            "type": "tool_call_end",
+            "content": {
+              "tool_id": "c1",
+              "structured_content": {
+                "page": 3
+              },
+              "outcome": "served"
+            }
+          },
+          {
+            "type": "tool_call_end",
+            "content": {
+              "tool_id": "c2",
+              "structured_content": {
+                "page": 9
+              },
+              "outcome": "served"
+            }
+          },
+          {
+            "type": "message"
+          }
+        ]
+      }
+    }
+  }
+}
