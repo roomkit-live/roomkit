@@ -1,0 +1,331 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/usage-two-agents-trusted",
+  "title": "Two ACP agents in one room retain their own trusted accounting",
+  "rules": [
+    "§6.4",
+    "Appendix A.9.1"
+  ],
+  "notes": "Python: tests/test_channels/test_acp_usage_boundaries.py::test_two_real_sdk_sessions_in_one_room_reach_framework_hooks. Two real JSON-RPC pipes and the framework response hooks; no SDK-only scheduling is asserted.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "one",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "usage_update",
+                    "used": 0,
+                    "size": 100,
+                    "_meta": {
+                      "roomkit.live/usage": {
+                        "usage_protocol": 1,
+                        "session_id": "one-session",
+                        "session_epoch": "epoch-1",
+                        "node_id": "node-1",
+                        "agent_id": "one",
+                        "adapter_info": "{\"name\":\"test-adapter\",\"version\":\"1.0\"}",
+                        "result_id": "result-2",
+                        "turn_id": "turn-2",
+                        "generation": 0,
+                        "replayed": true,
+                        "usage_report": {
+                          "report_id": "report-1",
+                          "observed_at_ms": 1234,
+                          "source": "session/update",
+                          "scope": "session",
+                          "source_result_id": "result-1",
+                          "update": {
+                            "sessionUpdate": "usage_update",
+                            "used": 0,
+                            "size": 100,
+                            "cost": {
+                              "amount": 0,
+                              "currency": "USD"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                ],
+                "usage": {
+                  "inputTokens": 2,
+                  "outputTokens": 3,
+                  "totalTokens": 5
+                },
+                "meta": {
+                  "roomkit.live/usage": {
+                    "usage_protocol": 1,
+                    "session_id": "one-session",
+                    "session_epoch": "epoch-1",
+                    "node_id": "node-1",
+                    "agent_id": "one",
+                    "adapter_info": "{\"name\":\"test-adapter\",\"version\":\"1.0\"}",
+                    "result_id": "result-2",
+                    "turn_id": "turn-2",
+                    "generation": 0,
+                    "replayed": true,
+                    "usage_report": {
+                      "report_id": "report-1",
+                      "observed_at_ms": 1234,
+                      "source": "session/update",
+                      "scope": "session",
+                      "source_result_id": "result-1",
+                      "update": {
+                        "sessionUpdate": "usage_update",
+                        "used": 0,
+                        "size": 100,
+                        "cost": {
+                          "amount": 0,
+                          "currency": "USD"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            ],
+            "initialize": {
+              "agent_info": {
+                "name": "scripted-agent",
+                "version": "1.0.0"
+              }
+            },
+            "new_sessions": [
+              {
+                "result": {
+                  "sessionId": "one-session"
+                }
+              }
+            ]
+          },
+          "transport": {
+            "provides_usage_metadata": true
+          }
+        }
+      },
+      {
+        "id": "two",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "usage_update",
+                    "used": 0,
+                    "size": 100,
+                    "_meta": {
+                      "roomkit.live/usage": {
+                        "usage_protocol": 1,
+                        "session_id": "two-session",
+                        "session_epoch": "epoch-1",
+                        "node_id": "node-1",
+                        "agent_id": "two",
+                        "adapter_info": "{\"name\":\"test-adapter\",\"version\":\"1.0\"}",
+                        "result_id": "result-2",
+                        "turn_id": "turn-2",
+                        "generation": 0,
+                        "replayed": true,
+                        "usage_report": {
+                          "report_id": "report-1",
+                          "observed_at_ms": 1234,
+                          "source": "session/update",
+                          "scope": "session",
+                          "source_result_id": "result-1",
+                          "update": {
+                            "sessionUpdate": "usage_update",
+                            "used": 0,
+                            "size": 100,
+                            "cost": {
+                              "amount": 0,
+                              "currency": "USD"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                ],
+                "usage": {
+                  "inputTokens": 2,
+                  "outputTokens": 3,
+                  "totalTokens": 5
+                },
+                "meta": {
+                  "roomkit.live/usage": {
+                    "usage_protocol": 1,
+                    "session_id": "two-session",
+                    "session_epoch": "epoch-1",
+                    "node_id": "node-1",
+                    "agent_id": "two",
+                    "adapter_info": "{\"name\":\"test-adapter\",\"version\":\"1.0\"}",
+                    "result_id": "result-2",
+                    "turn_id": "turn-2",
+                    "generation": 0,
+                    "replayed": true,
+                    "usage_report": {
+                      "report_id": "report-1",
+                      "observed_at_ms": 1234,
+                      "source": "session/update",
+                      "scope": "session",
+                      "source_result_id": "result-1",
+                      "update": {
+                        "sessionUpdate": "usage_update",
+                        "used": 0,
+                        "size": 100,
+                        "cost": {
+                          "amount": 0,
+                          "currency": "USD"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            ],
+            "initialize": {
+              "agent_info": {
+                "name": "scripted-agent",
+                "version": "1.0.0"
+              }
+            },
+            "new_sessions": [
+              {
+                "result": {
+                  "sessionId": "two-session"
+                }
+              }
+            ]
+          },
+          "transport": {
+            "provides_usage_metadata": true
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "one",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "two",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "one",
+        "trigger": "on_ai_response",
+        "execution": "async",
+        "channel_ids": [
+          "one"
+        ]
+      },
+      {
+        "name": "two",
+        "trigger": "on_ai_response",
+        "execution": "async",
+        "channel_ids": [
+          "two"
+        ]
+      }
+    ],
+    "kit": {
+      "persistence_policy": {
+        "persist_types": [
+          "message"
+        ]
+      }
+    }
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Prompt 0"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "one": [
+        {
+          "room_id": "room-1",
+          "response": {
+            "channel_id": "one",
+            "usage_metadata": {
+              "session_id": "one-session",
+              "transport": "scripted",
+              "event_id": "room-1#0",
+              "agent_id": "one",
+              "usage_report": {
+                "report_id": "report-1"
+              }
+            },
+            "usage": {
+              "input_tokens": 2,
+              "output_tokens": 3,
+              "total_tokens": 5,
+              "cost": 0
+            }
+          }
+        }
+      ],
+      "two": [
+        {
+          "room_id": "room-1",
+          "response": {
+            "channel_id": "two",
+            "usage_metadata": {
+              "session_id": "two-session",
+              "transport": "scripted",
+              "event_id": "room-1#0",
+              "agent_id": "two",
+              "usage_report": {
+                "report_id": "report-1"
+              }
+            },
+            "usage": {
+              "input_tokens": 2,
+              "output_tokens": 3,
+              "total_tokens": 5,
+              "cost": 0
+            }
+          }
+        }
+      ]
+    }
+  }
+}

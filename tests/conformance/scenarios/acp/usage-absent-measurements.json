@@ -1,0 +1,120 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/usage-absent-measurements",
+  "title": "An ACP agent reporting no usage invents no measurement",
+  "rules": [
+    "§6.4",
+    "Appendix A.9.1"
+  ],
+  "notes": "Python: tests/test_channels/test_acp.py::TestEndOfTurnReport::test_an_agent_that_reports_nothing_reports_no_usage. Read the real response hook; compare reported numbers without arithmetic.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {}
+            ],
+            "initialize": {
+              "agent_info": {
+                "name": "scripted-agent",
+                "version": "1.0.0"
+              }
+            }
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "response",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "first"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "response": [
+        {
+          "trigger": "on_ai_response",
+          "room_id": "room-1",
+          "response": {
+            "channel_id": "claude",
+            "usage": {
+              "total_tokens": {
+                "$absent": true
+              },
+              "input_tokens": {
+                "$absent": true
+              },
+              "output_tokens": {
+                "$absent": true
+              },
+              "thought_tokens": {
+                "$absent": true
+              },
+              "cached_read_tokens": {
+                "$absent": true
+              },
+              "cached_write_tokens": {
+                "$absent": true
+              },
+              "context_used": {
+                "$absent": true
+              },
+              "context_size": {
+                "$absent": true
+              },
+              "cost": {
+                "$absent": true
+              },
+              "currency": {
+                "$absent": true
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

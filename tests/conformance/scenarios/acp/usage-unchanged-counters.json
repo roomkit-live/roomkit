@@ -1,0 +1,141 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/usage-unchanged-counters",
+  "title": "Usage unchanged counters",
+  "rules": [
+    "§6.4",
+    "Appendix A.9.1"
+  ],
+  "notes": "Python: tests/test_channels/test_acp_usage.py::TestUsageProvenance. The real prompt and response-hook boundary; arbitrary metadata is trusted only when the transport opts in. Native tests cover callback timing and object ownership.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "usage": {
+                  "inputTokens": 2,
+                  "outputTokens": 3,
+                  "totalTokens": 27369,
+                  "cachedReadTokens": 16997,
+                  "cachedWriteTokens": 10367,
+                  "thoughtTokens": 0
+                }
+              },
+              {
+                "usage": {
+                  "inputTokens": 2,
+                  "outputTokens": 3,
+                  "totalTokens": 27369,
+                  "cachedReadTokens": 16997,
+                  "cachedWriteTokens": 10367,
+                  "thoughtTokens": 0
+                }
+              }
+            ],
+            "initialize": {
+              "agent_info": {
+                "name": "scripted-agent",
+                "version": "1.0.0"
+              }
+            }
+          },
+          "transport": {
+            "provides_usage_metadata": true
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "response",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Prompt 0"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Prompt 1"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "response": [
+        {
+          "room_id": "room-1",
+          "response": {
+            "usage": {
+              "input_tokens": 2,
+              "output_tokens": 3,
+              "total_tokens": 27369,
+              "cached_read_tokens": 16997,
+              "cached_write_tokens": 10367,
+              "thought_tokens": 0
+            }
+          }
+        },
+        {
+          "room_id": "room-1",
+          "response": {
+            "usage": {
+              "input_tokens": 2,
+              "output_tokens": 3,
+              "total_tokens": 27369,
+              "cached_read_tokens": 16997,
+              "cached_write_tokens": 10367,
+              "thought_tokens": 0
+            }
+          }
+        }
+      ]
+    }
+  }
+}

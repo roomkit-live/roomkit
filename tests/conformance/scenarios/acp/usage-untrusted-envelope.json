@@ -1,0 +1,151 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/usage-untrusted-envelope",
+  "title": "Usage untrusted envelope",
+  "rules": [
+    "§6.4",
+    "Appendix A.9.1"
+  ],
+  "notes": "Python: tests/test_channels/test_acp_usage.py::TestUsageProvenance. The real prompt and response-hook boundary; arbitrary metadata is trusted only when the transport opts in. Native tests cover callback timing and object ownership.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "usage": {
+                  "inputTokens": 0,
+                  "outputTokens": 0,
+                  "totalTokens": 0
+                },
+                "meta": {
+                  "roomkit.live/usage": {
+                    "usage_protocol": 1,
+                    "session_id": "original-session",
+                    "session_epoch": "epoch-1",
+                    "node_id": "node-1",
+                    "agent_id": "adapter-1",
+                    "adapter_info": "{\"name\":\"test-adapter\",\"version\":\"1.0\"}",
+                    "result_id": "result-2",
+                    "turn_id": "turn-2",
+                    "generation": 0,
+                    "replayed": true,
+                    "usage_report": {
+                      "report_id": "report-1",
+                      "observed_at_ms": 1234,
+                      "source": "session/update",
+                      "scope": "session",
+                      "source_result_id": "result-1",
+                      "update": {
+                        "sessionUpdate": "usage_update",
+                        "used": 0,
+                        "size": 100,
+                        "cost": {
+                          "amount": 0,
+                          "currency": "USD"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            ],
+            "initialize": {
+              "agent_info": {
+                "name": "scripted-agent",
+                "version": "1.0.0"
+              }
+            }
+          },
+          "transport": {
+            "provides_usage_metadata": false
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "response",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Prompt 0"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "response": [
+        {
+          "room_id": "room-1",
+          "response": {
+            "usage": {
+              "input_tokens": 0,
+              "output_tokens": 0,
+              "total_tokens": 0,
+              "cost": {
+                "$absent": true
+              }
+            },
+            "usage_metadata": {
+              "session_id": "session-1",
+              "node_id": {
+                "$absent": true
+              },
+              "agent_id": {
+                "$absent": true
+              },
+              "result_id": {
+                "$absent": true
+              },
+              "identity_source": {
+                "$absent": true
+              },
+              "usage_report": {
+                "$absent": true
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

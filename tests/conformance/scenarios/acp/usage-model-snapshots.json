@@ -1,0 +1,231 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/usage-model-snapshots",
+  "title": "ACP snapshots the model at prompt start and usage observation, without carrying measurements forward",
+  "rules": [
+    "§6.4",
+    "Appendix A.9.1"
+  ],
+  "notes": "Python: tests/test_channels/test_acp_usage.py::TestUsageProvenance::test_model_snapshots_and_no_carry_into_next_prompt. This shared case covers active notifications and the next prompt. Native tests cover owned report snapshots; the off-turn callback and publication are planned separately.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "usage_update",
+                    "used": 0,
+                    "size": 100,
+                    "cost": {
+                      "amount": 0,
+                      "currency": "USD"
+                    }
+                  },
+                  {
+                    "sessionUpdate": "config_option_update",
+                    "configOptions": [
+                      {
+                        "id": "model",
+                        "name": "Model",
+                        "type": "select",
+                        "currentValue": "sonnet",
+                        "options": [
+                          {
+                            "value": "opus",
+                            "name": "Opus"
+                          },
+                          {
+                            "value": "sonnet",
+                            "name": "Sonnet"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ],
+                "usage": {
+                  "inputTokens": 0,
+                  "outputTokens": 0,
+                  "totalTokens": 0
+                }
+              },
+              {}
+            ],
+            "initialize": {
+              "agent_info": {
+                "name": "scripted-agent",
+                "version": "1.0.0"
+              }
+            },
+            "new_sessions": [
+              {
+                "result": {
+                  "configOptions": [
+                    {
+                      "id": "model",
+                      "name": "Model",
+                      "type": "select",
+                      "currentValue": "opus",
+                      "options": [
+                        {
+                          "value": "opus",
+                          "name": "Opus"
+                        },
+                        {
+                          "value": "sonnet",
+                          "name": "Sonnet"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "response",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "first"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "second"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "response": [
+        {
+          "response": {
+            "usage": {
+              "input_tokens": 0,
+              "output_tokens": 0,
+              "total_tokens": 0,
+              "context_used": 0,
+              "context_size": 100,
+              "cost": 0,
+              "currency": "USD"
+            },
+            "usage_metadata": {
+              "session_id": "session-1",
+              "adapter_info": {
+                "name": "scripted-agent"
+              },
+              "prompt": {
+                "model_at_start": "opus",
+                "source": "session/prompt",
+                "scope": "unspecified",
+                "stop_reason": "end_turn"
+              },
+              "usage_report": {
+                "model_at_observation": "opus",
+                "identity_source": "roomkit",
+                "source_result_id": {
+                  "$absent": true
+                },
+                "update": {
+                  "used": 0,
+                  "size": 100,
+                  "cost": {
+                    "amount": 0,
+                    "currency": "USD"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "response": {
+            "usage": {
+              "input_tokens": {
+                "$absent": true
+              },
+              "output_tokens": {
+                "$absent": true
+              },
+              "total_tokens": {
+                "$absent": true
+              },
+              "context_used": {
+                "$absent": true
+              },
+              "context_size": {
+                "$absent": true
+              },
+              "cost": {
+                "$absent": true
+              },
+              "currency": {
+                "$absent": true
+              }
+            },
+            "usage_metadata": {
+              "prompt": {
+                "model_at_start": "sonnet"
+              },
+              "usage_report": {
+                "$absent": true
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

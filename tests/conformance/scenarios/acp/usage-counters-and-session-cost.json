@@ -1,0 +1,157 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/usage-counters-and-session-cost",
+  "title": "ACP returns each prompt counter unchanged beside session context and cost",
+  "rules": [
+    "§6.4",
+    "Appendix A.9.1"
+  ],
+  "notes": "Python: tests/test_channels/test_acp.py::TestEndOfTurnReport::test_the_counters_are_relayed_exactly_as_the_agent_sent_them. Read the real response hook; compare reported numbers without arithmetic.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "usage_update",
+                    "used": 120,
+                    "size": 200000,
+                    "cost": {
+                      "amount": 0.25,
+                      "currency": "USD"
+                    }
+                  }
+                ],
+                "usage": {
+                  "inputTokens": 100,
+                  "outputTokens": 20,
+                  "totalTokens": 120
+                }
+              },
+              {
+                "usage": {
+                  "inputTokens": 160,
+                  "outputTokens": 25,
+                  "totalTokens": 185
+                }
+              }
+            ],
+            "initialize": {
+              "agent_info": {
+                "name": "scripted-agent",
+                "version": "1.0.0"
+              }
+            }
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "response",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "first"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "second"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "response": [
+        {
+          "trigger": "on_ai_response",
+          "room_id": "room-1",
+          "response": {
+            "channel_id": "claude",
+            "usage": {
+              "input_tokens": 100,
+              "output_tokens": 20,
+              "total_tokens": 120,
+              "context_used": 120,
+              "context_size": 200000,
+              "cost": 0.25,
+              "currency": "USD"
+            }
+          }
+        },
+        {
+          "trigger": "on_ai_response",
+          "room_id": "room-1",
+          "response": {
+            "channel_id": "claude",
+            "usage": {
+              "input_tokens": 160,
+              "output_tokens": 25,
+              "total_tokens": 185,
+              "context_used": {
+                "$absent": true
+              },
+              "context_size": {
+                "$absent": true
+              },
+              "cost": {
+                "$absent": true
+              },
+              "currency": {
+                "$absent": true
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
