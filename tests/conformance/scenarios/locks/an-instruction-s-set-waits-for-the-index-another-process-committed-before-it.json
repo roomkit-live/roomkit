@@ -1,0 +1,229 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "locks/an-instruction-s-set-waits-for-the-index-another-process-committed-before-it",
+  "title": "An instruction's delivery set, which has no index, runs once the room's delivery cursor has reached the index another process committed before it, and moves the cursor no further",
+  "rules": [
+    "§13.5 Delivery lanes across processes",
+    "§10.1.1 rule 5",
+    "§5.1"
+  ],
+  "notes": "The run's kit delivers `zero`, index 0, held at `held` under the room's delivery claim. The process `other` then commits `first`, index 1, whose set waits for the cursor to reach 0, off the claim. The instruction the run's kit takes next is decided while the room's latest index is 1, and its set waits in the run's lane behind `zero`'s. Once `zero` is delivered, the cursor is at 0: the instruction's set waits on, until `other` has delivered `first` and moved the cursor to 1, so its agent's turn reads the cursor at 1. The instruction, never stored, consumes no index and moves the cursor no further. `agent` answers nothing. The gap timeout is the implementation's default, far above the run: nothing is skipped.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "deliver": [
+          {
+            "when": {
+              "text": "zero"
+            },
+            "gate": "held"
+          }
+        ]
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "type": "instruction"
+            },
+            "do": [
+              {
+                "call": "store.get_room",
+                "room_id": "room-1",
+                "as": "cursor"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent"
+          }
+        ]
+      }
+    ],
+    "processes": [
+      {
+        "id": "other"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "background": true,
+      "as": "zero",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "zero"
+        }
+      }
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "call": "process_inbound",
+      "kit": "other",
+      "room_id": "room-1",
+      "defer_delivery": true,
+      "as": "first",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "first"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 1
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "defer_delivery": true,
+      "as": "instruction",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Introduce yourself"
+        },
+        "event_type": "instruction",
+        "addressed_to": [
+          "agent"
+        ]
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "type": "instruction",
+            "status": "delivered",
+            "index": 2
+          }
+        }
+      }
+    },
+    {
+      "open": "held"
+    },
+    {
+      "await": "zero",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 0
+          }
+        }
+      }
+    },
+    {
+      "call": "delivery.wait",
+      "of": "first",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "cancellation_reason": null
+        }
+      }
+    },
+    {
+      "call": "delivery.wait",
+      "of": "instruction",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "cancellation_reason": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "actions": {
+      "cursor": [
+        {
+          "result": {
+            "latest_index": 1,
+            "delivered_index": 1
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "zero"
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "first"
+          },
+          "status": "delivered"
+        }
+      ]
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "body": "zero"
+            }
+          },
+          {
+            "content": {
+              "body": "first"
+            }
+          }
+        ]
+      }
+    },
+    "rooms": {
+      "room-1": {
+        "latest_index": 1,
+        "delivered_index": 1
+      }
+    }
+  }
+}
