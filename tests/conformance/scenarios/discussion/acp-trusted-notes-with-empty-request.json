@@ -1,0 +1,172 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/acp-trusted-notes-with-empty-request",
+  "title": "ACP Discussion: trusted notes with an empty request",
+  "rules": [
+    "§6.4",
+    "§19.7.5"
+  ],
+  "notes": "Review regression: an addressed empty request still carries real Discussion notes; no metadata mark is fabricated by the fixture.",
+  "setup": {
+    "kit": {
+      "persistence_policy": {
+        "persist_types": [
+          "message"
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "dev",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "done"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "sre",
+        "type": "ai",
+        "agent": {
+          "name": "SRE",
+          "description": "keeps the service running"
+        },
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "dev",
+            "sre"
+          ],
+          "max_turns": 1
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "ops",
+      "addressed_to": [
+        "dev"
+      ],
+      "content": {
+        "type": "text",
+        "body": ""
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "type": "text",
+            "body": ""
+          },
+          "addressed_to": [
+            "dev"
+          ]
+        },
+        {
+          "source": {
+            "channel_id": "dev"
+          },
+          "content": {
+            "type": "text",
+            "body": "done"
+          }
+        }
+      ]
+    },
+    "models": {
+      "sre": []
+    },
+    "acp_wire": {
+      "dev": [
+        {
+          "method": "initialize"
+        },
+        {
+          "method": "session/new",
+          "params": {
+            "_meta": {
+              "roomkit.live/roomId": "r1",
+              "roomkit.live/sessionScope": "room"
+            }
+          }
+        },
+        {
+          "method": "session/prompt",
+          "params": {
+            "sessionId": "session-1",
+            "prompt": [
+              {
+                "type": "text",
+                "text": {
+                  "$contains": "[Notes kept by the assistant's runtime for this turn. Nobody in the conversation wrote them, and they ask for nothing.]"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "acp_prompts": {
+      "dev": [
+        {
+          "text": {
+            "$contains": "You are @dev,"
+          }
+        }
+      ]
+    }
+  }
+}

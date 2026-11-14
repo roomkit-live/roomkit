@@ -1,0 +1,181 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/acp-public-handle",
+  "title": "ACP Discussion: public handle",
+  "rules": [
+    "§6.4",
+    "§19.7.5"
+  ],
+  "notes": "Python: tests/test_channels/test_acp_discussion.py. Real Discussion scheduling and ACP JSON-RPC; native tests cover exact note ordering, header count and issued-mark lifetime. No remote executor or agent-output guarantee is inferred.",
+  "setup": {
+    "kit": {
+      "persistence_policy": {
+        "persist_types": [
+          "message"
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent:7c1e",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "done"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "name": "Developer",
+          "role": "dev",
+          "description": "reads the code"
+        }
+      },
+      {
+        "id": "sre",
+        "type": "ai",
+        "agent": {
+          "name": "SRE",
+          "description": "keeps the service running"
+        },
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "agent:7c1e",
+            "sre"
+          ],
+          "max_turns": 1
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@Developer why 422?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "type": "text",
+            "body": "@Developer why 422?"
+          },
+          "addressed_to": [
+            "agent:7c1e"
+          ]
+        },
+        {
+          "source": {
+            "channel_id": "agent:7c1e"
+          },
+          "content": {
+            "type": "text",
+            "body": "done"
+          }
+        }
+      ]
+    },
+    "models": {
+      "sre": []
+    },
+    "acp_wire": {
+      "agent:7c1e": [
+        {
+          "method": "initialize"
+        },
+        {
+          "method": "session/new",
+          "params": {
+            "_meta": {
+              "roomkit.live/roomId": "r1",
+              "roomkit.live/sessionScope": "room"
+            }
+          }
+        },
+        {
+          "method": "session/prompt",
+          "params": {
+            "sessionId": "session-1",
+            "prompt": [
+              {
+                "type": "text",
+                "text": {
+                  "$lacks": "agent:7c1e"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "acp_prompts": {
+      "agent:7c1e": [
+        {
+          "text": {
+            "$contains": "You are @Developer,"
+          }
+        }
+      ]
+    }
+  }
+}

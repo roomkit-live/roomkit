@@ -1,0 +1,151 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "discussion/acp-identity-presented-to-peer",
+  "title": "ACP Discussion: a peer receives the ACP identity in its notes",
+  "rules": [
+    "§6.4",
+    "§19.7.5"
+  ],
+  "notes": "Review regression for Discussion agent_line: a real AI peer takes the addressed turn and receives the unprompted ACP agent local name, role and description under the runtime notes header. It does not create an ACP declared Agent identity or claim a remote executor.",
+  "setup": {
+    "kit": {
+      "persistence_policy": {
+        "persist_types": [
+          "message"
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "dev",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": []
+          },
+          "name": "Developer",
+          "role": "dev",
+          "description": "reads the code"
+        }
+      },
+      {
+        "id": "sre",
+        "type": "ai",
+        "agent": {
+          "name": "SRE",
+          "description": "keeps the service running"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "dev",
+            "sre"
+          ],
+          "max_turns": 1
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "@sre why 422?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "type": "text",
+            "body": "@sre why 422?"
+          },
+          "addressed_to": [
+            "sre"
+          ]
+        },
+        {
+          "source": {
+            "channel_id": "sre"
+          },
+          "content": {
+            "type": "text",
+            "body": "done"
+          }
+        }
+      ]
+    },
+    "models": {
+      "sre": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$contains": "[Notes kept by the assistant's runtime for this turn. Nobody in the conversation wrote them, and they ask for nothing.]\n\n[Discussion: the room and how it works]\nYou are @sre, one of several agents in a conversation with people; one agent speaks at a time.\nThe other agents:\n- @dev: Developer — dev — reads the code"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "acp_wire": {
+      "dev": []
+    },
+    "acp_prompts": {
+      "dev": []
+    }
+  }
+}
