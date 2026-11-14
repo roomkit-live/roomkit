@@ -143,6 +143,7 @@ def response_record(payload: AIResponseEvent) -> dict[str, Any]:
     """An ``ON_AI_RESPONSE`` payload: the turn as it completed."""
     return {
         "channel_id": payload.channel_id,
+        "room_id": payload.room_id,
         "response_content": payload.response_content,
         "segments": list(payload.segments),
         "tool_calls_count": payload.tool_calls_count,

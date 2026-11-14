@@ -1,0 +1,225 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/a-finished-handler-turn-reports-its-complete-answer",
+  "title": "An ACP turn with an external handler reports its text, thinking, segments and tool count together",
+  "rules": [
+    "§6.4",
+    "§9.3",
+    "Appendix A.9.1"
+  ],
+  "notes": "Python: tests/test_channels/test_acp.py::TestEndOfTurnReport::test_on_ai_response_fires_for_a_channel_that_is_not_an_aichannel and test_a_finished_turn_reports_what_it_produced. The public kit hook carries the combined payload; the private standalone _after_response_hook is not claimed. The scenario projection omits timings; Python source tests assert nonnegative latency, which the Rust public unsigned latency_ms field guarantees by type.",
+  "setup": {
+    "channels": [
+      {
+        "id": "web",
+        "type": "webhook",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "agent_thought_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "checking"
+                    }
+                  },
+                  {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {
+                      "type": "text",
+                      "text": "Working "
+                    }
+                  },
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "call-1",
+                    "title": "Read",
+                    "status": "in_progress",
+                    "rawInput": {
+                      "path": "notes.txt"
+                    }
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "call-1",
+                        "title": "Read",
+                        "rawInput": {
+                          "path": "notes.txt"
+                        }
+                      },
+                      "options": [
+                        {
+                          "kind": "reject_always",
+                          "name": "reject_always",
+                          "optionId": "reject_always"
+                        },
+                        {
+                          "kind": "allow_always",
+                          "name": "allow_always",
+                          "optionId": "allow_always"
+                        },
+                        {
+                          "kind": "reject_once",
+                          "name": "reject_once",
+                          "optionId": "reject_once"
+                        },
+                        {
+                          "kind": "allow_once",
+                          "name": "allow_once",
+                          "optionId": "allow_once"
+                        }
+                      ]
+                    },
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "call-1",
+                        "status": "completed",
+                        "rawOutput": "ran anyway"
+                      },
+                      {
+                        "sessionUpdate": "agent_message_chunk",
+                        "content": {
+                          "type": "text",
+                          "text": "done"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "external_tool_handler": {}
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "response",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "web",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "response": [
+        {
+          "trigger": "on_ai_response",
+          "room_id": "room-1",
+          "response": {
+            "channel_id": "claude",
+            "response_content": "Working \n\ndone",
+            "segments": [
+              "Working ",
+              "done"
+            ],
+            "thinking": "checking",
+            "tool_calls_count": 1,
+            "round_count": 0,
+            "loop_end_reason": "completed",
+            "streaming": true,
+            "room_id": "room-1"
+          }
+        }
+      ]
+    },
+    "acp_permissions": {
+      "claude": [
+        {
+          "session_id": "session-1",
+          "tool_call_id": "call-1",
+          "result": {
+            "outcome": {
+              "outcome": "selected",
+              "optionId": "allow_once"
+            }
+          }
+        }
+      ]
+    },
+    "acp_handlers": {
+      "claude": [
+        {
+          "method": "start",
+          "channel_id": "claude"
+        },
+        {
+          "method": "process_tool_call",
+          "channel_id": "claude",
+          "name": "Read",
+          "arguments": {
+            "path": "notes.txt"
+          },
+          "tool_call_id": "call-1",
+          "room_id": "room-1",
+          "session_id": "session-1"
+        },
+        {
+          "method": "on_tool_result",
+          "channel_id": "claude",
+          "name": "Read",
+          "arguments": {
+            "path": "notes.txt"
+          },
+          "tool_call_id": "call-1",
+          "room_id": "room-1",
+          "result": "ran anyway",
+          "is_error": false
+        }
+      ]
+    }
+  }
+}
