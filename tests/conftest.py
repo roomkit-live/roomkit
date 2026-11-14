@@ -28,7 +28,7 @@ from roomkit.store.memory import InMemoryStore
 from roomkit.turns import InMemoryTurnBackend
 from roomkit.turns.base import TurnBackend
 from roomkit.turns.redis import RedisTurnBackend
-from tests import redis_turn_mode
+from tests import postgres_worker, redis_turn_mode
 from tests.redis_keys import delete_keys, key_prefix
 from tests.tool_loop_modes import expect_streaming
 
@@ -141,11 +141,13 @@ if redis_turn_mode.ENABLED:
 def pytest_configure(config: pytest.Config) -> None:
     if redis_turn_mode.ENABLED:
         redis_turn_mode.install(config)
+    postgres_worker.install()
 
 
 def pytest_unconfigure(config: pytest.Config) -> None:
     if redis_turn_mode.ENABLED:
         redis_turn_mode.clean_up()
+    postgres_worker.clean_up()
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
