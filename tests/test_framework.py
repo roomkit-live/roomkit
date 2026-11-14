@@ -1070,7 +1070,9 @@ class TestTimeouts:
                 await asyncio.sleep(0.1)
                 return await super().commit_event(room_id, event, **kwargs)
 
-        kit = RoomKit(process_timeout=0.01, store=SlowCommitStore())
+        # The budget runs from the call's start: 50 ms leaves room for a pause
+        # of the loop before the decision, the commit still twice as long.
+        kit = RoomKit(process_timeout=0.05, store=SlowCommitStore())
         ch = SimpleChannel("sms1")
         kit.register_channel(ch)
         await kit.create_room(room_id="r1")
