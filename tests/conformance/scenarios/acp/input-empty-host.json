@@ -1,0 +1,110 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/input-empty-host",
+  "title": "Empty input uses host content without rewriting the request",
+  "rules": [
+    "§6.4",
+    "§19.3.2"
+  ],
+  "notes": "Python: tests/test_channels/test_acp_empty_prompt.py::test_host_content_supplies_a_prompt_without_mutating_the_event, body='', blocks=['The user supplied an image without a caption.']. Exact prompt list, original contributor input and stored event. Native Rust tests cover the direct ChannelOutput and caller-owned event preservation; stored-event equality alone does not prove object identity.",
+  "setup": {
+    "kit": {
+      "persistence_policy": {
+        "persist_types": [
+          "message"
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {},
+          "context_contributor": {
+            "responses": [
+              {
+                "blocks": [
+                  "The user supplied an image without a caption."
+                ]
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": ""
+      },
+      "addressed_to": [
+        "claude"
+      ]
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "acp_prompts": {
+      "claude": [
+        {
+          "text": "The user supplied an image without a caption."
+        }
+      ]
+    },
+    "acp_context_requests": {
+      "claude": [
+        {
+          "room_id": "room-1",
+          "event": {
+            "id": "room-1#0",
+            "content": {
+              "body": ""
+            }
+          },
+          "recent_events": [
+            {
+              "id": "room-1#0"
+            }
+          ]
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": ""
+          }
+        }
+      ]
+    }
+  }
+}

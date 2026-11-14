@@ -1,0 +1,97 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/input-whitespace-absent",
+  "title": "Whitespace input with absent host content starts no turn despite missed history",
+  "rules": [
+    "§6.4",
+    "§19.3.2"
+  ],
+  "notes": "Python: tests/test_channels/test_acp_empty_prompt.py::test_no_turn_without_text_or_host_content, body='   ', blocks=None. Exact prompt list, original contributor input and stored event. Native Rust tests cover the direct ChannelOutput and caller-owned event preservation; stored-event equality alone does not prove object identity.",
+  "setup": {
+    "kit": {
+      "persistence_policy": {
+        "persist_types": [
+          "message"
+        ]
+      }
+    },
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {}
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "Earlier text"
+      },
+      "addressed_to": []
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "text",
+        "body": "   "
+      },
+      "addressed_to": [
+        "claude"
+      ]
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "acp_prompts": {
+      "claude": []
+    },
+    "acp_context_requests": {
+      "claude": []
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "Earlier text"
+          }
+        },
+        {
+          "content": {
+            "body": "   "
+          }
+        }
+      ]
+    }
+  }
+}
