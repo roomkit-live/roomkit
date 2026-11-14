@@ -409,13 +409,13 @@ async def test_a_turn_whose_lease_another_process_took_is_cut(
 
 
 class _Clock:
-    """The lease's clock, which a test sets ahead of the wall clock."""
+    """The lease's clock: the wall clock until a test stops it at *now*."""
 
     def __init__(self) -> None:
-        self.ahead = 0.0
+        self.now: float | None = None
 
     def time(self) -> float:
-        return time.time() + self.ahead
+        return time.time() if self.now is None else self.now
 
 
 async def test_an_expired_lease_is_taken_over_one_read_past_its_end(
@@ -442,12 +442,12 @@ async def test_an_expired_lease_is_taken_over_one_read_past_its_end(
     async def b_holds() -> bool:
         return (await _stored_queue(cluster)).get("lease_holder") == b._instance_id
 
-    clock.ahead = expires + _driver.POLL_SECONDS / 2 - time.time()
+    clock.now = expires + _driver.POLL_SECONDS / 2
     driver.wake()
     await _until(settled)
     within_a_read = (await _stored_queue(cluster))["lease_holder"]
 
-    clock.ahead = expires + 1.5 * _driver.POLL_SECONDS - time.time()
+    clock.now = expires + 1.5 * _driver.POLL_SECONDS
     driver.wake()
     await _until(b_holds)
     release.set()
@@ -537,7 +537,14 @@ async def test_an_instruction_moves_the_turns_to_the_process_holding_it() -> Non
     await cluster.close()
 
 
-async def test_listen_only_in_one_process_cuts_the_turn_running_in_another() -> None:
+@pytest.mark.parametrize("renewal", ["free", "stalled"])
+async def test_listen_only_in_one_process_cuts_the_turn_running_in_another(
+    renewal: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A renewal of the lease stalled in the process giving the turn holds
+    # back no cut: the lease outlasts the test.
+    monkeypatch.setattr(_shared, "LEASE_SECONDS", 30.0)
+    monkeypatch.setattr(_shared, "_RENEW_BEFORE", 20.0)
     cluster = _Cluster()
     a = await cluster.process(install=True, create=True, delay=2.0)
     follower = await cluster.process(install=False)
@@ -546,13 +553,20 @@ async def test_listen_only_in_one_process_cuts_the_turn_running_in_another() -> 
     async def started() -> bool:
         return "+investigator" in cluster.log
 
-    await _until(started)
-    await follower.listen_only("r1", ["investigator"])
+    async def cut() -> bool:
+        return "xinvestigator" in cluster.log
 
     async def ended() -> bool:
         queue = a.speak_queue("r1")
         return queue is not None and queue.speaking is None
 
+    await _until(started)
+    release = _hold(monkeypatch, a, "editing")[0] if renewal == "stalled" else None
+    await follower.listen_only("r1", ["investigator"])
+
+    await _until(cut, timeout=3.0)
+    if release is not None:
+        release.set()
     await _until(ended, timeout=3.0)
     assert await cluster.answers() == []
     await cluster.close()
