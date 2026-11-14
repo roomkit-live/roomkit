@@ -5,7 +5,8 @@ writes it back under the room lock, a lock every process takes (Section 13.5,
 ``PostgresAdvisoryLockManager`` across processes). The lease names the one
 process that gives the turns, until it expires. Its holder renews it while it
 holds it, and another process that installed the discussion takes it once it
-has expired.
+has expired, one read of the driver later: a holder that cannot renew it cuts
+its turn when it ends, before another process may give one (rule 7).
 """
 
 from __future__ import annotations
@@ -93,14 +94,19 @@ class SharedQueue:
     def holds(self, state: SpeakQueueState) -> bool:
         return state.lease_holder == self.me and state.lease_expires > time.time()
 
-    def held_elsewhere(self, state: SpeakQueueState) -> bool:
-        return state.lease_holder not in (None, self.me) and state.lease_expires > time.time()
+    def held_elsewhere(self, state: SpeakQueueState, *, grace: float = 0.0) -> bool:
+        """Whether another process holds the lease: until it expires, and
+        *grace* seconds past that for a process about to take it over."""
+        return (
+            state.lease_holder not in (None, self.me) and state.lease_expires + grace > time.time()
+        )
 
-    def take(self, state: SpeakQueueState) -> bool:
-        """Take or renew the lease, unless another process holds it; whether
-        this process holds it now. Taking it over from a process whose lease
-        expired ends that process's turn (rule 6)."""
-        if self.held_elsewhere(state):
+    def take(self, state: SpeakQueueState, *, grace: float = 0.0) -> bool:
+        """Take or renew the lease, unless another process holds it, *grace*
+        seconds past its expiry included; whether this process holds it now.
+        Taking it over from a process whose lease expired ends that process's
+        turn (rule 6)."""
+        if self.held_elsewhere(state, grace=grace):
             return False
         if state.lease_holder != self.me:
             state.speaking = None

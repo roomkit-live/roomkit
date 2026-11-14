@@ -5,8 +5,10 @@ room's lease gives the turns. A turn is a rerun of the event it answers,
 planned for one agent under the room lock and run in the room's delivery lane
 (``RoomKit._plan_discussion_turn``). The driver reads the stored queue again
 at least once a second, so a turn another process queued, or an agent another
-process set to listen, reaches it; it renews the lease while a turn runs. Once
-handed to the lane, a turn is always run to its end or abandoned.
+process set to listen, reaches it; it renews the lease at each read while a
+turn runs, and cuts the turn once the lease is another process's or ends
+unrenewed. Once handed to the lane, a turn is always run to its end or
+abandoned.
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ import contextlib
 import contextvars
 import inspect
 import logging
+import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -34,6 +37,8 @@ from ._people import person_label
 from .models import SpeakQueueChange
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable
+
     from roomkit.core.lanes import DeliveryCascade, DeliveryPlan
     from roomkit.models.context import RoomContext
     from roomkit.models.event import RoomEvent
@@ -69,6 +74,9 @@ class _Turn:
     listening: bool = False
     """Its agent only listens, as last read: a person named it (rule 12), and
     only setting the state while the turn runs cuts it."""
+    lease_ends: float = 0.0
+    """When the lease the turn runs under ends, as this process last stored
+    it (``time.time()``)."""
 
 
 class TurnDriver:
@@ -179,7 +187,9 @@ class TurnDriver:
             return None
         if not await self._gives_turns(peek):
             return None
-        if peek.over or shared.held_elsewhere(peek):
+        # A lease past its end stays its holder's one read more: a holder that
+        # could not renew it cut its turn at its end (rule 7).
+        if peek.over or shared.held_elsewhere(peek, grace=POLL_SECONDS):
             return None
         unchanged = peek.version == self._seen_version
         if unchanged and shared.holds(peek) and not shared.renew_due(peek):
@@ -216,7 +226,7 @@ class TurnDriver:
                 return None
             async with room.editing() as state:
                 # Uninstalled since the peek: no turn, the next look leaves it.
-                if shared.config is None or not shared.take(state):
+                if shared.config is None or not shared.take(state, grace=POLL_SECONDS):
                     return None
                 if done is None and _holds_work(state):
                     self.wake()
@@ -226,6 +236,8 @@ class TurnDriver:
                 turn, stopped = None, []
                 if pending is None:
                     turn, stopped = await self._pick(state, context, done=done)
+                if turn is not None:
+                    turn.lease_ends = state.lease_expires
             self._seen_version = room.state.version
             if turn is not None and turn.plan is not None:
                 turn.cascade = room.kit._enter_discussion_turn(
@@ -480,27 +492,99 @@ class TurnDriver:
     async def _watch(self, turn: _Turn) -> None:
         """While *turn* runs: what another process stored cuts it (the
         discussion uninstalled, its agent set to listen or removed), and the
-        lease is renewed before it expires."""
+        lease is renewed at each read. A lease another process took, or one
+        this process cannot renew before it ends, cuts it too: past its end,
+        another process may take the lease and give the next turn (rules 6,
+        7 and 16)."""
         room = self._room
         while True:
             await asyncio.sleep(POLL_SECONDS)
             try:
-                installs = room.installs
-                state = await room.read()
-                # A read begun before an install here tells nothing of it.
-                reason = self._cut_reason(turn, state, outdated=room.installs != installs)
-                turn.listening = turn.entry.agent in state.listening
-                if reason is not None and not turn.cut:
-                    turn.cut = True
-                    if reason == "discussion_uninstalled":
-                        # Gone for every process: its end is recorded nowhere (rule 1).
-                        room.forgotten = True
-                    await room.cut(turn.entry.agent, reason)
-                if room.shared.renew_due(state):
-                    async with room.editing() as editing:
-                        room.shared.take(editing)
+                await self._look(turn)
             except Exception:
                 logger.warning("Watching the turn in room %s failed", room.room_id, exc_info=True)
+
+    async def _look(self, turn: _Turn) -> None:
+        """One read of the stored queue while *turn* runs: what it says is
+        applied, then the lease renewed, both before the lease ends."""
+        room = self._room
+        try:
+            deadline = self._deadline(turn)
+            installs = room.installs
+            state = await self._within(deadline, turn, room.read())
+            # A read begun before an install here tells nothing of it.
+            reason = self._cut_reason(turn, state, outdated=room.installs != installs)
+            turn.listening = turn.entry.agent in state.listening
+            if reason is not None:
+                await self._cut_running(turn, reason)
+            if await self._within(deadline, turn, self._renew(turn, state)):
+                # Its taking the lease over ended this turn (rule 16).
+                if not turn.cut:
+                    logger.warning(
+                        "Room %s: another process took the lease over; %s's turn is cut",
+                        room.room_id,
+                        turn.entry.agent,
+                    )
+                await self._cut_running(turn, "lease_lost")
+        except _LeaseEndedError as ended:
+            if not turn.cut:
+                logger.warning(
+                    "Room %s: the lease ends before this process renews it; %s's turn is cut (%r)",
+                    room.room_id,
+                    turn.entry.agent,
+                    ended.__cause__,
+                )
+            await self._cut_running(turn, "lease_expired")
+
+    def _deadline(self, turn: _Turn) -> float:
+        """Until when, in the loop's time, a look may read and renew the lease:
+        its end; for a look that wakes past it, the process held meanwhile
+        (its turn with it), one read later, when another process may take it
+        over. Raises _LeaseEndedError once that is past too (rule 16)."""
+        left = turn.lease_ends - time.time()
+        if left <= 0:
+            left += POLL_SECONDS
+        if left <= 0:
+            raise _LeaseEndedError
+        return asyncio.get_running_loop().time() + left
+
+    async def _within[T](self, deadline: float, turn: _Turn, step: Awaitable[T]) -> T:
+        """*step*, awaited before *deadline*. One that outlasts it, or fails
+        with no read left to try again before the lease ends, raises
+        _LeaseEndedError; another failure is tried again on the next look."""
+        bound = asyncio.timeout_at(deadline)
+        try:
+            async with bound:
+                return await step
+        except Exception as error:
+            if bound.expired() or turn.lease_ends - time.time() < POLL_SECONDS:
+                raise _LeaseEndedError from error
+            raise
+
+    async def _renew(self, turn: _Turn, state: SpeakQueueState) -> bool:
+        """Renew the lease *turn* runs under, read as *state*; whether another
+        process took it over. One no process holds (the discussion uninstalled
+        elsewhere, and maybe installed again since) is the driver's next look's."""
+        room = self._room
+        if state.lease_holder != room.shared.me:
+            return state.lease_holder is not None
+        async with room.editing() as editing:
+            if editing.lease_holder != room.shared.me:
+                return editing.lease_holder is not None
+            room.shared.take(editing)
+        # Renewed once the edit is stored: a write that failed renewed nothing.
+        turn.lease_ends = editing.lease_expires
+        return False
+
+    async def _cut_running(self, turn: _Turn, reason: str) -> None:
+        """Cut *turn* once, as a ``Cancel`` does (rule 12)."""
+        if turn.cut:
+            return
+        turn.cut = True
+        if reason == "discussion_uninstalled":
+            # Gone for every process: its end is recorded nowhere (rule 1).
+            self._room.forgotten = True
+        await self._room.cut(turn.entry.agent, reason)
 
     def _cut_reason(self, turn: _Turn, state: SpeakQueueState, *, outdated: bool) -> str | None:
         """Why the stored queue, just read as *state*, cuts *turn*, if it does;
@@ -538,7 +622,10 @@ class TurnDriver:
                 if room.shared.config is None:
                     # Uninstalled elsewhere meanwhile: no queue to write back.
                     return []
-                state.ended(agent)
+                if not room.shared.held_elsewhere(state):
+                    # Else the process that took the lease over ended this
+                    # turn, and `speaking` names its own (rule 16).
+                    state.ended(agent)
                 if turn.entry.instruction is not None:
                     room.forget_instruction(turn.entry.instruction, state)
                 responses = turn.cascade.response_events if turn.cascade is not None else ()
@@ -622,6 +709,10 @@ class TurnDriver:
         state.over = True
         room.drop_instructions(state.drop(), keep=state)
         room.fire(SpeakQueueChange.OVER, [])
+
+
+class _LeaseEndedError(Exception):
+    """The lease a turn runs under ends before this process renews it."""
 
 
 def _holds_work(state: SpeakQueueState) -> bool:

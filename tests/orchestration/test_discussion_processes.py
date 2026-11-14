@@ -8,8 +8,10 @@ locks. One queue in the store, one process giving the turns under a lease.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
-from collections.abc import Sequence
+import time
+from collections.abc import AsyncGenerator, Sequence
 from typing import Any
 
 import pytest
@@ -270,6 +272,186 @@ async def test_a_turn_longer_than_the_lease_keeps_it(monkeypatch: pytest.MonkeyP
 
     await _until(both)
     assert cluster.overlap() == 1
+    await cluster.close()
+
+
+def _hold(
+    monkeypatch: pytest.MonkeyPatch, kit: RoomKit, method: str, *, failing: bool = False
+) -> tuple[asyncio.Event, asyncio.Event]:
+    """Hold *kit*'s reads of the stored queue (``read``) or its changes of it
+    (``editing``), its lease renewals with them, until the first event
+    returned is set: a process whose store or room lock stalls. *failing*,
+    a change is made but its write fails instead. The second event is set
+    once one was held."""
+    room = kit._discussions["r1"]
+    release, entered = asyncio.Event(), asyncio.Event()
+
+    async def held() -> None:
+        entered.set()
+        if not failing:
+            await release.wait()
+
+    if method == "read":
+        read = room.read
+
+        async def held_read() -> Any:
+            await held()
+            return await read()
+
+        monkeypatch.setattr(room, "read", held_read)
+    else:
+        edit = room.editing
+
+        @contextlib.asynccontextmanager
+        async def held_edit() -> AsyncGenerator[Any, None]:
+            await held()
+            async with edit() as state:
+                yield state
+                if failing and not release.is_set():
+                    raise ConnectionError("the store refused the write")
+
+        monkeypatch.setattr(room, "editing", held_edit)
+    return release, entered
+
+
+async def _stored_queue(cluster: _Cluster) -> dict[str, Any]:
+    room = await cluster.store.get_room("r1")
+    return dict((room.metadata if room is not None else {}).get("_speak_queue") or {})
+
+
+def _turns_ended(kit: RoomKit) -> list[str]:
+    """The agents whose turn *kit* announced ended, as it announces them."""
+    ended: list[str] = []
+
+    @kit.hook(HookTrigger.ON_SPEAK_QUEUE, execution=HookExecution.ASYNC)
+    async def follow(event: SpeakQueueEvent, context: Any) -> None:
+        if event.change == SpeakQueueChange.TURN_ENDED:
+            ended.extend(event.channel_ids)
+
+    return ended
+
+
+@pytest.mark.wallclock
+@pytest.mark.parametrize("failing", [False, True], ids=["held", "failing"])
+async def test_a_turn_whose_lease_ends_unrenewed_is_cut_before_another_process_takes_it(
+    failing: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A cannot renew its lease while investigator's turn runs: the turn is
+    # cut once the lease ends, then B takes the lease and gives investigator
+    # a turn again. One turn at a time, only B's commits, and the end of A's
+    # turn, recorded once A can, leaves B's as the one speaking (rules 6, 7
+    # and 16).
+    _shorter_lease(monkeypatch)
+    cluster = _Cluster()
+    a = await cluster.process(install=True, create=True, delay=2.0)
+    b = await cluster.process(install=True, delay=2.0)
+    ended = _turns_ended(a)
+    await _say(a, "@investigator what do the logs say?")
+    await _turn_started(cluster)
+    release, _ = _hold(monkeypatch, a, "editing", failing=failing)
+
+    await _say(b, "@investigator anything new?")
+
+    async def given_again() -> bool:
+        return cluster.log.count("+investigator") == 2
+
+    async def a_turn_ended() -> bool:
+        return ended == ["investigator"]
+
+    await _until(given_again)
+    log = list(cluster.log)
+    release.set()
+    await _until(a_turn_ended)
+    queue = await _stored_queue(cluster)
+    cluster.release.set()
+    await _turn_over(cluster, b._discussions["r1"].driver)
+    assert log == ["+investigator", "xinvestigator", "+investigator"]
+    assert (queue["lease_holder"], queue["speaking"]) == (b._instance_id, "investigator")
+    assert await cluster.answers() == ["investigator"]
+    await cluster.close()
+
+
+async def test_a_turn_whose_lease_another_process_took_is_cut(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # B uninstalls the discussion and installs it again while A's turn runs,
+    # A's reads held meanwhile: A next reads the lease B's, and cuts the
+    # turn before B gives one (rules 1 and 16). The lease outlasts the test:
+    # only B's taking it cuts the turn.
+    monkeypatch.setattr(_shared, "LEASE_SECONDS", 30.0)
+    monkeypatch.setattr(_shared, "_RENEW_BEFORE", 20.0)
+    cluster = _Cluster()
+    a = await cluster.process(install=True, create=True, delay=2.0)
+    b = await cluster.process(install=False)
+    await _say(a, "@investigator what do the logs say?")
+    await _turn_started(cluster)
+    driver = a._discussions["r1"].driver
+    release, _ = _hold(monkeypatch, a, "read")
+    assert await b.uninstall_strategy("r1") is True
+    await b.install_strategy("r1", cluster.strategy())
+
+    async def b_holds() -> bool:
+        return (await _stored_queue(cluster)).get("lease_holder") == b._instance_id
+
+    await _until(b_holds)
+
+    release.set()
+    await _turn_over(cluster, driver)
+    await _say(b, "@sre and the metrics?")
+
+    async def sre_answered() -> bool:
+        return "sre" in await cluster.answers()
+
+    await _until(sre_answered)
+    assert cluster.log == ["+investigator", "xinvestigator", "+sre", "-sre"]
+    assert await cluster.answers() == ["sre"]
+    await cluster.close()
+
+
+class _Clock:
+    """The lease's clock, which a test sets ahead of the wall clock."""
+
+    def __init__(self) -> None:
+        self.ahead = 0.0
+
+    def time(self) -> float:
+        return time.time() + self.ahead
+
+
+async def test_an_expired_lease_is_taken_over_one_read_past_its_end(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A's renewal stalls during its turn. B, which looks once A's lease has
+    # expired, leaves it to A for one read more, the one in which A cuts its
+    # turn when it could not renew; then B takes it (rules 7 and 16).
+    clock = _Clock()
+    monkeypatch.setattr(_shared, "time", clock)
+    cluster = _Cluster()
+    a = await cluster.process(install=True, create=True, delay=2.0)
+    b = await cluster.process(install=True)
+    await _say(a, "@investigator what do the logs say?")
+    await _turn_started(cluster)
+    release, entered = _hold(monkeypatch, a, "editing")
+    await asyncio.wait_for(entered.wait(), 2.0)  # A's renewal waits: the lease is as stored
+    expires = (await _stored_queue(cluster))["lease_expires"]
+    driver = b._discussions["r1"].driver
+
+    async def settled() -> bool:
+        return driver.settled
+
+    async def b_holds() -> bool:
+        return (await _stored_queue(cluster)).get("lease_holder") == b._instance_id
+
+    clock.ahead = expires + _driver.POLL_SECONDS / 2 - time.time()
+    driver.wake()
+    await _until(settled)
+    within_a_read = (await _stored_queue(cluster))["lease_holder"]
+
+    clock.ahead = expires + 1.5 * _driver.POLL_SECONDS - time.time()
+    driver.wake()
+    await _until(b_holds)
+    release.set()
+    assert within_a_read == a._instance_id
     await cluster.close()
 
 
