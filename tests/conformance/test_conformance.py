@@ -50,12 +50,17 @@ _IN_PROCESS = (
 # Like the source ACP test, this observer calls the kit it holds and
 # therefore shares the delivery cascade only in the local process.
 _LOCAL_TURN_CONTEXT = {
-    "acp/tools-observer-reentry-bound": (
+    scenario_id: (
         "the ACP tool observer calls its captured kit: its posts draw the local "
         "delivery cascade's budget; across Redis it must call through TurnHost "
         "(tests/test_channels/test_acp.py::"
         "TestACPChannel::test_an_observer_posting_per_tool_call_the_agent_answers_stops)"
-    ),
+    )
+    for scenario_id in (
+        "acp/tools-observer-reentry-bound",
+        "acp/handler-on-tool-call-observer-reentry-bound",
+        "acp/handler-before-tool-use-observer-reentry-bound",
+    )
 }
 
 
