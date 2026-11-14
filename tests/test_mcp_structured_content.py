@@ -9,6 +9,7 @@ tool-call events carry it untouched. These tests pin that side channel.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -48,16 +49,20 @@ def _provider(result: _CallToolResult) -> MCPToolProvider:
     return provider
 
 
-async def _call_with_ctx(provider: MCPToolProvider) -> tuple[str, ToolCallContext]:
-    ctx = ToolCallContext(room_id="r1", tool_call_id="call_1", channel_id="ai")
+async def _call_with_ctx(
+    provider: MCPToolProvider, *, initial: dict[str, Any] | None = None
+) -> tuple[str, ToolCallContext]:
+    ctx = ToolCallContext(
+        room_id="r1", tool_call_id="call_1", channel_id="ai", structured_content=initial
+    )
     with tool_turn_context(room_id="r1", call=ctx):
         text = await provider.call_tool("get-menu", {})
     return text, ctx
 
 
 @pytest.mark.asyncio
-async def test_structured_content_published_to_tool_call_context() -> None:
-    menu = {"menu": {"items": [{"id": "1", "name": "Espresso"}]}}
+@pytest.mark.parametrize("menu", [{}, {"menu": {"items": [{"id": "1", "name": "Espresso"}]}}])
+async def test_structured_content_published_to_tool_call_context(menu: dict[str, Any]) -> None:
     provider = _provider(_CallToolResult([_TextContent('{"menu": ...}')], structured_content=menu))
 
     text, ctx = await _call_with_ctx(provider)
@@ -89,11 +94,40 @@ async def test_error_results_never_publish_structured_content() -> None:
 
 
 @pytest.mark.asyncio
-async def test_oversized_structured_content_is_dropped() -> None:
-    huge = {"blob": "x" * (600 * 1024)}
-    provider = _provider(_CallToolResult([_TextContent("ok")], structured_content=huge))
+@pytest.mark.parametrize("character", ["x", "😀"], ids=["ascii", "unicode"])
+@pytest.mark.parametrize("extra", [0, 1], ids=["at-bound", "past-bound"])
+async def test_structured_content_obeys_the_serialized_size_bound(
+    character: str, extra: int
+) -> None:
+    payload_size = 512 * 1024 + extra - len(json.dumps({"blob": ""}))
+    repetitions, tail = divmod(payload_size, len(json.dumps(character)) - 2)
+    copy = {"blob": character * repetitions + "x" * tail}
+    provider = _provider(_CallToolResult([_TextContent("ok")], structured_content=copy))
+
     _, ctx = await _call_with_ctx(provider)
-    assert ctx.structured_content is None
+
+    assert ctx.structured_content == (copy if extra == 0 else None)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("copy", "is_error"),
+    [
+        pytest.param(None, False, id="absent"),
+        pytest.param([1, 2], False, id="not-an-object"),
+        pytest.param({"blob": "x" * (600 * 1024)}, False, id="too-large"),
+        pytest.param({"page": 3}, True, id="error"),
+    ],
+)
+async def test_a_non_publication_keeps_the_existing_call_copy(copy: Any, is_error: bool) -> None:
+    initial = {"page": 7}
+    provider = _provider(
+        _CallToolResult([_TextContent("ok")], is_error=is_error, structured_content=copy)
+    )
+
+    _, ctx = await _call_with_ctx(provider, initial=initial)
+
+    assert ctx.structured_content is initial
 
 
 @pytest.mark.asyncio

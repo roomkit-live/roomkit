@@ -15,6 +15,7 @@ import shutil
 import tempfile
 import weakref
 from collections.abc import AsyncIterator, Callable, Iterator, Mapping
+from copy import deepcopy
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -69,7 +70,7 @@ from roomkit.providers.openai.config import OpenAIConfig
 from roomkit.providers.utils import _aclose_stream
 from roomkit.skills.registry import SkillRegistry
 from roomkit.tasks import CancelTaskTool, TaskStatusTool
-from roomkit.tools import current_response_metadata
+from roomkit.tools import current_response_metadata, current_tool_call
 from roomkit.tools.human_input import HumanInputToolHandler
 from roomkit.tools.policy import ToolPolicy
 from tests.conformance._memory import Compacted, scripted_memory
@@ -552,6 +553,7 @@ def _tool_handler(tools: list[Mapping[str, Any]], gates: Gates) -> Any:
             # agent is given serve it (README, "Scripted agents").
             raise UnservedToolCallError(f"{name} is not this handler's")
         _write_record(tool)
+        _write_structured_content(tool)
         if (gate := tool.get("gate")) is not None:
             await gates.hold(gate)
         if "returns" in tool:
@@ -572,6 +574,16 @@ def _tool_handler(tools: list[Mapping[str, Any]], gates: Gates) -> Any:
         raise AssertionError("a tool that hangs never answers")
 
     return handler
+
+
+def _write_structured_content(spec: Mapping[str, Any]) -> None:
+    """Publish a scripted tool's copy through its actual public call context."""
+    if "writes_structured_content" not in spec:
+        return
+    call = current_tool_call()
+    if call is None:
+        raise AssertionError("a scripted tool publishing a copy must run inside a call")
+    call.structured_content = deepcopy(spec["writes_structured_content"])
 
 
 class ScriptedAIRouter(AIRouter):
@@ -913,6 +925,7 @@ def tool_call_record(payload: ToolCallEvent) -> dict[str, Any]:
         "refused_but_ran": payload.refused_but_ran,
         "cancelled": payload.cancelled,
         "error_detail": payload.error_detail,
+        "structured_content": payload.structured_content,
     }
 
 

@@ -248,6 +248,7 @@ TOOL = {
     "declared",
     "returns_json",
     "writes_record",
+    "writes_structured_content",
     "returns_parts",
 }
 RAISES = {"kind", "message"}
