@@ -1,0 +1,127 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/notifications-binding-scope",
+  "title": "ACP turn notifications obey binding scope",
+  "rules": [
+    "§6.4",
+    "Appendix A.9.1",
+    "§8.4"
+  ],
+  "notes": "Python: tests/test_turn_ephemerals_scope.py::test_a_turn_whose_answer_the_room_narrows_publishes_no_ephemeral; ACP notification path with actual subscriber.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "plan",
+                    "entries": [
+                      {
+                        "content": "Read the project",
+                        "priority": "high",
+                        "status": "in_progress"
+                      }
+                    ]
+                  },
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "inspect-1",
+                    "title": "Inspect",
+                    "kind": "read",
+                    "status": "in_progress",
+                    "rawInput": {
+                      "path": "README.md"
+                    }
+                  },
+                  {
+                    "sessionUpdate": "tool_call_update",
+                    "toolCallId": "inspect-1",
+                    "status": "in_progress",
+                    "title": "Reading the README"
+                  },
+                  {
+                    "sessionUpdate": "tool_call_update",
+                    "toolCallId": "inspect-1",
+                    "status": "completed",
+                    "rawOutput": "Read."
+                  }
+                ]
+              }
+            ],
+            "initialize": {
+              "agent_info": {
+                "name": "scripted-agent",
+                "version": "1.0.0"
+              }
+            }
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence",
+            "visibility": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "response",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "first"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "custom_events": {
+      "room-1": []
+    },
+    "hooks": {
+      "response": [
+        {
+          "response": {
+            "tool_calls_count": 1,
+            "loop_end_reason": "completed"
+          }
+        }
+      ]
+    }
+  }
+}

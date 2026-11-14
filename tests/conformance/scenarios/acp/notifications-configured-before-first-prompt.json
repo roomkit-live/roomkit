@@ -1,0 +1,263 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/notifications-configured-before-first-prompt",
+  "title": "Opening from an explicit setter publishes the configured values and labels before any prompt",
+  "rules": [
+    "§6.4",
+    "Appendix A.9.1"
+  ],
+  "notes": "Python: tests/test_channels/test_acp.py::TestACPChannel::test_set_config_option_opens_a_session_when_needed. Actual subscriber and channel_call; no prompt required. Opening announces once, then the successful explicit setter announces its full state again, as ACPChannel.set_config_option calls _publish_config_options after _room_session.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [],
+            "initialize": {
+              "agent_info": {
+                "name": "scripted-agent",
+                "version": "1.0.0"
+              }
+            },
+            "new_sessions": [
+              {
+                "result": {
+                  "configOptions": [
+                    {
+                      "id": "model",
+                      "name": "Model",
+                      "type": "select",
+                      "currentValue": "opus",
+                      "options": [
+                        {
+                          "value": "opus",
+                          "name": "Opus"
+                        },
+                        {
+                          "value": "sonnet",
+                          "name": "Sonnet"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            ],
+            "set_config_options": [
+              {
+                "result": {
+                  "configOptions": [
+                    {
+                      "id": "model",
+                      "name": "Model",
+                      "type": "select",
+                      "currentValue": "sonnet",
+                      "options": [
+                        {
+                          "value": "opus",
+                          "name": "Opus"
+                        },
+                        {
+                          "value": "sonnet",
+                          "name": "Sonnet"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "result": {
+                  "configOptions": [
+                    {
+                      "id": "model",
+                      "name": "Model",
+                      "type": "select",
+                      "currentValue": "opus",
+                      "options": [
+                        {
+                          "value": "opus",
+                          "name": "Opus"
+                        },
+                        {
+                          "value": "sonnet",
+                          "name": "Sonnet"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "response",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "channel_call",
+      "room_id": "room-1",
+      "channel_id": "claude",
+      "verb": "set_config_option",
+      "arguments": {
+        "config_id": "model",
+        "value": "sonnet"
+      },
+      "expect": {
+        "result": {
+          "model": "sonnet"
+        }
+      }
+    },
+    {
+      "call": "channel_call",
+      "room_id": "room-1",
+      "channel_id": "claude",
+      "verb": "set_config_option",
+      "arguments": {
+        "config_id": "model",
+        "value": "opus"
+      },
+      "expect": {
+        "result": {
+          "model": "opus"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "custom_events": {
+      "room-1": [
+        {
+          "room_id": "room-1",
+          "channel_id": "claude",
+          "data": {
+            "type": "acp_config_options",
+            "session_id": "session-1",
+            "values": {
+              "model": "sonnet"
+            },
+            "labels": {
+              "model": "Sonnet"
+            },
+            "config_options": [
+              {
+                "id": "model",
+                "name": "Model",
+                "type": "select",
+                "currentValue": "sonnet",
+                "options": [
+                  {
+                    "value": "opus",
+                    "name": "Opus"
+                  },
+                  {
+                    "value": "sonnet",
+                    "name": "Sonnet"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "room_id": "room-1",
+          "channel_id": "claude",
+          "data": {
+            "type": "acp_config_options",
+            "session_id": "session-1",
+            "values": {
+              "model": "sonnet"
+            },
+            "labels": {
+              "model": "Sonnet"
+            },
+            "config_options": [
+              {
+                "id": "model",
+                "name": "Model",
+                "type": "select",
+                "currentValue": "sonnet",
+                "options": [
+                  {
+                    "value": "opus",
+                    "name": "Opus"
+                  },
+                  {
+                    "value": "sonnet",
+                    "name": "Sonnet"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "room_id": "room-1",
+          "channel_id": "claude",
+          "data": {
+            "type": "acp_config_options",
+            "session_id": "session-1",
+            "values": {
+              "model": "opus"
+            },
+            "labels": {
+              "model": "Opus"
+            },
+            "config_options": [
+              {
+                "id": "model",
+                "name": "Model",
+                "type": "select",
+                "currentValue": "opus",
+                "options": [
+                  {
+                    "value": "opus",
+                    "name": "Opus"
+                  },
+                  {
+                    "value": "sonnet",
+                    "name": "Sonnet"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

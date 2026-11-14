@@ -387,6 +387,7 @@ EXPECT = {
     "acp_prompts",
     "thinking_events",
     "tool_events",
+    "custom_events",
     "presence_events",
     "text_events",
     "streamed",

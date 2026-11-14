@@ -1,0 +1,166 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/notifications-plan-and-tool-progress",
+  "title": "ACP publishes the plan and intermediate tool progress to the prompting room",
+  "rules": [
+    "§6.4",
+    "Appendix A.9.1"
+  ],
+  "notes": "Python: tests/test_channels/test_acp.py::TestACPChannel::test_streams_updates_and_reuses_room_session. Real JSON-RPC updates and the realtime subscriber, not a synthetic notification oracle.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "plan",
+                    "entries": [
+                      {
+                        "content": "Read the project",
+                        "priority": "high",
+                        "status": "in_progress"
+                      }
+                    ]
+                  },
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "inspect-1",
+                    "title": "Inspect",
+                    "kind": "read",
+                    "status": "in_progress",
+                    "rawInput": {
+                      "path": "README.md"
+                    }
+                  },
+                  {
+                    "sessionUpdate": "tool_call_update",
+                    "toolCallId": "inspect-1",
+                    "status": "in_progress",
+                    "title": "Reading the README"
+                  },
+                  {
+                    "sessionUpdate": "tool_call_update",
+                    "toolCallId": "inspect-1",
+                    "status": "completed",
+                    "rawOutput": "Read."
+                  }
+                ]
+              }
+            ],
+            "initialize": {
+              "agent_info": {
+                "name": "scripted-agent",
+                "version": "1.0.0"
+              }
+            }
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "response",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "first"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "custom_events": {
+      "room-1": [
+        {
+          "room_id": "room-1",
+          "channel_id": "claude",
+          "data": {
+            "type": "acp_config_options",
+            "values": {}
+          }
+        },
+        {
+          "room_id": "room-1",
+          "channel_id": "claude",
+          "data": {
+            "type": "acp_plan_update",
+            "session_id": "session-1",
+            "update": {
+              "sessionUpdate": "plan",
+              "entries": [
+                {
+                  "content": "Read the project",
+                  "priority": "high",
+                  "status": "in_progress"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "room_id": "room-1",
+          "channel_id": "claude",
+          "data": {
+            "type": "acp_tool_progress",
+            "session_id": "session-1",
+            "tool_call": {
+              "sessionUpdate": "tool_call_update",
+              "toolCallId": "inspect-1",
+              "status": "in_progress",
+              "title": "Reading the README"
+            }
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "response": [
+        {
+          "response": {
+            "tool_calls_count": 1,
+            "loop_end_reason": "completed"
+          }
+        }
+      ]
+    }
+  }
+}

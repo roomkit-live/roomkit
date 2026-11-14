@@ -157,7 +157,7 @@ _PRESENCE_EVENTS = {
     EphemeralEventType.PRESENCE_ONLINE,
     EphemeralEventType.PRESENCE_OFFLINE,
 }
-_EPHEMERALS = ("thinking_events", "tool_events", "presence_events")
+_EPHEMERALS = ("thinking_events", "tool_events", "presence_events", "custom_events")
 """The expectations a room's subscribers' ephemeral events are recorded for."""
 
 
@@ -521,6 +521,11 @@ class Harness:
                 recorded = self.observed.thinking_events
             elif event.type in _TOOL_EVENTS:
                 recorded = self.observed.tool_events
+            elif event.type == EphemeralEventType.CUSTOM:
+                self.observed.custom_events.setdefault(room_id, []).append(
+                    {"room_id": event.room_id, "channel_id": event.channel_id, "data": event.data}
+                )
+                return
             else:
                 return
             recorded.setdefault(room_id, []).append({"type": event.type.value, **event.data})
