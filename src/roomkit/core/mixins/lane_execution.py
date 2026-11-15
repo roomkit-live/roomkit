@@ -320,8 +320,7 @@ class LaneExecutionMixin(HelpersMixin):
                     event = await self._with_author(room_id, event, snapshot)
                 plan = plan_factory(event)
                 if plan is not None:
-                    room = await self._store.get_room(room_id)
-                    anchor = anchor_index(None if room is None else room.latest_index)
+                    anchor = await self._anchor_of(room_id, cascade)
                     cascade.retain()
                     self._enqueue_committed(room_id, plan, cascade, index=None, after_index=anchor)
             return None
@@ -339,6 +338,26 @@ class LaneExecutionMixin(HelpersMixin):
         if discussion is not None:
             await self._queue_for_discussion(discussion, committed, plan)
         return committed
+
+    async def _anchor_of(self, room_id: str, cascade: DeliveryCascade) -> int:
+        """The anchor of an index-less set placed under the room's lock: the
+        room's latest index, read from the store (RFC §13.5). A read the
+        store fails is the cascade's error, not the call's raise: the event
+        is decided, and a later failure goes on the result (RFC §10.1.1 rule
+        5). The set then waits for no other process's index, behind the sets
+        of this process placed before it."""
+        try:
+            room = await self._store.get_room(room_id)
+        except Exception as exc:
+            logger.warning(
+                "The latest index of room %s could not be read; its delivery set "
+                "waits for no other process's delivery",
+                room_id,
+                exc_info=True,
+            )
+            cascade.record_error(exc)
+            return self._lanes.own_anchor(room_id)
+        return anchor_index(None if room is None else room.latest_index)
 
     async def _queue_for_discussion(
         self, discussion: Any, committed: RoomEvent, plan: DeliveryPlan | None

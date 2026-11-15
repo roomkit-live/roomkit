@@ -783,6 +783,17 @@ class RoomDeliveryLane:
             and self._owed_cursor is None
         )
 
+    @property
+    def own_anchor(self) -> int:
+        """The anchor of an index-less set that waits for no other process's
+        index: the highest index of a set this lane holds, ``-1`` when it
+        holds none, so that the set still runs behind the sets of this
+        process placed before it (RFC §10.2), and waits for nothing else."""
+        return max(
+            (index for index, entry in self._indexed.items() if isinstance(entry, ExecEntry)),
+            default=-1,
+        )
+
     def start(self) -> None:
         """Start the executor on a FRESH contextvars context.
 
@@ -1411,6 +1422,13 @@ class RoomLaneRegistry:
                 lane.enqueue(entry)
             return
         self.lane(room_id).enqueue(entry)
+
+    def own_anchor(self, room_id: str) -> int:
+        """The anchor of an index-less set of *room_id* that waits for no
+        other process's index (:attr:`RoomDeliveryLane.own_anchor`); ``-1``
+        when the room has no lane."""
+        lane = self._lanes.get(room_id)
+        return -1 if lane is None else lane.own_anchor
 
     def note_committed(
         self,

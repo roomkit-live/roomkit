@@ -194,6 +194,22 @@ async def test_unindexed_entries_run_at_their_anchor_without_moving_cursor() -> 
 
 
 @pytest.mark.asyncio
+async def test_an_entry_anchored_behind_the_lane_s_own_sets_waits_for_no_hole() -> None:
+    """An index-less entry whose anchor could not be read is anchored behind
+    the sets this lane holds (RMK-1701): an index with no set, waiting on
+    another process's index, holds it back no more than another process's
+    index does (RFC §13.5)."""
+    store, host, registry, _ = await make_rig()
+    registry.note_committed(ROOM, 1)  # a BLOCKED record behind index 0, not ours
+    cascade = DeliveryCascade(ROOM, reentry_budget=10)
+    enqueue_exec(registry, cascade, "u", None, after_index=registry.own_anchor(ROOM))
+    await asyncio.wait_for(cascade.wait(), timeout=1.0)
+    assert host.executed == ["u"]
+    assert await cursor(store) == -1
+    await registry.aclose()
+
+
+@pytest.mark.asyncio
 async def test_gap_blocks_then_resumes_when_another_worker_advances() -> None:
     store, host, registry, _ = await make_rig(gap_timeout=10.0)
     cascade = DeliveryCascade(ROOM, reentry_budget=10)

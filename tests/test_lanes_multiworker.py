@@ -21,10 +21,11 @@ from roomkit.core.locks import (
     _held_rooms,
     _holds_a_room_lock,
 )
-from roomkit.models.channel import ChannelBinding
+from roomkit.models.channel import ChannelBinding, ChannelOutput
 from roomkit.models.delivery import InboundMessage
-from roomkit.models.enums import ChannelType
+from roomkit.models.enums import ChannelType, EventType, HookTrigger
 from roomkit.models.event import TextContent
+from roomkit.models.hook import HookResult
 from roomkit.models.room import Room
 from roomkit.store.memory import InMemoryStore
 from roomkit.store.postgres_lock import PostgresAdvisoryLockManager
@@ -144,6 +145,113 @@ async def test_crashed_worker_commit_is_skipped_and_room_recovers() -> None:
     assert room.delivered_index == room.latest_index
     await kit_a.close()
     await kit_b.close()
+
+
+class AnchorReadFailingStore(InMemoryStore):
+    """A store that fails the next plain read of a room once armed, its
+    contexts read all the same: the read the commit of an index-less set
+    makes for its anchor (RFC §13.5)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.armed = False
+
+    async def get_room(self, room_id: str) -> Room | None:
+        if self.armed:
+            self.armed = False
+            raise RuntimeError("the store is unreachable")
+        return await super().get_room(room_id)
+
+    async def load_room_context(self, room_id: str):  # type: ignore[override]
+        room = await super().get_room(room_id)
+        if room is None:
+            return None, [], []
+        return room, await self.list_bindings(room_id), await self.list_participants(room_id)
+
+
+@pytest.mark.parametrize("deferred", [False, True], ids=["waited", "deferred"])
+async def test_an_instruction_whose_anchor_read_fails_reports_it_and_keeps_its_place(
+    deferred: bool,
+) -> None:
+    """The read of the room that anchors an instruction's set fails (RFC
+    §13.5): the call returns, the failure is its cascade's error (§10.1.1
+    rule 5), which a deferred call's handle reports once the set ran, and
+    the set runs waiting for no other process, behind the sets this process
+    placed before it."""
+    store = AnchorReadFailingStore()
+    kit = RoomKit(store=store)
+    order: list[str] = []
+    held, gate = asyncio.Event(), asyncio.Event()
+
+    class Out(SimpleChannel):
+        async def deliver(self, event, binding, context):  # type: ignore[override]
+            if event.content.body == "m0":
+                held.set()
+                await gate.wait()
+            order.append(event.content.body)
+            return await super().deliver(event, binding, context)
+
+    class Agent(AILikeChannel):
+        async def on_event(self, event, binding, context):  # type: ignore[override]
+            if event.type == EventType.INSTRUCTION:
+                order.append("instruction")
+            return ChannelOutput(responded=False)
+
+    hooked = asyncio.Event()
+
+    @kit.hook(HookTrigger.BEFORE_BROADCAST, name="arm")
+    async def arm(event, context) -> HookResult:
+        if event.type == EventType.INSTRUCTION:
+            store.armed = True
+            hooked.set()
+        return HookResult(action="allow")
+
+    for channel in (SimpleChannel("src"), Out("out"), Agent("ai")):
+        kit.register_channel(channel)
+    await kit.create_room(room_id="r1")
+    for channel_id in ("src", "out", "ai"):
+        await kit.attach_channel("r1", channel_id)
+
+    def message(body: str, **fields) -> InboundMessage:
+        return InboundMessage(
+            channel_id="src", sender_id="u", content=TextContent(body=body), **fields
+        )
+
+    instruction = message(
+        "Introduce yourself", event_type=EventType.INSTRUCTION, addressed_to=["ai"]
+    )
+    zero = asyncio.create_task(kit.process_inbound(message("m0")))
+    try:
+        await asyncio.wait_for(held.wait(), 1.0)
+        queued = [
+            await kit.process_inbound(message(body), defer_delivery=True) for body in ("m1", "m2")
+        ]
+        if deferred:
+            decided = await kit.process_inbound(instruction, defer_delivery=True)
+            assert decided.error is None
+            assert decided.delivery is not None
+            gate.set()
+            result = await asyncio.wait_for(decided.delivery.wait(), 1.0)
+        else:
+            call = asyncio.create_task(kit.process_inbound(instruction))
+            await asyncio.wait_for(hooked.wait(), 1.0)
+            # The instruction's set is placed once its section let the lock go.
+            async with kit.lock_manager.locked("r1"):
+                pass
+            gate.set()
+            result = await asyncio.wait_for(call, 1.0)
+        await asyncio.wait_for(zero, 1.0)
+        for one in queued:
+            assert one.delivery is not None
+            await asyncio.wait_for(one.delivery.wait(), 1.0)
+    finally:
+        gate.set()
+        await kit.close()
+    assert not result.blocked
+    assert result.event is not None and result.event.type == EventType.INSTRUCTION
+    assert isinstance(result.error, RuntimeError)
+    assert str(result.error) == "the store is unreachable"
+    assert order == ["m0", "m1", "m2", "instruction"]
 
 
 @pytest.mark.parametrize("locks", [InMemoryLockManager, MarkingLockManager])
