@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **A failed read of the room that anchors an instruction's delivery set is the call's error, not its raise** (RFC §10.1.1 rule 5, §13.5, RMK-1701). The read of the room's latest index that orders a set with no index (an instruction's, an event the persistence policy keeps out) behind the indexes committed before it raised out of `process_inbound()` when the store failed it, and the agent never ran. The failure is now on `InboundResult.error`, and the set runs behind the sets this process placed before it, waiting for no other process.
 
+- **A delivery set no longer waits forever on the cursor of a room the store deleted** (RFC §13.5, RMK-1702). A deleted room's cursor reads -1 for good, and no skip can move it: a set whose turn came in a round after the deletion (an instruction or a message behind another process's index, or behind a set of an earlier round) never ran, and its call never returned. Such sets now take their turn in their lane's order, as the sets of the same round already did.
+
 - A completed ACP prompt from a replaced connection no longer advances the replacement session's history cursor or marks its instructions and speaker labels as already read; the old prompt keeps its result.
 
 - ACP catch-up no longer reports lifecycle or hidden events as missing conversation when the loaded history is complete; contexts carry their history boundary across filtering and turn execution (RMK-1447).

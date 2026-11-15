@@ -193,6 +193,42 @@ async def test_unindexed_entries_run_at_their_anchor_without_moving_cursor() -> 
     await registry.aclose()
 
 
+@pytest.mark.parametrize(
+    ("delivered_first", "entries", "executed"),
+    [
+        # A round delivered index 0, the room is deleted, then an entry with
+        # no index anchored at it (RMK-1702), or the entry of index 1.
+        (True, [("u1", None, 0)], ["e0", "u1"]),
+        (True, [("e1", 1, -1)], ["e0", "e1"]),
+        # Entries behind another process's index 0 when the room is deleted.
+        (False, [("e1", 1, -1), ("u2", None, 1)], ["e1", "u2"]),
+    ],
+    ids=["unindexed", "indexed", "behind_a_hole"],
+)
+async def test_the_entries_of_a_deleted_room_take_their_turn(
+    delivered_first: bool, entries: list[tuple[str, int | None, int]], executed: list[str]
+) -> None:
+    """The cursor of a room the store no longer holds reads -1 for good and
+    no skip moves it: the lane's entries take their turn in its order, never
+    waiting for an index no lane will deliver (RFC §13.5)."""
+    store, host, registry, _ = await make_rig()
+    if delivered_first:
+        first = DeliveryCascade(ROOM, reentry_budget=10)
+        enqueue_exec(registry, first, "e0", 0)
+        await asyncio.wait_for(first.wait(), timeout=1.0)
+        assert await store.delete_room(ROOM)
+    cascade = DeliveryCascade(ROOM, reentry_budget=10)
+    for event_id, index, after_index in entries:
+        enqueue_exec(registry, cascade, event_id, index, after_index)
+    if not delivered_first:
+        assert await store.delete_room(ROOM)
+    await asyncio.wait_for(cascade.wait(), timeout=1.0)
+    assert host.executed == executed
+    assert cascade.cancelled is None
+    assert not any(name == "delivery_skipped" for name, _ in host.framework_events)
+    await registry.aclose()
+
+
 @pytest.mark.asyncio
 async def test_an_entry_anchored_behind_the_lane_s_own_sets_waits_for_no_hole() -> None:
     """An index-less entry whose anchor could not be read is anchored behind
@@ -206,6 +242,28 @@ async def test_an_entry_anchored_behind_the_lane_s_own_sets_waits_for_no_hole() 
     await asyncio.wait_for(cascade.wait(), timeout=1.0)
     assert host.executed == ["u"]
     assert await cursor(store) == -1
+    await registry.aclose()
+
+
+@pytest.mark.asyncio
+async def test_a_room_that_cannot_be_read_keeps_its_hole_skippable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A store that fails the read of whether the room still exists leaves
+    the lane as for any hole (RMK-1702): another process's index is skipped
+    after the gap timeout and the entry behind it runs (RFC §13.5)."""
+    store, host, registry, _ = await make_rig(gap_timeout=0.05)
+
+    async def unreachable(room_id: str) -> bool:
+        raise RuntimeError("the store is unreachable")
+
+    monkeypatch.setattr(store, "room_exists", unreachable)
+    cascade = DeliveryCascade(ROOM, reentry_budget=10)
+    enqueue_exec(registry, cascade, "e1", 1)  # index 0 is not ours
+    await asyncio.wait_for(cascade.wait(), timeout=1.0)
+    assert host.executed == ["e1"]
+    skipped = [data for name, data in host.framework_events if name == "delivery_skipped"]
+    assert skipped == [{"from_index": 0, "to_index": 0}]
     await registry.aclose()
 
 

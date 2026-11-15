@@ -1175,12 +1175,31 @@ class RoomDeliveryLane:
     async def _read_cursor(self) -> int:
         """The room's cursor, past the indexes this lane delivered whose
         cursor write it still owes, read in the trace of the entry it runs
-        next."""
+        next.
+
+        The cursor of a room the store no longer holds reads ``-1`` for
+        good, and no lane fills or skips its holes any more: it reads as
+        standing just before this lane's next entry, so that every entry
+        takes its turn in the lane's order (RFC §13.5).
+        """
         with _in_trace_of(self._next()):
             stored = await self._host._store.get_delivered_index(self.room_id)
+            if stored < 0 and not self._has_turn(stored) and await self._room_gone():
+                stored = self._skip_target(stored)
         if self._owed_cursor is None:
             return stored
         return max(stored, self._owed_cursor)
+
+    async def _room_gone(self) -> bool:
+        """Whether the store no longer holds the room while entries wait. A
+        store that fails the read leaves them waiting, as a hole does."""
+        if not self._indexed and not self._unindexed:
+            return False
+        try:
+            return not await self._host._store.room_exists(self.room_id)
+        except Exception:
+            logger.debug("Room %s could not be read; its lane waits", self.room_id, exc_info=True)
+            return False
 
     async def _advance_cursor(self, index: int) -> None:
         """Moves the room's cursor to *index*, whose set ran, under the claim.
