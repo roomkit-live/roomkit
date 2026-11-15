@@ -1,0 +1,292 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "locks/the-first-row-an-agent-streams-once-its-room-is-created-again-is-refused-before-its-hooks",
+  "title": "The first row an agent streams once its room is deleted and created again under the same id is refused before its BEFORE_BROADCAST hooks, as each row after it: no hook runs on it, and nothing a hook would write reaches the new room",
+  "rules": [
+    "§13.5 Delivery lanes across processes",
+    "§5.1",
+    "§8.2",
+    "§9.4"
+  ],
+  "notes": "As locks/the-rows-an-agent-streams-once-its-room-is-created-again-are-refused, with a BEFORE_BROADCAST hook `watch` that records its calls and, on a tool call's end, would mark the room's metadata. The tool call's end is the first row written once the room is created again: it belongs to the deleted room and is refused before its hooks, as the answer's text after it, so `watch` runs on the incoming message and the two rows written before the deletion only, and the new room's metadata stays unmarked.",
+  "setup": {
+    "channels": [
+      {
+        "id": "web",
+        "type": "webhook",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "Let me ",
+                "check."
+              ],
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "lookup_order",
+                  "arguments": {
+                    "order": "42"
+                  }
+                }
+              ]
+            },
+            {
+              "deltas": [
+                "Order 42 ",
+                "shipped."
+              ]
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup_order",
+            "description": "Find an order by its number",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "order": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "order"
+              ]
+            },
+            "returns": "shipped"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "moderator",
+        "trigger": "on_tool_call",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "store.delete_room",
+                "room_id": "room-1"
+              },
+              {
+                "call": "create_room",
+                "room": {
+                  "id": "room-1"
+                }
+              },
+              {
+                "call": "attach_channel",
+                "room_id": "room-1",
+                "channel_id": "web"
+              },
+              {
+                "call": "attach_channel",
+                "room_id": "room-1",
+                "channel_id": "ws"
+              },
+              {
+                "call": "attach_channel",
+                "room_id": "room-1",
+                "channel_id": "agent",
+                "category": "intelligence"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "watch",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "type": "tool_call_end"
+            },
+            "do": [
+              {
+                "call": "update_room_metadata",
+                "room_id": "$room",
+                "metadata": {
+                  "late_hook": true
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "web",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Where is order 42?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": []
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "body": "Where is order 42?"
+            }
+          }
+        ],
+        "web": [
+          {
+            "type": "message",
+            "content": {
+              "body": "Let me check."
+            }
+          },
+          {
+            "type": "tool_call_start"
+          }
+        ]
+      }
+    },
+    "streamed": {
+      "room-1": {
+        "ws": [
+          {
+            "text": "Let me "
+          },
+          {
+            "text": "check."
+          },
+          {
+            "row": {
+              "type": "message",
+              "content": {
+                "body": "Let me check."
+              }
+            }
+          },
+          {
+            "row": {
+              "type": "tool_call_start"
+            }
+          }
+        ]
+      }
+    },
+    "framework_events": {
+      "room-1": [
+        {
+          "event": "delivery_succeeded",
+          "channel_id": "ws"
+        },
+        "event_processed",
+        "room_created",
+        {
+          "event": "room_channel_attached",
+          "channel_id": "web"
+        },
+        {
+          "event": "room_channel_attached",
+          "channel_id": "ws"
+        },
+        {
+          "event": "room_channel_attached",
+          "channel_id": "agent"
+        },
+        {
+          "event": "room_refused_event",
+          "status": null,
+          "operation": "reentry",
+          "event_type": "tool_call_end"
+        },
+        {
+          "event": "room_refused_event",
+          "status": null,
+          "operation": "reentry",
+          "event_type": "message"
+        }
+      ]
+    },
+    "hooks": {
+      "watch": [
+        {
+          "trigger": "before_broadcast",
+          "event": {
+            "type": "message",
+            "content": {
+              "body": "Where is order 42?"
+            }
+          }
+        },
+        {
+          "trigger": "before_broadcast",
+          "event": {
+            "type": "message",
+            "content": {
+              "body": "Let me check."
+            }
+          }
+        },
+        {
+          "trigger": "before_broadcast",
+          "event": {
+            "type": "tool_call_start"
+          }
+        }
+      ]
+    },
+    "rooms": {
+      "room-1": {
+        "metadata": {
+          "late_hook": {
+            "$absent": true
+          }
+        }
+      }
+    }
+  }
+}

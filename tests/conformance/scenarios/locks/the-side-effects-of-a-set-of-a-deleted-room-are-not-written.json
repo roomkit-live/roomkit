@@ -1,0 +1,193 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "locks/the-side-effects-of-a-set-of-a-deleted-room-are-not-written",
+  "title": "The side effects of a delivery set of a room deleted while the set runs are not written: no task is stored under the room's id, and no ON_TASK_CREATED fires",
+  "rules": [
+    "§13.5 Delivery lanes across processes",
+    "§10.1 step 15",
+    "§5.1"
+  ],
+  "notes": "One process. `held` is held at `held` in its delivery to `ws`, which returns the metadata update `stale`; the agent `ai` returns `stale_ai`, the task `Stale` and an observation, and the `triage` hook gave `held` the task `Stale hook` and an observation. The room is deleted, and not created again. Once `held` is let go, its set ends in a room gone: none of its side effects is written, so the store holds no task under the room's id and no ON_TASK_CREATED fires.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "deliver": [
+          {
+            "when": {
+              "text": "held"
+            },
+            "gate": "held",
+            "output": {
+              "metadata_updates": {
+                "stale": true
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "held"
+            },
+            "output": {
+              "metadata_updates": {
+                "stale_ai": true
+              },
+              "tasks": [
+                {
+                  "title": "Stale"
+                }
+              ],
+              "observations": [
+                {
+                  "category": "stale",
+                  "content": "agent"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "triage",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "held"
+            },
+            "result": {
+              "action": "allow",
+              "tasks": [
+                {
+                  "title": "Stale hook"
+                }
+              ],
+              "observations": [
+                {
+                  "category": "stale",
+                  "content": "hook"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "follow_up",
+        "trigger": "on_task_created",
+        "execution": "async"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "background": true,
+      "as": "held",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "held"
+        }
+      }
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "call": "store.delete_room",
+      "room_id": "room-1",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "open": "held"
+    },
+    {
+      "await": "held",
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "call": "store.get_room",
+      "room_id": "room-1",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "store.list_tasks",
+      "room_id": "room-1",
+      "expect": {
+        "result": []
+      }
+    }
+  ],
+  "expect": {
+    "turns": {
+      "room-1": {
+        "ai": [
+          {
+            "content": {
+              "body": "held"
+            }
+          }
+        ]
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [],
+        "ws": [
+          {
+            "content": {
+              "body": "held"
+            }
+          }
+        ]
+      }
+    },
+    "hooks": {
+      "follow_up": []
+    }
+  }
+}

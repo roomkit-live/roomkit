@@ -1,0 +1,316 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "locks/the-side-effects-of-a-set-of-a-deleted-room-stay-out-of-the-room-created-again",
+  "title": "The side effects of a delivery set of a room deleted while the set runs, and created again under the same id before it ends, are not written: the new room takes none of its metadata updates, tasks or observations, and fires no ON_TASK_CREATED for them",
+  "rules": [
+    "§13.5 Delivery lanes across processes",
+    "§10.1 step 15",
+    "§5.1"
+  ],
+  "notes": "One process. `held` is held at `held` in its delivery to `ws`, which returns the metadata update `stale`; the agent `ai` returns `stale_ai`, the task `Stale` and an observation, and the `triage` hook gave `held` the task `Stale hook` and an observation. The room is deleted and created again under the same id with `sms` and `ws` only. Once `held` is let go, its set ends in a room gone: none of its side effects is written, and the new room, which never asked for them, takes none. The new room's own message, `again 0`, writes its own: the metadata update `fresh` and the hook's task `Fresh`, whose ON_TASK_CREATED fires. Indexes are read without lifecycle records.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "deliver": [
+          {
+            "when": {
+              "text": "held"
+            },
+            "gate": "held",
+            "output": {
+              "metadata_updates": {
+                "stale": true
+              }
+            }
+          },
+          {
+            "when": {
+              "text": "again 0"
+            },
+            "output": {
+              "metadata_updates": {
+                "fresh": true
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "text": "held"
+            },
+            "output": {
+              "metadata_updates": {
+                "stale_ai": true
+              },
+              "tasks": [
+                {
+                  "title": "Stale"
+                }
+              ],
+              "observations": [
+                {
+                  "category": "stale",
+                  "content": "agent"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "triage",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "held"
+            },
+            "result": {
+              "action": "allow",
+              "tasks": [
+                {
+                  "title": "Stale hook"
+                }
+              ],
+              "observations": [
+                {
+                  "category": "stale",
+                  "content": "hook"
+                }
+              ]
+            }
+          },
+          {
+            "when": {
+              "text": "again 0"
+            },
+            "result": {
+              "action": "allow",
+              "tasks": [
+                {
+                  "title": "Fresh"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "follow_up",
+        "trigger": "on_task_created",
+        "execution": "async"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "background": true,
+      "as": "held",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "held"
+        }
+      }
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "call": "store.delete_room",
+      "room_id": "room-1",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "create_room",
+      "room": {
+        "id": "room-1"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "sms"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "ws"
+    },
+    {
+      "open": "held"
+    },
+    {
+      "await": "held",
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "again 0"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 0
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "turns": {
+      "room-1": {
+        "ai": [
+          {
+            "content": {
+              "body": "held"
+            }
+          }
+        ]
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [],
+        "ws": [
+          {
+            "content": {
+              "body": "held"
+            }
+          },
+          {
+            "content": {
+              "body": "again 0"
+            }
+          }
+        ]
+      }
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "again 0"
+          },
+          "status": "delivered"
+        }
+      ]
+    },
+    "rooms": {
+      "room-1": {
+        "latest_index": 0,
+        "delivered_index": 0,
+        "metadata": {
+          "stale": {
+            "$absent": true
+          },
+          "stale_ai": {
+            "$absent": true
+          },
+          "fresh": true
+        }
+      }
+    },
+    "tasks": {
+      "room-1": [
+        {
+          "title": "Fresh"
+        }
+      ]
+    },
+    "observations": {
+      "room-1": []
+    },
+    "hooks": {
+      "follow_up": [
+        {
+          "trigger": "on_task_created",
+          "room_id": "room-1",
+          "event": {
+            "type": "task_created",
+            "content": {
+              "body": "again 0"
+            },
+            "metadata": {
+              "task_title": "Fresh"
+            }
+          }
+        }
+      ]
+    },
+    "framework_events": {
+      "room-1": [
+        "room_created",
+        {
+          "event": "room_channel_attached",
+          "channel_id": "sms"
+        },
+        {
+          "event": "room_channel_attached",
+          "channel_id": "ws"
+        },
+        {
+          "event": "delivery_succeeded",
+          "channel_id": "ws"
+        },
+        "event_processed",
+        {
+          "event": "delivery_succeeded",
+          "channel_id": "ws"
+        },
+        "event_processed"
+      ]
+    }
+  }
+}

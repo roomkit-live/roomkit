@@ -1,0 +1,177 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "locks/the-side-effects-of-an-injected-event-s-set-of-a-deleted-room-stay-out-of-the-room-created-again",
+  "title": "The metadata updates of the delivery set of an event a hook injected, in a room deleted while that set runs and created again under the same id before it ends, are not written into the new room",
+  "rules": [
+    "§13.5 Delivery lanes across processes",
+    "§10.1 step 15",
+    "§5.1",
+    "§9.4"
+  ],
+  "notes": "One process. The `triage` hook injects `note` for `ws` when `held` arrives. `note`'s set is held at `held` in its delivery to `ws`, which returns the metadata update `stale`. The room is deleted and created again under the same id with `sms` and `ws`. Once `note` is let go, its set ends in a room gone: its metadata update is not written into the new room. The new room's own message, `again 0`, writes its own, `fresh`. Indexes are read without lifecycle records.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "deliver": [
+          {
+            "when": {
+              "text": "note"
+            },
+            "gate": "held",
+            "output": {
+              "metadata_updates": {
+                "stale": true
+              }
+            }
+          },
+          {
+            "when": {
+              "text": "again 0"
+            },
+            "output": {
+              "metadata_updates": {
+                "fresh": true
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "triage",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "held"
+            },
+            "result": {
+              "action": "allow",
+              "injected_events": [
+                {
+                  "target_channel_ids": [
+                    "ws"
+                  ],
+                  "event": {
+                    "content": {
+                      "type": "text",
+                      "body": "note"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "background": true,
+      "as": "held",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "held"
+        }
+      }
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "call": "store.delete_room",
+      "room_id": "room-1",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "create_room",
+      "room": {
+        "id": "room-1"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "sms"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "ws"
+    },
+    {
+      "open": "held"
+    },
+    {
+      "await": "held",
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "again 0"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 0
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "room-1": {
+        "latest_index": 0,
+        "metadata": {
+          "stale": {
+            "$absent": true
+          },
+          "fresh": true
+        }
+      }
+    }
+  }
+}
