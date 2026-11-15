@@ -1,0 +1,190 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "locks/a-room-created-again-with-an-earlier-created-at-delivers-each-message",
+  "title": "A room created again under the id of a room deleted while one of its delivery sets runs, its `created_at` earlier than the deleted room's, delivers each message committed in it while that set still runs: a room's `created_at` tells it from the deleted one, whichever is the later",
+  "rules": [
+    "§13.5 Delivery lanes across processes",
+    "§10.2",
+    "§5.1"
+  ],
+  "notes": "One process. `zero` is delivered; `held` is held at `held` in its delivery while the room is deleted, then written again to the store under the same id with a `created_at` years before the deleted room's (a record restored, or a process whose clock runs behind), its bindings attached again. A record committed outside the pipeline and `again 1` are committed in the new room while `held` still runs. Once `held` is let go, it is delivered, then `again 1`, which the new room's cursor reaches: none of the new room's indexes is filed as the deleted room's. Indexes are read without lifecycle records. The gap timeout is the implementation's default, far above the run: nothing is skipped.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "deliver": [
+          {
+            "when": {
+              "text": "held"
+            },
+            "gate": "held"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "zero"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "background": true,
+      "as": "held",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "held"
+        }
+      }
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "call": "store.delete_room",
+      "room_id": "room-1",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "store.create_room",
+      "room": {
+        "id": "room-1",
+        "created_at": "2001-01-01T00:00:00Z",
+        "updated_at": "2001-01-01T00:00:00Z"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "sms"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "ws"
+    },
+    {
+      "call": "commit_event",
+      "room_id": "room-1",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "trace"
+        },
+        "visibility": "none"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "defer_delivery": true,
+      "as": "again_1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "again 1"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 1
+          }
+        }
+      }
+    },
+    {
+      "open": "held"
+    },
+    {
+      "await": "held",
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "call": "delivery.wait",
+      "of": "again_1",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "cancellation_reason": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "body": "zero"
+            }
+          },
+          {
+            "content": {
+              "body": "held"
+            }
+          },
+          {
+            "content": {
+              "body": "again 1"
+            }
+          }
+        ]
+      }
+    },
+    "rooms": {
+      "room-1": {
+        "latest_index": 1,
+        "delivered_index": 1
+      }
+    }
+  }
+}

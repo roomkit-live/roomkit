@@ -1,0 +1,276 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "locks/a-room-created-again-delivers-each-message-sent-while-a-set-of-the-deleted-room-runs",
+  "title": "A room created again under the id of a room deleted while one of its delivery sets runs delivers each message sent into it while that set still runs: the deleted room's set and the new room's sets, which share their indexes, never mix",
+  "rules": [
+    "§13.5 Delivery lanes across processes",
+    "§10.2",
+    "§5.1"
+  ],
+  "notes": "One process. `zero` is delivered; `held` is held at `held` in its delivery while the room is deleted, then created again under the same id, its bindings attached again. Three messages are committed in the new room while `held` still runs; they take the indexes the deleted room had given out, `held`'s among them. Once `held` is let go, it is delivered first, then each of the new room's messages, in its order, none dropped as `delivery_stale`, and the new room's cursor reaches the last of them. Indexes are read without lifecycle records. The gap timeout is the implementation's default, far above the run: nothing is skipped.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "deliver": [
+          {
+            "when": {
+              "text": "held"
+            },
+            "gate": "held"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "zero"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "background": true,
+      "as": "held",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "held"
+        }
+      }
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "call": "store.delete_room",
+      "room_id": "room-1",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "create_room",
+      "room": {
+        "id": "room-1"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "sms"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "ws"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "defer_delivery": true,
+      "as": "again_0",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "again 0"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 0
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "defer_delivery": true,
+      "as": "again_1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "again 1"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 1
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "defer_delivery": true,
+      "as": "again_2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "again 2"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 2
+          }
+        }
+      }
+    },
+    {
+      "open": "held"
+    },
+    {
+      "await": "held",
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "call": "delivery.wait",
+      "of": "again_0",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "cancellation_reason": null
+        }
+      }
+    },
+    {
+      "call": "delivery.wait",
+      "of": "again_1",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "cancellation_reason": null
+        }
+      }
+    },
+    {
+      "call": "delivery.wait",
+      "of": "again_2",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "cancellation_reason": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "body": "zero"
+            }
+          },
+          {
+            "content": {
+              "body": "held"
+            }
+          },
+          {
+            "content": {
+              "body": "again 0"
+            }
+          },
+          {
+            "content": {
+              "body": "again 1"
+            }
+          },
+          {
+            "content": {
+              "body": "again 2"
+            }
+          }
+        ]
+      }
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "again 0"
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "again 1"
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "again 2"
+          },
+          "status": "delivered"
+        }
+      ]
+    },
+    "rooms": {
+      "room-1": {
+        "latest_index": 2,
+        "delivered_index": 2
+      }
+    }
+  }
+}

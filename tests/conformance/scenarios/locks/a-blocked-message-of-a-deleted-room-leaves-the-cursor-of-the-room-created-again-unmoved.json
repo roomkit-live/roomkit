@@ -1,0 +1,192 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "locks/a-blocked-message-of-a-deleted-room-leaves-the-cursor-of-the-room-created-again-unmoved",
+  "title": "A message a hook blocks in a room while one of the room's delivery sets runs, the room then deleted and created again under the same id, moves none of the new room's delivery cursor: its index, which has no delivery set, is the deleted room's",
+  "rules": [
+    "§13.5 Delivery lanes across processes",
+    "§10.2",
+    "§5.1"
+  ],
+  "notes": "One process. `held`, the room's first message, is held at `held` in its delivery; `blocked`, which a hook blocks, is stored `blocked` behind it: its index has no delivery set and waits for the cursor behind `held`'s. The room is then deleted and created again under the same id, its bindings attached again. Once `held` is let go, neither its index nor `blocked`'s is written to the new room's cursor. In the new room, a record committed outside the pipeline takes the first index and moves the cursor to it; once the kit is idle, `again 1` takes the next index and is delivered, read neither as delivered nor as skipped. Indexes are read without lifecycle records. The gap timeout is the implementation's default, far above the run: nothing is skipped.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "deliver": [
+          {
+            "when": {
+              "text": "held"
+            },
+            "gate": "held"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "gate",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "blocked"
+            },
+            "result": {
+              "action": "block",
+              "reason": "kept out"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "background": true,
+      "as": "held",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "held"
+        }
+      }
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "blocked"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true
+        }
+      }
+    },
+    {
+      "call": "store.delete_room",
+      "room_id": "room-1",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "create_room",
+      "room": {
+        "id": "room-1"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "sms"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "ws"
+    },
+    {
+      "open": "held"
+    },
+    {
+      "await": "held",
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "call": "commit_event",
+      "room_id": "room-1",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "trace"
+        },
+        "visibility": "none"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "again 1"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 1
+          },
+          "cancellation_reason": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "body": "held"
+            }
+          },
+          {
+            "content": {
+              "body": "again 1"
+            }
+          }
+        ]
+      }
+    },
+    "rooms": {
+      "room-1": {
+        "latest_index": 1,
+        "delivered_index": 1
+      }
+    }
+  }
+}
