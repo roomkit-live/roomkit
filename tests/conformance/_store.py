@@ -28,6 +28,7 @@ from tests.conformance._script import (
 )
 
 if TYPE_CHECKING:
+    from roomkit.store.base import ConversationStore
     from tests.conformance._harness import Harness
 
 
@@ -156,12 +157,29 @@ def _argument(name: str, spec: Mapping[str, Any]) -> Any:
     return read(lambda: readers[name](spec[name], spec))
 
 
+async def _kept_created_at(store: ConversationStore, spec: Mapping[str, Any]) -> Mapping[str, Any]:
+    """*spec* with its room's template given the stored room's ``created_at``
+    when it names none: a write of a partial room updates that room, it
+    creates none, and a room is its id and its ``created_at`` (RFC §13.5)."""
+    template = spec.get("room")
+    if not isinstance(template, Mapping) or "created_at" in template:
+        return spec
+    room_id = template.get("id")
+    stored = await store.get_room(room_id) if isinstance(room_id, str) else None
+    if stored is None:
+        return spec
+    return {**spec, "room": {**template, "created_at": stored.created_at}}
+
+
 async def _store_call(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
     operation = spec["call"].removeprefix("store.")
+    store = harness.store_of(kit)
+    if spec["call"] == "store.update_room_if":
+        spec = await _kept_created_at(store, spec)
     arguments = {
         name: _argument(name, spec) for name in STORE_ARGUMENTS[spec["call"]] if name in spec
     }
-    return await getattr(harness.store_of(kit), operation)(**arguments)
+    return await getattr(store, operation)(**arguments)
 
 
 async def _read_marker_call(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
