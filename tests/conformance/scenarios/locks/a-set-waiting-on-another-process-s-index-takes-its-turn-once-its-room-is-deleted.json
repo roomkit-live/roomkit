@@ -1,0 +1,161 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "locks/a-set-waiting-on-another-process-s-index-takes-its-turn-once-its-room-is-deleted",
+  "title": "Delivery sets waiting on an index no lane runs take their turn, in their lane's order, once their room is deleted: a message's, which has an index, and an instruction's, which has none",
+  "rules": [
+    "§13.5 Delivery lanes across processes",
+    "§10.1.1 rule 5",
+    "§5.1"
+  ],
+  "notes": "An event is committed straight to the store, as a process that stopped before delivering it: no lane runs its index. `one`, committed next, waits for the cursor to pass that index; the instruction to `agent`, decided once `one` is committed, waits behind `one`. The room is then deleted: its cursor reads -1 for good, and no skip can move it any more. `one`, then the instruction, take their turn rather than waiting forever: `ws` delivers `one`, and `agent`, which answers nothing, takes both as its turns. Indexes are not asserted: the room's lifecycle records, which they are read without, are deleted with it. The gap timeout is the implementation's default, far above the run: nothing is skipped.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.commit_event",
+      "room_id": "room-1",
+      "event": {
+        "content": {
+          "type": "text",
+          "body": "lost"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "defer_delivery": true,
+      "as": "one",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "one"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "defer_delivery": true,
+      "as": "instruction",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Introduce yourself"
+        },
+        "event_type": "instruction",
+        "addressed_to": [
+          "agent"
+        ]
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "type": "instruction",
+            "status": "delivered"
+          }
+        }
+      }
+    },
+    {
+      "call": "store.delete_room",
+      "room_id": "room-1",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "delivery.wait",
+      "of": "one",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "cancellation_reason": null
+        }
+      }
+    },
+    {
+      "call": "delivery.wait",
+      "of": "instruction",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "cancellation_reason": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "body": "one"
+            }
+          }
+        ]
+      }
+    },
+    "turns": {
+      "room-1": {
+        "agent": [
+          {
+            "content": {
+              "body": "one"
+            }
+          },
+          {
+            "type": "instruction",
+            "content": {
+              "body": "Introduce yourself"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
