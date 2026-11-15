@@ -47,6 +47,8 @@ from roomkit.telemetry.context import restored_span
 from roomkit.turns.owner import drop_unread_streams
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from roomkit.core.event_router import StreamingResponse
     from roomkit.core.locks import RoomLockManager, _Call, _LockLease
     from roomkit.models.channel import ChannelBinding
@@ -590,6 +592,10 @@ class ExecEntry:
     """Whether it was placed first in its idle lane, and no entry placed
     later took the lead: its set runs from its placement, which the kit's
     close does not drop (RFC §12.10.4)."""
+    room_created_at: datetime | None = None
+    """The ``created_at`` of the room the set was placed in: a room created
+    again under its id is another room, whose lane it never joins (RFC
+    §13.5). None when unknown: the lane then tells only a room gone."""
 
 
 @dataclass(slots=True)
@@ -602,12 +608,13 @@ class CursorEntry:
 
     ``parent_span_id`` / ``parent_span_ctx`` are the span of the call that
     committed it, as a plan's: the cursor write at its turn stays in that
-    call's trace.
+    call's trace. ``room_created_at`` is the room's, as an :class:`ExecEntry`'s.
     """
 
     index: int
     parent_span_id: str | None = None
     parent_span_ctx: Any = None
+    room_created_at: datetime | None = None
 
 
 def _in_trace_of(entry: ExecEntry | CursorEntry | None) -> contextlib.AbstractContextManager[None]:
@@ -737,8 +744,19 @@ class RoomDeliveryLane:
         config: LaneConfig,
         *,
         retire: Any = None,
+        room_created_at: datetime | None = None,
     ) -> None:
         self.room_id = room_id
+        # The created_at of the room whose sets the lane runs: a room created
+        # again under its id has a lane of its own (RFC §13.5).
+        self.room_created_at = room_created_at
+        # Set for good once the store holds no room under its id, or another
+        # one created again: the lane then neither reads nor moves the
+        # cursor, and runs its entries in its own order.
+        self._gone = False
+        # The cursor value the lane last waited at: it reads the room again
+        # before it waits at another one (RFC §13.5).
+        self._waited_at: int | None = None
         self._host = host
         self._claims = claims
         self._config = config
@@ -1166,8 +1184,10 @@ class RoomDeliveryLane:
 
     async def _skip_to(self, target: int) -> bool:
         """Moves the room's cursor past a hole to *target*, in the trace of
-        the entry the skip lets run."""
+        the entry the skip lets run; never the cursor of a room gone."""
         with _in_trace_of(self._next()):
+            if await self._room_gone():
+                return False
             return await self._host._store.advance_delivered_index(
                 self.room_id, target, force=True
             )
@@ -1175,31 +1195,57 @@ class RoomDeliveryLane:
     async def _read_cursor(self) -> int:
         """The room's cursor, past the indexes this lane delivered whose
         cursor write it still owes, read in the trace of the entry it runs
-        next.
-
-        The cursor of a room the store no longer holds reads ``-1`` for
-        good, and no lane fills or skips its holes any more: it reads as
-        standing just before this lane's next entry, so that every entry
-        takes its turn in the lane's order (RFC §13.5).
-        """
+        next."""
         with _in_trace_of(self._next()):
-            stored = await self._host._store.get_delivered_index(self.room_id)
-            if stored < 0 and not self._has_turn(stored) and await self._room_gone():
-                stored = self._skip_target(stored)
+            stored = await self._stored_cursor()
         if self._owed_cursor is None:
             return stored
         return max(stored, self._owed_cursor)
 
+    async def _stored_cursor(self) -> int:
+        """The room's cursor as the store holds it.
+
+        Once the lane's room is gone (no room under its id, or one created
+        again), no lane fills or skips its holes any more and this lane never
+        reads another room's cursor: it reads as standing just before this
+        lane's next entry, so that every entry takes its turn in the lane's
+        order (RFC §13.5). The room is read before the cursor has the lane
+        drop an entry as skipped, and before it has the lane wait: at each
+        read of ``-1``, which a deleted room's cursor reads for good, and
+        once at each other value the cursor stands at, which a room created
+        again may have.
+        """
+        if self._gone:
+            return self._gone_cursor()
+        stored = await self._host._store.get_delivered_index(self.room_id)
+        suspect = any(index <= stored for index in self._indexed)
+        if self._next() is not None and not self._has_turn(stored):
+            suspect |= stored < 0 or stored != self._waited_at
+            self._waited_at = stored
+        if suspect and await self._room_gone():
+            return self._gone_cursor()
+        return stored
+
+    def _gone_cursor(self) -> int:
+        """The cursor of a lane whose room is gone: just before its next entry."""
+        nxt = self._next()
+        return -1 if nxt is None else _turn(nxt)[0]
+
     async def _room_gone(self) -> bool:
-        """Whether the store no longer holds the room while entries wait. A
-        store that fails the read leaves them waiting, as a hole does."""
-        if not self._indexed and not self._unindexed:
-            return False
+        """Whether the store no longer holds the lane's room: no room under
+        its id, or one created again, with another ``created_at`` (a lane
+        that knows none tells only a room gone). Once gone, for good. A store
+        that fails the read leaves the lane as it was, as for any hole."""
+        if self._gone:
+            return True
         try:
-            return not await self._host._store.room_exists(self.room_id)
+            room = await self._host._store.get_room(self.room_id)
         except Exception:
             logger.debug("Room %s could not be read; its lane waits", self.room_id, exc_info=True)
             return False
+        known = self.room_created_at
+        self._gone = room is None or (known is not None and room.created_at != known)
+        return self._gone
 
     async def _advance_cursor(self, index: int) -> None:
         """Moves the room's cursor to *index*, whose set ran, under the claim.
@@ -1210,10 +1256,13 @@ class RoomDeliveryLane:
         next delivery runs at once and no index is skipped as lost, and the
         write is made again at the next claimed round. An index behind one
         whose write is owed is owed with it: the store moves from the index
-        before alone.
+        before alone. The cursor of a room gone, which may be a room created
+        again under its id, is never written (RFC §13.5).
         """
         if self._owed_cursor is not None:
             self._owed_cursor = index
+            return
+        if await self._room_gone():
             return
         try:
             await self._host._store.advance_delivered_index(self.room_id, index)
@@ -1231,11 +1280,15 @@ class RoomDeliveryLane:
         """The room's cursor, read under the claim, once the writes this lane
         owes are made again: one index at a time from the stored cursor, as a
         delivery moves it. A write that fails again is logged, the rest still
-        owed; the cursor reads past them all the same."""
-        stored = await self._host._store.get_delivered_index(self.room_id)
+        owed; the cursor reads past them all the same. The debt to a room
+        gone is dropped: no lane moves its cursor any more."""
+        stored = await self._stored_cursor()
         owed = self._owed_cursor
         if owed is None:
             return stored
+        if await self._room_gone():
+            self._owed_cursor = None
+            return self._gone_cursor()
         while stored < owed:
             try:
                 moved = await self._host._store.advance_delivered_index(self.room_id, stored + 1)
@@ -1398,23 +1451,34 @@ class RoomDeliveryLane:
 
 
 class RoomLaneRegistry:
-    """The framework's lanes, created lazily and retired when idle."""
+    """The framework's lanes, created lazily and retired when idle.
+
+    A lane is a room's: its id and its ``created_at``. A room deleted while
+    its sets run, then created again under the same id, is another room,
+    whose sets take another lane, so that the deleted room's never read or
+    move its cursor (RFC §13.5)."""
 
     def __init__(self, host: LaneHost, claims: RoomLockManager, config: LaneConfig) -> None:
         self._host = host
         self._claims = claims
         self._config = config
-        self._lanes: dict[str, RoomDeliveryLane] = {}
+        self._lanes: dict[tuple[str, datetime | None], RoomDeliveryLane] = {}
         self._sealed = False
 
-    def lane(self, room_id: str) -> RoomDeliveryLane:
-        """Get or create (and start) the room's lane."""
-        lane = self._lanes.get(room_id)
+    def lane(self, room_id: str, room_created_at: datetime | None = None) -> RoomDeliveryLane:
+        """Get or create (and start) the lane of the room *room_id* whose
+        ``created_at`` is *room_created_at*."""
+        lane = self._lanes.get((room_id, room_created_at))
         if lane is None:
             lane = RoomDeliveryLane(
-                room_id, self._host, self._claims, self._config, retire=self._try_retire
+                room_id,
+                self._host,
+                self._claims,
+                self._config,
+                retire=self._try_retire,
+                room_created_at=room_created_at,
             )
-            self._lanes[room_id] = lane
+            self._lanes[room_id, room_created_at] = lane
             lane.start()
         return lane
 
@@ -1435,18 +1499,19 @@ class RoomLaneRegistry:
                 _keep_side_effects(self._host, entry)
                 entry.cascade.cancel(KitClosedError.code)
                 entry.cascade.release()
-            elif (lane := self._lanes.get(room_id)) is not None:
+            elif (lane := self._lanes.get((room_id, entry.room_created_at))) is not None:
                 # A committed index still fills the cursor of a lane running
                 # the set it keeps (RFC §12.10.4); it opens no lane.
                 lane.enqueue(entry)
             return
-        self.lane(room_id).enqueue(entry)
+        self.lane(room_id, entry.room_created_at).enqueue(entry)
 
-    def own_anchor(self, room_id: str) -> int:
-        """The anchor of an index-less set of *room_id* that waits for no
-        other process's index (:attr:`RoomDeliveryLane.own_anchor`); ``-1``
-        when the room has no lane."""
-        lane = self._lanes.get(room_id)
+    def own_anchor(self, room_id: str, room_created_at: datetime | None = None) -> int:
+        """The anchor of an index-less set of the room *room_id* whose
+        ``created_at`` is *room_created_at*, waiting for no other process's index
+        (:attr:`RoomDeliveryLane.own_anchor`); ``-1`` when the room has no
+        lane."""
+        lane = self._lanes.get((room_id, room_created_at))
         return -1 if lane is None else lane.own_anchor
 
     def note_committed(
@@ -1456,17 +1521,19 @@ class RoomLaneRegistry:
         *,
         parent_span_id: str | None = None,
         parent_span_ctx: Any = None,
+        room_created_at: datetime | None = None,
     ) -> None:
-        """Record a committed index with no delivery set (cursor no-op), the
-        span of the call that committed it carried with it."""
-        self.enqueue(room_id, CursorEntry(index, parent_span_id, parent_span_ctx))
+        """Record a committed index with no delivery set (cursor no-op) of
+        the room whose ``created_at`` is *room_created_at*, the span of the
+        call that committed it carried with it."""
+        self.enqueue(room_id, CursorEntry(index, parent_span_id, parent_span_ctx, room_created_at))
 
     def _try_retire(self, lane: RoomDeliveryLane) -> bool:
         """Idle-timeout retirement; no await between the check and the drop."""
         if not lane.idle:
             return False
-        if self._lanes.get(lane.room_id) is lane:
-            del self._lanes[lane.room_id]
+        if self._lanes.get((lane.room_id, lane.room_created_at)) is lane:
+            del self._lanes[lane.room_id, lane.room_created_at]
         return True
 
     def seal(self, reason: str = "kit_closed") -> None:

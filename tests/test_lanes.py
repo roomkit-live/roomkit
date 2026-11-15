@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from collections.abc import AsyncIterator
+from datetime import datetime
 from typing import Any
 
 import pytest
@@ -134,12 +135,23 @@ def enqueue_exec(
     event_id: str,
     index: int | None,
     after_index: int = -1,
+    room_created_at: datetime | None = None,
 ) -> None:
     cascade.retain()
     entry = ExecEntry(
-        plan=make_plan(event_id), cascade=cascade, index=index, after_index=after_index
+        plan=make_plan(event_id),
+        cascade=cascade,
+        index=index,
+        after_index=after_index,
+        room_created_at=room_created_at,
     )
     registry.enqueue(ROOM, entry)
+
+
+async def created_at(store: InMemoryStore) -> datetime:
+    room = await store.get_room(ROOM)
+    assert room is not None
+    return room.created_at
 
 
 async def cursor(store: InMemoryStore) -> int:
@@ -194,38 +206,170 @@ async def test_unindexed_entries_run_at_their_anchor_without_moving_cursor() -> 
 
 
 @pytest.mark.parametrize(
-    ("delivered_first", "entries", "executed"),
+    ("delivered_first", "entries", "executed", "again_at"),
     [
         # A round delivered index 0, the room is deleted, then an entry with
         # no index anchored at it (RMK-1702), or the entry of index 1.
-        (True, [("u1", None, 0)], ["e0", "u1"]),
-        (True, [("e1", 1, -1)], ["e0", "e1"]),
+        (True, [("u1", None, 0)], ["e0", "u1"], None),
+        (True, [("e1", 1, -1)], ["e0", "e1"], None),
         # Entries behind another process's index 0 when the room is deleted.
-        (False, [("e1", 1, -1), ("u2", None, 1)], ["e1", "u2"]),
+        (False, [("e1", 1, -1), ("u2", None, 1)], ["e1", "u2"], None),
+        # Entries behind other processes' indexes when the room is created
+        # again under its id (RMK-1707), its cursor at -1, moved past 0, or
+        # past their own index.
+        (False, [("e2", 2, -1), ("u3", None, 2)], ["e2", "u3"], -1),
+        (False, [("e2", 2, -1), ("u3", None, 2)], ["e2", "u3"], 0),
+        (False, [("e2", 2, -1), ("u3", None, 2)], ["e2", "u3"], 3),
     ],
-    ids=["unindexed", "indexed", "behind_a_hole"],
+    ids=[
+        "unindexed",
+        "indexed",
+        "behind_a_hole",
+        "behind_holes_created_again",
+        "behind_holes_created_again_moved",
+        "behind_holes_created_again_past_them",
+    ],
 )
 async def test_the_entries_of_a_deleted_room_take_their_turn(
-    delivered_first: bool, entries: list[tuple[str, int | None, int]], executed: list[str]
+    delivered_first: bool,
+    entries: list[tuple[str, int | None, int]],
+    executed: list[str],
+    again_at: int | None,
 ) -> None:
     """The cursor of a room the store no longer holds reads -1 for good and
     no skip moves it: the lane's entries take their turn in its order, never
-    waiting for an index no lane will deliver (RFC §13.5)."""
+    waiting for an index no lane will deliver, nor on the cursor of a room
+    created again under its id, which is another room's (RFC §13.5)."""
     store, host, registry, _ = await make_rig()
+    old = await created_at(store)
     if delivered_first:
         first = DeliveryCascade(ROOM, reentry_budget=10)
-        enqueue_exec(registry, first, "e0", 0)
+        enqueue_exec(registry, first, "e0", 0, room_created_at=old)
         await asyncio.wait_for(first.wait(), timeout=1.0)
         assert await store.delete_room(ROOM)
     cascade = DeliveryCascade(ROOM, reentry_budget=10)
     for event_id, index, after_index in entries:
-        enqueue_exec(registry, cascade, event_id, index, after_index)
+        enqueue_exec(registry, cascade, event_id, index, after_index, room_created_at=old)
+    if again_at is not None:
+        # The lane waits on the holes, then the room is created again: its
+        # cursor is another room's, whatever it reads.
+        await asyncio.sleep(0)
+        assert host.executed == []
     if not delivered_first:
         assert await store.delete_room(ROOM)
+    if again_at is not None:
+        await store.create_room(Room(id=ROOM))
+        assert await created_at(store) != old
+        if again_at >= 0:
+            assert await store.advance_delivered_index(ROOM, again_at, force=True)
     await asyncio.wait_for(cascade.wait(), timeout=1.0)
     assert host.executed == executed
     assert cascade.cancelled is None
     assert not any(name == "delivery_skipped" for name, _ in host.framework_events)
+    if again_at is not None:
+        assert await cursor(store) == again_at
+    await registry.aclose()
+
+
+async def test_a_lane_skips_no_index_of_a_room_created_again_at_its_cursor() -> None:
+    """A lane waiting on another process's index when its room is deleted
+    and created again under its id, the new room's cursor standing where
+    the lane waited, skips none of the new room's indexes past the gap
+    timeout (RMK-1707, RFC §13.5): its entry takes its turn."""
+    store, host, registry, _ = await make_rig(gap_timeout=0.05)
+    old = await created_at(store)
+    assert await store.advance_delivered_index(ROOM, 0)
+    cascade = DeliveryCascade(ROOM, reentry_budget=10)
+    enqueue_exec(registry, cascade, "e2", 2, room_created_at=old)  # index 1 is not ours
+    await asyncio.sleep(0)
+    assert host.executed == []
+    assert await store.delete_room(ROOM)
+    await store.create_room(Room(id=ROOM))
+    assert await store.advance_delivered_index(ROOM, 0)
+    await asyncio.wait_for(cascade.wait(), timeout=1.0)
+    assert host.executed == ["e2"]
+    assert not any(name == "delivery_skipped" for name, _ in host.framework_events)
+    assert await cursor(store) == 0
+    await registry.aclose()
+
+
+async def test_a_lane_owing_a_cursor_write_writes_none_to_a_room_created_again() -> None:
+    """A lane whose cursor write failed (RMK-1515) owes it while its room is
+    deleted and created again under its id: the debt was the deleted
+    room's, and the lane never writes it to the new room's cursor, though
+    that cursor stands where the write would succeed (RMK-1707, RFC
+    §13.5)."""
+    store, host, registry, _ = await make_rig()
+    old = await created_at(store)
+    advance = store.advance_delivered_index
+    failed: list[int] = []
+
+    async def failing_once(room_id: str, index: int, **kwargs: Any) -> bool:
+        if index == 1 and not failed:
+            failed.append(index)
+            raise RuntimeError("store down")
+        return await advance(room_id, index, **kwargs)
+
+    store.advance_delivered_index = failing_once  # type: ignore[method-assign]
+    cascade = DeliveryCascade(ROOM, reentry_budget=10)
+    enqueue_exec(registry, cascade, "e0", 0, room_created_at=old)
+    enqueue_exec(registry, cascade, "e1", 1, room_created_at=old)
+    await asyncio.wait_for(cascade.wait(), timeout=1.0)
+    assert (failed, await cursor(store)) == ([1], 0)
+    assert await store.delete_room(ROOM)
+    await store.create_room(Room(id=ROOM))
+    assert await created_at(store) != old
+    assert await store.advance_delivered_index(ROOM, 0)
+    later = DeliveryCascade(ROOM, reentry_budget=10)
+    enqueue_exec(registry, later, "u", None, after_index=0, room_created_at=old)
+    await asyncio.wait_for(later.wait(), timeout=1.0)
+    assert host.executed == ["e0", "e1", "u"]
+    assert await cursor(store) == 0
+    await registry.aclose()
+
+
+@pytest.mark.parametrize(
+    ("held_index", "new_indexes"),
+    [(0, []), (1, [0, 1, 2])],
+    ids=["its_first_set", "sets_sharing_its_indexes"],
+)
+async def test_the_sets_of_a_deleted_room_never_touch_the_cursor_of_one_created_again(
+    held_index: int, new_indexes: list[int]
+) -> None:
+    """A room deleted while one of its sets runs, then created again under
+    its id, is another room (RMK-1707, RFC §13.5): the deleted room's sets
+    take their turn in their lane without writing the new room's cursor,
+    and the new room's sets, which share their indexes, run in the new
+    room's lane once the deleted room's are over."""
+    store, host, registry, _ = await make_rig()
+    old = await created_at(store)
+    held, release = asyncio.Event(), asyncio.Event()
+
+    async def on_execute(plan: DeliveryPlan) -> None:
+        if plan.event.id == "held":
+            held.set()
+            await release.wait()
+
+    host.on_execute = on_execute
+    cascade = DeliveryCascade(ROOM, reentry_budget=10)
+    sets = [("zero", 0)] if held_index else []
+    sets += [("held", held_index), ("behind", held_index + 1)]
+    for event_id, index in sets:
+        enqueue_exec(registry, cascade, event_id, index, room_created_at=old)
+    await asyncio.wait_for(held.wait(), timeout=1.0)
+    assert await store.delete_room(ROOM)
+    await store.create_room(Room(id=ROOM))
+    again = await created_at(store)
+    assert again != old
+    later = DeliveryCascade(ROOM, reentry_budget=10)
+    for index in new_indexes:
+        enqueue_exec(registry, later, f"new {index}", index, room_created_at=again)
+    release.set()
+    await asyncio.wait_for(cascade.wait(), timeout=1.0)
+    await asyncio.wait_for(later.wait(), timeout=1.0)
+    assert host.executed == [event_id for event_id, _ in sets] + [f"new {i}" for i in new_indexes]
+    assert (cascade.cancelled, later.cancelled) == (None, None)
+    assert await cursor(store) == max(new_indexes, default=-1)
     await registry.aclose()
 
 
@@ -694,14 +838,15 @@ async def test_close_runs_the_entry_it_keeps_once_its_index_hole_is_filled(fille
     so the kept entry runs at once instead of being dropped, or waiting the
     whole grace for an index the close threw away (RMK-1039)."""
     store, host, registry, _ = await make_rig(close_grace=5.0)
+    old = await created_at(store)
     cascade = DeliveryCascade(ROOM, reentry_budget=10)
-    enqueue_exec(registry, cascade, "e1", 1)
+    enqueue_exec(registry, cascade, "e1", 1, room_created_at=old)
     closing = asyncio.ensure_future(registry.aclose())
     if filled == "before-seal":
-        registry.enqueue(ROOM, CursorEntry(0))
+        registry.enqueue(ROOM, CursorEntry(0, room_created_at=old))
     await asyncio.sleep(0)
     if filled == "after-seal":
-        registry.enqueue(ROOM, CursorEntry(0))
+        registry.enqueue(ROOM, CursorEntry(0, room_created_at=old))
     await asyncio.wait_for(closing, timeout=1.0)
     await asyncio.wait_for(cascade.wait(), timeout=0.5)
     assert host.executed == ["e1"]
@@ -833,7 +978,7 @@ async def test_a_cut_round_whose_claim_release_fails_runs_no_aftermath() -> None
     await asyncio.wait_for(entered.wait(), timeout=2.0)
     registry.seal("kit_closed")
     registry.cut(set())
-    lane_task = registry._lanes[ROOM].task
+    lane_task = registry.lane(ROOM).task
     assert lane_task is not None
     await asyncio.wait({lane_task}, timeout=2.0)
     await registry.aclose()

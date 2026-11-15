@@ -115,6 +115,8 @@ def _source_block_reason(binding: ChannelBinding | None) -> str | None:
 
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from roomkit.channels._ai_callbacks import (
         ThinkingHook,
         ToolUsageLoader,
@@ -474,15 +476,32 @@ class HelpersMixin:
         (greeting, child rooms, streamed segments) where the cursor already
         sits at ``index - 1``. When it does not (a lane is in flight for the
         room), the index becomes a cursor entry the lane advances at its
-        turn, in the trace of the call that committed it.
+        turn, in the trace of the call that committed it: the lane of the
+        room the store holds, a room created again under its id taking
+        another one (RFC §13.5).
         """
         if await self._store.advance_delivered_index(room_id, index):
             return
         parent_id = get_current_span()
         parent_ctx = self._telemetry.get_span_context(parent_id) if parent_id is not None else None
         self._lanes.note_committed(
-            room_id, index, parent_span_id=parent_id, parent_span_ctx=parent_ctx
+            room_id,
+            index,
+            parent_span_id=parent_id,
+            parent_span_ctx=parent_ctx,
+            room_created_at=await self._room_created_at(room_id),
         )
+
+    async def _room_created_at(self, room_id: str) -> datetime | None:
+        """The ``created_at`` of the room the store holds under *room_id*;
+        None when it holds none, or fails the read: the index then takes the
+        lane of a room it knows only by its id."""
+        try:
+            room = await self._store.get_room(room_id)
+        except Exception:
+            logger.debug("Room %s could not be read for its lane", room_id, exc_info=True)
+            return None
+        return None if room is None else room.created_at
 
     # -- Error surfacing --
 

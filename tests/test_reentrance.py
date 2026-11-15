@@ -328,10 +328,17 @@ async def _heads_up(kit: RoomKit, call: str) -> None:
         await kit.send_greeting("r1", greeting="Heads up")
 
 
+async def _lane_of(kit: RoomKit, room_id: str) -> Any:
+    """The lane of the room the store holds under *room_id*."""
+    room = await kit.store.get_room(room_id)
+    assert room is not None
+    return kit._lanes.lane(room_id, room.created_at)  # noqa: SLF001
+
+
 async def _until_held(kit: RoomKit) -> None:
     """Until r1's lane, having taken a delivery set, waits behind the hook
     that made its call: its wait on the lane's seal has begun."""
-    lane = kit._lanes.lane("r1")
+    lane = await _lane_of(kit, "r1")
     async with asyncio.timeout(1):
         while not lane._sealed._waiters:
             await asyncio.sleep(0.001)
@@ -1720,7 +1727,7 @@ class _Elsewhere(AILikeChannel):
 
 async def _settled(kit: RoomKit, room_id: str = "r1") -> None:
     """Wait until the room's lane has run everything queued."""
-    await kit._lanes.lane(room_id).drain()  # noqa: SLF001
+    await (await _lane_of(kit, room_id)).drain()
 
 
 async def _observed(kit: RoomKit, room_id: str = "r1") -> None:

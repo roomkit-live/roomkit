@@ -320,7 +320,7 @@ class LaneExecutionMixin(HelpersMixin):
                     event = await self._with_author(room_id, event, snapshot)
                 plan = plan_factory(event)
                 if plan is not None:
-                    anchor = await self._anchor_of(room_id, cascade)
+                    anchor = await self._anchor_of(room_id, cascade, plan)
                     cascade.retain()
                     self._enqueue_committed(room_id, plan, cascade, index=None, after_index=anchor)
             return None
@@ -339,13 +339,14 @@ class LaneExecutionMixin(HelpersMixin):
             await self._queue_for_discussion(discussion, committed, plan)
         return committed
 
-    async def _anchor_of(self, room_id: str, cascade: DeliveryCascade) -> int:
-        """The anchor of an index-less set placed under the room's lock: the
-        room's latest index, read from the store (RFC §13.5). A read the
-        store fails is the cascade's error, not the call's raise: the event
-        is decided, and a later failure goes on the result (RFC §10.1.1 rule
-        5). The set then waits for no other process's index, behind the sets
-        of this process placed before it."""
+    async def _anchor_of(self, room_id: str, cascade: DeliveryCascade, plan: DeliveryPlan) -> int:
+        """The anchor of *plan*'s index-less set placed under the room's
+        lock: the room's latest index, read from the store (RFC §13.5). A
+        read the store fails is the cascade's error, not the call's raise:
+        the event is decided, and a later failure goes on the result (RFC
+        §10.1.1 rule 5). The set then waits for no other process's index,
+        behind the sets of this process placed before it in its room's
+        lane."""
         try:
             room = await self._store.get_room(room_id)
         except Exception as exc:
@@ -356,7 +357,7 @@ class LaneExecutionMixin(HelpersMixin):
                 exc_info=True,
             )
             cascade.record_error(exc)
-            return self._lanes.own_anchor(room_id)
+            return self._lanes.own_anchor(room_id, plan.context.room.created_at)
         return anchor_index(None if room is None else room.latest_index)
 
     async def _queue_for_discussion(
@@ -589,9 +590,17 @@ class LaneExecutionMixin(HelpersMixin):
     ) -> None:
         from roomkit.core.lanes import ExecEntry
 
+        # The room the set was placed in, as its plan's context read it under
+        # the lock: a room created again under its id takes another lane.
         self._lanes.enqueue(
             room_id,
-            ExecEntry(plan=plan, cascade=cascade, index=index, after_index=after_index),
+            ExecEntry(
+                plan=plan,
+                cascade=cascade,
+                index=index,
+                after_index=after_index,
+                room_created_at=plan.context.room.created_at,
+            ),
         )
 
     def _enqueue_committed(
