@@ -1,0 +1,136 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "locks/the-streamed-answer-of-a-set-of-a-deleted-room-is-not-read",
+  "title": "An agent's streamed answer to a delivery set of a room deleted while the set runs is not read: nothing of it is written, and the set's call returns its result, its event delivered, with no error",
+  "rules": [
+    "§13.5 Delivery lanes across processes",
+    "§10.1 step 14",
+    "§13.6",
+    "§5.1"
+  ],
+  "notes": "One process. `held` is held at `held` in its delivery to `ws`, while the agent `ai`, whose model streams, answers it. The room is deleted. Once `held` is let go, the agent's stream is to be read on a room the store no longer holds: it is closed unread, its model never asked to generate, and `held`'s call, whose event was committed and delivered, returns its result with no error rather than raising (§13.6).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "deliver": [
+          {
+            "when": {
+              "text": "held"
+            },
+            "gate": "held"
+          }
+        ]
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "re",
+                "ply"
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "background": true,
+      "as": "held",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "held"
+        }
+      }
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "call": "store.delete_room",
+      "room_id": "room-1",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "open": "held"
+    },
+    {
+      "await": "held",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null,
+          "event": {
+            "status": "delivered"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "deliveries": {
+      "room-1": {
+        "sms": [],
+        "ws": [
+          {
+            "content": {
+              "body": "held"
+            }
+          }
+        ]
+      }
+    },
+    "framework_events": {
+      "room-1": [
+        {
+          "$unordered": [
+            {
+              "event": "delivery_succeeded",
+              "channel_id": "ws"
+            },
+            "event_processed"
+          ]
+        }
+      ]
+    },
+    "models": {
+      "ai": []
+    }
+  }
+}

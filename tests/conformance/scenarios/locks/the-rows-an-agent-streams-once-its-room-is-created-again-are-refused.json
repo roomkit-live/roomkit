@@ -1,0 +1,235 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "locks/the-rows-an-agent-streams-once-its-room-is-created-again-are-refused",
+  "title": "A room deleted while an agent streams its answer, and created again under the same id before the answer ends, takes none of the rows the stream writes after: each is refused as in a room gone, room_refused_event naming no status",
+  "rules": [
+    "§13.5 Delivery lanes across processes",
+    "§5.1",
+    "§10.1 step 14",
+    "§8.2"
+  ],
+  "notes": "As locks/the-rows-an-agent-streams-once-its-room-is-deleted-are-refused, the tool-call hook then creating the room again under the same id with `web`, `ws` and the agent itself, which may write there. The rows after it belong to the deleted room: each is refused as in a room gone (`room_refused_event`, a null status), none is written into the new room, though the agent may write there: its timeline stays empty. The deleted room's events are matched by their content: its indexes and ids are not read back once it is gone.",
+  "setup": {
+    "channels": [
+      {
+        "id": "web",
+        "type": "webhook",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "Let me ",
+                "check."
+              ],
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "lookup_order",
+                  "arguments": {
+                    "order": "42"
+                  }
+                }
+              ]
+            },
+            {
+              "deltas": [
+                "Order 42 ",
+                "shipped."
+              ]
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup_order",
+            "description": "Find an order by its number",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "order": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "order"
+              ]
+            },
+            "returns": "shipped"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "moderator",
+        "trigger": "on_tool_call",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "store.delete_room",
+                "room_id": "room-1"
+              },
+              {
+                "call": "create_room",
+                "room": {
+                  "id": "room-1"
+                }
+              },
+              {
+                "call": "attach_channel",
+                "room_id": "room-1",
+                "channel_id": "web"
+              },
+              {
+                "call": "attach_channel",
+                "room_id": "room-1",
+                "channel_id": "ws"
+              },
+              {
+                "call": "attach_channel",
+                "room_id": "room-1",
+                "channel_id": "agent",
+                "category": "intelligence"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "web",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Where is order 42?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": []
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "body": "Where is order 42?"
+            }
+          }
+        ],
+        "web": [
+          {
+            "type": "message",
+            "content": {
+              "body": "Let me check."
+            }
+          },
+          {
+            "type": "tool_call_start"
+          }
+        ]
+      }
+    },
+    "streamed": {
+      "room-1": {
+        "ws": [
+          {
+            "text": "Let me "
+          },
+          {
+            "text": "check."
+          },
+          {
+            "row": {
+              "type": "message",
+              "content": {
+                "body": "Let me check."
+              }
+            }
+          },
+          {
+            "row": {
+              "type": "tool_call_start"
+            }
+          }
+        ]
+      }
+    },
+    "framework_events": {
+      "room-1": [
+        {
+          "event": "delivery_succeeded",
+          "channel_id": "ws"
+        },
+        "event_processed",
+        "room_created",
+        {
+          "event": "room_channel_attached",
+          "channel_id": "web"
+        },
+        {
+          "event": "room_channel_attached",
+          "channel_id": "ws"
+        },
+        {
+          "event": "room_channel_attached",
+          "channel_id": "agent"
+        },
+        {
+          "event": "room_refused_event",
+          "status": null,
+          "operation": "reentry",
+          "event_type": "tool_call_end"
+        },
+        {
+          "event": "room_refused_event",
+          "status": null,
+          "operation": "reentry",
+          "event_type": "message"
+        }
+      ]
+    }
+  }
+}

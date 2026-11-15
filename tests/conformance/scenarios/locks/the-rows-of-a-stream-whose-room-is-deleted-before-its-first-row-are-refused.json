@@ -1,0 +1,126 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "locks/the-rows-of-a-stream-whose-room-is-deleted-before-its-first-row-are-refused",
+  "title": "A room deleted while its agent's stream is being read, before the stream's first row, refuses that row as it refuses any response of a room gone: room_refused_event naming no status, nothing stored, and the call raises nothing",
+  "rules": [
+    "§5.1",
+    "§13.5 Delivery lanes across processes",
+    "§10.1 step 14",
+    "§8.2"
+  ],
+  "notes": "One process. The agent's model holds its answer at `g`, its stream read on the room as it stood. The room is deleted, then `g` is let go: the stream's one row, the answer's text, finds the room gone and is refused as a response a room gone refuses (`room_refused_event`, a null status, `operation = reentry`), neither dropped without a word nor stored. `web` is delivered no row. Found by the review of lot P5-31.",
+  "setup": {
+    "channels": [
+      {
+        "id": "web",
+        "type": "webhook",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "gate": "g",
+              "deltas": [
+                "Order 42 ",
+                "shipped."
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "background": true,
+      "as": "q",
+      "message": {
+        "channel_id": "web",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Where is order 42?"
+        }
+      }
+    },
+    {
+      "wait_for": "g"
+    },
+    {
+      "call": "store.delete_room",
+      "room_id": "room-1",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "open": "g"
+    },
+    {
+      "await": "q",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "body": "Where is order 42?"
+            }
+          }
+        ],
+        "web": []
+      }
+    },
+    "framework_events": {
+      "room-1": [
+        {
+          "event": "delivery_succeeded",
+          "channel_id": "ws"
+        },
+        "event_processed",
+        {
+          "event": "room_refused_event",
+          "status": null,
+          "operation": "reentry",
+          "event_type": "message"
+        }
+      ]
+    }
+  }
+}
