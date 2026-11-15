@@ -4,14 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Container, Iterable, Mapping, Sequence
-from html import escape
+from collections.abc import Container, Iterable, Sequence
 from pathlib import Path
 
-from roomkit._text import quoted
+from roomkit.skills._manifest import render_manifest
 from roomkit.skills.errors import (
     SkillDiscoveryError,
-    SkillManifestTooLargeError,
     SkillParseError,
     SkillValidationError,
 )
@@ -33,13 +31,6 @@ from roomkit.skills.parser import (
 )
 
 logger = logging.getLogger("roomkit.skills")
-
-_QUOTED_MAX = 1100
-_MANIFEST_MAX = 65_536
-"""The most characters the skills' manifest takes, which every system
-prompt carries (RFC §24.1)."""
-"""Characters of a served skill's description, license or compatibility the
-manifest quotes: a description holds 1024 at most."""
 
 
 class SkillRegistry:
@@ -238,6 +229,10 @@ class SkillRegistry:
         copies is available and listed (a hand-picked set, say), and a name
         the source marks unavailable is not copied at all, nor asked of its
         server.
+
+        Raises:
+            SkillManifestTooLargeError: The copied manifest would exceed
+                65,536 characters, including skills made listed by dropping marks.
         """
         wanted = set(self._metadata) | set(self._unavailable) if names is None else set(names)
         copied = SkillRegistry(requires_match=self.requires_match)
@@ -262,6 +257,7 @@ class SkillRegistry:
             copied._closed_gates = {
                 name: gates for name, gates in self._closed_gates.items() if name in wanted
             }
+        copied.to_prompt_xml()
         return copied
 
     async def add_mcp_server(
@@ -306,6 +302,8 @@ class SkillRegistry:
                 another server already.
             SkillDiscoveryError: The server does not declare the extension,
                 or its listing cannot be read.
+            SkillManifestTooLargeError: The final manifest would exceed
+                65,536 characters; neither registry nor shared catalog changes.
         """
         origin, listed = await self._mcp.read_listing(
             server,
@@ -314,6 +312,7 @@ class SkillRegistry:
             approve_execution=approve_execution,
             execution_tools=execution_tools,
         )
+        self._check_served(listed, removed=self._mcp.names_of(label), label=label)
         offered = {item.name for item in listed if item.metadata is not None}
         for name in self._mcp.names_of(label):
             self._metadata.pop(name, None)
@@ -364,6 +363,8 @@ class SkillRegistry:
             SkillError: A served skill that is not found on its server, or
                 whose content does not match its entry; the message names
                 the skill only.
+            SkillManifestTooLargeError: A new unavailable reason would
+                exceed the manifest bound; its local record stays unchanged.
         """
         if self._mcp.label_of(name) is None:
             return await asyncio.to_thread(self.get_skill, name)
@@ -397,7 +398,9 @@ class SkillRegistry:
             return
         reason = self._mcp.refusal(name)
         if reason is not None:
-            self._record_served(Listed(name, None, None, reason))
+            item = Listed(name, None, None, reason)
+            self._check_served([item])
+            self._record_served(item)
             return
         loaded = self._skills.get(name)
         if isinstance(loaded, MCPSkill) and self._mcp.is_retired(loaded):
@@ -413,7 +416,9 @@ class SkillRegistry:
         """
         if self._mcp.label_of(name) not in self._owned_labels or name in self._withheld:
             raise SkillValidationError(f"Skill {name!r} not found")
-        listed = await self._mcp.fetch_unlisted(name)
+        listed = await self._mcp.read_unlisted(name)
+        self._check_served([listed], hidden={name})
+        self._mcp.record_unlisted(listed)
         self._record_served(listed)
         if listed.metadata is not None:
             self._unlisted.add(name)
@@ -510,7 +515,17 @@ class SkillRegistry:
 
         What it gated stays closed: no activation can open it any more
         (:meth:`gated_tool_names`).
+
+        Raises:
+            SkillManifestTooLargeError: The final escaped manifest would
+                exceed 65,536 characters; the registry stays unchanged.
         """
+        listed = [
+            meta
+            for key, meta in self._metadata.items()
+            if key != name and meta.name not in self._unlisted
+        ]
+        render_manifest(listed, {**self._unavailable, name: reason}, self._mcp.label_of)
         metadata = self._metadata.pop(name, None)
         if metadata is not None and metadata.gated_tool_names:
             self._closed_gates[name] = metadata.gated_tool_names
@@ -614,29 +629,13 @@ class SkillRegistry:
         answer "not found". Skills marked unlisted are simply absent —
         activatable, but not advertised. Content is HTML-escaped to
         prevent injection.
+
+        Raises:
+            SkillManifestTooLargeError: The final XML exceeds 65,536
+                characters, including after a host mutates shared metadata.
         """
         listed = [meta for meta in self._metadata.values() if meta.name not in self._unlisted]
-        return self._manifest(listed, self._unavailable)
-
-    def _manifest(self, listed: list[SkillMetadata], unavailable: Mapping[str, str]) -> str:
-        """The manifest of *listed* skills and *unavailable* ones."""
-        if not listed and not unavailable:
-            return ""
-
-        lines: list[str] = []
-        if listed:
-            lines.append("<available_skills>")
-            for meta in listed:
-                lines.extend(self._manifest_lines(meta))
-            lines.append("</available_skills>")
-        if unavailable:
-            lines.append("<unavailable_skills>")
-            for name, reason in unavailable.items():
-                lines.append(f'  <skill name="{escape(name)}">')
-                lines.append(f"    <reason>{escape(reason)}</reason>")
-                lines.append("  </skill>")
-            lines.append("</unavailable_skills>")
-        return "\n".join(lines)
+        return render_manifest(listed, self._unavailable, self._mcp.label_of)
 
     def _check_manifest(self, registered: list[SkillMetadata]) -> None:
         """Refuse to register *registered* when the manifest would pass its
@@ -655,29 +654,40 @@ class SkillRegistry:
             if meta.name in names or meta.name not in self._unlisted
         ]
         unavailable = {n: r for n, r in self._unavailable.items() if n not in names}
-        characters = len(self._manifest(listed, unavailable))
-        if characters > _MANIFEST_MAX:
-            raise SkillManifestTooLargeError(characters, _MANIFEST_MAX)
+        render_manifest(listed, unavailable, self._mcp.label_of)
 
-    def _manifest_lines(self, meta: SkillMetadata) -> list[str]:
-        """One skill of the manifest. A served skill names its origin, and what
-        its server wrote is quoted as a text from outside (RFC §6.4, §24.7)."""
-        label = self._mcp.label_of(meta.name)
-        if label is None:
-            opening = f'  <skill name="{escape(meta.name)}">'
-            fields = [meta.description, meta.license, meta.compatibility]
-        else:
-            opening = f'  <skill name="{escape(meta.name)}" origin="{escape(label)}">'
-            fields = [
-                quoted(value, _QUOTED_MAX) if value else None
-                for value in (meta.description, meta.license, meta.compatibility)
-            ]
-        lines = [opening]
-        for tag, value in zip(("description", "license", "compatibility"), fields, strict=True):
-            if value:
-                # A quote made every double quote mark a single one: element
-                # text needs no quote escaped, only its brackets and ampersands.
-                text = escape(value) if label is None else escape(value, quote=False)
-                lines.append(f"    <{tag}>{text}</{tag}>")
-        lines.append("  </skill>")
-        return lines
+    def _check_served(
+        self,
+        items: Sequence[Listed],
+        *,
+        removed: Iterable[str] = (),
+        hidden: Iterable[str] = (),
+        label: str | None = None,
+    ) -> None:
+        """Check a served projection before writing either registry or catalog.
+
+        Build it after remote I/O, using the current state and prospective
+        origin. Successful commits contain no await and keep catalog sharing.
+        """
+        removed_names = set(removed)
+        metadata = {n: m for n, m in self._metadata.items() if n not in removed_names}
+        unavailable = {n: r for n, r in self._unavailable.items() if n not in removed_names}
+        unlisted = (self._unlisted - removed_names) | set(hidden)
+        for item in items:
+            if item.metadata is not None:
+                metadata[item.name] = item.metadata
+                unavailable.pop(item.name, None)
+            else:
+                metadata.pop(item.name, None)
+                unavailable[item.name] = item.reason or "unavailable"
+        render_manifest(
+            [m for m in metadata.values() if m.name not in unlisted],
+            unavailable,
+            # Registering a label also classifies any aliased metadata name
+            # with that prefix, even when the listing does not contain it.
+            lambda name: (
+                label
+                if label is not None and name.partition(":")[0] == label
+                else self._mcp.label_of(name)
+            ),
+        )

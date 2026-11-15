@@ -240,7 +240,7 @@ class MCPSkillCatalog:
             if item.entry is not None:
                 self._entries[item.name] = item.entry
 
-    async def fetch_unlisted(self, name: str) -> Listed:
+    async def read_unlisted(self, name: str) -> Listed:
         """The entry of *name*, a skill its server's listing did not hold, asked
         of that server with ``skills/get`` (a partial listing proves no skill
         missing).
@@ -258,10 +258,13 @@ class MCPSkillCatalog:
         if served_name(label, entry) != name:
             raise SkillValidationError(f"Skill {name!r} not found")
         reason = _unavailable_reason(entry, origin)
-        listed = Listed(name, entry, None if reason else served_metadata(name, entry), reason)
-        self._labels[name] = label
-        self._entries[name] = entry
-        return listed
+        return Listed(name, entry, None if reason else served_metadata(name, entry), reason)
+
+    def record_unlisted(self, item: Listed) -> None:
+        """Install a fetched entry only after its registry projection fits."""
+        self._labels[item.name] = item.name.partition(":")[0]
+        if item.entry is not None:
+            self._entries[item.name] = item.entry
 
     async def _get(self, origin: ServedOrigin, name: str, uri: str) -> SkillEntry:
         """The server's current entry for *uri*, any failure a skill error that
