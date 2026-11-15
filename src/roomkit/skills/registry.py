@@ -442,6 +442,8 @@ class SkillRegistry:
                 or the catalog this registry shares no longer holds the
                 skill in a form this host takes: the skill is retired here
                 and must be activated again.
+            SkillManifestTooLargeError: A shared catalog refusal cannot fit
+                in this registry's manifest; no cached file is returned.
         """
         if self._mcp.label_of(name) is None:
             skill = await asyncio.to_thread(self.get_skill, name)
@@ -486,7 +488,12 @@ class SkillRegistry:
         return self._metadata.get(name)
 
     def get_skill(self, name: str) -> Skill | None:
-        """Get full skill (with instructions), loading lazily if needed."""
+        """Get full skill (with instructions), loading lazily if needed.
+
+        Raises:
+            SkillManifestTooLargeError: A shared catalog refusal cannot fit
+                in this registry's manifest; no cached skill is returned.
+        """
         if self._mcp.label_of(name) is not None:
             self._follow_catalog(name)
         if name in self._skills:
