@@ -1,0 +1,168 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skill-gating/scalar-globs-hide-and-refuse-only-matching-tools-streaming",
+  "title": "Skill globs hide matching schemas and refuse guessed calls without running their handlers (streaming)",
+  "rules": [
+    "§24.2",
+    "§24.4",
+    "§21.1"
+  ],
+  "notes": "Python: tests/test_skill_tool_gating.py::TestGlobsGate; tests/test_channels/test_ai_skill_gating.py::TestSkillGatingVisibility, TestSkillGatingExecution. The auditor proves that a refused call never reaches the host handler.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tool_search": false,
+        "audit": "tool_auditor",
+        "tools": [
+          {
+            "name": "search_web",
+            "description": "search web",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "search_web ran"
+          },
+          {
+            "name": "fetch_v1",
+            "description": "fetch v1",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "fetch_v1 ran"
+          },
+          {
+            "name": "safe_read",
+            "description": "safe read",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "safe_read ran"
+          }
+        ],
+        "skills": [
+          {
+            "name": "research",
+            "description": "research procedure",
+            "instructions": "Rules for research.",
+            "allowed_tools": "search_*, fetch_v?"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "search_web"
+                },
+                {
+                  "id": "c2",
+                  "name": "fetch_v1"
+                },
+                {
+                  "id": "c3",
+                  "name": "safe_read"
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ],
+          "streaming": true
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "safe_read": {
+              "$present": true
+            },
+            "activate_skill": {
+              "$present": true
+            },
+            "read_skill_reference": {
+              "$present": true
+            },
+            "search_web": {
+              "$absent": true
+            },
+            "fetch_v1": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "{\"error\": \"Tool 'search_web' is gated by a skill. Activate the skill first using activate_skill.\"}",
+              "is_error": true
+            },
+            {
+              "tool_call_id": "c2",
+              "content": "{\"error\": \"Tool 'fetch_v1' is gated by a skill. Activate the skill first using activate_skill.\"}",
+              "is_error": true
+            },
+            {
+              "tool_call_id": "c3",
+              "content": "safe_read ran",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    },
+    "tool_audit": {
+      "$unordered": [
+        {
+          "tool_name": "safe_read",
+          "status": "ok",
+          "result": "safe_read ran"
+        }
+      ]
+    }
+  }
+}

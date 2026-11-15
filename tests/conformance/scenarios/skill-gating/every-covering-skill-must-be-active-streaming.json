@@ -1,0 +1,222 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skill-gating/every-covering-skill-must-be-active-streaming",
+  "title": "Each inactive skill keeps its own matching tools gated (streaming)",
+  "rules": [
+    "§24.2",
+    "§24.4",
+    "§21.1"
+  ],
+  "notes": "Python: tests/test_channels/test_ai_skill_gating.py::TestMultipleSkillGating; skills/registry.py::gated_tool_names unions the patterns of all inactive skills.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tool_search": false,
+        "audit": "tool_auditor",
+        "tools": [
+          {
+            "name": "shared",
+            "description": "shared",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "shared ran"
+          }
+        ],
+        "skills": [
+          {
+            "name": "analytics",
+            "description": "analytics procedure",
+            "instructions": "Rules for analytics.",
+            "allowed_tools": [
+              "shared"
+            ]
+          },
+          {
+            "name": "export",
+            "description": "export procedure",
+            "instructions": "Rules for export.",
+            "allowed_tools": [
+              "shared"
+            ]
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "analytics"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "shared",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c3",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "export"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c4",
+                  "name": "shared",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ],
+          "streaming": true
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "shared": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "shared": {
+              "$absent": true
+            }
+          },
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": {
+                "$contains": "Rules for analytics."
+              },
+              "is_error": false
+            }
+          ]
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": {
+                "$contains": "Rules for analytics."
+              },
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c2",
+              "content": "{\"error\": \"Tool 'shared' is gated by a skill. Activate the skill first using activate_skill.\"}",
+              "is_error": true
+            }
+          ]
+        },
+        {
+          "tools": {
+            "shared": {
+              "$present": true
+            }
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": {
+                "$contains": "Rules for analytics."
+              },
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c2",
+              "content": "{\"error\": \"Tool 'shared' is gated by a skill. Activate the skill first using activate_skill.\"}",
+              "is_error": true
+            },
+            {
+              "tool_call_id": "c3",
+              "content": {
+                "$contains": "Rules for export."
+              },
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c4",
+              "content": "shared ran",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    },
+    "tool_audit": {
+      "$unordered": [
+        {
+          "tool_name": "shared",
+          "status": "ok",
+          "result": "shared ran"
+        }
+      ]
+    }
+  }
+}

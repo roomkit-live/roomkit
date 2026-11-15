@@ -1,0 +1,244 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skill-gating/activating-one-skill-leaves-the-other-gate-closed-streaming",
+  "title": "Each inactive skill keeps its own matching tools gated (streaming)",
+  "rules": [
+    "§24.2",
+    "§24.4",
+    "§21.1"
+  ],
+  "notes": "Python: tests/test_channels/test_ai_skill_gating.py::TestMultipleSkillGating; skills/registry.py::gated_tool_names unions the patterns of all inactive skills.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tool_search": false,
+        "audit": "tool_auditor",
+        "tools": [
+          {
+            "name": "export_csv",
+            "description": "export csv",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "export_csv ran"
+          },
+          {
+            "name": "run_query",
+            "description": "run query",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "run_query ran"
+          }
+        ],
+        "skills": [
+          {
+            "name": "analytics",
+            "description": "analytics procedure",
+            "instructions": "Rules for analytics.",
+            "allowed_tools": [
+              "run_query"
+            ]
+          },
+          {
+            "name": "export",
+            "description": "export procedure",
+            "instructions": "Rules for export.",
+            "allowed_tools": [
+              "export_csv"
+            ]
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "analytics"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "run_query",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c3",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "export"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c4",
+                  "name": "export_csv",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ],
+          "streaming": true
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "export_csv": {
+              "$absent": true
+            },
+            "run_query": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "run_query": {
+              "$present": true
+            },
+            "export_csv": {
+              "$absent": true
+            }
+          },
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": {
+                "$contains": "Rules for analytics."
+              },
+              "is_error": false
+            }
+          ]
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": {
+                "$contains": "Rules for analytics."
+              },
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c2",
+              "content": "run_query ran",
+              "is_error": false
+            }
+          ]
+        },
+        {
+          "tools": {
+            "export_csv": {
+              "$present": true
+            },
+            "run_query": {
+              "$present": true
+            }
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": {
+                "$contains": "Rules for analytics."
+              },
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c2",
+              "content": "run_query ran",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c3",
+              "content": {
+                "$contains": "Rules for export."
+              },
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c4",
+              "content": "export_csv ran",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    },
+    "tool_audit": {
+      "$unordered": [
+        {
+          "tool_name": "run_query",
+          "status": "ok",
+          "result": "run_query ran"
+        },
+        {
+          "tool_name": "export_csv",
+          "status": "ok",
+          "result": "export_csv ran"
+        }
+      ]
+    }
+  }
+}

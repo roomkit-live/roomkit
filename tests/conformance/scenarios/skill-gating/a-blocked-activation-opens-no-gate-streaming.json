@@ -1,0 +1,174 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skill-gating/a-blocked-activation-opens-no-gate-streaming",
+  "title": "An activation blocked by ON_TOOL_CALL leaves matching tools hidden and unserved (streaming)",
+  "rules": [
+    "§24.2",
+    "§24.4",
+    "§21.1"
+  ],
+  "notes": "Python: tests/test_toolset_edges.py::test_a_blocked_text_activation_reveals_nothing; channels/_skill_activation.py records only a served activation.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tool_search": false,
+        "audit": "tool_auditor",
+        "tools": [
+          {
+            "name": "search_web",
+            "description": "search web",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "search_web ran"
+          },
+          {
+            "name": "fetch_v1",
+            "description": "fetch v1",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "fetch_v1 ran"
+          },
+          {
+            "name": "safe_read",
+            "description": "safe read",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "safe_read ran"
+          }
+        ],
+        "skills": [
+          {
+            "name": "research",
+            "description": "research procedure",
+            "instructions": "Rules for research.",
+            "allowed_tools": [
+              "search_*",
+              "fetch_v?"
+            ]
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "research"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "search_web",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ],
+          "streaming": true
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "block",
+        "trigger": "on_tool_call",
+        "execution": "sync",
+        "reactions": [
+          {
+            "result": {
+              "action": "block",
+              "reason": "no skills here"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "search_web": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "search_web": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "{\"error\": \"no skills here\"}",
+              "is_error": true
+            },
+            {
+              "tool_call_id": "c2",
+              "content": "{\"error\": \"Tool 'search_web' is gated by a skill. Activate the skill first using activate_skill.\"}",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    },
+    "tool_audit": {
+      "$unordered": []
+    }
+  }
+}

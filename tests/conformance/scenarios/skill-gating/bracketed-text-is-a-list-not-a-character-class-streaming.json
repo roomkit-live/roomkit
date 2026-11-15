@@ -1,0 +1,167 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skill-gating/bracketed-text-is-a-list-not-a-character-class-streaming",
+  "title": "Bracketed text gates its one listed tool, never individual characters (streaming)",
+  "rules": [
+    "§24.2",
+    "§24.4",
+    "§21.1"
+  ],
+  "notes": "Python: tests/test_skill_tool_gating.py::test_a_bracketed_text_reads_as_a_list. Section 21.1 permits only * and ? wildcards; [ab] is a bracketed list containing ab, never a character class. The contradictory parenthesis in section 24.2 is tracked in lot 55.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tool_search": false,
+        "audit": "tool_auditor",
+        "tools": [
+          {
+            "name": "ab",
+            "description": "ab",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "ab ran"
+          },
+          {
+            "name": "a",
+            "description": "a",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "a ran"
+          },
+          {
+            "name": "b",
+            "description": "b",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "b ran"
+          }
+        ],
+        "skills": [
+          {
+            "name": "research",
+            "description": "research procedure",
+            "instructions": "Rules for research.",
+            "allowed_tools": "[ab]"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "ab"
+                },
+                {
+                  "id": "c2",
+                  "name": "a"
+                },
+                {
+                  "id": "c3",
+                  "name": "b"
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ],
+          "streaming": true
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "a": {
+              "$present": true
+            },
+            "b": {
+              "$present": true
+            },
+            "ab": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "{\"error\": \"Tool 'ab' is gated by a skill. Activate the skill first using activate_skill.\"}",
+              "is_error": true
+            },
+            {
+              "tool_call_id": "c2",
+              "content": "a ran",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c3",
+              "content": "b ran",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    },
+    "tool_audit": {
+      "$unordered": [
+        {
+          "tool_name": "a",
+          "status": "ok",
+          "result": "a ran"
+        },
+        {
+          "tool_name": "b",
+          "status": "ok",
+          "result": "b ran"
+        }
+      ]
+    }
+  }
+}
