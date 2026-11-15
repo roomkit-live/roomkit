@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import json
 import shutil
 import tempfile
 import weakref
@@ -863,7 +864,11 @@ def _skill_registry(skills: list[Mapping[str, Any]]) -> SkillRegistry:
     for skill in skills:
         directory = root / skill["name"]
         (directory / "references").mkdir(parents=True)
-        allowed = f"allowed_tools: {skill['allowed_tools']}\n" if "allowed_tools" in skill else ""
+        allowed = (
+            f"allowed_tools: {json.dumps(skill['allowed_tools'])}\n"
+            if "allowed_tools" in skill
+            else ""
+        )
         (directory / "SKILL.md").write_text(
             f"---\nname: {skill['name']}\ndescription: {skill['description']}\n"
             f"{allowed}---\n"
