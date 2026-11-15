@@ -70,7 +70,7 @@ from roomkit.providers.openai.config import OpenAIConfig
 from roomkit.providers.utils import _aclose_stream
 from roomkit.skills.registry import SkillRegistry
 from roomkit.tasks import CancelTaskTool, TaskStatusTool
-from roomkit.tools import current_response_metadata, current_tool_call
+from roomkit.tools import current_response_metadata, current_tool_allowed_names, current_tool_call
 from roomkit.tools.human_input import HumanInputToolHandler
 from roomkit.tools.policy import ToolPolicy
 from tests.conformance._memory import Compacted, scripted_memory
@@ -560,6 +560,9 @@ def _tool_handler(tools: list[Mapping[str, Any]], gates: Gates) -> Any:
             return str(tool["returns"])
         if "returns_json" in tool:
             return tool["returns_json"]
+        if tool.get("returns_allowed_names"):
+            names = current_tool_allowed_names()
+            return None if names is None else sorted(names)
         if "returns_parts" in tool:
             return _returned_parts(tool["returns_parts"])
         if "raises" in tool:
@@ -860,8 +863,10 @@ def _skill_registry(skills: list[Mapping[str, Any]]) -> SkillRegistry:
     for skill in skills:
         directory = root / skill["name"]
         (directory / "references").mkdir(parents=True)
+        allowed = f"allowed_tools: {skill['allowed_tools']}\n" if "allowed_tools" in skill else ""
         (directory / "SKILL.md").write_text(
-            f"---\nname: {skill['name']}\ndescription: {skill['description']}\n---\n"
+            f"---\nname: {skill['name']}\ndescription: {skill['description']}\n"
+            f"{allowed}---\n"
             f"{skill.get('instructions', '')}",
             encoding="utf-8",
         )

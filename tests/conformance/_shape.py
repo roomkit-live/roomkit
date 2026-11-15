@@ -247,6 +247,7 @@ TOOL = {
     "gate",
     "declared",
     "returns_json",
+    "returns_allowed_names",
     "writes_record",
     "writes_structured_content",
     "returns_parts",
@@ -268,7 +269,7 @@ TURN_CONFIG = {
     "skills",
 }
 TURN_TOOL = {"name", "description", "parameters"}
-SKILL = {"name", "description", "instructions", "references"}
+SKILL = {"name", "description", "instructions", "references", "allowed_tools"}
 HUMAN_TOOL = {"name", "description", "parameters"}
 POLICY = {"allow", "deny"}
 MEMORY = {
