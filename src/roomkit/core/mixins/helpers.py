@@ -96,6 +96,15 @@ def _refuses_writes(room: Room | None) -> bool:
     return room is None or room.status in _REFUSING_STATUSES
 
 
+def _unless_created_again(room: Room | None, created_at: datetime | None) -> Room | None:
+    """*room*, or ``None`` when it is another room than the one created at
+    *created_at*: one created again under its id, which a deleted room's
+    delivery set reads as gone (RFC §13.5). With no *created_at*, *room*."""
+    if room is None or created_at is None or room.created_at == created_at:
+        return room
+    return None
+
+
 def _source_block_reason(binding: ChannelBinding | None) -> str | None:
     """Why an event from a source bound by *binding* is stored BLOCKED
     (RFC §7.5 rule 2), ``None`` for a source that can write.

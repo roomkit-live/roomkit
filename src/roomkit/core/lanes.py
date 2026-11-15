@@ -436,19 +436,28 @@ class DeliveryCascade:
         """Take one reentry slot; ``False`` when the chain cap is exhausted."""
         return self.budget.take()
 
-    def add_streams(self, streams: list[StreamingResponse], *, chained: bool = False) -> None:
+    def add_streams(
+        self,
+        streams: list[StreamingResponse],
+        *,
+        chained: bool = False,
+        room_created_at: datetime | None = None,
+    ) -> None:
         """Queue streams for the caller's reader.
 
         ``chained`` marks answers to an answer, started by a pass other than
         the caller's own: read like the caller's, they count against the
         reentry budget and their record and failure are not the caller's.
-        A cancelled cascade's are dropped unread: nobody reads them.
+        ``room_created_at`` is the ``created_at`` of the room whose set
+        started them (RFC §13.5). A cancelled cascade's are dropped unread:
+        nobody reads them.
         """
         if self.cancelled is not None:
             drop_unread_streams(streams)
             return
         for stream in streams:
             stream.chained = chained
+            stream.room_created_at = room_created_at
         self.streams.extend(streams)
 
     def caller_logs_failure_of(self, stream: Any, *, rendered: bool) -> bool:

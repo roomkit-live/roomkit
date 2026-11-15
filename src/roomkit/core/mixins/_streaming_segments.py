@@ -17,7 +17,11 @@ from roomkit.core._queued_injections import QueuedInjections
 from roomkit.core.event_router import stream_record
 from roomkit.core.exceptions import KitClosedError, RoomClosedError, RoomNotFoundError
 from roomkit.core.mixins._stream_reach import reads_the_stream
-from roomkit.core.mixins.helpers import _refuses_writes, _source_block_reason
+from roomkit.core.mixins.helpers import (
+    _refuses_writes,
+    _source_block_reason,
+    _unless_created_again,
+)
 from roomkit.core.mixins.inbound_locked import _Blocked, _Refused, within_answer_scope
 from roomkit.core.mixins.lane_execution import DeliverySource
 from roomkit.core.task_utils import cancel_reason
@@ -38,6 +42,8 @@ from roomkit.models.streaming import (
 )
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from roomkit.core.event_router import StreamingResponse
     from roomkit.core.hooks import SyncPipelineResult
     from roomkit.core.lanes import DeliveryCascade
@@ -765,7 +771,9 @@ class SegmentWriter:
 class LaneSink:
     """A room's streamed rows: refused once the room refuses writes, gated on
     ``BEFORE_BROADCAST``, committed on its lane with the room's context as it
-    stands at each row's commit."""
+    stands at each row's commit. The room is the one created at
+    *room_created_at*: a room created again under its id is another room,
+    which refuses the rows as a room gone does (RFC §13.5)."""
 
     def __init__(
         self,
@@ -774,15 +782,21 @@ class LaneSink:
         room_id: str,
         context: RoomContext,
         cascade: DeliveryCascade,
+        room_created_at: datetime | None = None,
     ) -> None:
         self._kit = kit
         self._room_id = room_id
         self._context = context
         self._cascade = cascade
+        self._room_created_at = room_created_at
         # The room's status as last read, and the kit's close count then:
         # None until the first row reads it.
         self._refusing = False
         self._close_epoch: int | None = None
+        # Whether a row found the room gone: deleted, or created again under
+        # its id. It stays gone, and each next row is refused as a room gone
+        # refuses it, before its hooks (RFC §5.1, §13.5).
+        self._gone = False
         # The channels the room still lets read the stream, as the last
         # row's commit read it.
         self._readers: set[str] = set()
@@ -794,8 +808,8 @@ class LaneSink:
 
     async def commit(self, event: RoomEvent, *, exclude: set[str] | None) -> RoomEvent | None:
         self._readers = set()
-        if await self._room_refuses_writes():
-            logger.debug("Room %s refuses writes; %s not committed", self._room_id, event.type)
+        if self._gone or await self._room_refuses_writes():
+            await self._refuse(event)
             return None
         # The row's BEFORE_BROADCAST observers start once it is laned, or
         # refused (RFC §10.1).
@@ -826,9 +840,38 @@ class LaneSink:
         """
         epoch = self._kit._room_close_epoch
         if epoch != self._close_epoch:
-            self._refusing = await self._kit._room_refuses_writes(self._room_id)
+            refusing = await self._kit._room_refuses_writes(self._room_id)
+            # A room that refuses because it is gone refuses as a room gone.
+            if refusing and await self._room_gone():
+                self._gone = True
+            self._refusing = refusing
             self._close_epoch = epoch
         return self._refusing
+
+    async def _refuse(self, event: RoomEvent) -> None:
+        """Refuse *event* before its commit: as a room gone refuses it once a
+        row found the room gone, else quietly, the room's status refusing it
+        (RFC §5.1)."""
+        if self._gone:
+            await self._refuse_gone(event)
+            return
+        logger.debug("Room %s refuses writes; %s not committed", self._room_id, event.type)
+
+    async def _refuse_gone(self, event: RoomEvent) -> None:
+        """Refuse *event*, a row of a stream whose room is gone (deleted, or
+        created again under its id), as any response a room gone refuses:
+        ``room_refused_event`` naming no status, nothing written (RFC §5.1,
+        §13.5). The stream's next rows are refused alike."""
+        self._gone = True
+        await self._kit._refuse_closed_room(
+            self._room_id, status=None, operation="reentry", event=event
+        )
+
+    async def _room_gone(self) -> bool:
+        """Whether the store holds no room under the stream's id, or one
+        created again under it (RFC §13.5)."""
+        room = await self._kit._store.get_room(self._room_id)
+        return _unless_created_again(room, self._room_created_at) is None
 
     async def _gate(
         self, event: RoomEvent, observed: Observed, exclude: set[str] | None
@@ -858,7 +901,7 @@ class LaneSink:
         # The hooks ran without the room lock: a close meanwhile refuses the
         # row, which is then neither committed nor recorded as blocked.
         if await self._room_refuses_writes():
-            logger.debug("Room %s closed during the hooks; %s not committed", room_id, event.type)
+            await self._refuse(event)
             return None
         if isinstance(decision, _Refused):
             # Only a change is refused here, and a streamed row is text.
@@ -866,6 +909,11 @@ class LaneSink:
         # Its hooks may have widened it: back within the cascade's scope.
         decision = within_answer_scope(decision, scope)
         if isinstance(decision, _Blocked):
+            # A room gone stores no record of a row: its source unbound
+            # there says nothing of the agent (RFC §5.1, §13.5).
+            if await self._room_gone():
+                await self._refuse_gone(decision.event)
+                return None
             # Who still reads the stream: a hook's block withdraws no one.
             bindings = await self._kit._store.list_bindings(room_id)
             self._readers = _readers(bindings, event.source.channel_id, scope, exclude)
@@ -921,8 +969,15 @@ class LaneSink:
         scope = event.response_visibility
         async with kit._lock_manager.locked(room_id):
             context = await kit._existing_room_context(room_id)
+            # A room gone meanwhile, or created again under its id, refuses
+            # the row as it refuses any response (RFC §5.1, §13.5).
+            if context is None or (
+                _unless_created_again(context.room, self._room_created_at) is None
+            ):
+                await self._refuse_gone(event)
+                return None
             # A close that held the lock meanwhile refuses the row (RFC §5.1).
-            if context is None or _refuses_writes(context.room):
+            if _refuses_writes(context.room):
                 logger.debug("Room %s closed before %s's commit", room_id, event.type)
                 # A status changed elsewhere moves no close count: the next
                 # row's hooks are spared all the same.

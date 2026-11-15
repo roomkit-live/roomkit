@@ -14,12 +14,12 @@ from roomkit.core._failure_log import log_failure
 from roomkit.core._reentrance import delivering
 from roomkit.core._room_turns import stop_turn, until_turn_starts
 from roomkit.core.event_router import stream_turn_entry, unanswered
-from roomkit.core.exceptions import error_type_name
+from roomkit.core.exceptions import RoomNotFoundError, error_type_name
 from roomkit.core.lanes import DeliveryCascade
 from roomkit.core.mixins._response_reader import ResponseReader
 from roomkit.core.mixins._stream_reach import reads_the_stream
 from roomkit.core.mixins._streaming_segments import LaneSink, SegmentWriter, TurnScope
-from roomkit.core.mixins.helpers import HelpersMixin
+from roomkit.core.mixins.helpers import HelpersMixin, _unless_created_again
 from roomkit.core.task_utils import cancel_reason
 from roomkit.core.visibility import answer_scope, answers_reach
 from roomkit.models.enums import EventDirection
@@ -177,7 +177,13 @@ class InboundStreamingMixin(HelpersMixin):
         writer = SegmentWriter(
             self,
             sr,
-            LaneSink(self, room_id=room_id, context=context, cascade=cascade),
+            LaneSink(
+                self,
+                room_id=room_id,
+                context=context,
+                cascade=cascade,
+                room_created_at=sr.room_created_at,
+            ),
             room_id=room_id,
             chain_depth=chain_depth,
             visibility=visibility,
@@ -624,7 +630,10 @@ class InboundStreamingMixin(HelpersMixin):
         except asyncio.CancelledError:
             _record_cancelled_read(cascade, record, sr)
             raise
-        context = await self._build_context(room_id)
+        context = await self._stream_context(room_id, sr)
+        if context is None:
+            await _aclose_stream(sr.stream)
+            return None
         try:
             result = await self._handle_streaming_response(
                 router,
@@ -640,6 +649,26 @@ class InboundStreamingMixin(HelpersMixin):
         await _aclose_stream(sr.stream)
         return result
 
+    async def _stream_context(self, room_id: str, sr: StreamingResponse) -> RoomContext | None:
+        """The room's context to read *sr* on, or ``None`` when the room whose
+        delivery set started it is gone: deleted, or created again under its
+        id (RFC §13.5). The stream is then closed unread, nothing of it
+        generated nor written, and its caller's result stands (§13.6)."""
+        try:
+            context = await self._build_context(room_id)
+        except RoomNotFoundError:
+            context = None
+        if context is not None and (
+            _unless_created_again(context.room, sr.room_created_at) is not None
+        ):
+            return context
+        logger.warning(
+            "The room of %s's stream is gone: it is closed unread",
+            sr.source_channel_id,
+            extra={"room_id": room_id, "channel_id": sr.source_channel_id},
+        )
+        return None
+
     async def _admit_chained_stream(
         self, sr: StreamingResponse, cascade: DeliveryCascade, room_id: str
     ) -> bool:
@@ -653,7 +682,9 @@ class InboundStreamingMixin(HelpersMixin):
             return True
         await _aclose_stream(sr.stream)
         await self._store_past_reentry_cap(
-            room_id, unanswered(sr.trigger_event, sr.source_channel_id, sr.source_channel_type)
+            room_id,
+            unanswered(sr.trigger_event, sr.source_channel_id, sr.source_channel_type),
+            room_created_at=sr.room_created_at,
         )
         return False
 

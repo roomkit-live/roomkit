@@ -7,6 +7,7 @@ import logging
 from collections.abc import Awaitable, Callable, Mapping
 from contextlib import nullcontext
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 from roomkit.channels.base import Channel
@@ -299,6 +300,10 @@ class StreamingResponse:
     # segment's delivery rather than by the caller's own event. Set when the
     # stream joins its cascade (``DeliveryCascade.add_streams``).
     chained: bool = False
+    # The ``created_at`` of the room whose delivery set started the stream,
+    # set as ``chained`` is: a room created again under its id since is
+    # another room, which the stream finds gone (RFC §13.5).
+    room_created_at: datetime | None = None
 
 
 def stream_record(sr: StreamingResponse) -> dict[str, Any]:

@@ -35,6 +35,7 @@ from roomkit.core.mixins.helpers import (
     _RECENT_EVENTS_LIMIT,
     HelpersMixin,
     _refuses_writes,
+    _unless_created_again,
 )
 from roomkit.core.mixins.inbound_locked import (
     _Blocked,
@@ -71,6 +72,7 @@ from roomkit.turns.owner import unread_dropped_on_failure
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
+    from datetime import datetime
 
     from roomkit.channels.base import Channel
     from roomkit.core._closing import DoorRuns
@@ -808,9 +810,13 @@ class LaneExecutionMixin(HelpersMixin):
     async def _refuse_closed_rerun(self, plan: DeliveryPlan) -> bool:
         """Whether the room closed while a regeneration waited in its lane:
         it is then refused as at its start, before the agent runs (RFC
-        §13.6, §5.1), the refusal kept on the plan for its caller."""
+        §13.6, §5.1), the refusal kept on the plan for its caller. A room
+        created again under its id meanwhile is another room: the
+        regeneration's own is gone (§13.5)."""
         room_id = plan.event.room_id
-        room = await self._store.get_room(room_id)
+        room = _unless_created_again(
+            await self._store.get_room(room_id), plan.context.room.created_at
+        )
         if not _refuses_writes(room):
             return False
         plan.refusal = await self._refuse_closed_room(
@@ -940,7 +946,11 @@ class LaneExecutionMixin(HelpersMixin):
         # A stream any pass started is read by the caller (RFC §8.3); one a
         # reentry pass or a streamed segment's delivery started answers an
         # answer, and is chained.
-        cascade.add_streams(result.streaming_responses, chained=not plan.answers_caller)
+        cascade.add_streams(
+            result.streaming_responses,
+            chained=not plan.answers_caller,
+            room_created_at=plan.context.room.created_at,
+        )
 
         await self._commit_blocked_events(
             room_id,
@@ -948,6 +958,7 @@ class LaneExecutionMixin(HelpersMixin):
             plan.response_visibility,
             plan.context.bindings,
             max_chain_depth=plan.max_chain_depth,
+            room_created_at=plan.context.room.created_at,
         )
 
         if plan.fire_after_broadcast:
@@ -1136,6 +1147,7 @@ class LaneExecutionMixin(HelpersMixin):
         bindings: Iterable[ChannelBinding] = (),
         *,
         max_chain_depth: int | None = None,
+        room_created_at: datetime | None = None,
     ) -> None:
         """Commit the records a delivery set blocked (RFC §8.1, §8.3, §14.3).
 
@@ -1143,24 +1155,30 @@ class LaneExecutionMixin(HelpersMixin):
         limit and a muted source's response (§7.5 rule 2) both land here,
         whichever path broadcast the trigger, each within the answer scope
         its trigger asked for, as a response is. A room that refuses writes
-        takes neither, each refusal announced (§5.1). ``max_chain_depth`` is
-        the limit the delivery set answered to when not the kit's (a
-        discussion's turn, §19.7.5 rule 11).
+        takes neither, each refusal announced (§5.1), nor does one created
+        again under its id since the set's room, created at
+        *room_created_at* (§13.5). ``max_chain_depth`` is the limit the
+        delivery set answered to when not the kit's (a discussion's turn,
+        §19.7.5 rule 11).
         """
         for blocked in result.blocked_events:
             await self._commit_blocked_response(
                 room_id,
                 scoped(blocked, response_visibility, bindings),
                 max_chain_depth=max_chain_depth,
+                room_created_at=room_created_at,
             )
 
-    async def _refuses_record(self, room_id: str, record: RoomEvent) -> bool:
+    async def _refuses_record(
+        self, room_id: str, record: RoomEvent, room_created_at: datetime | None = None
+    ) -> bool:
         """Whether the room's status refuses *record*, stored in place of a
         turn or a response it refuses (RFC §5.1, §8.3): the refusal announced
         as any refused pass's, ``operation = reentry`` (§8.2). Call under the
         room lock, which ``close_room()`` takes, once the room's due timer
-        transitions are applied (§5.1)."""
-        room = await self._room_timers.room_due(room_id)
+        transitions are applied (§5.1). A room created again under its id
+        since the one created at *room_created_at* is gone (§13.5)."""
+        room = _unless_created_again(await self._room_timers.room_due(room_id), room_created_at)
         if not _refuses_writes(room):
             return False
         await self._refuse_closed_room(
@@ -1172,7 +1190,12 @@ class LaneExecutionMixin(HelpersMixin):
         return True
 
     async def _commit_blocked_response(
-        self, room_id: str, blocked: RoomEvent, *, max_chain_depth: int | None = None
+        self,
+        room_id: str,
+        blocked: RoomEvent,
+        *,
+        max_chain_depth: int | None = None,
+        room_created_at: datetime | None = None,
     ) -> None:
         """Commit a record the router blocked, and announce why.
 
@@ -1183,10 +1206,12 @@ class LaneExecutionMixin(HelpersMixin):
         A room that refuses writes takes none, the refusal announced (§5.1).
         One carrying ``internal``, which only the framework writes, is stored
         ``none``, as the answer it stands in for would be (§7.3, §8.5).
+        A room created again since the one created at *room_created_at*
+        takes none either (§13.5).
         """
         blocked = without_framework_mark(blocked)
         async with self._lock_manager.locked(room_id):
-            if await self._refuses_record(room_id, blocked):
+            if await self._refuses_record(room_id, blocked, room_created_at):
                 return
             blocked = await self._with_thread_root(room_id, blocked)
             blocked = await self._commit_indexed(room_id, await self._scoped_record(blocked))
@@ -1232,6 +1257,7 @@ class LaneExecutionMixin(HelpersMixin):
             plan.response_visibility,
             cascade,
             plan.context.bindings,
+            room_created_at=plan.context.room.created_at,
         )
 
     async def _commit_responses(
@@ -1241,6 +1267,8 @@ class LaneExecutionMixin(HelpersMixin):
         response_visibility: str | None,
         cascade: DeliveryCascade,
         bindings: Iterable[ChannelBinding] = (),
+        *,
+        room_created_at: datetime | None = None,
     ) -> None:
         """Give each buffered response its own commit pass, within the
         cascade's reentry budget (RFC §10.1 step 14, §8.3), within
@@ -1249,17 +1277,29 @@ class LaneExecutionMixin(HelpersMixin):
         which scopes what answers it too.
 
         The one way a buffered response reaches the timeline, whichever pass
-        produced it: a trigger's delivery set or a regeneration.
+        produced it: a trigger's delivery set or a regeneration. The room
+        that produced it is the one created at *room_created_at*: a room
+        created again under its id since is another room, and the response
+        finds its own gone (RFC §13.5).
         """
         for response in responses:
             reentry = without_framework_mark(scoped(response, response_visibility, bindings))
             if not cascade.consume_reentry_budget():
-                await self._store_past_reentry_cap(room_id, reentry)
+                await self._store_past_reentry_cap(
+                    room_id, reentry, room_created_at=room_created_at
+                )
                 continue
-            await self._run_reentry_pass(room_id, reentry, response_visibility, cascade)
+            await self._run_reentry_pass(
+                room_id, reentry, response_visibility, cascade, room_created_at=room_created_at
+            )
 
     async def _store_past_reentry_cap(
-        self, room_id: str, response: RoomEvent, *, channels: bool = True
+        self,
+        room_id: str,
+        response: RoomEvent,
+        *,
+        channels: bool = True,
+        room_created_at: datetime | None = None,
     ) -> None:
         """Store a response past the cascade's reentry budget as its BLOCKED record.
 
@@ -1275,7 +1315,7 @@ class LaneExecutionMixin(HelpersMixin):
         async with self._lock_manager.locked(room_id):
             # Same status gate as every other growth point (RFC §5.1): a
             # closed room does not take the audit record either, and says so.
-            if await self._refuses_record(room_id, response):
+            if await self._refuses_record(room_id, response, room_created_at):
                 return
             record = response.model_copy(
                 update={"status": EventStatus.BLOCKED, "blocked_by": "reentry_loop_cap"}
@@ -1297,14 +1337,19 @@ class LaneExecutionMixin(HelpersMixin):
         bindings = await self._store.list_bindings(record.room_id)
         return with_committed_visibility(record, binding, bindings)
 
-    async def _reentry_context(self, room_id: str, reentry: RoomEvent) -> RoomContext | None:
+    async def _reentry_context(
+        self, room_id: str, reentry: RoomEvent, room_created_at: datetime | None = None
+    ) -> RoomContext | None:
         """The room's context for a reentry pass, or ``None`` when the room is
-        gone, the refusal announced with a null status (RFC §8.2)."""
+        gone, the refusal announced with a null status (RFC §8.2). A room
+        created again under its id since the one created at
+        *room_created_at* is gone too (§13.5)."""
         context = await self._existing_room_context(room_id)
-        if context is None:
+        if context is None or _unless_created_again(context.room, room_created_at) is None:
             await self._refuse_closed_room(
                 room_id, status=None, operation="reentry", event=reentry
             )
+            return None
         return context
 
     async def _refuse_reentry(
@@ -1328,11 +1373,15 @@ class LaneExecutionMixin(HelpersMixin):
         )
         return True
 
-    async def _open_pass(self, room_id: str, event: RoomEvent) -> RoomContext | None:
+    async def _open_pass(
+        self, room_id: str, event: RoomEvent, room_created_at: datetime | None = None
+    ) -> RoomContext | None:
         """The room's context for a commit pass of *event*, read under the
-        lock its pass holds, or ``None`` when the room is gone or its status
-        refuses the event, the refusal announced (RFC §10.1 step 6, §5.1)."""
-        context = await self._reentry_context(room_id, event)
+        lock its pass holds, or ``None`` when the room is gone (created
+        again since the one created at *room_created_at*, §13.5) or its
+        status refuses the event, the refusal announced (RFC §10.1 step 6,
+        §5.1)."""
+        context = await self._reentry_context(room_id, event, room_created_at)
         if context is None or await self._refuse_reentry(room_id, event, context):
             return None
         return context
@@ -1343,10 +1392,12 @@ class LaneExecutionMixin(HelpersMixin):
         reentry: RoomEvent,
         response_visibility: str | None,
         cascade: DeliveryCascade,
+        *,
+        room_created_at: datetime | None = None,
     ) -> None:
-        """One response event's own commit pass, under a fresh room lock;
-        then the passes of what its hooks injected, once it released the
-        lock (RFC §9.4)."""
+        """One response event's own commit pass, under a fresh room lock, in
+        the room created at *room_created_at*; then the passes of what its
+        hooks injected, once it released the lock (RFC §9.4)."""
         queued = QueuedInjections()
         async with self._lock_manager.locked(room_id):
             with section(room_id, cascade.budget, queued):
@@ -1354,7 +1405,13 @@ class LaneExecutionMixin(HelpersMixin):
                     self._hook_engine, room_id, closing=lambda: self._closed
                 ) as observed:
                     await self._reentry_section(
-                        room_id, reentry, response_visibility, cascade, queued, observed
+                        room_id,
+                        reentry,
+                        response_visibility,
+                        cascade,
+                        queued,
+                        observed,
+                        room_created_at,
                     )
         await self._run_queued(queued, room_id, cascade)
 
@@ -1366,6 +1423,7 @@ class LaneExecutionMixin(HelpersMixin):
         cascade: DeliveryCascade,
         queued: QueuedInjections,
         observed: Observed,
+        room_created_at: datetime | None = None,
     ) -> None:
         """A response's locked section: its gates and its commit, the
         events its hooks inject queued on *queued*, what its chain owes its
@@ -1374,7 +1432,7 @@ class LaneExecutionMixin(HelpersMixin):
         # the status gate, the source's right to write and the delivery
         # plan all read this context, fresh under the lock, since
         # concurrent commits may have landed after the trigger's plan.
-        context = await self._open_pass(room_id, reentry)
+        context = await self._open_pass(room_id, reentry, room_created_at)
         if context is None:
             return
         # Its thread parent, the channel's or its trigger's, rooted (RFC
