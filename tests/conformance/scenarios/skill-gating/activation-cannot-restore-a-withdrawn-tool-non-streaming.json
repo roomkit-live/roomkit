@@ -1,0 +1,209 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skill-gating/activation-cannot-restore-a-withdrawn-tool-non-streaming",
+  "title": "A tool withdrawn by the round hook remains unavailable after its skill was activated (non-streaming)",
+  "rules": [
+    "§24.2",
+    "§24.4",
+    "§21.1"
+  ],
+  "notes": "Python: tests/test_toolset_edges.py::test_a_withdrawn_tool_leaves_the_allowed_names; channels/_ai_policy.py::_apply_tool_filters, channels/_ai_tools.py::_execute_single_tool_call. The hook withdraws search_web after safe_read, BEFORE the activation; activation opens fetch_v1 but must not restore search_web.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tool_search": false,
+        "audit": "tool_auditor",
+        "tools": [
+          {
+            "name": "search_web",
+            "description": "search web",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "search_web ran"
+          },
+          {
+            "name": "fetch_v1",
+            "description": "fetch v1",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "fetch_v1 ran"
+          },
+          {
+            "name": "safe_read",
+            "description": "safe read",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "safe_read ran"
+          }
+        ],
+        "skills": [
+          {
+            "name": "research",
+            "description": "research procedure",
+            "instructions": "Rules for research.",
+            "allowed_tools": [
+              "search_*",
+              "fetch_v?"
+            ]
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "safe_read",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "research"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c3",
+                  "name": "search_web",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ],
+          "streaming": false
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "withdraw",
+        "trigger": "after_tool_round",
+        "reactions": [
+          {
+            "result": {
+              "action": "modify",
+              "event": {
+                "withdrawn": [
+                  "search_web"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "search_web": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "search_web": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "fetch_v1": {
+              "$present": true
+            },
+            "search_web": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "safe_read ran",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c2",
+              "content": {
+                "$contains": "Rules for research."
+              },
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c3",
+              "content": "{\"error\": \"Tool 'search_web' is not available in this turn.\"}",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    },
+    "tool_audit": {
+      "$unordered": [
+        {
+          "tool_name": "safe_read",
+          "status": "ok",
+          "result": "safe_read ran"
+        }
+      ]
+    }
+  }
+}

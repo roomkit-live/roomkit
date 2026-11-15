@@ -1,0 +1,191 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skill-gating/an-activation-in-one-room-does-not-open-another-streaming",
+  "title": "Activation state is scoped to the room (streaming)",
+  "rules": [
+    "§24.2",
+    "§24.4",
+    "§21.1"
+  ],
+  "notes": "Python: channels/_ai_policy.py::_activated_skill_names and channels/_skill_activation.py::active_names; tests/test_skills_integration.py::test_gated_tools_stay_visible_on_later_turns (room-keyed record).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tool_search": false,
+        "audit": "tool_auditor",
+        "tools": [
+          {
+            "name": "search_web",
+            "description": "search web",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "search_web ran"
+          },
+          {
+            "name": "fetch_v1",
+            "description": "fetch v1",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "fetch_v1 ran"
+          },
+          {
+            "name": "safe_read",
+            "description": "safe read",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "safe_read ran"
+          }
+        ],
+        "skills": [
+          {
+            "name": "research",
+            "description": "research procedure",
+            "instructions": "Rules for research.",
+            "allowed_tools": [
+              "search_*",
+              "fetch_v?"
+            ]
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "research"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "search_web",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ],
+          "streaming": true
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "search_web": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "search_web": {
+              "$present": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "search_web": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c2",
+              "content": "{\"error\": \"Tool 'search_web' is gated by a skill. Activate the skill first using activate_skill.\"}",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    },
+    "tool_audit": {
+      "$unordered": []
+    }
+  }
+}

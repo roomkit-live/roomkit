@@ -1,0 +1,227 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skill-gating/an-ordinary-success-does-not-reference-still-gated-tools-streaming",
+  "title": "An ordinary successful call references no tool behind a closed skill gate (streaming)",
+  "rules": [
+    "§24.2",
+    "§24.4",
+    "§21.1"
+  ],
+  "notes": "Python: channels/_ai_policy.py::_reference_shown applies _apply_tool_filters; tests/test_deferred_tools.py::test_a_skill_references_the_tools_it_opens. A successful ordinary call precedes activation: it must not reveal the held gated tools or consume their later activation references.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tool_search": false,
+        "audit": "tool_auditor",
+        "tools": [
+          {
+            "name": "search_web",
+            "description": "search web",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "search_web ran"
+          },
+          {
+            "name": "fetch_v1",
+            "description": "fetch v1",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "fetch_v1 ran"
+          },
+          {
+            "name": "safe_read",
+            "description": "safe read",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "safe_read ran"
+          }
+        ],
+        "skills": [
+          {
+            "name": "research",
+            "description": "research procedure",
+            "instructions": "Rules for research.",
+            "allowed_tools": [
+              "search_*",
+              "fetch_v?"
+            ]
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "safe_read",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "research"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c3",
+                  "name": "search_web",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ],
+          "deferred_tools": true,
+          "streaming": true
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "deferred_tools": [
+            "search_web",
+            "fetch_v1"
+          ]
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "safe_read ran",
+              "is_error": false,
+              "references": []
+            }
+          ],
+          "deferred_tools": [
+            "search_web",
+            "fetch_v1"
+          ]
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "safe_read ran",
+              "is_error": false,
+              "references": []
+            },
+            {
+              "tool_call_id": "c2",
+              "content": {
+                "$contains": "Rules for research."
+              },
+              "is_error": false,
+              "references": [
+                "search_web",
+                "fetch_v1"
+              ]
+            }
+          ],
+          "deferred_tools": [
+            "search_web",
+            "fetch_v1"
+          ]
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "safe_read ran",
+              "is_error": false,
+              "references": []
+            },
+            {
+              "tool_call_id": "c2",
+              "content": {
+                "$contains": "Rules for research."
+              },
+              "is_error": false,
+              "references": [
+                "search_web",
+                "fetch_v1"
+              ]
+            },
+            {
+              "tool_call_id": "c3",
+              "content": "search_web ran",
+              "is_error": false
+            }
+          ],
+          "deferred_tools": [
+            "search_web",
+            "fetch_v1"
+          ]
+        }
+      ]
+    },
+    "tool_audit": {
+      "$unordered": [
+        {
+          "tool_name": "safe_read",
+          "status": "ok",
+          "result": "safe_read ran"
+        },
+        {
+          "tool_name": "search_web",
+          "status": "ok",
+          "result": "search_web ran"
+        }
+      ]
+    }
+  }
+}
