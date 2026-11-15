@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
+import time
 from typing import Any
 
 import pytest
@@ -905,6 +907,54 @@ class TestIdentityIdempotency:
 # -- Changeset 5: Timeout tests --
 
 
+class _HeldClock:
+    """The running loop's clock, held still by the test from :meth:`hold`
+    until :meth:`release`: real time passing does not move it, only
+    :meth:`past` does. A deadline on it is spent by what the test moves,
+    never by how the worker is scheduled."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        loop = asyncio.get_running_loop()
+        self._real = loop.time
+        self._held: float | None = None
+        self._offset = 0.0
+        monkeypatch.setattr(loop, "time", self)
+
+    def __call__(self) -> float:
+        if self._held is None:
+            return self._real() + self._offset
+        return self._held
+
+    def hold(self) -> None:
+        self._held = self()
+
+    async def first(self, *tasks: asyncio.Future[Any], within: float = 5.0) -> None:
+        """Wait for the first of *tasks*, *within* seconds of real time at
+        most: while the clock is held, a wait on a loop timer never ends."""
+        stop = threading.Event()
+        bound = asyncio.ensure_future(asyncio.to_thread(stop.wait, within))
+        try:
+            await asyncio.wait({*tasks, bound}, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            stop.set()
+            await bound
+
+    async def past(self, seconds: float) -> None:
+        """Move the held clock *seconds* on; return once the loop has run
+        what fell due by then."""
+        assert self._held is not None
+        self._held += seconds
+        loop = asyncio.get_running_loop()
+        due = loop.create_future()
+        loop.call_at(self._held, lambda: due.cancelled() or due.set_result(None))
+        await due
+
+    def release(self) -> None:
+        assert self._held is not None
+        self._offset = self._held - self._real()
+        self._held = None
+
+
 class TestTimeouts:
     async def test_identity_timeout_falls_back_to_unknown(self) -> None:
         """When identity resolution times out, fall back to UNKNOWN status."""
@@ -1057,22 +1107,29 @@ class TestTimeouts:
         assert room_after.event_count == len(timeline)
         assert room_after.latest_index == result.event.index
 
-    async def test_slow_store_commit_is_not_reported_blocked(self) -> None:
+    async def test_slow_store_commit_is_not_reported_blocked(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """A store commit slower than process_timeout MUST NOT be cancelled or
         reported blocked: the commit is not part of the cancellable pre-commit
         unit (RFC §13.6 MUST NOT)."""
         from roomkit.store.memory import InMemoryStore
 
-        class SlowCommitStore(InMemoryStore):
+        committing = asyncio.Event()
+        go = asyncio.Event()
+
+        class GatedCommitStore(InMemoryStore):
+            """Holds the message's commit until the test lets it go."""
+
             async def commit_event(
                 self, room_id: str, event: RoomEvent, **kwargs: Any
             ) -> RoomEvent:
-                await asyncio.sleep(0.1)
+                if getattr(event.content, "body", None) == "hello":
+                    committing.set()
+                    await go.wait()
                 return await super().commit_event(room_id, event, **kwargs)
 
-        # The budget runs from the call's start: 50 ms leaves room for a pause
-        # of the loop before the decision, the commit still twice as long.
-        kit = RoomKit(process_timeout=0.05, store=SlowCommitStore())
+        kit = RoomKit(process_timeout=0.05, store=GatedCommitStore())
         ch = SimpleChannel("sms1")
         kit.register_channel(ch)
         await kit.create_room(room_id="r1")
@@ -1091,7 +1148,25 @@ class TestTimeouts:
             sender_id="user1",
             content=TextContent(body="hello"),
         )
-        result = await kit.process_inbound(msg)
+        # The budget runs from the call's start (§13.6), on the loop's clock,
+        # held from there: only the commit spends it, never a pause of the
+        # worker before the commit is reached (RMK-1712).
+        clock = _HeldClock(monkeypatch)
+        clock.hold()
+        call = asyncio.create_task(kit.process_inbound(msg))
+        reached = asyncio.create_task(committing.wait())
+        await clock.first(call, reached)
+        reached.cancel()
+        assert committing.is_set(), "the call did not reach its commit"
+        # The deadline passes during the commit: on the loop's clock, which
+        # the commit runs twice the budget, and in real time, which a thread
+        # lets pass without a loop timer.
+        await clock.past(0.1)
+        await asyncio.to_thread(time.sleep, 0.05)
+        assert not call.done()
+        clock.release()
+        go.set()
+        result = await call
 
         assert timeouts == []
         assert not result.blocked
@@ -1103,6 +1178,7 @@ class TestTimeouts:
         room_after = await kit.get_room("r1")
         assert room_after is not None
         assert room_after.event_count == len(timeline)
+        await kit.close()
 
 
 # -- Changeset 6: Broadcast & side-effect error handling --
