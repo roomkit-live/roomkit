@@ -1,0 +1,243 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "locks/a-room-created-again-before-a-set-of-the-deleted-room-ends-delivers-each-message",
+  "title": "A room deleted while one of its delivery sets runs, and created again under the same id before that set ends, delivers each of its new messages: the deleted room's set leaves nothing in the new room's delivery cursor",
+  "rules": [
+    "§13.5 Delivery lanes across processes",
+    "§10.2",
+    "§5.1"
+  ],
+  "notes": "One process. `zero` is delivered; `held` is held at `held` in its delivery while the room is deleted, then created again under the same id, its bindings attached again, its indexes starting again from the first. Only then is `held` let go: its set ends in the new room, whose latest index is below the one `held` took. Each new message is delivered and moves the new room's cursor: the index `held` took, which a new message takes again, is never read as delivered, nor as skipped by another process. The new room's messages are sent once `held` is over: a message committed in the new room while a set of the deleted room still runs is another case. The gap timeout is the implementation's default, far above the run: nothing is skipped.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "deliver": [
+          {
+            "when": {
+              "text": "held"
+            },
+            "gate": "held"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "zero"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "background": true,
+      "as": "held",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "held"
+        }
+      }
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "call": "store.delete_room",
+      "room_id": "room-1",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "create_room",
+      "room": {
+        "id": "room-1"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "sms"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "ws"
+    },
+    {
+      "open": "held"
+    },
+    {
+      "await": "held",
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "again 0"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 0
+          },
+          "cancellation_reason": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "again 1"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 1
+          },
+          "cancellation_reason": null
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "again 2"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 2
+          },
+          "cancellation_reason": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "content": {
+              "body": "zero"
+            }
+          },
+          {
+            "content": {
+              "body": "held"
+            }
+          },
+          {
+            "content": {
+              "body": "again 0"
+            }
+          },
+          {
+            "content": {
+              "body": "again 1"
+            }
+          },
+          {
+            "content": {
+              "body": "again 2"
+            }
+          }
+        ]
+      }
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "again 0"
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "again 1"
+          },
+          "status": "delivered"
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "again 2"
+          },
+          "status": "delivered"
+        }
+      ]
+    },
+    "rooms": {
+      "room-1": {
+        "latest_index": 2,
+        "delivered_index": 2
+      }
+    }
+  }
+}
