@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, tzinfo
 from typing import Any
 
 import pytest
@@ -68,6 +68,31 @@ async def _kit(
 async def _verified(kit: RoomKit, identity_id: str = "id-alice") -> Verification:
     request, secret = await kit.request_verification(identity_id, room_id="r1", channel_id="sms")
     return await kit.complete_verification(request.id, secret)
+
+
+class _VerificationClock:
+    """Only verification's clock and timer waits move when the test advances them."""
+
+    def __init__(self) -> None:
+        self._now = datetime.now(UTC)
+        self._changed = asyncio.Event()
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(asyncio, name)
+
+    def now(self, tz: tzinfo) -> datetime:
+        return self._now.astimezone(tz)
+
+    async def sleep(self, delay: float) -> None:
+        deadline = self._now + timedelta(seconds=delay)
+        while self._now < deadline:
+            await self._changed.wait()
+
+    def past(self, deadline: datetime | None) -> None:
+        assert deadline is not None and deadline >= self._now
+        self._now = deadline + timedelta(microseconds=1)
+        self._changed.set()
+        self._changed = asyncio.Event()
 
 
 async def test_a_completion_fires_its_hook_in_the_request_room() -> None:
@@ -136,23 +161,35 @@ async def test_a_request_that_fails_while_verified_ends_the_verification() -> No
     await kit.close()
 
 
-async def test_a_verification_that_outlived_an_unanswered_request_still_ends() -> None:
+async def test_a_verification_that_outlived_an_unanswered_request_still_ends(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Asked again, the person did not answer: the request's end is not the
     verification's, which is still announced when its own time runs out."""
+    clock = _VerificationClock()
+    monkeypatch.setattr(verification_mixin, "datetime", clock)
+    monkeypatch.setattr(verification_mixin, "asyncio", clock)
     kit, fired = await _kit(ttl=0.2, request_ttl=0.05)
-    await _verified(kit)
-    again, secret = await kit.request_verification("id-alice", room_id="r1", channel_id="sms")
-    await _past(again.expires_at)
-    with pytest.raises(VerificationRefusedError):
-        await kit.complete_verification(again.id, secret)  # too late: the request ends
+    try:
+        verified = await _verified(kit)
+        again, secret = await kit.request_verification("id-alice", room_id="r1", channel_id="sms")
 
-    await _eventually(
-        lambda: len([t for t, _ in fired if t == HookTrigger.ON_VERIFICATION_ENDED]) == 2,
-        timeout=3.0,
-    )
-    ended = [(d["reason"], d["ended"]) for t, d in fired if t == HookTrigger.ON_VERIFICATION_ENDED]
-    assert ended == [("expired", "request"), ("expired", "verification")]
-    await kit.close()
+        clock.past(again.expires_at)
+        await _eventually(lambda: _ends(fired))  # the timer ends it without a late reply
+        assert _ends(fired) == [("expired", "request")]
+        state = await kit.verification_of("id-alice")
+        assert state.status == VerificationStatus.VERIFIED and state.request_id is None
+        assert state.expires_at == verified.expires_at
+        with pytest.raises(VerificationRefusedError, match="expired"):
+            await kit.complete_verification(again.id, secret)
+
+        clock.past(verified.expires_at)
+        await _eventually(lambda: len(_ends(fired)) == 2, timeout=3.0)
+        assert _ends(fired) == [("expired", "request"), ("expired", "verification")]
+        stored = await kit.store.get_verification("id-alice")
+        assert stored is not None and stored.status == VerificationStatus.EXPIRED
+    finally:
+        await kit.close()
 
 
 async def test_a_starting_kit_rearms_the_timers_of_verifications_in_force() -> None:
