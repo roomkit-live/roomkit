@@ -24,6 +24,7 @@ from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import ChannelCategory, EventType, RoomStatus
 from roomkit.models.event import EventSource, RoomEvent, TextContent
+from roomkit.models.framework_event import FrameworkEvent
 from roomkit.models.store_filter import EventFilter
 from roomkit.providers.ai.base import AIResponse, AITool, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
@@ -83,6 +84,18 @@ def _count_status_reads(kit: RoomKit) -> list[str]:
 
     kit._room_refuses_writes = counting  # type: ignore[method-assign]
     return reads
+
+
+def _refusals(kit: RoomKit) -> list[tuple[str | None, str, str]]:
+    """The ``room_refused_event`` the kit announces, as (status, operation,
+    event type)."""
+    refused: list[tuple[str | None, str, str]] = []
+
+    @kit.on("room_refused_event")
+    async def on_refused(fe: FrameworkEvent) -> None:
+        refused.append((fe.data["status"], fe.data["operation"], fe.data["event_type"]))
+
+    return refused
 
 
 async def _ai_rows(kit: RoomKit) -> list[EventType]:
@@ -157,10 +170,16 @@ async def _time_out(kit: RoomKit) -> None:
     await kit.check_room_timers("r1")
 
 
-@pytest.mark.parametrize("closer", [_close, _archive, _time_out], ids=lambda c: c.__name__)
-async def test_every_close_refuses_the_rows_after_it(closer: Closer) -> None:
-    """Refused, not recorded as blocked either, whatever a hook would say."""
+@pytest.mark.parametrize(
+    ("closer", "status"),
+    [(_close, "closed"), (_archive, "archived"), (_time_out, "closed")],
+    ids=["close", "archive", "time_out"],
+)
+async def test_every_close_refuses_the_rows_after_it(closer: Closer, status: str) -> None:
+    """Refused, not recorded as blocked either, whatever a hook would say,
+    and announced with the status that refused them (RFC §5.1)."""
     kit = await _room(rounds=1, during_tool=closer)
+    refused = _refusals(kit)
 
     @kit.hook(HookTrigger.BEFORE_BROADCAST, name="block_ends")
     async def block_ends(event: RoomEvent, ctx: RoomContext) -> HookResult:
@@ -173,11 +192,16 @@ async def test_every_close_refuses_the_rows_after_it(closer: Closer) -> None:
     rows = await _ai_rows(kit)
     assert EventType.TOOL_CALL_START in rows
     assert EventType.TOOL_CALL_END not in rows
+    assert refused == [
+        (status, "reentry", EventType.TOOL_CALL_END),
+        (status, "reentry", EventType.MESSAGE),
+    ]
     await kit.close()
 
 
 async def test_a_close_during_the_hooks_refuses_the_row() -> None:
     kit = await _room(rounds=1)
+    refused = _refusals(kit)
 
     @kit.hook(HookTrigger.BEFORE_BROADCAST, name="closer")
     async def closer(event: RoomEvent, ctx: RoomContext) -> HookResult:
@@ -188,6 +212,11 @@ async def test_a_close_during_the_hooks_refuses_the_row() -> None:
     await _say(kit)
 
     assert EventType.TOOL_CALL_START not in await _ai_rows(kit)
+    assert refused == [
+        ("closed", "reentry", EventType.TOOL_CALL_START),
+        ("closed", "reentry", EventType.TOOL_CALL_END),
+        ("closed", "reentry", EventType.MESSAGE),
+    ]
     await kit.close()
 
 

@@ -26,7 +26,7 @@ from roomkit.core.mixins.inbound_locked import _Blocked, _Refused, within_answer
 from roomkit.core.mixins.lane_execution import DeliverySource
 from roomkit.core.task_utils import cancel_reason
 from roomkit.core.visibility import answer_scope, answers_reach, with_committed_visibility
-from roomkit.models.enums import EventDirection, EventStatus, EventType, Visibility
+from roomkit.models.enums import EventDirection, EventStatus, EventType, RoomStatus, Visibility
 from roomkit.models.event import EventSource, RoomEvent, TextContent, ToolCallContent
 from roomkit.models.response_metadata import recorded_turn_end
 from roomkit.models.streaming import (
@@ -795,6 +795,9 @@ class LaneSink:
         # None until the first row reads it.
         self._refusing = False
         self._close_epoch: int | None = None
+        # The status of a room still there, read again once it refused: the
+        # status a refusal names.
+        self._refused_status: RoomStatus | None = None
         # Whether a row found the room gone: deleted, or created again under
         # its id. It stays gone, and each row is refused as a room gone
         # refuses it, before its hooks (RFC §5.1, §13.5).
@@ -843,21 +846,35 @@ class LaneSink:
         epoch = self._kit._room_close_epoch
         if epoch != self._close_epoch:
             refusing = await self._kit._room_refuses_writes(self._room_id)
-            # A room that refuses because it is gone refuses as a room gone.
-            if refusing and await self._room_gone():
-                self._gone = True
-            self._refusing = refusing
+            self._refusing = refusing and await self._still_refuses()
             self._close_epoch = epoch
         return self._refusing
 
+    async def _still_refuses(self) -> bool:
+        """Whether the room, read again once it refused, still refuses the
+        row: gone (deleted, or created again under its id), refusing it as a
+        room gone, or in the status it now holds, which the refusal names
+        (RFC §5.1, §13.5)."""
+        room = _unless_created_again(
+            await self._kit._store.get_room(self._room_id), self._room_created_at
+        )
+        if room is None:
+            self._gone = True
+            return True
+        self._refused_status = room.status
+        return _refuses_writes(room)
+
     async def _refuse(self, event: RoomEvent) -> None:
-        """Refuse *event* before its commit: as a room gone refuses it once a
-        row found the room gone, else quietly, the room's status refusing it
-        (RFC §5.1)."""
+        """Refuse *event*, nothing written, as the room refuses any response
+        re-entering it: as a room gone once a row found it gone, else with
+        ``room_refused_event`` naming the status that refused it (RFC §5.1,
+        §13.5)."""
         if self._gone:
             await self._refuse_gone(event)
             return
-        logger.debug("Room %s refuses writes; %s not committed", self._room_id, event.type)
+        await self._kit._refuse_closed_room(
+            self._room_id, status=self._refused_status, operation="reentry", event=event
+        )
 
     async def _refuse_gone(self, event: RoomEvent) -> None:
         """Refuse *event*, a row of a stream whose room is gone (deleted, or
@@ -989,10 +1006,11 @@ class LaneSink:
                 return None
             # A close that held the lock meanwhile refuses the row (RFC §5.1).
             if _refuses_writes(context.room):
-                logger.debug("Room %s closed before %s's commit", room_id, event.type)
                 # A status changed elsewhere moves no close count: the next
                 # row's hooks are spared all the same.
                 self._refusing = True
+                self._refused_status = context.room.status
+                await self._refuse(event)
                 return None
             bindings = context.bindings
             source = context.get_binding(event.source.channel_id)
