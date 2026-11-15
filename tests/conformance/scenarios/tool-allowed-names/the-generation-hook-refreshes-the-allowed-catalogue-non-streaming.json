@@ -1,0 +1,148 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "rules": [
+    "§6.4",
+    "§21.4"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tool_search": false,
+        "tools": [
+          {
+            "name": "inspect",
+            "description": "inspect",
+            "parameters": {
+              "type": "object"
+            },
+            "returns_allowed_names": true
+          },
+          {
+            "name": "book",
+            "description": "book",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "ok"
+          },
+          {
+            "name": "added",
+            "description": "added",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "ok",
+            "declared": false
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "inspect"
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ],
+          "streaming": false
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "replace",
+        "trigger": "before_ai_generation",
+        "reactions": [
+          {
+            "result": {
+              "action": "modify",
+              "event": {
+                "tools": [
+                  "inspect"
+                ],
+                "define": [
+                  {
+                    "name": "added",
+                    "description": "added",
+                    "parameters": {
+                      "type": "object"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "book": {
+              "$absent": true
+            },
+            "added": 1
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "[\"added\", \"inspect\", \"read_stored_result\"]",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "notes": "Python: _ai_generation._adopt_hook_toolset; existing shared scenario tools/a-tool-the-generation-hook-withdraws-is-refused. The reader adopts additions and withdrawals for the same turn.",
+  "id": "tool-allowed-names/the-generation-hook-refreshes-the-allowed-catalogue-non-streaming",
+  "title": "The generation hook refreshes the allowed catalogue (non-streaming)"
+}

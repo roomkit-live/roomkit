@@ -1,0 +1,187 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "rules": [
+    "§6.4",
+    "§21.4"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tool_search": false,
+        "tools": [
+          {
+            "name": "inspect",
+            "description": "inspect",
+            "parameters": {
+              "type": "object"
+            },
+            "returns_allowed_names": true
+          },
+          {
+            "name": "gmail",
+            "description": "gmail",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "ok",
+            "declared": false
+          },
+          {
+            "name": "outlook",
+            "description": "outlook",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "ok",
+            "declared": false
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "inspect"
+                }
+              ]
+            },
+            {
+              "text": "done"
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "inspect"
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ],
+          "streaming": false
+        },
+        "config_provider": {
+          "r1": {
+            "tools": [
+              {
+                "name": "gmail",
+                "description": "gmail",
+                "parameters": {
+                  "type": "object"
+                }
+              }
+            ]
+          },
+          "r2": {
+            "tools": [
+              {
+                "name": "outlook",
+                "description": "outlook",
+                "parameters": {
+                  "type": "object"
+                }
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "[\"gmail\", \"inspect\", \"read_stored_result\"]",
+              "is_error": false
+            }
+          ]
+        },
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c2",
+              "content": "[\"inspect\", \"outlook\", \"read_stored_result\"]",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "notes": "Python: tests/test_channels/test_turn_config.py::TestConfigProvider::test_provider_overrides_prompt_and_tools; the real reader sees the fresh per-room resolved catalogue, not the shared channel definition.",
+  "id": "tool-allowed-names/a-shared-channel-reads-each-turns-configured-catalogue-non-streaming",
+  "title": "A shared channel reads each turns configured catalogue (non-streaming)"
+}

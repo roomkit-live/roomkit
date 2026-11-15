@@ -1,0 +1,114 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "rules": [
+    "§6.4",
+    "§21.4"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tool_search": true,
+        "tools": [
+          {
+            "name": "inspect",
+            "description": "inspect",
+            "parameters": {
+              "type": "object"
+            },
+            "returns_allowed_names": true
+          },
+          {
+            "name": "book",
+            "description": "book",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "ok"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "inspect"
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ],
+          "streaming": true
+        },
+        "tool_search_pinned": [
+          "inspect"
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "book": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "[\"book\", \"find_tools\", \"inspect\", \"list_tools\", \"read_stored_result\"]",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "notes": "Python: current_tool_allowed_names reads all_context_tools before Tool Search collapses the declaration (_ai_context._stamp_toolset); test_toolset_edges.py tests the round reread.",
+  "id": "tool-allowed-names/tool-search-hides-definitions-without-narrowing-allowed-names-streaming",
+  "title": "Tool search hides definitions without narrowing allowed names (streaming)"
+}

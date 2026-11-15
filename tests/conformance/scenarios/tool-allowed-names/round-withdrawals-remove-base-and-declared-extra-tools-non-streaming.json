@@ -1,0 +1,138 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "rules": [
+    "§6.4",
+    "§21.4"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tool_search": false,
+        "tools": [
+          {
+            "name": "inspect",
+            "description": "inspect",
+            "parameters": {
+              "type": "object"
+            },
+            "returns_allowed_names": true
+          },
+          {
+            "name": "book",
+            "description": "book",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "ok"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "inspect"
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "inspect"
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ],
+          "streaming": false
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "withdraw",
+        "trigger": "after_tool_round",
+        "reactions": [
+          {
+            "result": {
+              "action": "modify",
+              "event": {
+                "withdrawn": [
+                  "book",
+                  "read_stored_result"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "[\"book\", \"inspect\", \"read_stored_result\"]",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c2",
+              "content": "[\"inspect\"]",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "notes": "Python: tests/test_toolset_edges.py::test_a_withdrawn_tool_leaves_the_allowed_names; tests/test_channels/test_allowed_names_lifetime.py::test_preparation_keeps_its_base_but_shares_round_declarations.",
+  "id": "tool-allowed-names/round-withdrawals-remove-base-and-declared-extra-tools-non-streaming",
+  "title": "Round withdrawals remove base and declared extra tools (non-streaming)"
+}
