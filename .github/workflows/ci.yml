@@ -199,8 +199,13 @@ jobs:
       - name: Install dependencies
         run: uv sync --extra dev
 
+      # The suite with the kit's turns in its own process runs only here
+      # (the integration job's Redis pass carries them across Redis): the
+      # JUnit report keeps one result per test, per Python version.
       - name: Run tests
-        run: uv run pytest -n auto --dist worksteal --cov --cov-report=xml
+        run: >-
+          uv run pytest -n auto --dist worksteal --cov --cov-report=xml
+          --junitxml=test-results/test-${{ matrix.python-version }}.xml
 
       - name: Upload coverage
         if: matrix.python-version == '3.12'
@@ -208,6 +213,14 @@ jobs:
         with:
           name: coverage-report
           path: coverage.xml
+
+      # Uploaded even when a test failed, as the integration job does.
+      - name: Upload the JUnit report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-junit-${{ matrix.python-version }}
+          path: test-results/
 
   # The lock pins the newest agent-client-protocol, so the `test` job never
   # runs ACPChannel on the oldest release the `acp` extra accepts. Keep the
