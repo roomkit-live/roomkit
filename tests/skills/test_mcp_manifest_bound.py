@@ -39,6 +39,16 @@ async def test_a_new_label_counts_aliased_names_outside_its_listing(tmp_path: Pa
     assert registry.get_metadata("local") is skill.metadata
 
 
+async def test_a_local_name_equal_to_a_new_label_stays_local_at_the_bound(tmp_path: Path) -> None:
+    registry = SkillRegistry()
+    registry.add(Skill(SkillMetadata(name="hf", description="small"), "body", tmp_path))
+    _fill(registry)
+    before = registry.to_prompt_xml()
+    assert await registry.add_mcp_server(FakeSkillServer(), "hf") == 0
+    assert registry.to_prompt_xml() == before
+    assert registry.origin("hf") is None
+
+
 @pytest.mark.parametrize("kind", ["available", "dynamic", "malformed"])
 async def test_oversized_first_listing_registers_neither_skills_nor_server(kind: str) -> None:
     server = FakeSkillServer([_skill(f"skill-{i}", dynamic=kind == "dynamic") for i in range(800)])

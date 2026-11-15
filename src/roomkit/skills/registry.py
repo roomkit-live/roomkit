@@ -687,7 +687,7 @@ class SkillRegistry:
             # with that prefix, even when the listing does not contain it.
             lambda name: (
                 label
-                if label is not None and name.partition(":")[0] == label
+                if label is not None and name.startswith(f"{label}:")
                 else self._mcp.label_of(name)
             ),
         )
