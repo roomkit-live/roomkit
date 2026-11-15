@@ -1391,19 +1391,27 @@ class TestARoomBeingCreated:
 
     @pytest.mark.wallclock
     async def test_a_deadline_passed_in_the_second_room_s_hooks_opens_no_third(self) -> None:
-        """Every new room a hook binds to Bob; the second one's hooks run past
-        the call's process_timeout: the message is refused process_timeout,
-        no third room opened."""
-        kit = RoomKit(inbound_router=_NewIds(), process_timeout=0.04)
+        """Every new room a hook binds to Bob; the second one's hook waits
+        for nothing until its own timeout cuts it: the call's process_timeout
+        passes in the second room's hooks, the message is refused
+        process_timeout, no third room opened."""
+        # The deadline runs from the call's start, so the first room's path
+        # spends it too: about 1 ms, but a loaded runner's pause once spent
+        # all of a 40 ms budget there (RMK-1705).
+        budget = 0.2
+        kit = RoomKit(inbound_router=_NewIds(), process_timeout=budget)
         kit.register_channel(SMSChannel("sms", provider=MockSMSProvider()))
         rooms: list[str] = []
+        never = asyncio.Event()
 
-        @kit.hook(HookTrigger.ON_ROOM_CREATED)
+        # Its timeout runs from the hook's start, after the call's: the
+        # call's deadline has passed once the hook is cut.
+        @kit.hook(HookTrigger.ON_ROOM_CREATED, timeout=budget)
         async def bind_to_bob(event: Any, ctx: RoomContext) -> None:
             rooms.append(ctx.room.id)
             await kit.attach_channel(ctx.room.id, "sms", metadata={"phone_number": BOB})
             if len(rooms) == 2:
-                await asyncio.sleep(0.08)
+                await never.wait()
 
         result = await kit.process_inbound(
             InboundMessage(channel_id="sms", sender_id=ALICE, content=TextContent(body="hi"))
