@@ -856,6 +856,7 @@ class LaneExecutionMixin(HelpersMixin):
                 list(plan.hook_observations),
                 plan.event,
                 plan.context,
+                room_created_at=plan.context.room.created_at,
             )
 
     async def _record_failed_deliveries(
@@ -926,6 +927,7 @@ class LaneExecutionMixin(HelpersMixin):
                 event,
                 context,
                 result.metadata_updates,
+                room_created_at=context.room.created_at,
             )
             if plan.fire_after_broadcast:
                 await self._after_broadcast(cascade, event, context, processed=False)
@@ -969,6 +971,7 @@ class LaneExecutionMixin(HelpersMixin):
                 event,
                 context,
                 result.metadata_updates,
+                room_created_at=context.room.created_at,
             )
         if plan.fire_after_broadcast and not plan.rerun:
             await self._after_broadcast(cascade, event, context, processed=plan.emit_processed)

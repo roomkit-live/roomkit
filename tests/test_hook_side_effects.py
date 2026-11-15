@@ -937,3 +937,107 @@ class TestARoundThatFailsMidway:
             ],
         )
         assert (len(ws1.delivered), skipped, cursor) == (3, [], room.latest_index)
+
+
+class _GatedUpdater(GatedChannel):
+    """A gated transport whose delivery returns the room metadata update
+    ``stale``."""
+
+    async def deliver(
+        self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
+    ) -> ChannelOutput:
+        await super().deliver(event, binding, context)
+        return ChannelOutput(metadata_updates={"stale": True})
+
+
+async def _kit_with_a_held_set() -> tuple[RoomKit, _GatedUpdater, list[str]]:
+    """A kit with room r1 binding sms1 and ws1, whose delivery of "held" waits
+    for the test and returns ``stale``; a BEFORE_BROADCAST hook gives task t1
+    and observation o1; the tasks whose ON_TASK_CREATED fired are noted."""
+    kit = RoomKit()
+    ws1 = _GatedUpdater("ws1", held="held")
+    kit.register_channel(SimpleChannel("sms1"))
+    kit.register_channel(ws1)
+    await kit.create_room(room_id="r1")
+    await kit.attach_channel("r1", "sms1")
+    await kit.attach_channel("r1", "ws1")
+
+    @kit.hook(HookTrigger.BEFORE_BROADCAST, name="triage")
+    async def triage(event: RoomEvent, ctx: RoomContext) -> HookResult:
+        task = Task(id="t1", room_id="r1", title="Stale")
+        observation = Observation(id="o1", room_id="r1", channel_id="sms1", content="stale")
+        return HookResult(action="allow", tasks=[task], observations=[observation])
+
+    created: list[str] = []
+
+    @kit.hook(HookTrigger.ON_TASK_CREATED, execution=HookExecution.ASYNC, name="follow_up")
+    async def follow_up(event: RoomEvent, ctx: RoomContext) -> None:
+        created.append(event.metadata["task_id"])
+
+    return kit, ws1, created
+
+
+_HELD = InboundMessage(channel_id="sms1", sender_id="user1", content=TextContent(body="held"))
+
+
+class TestGoneRoomSideEffects:
+    @pytest.mark.parametrize("again", [False, True], ids=["deleted", "created-again"])
+    async def test_a_set_whose_room_is_gone_writes_no_side_effects_and_says_why(
+        self, caplog: pytest.LogCaptureFixture, again: bool
+    ) -> None:
+        """RFC §13.5, §10.1 step 15 (RMK-1710): a room deleted while one of
+        its sets runs, created again under its id or not, takes none of the
+        set's side effects, and no ON_TASK_CREATED fires; one line says why.
+        The shared scenarios locks/the-side-effects-of-a-set-... pin what is
+        written; this pins the line."""
+        kit, ws1, created = await _kit_with_a_held_set()
+        with caplog.at_level(logging.INFO, logger="roomkit"):
+            call = asyncio.create_task(kit.process_inbound(_HELD))
+            await asyncio.wait_for(ws1.reached.wait(), 5)
+            await kit.store.delete_room("r1")
+            if again:
+                await kit.create_room(room_id="r1")
+            ws1.opened.set()
+            result = await asyncio.wait_for(call, 5)
+            await kit.hook_engine.drain_observers()
+        room = await kit.store.get_room("r1")
+        tasks = await kit.store.list_tasks("r1")
+        observations = await kit.store.list_observations("r1")
+        await kit.close()
+
+        gone = [r.getMessage() for r in caplog.records if "is gone" in r.getMessage()]
+        assert (result.error, tasks, observations, created) == (None, [], [], [])
+        assert (room is not None, room is not None and "stale" in room.metadata) == (again, False)
+        assert gone == [
+            "Room r1 is gone, deleted or created again: its delivery set's 1 task(s), "
+            "1 observation(s) and metadata updates ['stale'] are not written"
+        ]
+
+    async def test_a_set_whose_room_read_fails_still_writes_its_side_effects(
+        self, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """RFC §10.1 step 15, §15.2 (RMK-1710): a set whose room cannot be read
+        before its side effects writes them all the same, the failure an
+        ERROR line, and the call goes on. (The metadata write, which the
+        store's own read of the room fails here, is left out.)"""
+        kit, ws1, created = await _kit_with_a_held_set()
+        get_room = kit.store.get_room
+
+        async def read_room(room_id: str) -> Any:
+            if ws1.opened.is_set():
+                raise RuntimeError("store down")
+            return await get_room(room_id)
+
+        monkeypatch.setattr(kit.store, "get_room", read_room)
+        with caplog.at_level(logging.ERROR):
+            call = asyncio.create_task(kit.process_inbound(_HELD))
+            await asyncio.wait_for(ws1.reached.wait(), 5)
+            ws1.opened.set()
+            result = await asyncio.wait_for(call, 5)
+            await kit.hook_engine.drain_observers()
+        tasks = [task.id for task in await kit.store.list_tasks("r1")]
+        observations = [o.id for o in await kit.store.list_observations("r1")]
+        await kit.close()
+
+        assert (result.error, tasks, observations, created) == (None, ["t1"], ["o1"], ["t1"])
+        assert "Could not read room r1 before writing its side effects" in _error_lines(caplog)

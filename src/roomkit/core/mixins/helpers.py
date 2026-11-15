@@ -758,10 +758,18 @@ class HelpersMixin:
         event: RoomEvent,
         context: RoomContext,
         metadata_updates: Mapping[str, Any] | None = None,
+        *,
+        room_created_at: datetime | None = None,
     ) -> None:
         """Persist tasks and observations, write the room metadata updates
         the channels returned (RFC §10.1 step 15), start the ON_TASK_CREATED
-        hooks of the new tasks (§9.3)."""
+        hooks of the new tasks (§9.3). A delivery set's, from the room
+        created at *room_created_at*, writes none of them once that room is
+        gone: deleted, or created again under its id (§13.5)."""
+        if room_created_at is not None and await self._side_effects_room_gone(
+            room_id, room_created_at, tasks, observations, metadata_updates
+        ):
+            return
         persisted_tasks: list[Task] = []
         for task in tasks:
             try:
@@ -797,6 +805,43 @@ class HelpersMixin:
             self._hook_engine._start_async_hooks(
                 room_id, HookTrigger.ON_TASK_CREATED, task_event, context
             )
+
+    async def _side_effects_room_gone(
+        self,
+        room_id: str,
+        room_created_at: datetime,
+        tasks: list[Task],
+        observations: list[Observation],
+        metadata_updates: Mapping[str, Any] | None,
+    ) -> bool:
+        """Whether a delivery set's side effects find the room created at
+        *room_created_at* gone, deleted or created again under its id: they
+        are then not written, and the log says why (RFC §13.5). A read that
+        fails is logged and the side effects are written, as before the
+        read."""
+        if not (tasks or observations or metadata_updates):
+            return False
+        try:
+            room = await self._store.get_room(room_id)
+        except Exception:
+            logger.exception(
+                "Could not read room %s before writing its side effects",
+                room_id,
+                extra={"room_id": room_id},
+            )
+            return False
+        if _unless_created_again(room, room_created_at) is not None:
+            return False
+        logger.info(
+            "Room %s is gone, deleted or created again: its delivery set's %d task(s), "
+            "%d observation(s) and metadata updates %s are not written",
+            room_id,
+            len(tasks),
+            len(observations),
+            sorted(metadata_updates or {}),
+            extra={"room_id": room_id},
+        )
+        return True
 
     async def _write_metadata_updates(
         self, room_id: str, updates: Mapping[str, Any] | None

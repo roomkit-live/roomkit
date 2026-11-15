@@ -773,7 +773,9 @@ class LaneSink:
     ``BEFORE_BROADCAST``, committed on its lane with the room's context as it
     stands at each row's commit. The room is the one created at
     *room_created_at*: a room created again under its id is another room,
-    which refuses the rows as a room gone does (RFC §13.5)."""
+    which refuses the rows as a room gone does (RFC §13.5). Each row reads
+    the room before its hooks, so that the first row written once the room
+    is gone is refused before them, as each next one is."""
 
     def __init__(
         self,
@@ -794,7 +796,7 @@ class LaneSink:
         self._refusing = False
         self._close_epoch: int | None = None
         # Whether a row found the room gone: deleted, or created again under
-        # its id. It stays gone, and each next row is refused as a room gone
+        # its id. It stays gone, and each row is refused as a room gone
         # refuses it, before its hooks (RFC §5.1, §13.5).
         self._gone = False
         # The channels the room still lets read the stream, as the last
@@ -808,7 +810,7 @@ class LaneSink:
 
     async def commit(self, event: RoomEvent, *, exclude: set[str] | None) -> RoomEvent | None:
         self._readers = set()
-        if self._gone or await self._room_refuses_writes():
+        if self._gone or await self._found_gone() or await self._room_refuses_writes():
             await self._refuse(event)
             return None
         # The row's BEFORE_BROADCAST observers start once it is laned, or
@@ -866,6 +868,15 @@ class LaneSink:
         await self._kit._refuse_closed_room(
             self._room_id, status=None, operation="reentry", event=event
         )
+
+    async def _found_gone(self) -> bool:
+        """Whether the room is gone, read before the row's hooks: the first
+        row written once it is gone is refused before its hooks, as the next
+        ones are (RFC §5.1, §13.5). One room read per row, a live room's
+        included."""
+        if await self._room_gone():
+            self._gone = True
+        return self._gone
 
     async def _room_gone(self) -> bool:
         """Whether the store holds no room under the stream's id, or one
