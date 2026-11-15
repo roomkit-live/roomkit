@@ -7,7 +7,7 @@
     "§24.4",
     "§21.1"
   ],
-  "notes": "Python: tests/test_toolset_edges.py::test_a_blocked_text_activation_reveals_nothing; channels/_skill_activation.py records only a served activation.",
+  "notes": "Python: tests/test_deferred_tools.py::test_a_blocked_activation_references_nothing; channels/_skill_activation.py records only a served activation. This case exercises the same existing-skill boundary without deferred loading, not the unknown-skill Tool Search hint branch.",
   "setup": {
     "channels": [
       {

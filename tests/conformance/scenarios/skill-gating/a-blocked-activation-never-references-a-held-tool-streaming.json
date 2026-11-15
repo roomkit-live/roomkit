@@ -7,7 +7,7 @@
     "§24.4",
     "§21.1"
   ],
-  "notes": "Python: tests/test_deferred_tools.py::test_a_blocked_activation_references_nothing; tests/test_toolset_edges.py::test_a_blocked_text_activation_reveals_nothing.",
+  "notes": "Python: tests/test_deferred_tools.py::test_a_blocked_activation_references_nothing. The skill exists; an unknown-skill Tool Search hint is a separate branch.",
   "setup": {
     "channels": [
       {
