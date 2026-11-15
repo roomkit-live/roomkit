@@ -151,6 +151,7 @@ CHANNEL = {
     "max_tokens",
     "config_provider",
     "skills",
+    "skills_requires_match",
     "skills_in_prompt",
     "thinking_budget",
     "enable_thinking",
@@ -267,9 +268,19 @@ TURN_CONFIG = {
     "turn_budget_usd",
     "tool_handler",
     "skills",
+    "skills_requires_match",
 }
 TURN_TOOL = {"name", "description", "parameters"}
-SKILL = {"name", "description", "instructions", "references", "allowed_tools"}
+SKILL = {
+    "name",
+    "description",
+    "instructions",
+    "references",
+    "allowed_tools",
+    "requires",
+    "unavailable",
+    "unlisted",
+}
 HUMAN_TOOL = {"name", "description", "parameters"}
 POLICY = {"allow", "deny"}
 MEMORY = {

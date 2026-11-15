@@ -1,0 +1,203 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skill-prerequisites/a-withdrawn-prerequisite-refuses-activation-streaming",
+  "title": "A withdrawn prerequisite refuses activation (streaming)",
+  "rules": [
+    "§24.2",
+    "§24.3",
+    "§24.4",
+    "§21.1"
+  ],
+  "notes": "Python: channels/_ai_tools.py::_missing_required_tools reads the current catalogue; tests/test_toolset_edges.py::test_a_withdrawn_tool_leaves_the_allowed_names.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "audit": "tool_auditor",
+        "tool_search": false,
+        "tools": [
+          {
+            "name": "safe_read",
+            "description": "safe_read",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "safe_read ran"
+          },
+          {
+            "name": "calendar_read",
+            "description": "calendar_read",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "calendar_read ran"
+          },
+          {
+            "name": "calendar_write",
+            "description": "calendar_write",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "calendar_write ran"
+          }
+        ],
+        "skills": [
+          {
+            "name": "calendar",
+            "description": "calendar procedure",
+            "instructions": "Rules for calendar.",
+            "requires": "calendar_read",
+            "allowed_tools": "calendar_write"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "name": "safe_read",
+                  "arguments": {},
+                  "id": "c1"
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "calendar"
+                  },
+                  "id": "c2"
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "name": "calendar_write",
+                  "arguments": {},
+                  "id": "c3"
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ],
+          "streaming": true
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "withdraw",
+        "trigger": "after_tool_round",
+        "reactions": [
+          {
+            "result": {
+              "action": "modify",
+              "event": {
+                "withdrawn": [
+                  "calendar_read"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tools": {
+            "calendar_read": {
+              "$absent": true
+            },
+            "calendar_write": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "calendar_read": {
+              "$absent": true
+            },
+            "calendar_write": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "content": "safe_read ran",
+              "is_error": false,
+              "tool_call_id": "c1"
+            },
+            {
+              "content": "{\"error\": \"Required tools not available: calendar_read\"}",
+              "is_error": true,
+              "tool_call_id": "c2"
+            },
+            {
+              "content": "{\"error\": \"Tool 'calendar_write' is gated by a skill. Activate the skill first using activate_skill.\"}",
+              "is_error": true,
+              "tool_call_id": "c3"
+            }
+          ]
+        }
+      ]
+    },
+    "tool_audit": {
+      "$unordered": [
+        {
+          "tool_name": "safe_read",
+          "status": "ok",
+          "result": "safe_read ran"
+        }
+      ]
+    }
+  }
+}

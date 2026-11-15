@@ -1,0 +1,120 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skill-prerequisites/a-host-matcher-reads-only-offered-requirements-non-streaming",
+  "title": "A host matcher reads only offered requirements (non-streaming)",
+  "rules": [
+    "§24.2",
+    "§24.3",
+    "§24.4",
+    "§21.1"
+  ],
+  "notes": "Python: tests/test_skill_requires_parity.py::test_a_host_matcher_reads_a_hub_requirement[text]; skills/models.py::missing_required_tools filters policy and closed gates before calling the matcher.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "audit": "tool_auditor",
+        "tool_search": false,
+        "tools": [
+          {
+            "name": "boards_get_card",
+            "description": "boards_get_card",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "boards_get_card ran"
+          }
+        ],
+        "skills": [
+          {
+            "name": "calendar",
+            "description": "calendar procedure",
+            "instructions": "Rules for calendar.",
+            "requires": "boards"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "calendar"
+                  },
+                  "id": "c1"
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ],
+          "streaming": false
+        },
+        "skills_requires_match": "hub",
+        "tool_policy": {
+          "deny": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "content": {
+                "$contains": "Rules for calendar."
+              },
+              "is_error": false,
+              "tool_call_id": "c1"
+            }
+          ]
+        }
+      ]
+    },
+    "tool_audit": {
+      "$unordered": []
+    }
+  }
+}

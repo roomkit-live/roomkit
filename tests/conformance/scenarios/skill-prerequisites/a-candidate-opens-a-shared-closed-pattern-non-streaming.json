@@ -1,0 +1,135 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skill-prerequisites/a-candidate-opens-a-shared-closed-pattern-non-streaming",
+  "title": "A candidate opens a shared closed pattern (non-streaming)",
+  "rules": [
+    "§24.2",
+    "§24.3",
+    "§24.4",
+    "§21.1"
+  ],
+  "notes": "Python: tests/test_skill_requires_parity.py::test_a_required_tool_only_a_closed_gate_holds_is_missing[text], test_an_activated_skill_opens_a_gate_an_unavailable_one_shares[text].",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "audit": "tool_auditor",
+        "tool_search": false,
+        "tools": [
+          {
+            "name": "calendar_read",
+            "description": "calendar_read",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "calendar_read ran"
+          }
+        ],
+        "skills": [
+          {
+            "name": "calendar",
+            "description": "calendar procedure",
+            "instructions": "Rules for calendar.",
+            "requires": "calendar_read",
+            "allowed_tools": "calendar_*"
+          },
+          {
+            "name": "closed",
+            "description": "closed procedure",
+            "instructions": "Rules for closed.",
+            "allowed_tools": "calendar_*",
+            "unavailable": "not granted"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "calendar"
+                  },
+                  "id": "c1"
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ],
+          "streaming": false
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "calendar_read": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "calendar_read": {
+              "$present": true
+            }
+          },
+          "tool_results": [
+            {
+              "content": {
+                "$contains": "Rules for calendar."
+              },
+              "is_error": false,
+              "tool_call_id": "c1"
+            }
+          ]
+        }
+      ]
+    },
+    "tool_audit": {
+      "$unordered": []
+    }
+  }
+}

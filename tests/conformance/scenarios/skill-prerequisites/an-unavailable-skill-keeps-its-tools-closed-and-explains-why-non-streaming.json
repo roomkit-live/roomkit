@@ -1,0 +1,188 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skill-prerequisites/an-unavailable-skill-keeps-its-tools-closed-and-explains-why-non-streaming",
+  "title": "An unavailable skill keeps its tools closed and explains why (non-streaming)",
+  "rules": [
+    "§24.2",
+    "§24.3",
+    "§24.4",
+    "§21.1"
+  ],
+  "notes": "Python: tests/test_skill_requires_parity.py::test_an_unavailable_skill_keeps_its_tools_closed[text]; tests/test_skills.py::TestSkillRegistry::test_to_prompt_xml_unavailable_block.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "audit": "tool_auditor",
+        "tool_search": false,
+        "tools": [
+          {
+            "name": "calendar_read",
+            "description": "calendar_read",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "calendar_read ran"
+          },
+          {
+            "name": "safe_read",
+            "description": "safe_read",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "safe_read ran"
+          }
+        ],
+        "skills": [
+          {
+            "name": "calendar",
+            "description": "calendar procedure",
+            "instructions": "Rules for calendar.",
+            "allowed_tools": "calendar_*",
+            "unavailable": "Needs <approval> & access"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "calendar"
+                  },
+                  "id": "c1"
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "name": "calendar_read",
+                  "arguments": {},
+                  "id": "c2"
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "name": "safe_read",
+                  "arguments": {},
+                  "id": "c3"
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ],
+          "streaming": false
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "activate_skill": {
+              "$present": true
+            },
+            "safe_read": {
+              "$present": true
+            },
+            "calendar_read": {
+              "$absent": true
+            }
+          },
+          "system_prompt": {
+            "$contains": "<reason>Needs &lt;approval&gt; &amp; access</reason>"
+          }
+        },
+        {
+          "tools": {
+            "calendar_read": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "calendar_read": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "content": {
+                "$contains": "is unavailable in this context: Needs <approval> & access"
+              },
+              "is_error": true,
+              "tool_call_id": "c1"
+            },
+            {
+              "content": "{\"error\": \"Tool 'calendar_read' is gated by a skill that is not available here.\"}",
+              "is_error": true,
+              "tool_call_id": "c2"
+            },
+            {
+              "content": "safe_read ran",
+              "is_error": false,
+              "tool_call_id": "c3"
+            }
+          ]
+        }
+      ]
+    },
+    "tool_audit": {
+      "$unordered": [
+        {
+          "tool_name": "safe_read",
+          "status": "ok",
+          "result": "safe_read ran"
+        }
+      ]
+    }
+  }
+}

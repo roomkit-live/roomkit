@@ -15,7 +15,7 @@ import json
 import shutil
 import tempfile
 import weakref
-from collections.abc import AsyncIterator, Callable, Iterator, Mapping
+from collections.abc import AsyncIterator, Callable, Collection, Iterator, Mapping
 from copy import deepcopy
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -707,7 +707,9 @@ def scripted_agent(
     if "config_provider" in spec:
         kwargs["config_provider"] = _config_provider(spec["config_provider"], gates)
     if "skills" in spec:
-        kwargs["skills"] = _skill_registry(spec["skills"])
+        kwargs["skills"] = _skill_registry(
+            spec["skills"], spec.get("skills_requires_match", "exact")
+        )
     if "skills_in_prompt" in spec:
         kwargs["skills_in_prompt"] = spec["skills_in_prompt"]
     if "turn_budget_usd" in spec:
@@ -835,11 +837,13 @@ def _config_provider(by_room: Mapping[str, Any], gates: Gates) -> ConfigProvider
         settings = {
             key: value
             for key, value in spec.items()
-            if key not in ("tools", "tool_handler", "skills")
+            if key not in ("tools", "tool_handler", "skills", "skills_requires_match")
         }
         config = AIChannelTurnConfig(**settings)
         if "skills" in spec:
-            config.skills = _skill_registry(spec["skills"])
+            config.skills = _skill_registry(
+                spec["skills"], spec.get("skills_requires_match", "exact")
+            )
         if (tools := spec.get("tools")) is not None:
             config.tools = [
                 AITool(
@@ -856,7 +860,9 @@ def _config_provider(by_room: Mapping[str, Any], gates: Gates) -> ConfigProvider
     return provider
 
 
-def _skill_registry(skills: list[Mapping[str, Any]]) -> SkillRegistry:
+def _skill_registry(
+    skills: list[Mapping[str, Any]], requires_match: str = "exact"
+) -> SkillRegistry:
     """A scripted skill registry: each skill written to a directory of its
     own, removed with the registry, and discovered from there (README,
     "Scripted agents")."""
@@ -864,23 +870,43 @@ def _skill_registry(skills: list[Mapping[str, Any]]) -> SkillRegistry:
     for skill in skills:
         directory = root / skill["name"]
         (directory / "references").mkdir(parents=True)
-        allowed = (
-            f"allowed_tools: {json.dumps(skill['allowed_tools'])}\n"
-            if "allowed_tools" in skill
-            else ""
+        requirements = "".join(
+            f"{key}: {json.dumps(skill[key])}\n"
+            for key in ("allowed_tools", "requires")
+            if key in skill
         )
         (directory / "SKILL.md").write_text(
             f"---\nname: {skill['name']}\ndescription: {skill['description']}\n"
-            f"{allowed}---\n"
+            f"{requirements}---\n"
             f"{skill.get('instructions', '')}",
             encoding="utf-8",
         )
         for name, text in skill.get("references", {}).items():
             (directory / "references" / name).write_text(text, encoding="utf-8")
-    registry = SkillRegistry()
+    registry = _registry_with_matcher(requires_match)
     registry.discover(root)
+    for skill in skills:
+        if "unavailable" in skill:
+            registry.mark_unavailable(skill["name"], skill["unavailable"])
+        if skill.get("unlisted", False):
+            registry.mark_unlisted(skill["name"])
     weakref.finalize(registry, shutil.rmtree, root, ignore_errors=True)
     return registry
+
+
+def _registry_with_matcher(mode: str) -> SkillRegistry:
+    """Use the registry's default or the scripted host callback."""
+    if mode == "exact":
+        return SkillRegistry()
+    if mode not in ("hub", "fail"):
+        raise AssertionError(f"Unknown skill matcher: {mode}")
+
+    def match_requirement(required: str, offered: Collection[str]) -> bool:
+        if mode == "fail":
+            raise RuntimeError("Scripted skill matcher failed")
+        return any(name == required or name.startswith(f"{required}_") for name in offered)
+
+    return SkillRegistry(requires_match=match_requirement)
 
 
 def _retry_policy(spec: Mapping[str, Any]) -> RetryPolicy:

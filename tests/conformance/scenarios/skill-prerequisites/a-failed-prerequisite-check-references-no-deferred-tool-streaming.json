@@ -1,0 +1,144 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skill-prerequisites/a-failed-prerequisite-check-references-no-deferred-tool-streaming",
+  "title": "A failed prerequisite check references no deferred tool (streaming)",
+  "rules": [
+    "§24.2",
+    "§24.3",
+    "§24.4",
+    "§21.1"
+  ],
+  "notes": "Python: tests/test_skill_requires_parity.py::test_a_text_turn_refuses_an_activation_missing_its_tool, with deferred provider references observed as in tests/test_deferred_tools.py.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "audit": "tool_auditor",
+        "tool_search": false,
+        "tools": [
+          {
+            "name": "calendar_read",
+            "description": "calendar_read",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "calendar_read ran"
+          }
+        ],
+        "skills": [
+          {
+            "name": "calendar",
+            "description": "calendar procedure",
+            "instructions": "Rules for calendar.",
+            "requires": "missing",
+            "allowed_tools": "calendar_*"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "calendar"
+                  },
+                  "id": "c1"
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "name": "calendar_read",
+                  "arguments": {},
+                  "id": "c2"
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ],
+          "deferred_tools": true,
+          "streaming": true
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "deferred_tools": [
+            "calendar_read"
+          ]
+        },
+        {
+          "deferred_tools": [
+            "calendar_read"
+          ]
+        },
+        {
+          "tool_results": [
+            {
+              "content": "{\"error\": \"Required tools not available: missing\"}",
+              "is_error": true,
+              "references": [],
+              "tool_call_id": "c1"
+            },
+            {
+              "content": "{\"error\": \"Tool 'calendar_read' is gated by a skill. Activate the skill first using activate_skill.\"}",
+              "is_error": true,
+              "references": [],
+              "tool_call_id": "c2"
+            }
+          ],
+          "deferred_tools": [
+            "calendar_read"
+          ]
+        }
+      ]
+    },
+    "tool_audit": {
+      "$unordered": []
+    }
+  }
+}

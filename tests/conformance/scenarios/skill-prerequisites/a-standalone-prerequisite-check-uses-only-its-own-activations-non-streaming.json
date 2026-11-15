@@ -1,0 +1,272 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skill-prerequisites/a-standalone-prerequisite-check-uses-only-its-own-activations-non-streaming",
+  "title": "A standalone prerequisite check uses only its own activations (non-streaming)",
+  "rules": [
+    "§24.2",
+    "§24.3",
+    "§24.4",
+    "§21.1",
+    "§10.1.1"
+  ],
+  "notes": "Python: channels/_ai_tools.py::_missing_required_tools and channels/_ai_policy.py::_activated_skill_names. A standalone turn borrows no room activation, but a served activation in that same turn can open a closed prerequisite.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "audit": "tool_auditor",
+        "tool_search": false,
+        "tools": [
+          {
+            "name": "calendar_read",
+            "description": "calendar_read",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "calendar_read ran"
+          }
+        ],
+        "skills": [
+          {
+            "name": "calendar",
+            "description": "calendar procedure",
+            "instructions": "Rules for calendar.",
+            "requires": "calendar_read"
+          },
+          {
+            "name": "opener",
+            "description": "opener procedure",
+            "instructions": "Rules for opener.",
+            "allowed_tools": "calendar_*"
+          },
+          {
+            "name": "closed",
+            "description": "closed procedure",
+            "instructions": "Rules for closed.",
+            "allowed_tools": "calendar_*",
+            "unavailable": "not granted"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "opener"
+                  },
+                  "id": "c1"
+                }
+              ]
+            },
+            {
+              "text": "done"
+            },
+            {
+              "calls": [
+                {
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "calendar"
+                  },
+                  "id": "c2"
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "opener"
+                  },
+                  "id": "c3"
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "calendar"
+                  },
+                  "id": "c4"
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "name": "calendar_read",
+                  "arguments": {},
+                  "id": "c5"
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ],
+          "streaming": false
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        },
+        "event_type": "instruction",
+        "addressed_to": [
+          "agent"
+        ],
+        "standalone": true
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "calendar_read": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "calendar_read": {
+              "$present": true
+            }
+          },
+          "tool_results": [
+            {
+              "content": {
+                "$contains": "Rules for opener."
+              },
+              "is_error": false,
+              "tool_call_id": "c1"
+            }
+          ]
+        },
+        {
+          "tools": {
+            "calendar_read": {
+              "$absent": true
+            }
+          },
+          "system_prompt": {
+            "$lacks": "Rules for opener."
+          },
+          "tool_results": []
+        },
+        {
+          "tools": {
+            "calendar_read": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "calendar_read": {
+              "$present": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "calendar_read": {
+              "$present": true
+            }
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "content": "{\"error\": \"Required tools not available: calendar_read\"}",
+              "is_error": true,
+              "tool_call_id": "c2"
+            },
+            {
+              "content": {
+                "$contains": "Rules for opener."
+              },
+              "is_error": false,
+              "tool_call_id": "c3"
+            },
+            {
+              "content": {
+                "$contains": "Rules for calendar."
+              },
+              "is_error": false,
+              "tool_call_id": "c4"
+            },
+            {
+              "content": "calendar_read ran",
+              "is_error": false,
+              "tool_call_id": "c5"
+            }
+          ]
+        }
+      ]
+    },
+    "tool_audit": {
+      "$unordered": [
+        {
+          "tool_name": "calendar_read",
+          "status": "ok",
+          "result": "calendar_read ran"
+        }
+      ]
+    }
+  }
+}
