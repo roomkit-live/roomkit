@@ -101,9 +101,11 @@ async def test_a_streamed_turn_reads_the_status_once_around_its_hooks() -> None:
     await kit.close()
 
 
-async def test_a_row_reads_the_room_once() -> None:
+async def test_a_row_reads_the_room_at_its_commit_and_at_its_cursor_write() -> None:
     """Each tool round adds three rows, each reading the room at its commit
-    (RMK-1286); a read that grew with the rows would not pass."""
+    (RMK-1286), and once more as the lane moves the room's cursor past its
+    index, which must not land on a room created again under its id
+    (RMK-1707); a read that grew with the rows otherwise would not pass."""
 
     async def reads(rounds: int) -> int:
         kit = await _room(rounds=rounds)
@@ -120,7 +122,7 @@ async def test_a_row_reads_the_room_once() -> None:
         await kit.close()
         return count
 
-    assert await reads(4) - await reads(1) <= 3 * 3
+    assert await reads(4) - await reads(1) <= 3 * 3 * 2
 
 
 async def test_another_room_closing_costs_one_read_and_blocks_nothing() -> None:

@@ -1455,8 +1455,8 @@ class RoomLaneRegistry:
 
     A lane is a room's: its id and its ``created_at``. A room deleted while
     its sets run, then created again under the same id, is another room,
-    whose sets take another lane, so that the deleted room's never read or
-    move its cursor (RFC §13.5)."""
+    whose sets take another lane, so that the deleted room's never move or
+    skip its cursor (RFC §13.5)."""
 
     def __init__(self, host: LaneHost, claims: RoomLockManager, config: LaneConfig) -> None:
         self._host = host
