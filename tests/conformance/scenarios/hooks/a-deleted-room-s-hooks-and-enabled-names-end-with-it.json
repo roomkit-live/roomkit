@@ -1,0 +1,115 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/a-deleted-room-s-hooks-and-enabled-names-end-with-it",
+  "title": "A room's hooks and the names it enables end with the room: once the store deleted it, the room created again under its id runs none of them and holds none",
+  "rules": [
+    "§9.1",
+    "§10.6.6",
+    "§17.2"
+  ],
+  "notes": "The hook is added with no organization, and the name enabled is the kit executor's. Created again, the room holds neither: removing the hook and disabling the name find nothing.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "create_room",
+      "room": {
+        "id": "room-1"
+      }
+    },
+    {
+      "call": "add_room_hook",
+      "room_id": "room-1",
+      "hook": {
+        "name": "audit",
+        "trigger": "after_broadcast",
+        "execution": "async"
+      }
+    },
+    {
+      "call": "kit_executor.room_hook",
+      "hook": {
+        "name": "tools",
+        "trigger": "before_tool_use"
+      }
+    },
+    {
+      "call": "enable_room_hook",
+      "room_id": "room-1",
+      "name": "tools"
+    },
+    {
+      "call": "store.delete_room",
+      "room_id": "room-1"
+    },
+    {
+      "call": "create_room",
+      "room": {
+        "id": "room-1"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "sms"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "ws"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "remove_room_hook",
+      "room_id": "room-1",
+      "name": "audit",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "call": "disable_room_hook",
+      "room_id": "room-1",
+      "name": "tools",
+      "expect": {
+        "result": false
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "audit": []
+    }
+  }
+}

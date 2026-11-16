@@ -1,0 +1,113 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tenancy/a-deleted-room-s-hook-does-not-run-in-the-room-created-again",
+  "title": "A room hook ends with its room: once the room is deleted, the hook does not run in the room another organization creates under its id",
+  "rules": [
+    "§17.2",
+    "§9.1"
+  ],
+  "notes": "acme adds a hook to its room; the store deletes the room; globex creates a room under the same id, adds its own hook, and a message arrives in it. acme's hook was the deleted room's and reads nothing of globex's; globex's runs.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "create_room",
+      "room": {
+        "id": "shared-id",
+        "organization_id": "acme"
+      }
+    },
+    {
+      "call": "add_room_hook",
+      "room_id": "shared-id",
+      "hook": {
+        "name": "acme-audit",
+        "trigger": "after_broadcast",
+        "execution": "async"
+      },
+      "organization_id": "acme"
+    },
+    {
+      "call": "store.delete_room",
+      "room_id": "shared-id"
+    },
+    {
+      "call": "create_room",
+      "room": {
+        "id": "shared-id",
+        "organization_id": "globex"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "shared-id",
+      "channel_id": "sms",
+      "organization_id": "globex"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "shared-id",
+      "channel_id": "ws",
+      "organization_id": "globex"
+    },
+    {
+      "call": "add_room_hook",
+      "room_id": "shared-id",
+      "hook": {
+        "name": "globex-audit",
+        "trigger": "after_broadcast",
+        "execution": "async"
+      },
+      "organization_id": "globex"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "shared-id",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "globex secret"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "acme-audit": [],
+      "globex-audit": [
+        {
+          "trigger": "after_broadcast",
+          "room_id": "shared-id",
+          "event": {
+            "content": {
+              "type": "text",
+              "body": "globex secret"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

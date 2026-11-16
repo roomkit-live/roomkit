@@ -1,0 +1,79 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/a-room-hook-added-before-its-room-ends-with-that-room",
+  "title": "A hook added for a room id no room holds waits for the room created under it and ends with it; one added once that room is deleted waits for the next",
+  "rules": [
+    "§9.1",
+    "§17.2"
+  ],
+  "notes": "Each hook fires for the creation of the one room it waited for.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "add_room_hook",
+      "room_id": "room-1",
+      "hook": {
+        "name": "first",
+        "trigger": "on_room_created",
+        "execution": "async"
+      }
+    },
+    {
+      "call": "create_room",
+      "room": {
+        "id": "room-1"
+      }
+    },
+    {
+      "call": "store.delete_room",
+      "room_id": "room-1"
+    },
+    {
+      "call": "add_room_hook",
+      "room_id": "room-1",
+      "hook": {
+        "name": "second",
+        "trigger": "on_room_created",
+        "execution": "async"
+      }
+    },
+    {
+      "call": "create_room",
+      "room": {
+        "id": "room-1"
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "first": [
+        {
+          "trigger": "on_room_created",
+          "room_id": "room-1"
+        }
+      ],
+      "second": [
+        {
+          "trigger": "on_room_created",
+          "room_id": "room-1"
+        }
+      ]
+    }
+  }
+}
