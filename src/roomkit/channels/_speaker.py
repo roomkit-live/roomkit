@@ -198,6 +198,18 @@ def author_name(event: RoomEvent, context: RoomContext) -> str | None:
     return _author_name(event, People(context.participants))
 
 
+def committed_label(event: RoomEvent) -> str:
+    """The label of *event*'s author as its commit fixed it, for a reader
+    that has no room to read it in (a passage a memory indexes): the name and
+    rank of its record (:data:`~roomkit.core._authors.AUTHOR`), else its
+    channel (:func:`channel_label`)."""
+    record = recorded_author(event)
+    name = person_name(record[0]) if record is not None else ""
+    if name and record is not None:
+        return _ranked(name, record[1])
+    return channel_label(event.source.channel_id)
+
+
 def turn_labels(events: Iterable[RoomEvent], context: RoomContext) -> dict[str, str | None]:
     """The label each of *events* opens with where a model reads it
     (:func:`turn_speakers`); ``None`` for the runtime's system events."""

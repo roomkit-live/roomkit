@@ -181,7 +181,9 @@ def scripted_memory(
 
 class ScriptedSource(KnowledgeSource):
     """A knowledge source answering every search with its results, at most
-    the search's limit, or failing with its ``fails``."""
+    the search's limit, or failing with its ``fails``; with ``indexes``, the
+    passages it was handed to index first, the latest first, each with its
+    metadata at score 1, one whose content is the query itself left out."""
 
     def __init__(self, spec: Mapping[str, Any]) -> None:
         self._name = spec["name"]
@@ -194,6 +196,8 @@ class ScriptedSource(KnowledgeSource):
             for result in spec.get("results", [])
         ]
         self._fails = spec.get("fails")
+        self._indexes = bool(spec.get("indexes", False))
+        self._indexed: list[KnowledgeResult] = []
 
     @property
     def name(self) -> str:
@@ -204,7 +208,12 @@ class ScriptedSource(KnowledgeSource):
     ) -> list[KnowledgeResult]:
         if self._fails is not None:
             raise RuntimeError(self._fails)
-        return self._results[:limit]
+        indexed = [passage for passage in reversed(self._indexed) if passage.content != query]
+        return [*indexed, *self._results][:limit]
+
+    async def index(self, content: str, metadata: dict[str, Any] | None = None) -> None:
+        if self._indexes:
+            self._indexed.append(KnowledgeResult(content, 1.0, metadata=dict(metadata or {})))
 
 
 def _summarizer(summarizer: AIProvider | None) -> AIProvider:

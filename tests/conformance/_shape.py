@@ -310,7 +310,7 @@ MEMORY_COMPACTION = {"messages", "keep", "fails"}
 BUDGET_AWARE = {"max_context_tokens", "safety_margin_ratio", "min_events", "reserved_tokens"}
 COMPACTING = {"max_context_tokens", "summary_ratio", "safety_margin_ratio", "min_events"}
 RETRIEVAL = {"sources", "max_results", "min_query_length"}
-SOURCE = {"name", "results", "fails"}
+SOURCE = {"name", "results", "fails", "indexes"}
 SOURCE_RESULT = {"content", "score", "source"}
 SUMMARIZING = {
     "max_context_tokens",

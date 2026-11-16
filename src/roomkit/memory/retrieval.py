@@ -12,6 +12,8 @@ import logging
 from dataclasses import replace
 
 from roomkit._media import content_words
+from roomkit._text import json_text_line
+from roomkit.channels._speaker import committed_label
 from roomkit.knowledge.base import KnowledgeResult, KnowledgeSource
 from roomkit.memory._wrapper import _MemoryWrapper
 from roomkit.memory.base import MemoryProvider, MemoryResult
@@ -118,11 +120,9 @@ class RetrievalMemory(_MemoryWrapper):
         text = self._extract_query(event)
         if not text:
             return
+        metadata = {"room_id": room_id, "event_id": event.id, "speaker": committed_label(event)}
         results = await asyncio.gather(
-            *[
-                s.index(text, metadata={"room_id": room_id, "event_id": event.id})
-                for s in self._sources
-            ],
+            *[s.index(text, metadata=dict(metadata)) for s in self._sources],
             return_exceptions=True,
         )
         for i, result in enumerate(results):
@@ -158,6 +158,19 @@ class RetrievalMemory(_MemoryWrapper):
         """The retrieved passages as the turn's note, each set apart as data."""
         lines = ["Relevant context from knowledge sources:"]
         for r in results:
-            source_prefix = f"[{r.source}] " if r.source else ""
-            lines.append(fence("knowledge", f"{source_prefix}{r.content}"))
+            lines.append(fence("knowledge", _passage(r)))
         return "\n".join(lines)
+
+
+def _passage(result: KnowledgeResult) -> str:
+    """*result* as the note reads it: a passage taken from a turn
+    (``event_id`` in its metadata) as a line of the conversation, its text a
+    JSON string after the label of its author the runtime set when indexing
+    it, so a name its author typed reads as their words (RFC §6.4); one
+    indexed with no label quoted alone; a document after its source."""
+    if "event_id" not in result.metadata:
+        prefix = f"[{result.source}] " if result.source else ""
+        return f"{prefix}{result.content}"
+    text = json_text_line(result.content)
+    speaker = result.metadata.get("speaker")
+    return f"{speaker}: {text}" if isinstance(speaker, str) and speaker else text
