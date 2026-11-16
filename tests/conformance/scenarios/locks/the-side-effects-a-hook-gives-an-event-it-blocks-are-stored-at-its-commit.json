@@ -1,0 +1,234 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "locks/the-side-effects-a-hook-gives-an-event-it-blocks-are-stored-at-its-commit",
+  "title": "The task and the observation a hook gives an event of a call's cascade it blocks are stored at the commit of its BLOCKED record, before the cascade ends, and leave with the room deleted while the cascade runs: the room created again under its id takes none",
+  "rules": [
+    "§10.1 step 10",
+    "§10.1 step 15",
+    "§13.5 Delivery lanes across processes",
+    "§9.4"
+  ],
+  "notes": "One process. When `held` arrives, the `triage` hook injects `spam` then `note`, both for `ws`. It blocks `spam` and gives it the task `Blocked spam` and an observation, stored with its BLOCKED record, under the room's lock, before `note` is committed. `note`'s set is held at `held` in its delivery to `ws`: the call's cascade is not over, and the task and the observation are already stored. The room is deleted and created again under the same id with `sms` and `ws`: they leave with the deleted room. Once `note` is let go and the call ends, the new room holds neither. The task's ON_TASK_CREATED fires once, for `spam`, in the room it was stored in. Python: core/mixins/inbound_locked.py `_store_blocked`.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "deliver": [
+          {
+            "when": {
+              "text": "note"
+            },
+            "gate": "held"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "triage",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "held"
+            },
+            "result": {
+              "action": "allow",
+              "injected_events": [
+                {
+                  "target_channel_ids": [
+                    "ws"
+                  ],
+                  "event": {
+                    "content": {
+                      "type": "text",
+                      "body": "spam"
+                    }
+                  }
+                },
+                {
+                  "target_channel_ids": [
+                    "ws"
+                  ],
+                  "event": {
+                    "content": {
+                      "type": "text",
+                      "body": "note"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "when": {
+              "text": "spam"
+            },
+            "result": {
+              "action": "block",
+              "reason": "spam",
+              "tasks": [
+                {
+                  "title": "Blocked spam"
+                }
+              ],
+              "observations": [
+                {
+                  "category": "spam",
+                  "content": "blocked"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "follow_up",
+        "trigger": "on_task_created",
+        "execution": "async"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "background": true,
+      "as": "held",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "held"
+        }
+      }
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "call": "store.list_tasks",
+      "room_id": "room-1",
+      "expect": {
+        "result": [
+          {
+            "title": "Blocked spam",
+            "status": "pending"
+          }
+        ]
+      }
+    },
+    {
+      "call": "list_observations",
+      "room_id": "room-1",
+      "expect": {
+        "result": [
+          {
+            "category": "spam",
+            "content": "blocked"
+          }
+        ]
+      }
+    },
+    {
+      "call": "store.delete_room",
+      "room_id": "room-1",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "create_room",
+      "room": {
+        "id": "room-1"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "sms"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "ws"
+    },
+    {
+      "open": "held"
+    },
+    {
+      "await": "held",
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "deliveries": {
+      "room-1": {
+        "sms": [],
+        "ws": [
+          {
+            "content": {
+              "body": "held"
+            }
+          },
+          {
+            "content": {
+              "body": "note"
+            }
+          }
+        ]
+      }
+    },
+    "tasks": {
+      "room-1": []
+    },
+    "observations": {
+      "room-1": []
+    },
+    "hooks": {
+      "follow_up": [
+        {
+          "trigger": "on_task_created",
+          "room_id": "room-1",
+          "event": {
+            "type": "task_created",
+            "content": {
+              "body": "spam"
+            },
+            "metadata": {
+              "task_title": "Blocked spam"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

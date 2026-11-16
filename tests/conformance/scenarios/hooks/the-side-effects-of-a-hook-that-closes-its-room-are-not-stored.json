@@ -1,0 +1,105 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "hooks/the-side-effects-of-a-hook-that-closes-its-room-are-not-stored",
+  "title": "The task and the observation a BEFORE_BROADCAST hook gives an event whose room it closes are not stored: the event is refused as the closed room refuses it, with nothing of its hooks",
+  "rules": [
+    "§10.1 step 9a",
+    "§10.1 step 15",
+    "§5.1"
+  ],
+  "notes": "One process. The `closer` hook closes the room as `Hello` passes it, and allows it with the task `Follow up` and an observation. Read again after the hook, the closed room refuses `Hello` as step 6 would: nothing is stored, the hook's task and observation included, and ON_TASK_CREATED does not fire. Python: core/mixins/inbound_locked.py `_gate_commit` returns `_Refused` before any side effect is kept.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "closer",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "Hello"
+            },
+            "do": [
+              {
+                "call": "close_room",
+                "room_id": "$room"
+              }
+            ],
+            "result": {
+              "action": "allow",
+              "tasks": [
+                {
+                  "title": "Follow up"
+                }
+              ],
+              "observations": [
+                {
+                  "category": "closing",
+                  "content": "closed"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "follow_up",
+        "trigger": "on_task_created",
+        "execution": "async"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "room_closed"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": []
+    },
+    "tasks": {
+      "room-1": []
+    },
+    "observations": {
+      "room-1": []
+    },
+    "hooks": {
+      "follow_up": []
+    }
+  }
+}

@@ -1,0 +1,137 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "edits/the-side-effects-of-a-hook-on-an-edit-its-re-read-refuses-are-not-stored",
+  "title": "The task and the observation a BEFORE_BROADCAST hook gives an edit are not stored when the edit is refused once the hook ran, its target deleted by the hook",
+  "rules": [
+    "§10.1 step 9a",
+    "§10.1 step 8a",
+    "§10.3"
+  ],
+  "notes": "One process. `Hello` is stored at index 0. The `eraser` hook, run on an edit of `Hello`, deletes `Hello` and allows the edit with the task `Edited` and an observation. Read again after the hook, the target is gone: the edit is refused `target_event_not_found`, and neither the task nor the observation is stored; ON_TASK_CREATED does not fire. Python: core/mixins/inbound_locked.py `_gate_commit` returns `_Refused(change.refusal)` before any side effect is kept.",
+  "setup": {
+    "channels": [
+      {
+        "id": "wa",
+        "type": "whatsapp",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "wa"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "eraser",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "type": "edit"
+            },
+            "do": [
+              {
+                "call": "delete_event",
+                "room_id": "$room",
+                "event_id": "room-1#0"
+              }
+            ],
+            "result": {
+              "action": "allow",
+              "tasks": [
+                {
+                  "title": "Edited"
+                }
+              ],
+              "observations": [
+                {
+                  "category": "edit",
+                  "content": "edited"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "follow_up",
+        "trigger": "on_task_created",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "index": 0
+          }
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "wa",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "edit",
+          "target_event_id": "room-1#0",
+          "new_content": {
+            "type": "text",
+            "body": "Hi"
+          },
+          "edit_source": "sender"
+        },
+        "event_type": "edit"
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "target_event_not_found"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "tasks": {
+      "room-1": []
+    },
+    "observations": {
+      "room-1": []
+    },
+    "hooks": {
+      "follow_up": []
+    }
+  }
+}
