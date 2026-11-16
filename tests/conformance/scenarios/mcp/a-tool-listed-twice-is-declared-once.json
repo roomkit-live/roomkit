@@ -1,0 +1,97 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "mcp/a-tool-listed-twice-is-declared-once",
+  "title": "A tool an MCP server lists twice is declared once, with its first definition",
+  "rules": [
+    "§21.1",
+    "§21.2"
+  ],
+  "notes": "The server lists lookup_order twice with two descriptions. One tool per name: the listing keeps the first definition and leaves out the second with a warning, so the agent is built and declares the tool once.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "label": "orders",
+            "tools": [
+              {
+                "name": "lookup_order",
+                "description": "First.",
+                "returns": "first"
+              },
+              {
+                "name": "lookup_order",
+                "description": "Second.",
+                "returns": "second"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Delete the 2019 records."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "lookup_order": 0
+          },
+          "tool_definitions": {
+            "lookup_order": {
+              "description": "First."
+            }
+          }
+        }
+      ]
+    }
+  }
+}

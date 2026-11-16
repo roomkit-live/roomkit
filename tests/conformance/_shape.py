@@ -135,6 +135,7 @@ CHANNEL = {
     "on_room_detached",
     "model",
     "acp",
+    "mcp_servers",
     "tools",
     "tool_policy",
     "max_tool_rounds",
@@ -255,6 +256,8 @@ TOOL = {
     "returns_parts",
 }
 RAISES = {"kind", "message"}
+MCP_SERVER = {"label", "gate_discovery", "declare", "tools"}
+MCP_TOOL = {"name", "description", "input_schema", "returns"}
 HUMAN_INPUT = {"tool_names", "timeout_ms", "tools"}
 TURN_CONFIG = {
     "system_prompt",
@@ -778,6 +781,10 @@ def _channel(channel: Mapping[str, Any], path: str, found: list[str]) -> None:
             _members(tool["raises"], RAISES, f"{path}.tools[{index}].raises", found)
     if "tool_policy" in channel:
         _members(channel["tool_policy"], POLICY, f"{path}.tool_policy", found)
+    for index, server in enumerate(channel.get("mcp_servers", [])):
+        _members(server, MCP_SERVER, f"{path}.mcp_servers[{index}]", found)
+        for position, tool in enumerate(server.get("tools", [])):
+            _members(tool, MCP_TOOL, f"{path}.mcp_servers[{index}].tools[{position}]", found)
     if "addresses" in channel:
         _members(channel["addresses"], ADDRESSES, f"{path}.addresses", found)
     if "agent" in channel:

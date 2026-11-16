@@ -1,0 +1,172 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "mcp/a-catalogue-of-aliases-holds-a-policy-that-names-a-server",
+  "title": "Declared under their aliases alone, MCP tools run on the server their alias names, and a policy that names a server holds",
+  "rules": [
+    "§21.1",
+    "§21.2",
+    "§21.4"
+  ],
+  "notes": "Both servers' tools are declared under their aliases alone, the archive's handler first. The bare name is not declared; the CRM's alias reaches the CRM whatever the order; the archive's alias is refused by the policy.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "delete_records",
+                  "arguments": {
+                    "query": "2019"
+                  }
+                },
+                {
+                  "id": "call-2",
+                  "name": "mcp__crm__delete_records",
+                  "arguments": {
+                    "query": "2019"
+                  }
+                },
+                {
+                  "id": "call-3",
+                  "name": "mcp__archive__delete_records",
+                  "arguments": {
+                    "query": "2019"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "label": "archive",
+            "declare": "aliases",
+            "tools": [
+              {
+                "name": "delete_records",
+                "description": "Delete the records matching a query.",
+                "input_schema": {
+                  "type": "object",
+                  "properties": {
+                    "query": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "query"
+                  ]
+                },
+                "returns": "archive: deleted the records matching 2019"
+              }
+            ]
+          },
+          {
+            "label": "crm",
+            "declare": "aliases",
+            "tools": [
+              {
+                "name": "delete_records",
+                "description": "Delete the records matching a query.",
+                "input_schema": {
+                  "type": "object",
+                  "properties": {
+                    "query": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "query"
+                  ]
+                },
+                "returns": "crm: deleted the records matching 2019"
+              }
+            ]
+          }
+        ],
+        "tool_policy": {
+          "deny": [
+            "mcp__archive__*"
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Delete the 2019 records."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tool_results": "$any"
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "call-1",
+              "name": "delete_records",
+              "content": "$any",
+              "is_error": true
+            },
+            {
+              "tool_call_id": "call-2",
+              "name": "mcp__crm__delete_records",
+              "content": "crm: deleted the records matching 2019",
+              "is_error": false
+            },
+            {
+              "tool_call_id": "call-3",
+              "name": "mcp__archive__delete_records",
+              "content": "$any",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

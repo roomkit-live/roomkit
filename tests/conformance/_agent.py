@@ -66,8 +66,10 @@ from roomkit.providers.openai.config import OpenAIConfig
 from roomkit.providers.utils import _aclose_stream
 from roomkit.tasks import CancelTaskTool, TaskStatusTool
 from roomkit.tools import current_response_metadata, current_tool_allowed_names, current_tool_call
+from roomkit.tools.compose import compose_tool_handlers
 from roomkit.tools.human_input import HumanInputToolHandler
 from roomkit.tools.policy import ToolPolicy
+from tests.conformance._mcp import Connected, declared_tools, tool_handlers
 from tests.conformance._memory import Compacted, scripted_memory
 from tests.conformance._script_executor import ScriptedScriptExecutor
 from tests.conformance._skills import scripted_skill_registry
@@ -306,6 +308,10 @@ class ScriptedModel(AIProvider):
                 "response_schema": context.response_schema,
                 "tools": {
                     tool.name: position for position, tool in enumerate(context.tools or [])
+                },
+                "tool_definitions": {
+                    tool.name: {"description": tool.description, "parameters": tool.parameters}
+                    for tool in context.tools or []
                 },
             }
         )
@@ -654,6 +660,7 @@ def scripted_agent(
     shared: Mapping[str, ScriptedModel] | None = None,
     compacted: Callable[[str, str, dict[str, Any]], None] | None = None,
     script_executors: dict[str, Any] | None = None,
+    mcp: Connected = (),
 ) -> tuple[AIChannel, dict[str, ScriptedModel]]:
     """The AI channel of a scripted agent, and its models by the name
     ``expect.models`` gives them: its own under its id, its memory's
@@ -662,7 +669,10 @@ def scripted_agent(
     holds at it; the tools *kit* makes that it is given, after its own; its
     calls' arguments read by *labelled* as the model writes them. A model
     *shared* holds under its name is answered from, as another process's
-    channel of the same id is (README, ``processes``)."""
+    channel of the same id is (README, ``processes``). Its *mcp* servers,
+    connected, are declared before its own tools and serve before them."""
+    if spec.get("mcp_servers") and not mcp:
+        raise ValueError("mcp_servers: only a setup channel's servers are connected")
     shared = shared or {}
     model = shared.get(spec["id"]) or _scripted_model(spec["model"], gates, labelled)
     models = {spec["id"]: model}
@@ -769,9 +779,13 @@ def scripted_agent(
         kwargs.update(spec["agent"])
     if "router" not in kwargs:
         kwargs["provider"] = model
+    handler = _tool_handler(tools, gates)
+    if mcp:
+        handler = compose_tool_handlers(*tool_handlers(mcp), handler)
     channel = build(
         spec["id"],
-        tools=[
+        tools=declared_tools(mcp)
+        + [
             AITool(
                 name=tool["name"],
                 description=tool.get("description", ""),
@@ -783,7 +797,7 @@ def scripted_agent(
             if tool.get("declared", True)
         ]
         + _kit_tools(spec.get("kit_tools", []), kit),
-        tool_handler=_audited(_tool_handler(tools, gates), spec, auditors),
+        tool_handler=_audited(handler, spec, auditors),
         **kwargs,
     )
     return channel, models

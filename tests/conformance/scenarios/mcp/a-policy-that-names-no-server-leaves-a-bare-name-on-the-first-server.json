@@ -1,0 +1,146 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "mcp/a-policy-that-names-no-server-leaves-a-bare-name-on-the-first-server",
+  "title": "A policy that names no server leaves a bare MCP tool name on the first server of the chain that serves it",
+  "rules": [
+    "§21.1",
+    "§21.2",
+    "§21.4"
+  ],
+  "notes": "The archive's handler is first in the chain, the CRM's tools are declared bare. The policy is an allow list of bare names (allow delete_records): it names no server, so it keeps none out, and the bare call runs on the archive, the first server that serves it.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "delete_records",
+                  "arguments": {
+                    "query": "2019"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "label": "archive",
+            "declare": "none",
+            "tools": [
+              {
+                "name": "delete_records",
+                "description": "Delete the records matching a query.",
+                "input_schema": {
+                  "type": "object",
+                  "properties": {
+                    "query": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "query"
+                  ]
+                },
+                "returns": "archive: deleted the records matching 2019"
+              }
+            ]
+          },
+          {
+            "label": "crm",
+            "declare": "bare",
+            "tools": [
+              {
+                "name": "delete_records",
+                "description": "Delete the records matching a query.",
+                "input_schema": {
+                  "type": "object",
+                  "properties": {
+                    "query": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "query"
+                  ]
+                },
+                "returns": "crm: deleted the records matching 2019"
+              }
+            ]
+          }
+        ],
+        "tool_policy": {
+          "allow": [
+            "delete_records"
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Delete the 2019 records."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tool_results": "$any"
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "call-1",
+              "name": "delete_records",
+              "content": "archive: deleted the records matching 2019",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

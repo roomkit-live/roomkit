@@ -78,6 +78,7 @@ from tests.conformance._identity import kit_options, register_identity_hook
 from tests.conformance._inputs import INPUT_CALLS, request_record
 from tests.conformance._kit_executor import KIT_EXECUTOR_CALLS
 from tests.conformance._locks import LOCK_EVENTS, lock_options, set_lock_releases
+from tests.conformance._mcp import MCPServers
 from tests.conformance._media import media_options
 from tests.conformance._members import MEMBER_CALLS, store_identities
 from tests.conformance._normalize import Observed, is_lifecycle_record
@@ -246,6 +247,7 @@ class Harness:
         self.acp_context: dict[str, ScriptedContextContributor] = {}
         self.acp_transports: dict[str, ScriptedACPTransport] = {}
         self.auditors = Auditors()
+        self.mcp = MCPServers()
         self.handoff_handlers: dict[str, HandoffHandler] = {}
         self.delegate_handlers: dict[str, DelegateHandler] = {}
         setup = scenario.get("setup", {})
@@ -557,6 +559,7 @@ class Harness:
             for kit in self._open_kits():
                 await kit.close()
             await self.executors.close_all()
+            await self.mcp.close()
             self.auditors.close()
         return self._problems + compare(
             self.scenario.get("expect", {}), self.observed, self._checks
@@ -578,6 +581,7 @@ class Harness:
         for event_type in recorded:
             self.kit.on(event_type)(self._on_framework_event)
         self.auditors.set_up(setup.get("session_auditor"), self.kit)
+        await self.mcp.connect(setup.get("channels", []))
         for channel in setup.get("channels", []):
             register_channel(self.kit, self, channel)
         await self.executors.start_all()
