@@ -1,0 +1,129 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skill-scripts/script-is-not-a-skill-activation-hint-non-streaming",
+  "title": "A missing skill never suggests the channel script tool (non-streaming)",
+  "rules": [
+    "§24.6",
+    "§24.3",
+    "§6.4",
+    "§9.3"
+  ],
+  "notes": "Python: AIChannel._handle_activate_skill excludes _channel_tool_names from hints, including run_skill_script independently of its exemption from policy.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "skills": [
+          {
+            "name": "local",
+            "description": "Build locally",
+            "instructions": "Local rules.",
+            "scripts": {
+              "build.sh": "local script"
+            }
+          }
+        ],
+        "script_executor": {
+          "result": {
+            "exit_code": 7,
+            "stdout": "résultat",
+            "stderr": "",
+            "success": true,
+            "metadata": {
+              "attempt": 2
+            }
+          }
+        },
+        "model": {
+          "streaming": false,
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "s1",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "script"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Build"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "script_executors": {
+      "agent": {
+        "calls": [],
+        "closes": 1
+      }
+    },
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "run_skill_script": {
+              "$present": true
+            }
+          },
+          "system_prompt": {
+            "$lacks": "Script execution is not available"
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "s1",
+              "name": "activate_skill",
+              "content": {
+                "$lacks": "tools_hint"
+              },
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
