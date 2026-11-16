@@ -201,13 +201,13 @@ class TestMCP:
     ) -> None:
         listed = SimpleNamespace(name="read file", description="d", inputSchema={}, meta=None)
 
-        assert _definition(listed) is None
+        assert _definition(listed, "server") is None
         assert "'read file' skipped" in caplog.text
 
     def test_a_dotted_mcp_tool_is_kept(self) -> None:
         listed = SimpleNamespace(name="files.read", description="d", inputSchema={}, meta=None)
 
-        definition = _definition(listed)
+        definition = _definition(listed, "server")
 
         assert definition is not None and definition.name == "files.read"
 
@@ -247,4 +247,4 @@ def test_an_mcp_tool_rejected_for_another_reason_is_not_blamed_on_its_name() -> 
     listed = SimpleNamespace(name="lookup", description="d", inputSchema="not-a-schema", meta=None)
 
     with pytest.raises(ValidationError, match="parameters"):
-        _definition(listed)
+        _definition(listed, "server")

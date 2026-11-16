@@ -56,7 +56,9 @@ def _definition(tool: Any, target: str) -> AITool | None:
     name = tool.name
     if len(name) > _NAME_LIMIT or not some_vendor_accepts_tool_name(name):
         logger.warning(
-            "MCP tool %r of %s skipped: no provider accepts its name", name[:_NAME_LIMIT], target
+            "MCP tool %r skipped: no provider accepts its name (server %s)",
+            name[:_NAME_LIMIT],
+            target,
         )
         return None
     parameters = tool.inputSchema if tool.inputSchema else {}
