@@ -5,7 +5,7 @@
   "rules": [
     "§21.2"
   ],
-  "notes": "Public MCPToolProvider over a bounded local HTTP peer; operation results and wire requests are both observed. Native stdio and lifecycle assertions are mapped separately in the lot checklist.",
+  "notes": "Public MCPToolProvider over a bounded local HTTP peer; operation results and wire requests are both observed. Native stdio and lifecycle assertions are mapped separately in the lot checklist. The 1-second operation deadline leaves time for local dispatch under parallel test load while remaining below the harness limit; the exact wire oracle still requires the held request and its successful successor.",
   "steps": [
     {
       "call": "mcp_session",
@@ -31,7 +31,7 @@
         },
         {
           "method": "request",
-          "timeout_ms": 10,
+          "timeout_ms": 1000,
           "name": "vendor/read"
         },
         {
