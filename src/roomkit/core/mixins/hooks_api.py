@@ -29,12 +29,15 @@ from roomkit.models.enums import (
 from roomkit.models.store_filter import RoomFilter
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from roomkit.channels.base import Channel
     from roomkit.core._room_hook_lifetime import RoomHookLifetime
     from roomkit.core.hooks import HookEngine, IdentityHookRegistration
     from roomkit.core.mixins.helpers import FrameworkEventHandler, IdentityHookFn
     from roomkit.models.channel import ChannelBinding
     from roomkit.models.delivery import InboundMessage, InboundResult
+    from roomkit.models.room import Room
     from roomkit.providers.sms.meta import WebhookMeta
     from roomkit.store.base import ConversationStore
 
@@ -466,7 +469,7 @@ class HooksApiMixin(HelpersMixin):
         added while no room held the id.
         """
         with self._room_hook_lifetime.registering(room_id) as registration:
-            registration.held = await self._room_held(room_id, organization_id)
+            registration.mark = await self._room_mark(room_id, organization_id)
             registered = self._hook_engine.add_room_hook(
                 room_id,
                 HookRegistration(
@@ -520,7 +523,7 @@ class HooksApiMixin(HelpersMixin):
         hook does (:meth:`add_room_hook`).
         """
         with self._room_hook_lifetime.registering(room_id) as registration:
-            registration.held = await self._room_held(room_id, organization_id)
+            registration.mark = await self._room_mark(room_id, organization_id)
             self._enable(room_id, name)
             registration.note(name)
         # Its agents' presence there follows the hooks (RFC §10.6.7).
@@ -560,12 +563,32 @@ class HooksApiMixin(HelpersMixin):
             await self._presence_watch.room_changed(room_id)
         return disabled
 
-    async def _room_held(self, room_id: str, organization_id: str | None) -> bool:
-        """Whether a room holds *room_id*, for a room hook's registration:
-        read with the caller's organization (RFC §17.2), another
-        organization's room raising :class:`RoomNotFoundError`; unscoped,
-        whether a room of any organization holds it."""
+    async def _room_mark(self, room_id: str, organization_id: str | None) -> datetime | None:
+        """The creation mark of the room holding *room_id*, ``None`` for
+        none, for a room hook's registration or a subscription: read with
+        the caller's organization (RFC §17.2), another organization's room
+        raising :class:`RoomNotFoundError`; unscoped, the room of any
+        organization. The id's hooks of a room another mark names, deleted
+        since, are forgotten first (RFC §17.2)."""
         if organization_id is not None:
-            await self.get_room(room_id, organization_id=organization_id)
-            return True
-        return await self._store.room_exists(room_id)
+            room: Room | None = await self.get_room(room_id, organization_id=organization_id)
+        else:
+            room = await self._store.get_room(room_id)
+        if room is None:
+            return None
+        self._settle_room(room)
+        return room.created_at
+
+    def _settle_room(self, room: Room) -> bool:
+        """*room* is in hand: its id's hooks, enabled names and turns of an
+        earlier room, deleted since and created again, by this process or
+        another, are forgotten. Whether the id's room hooks are *room*'s
+        (RFC §9.1, §17.2)."""
+        return self._room_hook_lifetime.settle(room)
+
+    def _names_forgotten(self, room_id: str) -> None:
+        """A settle forgot enabled names of *room_id*: its agents' presence
+        there follows them (RFC §10.6.7), published apart. A settle runs
+        within the room reads a presence publication makes, under the
+        watch's own lock."""
+        self._presence_watch.room_changed_later(room_id)

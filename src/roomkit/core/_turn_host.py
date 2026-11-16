@@ -132,7 +132,10 @@ class KitHost(OwnerHost):
         if message.verb not in BETWEEN_TURNS and message.verb not in self._between_turns:
             raise ValueError(f"{message.verb!r} needs a turn: it is not served between turns")
         room = await self._kit.store.get_room(message.room_id)
-        if room is None:
+        mark = message._room_created_at
+        # A room created again under its id since its turn is another room
+        # (RFC §17.2).
+        if room is None or (mark is not None and room.created_at != mark):
             raise ValueError(f"No room {message.room_id!r}")
         declared = self._declared.get(message.verb)
         if declared is not None:

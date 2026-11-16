@@ -49,6 +49,7 @@ from roomkit.models.event import (
     holds_too_deep,
 )
 from roomkit.models.hook import HookResult, InjectedEvent
+from roomkit.models.room import Room
 from roomkit.models.task import Observation, Task
 from roomkit.telemetry.base import span_error
 
@@ -569,6 +570,10 @@ class HookEngine:
         # Set by RoomKit after init: the names a room enables on the turn
         # executors (RFC §10.6.6), which join the room's scope (§9.1).
         self._enabled_room_hooks: Callable[[str], list[str]] | None = None
+        # Set by RoomKit after init: what forgets, the room in hand, the
+        # hooks an earlier room of its id left, and says whether the id's
+        # room hooks are that room's (RFC §9.1, §17.2).
+        self._room_settler: Callable[[Room], bool] | None = None
         self._suppressed_triggers: set[str] = {
             "on_input_audio_level",
             "on_output_audio_level",
@@ -932,6 +937,18 @@ class HookEngine:
         self.use_room_hooks(room_id, [n for n in names if n != name])
         return True
 
+    def _settle(self, context: RoomContext) -> bool:
+        """The room *context* holds is in hand: the room hooks of its id
+        registered for an earlier room of the id, deleted since and created
+        again, here or in another process, are forgotten before any runs.
+        Whether the id's room hooks are that room's: an earlier room's
+        context, of a room gone, runs none of them (RFC §9.1, §17.2)."""
+        return self._room_settler is None or self._room_settler(context.room)
+
+    def _holds_room(self, room_id: str) -> bool:
+        """Whether this engine holds a hook for *room_id* alone."""
+        return bool(self._room_hooks.get(room_id) or self._owner_room_hooks.get(room_id))
+
     def _forget_room(self, room_id: str, keep: Collection[str]) -> None:
         """Forget the hooks this engine holds for *room_id* alone, those
         given to it as an executor included, but those named in *keep*: the
@@ -1032,6 +1049,8 @@ class HookEngine:
         trigger: HookTrigger,
         execution: HookExecution | None,
         event: RoomEvent | None = None,
+        *,
+        of_room: bool = True,
     ) -> list[HookRegistration]:
         """Get merged global + room hooks filtered and sorted by priority.
 
@@ -1041,18 +1060,20 @@ class HookEngine:
             execution: The execution mode to filter by, or ``None`` to
                 match all execution modes.
             event: Optional event to filter hooks by channel_type/id/direction
+            of_room: ``False`` leaves the room's hooks out: the global ones
+                alone, for the context of a room gone (:meth:`_settle`).
         """
         all_hooks = [
             h
             for h in self._global_hooks
             if h.trigger == trigger and (execution is None or h.execution == execution)
         ]
-        room_hooks = [
-            h
-            for h in self._hooks_of_room(room_id)
-            if h.trigger == trigger and (execution is None or h.execution == execution)
-        ]
-        all_hooks.extend(room_hooks)
+        if of_room:
+            all_hooks.extend(
+                h
+                for h in self._hooks_of_room(room_id)
+                if h.trigger == trigger and (execution is None or h.execution == execution)
+            )
 
         # Apply event-based filters if event is provided
         if event is not None:
@@ -1286,8 +1307,11 @@ class HookEngine:
                 fold=fold,
                 fire_observers=fire_observers,
             )
+        of_room = self._settle(context)
         filter_event = None if skip_event_filter else event
-        hooks = self._get_hooks(room_id, trigger, HookExecution.SYNC, event=filter_event)
+        hooks = self._get_hooks(
+            room_id, trigger, HookExecution.SYNC, event=filter_event, of_room=of_room
+        )
         if needs_lock is not None:
             hooks = [h for h in hooks if h.needs_lock == needs_lock]
         result = SyncPipelineResult(event=event)
@@ -1429,6 +1453,7 @@ class HookEngine:
             trigger,
             HookExecution.ASYNC,
             event=filter_ev,
+            of_room=of_room,
         )
         self._observe(async_hooks, room_id, trigger, final_event, context)
         return result
@@ -1483,7 +1508,9 @@ class HookEngine:
             )
             return
         filter_event = None if skip_event_filter else event
-        hooks = self._get_hooks(room_id, trigger, None, event=filter_event)
+        hooks = self._get_hooks(
+            room_id, trigger, None, event=filter_event, of_room=self._settle(context)
+        )
         if name_prefix is not None:
             hooks = [h for h in hooks if h.name.startswith(name_prefix)]
         if exclude_name_prefix is not None:
@@ -1529,6 +1556,7 @@ class HookEngine:
             trigger,
             HookExecution.ASYNC,
             event=None if skip_event_filter else event,
+            of_room=self._settle(context),
         )
         self._observe(hooks, room_id, trigger, event, context)
 
@@ -1602,7 +1630,13 @@ class HookEngine:
                 skip_event_filter=skip_event_filter,
                 then=then,
             )
-        hooks = self._get_hooks(room_id, trigger, None, event=None if skip_event_filter else event)
+        hooks = self._get_hooks(
+            room_id,
+            trigger,
+            None,
+            event=None if skip_event_filter else event,
+            of_room=self._settle(context),
+        )
         if not hooks:
             return False
         floor = chain_floor()

@@ -21,6 +21,7 @@ from roomkit.turns.wire import Ephemeral
 
 if TYPE_CHECKING:
     import contextvars
+    from datetime import datetime
 
     from roomkit.turns.base import OwnerEvents
     from roomkit.turns.wire import FrameworkEventFrame, TurnRequest
@@ -58,9 +59,12 @@ async def publish_frame(
     label: str,
     unscoped: bool,
     traced: bool = False,
+    room_created_at: datetime | None = None,
 ) -> None:
     """Publish *frame*, published by a turn of *channel_id* in *room_id*
-    (*label* names it in the log), as that channel in that room.
+    (*label* names it in the log), as that channel in that room: the room of
+    creation mark *room_created_at*, which an ephemeral carries (RFC §8.4,
+    §17.2).
 
     An ephemeral is published only when the turn's answer reaches the whole
     room (RFC §8.4): its trigger is *unscoped*, and the channel's binding, as
@@ -81,6 +85,7 @@ async def publish_frame(
             logger.debug("%s: its answer does not reach the room, ephemeral not published", label)
             return
         event = EphemeralEvent.from_dict(frame.event)
+        event.room_created_at = room_created_at
         if not names_its_room(room_id, channel_id, event.room_id, event.channel_id) or (
             frame.channel != f"room:{room_id}"
         ):
@@ -160,6 +165,7 @@ class TurnPublisher:
                     label=f"Turn {request.turn_id}",
                     unscoped=self._unscoped,
                     traced=self.traced,
+                    room_created_at=request.context.room.created_at,
                 )
         except Exception:
             # What the turn published never stops the turn.

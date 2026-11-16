@@ -21,6 +21,8 @@ from roomkit.models.store_filter import EventFilter
 from roomkit.turns.host import current_turn_host
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from roomkit.channels._author_images import AttachedMedia, MediaResolver
     from roomkit.models.event import RoomEvent
     from roomkit.realtime.base import RealtimeBackend
@@ -168,6 +170,12 @@ class WiringEnv(ABC):
     def emitter(self) -> FrameworkEmitter | None:
         """Where a framework event emitted outside a turn goes, ``None`` for
         nowhere."""
+        return None
+
+    async def room_mark(self, room_id: str) -> datetime | None:
+        """The creation mark of the room holding *room_id*, which a
+        publication outside a turn carries (RFC §8.4, §17.2); ``None`` for
+        none, or where no store is read."""
         return None
 
     def turn_started(self, request: TurnRequest) -> None:  # noqa: B027

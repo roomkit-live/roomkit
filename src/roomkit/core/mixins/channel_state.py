@@ -83,6 +83,9 @@ class ChannelStateMixin:
             organization_id=room.organization_id,
             room_state=stored_room_state(room.metadata, channel_id),
         )
+        # The room it is made in: one created again under its id since its
+        # previous turn, by this process or another, follows none (RFC §17.2).
+        call._room_created_at = room.created_at
         answer = await self._turns.control(call)
         if answer is None:
             return None

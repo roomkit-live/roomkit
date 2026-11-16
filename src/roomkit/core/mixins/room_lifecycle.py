@@ -33,9 +33,11 @@ from roomkit.models.room import Room, RoomTimers
 if TYPE_CHECKING:
     from roomkit.channels.base import Channel
     from roomkit.core._room_hook_lifetime import RoomHookLifetime
+    from roomkit.core._room_subscriptions import RoomSubscriptions
     from roomkit.core.locks import RoomLockManager
     from roomkit.models.identity import Identity
     from roomkit.orchestration.base import Orchestration
+    from roomkit.realtime.base import RealtimeBackend
     from roomkit.recorder._room_recorder_manager import RoomRecorderManager
     from roomkit.recorder.base import RoomRecorderBinding
     from roomkit.store.base import ConversationStore
@@ -92,6 +94,8 @@ class RoomLifecycleMixin(HelpersMixin):
     _install_strategy: Any  # see StrategyMixin
     _forget_strategy: Any  # see StrategyMixin
     _room_hook_lifetime: RoomHookLifetime
+    _room_subscriptions: RoomSubscriptions
+    _realtime: RealtimeBackend
     _presence_watch: Any  # RoomKit's AgentPresenceWatch
 
     async def create_room(
@@ -214,7 +218,9 @@ class RoomLifecycleMixin(HelpersMixin):
         except BaseException:
             self._room_recorder_mgr.discard(started)
             raise
-        names_forgotten = self._room_hook_lifetime.forget_earlier_room(room.id)
+        names_forgotten = self._room_hook_lifetime.forget_earlier_room(room.id, stored.created_at)
+        for subscription_id in self._room_subscriptions.earlier_room(room.id):
+            await self._realtime.unsubscribe(subscription_id)
         await self._file_announced(room.id, started, room.organization_id)
         return stored, names_forgotten
 

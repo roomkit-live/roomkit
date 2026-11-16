@@ -8,9 +8,11 @@ when given one, refuse a room belonging to anyone else.
 from __future__ import annotations
 
 import asyncio
+import os
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from uuid import uuid4
 
 import pytest
 
@@ -18,6 +20,7 @@ from roomkit import (
     Access,
     AgentResponsePolicy,
     HookExecution,
+    HookRegistration,
     HookTrigger,
     RoomKit,
     RoomTimers,
@@ -30,18 +33,22 @@ from roomkit.channels.websocket import WebSocketChannel
 from roomkit.core.exceptions import RoomNotFoundError
 from roomkit.core.inbound_router import InboundRoomRouter
 from roomkit.delivery.memory import InMemoryDeliveryBackend
+from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import ChannelCategory, ChannelType
-from roomkit.models.event import TextContent
+from roomkit.models.event import RoomEvent, TextContent
+from roomkit.models.hook import HookResult
 from roomkit.models.identity import Identity
 from roomkit.models.steering import Cancel, InjectMessage
 from roomkit.providers.ai.base import AIResponse, AITool, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.providers.sms.mock import MockSMSProvider
-from roomkit.realtime.base import EphemeralCallback, EphemeralEvent
+from roomkit.realtime.base import EphemeralCallback, EphemeralEvent, EphemeralEventType
 from roomkit.realtime.memory import InMemoryRealtime
+from roomkit.realtime.redis import RedisRealtimeBackend
 from roomkit.recorder import MediaRecordingConfig, MockMediaRecorder, RoomRecorderBinding
-from tests.test_framework import SimpleChannel
+from roomkit.store.memory import InMemoryStore
+from tests.test_framework import AILikeChannel, SimpleChannel
 
 
 async def _two_tenants() -> RoomKit:
@@ -219,6 +226,10 @@ class TestUnscopedRooms:
         assert (await kit.get_room("solo")).id == "solo"
         with pytest.raises(RoomNotFoundError):
             await kit.get_room("solo", organization_id="acme")
+
+
+def _text(body: str) -> InboundMessage:
+    return InboundMessage(channel_id="sms", sender_id="+15550001", content=TextContent(body=body))
 
 
 def _message() -> InboundMessage:
@@ -915,6 +926,81 @@ class TestScopedRoomHooks:
         assert kit.hook_engine.room_hook_names("acme-room") == ["acme-hook"]
         await kit.close()
 
+    async def test_a_hook_given_to_the_engine_ends_with_the_first_room_it_ran_in(self) -> None:
+        """A room hook given to the kit's engine itself, below the kit, is the
+        first room's it runs in: another process creating the room again
+        ends it there (RFC §9.1, §17.2)."""
+        store = InMemoryStore()
+        acme, globex = RoomKit(store=store), RoomKit(store=store)
+        for kit in (acme, globex):
+            kit.register_channel(SimpleChannel("sms"))
+        read: list[str] = []
+
+        async def below(event: RoomEvent, context: RoomContext) -> HookResult:
+            read.append(f"{context.room.organization_id}:{event.content.body}")
+            return HookResult.allow()
+
+        await acme.create_room(room_id="shared-id", organization_id="acme")
+        await acme.attach_channel("shared-id", "sms")
+        acme.hook_engine.add_room_hook(
+            "shared-id",
+            HookRegistration(
+                trigger=HookTrigger.BEFORE_BROADCAST,
+                execution=HookExecution.SYNC,
+                fn=below,
+                name="below",
+            ),
+        )
+        await acme.process_inbound(_text("acme note"), room_id="shared-id")
+        await store.delete_room("shared-id")
+        await globex.create_room(room_id="shared-id", organization_id="globex")
+        await globex.attach_channel("shared-id", "sms")
+        await acme.process_inbound(_text("globex secret"), room_id="shared-id")
+        for kit in (acme, globex):
+            await kit.close()
+
+        assert read == ["acme:acme note"]
+
+    async def test_names_another_process_left_follow_the_presence_they_forget(self) -> None:
+        """The process holding a deleted room's enabled names forgets them on
+        reading the room created again, within a publication of its agents'
+        presence under the watch's lock, which the change of names does not
+        wait for: it is published apart (RFC §10.6.7, §17.2)."""
+        store = InMemoryStore()
+        acme, globex = RoomKit(store=store), RoomKit(store=store)
+        for kit in (acme, globex):
+            kit.register_channel(AILikeChannel("agent"))
+        published: list[str] = []
+        publish = acme.publish_presence
+
+        async def spy(room_id: str, user_id: str, status: str, **options: Any) -> None:
+            published.append(status)
+            await publish(room_id, user_id, status, **options)
+
+        acme.publish_presence = spy  # type: ignore[method-assign]
+        await acme.create_room(room_id="shared-id", organization_id="acme")
+        await acme.attach_channel("shared-id", "agent", category=ChannelCategory.INTELLIGENCE)
+        await acme.enable_room_hook("shared-id", "acme-name", organization_id="acme")
+        await store.delete_room("shared-id")
+        await globex.create_room(room_id="shared-id", organization_id="globex")
+        before = len(published)
+        await asyncio.wait_for(
+            acme.attach_channel(
+                "shared-id",
+                "agent",
+                category=ChannelCategory.INTELLIGENCE,
+                organization_id="globex",
+            ),
+            5,
+        )
+        # The presence the forget changed, published apart.
+        await asyncio.wait_for(asyncio.gather(*acme._presence_watch._changing), 5)
+        for kit in (acme, globex):
+            await kit.close()
+
+        assert acme._turns.room_hook_names("shared-id") == []
+        assert published[before:] == ["online"]
+
 
 class _RecordingRealtime(InMemoryRealtime):
     """The channels the kit publishes to and subscribes to, read without
@@ -1008,6 +1094,156 @@ class TestScopedEphemerals:
         await kit.connect_websocket("ws", "c2", _send_nothing, room_id="globex-room")
         assert ws.rooms_for("c1") == ws.rooms_for("c2") == {"globex-room"}
         await kit.close()
+
+    async def test_create_room_ends_the_subscriptions_of_an_earlier_room_of_its_id(self) -> None:
+        """A publication on the backend itself names no room's creation mark:
+        a deleted room's subscription is ended, not only filtered (RFC §8.4,
+        §17.2)."""
+        kit = RoomKit()
+        read: list[str] = []
+        heard = asyncio.Event()
+
+        async def watch(event: EphemeralEvent) -> None:
+            read.append(event.user_id)
+
+        async def hear(event: EphemeralEvent) -> None:
+            heard.set()
+
+        await kit.create_room(room_id="shared-id", organization_id="acme")
+        await kit.subscribe_room("shared-id", watch, organization_id="acme")
+        await kit.store.delete_room("shared-id")
+        await kit.create_room(room_id="shared-id", organization_id="globex")
+        await kit.subscribe_room("shared-id", hear, organization_id="globex")
+        typing = EphemeralEvent(
+            room_id="shared-id", type=EphemeralEventType.TYPING_START, user_id="globex-user"
+        )
+        await kit.realtime.publish_to_room("shared-id", typing)
+        await asyncio.wait_for(heard.wait(), 5)
+        for _ in range(10):
+            await asyncio.sleep(0)
+
+        assert read == []
+        await kit.close()
+
+    async def test_a_subscription_made_before_its_room_reads_nothing_of_a_room_gone(
+        self,
+    ) -> None:
+        """A subscription made while no room held the id is the room's that
+        holds the id when it reads: a late publication of a deleted room of
+        the id is not read, and binds it to nothing (RFC §8.4, §17.2)."""
+        kit = RoomKit()
+        read: list[str] = []
+
+        async def watch(event: EphemeralEvent) -> None:
+            read.append(event.user_id)
+
+        gone = await kit.create_room(room_id="shared-id", organization_id="acme")
+        await kit.store.delete_room("shared-id")
+        await kit.subscribe_room("shared-id", watch)
+        late = EphemeralEvent(
+            room_id="shared-id",
+            type=EphemeralEventType.TYPING_START,
+            user_id="acme-user",
+            room_created_at=gone.created_at,
+        )
+        await kit.realtime.publish_to_room("shared-id", late)
+        await kit.create_room(room_id="shared-id", organization_id="globex")
+        await kit.publish_typing("shared-id", "globex-user", organization_id="globex")
+        async with asyncio.timeout(5):
+            while "globex-user" not in read:
+                await asyncio.sleep(0)
+        await kit.close()
+
+        assert read == ["globex-user"]
+
+    async def test_a_channel_s_publication_outside_a_turn_reaches_no_room_gone(self) -> None:
+        """A channel's publication outside a turn is of the room the store
+        holds: the subscription of a room deleted and created again by
+        another process does not read it (RFC §8.4, §17.2)."""
+        store, realtime = InMemoryStore(), InMemoryRealtime()
+        acme = RoomKit(store=store, realtime=realtime)
+        globex = RoomKit(store=store, realtime=realtime)
+        agent = AIChannel("agent", provider=MockAIProvider(responses=["x"]))
+        globex.register_channel(agent)
+        read: list[str] = []
+        reached = asyncio.Event()
+
+        async def watch(event: EphemeralEvent) -> None:
+            read.append(event.user_id)
+
+        async def reach(event: EphemeralEvent) -> None:
+            reached.set()
+
+        await acme.create_room(room_id="shared-id", organization_id="acme")
+        await acme.subscribe_room("shared-id", watch, organization_id="acme")
+        await store.delete_room("shared-id")
+        await globex.create_room(room_id="shared-id", organization_id="globex")
+        await realtime.subscribe_to_room("shared-id", reach)
+        typing = EphemeralEvent(
+            room_id="shared-id", type=EphemeralEventType.TYPING_START, user_id="globex-agent"
+        )
+        await agent._realtime.publish_to_room("shared-id", typing)
+        await asyncio.wait_for(reached.wait(), 5)
+        for _ in range(10):
+            await asyncio.sleep(0)
+        for kit in (acme, globex):
+            await kit.close()
+
+        assert read == []
+
+    @pytest.mark.skipif(not os.environ.get("REDIS_URL"), reason="REDIS_URL not set")
+    @pytest.mark.parametrize("processes", [1, 2], ids=["same-process", "other-process"])
+    async def test_a_deleted_rooms_subscription_reads_nothing_of_the_room_created_again(
+        self, processes: int
+    ) -> None:
+        """A subscription ends with its room on a realtime backend processes
+        share, whichever process creates the room again (RFC §8.4, §17.2)."""
+        store = InMemoryStore()
+        prefix = f"roomkit:test:{uuid4().hex}"
+        kits = [
+            RoomKit(
+                store=store,
+                realtime=RedisRealtimeBackend(os.environ["REDIS_URL"], channel_prefix=prefix),
+            )
+            for _ in range(processes)
+        ]
+        acme, globex = kits[0], kits[-1]
+        read: list[tuple[str, str]] = []
+        heard = asyncio.Event()
+
+        async def watch(event: EphemeralEvent) -> None:
+            read.append((event.type.value, event.user_id))
+            heard.set()
+
+        await acme.create_room(room_id="shared-id", organization_id="acme")
+        await acme.subscribe_room("shared-id", watch, organization_id="acme")
+        await acme.publish_typing("shared-id", "acme-user", organization_id="acme")
+        await asyncio.wait_for(heard.wait(), 5)
+        await store.delete_room("shared-id")
+        await globex.create_room(room_id="shared-id", organization_id="globex")
+        own: list[str] = []
+        done = asyncio.Event()
+
+        async def watch_own(event: EphemeralEvent) -> None:
+            own.append(event.user_id)
+            done.set()
+
+        await globex.subscribe_room("shared-id", watch_own, organization_id="globex")
+        # What reaches acme's process, the deleted room's subscription aside.
+        reached = asyncio.Event()
+
+        async def reach(event: EphemeralEvent) -> None:
+            reached.set()
+
+        await acme.realtime.subscribe_to_room("shared-id", reach)
+        await globex.publish_typing("shared-id", "globex-user", organization_id="globex")
+        await asyncio.wait_for(asyncio.gather(done.wait(), reached.wait()), 5)
+        for _ in range(10):
+            await asyncio.sleep(0)
+
+        assert (read, own) == ([("typing_start", "acme-user")], ["globex-user"])
+        for kit in kits:
+            await kit.close()
 
 
 async def _send_nothing(connection_id: str, event: Any) -> None:

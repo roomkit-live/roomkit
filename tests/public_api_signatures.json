@@ -4990,7 +4990,7 @@
     "truncate_audio": ["async def", "session", "audio_end_ms"]
   },
   "roomkit.realtime.EphemeralEvent": {
-    "__init__": ["def", "room_id", "type", "user_id", "id=<factory>", "channel_id=None", "data=<factory>", "timestamp=<factory>"],
+    "__init__": ["def", "room_id", "type", "user_id", "id=<factory>", "channel_id=None", "data=<factory>", "timestamp=<factory>", "room_created_at=None"],
     "from_dict": ["classmethod", "data"],
     "to_dict": ["def"]
   },

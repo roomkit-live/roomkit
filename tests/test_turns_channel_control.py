@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -144,8 +145,12 @@ def _binding(room_id: str = "room") -> ChannelBinding:
     )
 
 
+# One room per id: a room of another creation mark is another room (RFC §17.2).
+_CREATED = datetime(2026, 1, 1, tzinfo=UTC)
+
+
 def _context(room_id: str = "room", metadata: dict[str, Any] | None = None) -> RoomContext:
-    room = Room(id=room_id, metadata=metadata or {})
+    room = Room(id=room_id, metadata=metadata or {}, created_at=_CREATED)
     return RoomContext(room=room, bindings=[_binding(room_id)])
 
 
@@ -221,6 +226,23 @@ async def test_each_request_names_the_room_s_previous_turn() -> None:
         "a",
     )
     assert other.previous_turn is None
+
+
+async def test_the_first_turn_of_a_room_created_again_names_no_previous_turn() -> None:
+    """Another process deleted the room and created it again: a turn of the
+    room of another creation mark follows none of the earlier room's, so an
+    executor drops what it held for the id (RFC §10.6.2, §17.2)."""
+    client, a, _b, _first, _second = await _two_executors()
+    await _turn(client)
+    again = _context()
+    again.room = again.room.model_copy(update={"created_at": _CREATED + timedelta(seconds=1)})
+    await client.run(_event("room"), _binding("room"), again)
+    await client.run(_event("room"), _binding("room"), again)
+
+    _, created_again, next_turn = a.requests
+    assert created_again.previous_turn is None
+    assert next_turn.previous_turn is not None
+    assert next_turn.previous_turn.turn_id == created_again.turn_id
 
 
 async def test_a_detach_leaves_the_next_turn_no_previous_one() -> None:

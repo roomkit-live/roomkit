@@ -22,6 +22,8 @@ from roomkit.turns._wiring_env import (
 from roomkit.turns.base import OwnerEvents
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from roomkit.channels._author_images import AttachedMedia, MediaResolver
     from roomkit.core.framework import RoomKit
     from roomkit.models.context import RoomContext
@@ -69,6 +71,10 @@ class KitWiringEnv(WiringEnv):
 
     def emitter(self) -> FrameworkEmitter | None:
         return self._kit._emit_framework_event
+
+    async def room_mark(self, room_id: str) -> datetime | None:
+        room = await self._kit._store.get_room(room_id)
+        return None if room is None else room.created_at
 
     async def room_tasks(self, room_id: str) -> list[dict[str, Any]]:
         return await self._kit._build_room_tasks_loader()(room_id)

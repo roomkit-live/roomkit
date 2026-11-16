@@ -581,3 +581,33 @@ async def test_a_room_call_after_the_turn_sends_at_the_depth_it_names() -> None:
 
     assert answer.error is None
     assert answer.result["chain_depth"] == 0
+
+
+async def test_a_room_call_after_the_turn_is_refused_in_the_room_created_again() -> None:
+    """Another process deleted the room and created it again: work the
+    deleted room's turn began is served there no more (RFC §17.2)."""
+    later = _Later()
+    host = _Host(later)
+    kit = await host.kit()
+    later.work = lambda: asyncio.sleep(0, True)
+    await _say(kit)
+    record = kit._turns._previous.get("ana", "r")
+    assert record is not None and record.executor_id is not None
+    await host.store.delete_room("r")
+    other = RoomKit(store=host.store)
+    await other.create_room(room_id="r", organization_id="globex")
+    call = RoomCall(
+        channel_id="ana",
+        room_id="r",
+        executor_id=record.executor_id,
+        turn_id=record.turn_id,
+        verb="send_event",
+        arguments={"room_id": "r", "channel_id": "ana", "content": {"type": "text", "body": "x"}},
+    )
+    answer = await kit._turns.room_call(call)
+    await _after_the_turn(later)
+    await other.close()
+    await host.close(kit)
+
+    assert answer.error is not None and answer.error.message == "No room 'r'"
+    assert await host.store.list_events("r") == []

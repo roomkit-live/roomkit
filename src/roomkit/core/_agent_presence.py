@@ -62,6 +62,8 @@ class AgentPresenceWatch:
         self._task: asyncio.Task[None] | None = None
         # The forgets of rooms that closed, by room: an attach there waits.
         self._forgetting: dict[str, asyncio.Task[None]] = {}
+        # The changes of rooms' enabled hooks published apart.
+        self._changing: set[asyncio.Task[None]] = set()
         self._closed = False
 
     def start(self) -> None:
@@ -84,7 +86,7 @@ class AgentPresenceWatch:
         publish: the room's next change or attach, or an owner that starts,
         publishes them."""
         self._closed = True
-        for task in [self._task, *self._forgetting.values()]:
+        for task in [self._task, *self._forgetting.values(), *self._changing]:
             if task is not None:
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
@@ -112,6 +114,23 @@ class AgentPresenceWatch:
     async def room_changed(self, room_id: str) -> None:
         """The room's enabled hooks changed: its agents' presence there."""
         await self._quietly("a room hook change", self._publish_in(room_id, None))
+
+    def room_changed_later(self, room_id: str) -> None:
+        """:meth:`room_changed`, started and not waited for: for a change
+        made within a room read, which a publication of this watch makes
+        under its lock (RFC §10.6.7, §17.2)."""
+        if self._closed:
+            return
+        task = asyncio.get_running_loop().create_task(
+            self._changed_later(room_id), name="roomkit-presence-room-changed"
+        )
+        self._changing.add(task)
+        task.add_done_callback(self._changing.discard)
+
+    async def _changed_later(self, room_id: str) -> None:
+        # The change's coroutine is made here, in the task: a task cut before
+        # its first step leaves no coroutine unawaited.
+        await self.room_changed(room_id)
 
     async def room_closed(self, event: FrameworkEvent) -> None:
         """A room closed, by a call or by its timer: no change is published

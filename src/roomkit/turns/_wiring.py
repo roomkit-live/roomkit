@@ -142,7 +142,7 @@ class TurnWiring:
     def __init__(self, hooks: HookEngine, env: WiringEnv) -> None:
         self._hooks = hooks
         self.env = env
-        self.realtime = TurnRealtime(env.realtime)
+        self.realtime = TurnRealtime(env.realtime, env.room_mark)
         self.tools = ToolHooks(hooks, self.hook_context, self.emit)
 
     # -- What it rests on ---------------------------------------------------------

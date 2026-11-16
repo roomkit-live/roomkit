@@ -44,6 +44,10 @@ async def answer_room_call(
         logger.warning("A %s after turn %s is refused: %s", message.verb, message.turn_id, refusal)
         return HostResult(call_id=message.call_id, error=error_record(PermissionError(refusal)))
     assert host is not None
+    held = previous.get(message.channel_id, message.room_id)
+    # The room its turn ran in: one created again under its id since, by
+    # another process, serves it not (RFC §17.2).
+    message._room_created_at = None if held is None else held._room_created_at
     try:
         result = await host.call_between_turns(message)
     except Exception as exc:
@@ -75,6 +79,7 @@ async def publish_between_turns(
                 message.frame,
                 label=f"The work of turn {message.turn_id}",
                 unscoped=held is not None and held._unscoped(message.turn_id),
+                room_created_at=None if held is None else held._room_created_at,
             )
     except Exception:
         logger.exception("A publication after turn %s could not be published", message.turn_id)

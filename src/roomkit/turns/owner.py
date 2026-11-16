@@ -46,11 +46,13 @@ from roomkit.turns.wire import (
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+    from datetime import datetime
 
     from roomkit.channels.base import Channel
     from roomkit.models.channel import ChannelBinding, ChannelOutput
     from roomkit.models.context import RoomContext
     from roomkit.models.event import RoomEvent
+    from roomkit.models.room import Room
     from roomkit.models.steering import SteeringDirective
     from roomkit.telemetry.base import TelemetryProvider
     from roomkit.turns.base import OwnerEvents, OwnerHost, OwnerTools, TurnBackend
@@ -188,6 +190,10 @@ class TurnClient(RoomOwner):
         self._closed = False
         # The names of each room's hooks on executor triggers (RFC §10.6.6).
         self._room_hooks: dict[str, list[str]] = {}
+        # What forgets, the room in hand, the hooks and turns of an earlier
+        # room of its id, and says whether the id's room hooks are that
+        # room's (RFC §17.2): the kit's.
+        self._room_settler: Callable[[Room], bool] | None = None
 
     async def run(
         self,
@@ -211,9 +217,13 @@ class TurnClient(RoomOwner):
             owner_tools=declared,
             telemetry=self.telemetry,
         )
-        request.room_hooks = list(self._room_hooks.get(request.room_id, ()))
+        # The room's hooks and turns of an earlier room of its id are
+        # forgotten first; a turn of a room gone runs none of the id's
+        # (RFC §17.2).
+        if self._room_settler is None or self._room_settler(context.room):
+            request.room_hooks = list(self._room_hooks.get(request.room_id, ()))
         request.previous_turn, submitted = self._leave(
-            channel_id, request.room_id, request.turn_id
+            channel_id, request.room_id, request.turn_id, context.room.created_at
         )
         submitted._record_scope(
             request.turn_id,
@@ -336,7 +346,9 @@ class TurnClient(RoomOwner):
             return await self.backend.control(message)
         # A channel call leaves the room's state as a turn does.
         channel_id, room_id = message.channel_id, message.room_id
-        previous, made = self._leave(channel_id, room_id, message.call_id)
+        previous, made = self._leave(
+            channel_id, room_id, message.call_id, message._room_created_at
+        )
         call = message.model_copy(update={"previous_turn": previous})
         try:
             answer = await self.backend.control(call)
@@ -349,14 +361,32 @@ class TurnClient(RoomOwner):
         return answer
 
     def _leave(
-        self, channel_id: str, room_id: str, entry_id: str
+        self,
+        channel_id: str,
+        room_id: str,
+        entry_id: str,
+        room_created_at: datetime | None = None,
     ) -> tuple[PreviousTurn | None, PreviousTurn]:
         """Record the turn or call *entry_id* as the room's last of the
         channel before it is sent, so one sent alongside names it: the record
-        it replaces (a copy, as a request carries it), and its own."""
+        it replaces (a copy, as a request carries it), and its own. A turn
+        names the creation mark of its room (*room_created_at*): the records
+        of another room of the id, deleted since and created again by
+        another process, are dropped first, so it names no previous turn
+        (RFC §17.2)."""
         previous = self._previous.get(channel_id, room_id)
+        if (
+            previous is not None
+            and room_created_at is not None
+            and previous._room_created_at not in (None, room_created_at)
+        ):
+            self._previous.pop_room(room_id)
+            previous = None
         made = PreviousTurn(turn_id=entry_id)
         made._inherit_scopes(previous)
+        made._room_created_at = room_created_at or (
+            previous._room_created_at if previous is not None else None
+        )
         self._previous.put(channel_id, room_id, made)
         return (previous.model_copy() if previous is not None else None), made
 

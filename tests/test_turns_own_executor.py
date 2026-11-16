@@ -273,3 +273,35 @@ async def test_a_live_agent_s_channel_calls_and_committed_events_stay_on_the_kit
 
     assert answer == "kit"
     assert seen == ["call:kit", "event:kit"]
+
+
+async def test_a_channel_call_in_a_room_created_again_names_no_previous_turn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The room was deleted and created again under its id: a channel call
+    there follows none of the deleted room's turns, so the executor drops
+    what it held for the id (RFC §10.6.2, §17.2)."""
+    kit = RoomKit()
+    kit.register_channel(WebSocketChannel("ws"))
+    kit.register_channel(_Tagged("ai", "kit", []))
+    await kit.create_room(room_id="r", organization_id="acme")
+    await kit.attach_channel("r", "ws")
+    await kit.attach_channel("r", "ai", category=ChannelCategory.INTELLIGENCE)
+    await kit.process_inbound(
+        InboundMessage(channel_id="ws", sender_id="u", content=TextContent(body="hi"))
+    )
+    await kit.store.delete_room("r")
+    await kit.create_room(room_id="r", organization_id="globex")
+    await kit.attach_channel("r", "ai", category=ChannelCategory.INTELLIGENCE)
+    sent: list[Any] = []
+    control = kit._turns.backend.control
+
+    async def spy(message: Any) -> Any:
+        sent.append(message)
+        return await control(message)
+
+    monkeypatch.setattr(kit._turns.backend, "control", spy)
+    await kit.channel_call("ai", "r", "whoami")
+    await kit.close()
+
+    assert [call.previous_turn for call in sent] == [None]

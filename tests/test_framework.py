@@ -39,6 +39,7 @@ from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.models.framework_event import FrameworkEvent
 from roomkit.models.hook import HookResult, InjectedEvent
 from roomkit.models.identity import IdentityResult
+from roomkit.models.room import Room
 from roomkit.store.memory import InMemoryStore
 from tests.loop_clock import HeldClock
 
@@ -644,19 +645,19 @@ class TestRoomHooks:
 
 
 class _HeldFirstExists(InMemoryStore):
-    """Holds the first existence read's answer until released."""
+    """Holds the first room read's answer until released."""
 
     def __init__(self) -> None:
         super().__init__()
         self.reading = asyncio.Event()
         self.release = asyncio.Event()
 
-    async def room_exists(self, room_id: str) -> bool:
-        exists = await super().room_exists(room_id)
+    async def get_room(self, room_id: str) -> Room | None:
+        room = await super().get_room(room_id)
         if not self.reading.is_set():
             self.reading.set()
             await self.release.wait()
-        return exists
+        return room
 
 
 class TestIdempotencyRace:

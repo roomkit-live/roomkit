@@ -49,6 +49,10 @@ class PreviousTurn(BaseModel):
     """Per turn of this record's executor in the room, newest last: whether
     its trigger scoped its answers nowhere, and its response's depth. Kept on
     the owner, never sent."""
+    _room_created_at: datetime | None = PrivateAttr(default=None)
+    """The creation mark of the room its turn ran in (RFC §17.2), ``None``
+    for a channel call's record that inherited none. Kept on the owner,
+    never sent."""
 
     def _record_scope(self, turn_id: str, *, unscoped: bool, response_depth: int) -> None:
         """Keep whether *turn_id*'s trigger scoped its answers nowhere (RFC
@@ -491,6 +495,10 @@ class ChannelCall(_HandedOver):
     previous_turn: PreviousTurn | None = None
     """The room's previous turn or call of the channel: the executor drops a
     state it did not leave before the verb runs, as before a turn."""
+    _room_created_at: datetime | None = PrivateAttr(default=None)
+    """The creation mark of the room the call is made in, as the owner read
+    it (RFC §17.2): a room created again under its id since its previous
+    turn names none. Set by the owner, never sent."""
 
 
 class ChannelResult(BaseModel):
@@ -574,6 +582,10 @@ class RoomCall(BaseModel):
     understood. What the call sends is at the depth its arguments name."""
     verb: str
     arguments: dict[str, Any] = Field(default_factory=dict)
+    _room_created_at: datetime | None = PrivateAttr(default=None)
+    """The creation mark of the room its turn ran in, as the owner's record
+    of the turn names it (RFC §17.2): the room created again under its id
+    since serves it not. Set by the owner, never sent."""
 
 
 class RoomPublication(BaseModel):

@@ -25,6 +25,8 @@ from roomkit.realtime.base import (
 from roomkit.turns.wire import Ephemeral, FrameworkEventFrame
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from roomkit.turns.wire import Frame
 
 logger = logging.getLogger("roomkit.turns")
@@ -113,8 +115,15 @@ class TurnRealtime(RealtimeBackend):
         fallback: The backend to publish to outside a turn, read when used.
     """
 
-    def __init__(self, fallback: Callable[[], RealtimeBackend | None]) -> None:
+    def __init__(
+        self,
+        fallback: Callable[[], RealtimeBackend | None],
+        room_mark: Callable[[str], Awaitable[datetime | None]] | None = None,
+    ) -> None:
         self._fallback = fallback
+        # The creation mark of the room holding an id, which a publication
+        # outside a turn carries (RFC §8.4, §17.2); none read without it.
+        self._room_mark = room_mark
 
     async def publish(self, channel: str, event: EphemeralEvent) -> None:
         outlet = current_turn_outlet()
@@ -129,6 +138,10 @@ class TurnRealtime(RealtimeBackend):
         if outlet is not None and await outlet.publish(f"room:{room_id}", event):
             return
         if (backend := self._outside_a_turn(event, f"in room {room_id}")) is not None:
+            if event.room_created_at is None and self._room_mark is not None:
+                # Of the room that holds the id now: a subscription of a room
+                # gone, created again under its id, does not read it.
+                event.room_created_at = await self._room_mark(room_id)
             await backend.publish_to_room(room_id, event)
 
     def _outside_a_turn(self, event: EphemeralEvent, where: str) -> RealtimeBackend | None:

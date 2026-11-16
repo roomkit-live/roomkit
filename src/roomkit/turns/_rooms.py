@@ -47,6 +47,8 @@ class RoomRecords[T]:
         self._kept = kept
         self._evicted = evicted
         self._records: OrderedDict[tuple[str, str], T] = OrderedDict()
+        # Room id → the channels it holds a record of.
+        self._channels: dict[str, set[str]] = {}
 
     def get(self, channel_id: str, room_id: str) -> T | None:
         return self._records.get((channel_id, room_id))
@@ -55,10 +57,27 @@ class RoomRecords[T]:
         key = (channel_id, room_id)
         self._records[key] = record
         self._records.move_to_end(key)
+        self._channels.setdefault(room_id, set()).add(channel_id)
         while len(self._records) > self._kept:
             (gone_channel, gone_room), _ = self._records.popitem(last=False)
+            self._unindex(gone_channel, gone_room)
             if self._evicted is not None:
                 self._evicted(gone_channel, gone_room)
 
     def pop(self, channel_id: str, room_id: str) -> T | None:
-        return self._records.pop((channel_id, room_id), None)
+        record = self._records.pop((channel_id, room_id), None)
+        self._unindex(channel_id, room_id)
+        return record
+
+    def pop_room(self, room_id: str) -> None:
+        """Drop every channel's record of *room_id*, telling no one."""
+        for channel_id in self._channels.pop(room_id, set()):
+            del self._records[(channel_id, room_id)]
+
+    def _unindex(self, channel_id: str, room_id: str) -> None:
+        channels = self._channels.get(room_id)
+        if channels is None:
+            return
+        channels.discard(channel_id)
+        if not channels:
+            del self._channels[room_id]

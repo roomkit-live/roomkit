@@ -42,6 +42,10 @@ class EphemeralEvent:
     channel_id: str | None = None
     data: dict[str, Any] = field(default_factory=dict)
     timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
+    room_created_at: datetime | None = None
+    """The creation mark of the room the event was published in, ``None``
+    when the publisher named none: a subscription the kit made reads the
+    events of its own room alone (RFC §8.4, §17.2)."""
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to a JSON-serializable dictionary."""
@@ -53,6 +57,9 @@ class EphemeralEvent:
             "channel_id": self.channel_id,
             "data": self.data,
             "timestamp": self.timestamp.isoformat(),
+            "room_created_at": (
+                None if self.room_created_at is None else self.room_created_at.isoformat()
+            ),
         }
 
     @classmethod
@@ -66,6 +73,11 @@ class EphemeralEvent:
             channel_id=data.get("channel_id"),
             data=data.get("data", {}),
             timestamp=datetime.fromisoformat(data["timestamp"]),
+            room_created_at=(
+                None
+                if data.get("room_created_at") is None
+                else datetime.fromisoformat(data["room_created_at"])
+            ),
         )
 
 
