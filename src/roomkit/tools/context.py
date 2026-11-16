@@ -322,6 +322,10 @@ class _ToolLoopContext:
     # ``None`` when no policy applies. Read by ``current_tool_allowed_names()``
     # (RFC §21.4): the gate refuses what it denies, so it is not callable.
     admits: Callable[[str], bool] | None = None
+    # Whether the turn's tool policy lets a bare name run on the server an MCP
+    # alias names (``alias_admitted``); ``None`` when no policy applies. Read
+    # by a labelled MCP handler (RFC §21.2).
+    alias_admits: Callable[[str], bool] | None = None
     # The names the turn admits, as an owner-served call carries them from the
     # executor that resolved its toolset (RFC §10.6.5): what
     # ``current_tool_allowed_names()`` answers on the owner.
@@ -419,6 +423,7 @@ class _ToolLoopContext:
             ctx.skills = parent.skills
             ctx.tool_timeouts = parent.tool_timeouts
             ctx.admits = parent.admits
+            ctx.alias_admits = parent.alias_admits
             ctx.withdrawn_tools = parent.withdrawn_tools
             ctx.unavailable_tools = parent.unavailable_tools
             ctx.hook_pinned = parent.hook_pinned
@@ -637,6 +642,50 @@ def current_tool_allowed_names() -> set[str] | None:
     return {
         name for t in ctx.offered_tools() if (name := getattr(t, "name", None)) and admits(name)
     }
+
+
+def turn_admits_alias(alias: str) -> bool:
+    """Whether the tool policy of the call now running lets a tool called by
+    its bare name run on the server its MCP *alias* names (RFC §21.2): false
+    only when the policy names that server to keep it out; true outside a
+    call and under no policy.
+
+    The MCP handler of a labelled server reads it, so a bare name runs on no
+    server the policy keeps out.
+    """
+    ctx = _current_loop_ctx.get()
+    admits = None if ctx is None else ctx.alias_admits
+    return admits is None or admits(alias)
+
+
+_delegating_alias_admits: contextvars.ContextVar[Callable[[str], bool] | None] = (
+    contextvars.ContextVar("_delegating_alias_admits", default=None)
+)
+
+
+@contextmanager
+def delegated_under(alias_admits: Callable[[str], bool] | None) -> Generator[None, None, None]:
+    """Serve the enclosed calls for an agent whose own policy judges them
+    beside the gate that serves them (a reasoning backend's agent, RFC
+    §12.4.1): that gate hands its handlers both judgements (RFC §21.2)."""
+    token = _delegating_alias_admits.set(alias_admits)
+    try:
+        yield
+    finally:
+        _delegating_alias_admits.reset(token)
+
+
+def with_delegating_agent(
+    alias_admits: Callable[[str], bool] | None,
+) -> Callable[[str], bool] | None:
+    """*alias_admits*, and the delegating agent's, when a call is served for
+    one (:func:`delegated_under`): both must let the bare name run there."""
+    outer = _delegating_alias_admits.get()
+    if outer is None:
+        return alias_admits
+    if alias_admits is None:
+        return outer
+    return lambda alias: alias_admits(alias) and outer(alias)
 
 
 def current_turn_footprint() -> TurnFootprint | None:

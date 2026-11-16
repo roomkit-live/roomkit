@@ -37,6 +37,7 @@ from roomkit.channels._conference_mixer import ConferenceMixer
 from roomkit.channels._conference_operations import ConferenceResource
 from roomkit.channels._conference_tools import (
     ConferenceToolGate,
+    alias_judge,
     bound_result,
     catalogue,
     declared_tools,
@@ -1068,6 +1069,9 @@ class ConferenceRealtime:
                 for tool in declared
                 if dict_tool_name(tool)  # a provider's native tool has no name
             ]
+        # What the policy says of the server a bare name would run on, which
+        # an MCP handler reads (RFC §21.2).
+        loop_ctx.alias_admits = alias_judge(config)
         return loop_ctx
 
     def _bound_call_result(self, call: RealtimeToolCall, text: str, *, served: bool = True) -> str:

@@ -15,7 +15,7 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel
 
-from roomkit._text import is_label
+from roomkit._text import bounded_text, is_label
 from roomkit.core.exceptions import ToolFailedError, UnservedToolCallError
 from roomkit.providers.ai.base import AITool, some_vendor_accepts_tool_name
 from roomkit.tools._mcp_result import (
@@ -25,22 +25,62 @@ from roomkit.tools._mcp_result import (
     text_body,
 )
 from roomkit.tools.compose import ToolHandler, ToolResult
+from roomkit.tools.context import turn_admits_alias
 from roomkit.tools.policy import alias_server, served_tool_name
 
 logger = logging.getLogger("roomkit.tools.mcp")
 
 
-def _definition(tool: Any) -> AITool | None:
-    """The definition of a listed MCP tool, or ``None`` for one whose name no
-    provider accepts: skipped, so the server's other tools stay usable
-    (RFC §6.7)."""
-    if not some_vendor_accepts_tool_name(tool.name):
-        logger.warning("MCP tool %r skipped: no provider accepts its name", tool.name)
+_NAME_LIMIT = 128
+"""The longest tool name kept, in characters: the longest a vendor accepts."""
+
+_DESCRIPTION_LIMIT = 4096
+"""The longest tool description kept, in characters: a longer one is cut at a
+word (RFC §21.2)."""
+
+_SCHEMA_LIMIT = 32 * 1024
+"""The largest parameters' schema kept, serialized, in bytes: a tool with a
+larger one is left out (RFC §21.2)."""
+
+_TOOL_LIMIT = 512
+"""The most tools a server's listing keeps (RFC §21.2)."""
+
+
+def _definition(tool: Any, target: str) -> AITool | None:
+    """The definition of a listed MCP tool, as its server declared it and
+    bounded (RFC §21.2), or ``None`` for one no model can be handed: a name no
+    provider accepts or longer than the longest a vendor takes (RFC §6.7), or
+    a parameters' schema over :data:`_SCHEMA_LIMIT` bytes. Skipped with a
+    warning, so the server's other tools stay usable. A description over
+    :data:`_DESCRIPTION_LIMIT` characters is cut at a word."""
+    name = tool.name
+    if len(name) > _NAME_LIMIT or not some_vendor_accepts_tool_name(name):
+        logger.warning(
+            "MCP tool %r of %s skipped: no provider accepts its name", name[:_NAME_LIMIT], target
+        )
         return None
+    parameters = tool.inputSchema if tool.inputSchema else {}
+    schema = json.dumps(parameters, ensure_ascii=False, separators=(",", ":"))
+    if len(schema.encode()) > _SCHEMA_LIMIT:
+        logger.warning(
+            "MCP tool %r of %s skipped: its parameters' schema is over %d bytes",
+            name,
+            target,
+            _SCHEMA_LIMIT,
+        )
+        return None
+    description = tool.description or ""
+    if len(description) > _DESCRIPTION_LIMIT:
+        logger.warning(
+            "MCP tool %r of %s: its description is cut to %d characters",
+            name,
+            target,
+            _DESCRIPTION_LIMIT,
+        )
     return AITool(
-        name=tool.name,
-        description=tool.description or "",
-        parameters=tool.inputSchema if tool.inputSchema else {},
+        name=name,
+        description=bounded_text(description, _DESCRIPTION_LIMIT),
+        parameters=parameters,
         tags=_published_tags(getattr(tool, "meta", None)),
     )
 
@@ -510,17 +550,34 @@ class MCPToolProvider:
         }
 
     def _catalogue(self, listed: Sequence[Any]) -> None:
-        """Keep the listed tools the filter admits and a provider accepts:
-        their definitions, their names and the ``_meta`` they were listed with."""
+        """Keep the listed tools the filter admits and a provider accepts,
+        :data:`_TOOL_LIMIT` at most, a name listed twice keeping its first
+        definition: their definitions, their names and the ``_meta`` they were
+        listed with."""
         tools: list[AITool] = []
+        kept: set[str] = set()
         meta_by_name: dict[str, dict[str, Any]] = {}
         for tool in listed:
             if self._tool_filter and not self._tool_filter(tool.name):
                 continue
-            ai_tool = _definition(tool)
+            if len(tools) == _TOOL_LIMIT:
+                logger.warning(
+                    "MCP server %s lists more tools than the %d kept", self._target, _TOOL_LIMIT
+                )
+                break
+            if tool.name in kept:
+                # One tool per name (RFC §21.1): the first definition stands.
+                logger.warning(
+                    "MCP tool %r of %s skipped: its name is listed already",
+                    tool.name[:_NAME_LIMIT],
+                    self._target,
+                )
+                continue
+            ai_tool = _definition(tool, self._target)
             if ai_tool is None:
                 continue
             tools.append(ai_tool)
+            kept.add(ai_tool.name)
             if isinstance(meta := getattr(tool, "meta", None), dict):
                 meta_by_name[tool.name] = meta
         self._tools = tools
@@ -739,6 +796,13 @@ class MCPToolProvider:
             return json.dumps({"error": error_text(result)})
         return text_body(result)
 
+    def _admitted_here(self, tool: str) -> bool:
+        """Whether the turn's policy lets *tool*, called by its bare name, run
+        on this labelled server: false when the policy names the server to keep
+        it out through its alias ``mcp__<label>__<tool>``, so the next handler
+        of the chain takes the call (RFC §21.1, §21.2)."""
+        return turn_admits_alias(f"mcp__{self._label}__{tool}")
+
     def as_tool_handler(self, *, gate_discovery: bool = True) -> ToolHandler:
         """Return a ToolHandler suitable for ``AIChannel(tool_handler=...)``.
 
@@ -752,7 +816,13 @@ class MCPToolProvider:
         naming another raises ``UnservedToolCallError`` either way, so the
         next handler of the chain takes it. A provider without a label serves
         an alias whatever server it names, so a policy that names a server
-        (``deny=["mcp__b__*"]``) cannot hold a call to it.
+        (``deny=["mcp__b__*"]``) cannot hold a call to it. A labelled
+        provider serves a bare name (``delete_records``) unless the turn's
+        tool policy names its server to keep it out, through a deny pattern
+        covering its alias (``mcp__<label>__delete_records``) or an allow list
+        of aliases none of which covers it: it then raises
+        ``UnservedToolCallError``, so a bare name runs on the first server of
+        the chain the policy admits, and on none when it keeps each out.
 
         ``gate_discovery=False`` forwards every name to the server instead. A
         gateway that routes by name prefix and authenticates the caller per
@@ -796,6 +866,8 @@ class MCPToolProvider:
             lookup = served_tool_name(name)
             if gate_discovery and lookup not in self._tool_set:
                 raise UnservedToolCallError(f"tool {name!r} is not served here")
+            if server is None and self._label is not None and not self._admitted_here(lookup):
+                raise UnservedToolCallError(f"tool {name!r} is refused on this server")
             result = await self.call_tool_result(lookup, arguments, timeout=_DEFAULT_CALL_TIMEOUT)
             if result.isError:
                 # The tool ran and failed (MCP ``isError``); say so instead of

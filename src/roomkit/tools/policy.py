@@ -100,6 +100,24 @@ def call_admitted(policy: ToolPolicy, name: str) -> bool:
     return all(policy.is_allowed(judged) for judged in judged_names(name))
 
 
+def alias_admitted(policy: ToolPolicy, alias: str) -> bool:
+    """Whether *policy* lets a tool called by its bare name run on the server
+    its MCP *alias* (``mcp__<server>__<tool>``) names (RFC §21.2).
+
+    Only a policy that names a server keeps one out: a deny pattern that
+    covers the alias, or an allow list holding an alias pattern (one that
+    starts with ``mcp__``) of which none covers it. An allow list of bare
+    names alone names no server, so it keeps none out.
+    """
+    if matches_any_pattern(alias, policy.deny):
+        return False
+    return all(
+        matches_any_pattern(alias, allowed)
+        for allowed in (policy.allow, policy._restrict_allow)
+        if any(pattern.startswith("mcp__") for pattern in allowed)
+    )
+
+
 def call_gated(name: str, patterns: Iterable[str]) -> bool:
     """Whether a glob of *patterns* (a skill's gate, RFC §24.2) covers a call
     to *name* under any name it is judged by (:func:`judged_names`)."""

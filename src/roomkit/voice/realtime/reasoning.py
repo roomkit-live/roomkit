@@ -33,7 +33,12 @@ from roomkit.models.channel import ChannelBinding
 from roomkit.models.streaming import LoopEndMarker, SegmentBreakMarker, ToolCallStartMarker
 from roomkit.models.tool_call import ToolCallEvent
 from roomkit.providers.ai.base import AIContext, AIMessage, AITool
-from roomkit.tools.context import _current_loop_ctx, _ToolLoopContext, current_tool_call
+from roomkit.tools.context import (
+    _current_loop_ctx,
+    _ToolLoopContext,
+    current_tool_call,
+    delegated_under,
+)
 from roomkit.tools.result import tool_failure
 from roomkit.tools.timeout import ToolTimeouts
 from roomkit.voice.base import VoiceSessionState
@@ -432,8 +437,11 @@ class AgentReasoningBackend(ReasoningBackend):
         if call is not None and loop_ctx is not None:
             loop_ctx.claim_report(call.tool_call_id)
         token = _MODEL_CALL_ID.set(call.tool_call_id or None if call is not None else None)
+        # The agent's policy judges the call beside the voice gate's: a
+        # labelled MCP handler reads both (RFC §21.2).
         try:
-            done = await _execute(_DELEGATION.get(), name, arguments)
+            with delegated_under(loop_ctx.alias_admits if loop_ctx is not None else None):
+                done = await _execute(_DELEGATION.get(), name, arguments)
         finally:
             _MODEL_CALL_ID.reset(token)
         if not done.is_error:

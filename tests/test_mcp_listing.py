@@ -330,6 +330,64 @@ def test_a_tag_a_server_wrote_badly_costs_it_no_tool(meta: Any, tags: list[str])
     listed = SimpleNamespace(
         name="search", description="Search", inputSchema={"type": "object"}, meta=meta
     )
-    definition = _definition(listed)
+    definition = _definition(listed, "server")
     assert definition is not None
     assert definition.tags == tags
+
+
+_LONG = " ".join(["lookup"] * 700)
+_OBJECT = {"type": "object"}
+_BIG_SCHEMA = {"type": "object", "properties": {"q": {"description": "x" * (32 * 1024)}}}
+
+
+@pytest.mark.parametrize(
+    ("name", "description", "schema", "kept"),
+    [
+        ("t" * 128, "Find.", _OBJECT, ("t" * 128, "Find.")),
+        ("t" * 129, "Find.", _OBJECT, None),
+        ("find", _LONG, _OBJECT, ("find", _LONG[:4094] + "…")),
+        ("find", "Find.", _BIG_SCHEMA, None),
+    ],
+    ids=["longest-name", "name-too-long", "long-description", "schema-too-large"],
+)
+def test_a_listed_tool_is_bounded(
+    name: str, description: str, schema: dict[str, Any], kept: tuple[str, str] | None
+) -> None:
+    """A tool is the server's declaration, handed to the model as written but
+    bounded (RFC §21.2, RMK-1001): a name past 128 characters or a schema past
+    32 KiB leaves the tool out, a description past 4,096 characters is cut at a
+    word, as roomkit-rs bounds them."""
+    listed = SimpleNamespace(name=name, description=description, inputSchema=schema, meta=None)
+
+    definition = _definition(listed, "server")
+
+    if kept is None:
+        assert definition is None
+    else:
+        assert definition is not None
+        assert (definition.name, definition.description) == kept
+
+
+@pytest.mark.parametrize(
+    ("listed", "kept"),
+    [
+        ([(f"t{n}", "") for n in range(513)], [(f"t{n}", "") for n in range(512)]),
+        ([("find", "First."), ("find", "Second.")], [("find", "First.")]),
+    ],
+    ids=["512-tools", "a-name-listed-twice"],
+)
+def test_a_listing_keeps_512_tools_each_name_once(
+    listed: list[tuple[str, str]], kept: list[tuple[str, str]]
+) -> None:
+    """A listing keeps 512 tools at most, and a name listed twice keeps its
+    first definition (RFC §21.1, §21.2), as roomkit-rs reads a listing."""
+    provider = MCPToolProvider("http://tools.invalid/mcp")
+
+    provider._catalogue(
+        [
+            SimpleNamespace(name=name, description=text, inputSchema=_OBJECT, meta=None)
+            for name, text in listed
+        ]
+    )
+
+    assert [(tool.name, tool.description) for tool in provider._tools] == kept

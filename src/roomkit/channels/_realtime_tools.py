@@ -49,6 +49,7 @@ from roomkit.skills.models import missing_tools_error, serves_exactly
 from roomkit.telemetry.base import Attr, SpanKind
 from roomkit.telemetry.context import reset_span, set_current_span
 from roomkit.tools._outcome import OutcomeKind, ToolOutcome, kept_in_tool_memory
+from roomkit.tools.context import with_delegating_agent
 from roomkit.tools.result import (
     GateRefusal,
     bounded_result,
@@ -255,6 +256,7 @@ class RealtimeToolsMixin:
     _admitted_catalogue: Any  # RealtimeToolGateMixin — cross-mixin
     _session_declared_tools: Any  # RealtimeToolGateMixin — cross-mixin
     _session_policy_check: Any  # RealtimeToolGateMixin — cross-mixin
+    _session_alias_check: Any  # RealtimeToolGateMixin — cross-mixin
     _tool_reachable: Any  # RealtimeToolGateMixin — cross-mixin
     _channel_tool_names: Any  # RealtimeToolGateMixin — cross-mixin
     _human_input_names: Any  # RealtimeToolGateMixin — cross-mixin
@@ -668,6 +670,10 @@ class RealtimeToolsMixin:
                 if dict_tool_name(tool)  # a provider's native tool has no name
             ]
             loop_ctx.admits = self._session_policy_check(session.id)
+        # What the session's policies, and a delegating agent's, say of the
+        # server a bare name would run on, with a catalogue or without: an MCP
+        # handler reads it (RFC §21.2).
+        loop_ctx.alias_admits = with_delegating_agent(self._session_alias_check(session.id))
         with serving_tool_call(call, self.channel_id, loop_ctx):
             yield loop_ctx
 

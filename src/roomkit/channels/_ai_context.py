@@ -10,7 +10,7 @@ from pydantic import ValidationError
 
 from roomkit._media import content_text, media_label, text_form
 from roomkit.channels._ai_cuts import CUT_NOTE, cut_answers, cut_mark, cut_records
-from roomkit.channels._ai_policy import policy_check
+from roomkit.channels._ai_policy import alias_check, policy_check
 from roomkit.channels._ai_router import messages_request, turn_request
 from roomkit.channels._author_images import (
     AuthorImages,
@@ -1032,6 +1032,7 @@ class AIContextMixin(_AIChannelContract):
         role = loop_ctx.current_participant_role
         policy = None if self._tool_policy is None else self._tool_policy.resolve(role)
         loop_ctx.admits = policy_check(policy, self._exempt_tool_names)
+        loop_ctx.alias_admits = alias_check(policy)
 
     def _turn_settings(
         self, binding: ChannelBinding, turn: AIChannelTurnConfig | None

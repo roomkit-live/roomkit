@@ -216,7 +216,12 @@ async def _realtime_door(
 
 
 async def _agent_backend_door(
-    handler: Any, call: AIToolCall, hooks: Hooks, schema: dict[str, Any], channel: dict[str, Any]
+    handler: Any,
+    call: AIToolCall,
+    hooks: Hooks,
+    schema: dict[str, Any],
+    channel: dict[str, Any],
+    agent: dict[str, Any],
 ) -> Seen:
     ai_provider = MockAIProvider(
         ai_responses=[
@@ -224,7 +229,7 @@ async def _agent_backend_door(
             AIResponse(content="done"),
         ]
     )
-    backend = AgentReasoningBackend(Agent("reasoner", provider=ai_provider))
+    backend = AgentReasoningBackend(Agent("reasoner", provider=ai_provider, **agent))
     kit, _, provider, session = await _realtime(
         handler, schema, reasoning_backend=backend, **channel
     )
@@ -272,18 +277,20 @@ async def run_door(
     call: AIToolCall | None = None,
     schema: dict[str, Any] = SCHEMA,
     channel: dict[str, Any] | None = None,
+    agent: dict[str, Any] | None = None,
 ) -> Seen:
     """Run one ``lookup`` call with *arguments* through *door*, served by
     *handler* ``(name, arguments)``, around the kit's *hooks*; or the model's
     *call* as it stands, when given; the tool declared with *schema*, on a
-    channel given the options in *channel*."""
+    channel given the options in *channel*, and a reasoning backend's agent
+    given those in *agent*."""
     call = call or AIToolCall(id="c1", name="lookup", arguments=dict(arguments or {}))
     hooks = hooks or Hooks()
     options = dict(channel or {})
     if door.startswith("text-"):
         return await _text_door(handler, door == "text-stream", call, hooks, schema, options)
     if door == "rt-agent-backend":
-        return await _agent_backend_door(handler, call, hooks, schema, options)
+        return await _agent_backend_door(handler, call, hooks, schema, options, dict(agent or {}))
     if door == "conference":
         return await _conference_door(handler, call, hooks, schema, options)
     return await _realtime_door(door, handler, call, hooks, schema, options)

@@ -20,7 +20,7 @@ from roomkit.channels._ai_policy import policy_admits
 from roomkit.channels._served_tools import CollisionLog, declared_once, dict_tool_name
 from roomkit.channels._tool_registry import ChannelRegistry, ToolSource, tool_dict
 from roomkit.models.tool_call import ToolCallEvent
-from roomkit.tools.policy import policy_refusal
+from roomkit.tools.policy import alias_admitted, policy_refusal
 from roomkit.tools.result import (
     GateRefusal,
     gated_tool_refusal,
@@ -281,6 +281,15 @@ class RealtimeToolGateMixin:
             return None
         passes = self._exempt_tool_names()
         return lambda name: all(policy_admits(p, name, passes) for p in policies)
+
+    def _session_alias_check(self, session_id: str) -> Callable[[str], bool] | None:
+        """Whether every policy the session answers to lets a bare name run on
+        the server an MCP alias names (RFC §21.2), or ``None`` when no policy
+        applies to it."""
+        policies = self._session_policies(session_id)
+        if not policies:
+            return None
+        return lambda alias: all(alias_admitted(p, alias) for p in policies)
 
     def _policy_filter(self, session_id: str, tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """The part of *tools* the session's policies admit; a provider's

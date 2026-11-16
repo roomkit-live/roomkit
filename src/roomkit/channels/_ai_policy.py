@@ -18,6 +18,7 @@ from roomkit.models.tool_call import DeclaredTool, ToolDeclarationOrigin
 from roomkit.providers.ai.base import AIContext, AIMessage, AITool, AIToolResultPart
 from roomkit.tools.policy import (
     ToolPolicy,
+    alias_admitted,
     call_admitted,
     call_gated,
     policy_refusal,
@@ -65,6 +66,15 @@ def policy_check(
     if policy is None:
         return None
     return lambda name: policy_admits(policy, name, exempt)
+
+
+def alias_check(policy: ToolPolicy | None) -> Callable[[str], bool] | None:
+    """Whether *policy* lets a bare name run on the server an MCP alias names,
+    as :func:`~roomkit.tools.policy.alias_admitted` reads it, held for a
+    turn; ``None`` when no policy applies (RFC §21.2)."""
+    if policy is None:
+        return None
+    return lambda alias: alias_admitted(policy, alias)
 
 
 class AIToolPolicyMixin(_AIChannelContract):

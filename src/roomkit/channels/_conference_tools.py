@@ -12,9 +12,10 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from roomkit.channels._ai_policy import policy_admits
+from roomkit.channels._ai_policy import alias_check, policy_admits
 from roomkit.channels._served_tools import CollisionLog, declared_once, dict_tool_name
 from roomkit.channels._tool_registry import tool_dict
 from roomkit.models.enums import ChannelType
@@ -75,6 +76,13 @@ def declared_tools(
         if not (name := dict_tool_name(t))
         or policy_admits(config.tool_policy, name, _NO_CHANNEL_TOOLS)
     ]
+
+
+def alias_judge(config: ConferenceRealtimeConfig) -> Callable[[str], bool] | None:
+    """What a conference's policy says of the server a bare name would run
+    on, held for a call's context, which a labelled MCP handler reads (RFC
+    §21.2); ``None`` under no policy."""
+    return alias_check(config.tool_policy)
 
 
 def warn_unused_role_overrides(config: ConferenceRealtimeConfig, channel_id: str) -> None:

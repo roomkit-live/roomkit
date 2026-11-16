@@ -5,8 +5,8 @@
 door, so a tool they refuse never runs under its alias; the alias itself is
 still served for a tool they admit. A provider given a ``label`` serves only
 the aliases naming its server, so a policy that names a server holds when
-every provider of the chain is labelled and the tools are declared under
-their aliases alone (RMK-493).
+every provider of the chain is labelled (RMK-493); a bare name runs on the
+first labelled server whose alias the policy admits (RMK-957).
 """
 
 from __future__ import annotations
@@ -34,6 +34,8 @@ from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransp
 from tests.conference.test_conference_realtime import ROOM, realtime_kit, until
 from tests.conftest import make_event
 from tests.test_realtime_skills import _registry_with_skill
+from tests.tool_doors import DOORS as EVERY_DOOR
+from tests.tool_doors import run_door
 from tests.tool_loop_modes import respond
 
 ALIAS = "mcp__crm__delete_records"
@@ -208,6 +210,57 @@ async def test_a_catalogue_of_aliases_refuses_a_bare_name(policy: ToolPolicy) ->
 
     assert "Tool 'delete_records' is not declared." in answer
     assert (a.ran, b.ran) == ([], [])
+
+
+def _lookup_servers() -> tuple[_Server, _Server, ToolHandler]:
+    """Labelled servers a and b, each serving ``lookup``, composed with b first."""
+    a, b = _Server(), _Server()
+    handlers = []
+    for server, label in ((b, "b"), (a, "a")):
+        provider = MCPToolProvider("http://records.invalid/mcp", label=label)
+        provider._connected = True
+        provider._session = server  # type: ignore[assignment]
+        provider._tools = [AITool(name="lookup", description="Look up", parameters={})]
+        provider._tool_set = {"lookup"}
+        handlers.append(provider.as_tool_handler())
+    return a, b, compose_tool_handlers(*handlers)
+
+
+@pytest.mark.parametrize("door", EVERY_DOOR)
+@pytest.mark.parametrize(
+    ("policy", "ran"),
+    [
+        (ToolPolicy(deny=["mcp__b__*"]), (["lookup"], [])),
+        (ToolPolicy(allow=["mcp__a__*", "lookup"]), (["lookup"], [])),
+        (ToolPolicy(deny=["mcp__a__*", "mcp__b__*"]), ([], [])),
+        (ToolPolicy(allow=["lookup"]), ([], ["lookup"])),
+    ],
+    ids=["deny-b", "allow-a", "deny-both", "allow-bare"],
+)
+async def test_a_bare_name_runs_on_the_first_server_the_policy_admits(
+    door: str, policy: ToolPolicy, ran: tuple[list[str], list[str]]
+) -> None:
+    """A labelled server serves a bare name unless the policy names it to
+    keep it out (RMK-957): b, first in the chain, is kept out, so a takes the
+    call, or nothing does when both are kept out; a policy that names no
+    server leaves the call on the first server, b."""
+    a, b, handler = _lookup_servers()
+
+    await run_door(door, handler, channel={"tool_policy": policy})
+
+    assert (a.ran, b.ran) == ran
+
+
+async def test_a_reasoning_backend_agent_s_policy_keeps_a_server_out() -> None:
+    """The policy of the agent a voice channel delegates to judges a bare name
+    beside the channel's (RMK-957, RFC §12.4.1)."""
+    a, b, handler = _lookup_servers()
+
+    await run_door(
+        "rt-agent-backend", handler, agent={"tool_policy": ToolPolicy(deny=["mcp__b__*"])}
+    )
+
+    assert (a.ran, b.ran) == (["lookup"], [])
 
 
 async def test_an_unlabelled_provider_serves_an_alias_naming_any_server() -> None:

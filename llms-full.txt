@@ -2696,6 +2696,15 @@ async with MCPToolProvider.from_command("uvx", ["mcp-server-sqlite", "--db", "da
     ai = AIChannel("ai", provider=provider, tools=mcp.get_tools(), tool_handler=mcp.as_tool_handler())
 ```
 
+A listed tool is its server's declaration: its description and its
+parameters reach the model as the server wrote them, in the request's tools
+rather than in a text of the runtime, so they are not framed as the server's
+instructions are (RFC §21.2). They are bounded, each with a warning naming the
+server: a description over 4,096 characters is cut at a word, a tool whose
+name is over 128 characters or whose parameters' schema is over 32 KiB is
+left out, a listing keeps 512 tools at most, and a name listed twice keeps its
+first definition.
+
 Entering a provider waits `connect_timeout` seconds at most
 (`from_command(..., connect_timeout=60.0)`, `from_url(..., connect_timeout=60.0)`):
 the handshake and the listing, and the start of a server it starts. Past it the
@@ -2736,11 +2745,14 @@ cannot hold a call to it.
 A policy judges an alias under both its names, the alias and the tool's
 (RFC §21.1): a call passes only when both do. To keep one server out, deny its
 aliases; to admit one server only, allow its aliases and its tools' names.
-Either holds only when the tools are declared under their aliases alone: a
-call under a bare name (`delete_records`) names no server, so a policy cannot
-tell which server it reaches, and the first handler of the chain that serves
-it runs it. Declared under aliases alone, a bare name is refused as not
-declared:
+A call under a bare name (`delete_records`) names no server: a labelled
+provider serves it unless the policy names its server to keep it out, through
+a deny pattern covering its alias (`mcp__archive__delete_records`) or an allow
+list of aliases none of which covers it. The call runs on the first server of
+the chain the policy does not keep out, and on none when it keeps each out; a
+policy that names no server (`allow=["delete_records"]`) leaves it on the
+first server that has it (RFC §21.2). Declared under aliases alone, a bare name
+is refused as not declared:
 
 ```python
 async with (
@@ -2763,8 +2775,9 @@ async with (
 ```
 
 `allow=["mcp__crm__*"]` alone admits nothing: the tool's own name fails it.
-A host that declares the bare names instead puts first in the chain the
-server its bare names must reach. Runnable: `examples/mcp_server_labels.py`.
+Declared under their bare names, a server's tools still run on a server the
+policy admits: with the archive first in the chain and kept out, a bare
+`delete_records` runs on the CRM. Runnable: `examples/mcp_server_labels.py`.
 
 #### Server instructions
 

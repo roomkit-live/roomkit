@@ -9,13 +9,13 @@ names whatever the order of the chain (RFC §21.2).
 A policy judges an alias under both its names. To keep a server out, deny its
 aliases (``deny=["mcp__archive__*"]``); to admit one server only, allow its
 aliases and its tools' names (``allow=["mcp__crm__*", "delete_records"]``).
-Such a policy holds only when the session declares the tools under their
-aliases alone, as here: a bare ``delete_records`` names no server, so it is
-refused as undeclared. Declared under their bare names, a bare call runs on
-the first server of the chain that has the tool, the archive here, whatever
-the policy says of servers; a host that declares bare names puts first the
-server its bare names must reach. A provider without ``label=`` serves an alias
-whatever server it names: a policy that names a server cannot hold a call to it.
+The first session declares the tools under their aliases alone, so a bare
+``delete_records`` is refused as undeclared. The second declares the CRM's
+tools under their bare names: a bare call runs on the first server of the
+chain the policy does not keep out, the CRM, the archive being kept out by
+its aliases (RFC §21.2). A provider without
+``label=`` serves an alias whatever server it names: a policy that names a
+server cannot hold a call to it.
 
     RealtimeVoiceChannel (tools=the aliases, tool_policy=deny mcp__archive__*)
         └── compose_tool_handlers
@@ -82,28 +82,41 @@ async def result_of(provider: MockRealtimeProvider, call: int) -> str:
     return provider.tool_results[call - 1][2]
 
 
+async def session_calls(
+    channel_id: str, tools: list[Any], crm: MCPToolProvider, archive: MCPToolProvider
+) -> None:
+    """A voice session declaring *tools*, calling each of CALLS once."""
+    provider = MockRealtimeProvider()
+    voice = RealtimeVoiceChannel(
+        channel_id,
+        provider=provider,
+        transport=MockRealtimeTransport(),
+        tools=tools,
+        # The archive first: without labels, every alias would reach it.
+        tool_handler=compose_tool_handlers(archive.as_tool_handler(), crm.as_tool_handler()),
+        tool_policy=ToolPolicy(deny=["mcp__archive__*"]),  # keep the archive out
+    )
+    kit = RoomKit()
+    kit.register_channel(voice)
+    await kit.create_room(room_id="records")
+    await kit.attach_channel("records", channel_id)
+    session = await voice.start_session("records", "operator", "ws")
+
+    for call, name in enumerate(CALLS, start=1):
+        await provider.simulate_tool_call(session, f"call-{call}", name, {"query": "2019"})
+        logger.info("%s: %s -> %s", channel_id, name, await result_of(provider, call))
+    await kit.close()
+
+
 async def main() -> None:
     async with records("crm") as crm, records("archive") as archive:
-        provider = MockRealtimeProvider()
-        voice = RealtimeVoiceChannel(
-            "voice",
-            provider=provider,
-            transport=MockRealtimeTransport(),
-            tools=[*aliases(crm, "crm"), *aliases(archive, "archive")],
-            # The archive first: without labels, every alias would reach it.
-            tool_handler=compose_tool_handlers(archive.as_tool_handler(), crm.as_tool_handler()),
-            tool_policy=ToolPolicy(deny=["mcp__archive__*"]),  # keep the archive out
+        # The aliases alone: the bare name is not declared.
+        await session_calls(
+            "aliases", [*aliases(crm, "crm"), *aliases(archive, "archive")], crm, archive
         )
-        kit = RoomKit()
-        kit.register_channel(voice)
-        await kit.create_room(room_id="records")
-        await kit.attach_channel("records", "voice")
-        session = await voice.start_session("records", "operator", "ws")
-
-        for call, name in enumerate(CALLS, start=1):
-            await provider.simulate_tool_call(session, f"call-{call}", name, {"query": "2019"})
-            logger.info("%s -> %s", name, await result_of(provider, call))
-        await kit.close()
+        # The CRM's tools under their bare names: the bare call runs on the
+        # CRM, the first server of the chain the policy admits.
+        await session_calls("bare", crm.get_tools_as_dicts(), crm, archive)
 
 
 if __name__ == "__main__":
