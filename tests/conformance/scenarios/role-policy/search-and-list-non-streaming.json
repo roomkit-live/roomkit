@@ -7,7 +7,7 @@
     "§21.1",
     "§5.5"
   ],
-  "notes": "Python: tests/test_tool_search_text.py::TestPolicyExemption::test_find_tools_runs_under_whitelist_policy, tests/test_tool_policy_exemptions.py::test_tool_search_names_no_denied_or_gated_tool. Role-selection counterpart of tool-search/tool-search-names-no-denied-tool-and-runs-under-an-allow-list; the channel base admits everything except in the owner-replace case. The original public oracle is retained, with an exhaustive wrapped-handler audit.",
+  "notes": "Python: tests/test_tool_search_text.py::TestPolicyExemption::test_find_tools_runs_under_whitelist_policy, tests/test_tool_policy_exemptions.py::test_tool_search_names_no_denied_or_gated_tool. Role-selection counterpart of tool-search/tool-search-names-no-denied-tool-and-runs-under-an-allow-list; the channel base admits everything except in the owner-replace case. The original public oracle is retained, with an exhaustive wrapped-handler audit. widget_0 is denied by the selected role; widget_1 is admitted by the role but gated by an inactive skill. Model results assert an allowed tool is found and listed; separate tool-hook observers assert both hidden names are absent from both results.",
   "setup": {
     "channels": [
       {
@@ -44,7 +44,7 @@
         "tools": [
           {
             "name": "widget_0",
-            "description": "Operate widget number 0.",
+            "description": "Send an SMS text message with a widget.",
             "parameters": {
               "type": "object"
             },
@@ -52,7 +52,7 @@
           },
           {
             "name": "widget_1",
-            "description": "Operate widget number 1.",
+            "description": "Send an SMS text message with a widget.",
             "parameters": {
               "type": "object"
             },
@@ -84,12 +84,23 @@
           "role_overrides": {
             "observer": {
               "allow": [
-                "send_sms"
+                "send_sms",
+                "widget_1"
               ]
             }
           }
         },
-        "audit": "tool_auditor"
+        "audit": "tool_auditor",
+        "skills": [
+          {
+            "name": "messaging",
+            "description": "Messaging procedure",
+            "instructions": "Rules for messaging.",
+            "allowed_tools": [
+              "widget_1"
+            ]
+          }
+        ]
       }
     ],
     "rooms": [
@@ -112,6 +123,18 @@
             "role": "observer"
           }
         ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "role_denied",
+        "trigger": "on_tool_call",
+        "execution": "async"
+      },
+      {
+        "name": "skill_gated",
+        "trigger": "on_tool_call",
+        "execution": "async"
       }
     ]
   },
@@ -143,15 +166,27 @@
       "agent": [
         {
           "tools": {
-            "find_tools": 0,
-            "list_tools": 1
+            "find_tools": "$any",
+            "list_tools": "$any",
+            "widget_0": {
+              "$absent": true
+            },
+            "widget_1": {
+              "$absent": true
+            }
           }
         },
         {
           "tools": {
-            "send_sms": 0,
-            "find_tools": 1,
-            "list_tools": 2
+            "send_sms": "$any",
+            "find_tools": "$any",
+            "list_tools": "$any",
+            "widget_0": {
+              "$absent": true
+            },
+            "widget_1": {
+              "$absent": true
+            }
           },
           "tool_results": [
             {
@@ -163,7 +198,7 @@
               "tool_call_id": "c2",
               "is_error": false,
               "content": {
-                "$lacks": "widget_0"
+                "$contains": "send_sms"
               }
             }
           ]
@@ -172,6 +207,44 @@
     },
     "tool_audit": {
       "$unordered": []
+    },
+    "hooks": {
+      "role_denied": [
+        {
+          "tool_call": {
+            "tool_call_id": "c1",
+            "result": {
+              "$lacks": "widget_0"
+            }
+          }
+        },
+        {
+          "tool_call": {
+            "tool_call_id": "c2",
+            "result": {
+              "$lacks": "widget_0"
+            }
+          }
+        }
+      ],
+      "skill_gated": [
+        {
+          "tool_call": {
+            "tool_call_id": "c1",
+            "result": {
+              "$lacks": "widget_1"
+            }
+          }
+        },
+        {
+          "tool_call": {
+            "tool_call_id": "c2",
+            "result": {
+              "$lacks": "widget_1"
+            }
+          }
+        }
+      ]
     }
   }
 }
