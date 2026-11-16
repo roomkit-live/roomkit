@@ -69,6 +69,12 @@ class RoomRecords[T]:
         self._unindex(channel_id, room_id)
         return record
 
+    def of_room(self, room_id: str) -> T | None:
+        """A record of *room_id*, of any channel; ``None`` for none."""
+        for channel_id in self._channels.get(room_id, ()):
+            return self._records[(channel_id, room_id)]
+        return None
+
     def pop_room(self, room_id: str) -> None:
         """Drop every channel's record of *room_id*, telling no one."""
         for channel_id in self._channels.pop(room_id, set()):

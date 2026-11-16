@@ -73,6 +73,11 @@ class KitWiringEnv(WiringEnv):
         return self._kit._emit_framework_event
 
     async def room_mark(self, room_id: str) -> datetime | None:
+        # The room the kit's last turn or channel call of the id ran in, else
+        # the room the store holds (RFC §8.4, §17.2).
+        mark = self._kit._turns._room_mark(room_id)
+        if mark is not None:
+            return mark
         room = await self._kit._store.get_room(room_id)
         return None if room is None else room.created_at
 

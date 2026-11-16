@@ -1213,6 +1213,48 @@ class TestScopedEphemerals:
 
         assert read == []
 
+    async def test_a_room_gone_s_channel_publication_reaches_none_of_the_room_created_again(
+        self,
+    ) -> None:
+        """A channel's publication outside a turn, made after its turn in
+        acme's room while another process deleted the room and created it
+        again for globex, is acme's room's: globex's subscription does not
+        read it (RFC §8.4, §17.2)."""
+        store, realtime = InMemoryStore(), InMemoryRealtime()
+        acme = RoomKit(store=store, realtime=realtime)
+        globex = RoomKit(store=store, realtime=realtime)
+        agent = AIChannel("agent", provider=MockAIProvider(responses=["acme answer"]))
+        acme.register_channel(agent)
+        acme.register_channel(SimpleChannel("sms"))
+        read: list[str] = []
+        reached = asyncio.Event()
+
+        async def watch(event: EphemeralEvent) -> None:
+            read.append(event.user_id)
+
+        async def reach(event: EphemeralEvent) -> None:
+            reached.set()
+
+        await acme.create_room(room_id="shared-id", organization_id="acme")
+        await acme.attach_channel("shared-id", "sms")
+        await acme.attach_channel("shared-id", "agent", category=ChannelCategory.INTELLIGENCE)
+        await acme.process_inbound(_text("acme question"), room_id="shared-id")
+        await store.delete_room("shared-id")
+        await globex.create_room(room_id="shared-id", organization_id="globex")
+        await globex.subscribe_room("shared-id", watch, organization_id="globex")
+        await realtime.subscribe_to_room("shared-id", reach)
+        typing = EphemeralEvent(
+            room_id="shared-id", type=EphemeralEventType.TYPING_START, user_id="acme-agent"
+        )
+        await agent._realtime.publish_to_room("shared-id", typing)
+        await asyncio.wait_for(reached.wait(), 5)
+        for _ in range(10):
+            await asyncio.sleep(0)
+        for kit in (acme, globex):
+            await kit.close()
+
+        assert read == []
+
     @pytest.mark.skipif(not os.environ.get("REDIS_URL"), reason="REDIS_URL not set")
     @pytest.mark.parametrize("processes", [1, 2], ids=["same-process", "other-process"])
     async def test_a_deleted_rooms_subscription_reads_nothing_of_the_room_created_again(

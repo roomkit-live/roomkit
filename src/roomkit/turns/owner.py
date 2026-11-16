@@ -321,6 +321,12 @@ class TurnClient(RoomOwner):
         """The names of *room_id*'s hooks on executor triggers."""
         return list(self._room_hooks.get(room_id, ()))
 
+    def _room_mark(self, room_id: str) -> datetime | None:
+        """The creation mark of the room this owner's last turn or channel
+        call of *room_id* ran in, ``None`` when it holds none of the id."""
+        record = self._previous.of_room(room_id)
+        return None if record is None else record._room_created_at
+
     async def control(self, message: ChannelControl) -> ChannelResult | None:
         """Send a channel control message (RFC §10.6.3): a ``channel_call``'s
         result; nothing for ``room_attached``, ``room_detached``,

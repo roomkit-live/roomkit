@@ -139,8 +139,8 @@ class TurnRealtime(RealtimeBackend):
             return
         if (backend := self._outside_a_turn(event, f"in room {room_id}")) is not None:
             if event.room_created_at is None and self._room_mark is not None:
-                # Of the room that holds the id now: a subscription of a room
-                # gone, created again under its id, does not read it.
+                # Of the room the kit's last turn of the id ran in, else of the
+                # room that holds it: another room's subscription reads it not.
                 event.room_created_at = await self._room_mark(room_id)
             await backend.publish_to_room(room_id, event)
 

@@ -173,8 +173,9 @@ class WiringEnv(ABC):
         return None
 
     async def room_mark(self, room_id: str) -> datetime | None:
-        """The creation mark of the room holding *room_id*, which a
-        publication outside a turn carries (RFC §8.4, §17.2); ``None`` for
+        """The creation mark a publication outside a turn in *room_id*
+        carries (RFC §8.4, §17.2): of the room the kit's last turn or channel
+        call of the id ran in, else of the room holding it; ``None`` for
         none, or where no store is read."""
         return None
 
