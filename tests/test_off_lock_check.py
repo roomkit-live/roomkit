@@ -22,6 +22,7 @@ from roomkit.models.event import RoomEvent, TextContent
 from roomkit.models.framework_event import FrameworkEvent
 from roomkit.models.hook import HookResult
 from roomkit.models.store_filter import EventFilter
+from tests.loop_clock import HeldClock
 from tests.test_framework import AILikeChannel, SimpleChannel
 
 
@@ -201,11 +202,18 @@ class TestDecisionMerge:
 
 
 class TestTicketRelease:
-    async def _next_goes_through(self, kit: RoomKit) -> None:
+    async def _next_goes_through(self, kit: RoomKit, clock: HeldClock | None = None) -> None:
         # The hook stays registered: the next message takes a ticket too, and
         # would hang behind a leaked one.
         assert kit._admission.pending("r1") == 0
-        result = await asyncio.wait_for(kit.process_inbound(_msg("next"), room_id="r1"), 1)
+        call = asyncio.ensure_future(kit.process_inbound(_msg("next"), room_id="r1"))
+        if clock is None:
+            result = await asyncio.wait_for(call, 1)
+        else:
+            # A held clock fires no loop timer: the wait is bounded in real time.
+            await clock.first(call)
+            assert call.done(), "the next message hangs behind a leaked ticket"
+            result = call.result()
         assert not result.blocked
 
     async def test_released_when_the_check_raises(self) -> None:
@@ -235,17 +243,39 @@ class TestTicketRelease:
         assert result.reason == "hook_timeout:pii"
         await self._next_goes_through(kit)
 
-    async def test_released_when_process_timeout_expires(self) -> None:
+    async def test_released_when_process_timeout_expires(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         kit = RoomKit(process_timeout=0.1)
         await _room(kit)
-        kit.hook(HookTrigger.BEFORE_BROADCAST, name="pii", needs_lock=False)(_scan({"A": 1}))
+        scanning = asyncio.Event()
 
-        result = await kit.process_inbound(_msg("A"), room_id="r1")
+        async def scan(event: RoomEvent, ctx: RoomContext) -> HookResult:
+            if _body(event) == "A":
+                scanning.set()
+                await asyncio.sleep(1)
+            return HookResult.allow()
 
+        kit.hook(HookTrigger.BEFORE_BROADCAST, name="pii", needs_lock=False)(scan)
+        # On the loop's clock, held from the first call's start to the end of
+        # the next one: only what the test moves spends their budgets, never a
+        # pause of the worker (RMK-1714).
+        clock = HeldClock(monkeypatch)
+        clock.hold()
+        call = asyncio.create_task(kit.process_inbound(_msg("A"), room_id="r1"))
+        reached = asyncio.create_task(scanning.wait())
+        await clock.first(call, reached)
+        assert scanning.is_set(), "the call did not reach its off-lock check"
+        await clock.past(0.1)
+        await clock.first(call)
+
+        assert call.done(), "the call outlived its process_timeout"
+        result = call.result()
         assert result.blocked and result.reason == "process_timeout"
         events = await kit.store.list_events("r1", event_filter=EventFilter(include_blocked=True))
         assert [_body(e) for e in events if e.type == EventType.MESSAGE] == []
-        await self._next_goes_through(kit)
+        await self._next_goes_through(kit, clock)
+        clock.release()
 
     async def test_released_when_the_caller_cancels(self) -> None:
         kit = RoomKit()

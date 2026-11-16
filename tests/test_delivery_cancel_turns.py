@@ -40,6 +40,7 @@ from roomkit.store.sqlite import SQLiteStore
 from roomkit.turns import InMemoryTurnBackend
 from roomkit.turns.base import TurnLink
 from roomkit.turns.wire import TurnRequest
+from tests.loop_clock import HeldClock
 from tests.test_channels.test_acp import _channel as acp_channel
 from tests.test_framework import SimpleChannel
 
@@ -543,7 +544,7 @@ async def test_a_task_delegated_from_a_delivery_is_not_its_turn_work(tmp_path: P
 
 
 async def test_a_cancel_returns_at_once_while_a_transport_still_delivers(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The cancel joins the turns' work, not the delivery going on: a slow
     transport neither holds the cancel nor makes it report its cleanup
@@ -555,7 +556,16 @@ async def test_a_cancel_returns_at_once_while_a_transport_still_delivers(
         a = await room.send("task A", "a")
         await room.seen.until_started("task A")
         assert a.delivery is not None
-        done_a = await asyncio.wait_for(a.delivery.cancel(timeout=0.5), WAIT)
+        # The cleanup's budget on the loop's clock, held from the cancel: a
+        # cleanup that ends by itself is never cut by a pause of the worker
+        # (RMK-1714).
+        clock = HeldClock(monkeypatch)
+        clock.hold()
+        cancelling = asyncio.ensure_future(a.delivery.cancel(timeout=0.5))
+        await clock.first(cancelling)
+        clock.require(cancelling.done(), "the cancel waited for the delivery going on")
+        clock.release()
+        done_a = await cancelling
         assert done_a.cancellation_reason == "caller_cancelled"
         room.ws.held["task A"].set()
         await room.until_broadcast("task A")

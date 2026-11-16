@@ -692,8 +692,10 @@ class TestTextSessionStarted:
 
     async def test_another_agent_reading_the_greeting_holds_no_message(self) -> None:
         """A greeting's delivery to another intelligence channel waits on no gate
-        of its own: the message is processed, not refused process_timeout (RMK-503)."""
-        kit = RoomKit(process_timeout=0.5)
+        of its own: the message is processed, not refused process_timeout (RMK-503).
+        The budget only matters on failure, where the gate waits for ever: short,
+        a pause of the worker spent it (RMK-1714)."""
+        kit = RoomKit(process_timeout=5)
         sms = SMSChannel("sms-1", provider=MockSMSProvider())
         agent = Agent(
             "agent-1",

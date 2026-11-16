@@ -12,6 +12,7 @@ from roomkit import Agent, ChannelCategory, InboundMessage, RoomKit, TextContent
 from roomkit.models.enums import EventType
 from roomkit.providers.ai.base import AIResponse, AITool, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
+from tests.loop_clock import HeldClock
 from tests.test_framework import SimpleChannel
 from tests.tool_loop_modes import open_tool_calls
 
@@ -360,14 +361,24 @@ async def test_cancelled_waiter_does_not_cancel_deferred_turn(streaming: bool) -
 
 
 @pytest.mark.parametrize("streaming", [False, True])
-async def test_handler_suppressing_cancel_cannot_start_next_tool(streaming: bool) -> None:
+async def test_handler_suppressing_cancel_cannot_start_next_tool(
+    streaming: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
     tool = PausedTool(suppress=True)
     kit, _, _ = await setup(tool, streaming=streaming)
     try:
         result = await kit.process_inbound(message(), room_id="owned", defer_delivery=True)
         assert result.delivery is not None
         await tool.started.wait()
-        await result.delivery.cancel(timeout=0.1)
+        # The cleanup's budget on the loop's clock, held from the cancel: a
+        # cleanup that ends by itself is never cut by a pause of the worker.
+        clock = HeldClock(monkeypatch)
+        clock.hold()
+        cancelling = asyncio.ensure_future(result.delivery.cancel(timeout=0.1))
+        await clock.first(cancelling)
+        clock.require(cancelling.done(), "the cancel's cleanup did not end")
+        clock.release()
+        await cancelling
         assert tool.calls == ["first"]
         assert tool.effects == []
     finally:

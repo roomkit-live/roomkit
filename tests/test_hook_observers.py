@@ -277,15 +277,18 @@ class TestTheRoomGoesOn:
             HookTrigger.ON_RECORDING_STOPPED: lambda: kit.stop_room_recording("r1"),
             HookTrigger.ON_DELIVERY_STATUS: lambda: kit.process_delivery_status(status),
         }
+        # Each bound only matters on failure: a call that waited for the hook
+        # would wait for ever, as only ``release`` ends it. Short, a pause of
+        # the worker spent it while an agent's turn crossed Redis (RMK-1714).
         try:
-            await asyncio.wait_for(calls[trigger](), 0.5)
-            await asyncio.wait_for(started.wait(), 0.5)
+            await asyncio.wait_for(calls[trigger](), 5)
+            await asyncio.wait_for(started.wait(), 5)
             seen.append("call returned")
             if trigger is HookTrigger.ON_AI_RESPONSE:
                 assert _bodies(witness) == ["Hi.", "Answer."]
             release.set()
             if reported is not None:
-                await asyncio.wait_for(came.wait(), 0.5)
+                await asyncio.wait_for(came.wait(), 5)
                 assert seen == ["call returned", "hook ended", reported]
         finally:
             release.set()

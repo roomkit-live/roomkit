@@ -70,7 +70,7 @@ async def _verified(kit: RoomKit, identity_id: str = "id-alice") -> Verification
     return await kit.complete_verification(request.id, secret)
 
 
-class _VerificationClock:
+class VerificationClock:
     """Only verification's clock and timer waits move when the test advances them."""
 
     def __init__(self) -> None:
@@ -166,7 +166,7 @@ async def test_a_verification_that_outlived_an_unanswered_request_still_ends(
 ) -> None:
     """Asked again, the person did not answer: the request's end is not the
     verification's, which is still announced when its own time runs out."""
-    clock = _VerificationClock()
+    clock = VerificationClock()
     monkeypatch.setattr(verification_mixin, "datetime", clock)
     monkeypatch.setattr(verification_mixin, "asyncio", clock)
     kit, fired = await _kit(ttl=0.2, request_ttl=0.05)
@@ -272,6 +272,10 @@ def _ends(fired: list[tuple[str, dict[str, Any]]]) -> list[tuple[str, str]]:
     return [(d["reason"], d["ended"]) for t, d in fired if t == HookTrigger.ON_VERIFICATION_ENDED]
 
 
+def _ended_requests(fired: list[tuple[str, dict[str, Any]]]) -> list[str]:
+    return [d["request_id"] for t, d in fired if t == HookTrigger.ON_VERIFICATION_ENDED]
+
+
 async def test_a_request_left_unanswered_ends_when_it_expires() -> None:
     """Its end is announced when it happens, and the person reads as having
     no request open: the next message calls for a new one (RFC §11.7.5)."""
@@ -283,19 +287,6 @@ async def test_a_request_left_unanswered_ends_when_it_expires() -> None:
     assert _ends(fired) == [("expired", "request")]
     state = await kit.verification_of("id-alice")
     assert state.status == VerificationStatus.UNVERIFIED and state.request_id is None
-    await kit.close()
-
-
-async def test_a_verified_person_s_unanswered_request_leaves_the_verification() -> None:
-    kit, fired = await _kit(ttl=5.0, request_ttl=0.02)
-    await _verified(kit)
-    await kit.request_verification("id-alice", room_id="r1", channel_id="sms")
-
-    await _eventually(lambda: _ends(fired), timeout=2.0)
-
-    assert _ends(fired) == [("expired", "request")]
-    state = await kit.verification_of("id-alice")
-    assert state.status == VerificationStatus.VERIFIED and state.request_id is None
     await kit.close()
 
 
@@ -319,11 +310,26 @@ async def test_a_request_that_expired_while_nothing_ran_reads_as_ended() -> None
     await second.close()
 
 
-async def test_a_completed_request_ends_nothing_at_its_expiry() -> None:
+async def test_a_completed_request_ends_nothing_at_its_expiry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = VerificationClock()
+    monkeypatch.setattr(verification_mixin, "datetime", clock)
+    monkeypatch.setattr(verification_mixin, "asyncio", clock)
     kit, fired = await _kit(ttl=5.0, request_ttl=0.05)
-    request, secret = await kit.request_verification("id-alice", room_id="r1", channel_id="sms")
-    await kit.complete_verification(request.id, secret)
-    await _past(request.expires_at)  # its timer, had it not been stopped, would have fired
+    try:
+        request, secret = await kit.request_verification(
+            "id-alice", room_id="r1", channel_id="sms"
+        )
+        await kit.complete_verification(request.id, secret)
+        clock.past(request.expires_at)  # its timer, had it not been stopped, would fire now
 
-    assert _ends(fired) == []
-    await kit.close()
+        # Another person's request, left unanswered, ends after it would have.
+        witness, _ = await kit.request_verification("id-bob", room_id="r1", channel_id="sms")
+        clock.past(witness.expires_at)
+        await _eventually(lambda: witness.id in _ended_requests(fired))
+        await kit.hook_engine.drain_observers()
+
+        assert _ended_requests(fired) == [witness.id]
+    finally:
+        await kit.close()

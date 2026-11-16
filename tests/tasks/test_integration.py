@@ -19,6 +19,7 @@ from roomkit.models.enums import HookExecution, HookTrigger, TaskStatus
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.providers.email.mock import MockEmailProvider
 from roomkit.tasks.models import DelegatedTaskResult
+from tests.loop_clock import HeldClock
 from tests.tasks.test_delegation_result_delivery import _told
 from tests.test_framework import SimpleChannel
 
@@ -111,7 +112,7 @@ class TestDelegateIntegration:
 
         await kit.close()
 
-    async def test_cancelled_inline_delegation_fires_completion_hook(self):
+    async def test_cancelled_inline_delegation_fires_completion_hook(self, monkeypatch):
         """A delegation cancelled by the caller's timeout (asyncio.wait_for) must
         still fire ON_TASK_COMPLETED (failed) — otherwise a consumer that closes a
         step on completion (the orchestration timeline) leaves it stuck 'running'."""
@@ -125,20 +126,36 @@ class TestDelegateIntegration:
         async def on_completed(event, ctx):
             completed_hooks.append(event)
 
+        working = asyncio.Event()
+
         async def _hang(*_a, **_k):
-            await asyncio.sleep(30)
+            working.set()
+            await asyncio.Event().wait()
 
         # Worker hangs → the caller's per-task timeout cancels the delegation.
+        # The timeout runs on the loop's clock, held from the call: it runs out
+        # once the worker runs, never while the delegation is being prepared.
+        clock = HeldClock(monkeypatch)
         with (
             patch("roomkit.core.mixins.delegation.run_agent_in_child_room", side_effect=_hang),
             pytest.raises((asyncio.TimeoutError, TimeoutError)),
         ):
-            await asyncio.wait_for(
-                kit.delegate(room_id="r1", agent_id="w1", task="go", wait=True),
-                timeout=0.1,
+            clock.hold()
+            call = asyncio.ensure_future(
+                asyncio.wait_for(
+                    kit.delegate(room_id="r1", agent_id="w1", task="go", wait=True),
+                    timeout=0.1,
+                )
             )
+            reached = asyncio.ensure_future(working.wait())
+            await clock.first(call, reached)
+            reached.cancel()
+            assert working.is_set(), "the worker did not start"
+            await clock.past(0.1)
+            clock.release()
+            await call
 
-        await asyncio.sleep(0.1)  # let the ASYNC completion hook run
+        await kit.hook_engine.drain_observers()  # the ASYNC completion hook ran
         assert len(completed_hooks) == 1  # step closed despite the cancellation
         await kit.close()
 

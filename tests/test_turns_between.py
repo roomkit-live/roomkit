@@ -28,7 +28,7 @@ from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import ChannelCategory, HookExecution, HookTrigger
 from roomkit.models.event import TextContent
 from roomkit.models.task import Observation
-from roomkit.providers.ai.base import AIResponse, AITool, AIToolCall
+from roomkit.providers.ai.base import AIContext, AIResponse, AITool, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.realtime.base import EphemeralEvent, EphemeralEventType
 from roomkit.store.memory import InMemoryStore
@@ -267,12 +267,29 @@ def _listener(thinker: MockThinker) -> AIChannel:
     )
 
 
+class _HeldThinker(MockThinker):
+    """A :class:`MockThinker` whose calls end only once ``let_go`` is set:
+    a call still thinking then stands for one as long as the test needs."""
+
+    def __init__(self, thoughts: list[Thought]) -> None:
+        super().__init__(thoughts)
+        self.let_go = asyncio.Event()
+
+    async def think(self, previous: Thought, context: AIContext) -> Thought:
+        await self.let_go.wait()
+        return await super().think(previous, context)
+
+
 async def _thoughts_posted(
-    kit: RoomKit, messages: list[str], until: Callable[[list[str]], bool]
+    kit: RoomKit,
+    messages: list[str],
+    until: Callable[[list[str]], bool],
+    *,
+    said: Callable[[], None] | None = None,
 ) -> tuple[list[str], list[str]]:
-    """The thoughts posted and refused once *messages* were said and the posts
-    satisfy *until*; the caller closes the kit, which lets a hook still running
-    end, before it reads them."""
+    """The thoughts posted and refused once *messages* were said, *said* was
+    called and the posts satisfy *until*; the caller closes the kit, which
+    lets a hook still running end, before it reads them."""
     posted: list[str] = []
     refused: list[str] = []
 
@@ -290,8 +307,12 @@ async def _thoughts_posted(
             posted.append(entry.detail)
 
     await kit.status_bus.subscribe(on_status)
-    for text in messages:
-        await _say(kit, text)
+    # Bounded: a turn that waited for its thought would never return.
+    async with asyncio.timeout(5):
+        for text in messages:
+            await _say(kit, text)
+    if said is not None:
+        said()
     async with asyncio.timeout(5):
         while not until(posted):
             await asyncio.sleep(0.01)
@@ -320,13 +341,15 @@ async def test_a_thought_at_once_reaches_the_room_before_the_turn_s_output() -> 
 
 
 async def test_a_thinker_running_across_turns_reports_under_the_latest_turn() -> None:
-    # Each thought takes long enough for the second turn to be sent before the first lands.
-    thinker = MockThinker([Thought(text="First."), Thought(text="Latest.")], delay=0.15)
+    # The first thought lands only once the second turn was sent: the second
+    # message's call returns once its turn ran. A delay instead was outrun by
+    # a pause of the worker before that turn was sent (RMK-1714).
+    thinker = _HeldThinker([Thought(text="First."), Thought(text="Latest.")])
     kit = await _kit_with(_listener(thinker))
 
     # The first thought began before the latest one: it has landed once the latest is in.
     posted, refused = await _thoughts_posted(
-        kit, ["One.", "Two."], lambda posted: "Latest." in posted
+        kit, ["One.", "Two."], lambda posted: "Latest." in posted, said=thinker.let_go.set
     )
     await kit.close()
 

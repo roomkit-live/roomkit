@@ -269,8 +269,10 @@ async def test_a_caller_holding_the_room_lock_delivers_past_a_drain_under_way(
     kit-wide strategy delivering the very message whose pass runs the hook.
     Behind that batch, whose delivery needs the lock the hook holds, it
     waited on itself until ``process_timeout``; it now delivers at once,
-    unbatched, and every delivery completes (RFC §9.5.1, §22.2)."""
-    kit = RoomKit(process_timeout=0.5, delivery_strategy="queued")
+    unbatched, and every delivery completes (RFC §9.5.1, §22.2). The budget
+    and the waits only matter on failure, where the hook waits on itself:
+    short, a pause of the worker spent them (RMK-1714)."""
+    kit = RoomKit(process_timeout=5, delivery_strategy="queued")
     kit.register_channel(SimpleChannel("human"))
     for room_id in ("room-1", "room-2"):
         await kit.create_room(room_id=room_id)
@@ -301,13 +303,13 @@ async def test_a_caller_holding_the_room_lock_delivers_past_a_drain_under_way(
                 )
                 await entered.wait()
                 go = asyncio.create_task(kit.process_inbound(_said("go"), room_id="room-1"))
-                await asyncio.wait_for(hooked.wait(), 1)  # the app's wait still runs
+                await asyncio.wait_for(hooked.wait(), 10)  # the app's wait still runs
                 release.set()
             else:
                 release.set()
                 first = asyncio.create_task(kit.deliver("room-1", "go", addressed_to=[]))
                 go = None
-            outcomes = await asyncio.wait_for(asyncio.gather(first, *[go] if go else []), 2)
+            outcomes = await asyncio.wait_for(asyncio.gather(first, *[go] if go else []), 10)
         bodies = [
             e.content.body
             for room_id in ("room-1", "room-2")

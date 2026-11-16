@@ -33,6 +33,7 @@ from roomkit.store.memory import InMemoryStore
 from roomkit.store.postgres_lock import PostgresAdvisoryLockManager
 from roomkit.store.sqlite import SQLiteStore
 from tests.test_locks import SharedLockManager, a_lock_manager
+from tests.test_verification_lifecycle import VerificationClock
 
 # The production work factor, ~55 ms a hash: what a leaked store's codes cost.
 _PRODUCTION_SCRYPT_N = verification_mixin._SCRYPT_N
@@ -221,8 +222,10 @@ async def test_the_close_cuts_a_wait_for_an_identity_s_lock_under_its_namesake_r
         while not kit._door_runs._waiting:
             await asyncio.sleep(0)
     closing = asyncio.create_task(kit.close())
+    # Uncut, the call waits for ever (``done`` is set below): the bound only
+    # matters on failure. Short, a pause of the worker spent it (RMK-1714).
     with pytest.raises(KitClosedError):
-        await asyncio.wait_for(call, 0.5)
+        await asyncio.wait_for(call, 5)
     done.set()
     await holding
     await closing
@@ -363,14 +366,18 @@ async def test_a_failed_request_ends_the_verification_in_force(
 
 
 async def test_an_unanswered_request_leaves_the_verification_in_force(
-    store: ConversationStore,
+    store: ConversationStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    clock = VerificationClock()
+    monkeypatch.setattr(verification_mixin, "datetime", clock)
+    monkeypatch.setattr(verification_mixin, "asyncio", clock)
     kit, events = _kit(store, request_ttl=0.05)
     room = await _room(kit)
     alice = _identity()
     first, secret = await kit.request_verification(alice, room_id=room, channel_id="sms")
     await kit.complete_verification(first.id, secret)
     again, again_secret = await kit.request_verification(alice, room_id=room, channel_id="sms")
+    clock.past(again.expires_at)
     await _ended(events, "expired")
 
     with pytest.raises(VerificationRefusedError):

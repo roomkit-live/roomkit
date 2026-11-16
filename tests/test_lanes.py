@@ -1003,7 +1003,9 @@ async def test_a_lane_whose_owed_write_fails_again_skips_no_index_another_proces
     host_a, host_b = FakeHost(store), FakeHost(store)
     fast = {"gap_backoff_initial": 0.005, "gap_backoff_max": 0.005}
     registry_a = RoomLaneRegistry(host_a, locks, fast_config(gap_timeout=0.03, **fast))
-    registry_b = RoomLaneRegistry(host_b, locks, fast_config(gap_timeout=0.3, **fast))
+    # B's gap clock does not run out within the test, however long a pause
+    # of the worker: only A's owed write, made again, lets B's set run.
+    registry_b = RoomLaneRegistry(host_b, locks, fast_config(gap_timeout=10.0, **fast))
     advance = store.advance_delivered_index
     failed: list[int] = []
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 from typing import Any
 
 import pytest
@@ -24,6 +25,7 @@ from roomkit.identity.mock import MockIdentityResolver
 from roomkit.models.identity import Identity
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.providers.sms.mock import MockSMSProvider
+from tests.test_verification_lifecycle import VerificationClock
 
 ALICE = "+15550000001"
 
@@ -333,12 +335,17 @@ async def test_an_unlabelled_event_has_no_sender_verification() -> None:
     await kit.close()
 
 
-async def test_a_new_link_goes_out_once_the_first_expired_unanswered() -> None:
+async def test_a_new_link_goes_out_once_the_first_expired_unanswered(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """The guide's hook asks for a request when none is open: one left
     unanswered past its expiry is not open, so the next message asks again."""
-    # Long enough for the second request to be read pending, the first one waited out.
+    clock = VerificationClock()
+    monkeypatch.setattr(verification_mixin, "datetime", clock)
+    monkeypatch.setattr(verification_mixin, "asyncio", clock)
     kit, _ = _kit(VerificationPolicy(request_ttl=0.2))
     links: list[str] = []
+    expiries: list[datetime] = []
 
     @kit.hook(HookTrigger.ON_VERIFICATION_REQUIRED)
     async def required(event: Any, ctx: Any) -> HookResult:
@@ -348,9 +355,13 @@ async def test_a_new_link_goes_out_once_the_first_expired_unanswered() -> None:
                 state.identity_id, room_id=ctx.room.id, channel_id="sms"
             )
             links.append(request.id)
+            expiries.append(request.expires_at)
         return HookResult.allow()
 
     await _text(kit, "hello")
+    # The first request's time runs out, and the clock moves no further: the
+    # second is read pending, however long the test takes.
+    clock.past(expiries[0])
 
     async def first_link_expired() -> bool:
         state = await kit.verification_of("id-alice")

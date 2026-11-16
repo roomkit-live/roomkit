@@ -110,9 +110,12 @@ async def test_the_call_returns_before_its_hooks_end(kit: RoomKit, trigger: Hook
         started.set()
         await release.wait()
 
+    # Each bound only matters on failure: a call that waited for the hook
+    # would wait for ever, as only ``release`` ends it. Short, a pause of the
+    # worker spent it (RMK-1714).
     try:
-        await asyncio.wait_for(call(), 0.5)
-        await asyncio.wait_for(started.wait(), 0.5)
+        await asyncio.wait_for(call(), 5)
+        await asyncio.wait_for(started.wait(), 5)
         assert rooms == ["r1"]
     finally:
         release.set()
