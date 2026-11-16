@@ -467,6 +467,7 @@ def scripted_channel(
                 ),
                 harness.models if process else None,
                 harness.record_compacted,
+                harness.observed.script_executors,
             )
         )
         harness.models.update(models)

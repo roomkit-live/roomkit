@@ -48,6 +48,10 @@ def _write_skill(root: Path, index: int, spec: Mapping[str, Any]) -> Path:
         _write_frontmatter(directory, spec)
     for name, text in spec.get("references", {}).items():
         (directory / "references" / name).write_text(text, encoding="utf-8")
+    if scripts := spec.get("scripts"):
+        (directory / "scripts").mkdir()
+        for name, text in scripts.items():
+            (directory / "scripts" / name).write_text(text, encoding="utf-8")
     return directory
 
 

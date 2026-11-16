@@ -69,6 +69,7 @@ from roomkit.tools import current_response_metadata, current_tool_allowed_names,
 from roomkit.tools.human_input import HumanInputToolHandler
 from roomkit.tools.policy import ToolPolicy
 from tests.conformance._memory import Compacted, scripted_memory
+from tests.conformance._script_executor import ScriptedScriptExecutor
 from tests.conformance._skills import scripted_skill_registry
 
 if TYPE_CHECKING:
@@ -652,6 +653,7 @@ def scripted_agent(
     ingested: Callable[[str, str, RoomEvent], None] | None = None,
     shared: Mapping[str, ScriptedModel] | None = None,
     compacted: Callable[[str, str, dict[str, Any]], None] | None = None,
+    script_executors: dict[str, Any] | None = None,
 ) -> tuple[AIChannel, dict[str, ScriptedModel]]:
     """The AI channel of a scripted agent, and its models by the name
     ``expect.models`` gives them: its own under its id, its memory's
@@ -705,6 +707,11 @@ def scripted_agent(
         kwargs["skills"] = scripted_skill_registry(
             spec["skills"], spec.get("skills_requires_match", "exact")
         )
+    if "script_executor" in spec:
+        if script_executors is None:
+            raise AssertionError("script_executor: no observation sink")
+        record = script_executors.setdefault(spec["id"], {"calls": [], "closes": 0})
+        kwargs["script_executor"] = ScriptedScriptExecutor(spec["script_executor"], record)
     if "skills_in_prompt" in spec:
         kwargs["skills_in_prompt"] = spec["skills_in_prompt"]
     if "turn_budget_usd" in spec:

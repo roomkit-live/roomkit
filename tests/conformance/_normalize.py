@@ -65,6 +65,7 @@ class Observed:
     steps: list[Any] = field(default_factory=list)
     actions: dict[str, list[Any]] = field(default_factory=dict)
     models: dict[str, list[Any]] = field(default_factory=dict)
+    script_executors: dict[str, Any] = field(default_factory=dict)
     ai_routes: dict[str, list[Any]] = field(default_factory=dict)
     acp_wire: dict[str, list[Any]] = field(default_factory=dict)
     acp_handlers: dict[str, list[Any]] = field(default_factory=dict)

@@ -146,6 +146,9 @@ class _Comparison:
         for executor_id, expected in self.expect.get("executors", {}).items():
             actual = self.observed.executors.get(executor_id, [])
             self._check(expected, actual, f"executors.{executor_id}")
+        for channel_id, expected in self.expect.get("script_executors", {}).items():
+            actual = self.observed.script_executors.get(channel_id, MISSING)
+            self._check(expected, actual, f"script_executors.{channel_id}")
         for kind in ("tool_audit", "session_audit"):
             if kind in self.expect:
                 self._check(self.expect[kind], getattr(self.observed, kind), kind)

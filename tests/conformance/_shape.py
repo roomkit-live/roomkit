@@ -153,6 +153,7 @@ CHANNEL = {
     "skills",
     "skills_requires_match",
     "skills_in_prompt",
+    "script_executor",
     "thinking_budget",
     "enable_thinking",
     "thinking_coalesce_ms",
@@ -277,6 +278,7 @@ SKILL = {
     "description",
     "instructions",
     "references",
+    "scripts",
     "allowed_tools",
     "requires",
     "unavailable",
@@ -417,6 +419,7 @@ EXPECT = {
     "tool_audit",
     "session_audit",
     "executors",
+    "script_executors",
 }
 NEW_ROOM = {"id", "organization_id", "metadata", "timers"}
 
@@ -798,6 +801,15 @@ def _channel_settings(channel: Mapping[str, Any], path: str, found: list[str]) -
         else:
             _turn_config(config or {}, path_of, found)
     _skills(channel.get("skills", []), f"{path}.skills", found)
+    if "script_executor" in channel:
+        executor = channel["script_executor"]
+        _members(executor, {"result", "raises"}, f"{path}.script_executor", found)
+        for key, allowed in {
+            "result": {"exit_code", "stdout", "stderr", "success", "metadata"},
+            "raises": {"kind", "message"},
+        }.items():
+            if key in executor:
+                _members(executor[key], allowed, f"{path}.script_executor.{key}", found)
     if "human_input" in channel:
         human = channel["human_input"]
         _members(human, HUMAN_INPUT, f"{path}.human_input", found)
