@@ -21,25 +21,32 @@ class MCPPeer:
         self._server: asyncio.Server | None = None
         self._tasks: set[asyncio.Task[Any]] = set()
         self._writers: set[asyncio.StreamWriter] = set()
+        self._closing = False
         self.url = ""
         self.discovery = False
 
     async def __aenter__(self) -> MCPPeer:
-        self._server = await asyncio.start_server(self._serve, "127.0.0.1", 0)
+        self._closing = False
+        self._server = await asyncio.start_server(self._accepted, "127.0.0.1", 0)
         port = self._server.sockets[0].getsockname()[1]
         self.url = f"http://127.0.0.1:{port}/mcp"
         return self
 
     async def __aexit__(self, *_: object) -> None:
+        self._closing = True
         if self._server is not None:
             self._server.close()
-            await self._server.wait_closed()
         for writer in self._writers:
             writer.close()
         tasks = list(self._tasks)
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+        # Python's server waits for accepted transports too. Close them before
+        # waiting; a held or idle request need not close from the client side.
+        if self._server is not None:
+            await self._server.wait_closed()
+        self._writers.clear()
         if self._position != len(self.spec["replies"]):
             self.problems.append("MCP peer has unconsumed scripted replies")
         if "initializations" in self.spec and self._initialized != len(
@@ -47,11 +54,18 @@ class MCPPeer:
         ):
             self.problems.append("MCP peer has unconsumed initializations")
 
-    async def _serve(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        task = asyncio.current_task()
-        assert task is not None
-        self._tasks.add(task)
+    def _accepted(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        if self._closing:
+            writer.close()
+            return
+        # Register the writer before its coroutine runs, so immediate shutdown
+        # also closes a connection whose task has not started yet.
         self._writers.add(writer)
+        task = asyncio.create_task(self._serve(reader, writer))
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+
+    async def _serve(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
             await self._exchange(reader, writer)
         except (ConnectionError, asyncio.IncompleteReadError):
@@ -63,7 +77,6 @@ class MCPPeer:
             with suppress(ConnectionError):
                 await writer.wait_closed()
             self._writers.discard(writer)
-            self._tasks.discard(task)
 
     async def _exchange(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         head = await reader.readuntil(b"\r\n\r\n")

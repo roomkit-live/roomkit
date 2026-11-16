@@ -2,15 +2,66 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from typing import Any
+from unittest.mock import Mock
 
 import pytest
 
 from tests.conformance._harness import Harness
 from tests.conformance._mcp_peer import MCPPeer
 from tests.conformance._mcp_shape import mcp_problems
+
+
+async def test_peer_exit_closes_an_accepted_connection_before_waiting_for_the_server(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    peer = MCPPeer({"replies": []})
+    accepted = asyncio.Event()
+    exchange = peer._exchange
+
+    async def observe(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        accepted.set()
+        await exchange(reader, writer)
+
+    monkeypatch.setattr(peer, "_exchange", observe)
+    await peer.__aenter__()
+    assert peer._server is not None
+    port = peer._server.sockets[0].getsockname()[1]
+    reader, writer = await asyncio.open_connection("127.0.0.1", port)
+    try:
+        async with asyncio.timeout(1):
+            await accepted.wait()
+            await peer.__aexit__()
+            assert await reader.read() == b""
+    finally:
+        writer.close()
+        await writer.wait_closed()
+        await peer.__aexit__()
+    assert peer.problems == []
+
+
+@pytest.mark.parametrize("after_shutdown", [False, True])
+async def test_peer_closes_connections_accepted_at_shutdown_without_starting_their_work(
+    monkeypatch: pytest.MonkeyPatch, after_shutdown: bool
+) -> None:
+    peer = MCPPeer({"replies": []})
+    started = asyncio.Event()
+
+    async def serve(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        started.set()
+
+    monkeypatch.setattr(peer, "_serve", serve)
+    writer = Mock(spec=asyncio.StreamWriter)
+    if after_shutdown:
+        await peer.__aexit__()
+    # No scheduling checkpoint between acceptance and shutdown.
+    peer._accepted(asyncio.StreamReader(), writer)
+    await peer.__aexit__()
+    writer.close.assert_called_once()
+    assert not started.is_set()
 
 
 @pytest.mark.parametrize(
