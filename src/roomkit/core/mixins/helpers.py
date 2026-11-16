@@ -30,6 +30,7 @@ from uuid import uuid4
 from roomkit.core._authors import own_record_id, reached, stored_register, with_author
 from roomkit.core._history_boundary import bounded_history
 from roomkit.core._participant_channels import channels_reached, warn_cross_channel
+from roomkit.core._reentrance import floors_lent_while_it_runs
 from roomkit.core.exceptions import RoomNotFoundError
 from roomkit.core.hooks import SyncPipelineResult
 from roomkit.core.locks import RoomLockManager, lent_while_it_runs
@@ -1266,8 +1267,17 @@ class HelpersMixin:
         channel_id: str | None = None,
         event_id: str | None = None,
         data: dict[str, Any] | None = None,
+        *,
+        floor: int | None = None,
     ) -> None:
-        """Emit a framework event to handlers registered for *event_type*."""
+        """Emit a framework event to handlers registered for *event_type*.
+
+        With *floor*, the depth of the work that emitted the event (a turn's
+        response, for an event the turn emitted while it ran), each handler
+        runs at least that deep for as long as it runs, the turn over or not,
+        as the body of an ASYNC hook does: a handler that tells the agent
+        something at each turn ends at the depth limit, and a task it starts
+        calls at its own depth once it has returned (RFC §8.3)."""
         fw_event = FrameworkEvent(
             type=event_type,
             room_id=room_id,
@@ -1278,7 +1288,11 @@ class HelpersMixin:
         for filter_type, handler in self._event_handlers:
             if filter_type == fw_event.type:
                 try:
-                    await handler(fw_event)
+                    if floor is None:
+                        await handler(fw_event)
+                    else:
+                        with floors_lent_while_it_runs(floor):
+                            await handler(fw_event)
                 except Exception:
                     logger.exception(
                         "Framework event handler failed",

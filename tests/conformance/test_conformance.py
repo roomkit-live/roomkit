@@ -114,6 +114,8 @@ _ON_EACH_STORE = (
 # the room a message routes to (§10.4 step 1), the delivery a closing kit abandons or
 # runs whatever the store (§12.10.4), a channel's state kept with its room (§10.6.2),
 # the lock releases and the delivery cursor (§13.5), identity verification (§11.7),
+# the depth a turn's framework-event handlers send at, which raced the store's
+# awaits, beside an ASYNC hook on the turn's trigger doing the same (§8.3, RMK-1699),
 # and every scenario with other processes, whose kits each open their own store and
 # advisory lock manager there.
 _ON_POSTGRES = (
@@ -124,6 +126,11 @@ _ON_POSTGRES = (
     "locks/",
     "verification/",
     "discussion/a-discussion-regeneration-carries-its-selection-lock-release-error",
+    "reentrancy/a-before-ai-generation-handler-",
+    "reentrancy/a-tool-call-handler-",
+    "reentrancy/an-ai-response-handler-",
+    "reentrancy/an-on-ai-response-hook-",
+    "reentrancy/a-turn-s-framework-event-handler-",
 )
 
 _WORKER_DEADLINES = {

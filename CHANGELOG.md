@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A handler of a framework event a turn emits sends at least as deep as the turn's answer** (RFC §8.3, RMK-1699). Its sends took the turn's depth or none as the store's awaits fell (`before_ai_generation`: 1 in memory, 0 on SQLite and PostgreSQL) and never for `tool_call` or `ai_response`, so an `ai_response` handler that posted at each answer looped without end. Each handler now keeps the turn's response depth for as long as it runs, the turn over or not, as an ASYNC hook's body does, for an event the turn's work emits after the turn too (an `ai_response` that a slower ASYNC `ON_AI_RESPONSE` hook delays): the loop ends at `max_chain_depth`.
+
 - **Every skill manifest stays within 65,536 escaped characters** (RFC §24.1, RMK-1709). Oversized unavailable reasons, copies and MCP updates fail before changing registry or shared catalog state; rendering also rejects oversized metadata changed through a host alias.
 
 - **A streamed row a closed or archived room refuses is announced by `room_refused_event`** (RFC §5.1, RMK-1711). The row was refused in silence, so a stream cut by a close (the kit's, a timer's, or a write straight to the store) went quiet with no word of why; it now reads as any response the room refuses, `room_refused_event` naming the status, the operation `reentry` and the row's type, as in roomkit-rs and as a room gone does, with a null status.

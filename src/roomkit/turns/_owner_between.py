@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from roomkit.core._reentrance import within_turn
 from roomkit.turns._error_codec import error_record
 from roomkit.turns._owner_publish import publish_frame
 from roomkit.turns.wire import HostResult
@@ -63,14 +64,18 @@ async def publish_between_turns(
         return
     try:
         held = previous.get(message.channel_id, message.room_id)
-        await publish_frame(
-            events,
-            message.room_id,
-            message.channel_id,
-            message.frame,
-            label=f"The work of turn {message.turn_id}",
-            unscoped=held is not None and held._unscoped(message.turn_id),
-        )
+        # Still the turn's: the handlers of a framework event its work emits
+        # after it run at least as deep as its response (RFC §8.3).
+        depth = held._response_depth(message.turn_id) if held is not None else 0
+        with within_turn(depth):
+            await publish_frame(
+                events,
+                message.room_id,
+                message.channel_id,
+                message.frame,
+                label=f"The work of turn {message.turn_id}",
+                unscoped=held is not None and held._unscoped(message.turn_id),
+            )
     except Exception:
         logger.exception("A publication after turn %s could not be published", message.turn_id)
 

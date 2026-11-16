@@ -2420,6 +2420,96 @@ class TestACallFromAnAsyncHook:
         finally:
             await kit.close()
 
+    @pytest.mark.parametrize(
+        ("event_type", "posts"),
+        [
+            ("before_ai_generation", "once the turn is over"),
+            ("ai_response", "while the turn awaits it"),
+            ("ai_response", "after a slower ON_AI_RESPONSE hook"),
+        ],
+    )
+    async def test_a_framework_event_handler_telling_the_agent_again_ends_at_the_depth_limit(
+        self, event_type: str, posts: str
+    ) -> None:
+        """RMK-1699: a handler of a framework event a turn's work emits sends
+        as the body of an ASYNC hook on the turn's trigger does, at least as
+        deep as the turn's response for as long as it runs, the turn over or
+        not: a handler that tells the agent something at each turn ends at the
+        depth limit (RFC §8.3). It posted at depth 0 every time, without end;
+        then, with the floor of the turn only while it ran, still at depth 0
+        once an ASYNC ON_AI_RESPONSE hook slower than the turn delayed
+        ``ai_response`` past the turn's end."""
+        kit = await _room(RoomKit(max_chain_depth=5))
+        kit.register_channel(AIChannel("ai", provider=MockAIProvider(responses=["ok"])))
+        await kit.attach_channel("r1", "ai", category=ChannelCategory.INTELLIGENCE)
+        posted: list[RoomEvent] = []
+        ended = _ends_at_the_depth_limit(kit)
+
+        returned = asyncio.Event()
+        if posts == "after a slower ON_AI_RESPONSE hook":
+
+            @kit.hook(HookTrigger.ON_AI_RESPONSE, execution=HookExecution.ASYNC, name="audit")
+            async def audit(event: Any, ctx: RoomContext) -> None:
+                # ai_response follows its observers: the first outlives its
+                # turn, the next return at once.
+                await returned.wait()
+
+        @kit.on(event_type)
+        async def remind(event: FrameworkEvent) -> None:
+            if len(posted) >= 2 * BUDGET:
+                ended.set()
+                return
+            if posts == "once the turn is over":
+                await _settled(kit)
+            posted.append(await kit.send_event("r1", "sms", TextContent(body="Cite sources.")))
+
+        try:
+            await kit.send_event("r1", "sms", TextContent(body="What is RoomKit?"))
+            await _settled(kit)
+            returned.set()
+            await asyncio.wait_for(ended.wait(), 5)
+            assert sorted(e.chain_depth for e in posted) == [1, 2, 3, 4]
+        finally:
+            await kit.close()
+
+    async def test_a_task_a_turn_s_framework_event_handler_starts_calls_as_work_of_its_own(
+        self,
+    ) -> None:
+        """RMK-1699: the floor of a handler of a framework event a turn emits
+        is its own while it runs, not its siblings': a task one handler starts
+        posts at depth 0 once that handler returned, though the event's next
+        handler still runs (RFC §8.3). Lent to the event's whole dispatch
+        instead, the floor made that post at depth 1."""
+        kit = await _room(RoomKit())
+        kit.register_channel(AIChannel("ai", provider=MockAIProvider(responses=["ok"])))
+        await kit.attach_channel("r1", "ai", category=ChannelCategory.INTELLIGENCE)
+        returned, sent = asyncio.Event(), asyncio.Event()
+        posted: list[RoomEvent] = []
+        tasks: set[asyncio.Task[None]] = set()
+
+        async def later() -> None:
+            await returned.wait()
+            posted.append(await kit.send_event("r1", "ai", TextContent(body="later")))
+            sent.set()
+
+        @kit.on("ai_response")
+        async def starts(event: FrameworkEvent) -> None:
+            task = asyncio.create_task(later())
+            tasks.add(task)
+            task.add_done_callback(tasks.discard)
+            returned.set()  # it returns right after
+
+        @kit.on("ai_response")
+        async def slow(event: FrameworkEvent) -> None:
+            await asyncio.wait_for(sent.wait(), 5)
+
+        try:
+            await kit.send_event("r1", "sms", TextContent(body="What is RoomKit?"))
+            await asyncio.wait_for(sent.wait(), 5)
+            assert [e.chain_depth for e in posted] == [0]
+        finally:
+            await kit.close()
+
     @pytest.mark.parametrize("report", ["the session's end", "the backend's provider"])
     async def test_an_observer_of_a_realtime_call_reported_outside_its_run_posts_at_its_depth(
         self, report: str

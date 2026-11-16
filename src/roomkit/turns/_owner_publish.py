@@ -12,9 +12,11 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
+from roomkit.core._reentrance import within_turn
 from roomkit.core.visibility import answers_reach
 from roomkit.models.enums import Visibility
 from roomkit.realtime.base import EphemeralEvent, EphemeralEventType
+from roomkit.turns.base import response_depth
 from roomkit.turns.wire import Ephemeral
 
 if TYPE_CHECKING:
@@ -146,15 +148,19 @@ class TurnPublisher:
         assert self._events is not None
         request = self._request
         try:
-            await publish_frame(
-                self._events,
-                request.room_id,
-                request.channel_id,
-                frame,
-                label=f"Turn {request.turn_id}",
-                unscoped=self._unscoped,
-                traced=self.traced,
-            )
+            # Published as the turn: the handlers of a framework event it
+            # emitted run at least as deep as its response, its turn over
+            # or not, each for as long as it runs (RFC §8.3).
+            with within_turn(response_depth(request)):
+                await publish_frame(
+                    self._events,
+                    request.room_id,
+                    request.channel_id,
+                    frame,
+                    label=f"Turn {request.turn_id}",
+                    unscoped=self._unscoped,
+                    traced=self.traced,
+                )
         except Exception:
             # What the turn published never stops the turn.
             logger.exception("Turn %s: a %s could not be published", request.turn_id, frame.type)

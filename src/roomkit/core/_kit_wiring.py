@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from roomkit.channels._video_hooks import room_vision_note
+from roomkit.core._reentrance import chain_floor
 from roomkit.core.visibility import binding_reaches_room
 from roomkit.turns._wiring_env import (
     WiringEnv,
@@ -105,6 +106,14 @@ class KitEvents(OwnerEvents):
         event_id: str | None,
         data: dict[str, Any],
     ) -> None:
+        # Each handler runs at least as deep as the work that published the
+        # event, its turn's response for one its turn emitted, for as long as
+        # the handler runs (RFC §8.3).
         await self._kit._emit_framework_event(
-            event_type, room_id=room_id, channel_id=channel_id, event_id=event_id, data=data
+            event_type,
+            room_id=room_id,
+            channel_id=channel_id,
+            event_id=event_id,
+            data=data,
+            floor=chain_floor(),
         )

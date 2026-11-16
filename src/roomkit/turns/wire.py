@@ -45,14 +45,16 @@ class PreviousTurn(BaseModel):
     """The turn's id, or the channel call's."""
     executor_id: str | None = None
     """The executor that took it; ``None`` when none had said so yet."""
-    _scopes: dict[str, bool] = PrivateAttr(default_factory=dict)
+    _scopes: dict[str, tuple[bool, int]] = PrivateAttr(default_factory=dict)
     """Per turn of this record's executor in the room, newest last: whether
-    its trigger scoped its answers nowhere. Kept on the owner, never sent."""
+    its trigger scoped its answers nowhere, and its response's depth. Kept on
+    the owner, never sent."""
 
-    def _record_scope(self, turn_id: str, *, unscoped: bool) -> None:
+    def _record_scope(self, turn_id: str, *, unscoped: bool, response_depth: int) -> None:
         """Keep whether *turn_id*'s trigger scoped its answers nowhere (RFC
-        §5.12), for what its work publishes after it (RFC §8.4)."""
-        self._scopes[turn_id] = unscoped
+        §5.12) and its response's depth, for what its work publishes after it
+        (RFC §8.4, §8.3)."""
+        self._scopes[turn_id] = (unscoped, response_depth)
         while len(self._scopes) > _SCOPES_KEPT:
             del self._scopes[next(iter(self._scopes))]
 
@@ -65,7 +67,13 @@ class PreviousTurn(BaseModel):
     def _unscoped(self, turn_id: str) -> bool:
         """Whether *turn_id*'s trigger scoped its answers nowhere; ``False``
         for a turn this record does not know, a channel call included."""
-        return self._scopes.get(turn_id, False)
+        return self._scopes.get(turn_id, (False, 0))[0]
+
+    def _response_depth(self, turn_id: str) -> int:
+        """The depth of *turn_id*'s response, which the handlers of a
+        framework event its work emits after it keep (RFC §8.3); 0 for a
+        turn this record does not know, a channel call included."""
+        return self._scopes.get(turn_id, (False, 0))[1]
 
 
 class _HandedOver(BaseModel):
