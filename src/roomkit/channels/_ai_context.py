@@ -68,6 +68,7 @@ from roomkit.channels._tool_search import search_tool_defs, should_activate_tool
 from roomkit.channels._tool_search_constants import TOOL_SEARCH_PREAMBLE
 from roomkit.channels._turn_budget import TurnBudget, turn_budget
 from roomkit.channels._turn_notes import (
+    TURN_IMAGES_HEADER,
     conversation_without_header_copies,
     turn_input,
     turn_notes,
@@ -425,13 +426,14 @@ class AIContextMixin(_AIChannelContract):
     def _turn_images(self, loop_ctx: _ToolLoopContext) -> list[AITextPart | AIImagePart]:
         """The images this channel's tool calls in the room returned that ride
         the turn's input, their labels quoting the calls with each copy of a
-        runtime mark replaced (RFC §6.4); none for a standalone turn or a
-        model that does not see."""
+        runtime mark replaced, under the runtime's own header, itself a mark
+        (RFC §6.4); none for a standalone turn or a model that does not
+        see."""
         if loop_ctx.standalone or not self._turn_provider().supports_vision:
             return []
         return [
             AITextPart(text=without_mark_copies(part.text))
-            if isinstance(part, AITextPart)
+            if isinstance(part, AITextPart) and part.text != TURN_IMAGES_HEADER
             else part
             for part in self._tool_usage.render_images(loop_ctx.room_id)
         ]

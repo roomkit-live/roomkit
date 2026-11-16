@@ -21,6 +21,7 @@ import itertools
 import re
 import sys
 import unicodedata
+from collections.abc import Callable
 
 from roomkit._lookalike_data import FORMS, SEQUENCES
 
@@ -39,6 +40,10 @@ whitespace and the lone surrogates a provider may strip before it sends a
 text. A model reads past them, and a stripped one leaves its neighbours
 side by side."""
 
+
+_INVISIBLE_LETTERS = "\u115f\u1160\u3164\uffa0"
+"""The characters of :data:`INVISIBLE` Unicode classes as letters (the Hangul
+fillers): a reader sees none of them, so they count as no letter."""
 
 _IOTA = "(?-i:\u0345)"
 """The combining iota, matched as itself only: under case folding it is the
@@ -314,18 +319,73 @@ def phrase_pattern(phrase: str, *, bracketed: bool = False) -> str:
     spacing, its own punctuation, markup (bold, struck, code, hyphens,
     slashes), combining marks and invisible characters between them (none
     included), its opening bracket, square or fullwidth, optional unless
-    *bracketed*, its last word not part of a longer one, and the closing
-    punctuation taken with the copy.
+    *bracketed*, its last word not part of a longer one, and its own closing
+    punctuation or a closing bracket of any kind taken with the copy.
 
     One quantified class between two words, never two in a row: a long run of
     spaces after a partial copy is then scanned once, not once per split."""
     marks = phrase_marks(phrase)
     gap = f"{phrase_space(marks)}*"
     body = gap.join(word_pattern(word, phrase=True) for word in phrase_words(phrase))
-    end = rf"(?:{gap}\]|[{marks}]+)?" if marks else rf"(?:{gap}\])?"
+    closing = closing_brackets()
+    end = rf"(?:{gap}[{closing}]|[{marks}]+)?" if marks else rf"(?:{gap}[{closing}])?"
     bracket = rf"[\[\uff3b]{gap}"
     opening = bracket if bracketed else f"(?:{bracket})?"
     return rf"{opening}{body}(?![^\W_]){end}"
+
+
+@functools.cache
+def opening_brackets() -> str:
+    """Every opening punctuation (general category Ps: ``[``, ``［``, ``【``,
+    ``〔``, ``(``…), as the body of a class: what a model may read as the
+    bracket a runtime mark opens with."""
+    return _category("Ps")
+
+
+@functools.cache
+def closing_brackets() -> str:
+    """Every closing punctuation (general category Pe), as the body of a
+    class: what a model may read as the bracket a runtime mark closes with."""
+    return _category("Pe")
+
+
+def _category(category: str) -> str:
+    return "".join(
+        re.escape(chr(code))
+        for code in range(sys.maxunicode + 1)
+        if unicodedata.category(chr(code)) == category
+    )
+
+
+@functools.cache
+def _letter_forms() -> str:
+    """The characters a phrase reads as a letter or a digit that are no word
+    character (``⍴`` for ``p``, ``℮`` for ``e``), escaped for a class: a
+    reader takes each for a letter."""
+    spacing = _spacing(True)
+    forms = {form for char, chars in FORMS.items() if char.isalnum() for form in chars}
+    forms |= {form for chars in SEQUENCES.values() for form in chars}
+    kept = (form for form in forms if not re.match(r"\w", form) and not spacing.fullmatch(form))
+    return re.escape("".join(sorted(kept)))
+
+
+@functools.cache
+def bracket_gap() -> str:
+    """What may sit between a mark's opening bracket and its first word, or
+    between the words of a note that reads as the runtime's under any
+    bracket: anything but a letter (in any of its forms) or a digit a reader
+    sees, or another opening bracket (``[)Instruction``). Its two classes
+    share no character, nor with a word's letters: a run of them is then
+    scanned once, and a run of brackets starts no scan of its own."""
+    other = f"[^\\w{opening_brackets()}{_letter_forms()}]"
+    return rf"(?:{other}|[_{_INVISIBLE_LETTERS}])*"
+
+
+def behind_any_bracket(pattern: str) -> str:
+    """*pattern*, a mark's words, behind any opening bracket
+    (:func:`opening_brackets`) with :func:`bracket_gap` between them: a
+    mark reads as the runtime's whatever bracket it wears (RFC §6.4)."""
+    return f"[{opening_brackets()}]{bracket_gap()}{pattern}"
 
 
 def phrase_words(phrase: str) -> list[str]:
@@ -346,13 +406,6 @@ def phrase_space(marks: str) -> str:
     invisible character. Never a bracket: a run of brackets then starts no
     copy at each of its brackets."""
     return rf"(?:[{_PHRASE_SPACE}{marks}]|{_IOTA})"
-
-
-def phrase_space_chars(marks: str) -> str:
-    """The characters :func:`phrase_space` takes, U+0345 among them, as the
-    body of a class to read in its own case: ``[^...]`` is then every other
-    character, each tried once."""
-    return rf"{_PHRASE_SPACE}{marks}\u0345"
 
 
 @functools.cache
@@ -406,34 +459,72 @@ def reads_as(text: str, word: str) -> bool:
     return re.fullmatch(rf"[\W_]*{letters}[\W_]*", text, re.IGNORECASE) is not None
 
 
-@functools.cache
-def hidden_marks() -> frozenset[str]:
-    """The combining marks no reader sees that a phrase's pattern does not read
-    past (RFC §6.4): held apart, so that a pattern does not repeat them at each
-    letter."""
-    read = re.compile(rf"[{_COMBINING}{INVISIBLE}]")
-    marks = (chr(code) for code in range(sys.maxunicode + 1))
-    return frozenset(
-        mark
-        for mark in marks
-        if unicodedata.category(mark).startswith("M") and not read.match(mark)
-    )
+_READ_MARKS = re.compile(rf"[{_COMBINING}{INVISIBLE}]")
+"""The marks and invisible characters a phrase's pattern reads past itself."""
 
 
-def replaced_past_hidden_marks(pattern: re.Pattern[str], replacement: str, text: str) -> str:
-    """*text* with each match of *pattern* replaced, then each match of a reading
-    of it without its :func:`hidden_marks`, wherever one sits: first as written,
-    since a look-alike of a letter may be such a mark. What a match does not
-    cover is kept as it is."""
-    text = pattern.sub(lambda _match: replacement, text)
-    hidden = hidden_marks()
-    if hidden.isdisjoint(text):
-        return text
-    offsets = [at for at, char in enumerate(text) if char not in hidden]
+_HIDDEN_MARKS_HELD = 65_536
+"""How many characters :class:`_HiddenMarks` holds at most: past that it starts
+again, so texts of every code point grow it no further."""
+
+
+class _HiddenMarks(dict[int, int | None]):
+    """A table for :meth:`str.translate` that drops each combining mark no
+    reader sees that a phrase's pattern does not read past (RFC §6.4), of any
+    script, and keeps every other character: filled as texts are read, a
+    character at a time, so no table of every mark is built ahead of a text
+    (one read on a voice path included)."""
+
+    def __missing__(self, code: int) -> int | None:
+        char = chr(code)
+        hidden = unicodedata.category(char).startswith("M") and not _READ_MARKS.match(char)
+        kept = None if hidden else code
+        if len(self) >= _HIDDEN_MARKS_HELD:
+            self.clear()
+        self[code] = kept
+        return kept
+
+
+_HIDDEN_MARKS = _HiddenMarks()
+
+
+def without_hidden_marks(text: str) -> str:
+    """*text* as read without the combining marks no reader sees that a
+    phrase's pattern does not read past: held apart, so that a pattern does
+    not repeat them at each letter; *text* itself when it is ASCII."""
+    return text if text.isascii() else text.translate(_HIDDEN_MARKS)
+
+
+def hidden_mark_offsets(text: str) -> list[int]:
+    """Where each character :func:`without_hidden_marks` keeps of *text*
+    sits in it, the length of *text* last."""
+    offsets = [at for at, char in enumerate(text) if _HIDDEN_MARKS[ord(char)] is not None]
     offsets.append(len(text))
-    read = "".join(text[at] for at in offsets[:-1])
+    return offsets
+
+
+def replaced_past_hidden_marks(
+    pattern: re.Pattern[str], replacement: str | Callable[[str], str], text: str
+) -> str:
+    """*text* with each match of *pattern* replaced, then each match of a reading
+    of it without its hidden marks (:func:`without_hidden_marks`), wherever
+    one sits: first as written, since a look-alike of a letter may be such a
+    mark. *replacement* is a text, or what to write in place of what a match
+    covers, as written, the hidden marks it reads past included. What a match
+    does not cover is kept as it is."""
+
+    def replace(covered: str) -> str:
+        return replacement if isinstance(replacement, str) else replacement(covered)
+
+    text = pattern.sub(lambda match: replace(match.group(0)), text)
+    read = without_hidden_marks(text)
+    copies = list(pattern.finditer(read)) if len(read) < len(text) else []
+    if not copies:
+        return text
+    offsets = hidden_mark_offsets(text)
     pieces, at = [], 0
-    for copy in pattern.finditer(read):
-        pieces += [text[at : offsets[copy.start()]], replacement]
-        at = offsets[copy.end()]
-    return "".join(pieces) + text[at:] if pieces else text
+    for copy in copies:
+        start, end = offsets[copy.start()], offsets[copy.end()]
+        pieces += [text[at:start], replace(text[start:end])]
+        at = end
+    return "".join(pieces) + text[at:]

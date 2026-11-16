@@ -18,7 +18,15 @@ import unicodedata
 from collections.abc import Collection
 from typing import Any
 
-from roomkit._lookalike import COLON, GAP, INVISIBLE, QUOTE, char_class, name_pattern
+from roomkit._lookalike import (
+    COLON,
+    GAP,
+    INVISIBLE,
+    QUOTE,
+    char_class,
+    name_pattern,
+    replaced_past_hidden_marks,
+)
 
 
 def bounded_text(text: str, limit: int) -> str:
@@ -169,16 +177,18 @@ def fence(tag: str, text: str) -> str:
 
 def without_tags(tag: str, text: str) -> str:
     """*text* with every closing and opening tag of *tag* neutralised, as
-    :func:`fence` says. For a text about to be written as JSON inside a block,
-    which reads it before JSON hides a line break or a slash as an escape."""
-    body = _closing_tag(tag).sub(_unnamed, text)
-    return _loose_opening_tag(tag).sub(_unnamed, body)
+    :func:`fence` says, read as written, then past a combining mark of any
+    script no reader sees (U+1DC0 between a name's letters). For a text about
+    to be written as JSON inside a block, which reads it before JSON hides a
+    line break or a slash as an escape."""
+    body = replaced_past_hidden_marks(_closing_tag(tag), _unnamed, text)
+    return replaced_past_hidden_marks(_loose_opening_tag(tag), _unnamed, body)
 
 
-def _unnamed(match: re.Match[str]) -> str:
+def _unnamed(tag: str) -> str:
     """A tag's start with an underscore after its name: another tag, kept as it
     was written otherwise."""
-    return f"{match.group(0)}_"
+    return f"{tag}_"
 
 
 def named_blocks(text: str, tags: tuple[str, ...] = FENCED_TAGS) -> str:

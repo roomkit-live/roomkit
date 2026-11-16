@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 
 import roomkit.channels._mark_copies as mark_copies
-from roomkit._lookalike import JOINT, phrase_marks, phrase_space, phrase_words
+from roomkit._lookalike import INVISIBLE, phrase_words
 from roomkit.channels._mark_copies import (
     COPIED_MARK,
     without_split_blocks,
@@ -135,17 +135,19 @@ def test_a_copy_across_a_boundary_is_seen_behind_a_match_overlapping_it() -> Non
 
 
 def test_the_window_counts_no_character_a_copy_may_hold_between_its_letters() -> None:
-    """Every character a phrase's pattern takes between its words, in any
-    case, or inside a word, is one the window does not count, so a run of
-    them never narrows it; and it counts past the longest phrase's letters
-    and brackets."""
+    """A copy may hold any number of characters other than letters and digits
+    a reader sees (spacing, markup, punctuation, a combining mark no reader
+    sees, a Hangul filler, what the note on who takes part or a mark's
+    bracket holds before its words), so a run of all of them never narrows
+    the window; and it counts past the longest phrase's letters (RMK-1315)."""
     every = "".join(chr(code) for code in range(0x110000))
-    gaps = sorted({phrase_space(phrase_marks(phrase)) for phrase in mark_copies._PHRASES})
-    held = "".join(re.findall("|".join([JOINT, *gaps]), every, re.IGNORECASE))
+    unseen = set(re.findall(f"[{INVISIBLE}]", every))
+    others = "".join(char for char in every if not char.isalnum() or char in unseen)
     longest = max(len("".join(phrase_words(phrase))) for phrase in mark_copies._PHRASES)
+    window = mark_copies._WINDOW_LETTERS
 
-    assert re.fullmatch(f"[{mark_copies._FILLER}]*", held)
-    assert mark_copies._reached("x" * 10_000, 0) >= longest + 2
+    assert mark_copies._reached(others + "x" * 10_000, 0) == len(others) + window
+    assert longest + 2 <= window
 
 
 def test_a_clean_run_grown_by_a_message_scans_its_new_boundary_only(
