@@ -11,6 +11,7 @@ import json
 from typing import TYPE_CHECKING, Any
 
 from roomkit._text import identifier
+from roomkit.channels._runtime_record import HANDBACK_OPENING
 from roomkit.channels._tool_registry import orchestration_tool
 from roomkit.channels.declared import owner_tools_of
 from roomkit.orchestration._background import (
@@ -207,7 +208,7 @@ def _worker_told(worker_id: str, outcome: WorkerOutcome | None) -> str:
         return background_failure_text(f"task for {worker}")
     status = "completed" if outcome.completed else "did not complete"
     return result_text(
-        f"[Your background task for {worker} {status}. Share the outcome with the user.]",
+        f"{HANDBACK_OPENING} task for {worker} {status}. Share the outcome with the user.]",
         bounded(outcome.output or "No output"),
     )
 

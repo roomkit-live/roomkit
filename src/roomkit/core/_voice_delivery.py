@@ -10,6 +10,7 @@ from collections.abc import Callable, Generator
 from contextlib import contextmanager, nullcontext
 from typing import TYPE_CHECKING, Any
 
+from roomkit.channels._runtime_record import delivering
 from roomkit.core._reentrance import answers_past_limit, chain_floor
 from roomkit.models.channel import ChannelBinding
 from roomkit.models.delivery import DeliveryError, DeliveryOutcome
@@ -247,13 +248,16 @@ async def _submit(
         role = "system" if ctx.instruction else "user"
         token = _DEPTH_TAKEN.set(True)
         try:
-            result = (
-                await channel.inject_text(session, ctx.content, role=role, silent=True)
-                if silent
-                else await channel.inject_text(
-                    session, ctx.content, role=role, chain_depth=ctx.chain_depth
+            # The runtime's own text (a hand-back) was cleaned as it was
+            # written: the injection keeps its marks (RFC §6.4).
+            with delivering(ctx.runtime_record):
+                result = (
+                    await channel.inject_text(session, ctx.content, role=role, silent=True)
+                    if silent
+                    else await channel.inject_text(
+                        session, ctx.content, role=role, chain_depth=ctx.chain_depth
+                    )
                 )
-            )
         finally:
             _DEPTH_TAKEN.reset(token)
         outcome = _reported(result, session.id)

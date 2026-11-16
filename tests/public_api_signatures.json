@@ -812,7 +812,7 @@
     "start": ["async def", "kit"]
   },
   "roomkit.DeliveryContext": {
-    "__init__": ["def", "kit", "room_id", "content", "channel_id=None", "metadata=None", "addressed_to=None", "idempotency_key=None", "session_id=None", "chain_depth=0", "instruction=False", "_voice_sessions=None", "_voice_channel=None", "_wait_for_turn=True"],
+    "__init__": ["def", "kit", "room_id", "content", "channel_id=None", "metadata=None", "addressed_to=None", "idempotency_key=None", "session_id=None", "chain_depth=0", "instruction=False", "runtime_record=None", "_voice_sessions=None", "_voice_channel=None", "_wait_for_turn=True"],
     "find_transport_channel_id": ["async def"],
     "resolve_channel_id": ["async def"]
   },
@@ -826,7 +826,7 @@
     "wait": ["async def"]
   },
   "roomkit.DeliveryItem": {
-    "__init__": ["def", "*", "id=<factory>", "room_id", "content", "channel_id=None", "addressed_to=None", "idempotency_key=None", "session_id=None", "chain_depth=0", "instruction=False", "strategy=<factory>", "metadata=<factory>", "retry_count=0", "max_retries=3", "created_at=<factory>", "status=<DeliveryItemStatus.PENDING: 'pending'>", "worker_id=None", "error=None", "outcome=None"]
+    "__init__": ["def", "*", "id=<factory>", "room_id", "content", "channel_id=None", "addressed_to=None", "idempotency_key=None", "session_id=None", "chain_depth=0", "instruction=False", "strategy=<factory>", "metadata=<factory>", "runtime_record=None", "retry_count=0", "max_retries=3", "created_at=<factory>", "status=<DeliveryItemStatus.PENDING: 'pending'>", "worker_id=None", "error=None", "outcome=None"]
   },
   "roomkit.DeliveryItemStatus": {
     "BLOCKED": ["member", "'blocked'"],

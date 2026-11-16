@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from functools import cached_property
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-from roomkit.channels._runtime_record import RUNTIME_RECORD
+from roomkit.channels._runtime_record import RUNTIME_RECORD, delivered_record, runtime_record
 from roomkit.channels.addressing import UnreadableRecipient, read_recipient
 from roomkit.core._changes import for_channels
 from roomkit.core._closing import Cascades, DoorRuns
@@ -1777,7 +1777,17 @@ def _apply_message_fields(event: RoomEvent, message: InboundMessage) -> RoomEven
     # rule: a channel that resolved one itself keeps it.
     if message.response_visibility is not None and event.response_visibility is None:
         event = event.model_copy(update={"response_visibility": message.response_visibility})
-    return _without_runtime_keys(event)
+    return _with_delivered_record(_without_runtime_keys(event))
+
+
+def _with_delivered_record(event: RoomEvent) -> RoomEvent:
+    """*event* with the provenance the delivery path set for the runtime's
+    own text (a background result handed back, RFC §6.4), stamped after any
+    the caller's metadata brought was removed."""
+    kind = delivered_record()
+    if kind is None:
+        return event
+    return event.model_copy(update={"metadata": {**event.metadata, **runtime_record(kind)}})
 
 
 def _from_its_channel(event: RoomEvent, message: InboundMessage) -> RoomEvent:

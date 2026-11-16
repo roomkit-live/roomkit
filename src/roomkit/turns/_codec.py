@@ -53,6 +53,14 @@ class _ItemKind:
     """Read ahead of the owner's reader within a pull (RFC §10.6.4)."""
 
 
+def _instruction_read(item: InstructionReadMarker) -> dict[str, Any]:
+    """*item* on the wire, its provenance only when the runtime wrote the
+    instruction: a peer of an earlier version reads the same form."""
+    if item.runtime_record is None:
+        return {"text": item.text}
+    return {"text": item.text, "runtime_record": item.runtime_record}
+
+
 def _encode_start(item: ToolCallStartMarker, start: int | None) -> dict[str, Any]:
     fields = {
         "tool_name": item.tool_name,
@@ -92,8 +100,10 @@ _ITEM_KINDS = (
     _ItemKind(
         "instruction_read",
         InstructionReadMarker,
-        lambda item, start: {"text": item.text},
-        lambda data: InstructionReadMarker(text=data["text"]),
+        lambda item, start: _instruction_read(item),
+        lambda data: InstructionReadMarker(
+            text=data["text"], runtime_record=data.get("runtime_record")
+        ),
     ),
     _ItemKind("tool_start", ToolCallStartMarker, _encode_start, _decode_start),
     _ItemKind(

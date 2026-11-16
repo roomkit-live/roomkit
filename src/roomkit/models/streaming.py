@@ -30,6 +30,10 @@ class InstructionReadMarker:
     """
 
     text: str
+    runtime_record: str | None = None
+    """The instruction's provenance when the runtime wrote it (a background
+    result handed back, RFC §6.4): its row carries it, and its later turns
+    replay it with the runtime's marks kept."""
 
 
 @dataclass(slots=True)

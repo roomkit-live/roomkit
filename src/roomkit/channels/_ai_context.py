@@ -657,7 +657,9 @@ class AIContextMixin(_AIChannelContract):
             # re-roled by several model APIs — marked so the model never reads
             # it as a participant's words. The pipeline records on each reply
             # which instruction produced it (step 6).
-            current_content = _instruction_input(text_form(event.content))
+            current_content = _instruction_input(
+                text_form(event.content), runtime=written_by_runtime(event.metadata)
+            )
             current_speaker = None
         return current_content, current_speaker
 
@@ -738,7 +740,7 @@ class AIContextMixin(_AIChannelContract):
             )
             return EarlierTurns()
         rounds = tool_rounds(rows, resolves=self._eviction.holds, intents=self._tool_call_intents)
-        return EarlierTurns(rounds, kept_instructions(rows, _instruction_input))
+        return EarlierTurns(rounds, kept_instructions(rows, _replayed_instruction))
 
     async def _tasks_notes(
         self, loop_ctx: _ToolLoopContext, context: RoomContext, *, standalone: bool
@@ -1267,12 +1269,21 @@ def _replayed_costs(earlier: EarlierTurns) -> tuple[tuple[int, str | None, int],
     return (*rounds, *instructions)
 
 
-def _instruction_input(text: str) -> str | None:
+def _instruction_input(text: str, *, runtime: bool = False) -> str | None:
     """The turn's input an instruction's *text* reads as, marked as the
-    application's, its copies of the runtime's marks replaced; ``None`` for a
-    text that reads as nothing. One form for the turn the instruction opens
-    and for the later turns that replay it (RFC §10.1.1)."""
-    return mark_instruction(without_mark_copies(text)) if text else None
+    application's, its copies of the runtime's marks replaced unless the
+    *runtime* wrote it (a background result handed back, cleaned as it was
+    written, RFC §6.4); ``None`` for a text that reads as nothing. One form
+    for the turn the instruction opens and for the later turns that replay
+    it (RFC §10.1.1)."""
+    if not text:
+        return None
+    return mark_instruction(text if runtime else without_mark_copies(text))
+
+
+def _replayed_instruction(text: str, runtime: bool) -> str | None:
+    """An instruction a later turn replays, as :func:`_instruction_input` reads it."""
+    return _instruction_input(text, runtime=runtime)
 
 
 def _rounds_before(event: RoomEvent) -> int | None:

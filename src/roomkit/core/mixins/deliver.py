@@ -136,6 +136,40 @@ class DeliverMixin(HelpersMixin):
                 missing or another organization's; nothing is delivered,
                 queued or fired.
         """
+        return await self._deliver(
+            room_id,
+            content,
+            channel_id=channel_id,
+            strategy=strategy,
+            metadata=metadata,
+            addressed_to=addressed_to,
+            idempotency_key=idempotency_key,
+            session_id=session_id,
+            chain_depth=chain_depth,
+            instruction=instruction,
+            organization_id=organization_id,
+        )
+
+    async def _deliver(
+        self,
+        room_id: str,
+        content: str,
+        *,
+        channel_id: str | None = None,
+        strategy: DeliveryStrategy | str | None = None,
+        metadata: dict[str, Any] | None = None,
+        addressed_to: list[str] | None = None,
+        idempotency_key: str | None = None,
+        session_id: str | None = None,
+        chain_depth: int = 0,
+        instruction: bool = False,
+        organization_id: str | None = None,
+        runtime_record: str | None = None,
+    ) -> DeliveryOutcome:
+        """:meth:`deliver`, and for the runtime's own text (a background
+        result handed back) its *runtime_record*, which the delivered event
+        carries as its provenance (RFC §6.4) and no caller of
+        :meth:`deliver` sets."""
         if organization_id is not None:
             await self.get_room(room_id, organization_id=organization_id)
         resolved = resolve_strategy(strategy) or self._delivery_strategy
@@ -160,6 +194,7 @@ class DeliverMixin(HelpersMixin):
             session_id=session_id,
             chain_depth=chain_depth,
             instruction=instruction,
+            runtime_record=runtime_record,
         )
         if self._delivery_backend is not None:
             refusal = await reject_invalid_delivery(

@@ -53,6 +53,11 @@ class DeliveryItem(BaseModel):
     instruction: bool = False
     strategy: dict[str, Any] = Field(default_factory=lambda: {"type": "immediate", "params": {}})
     metadata: dict[str, Any] = Field(default_factory=dict)
+    runtime_record: str | None = None
+    """What the runtime wrote, when it delivers its own text (a background
+    result handed back, ``"handback"``): the delivered event carries it as
+    its provenance (RFC §6.4), which ``deliver()`` never sets and the inbound
+    pipeline removes from what a caller's metadata brings."""
     retry_count: int = 0
     max_retries: int = 3
     """Retries after the first attempt, as a binding's ``RetryPolicy`` counts

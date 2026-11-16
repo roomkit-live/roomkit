@@ -8,9 +8,11 @@ a reply is the pipeline's to record (``roomkit.core._instructions``).
 from __future__ import annotations
 
 from roomkit._media import text_form
+from roomkit.channels._runtime_record import RUNTIME_RECORD
 from roomkit.models.delivery import STANDALONE
 from roomkit.models.enums import EventType
 from roomkit.models.event import RoomEvent
+from roomkit.models.streaming import InstructionReadMarker
 
 INSTRUCTION_MARKER = (
     "[Instruction from the application: nobody in this conversation said it. "
@@ -24,13 +26,18 @@ def mark_instruction(text: str) -> str:
     return f"{INSTRUCTION_MARKER}\n{text}"
 
 
-def kept_instruction(event: RoomEvent) -> str | None:
-    """The text of *event* the turn it opens keeps for its later turns: an
-    instruction's, never a standalone one's, whose turn reads nothing of the
-    room and is no part of its conversation (steps 6 and 7)."""
+def kept_instruction(event: RoomEvent) -> InstructionReadMarker | None:
+    """What of *event* the turn it opens keeps for its later turns: an
+    instruction's text, never a standalone one's, whose turn reads nothing of
+    the room and is no part of its conversation (steps 6 and 7), with its
+    provenance when the runtime wrote it (RFC §6.4)."""
     if event.type != EventType.INSTRUCTION or is_standalone(event):
         return None
-    return text_form(event.content) or None
+    text = text_form(event.content)
+    if not text:
+        return None
+    kind = event.metadata.get(RUNTIME_RECORD)
+    return InstructionReadMarker(text=text, runtime_record=kind if isinstance(kind, str) else None)
 
 
 def is_standalone(event: RoomEvent) -> bool:

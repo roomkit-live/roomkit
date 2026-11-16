@@ -13,6 +13,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from roomkit.channels._runtime_record import HANDBACK_OPENING
 from roomkit.channels._tool_registry import orchestration_tool, schema_tool
 from roomkit.channels.declared import named_agent, register_strategy_agents
 from roomkit.core._changes import opens_no_turn
@@ -491,12 +492,12 @@ def _delivered_text(outcome: _LoopOutcome | None) -> str:
         return background_failure_text("review loop")
     if outcome.stopped != "producer_failed":
         status = "approved" if outcome.approved else "max iterations reached, not approved"
-        header = f"[Your background review loop has completed ({status}). Share its result.]"
+        header = f"{HANDBACK_OPENING} review loop has completed ({status}). Share its result.]"
         return result_text(header, bounded(outcome.output))
     why = _failed_task_text(outcome.failure)
     if not outcome.output:
-        return f"[Your background review loop stopped before any output: {why}. Tell the user.]"
-    header = f"[Your background review loop stopped: {why}. Its last output, not approved:]"
+        return f"{HANDBACK_OPENING} review loop stopped before any output: {why}. Tell the user.]"
+    header = f"{HANDBACK_OPENING} review loop stopped: {why}. Its last output, not approved:]"
     return result_text(header, bounded(outcome.output))
 
 

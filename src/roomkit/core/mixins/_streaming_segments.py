@@ -9,6 +9,7 @@ from contextlib import aclosing
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
 
+from roomkit.channels._runtime_record import runtime_record
 from roomkit.channels._tool_event_result import tool_event_payload
 from roomkit.core._closing import KIT_CLOSED, ended_by_close
 from roomkit.core._instructions import response_metadata
@@ -603,6 +604,10 @@ class SegmentWriter:
         lands on it."""
         row = self._build(EventType.INSTRUCTION_READ, TextContent(body=marker.text))
         own = row.model_copy(update={"visibility": self._sr.source_channel_id})
+        if marker.runtime_record is not None:
+            own = own.model_copy(
+                update={"metadata": {**own.metadata, **runtime_record(marker.runtime_record)}}
+            )
         await self._settle()
         try:
             await self._kit.commit_event(self._room_id, own)

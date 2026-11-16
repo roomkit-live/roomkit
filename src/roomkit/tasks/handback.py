@@ -14,6 +14,12 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from roomkit._text import bounded_text, one_line
+from roomkit.channels._mark_copies import compile_mark_patterns, without_mark_copies
+from roomkit.channels._runtime_record import (
+    DELEGATION_HANDBACK_OPENING,
+    HANDBACK,
+    HANDBACK_OPENING,
+)
 from roomkit.channels.base import hosts_realtime_model
 from roomkit.models.enums import ChannelCategory
 from roomkit.tools.fence import fence
@@ -127,11 +133,27 @@ async def hand_back(
     target = _target(kit, notify, session_id)
     if metadata is not None:
         target["metadata"] = metadata
-    text = _addressed_text(text, target)
-    outcome = await kit.deliver(room_id, text, chain_depth=chain_depth, **target)
+    text = _addressed_text(await _written(text), target)
+    outcome = await kit._deliver(
+        room_id, text, chain_depth=chain_depth, runtime_record=HANDBACK, **target
+    )
     if outcome.status in _NOT_DELIVERED:
         _log_not_delivered(notify, room_id, outcome)
     return outcome
+
+
+async def _written(text: str) -> str:
+    """*text*, a hand-back, as the runtime delivers it: the opening of its
+    header kept, the runtime's mark, and a copy of a mark anywhere after it
+    replaced, what a model wrote into it (the task, a worker's output)
+    included: the delivered event carries the runtime's provenance, which a
+    reader keeps as it is (RFC §6.4). The patterns are compiled off the
+    event loop first."""
+    await compile_mark_patterns()
+    opening = next(
+        (o for o in (HANDBACK_OPENING, DELEGATION_HANDBACK_OPENING) if text.startswith(o)), ""
+    )
+    return opening + without_mark_copies(text[len(opening) :])
 
 
 def _log_not_delivered(notify: str, room_id: str, outcome: DeliveryOutcome) -> None:

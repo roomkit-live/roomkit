@@ -183,6 +183,7 @@ async def execute_delivery(
                     session_id=item.session_id,
                     chain_depth=item.chain_depth,
                     instruction=item.instruction,
+                    runtime_record=item.runtime_record,
                 )
             )
             if not isinstance(outcome, DeliveryOutcome):

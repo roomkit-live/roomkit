@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from roomkit.channels._realtime_context import get_current_voice_session
+from roomkit.channels._runtime_record import HANDBACK_OPENING
 from roomkit.core._fallback import FALLBACK_FAILED
 from roomkit.core.exceptions import RoomKitError
 from roomkit.core.task_utils import check_open, hold_task
@@ -41,7 +42,7 @@ def calling_channel_id() -> str:
 def background_failure_text(what: str) -> str:
     """What a run's caller reads when the run raised: the framework's words,
     never the error's message (RFC §9.3), and nothing to fence."""
-    return f"[Your background {what} failed: {FALLBACK_FAILED} Tell the user.]"
+    return f"{HANDBACK_OPENING} {what} failed: {FALLBACK_FAILED} Tell the user.]"
 
 
 @dataclass(frozen=True)

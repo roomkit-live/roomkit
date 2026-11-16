@@ -144,6 +144,9 @@ async def _read_all(output: ChannelOutput) -> list[Any]:
     [
         "a text delta",
         InstructionReadMarker(text="Introduce yourself."),
+        InstructionReadMarker(
+            text="[Your background workers completed.]", runtime_record="handback"
+        ),
         ThinkingDeltaMarker(thinking="hmm"),
         ToolCallStartMarker(tool_name="search", tool_id="c1", arguments={"q": "x"}),
         ToolCallStartMarker(
@@ -173,6 +176,9 @@ def test_every_stream_item_crosses_as_a_new_equal_object(item: Any) -> None:
     if getattr(item, "intent", "") is None:
         # A call without an intent has no ``intent`` key on the wire (RFC §6.4).
         assert "intent" not in encode_item(item)
+    if getattr(item, "runtime_record", "") is None:
+        # An instruction the runtime did not write crosses as before (RMK-645).
+        assert "runtime_record" not in encode_item(item)
 
 
 def test_a_call_its_turn_left_open_ends_cancelled_as_it_started() -> None:

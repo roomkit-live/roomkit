@@ -43,6 +43,8 @@ class DeliveryContext:
     session_id: str | None = None
     chain_depth: int = 0
     instruction: bool = False
+    runtime_record: str | None = None
+    """The provenance of the runtime's own text (``DeliveryItem.runtime_record``)."""
     _voice_sessions: list[Any] | None = field(default=None, repr=False)
     _voice_channel: Any = field(default=None, repr=False)
     _wait_for_turn: bool = field(default=True, repr=False)
@@ -149,6 +151,7 @@ class _QueuedRequest:
             and left.addressed_to == right.addressed_to
             and left.chain_depth == right.chain_depth
             and left.instruction == right.instruction
+            and left.runtime_record == right.runtime_record
             and left.session_id == right.session_id
             and left._voice_sessions == right._voice_sessions
             and left.metadata == right.metadata

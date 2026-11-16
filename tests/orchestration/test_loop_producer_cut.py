@@ -201,13 +201,13 @@ async def _async_text(producer: Agent) -> str:
     await kit.create_room(room_id="r")
     await kit.attach_channel("r", "sms")
     delivered: list[str] = []
-    real_deliver = kit.deliver
+    real_deliver = kit._deliver
 
     async def spy(room_id: str, content: Any, **kw: Any) -> Any:
         delivered.append(str(content))
         return await real_deliver(room_id, content, **kw)
 
-    kit.deliver = spy  # type: ignore[method-assign]
+    kit._deliver = spy  # type: ignore[method-assign]
     await _async_loop_and_deliver(
         kit=kit,
         room_id="r",

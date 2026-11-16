@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Literal
 from roomkit._text import quoted
 from roomkit.channels._mark_copies import compile_mark_patterns, without_mark_copies
 from roomkit.channels._room_hooks import RoomHooks
-from roomkit.channels._runtime_record import written_by_runtime
+from roomkit.channels._runtime_record import delivered_record, written_by_runtime
 from roomkit.channels._speaker import channel_label, turn_labels
 from roomkit.core._reentrance import within_turn
 from roomkit.core.visibility import visible_events
@@ -72,7 +72,12 @@ async def injected_text(text: str) -> str:
     a tool result recovered), with a copy of a runtime mark replaced (RFC
     §6.4), the patterns compiled off the event loop first. A broadcast does
     not come this way: :func:`broadcast_text` cleans it, a record of the
-    runtime keeping its own marks."""
+    runtime keeping its own marks. The runtime's own text the delivery path
+    injects (a background result handed back, :func:`delivering
+    <roomkit.channels._runtime_record.delivering>`) was cleaned as it was
+    written, and keeps its marks."""
+    if delivered_record() is not None:
+        return text
     await compile_mark_patterns()
     return without_mark_copies(text)
 

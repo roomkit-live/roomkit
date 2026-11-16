@@ -729,7 +729,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         *,
         parent_loop_ctx: _ToolLoopContext | None = None,
         parent_span_id: str | None = None,
-        instruction: str | None = None,
+        instruction: InstructionReadMarker | None = None,
     ) -> AsyncGenerator[StreamDelta, None]:
         """Orchestrate generation, termination decisions and local tool rounds.
 
@@ -747,7 +747,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                 yield turn.end("cancelled")
                 return
             if instruction is not None:
-                yield InstructionReadMarker(text=instruction)
+                yield instruction
             rules = self._new_loop_state(
                 "Streaming tool loop", turn.timeout_seconds, loop_ctx.turn_budget
             )

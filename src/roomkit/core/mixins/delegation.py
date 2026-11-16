@@ -11,6 +11,7 @@ from uuid import uuid4
 from roomkit._text import bounded_text, identifier, one_line, quoted
 from roomkit.channels._discussion_turn import agent_handle
 from roomkit.channels._realtime_context import get_current_voice_session
+from roomkit.channels._runtime_record import DELEGATION_HANDBACK_OPENING
 from roomkit.core._failure_log import log_failure
 from roomkit.core._preparing_room import preparing_child
 from roomkit.core.exceptions import ChannelNotRegisteredError, KitClosedError, RoomNotFoundError
@@ -302,8 +303,9 @@ def _delegation_result_text(
     # What was asked is quoted, the worker named by an identifier (RFC §6.4).
     asked = f" Task: {quoted(task, _TASK_NAME_CHARS)}." if task.strip() else ""
     named = identifier(worker or result.agent_id, "worker")
+    header = f"{DELEGATION_HANDBACK_OPENING} {named} {outcome}.{asked}"
     return result_text(
-        f"[Background task from {named} {outcome}.{asked} Share the outcome with the user.]",
+        f"{header} Share the outcome with the user.]",
         bounded(task_work(result) or "No output", max_result_chars),
     )
 

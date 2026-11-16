@@ -6,6 +6,7 @@ import asyncio
 from contextlib import AsyncExitStack
 from typing import TYPE_CHECKING
 
+from roomkit.channels._runtime_record import delivering
 from roomkit.channels.base import hosts_realtime_model
 from roomkit.core._publication_keys import publication_key, publishing
 from roomkit.core._voice_delivery import active_sessions as _active_sessions
@@ -176,7 +177,7 @@ async def deliver_to_channel(ctx: DeliveryContext, channel_id: str) -> DeliveryO
         result: InboundResult | None = None
         if not _rides_the_model(ctx, channel):
             message = _publication(ctx, channel_id)
-            with publishing(message.idempotency_key):
+            with publishing(message.idempotency_key), delivering(ctx.runtime_record):
                 result = await ctx.kit.process_inbound(
                     message, room_id=ctx.room_id, defer_delivery=True
                 )

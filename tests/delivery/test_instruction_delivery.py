@@ -110,12 +110,22 @@ async def test_queued_never_merges_an_instruction_with_a_message() -> None:
     kit = RoomKit()
     loop = asyncio.get_running_loop()
 
-    def request(*, instruction: bool) -> _QueuedRequest:
-        ctx = DeliveryContext(kit=kit, room_id="r", content="x", instruction=instruction)
+    def request(*, instruction: bool, runtime_record: str | None = None) -> _QueuedRequest:
+        ctx = DeliveryContext(
+            kit=kit,
+            room_id="r",
+            content="x",
+            instruction=instruction,
+            runtime_record=runtime_record,
+        )
         return _QueuedRequest(ctx, "phone", loop.create_future())
 
     assert not request(instruction=True).compatible(request(instruction=False))
     assert request(instruction=True).compatible(request(instruction=True))
+    # Nor the runtime's own text (a hand-back) with the application's: the
+    # batch would carry one provenance for both (RFC §6.4).
+    handback = request(instruction=True, runtime_record="handback")
+    assert not handback.compatible(request(instruction=True))
 
 
 async def test_a_queued_instruction_stays_one_through_the_backend() -> None:

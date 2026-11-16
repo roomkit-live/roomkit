@@ -101,6 +101,7 @@ def _make_mock_kit(room: Room) -> MagicMock:
     kit.channels = {}
     kit.register_channel = MagicMock()
     kit.deliver = AsyncMock()
+    kit._deliver = AsyncMock()
     # Pass 1's rows ride the room's lane, whose cascade the turn finishes,
     # in their trigger's thread, rooted (here as it stands).
     kit._max_chain_depth = 5
@@ -1346,12 +1347,12 @@ class TestAsyncRunAndDeliver:
             on_done=on_done,
         )
 
-        kit.deliver.assert_called_once()
-        delivered_text = kit.deliver.call_args[0][1]
+        kit._deliver.assert_called_once()
+        delivered_text = kit._deliver.call_args[0][1]
         assert "Analysis done" in delivered_text
         # Handed back to the supervisor alone, as an instruction (RFC §19.7.3).
-        assert kit.deliver.call_args.kwargs["addressed_to"] == ["boss"]
-        assert kit.deliver.call_args.kwargs["instruction"] is True
+        assert kit._deliver.call_args.kwargs["addressed_to"] == ["boss"]
+        assert kit._deliver.call_args.kwargs["instruction"] is True
         on_done.assert_called_once()
 
     async def test_the_results_continue_the_dispatching_turns_chain(self) -> None:
@@ -1372,7 +1373,7 @@ class TestAsyncRunAndDeliver:
                 on_done=MagicMock(),
             )
 
-        assert kit.deliver.call_args.kwargs["chain_depth"] == 3
+        assert kit._deliver.call_args.kwargs["chain_depth"] == 3
 
     async def test_a_failed_pipeline_hands_its_failure_back(self) -> None:
         """RMK-451: the supervisor hears that the work failed, not the
@@ -1395,15 +1396,15 @@ class TestAsyncRunAndDeliver:
             )
 
         on_done.assert_called_once_with(success=False)
-        kit.deliver.assert_called_once()
-        told = kit.deliver.call_args[0][1]
+        kit._deliver.assert_called_once()
+        told = kit._deliver.call_args[0][1]
         assert told == (
             f"[Your background workers failed: {FALLBACK_FAILED} Tell the user.]\n"
             f"{RESULT_TURN_NOTE}"
         )
         assert "Boom" not in told and "secret" not in told
-        assert kit.deliver.call_args.kwargs["addressed_to"] == ["boss"]
-        assert kit.deliver.call_args.kwargs["chain_depth"] == 2
+        assert kit._deliver.call_args.kwargs["addressed_to"] == ["boss"]
+        assert kit._deliver.call_args.kwargs["chain_depth"] == 2
 
     @pytest.mark.parametrize("fails", [False, True])
     async def test_the_room_is_released_before_the_outcome_is_handed_back(
@@ -1424,7 +1425,7 @@ class TestAsyncRunAndDeliver:
             order.append("handed back")
             return MagicMock(status="delivered")
 
-        kit.deliver = AsyncMock(side_effect=deliver)
+        kit._deliver = AsyncMock(side_effect=deliver)
 
         await _async_run_and_deliver(
             kit=kit,
@@ -1446,7 +1447,7 @@ class TestAsyncRunAndDeliver:
         kit = _make_mock_kit(Room(id="r1"))
         kit.get_channel = MagicMock(return_value=_make_agent("boss"))
         kit.delegate = AsyncMock(return_value=_delegated_task_with_output("Done"))
-        kit.deliver = AsyncMock(side_effect=RuntimeError("deliver boom"))
+        kit._deliver = AsyncMock(side_effect=RuntimeError("deliver boom"))
         kit.status_bus.post = MagicMock()
 
         await _async_run_and_deliver(
@@ -1494,7 +1495,7 @@ class TestAsyncRunAndDeliver:
         with pytest.raises(asyncio.CancelledError):
             await run
         assert outcomes == [False]
-        kit.deliver.assert_not_called()
+        kit._deliver.assert_not_called()
 
 
 # -- Tests: Auto-delegate wrapped on_event -----------------------------------
@@ -1647,5 +1648,5 @@ class TestAutoDelegate:
             on_done=on_done,
         )
 
-        kit.deliver.assert_called_once()
+        kit._deliver.assert_called_once()
         on_done.assert_called_once()

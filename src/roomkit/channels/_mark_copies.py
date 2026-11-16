@@ -42,7 +42,13 @@ from roomkit.channels._acp_marks import ROOM_CONTEXT_END, ROOM_CONTEXT_OPENING
 from roomkit.channels._ai_cuts import CUT_MARK_OPENING, CUT_NOTE
 from roomkit.channels._clean_texts import CleanTexts
 from roomkit.channels._instruction import INSTRUCTION_MARKER
-from roomkit.channels._runtime_record import COMPACTION_HEADER, HANDED_ON_CONTEXT, HANDOFF_OPENING
+from roomkit.channels._runtime_record import (
+    COMPACTION_HEADER,
+    DELEGATION_HANDBACK_OPENING,
+    HANDBACK_OPENING,
+    HANDED_ON_CONTEXT,
+    HANDOFF_OPENING,
+)
 from roomkit.channels._runtime_record import SUMMARY_HEADER as MEMORY_SUMMARY_HEADER
 from roomkit.channels._speaker import PEOPLE_NOTE_OPENING, SPEAKER_ATTRIBUTION_NOTE, SPEAKER_KEY
 from roomkit.channels._turn_notes import (
@@ -81,13 +87,16 @@ _SHORT_MARKS = (
     HANDOFF_OPENING,
     HANDED_ON_CONTEXT,
     SAID_BEFORE_MARK,
+    HANDBACK_OPENING,
+    DELEGATION_HANDBACK_OPENING,
 )
 """The runtime's marks that count only with their square or fullwidth bracket,
 the people note apart (:func:`_people_note_words`): their words
 alone are prose (``the room context``, ``a handoff``, ``people taking
-part``). The handoff's record and the context handed on are written outside
-a model's input, into the timeline and a memory, and kept there by their
-provenance (:mod:`~roomkit.channels._runtime_record`)."""
+part``, ``your background``). The handoff's record, the context handed on and
+a background result handed back are written outside a model's input, into
+the timeline, a memory or a delivery, and kept there by their provenance
+(:mod:`~roomkit.channels._runtime_record`)."""
 
 
 def _opening(mark: str) -> str | None:

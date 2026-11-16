@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, TypeGuard
 from uuid import uuid4
 
 from roomkit.channels._ai_context import TURN_INSTRUCTION
+from roomkit.channels._runtime_record import HANDBACK_OPENING
 from roomkit.core._failure_log import mark_reported
 from roomkit.core._fallback import FALLBACK_FAILED
 from roomkit.core._requester import asking_label, task_heading
@@ -174,9 +175,9 @@ def _outcome_text(worker_results: list[dict[str, Any]] | None) -> str:
         return background_failure_text("workers")
     each_bounded = [{**r, "output": bounded(str(r.get("output") or ""))} for r in worker_results]
     header = (
-        "[Your background workers completed. Share their results with the user.]"
+        f"{HANDBACK_OPENING} workers completed. Share their results with the user.]"
         if _why_failed(worker_results) is None
-        else "[Your background workers could not complete the work. Tell the user what failed.]"
+        else f"{HANDBACK_OPENING} workers could not complete the work. Tell the user what failed.]"
     )
     return workers_text(header, _format_worker_results(each_bounded))
 

@@ -29,6 +29,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
+from roomkit.channels._runtime_record import written_by_runtime
 from roomkit.channels._tool_eviction import eviction_placeholder_size, is_eviction_placeholder
 from roomkit.models.enums import EventType, ToolCallOutcome
 from roomkit.models.event import RoomEvent, TextContent, ToolCallContent
@@ -146,15 +147,16 @@ class ReplayedInstruction:
 
 
 def kept_instructions(
-    rows: list[RoomEvent], read_as: Callable[[str], str | None]
+    rows: list[RoomEvent], read_as: Callable[[str, bool], str | None]
 ) -> list[ReplayedInstruction]:
     """The instructions *rows*, a channel's own rows oldest first, keep, each
-    as the user message *read_as* makes of its text (RFC §10.1.1)."""
+    as the user message *read_as* makes of its text, told whether the
+    runtime wrote it (RFC §6.4, §10.1.1)."""
     kept: list[ReplayedInstruction] = []
     for row in rows:
         if row.type != EventType.INSTRUCTION_READ or not isinstance(row.content, TextContent):
             continue
-        text = read_as(row.content.body)
+        text = read_as(row.content.body, written_by_runtime(row.metadata))
         if text is not None:
             message = AIMessage(role="user", content=text)
             kept.append(ReplayedInstruction(row.index, row.correlation_id, message))

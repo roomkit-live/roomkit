@@ -12,7 +12,9 @@ cleaning and the writers both import it without importing each other.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Generator, Mapping
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Any
 
 RUNTIME_RECORD = "runtime_record"
@@ -36,6 +38,42 @@ type (RFC §6.4)."""
 
 SUMMARY_HEADER = f"{SUMMARY_MARK} — earlier messages compacted]"
 """Opens a memory summary's message."""
+
+HANDBACK_OPENING = "[Your background"
+"""How the header over a background run's hand-back opens (a supervisor's
+worker or team, a review loop, a run that failed): ``[Your background workers
+completed. …]``. A mark of the runtime (RFC §6.4): the hand-back carries
+:data:`RUNTIME_RECORD`, and a copy anywhere else is replaced."""
+
+DELEGATION_HANDBACK_OPENING = "[Background task from"
+"""How the header over a delegation's hand-back opens (``[Background task from
+worker completed. …]``), a mark of the runtime as :data:`HANDBACK_OPENING`."""
+
+HANDBACK = "handback"
+"""The :data:`RUNTIME_RECORD` of a background result the runtime hands back."""
+
+
+_DELIVERING: ContextVar[list[str] | None] = ContextVar("roomkit_runtime_delivery", default=None)
+
+
+@contextmanager
+def delivering(kind: str | None) -> Generator[None]:
+    """Let the message the delivery path processes inside carry *kind* as
+    its provenance: the runtime's own text, which the inbound pipeline stamps
+    once it removed what the caller's metadata brought
+    (:func:`delivered_record`). Taken once, by the first message the
+    pipeline reads inside, so nothing a hook sends from there carries it."""
+    token = _DELIVERING.set([kind] if kind is not None else None)
+    try:
+        yield
+    finally:
+        _DELIVERING.reset(token)
+
+
+def delivered_record() -> str | None:
+    """The provenance :func:`delivering` set for the message being read, once."""
+    held = _DELIVERING.get()
+    return held.pop() if held else None
 
 
 def written_by_runtime(metadata: Mapping[str, Any]) -> bool:
