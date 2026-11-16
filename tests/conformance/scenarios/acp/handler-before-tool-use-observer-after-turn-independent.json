@@ -1,0 +1,2034 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/handler-before-tool-use-observer-after-turn-independent",
+  "title": "An ACP before_tool_use observer posting after its turn starts independent work",
+  "rules": [
+    "§6.4",
+    "§9.3",
+    "Appendix A.9.1",
+    "§8.3"
+  ],
+  "notes": "Python: tests/test_reentrance.py::test_work_a_turn_began_starts_fresh_once_the_turn_is_over; tests/test_channels/test_acp.py::test_an_observer_posting_per_tool_call_the_agent_answers_stops. RFC §8.3 RK-8.3-006: per-tool observers run as work the turn starts. Each post is released only after its originating delivery ended; 25 posts exceed one cascade budget of 20 without consuming it. In-process context only.",
+  "setup": {
+    "channels": [
+      {
+        "id": "web",
+        "type": "webhook",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-0",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-0",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-0",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-1",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-1",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-1",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-2",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-2",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-2",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-3",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-3",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-3",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-4",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-4",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-4",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-5",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-5",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-5",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-6",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-6",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-6",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-7",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-7",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-7",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-8",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-8",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-8",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-9",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-9",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-9",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-10",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-10",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-10",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-11",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-11",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-11",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-12",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-12",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-12",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-13",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-13",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-13",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-14",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-14",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-14",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-15",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-15",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-15",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-16",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-16",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-16",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-17",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-17",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-17",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-18",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-18",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-18",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-19",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-19",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-19",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-20",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-20",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-20",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-21",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-21",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-21",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-22",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-22",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-22",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-23",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-23",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-23",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "tool-24",
+                    "title": "Write",
+                    "kind": "edit",
+                    "status": "in_progress"
+                  }
+                ],
+                "permission_steps": [
+                  {
+                    "updates": [
+                      {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tool-24",
+                        "status": "completed",
+                        "rawOutput": {
+                          "ok": true
+                        }
+                      }
+                    ],
+                    "request": {
+                      "toolCall": {
+                        "toolCallId": "tool-24",
+                        "title": "Write",
+                        "rawInput": {
+                          "path": "x"
+                        }
+                      },
+                      "options": [
+                        {
+                          "optionId": "a",
+                          "name": "Allow",
+                          "kind": "allow_once"
+                        },
+                        {
+                          "optionId": "r",
+                          "name": "Reject",
+                          "kind": "reject_once"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "external_tool_handler": {}
+        }
+      },
+      {
+        "id": "bot",
+        "type": "webhook",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "bot"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "response",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      },
+      {
+        "name": "tools",
+        "trigger": "before_tool_use",
+        "execution": "async",
+        "reactions": [
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "bot",
+                "content": {
+                  "type": "text",
+                  "body": "next"
+                },
+                "as": "posted"
+              }
+            ],
+            "gate": "observer-0",
+            "after_do_gate": "posted-0"
+          },
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "bot",
+                "content": {
+                  "type": "text",
+                  "body": "next"
+                },
+                "as": "posted"
+              }
+            ],
+            "gate": "observer-1",
+            "after_do_gate": "posted-1"
+          },
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "bot",
+                "content": {
+                  "type": "text",
+                  "body": "next"
+                },
+                "as": "posted"
+              }
+            ],
+            "gate": "observer-2",
+            "after_do_gate": "posted-2"
+          },
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "bot",
+                "content": {
+                  "type": "text",
+                  "body": "next"
+                },
+                "as": "posted"
+              }
+            ],
+            "gate": "observer-3",
+            "after_do_gate": "posted-3"
+          },
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "bot",
+                "content": {
+                  "type": "text",
+                  "body": "next"
+                },
+                "as": "posted"
+              }
+            ],
+            "gate": "observer-4",
+            "after_do_gate": "posted-4"
+          },
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "bot",
+                "content": {
+                  "type": "text",
+                  "body": "next"
+                },
+                "as": "posted"
+              }
+            ],
+            "gate": "observer-5",
+            "after_do_gate": "posted-5"
+          },
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "bot",
+                "content": {
+                  "type": "text",
+                  "body": "next"
+                },
+                "as": "posted"
+              }
+            ],
+            "gate": "observer-6",
+            "after_do_gate": "posted-6"
+          },
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "bot",
+                "content": {
+                  "type": "text",
+                  "body": "next"
+                },
+                "as": "posted"
+              }
+            ],
+            "gate": "observer-7",
+            "after_do_gate": "posted-7"
+          },
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "bot",
+                "content": {
+                  "type": "text",
+                  "body": "next"
+                },
+                "as": "posted"
+              }
+            ],
+            "gate": "observer-8",
+            "after_do_gate": "posted-8"
+          },
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "bot",
+                "content": {
+                  "type": "text",
+                  "body": "next"
+                },
+                "as": "posted"
+              }
+            ],
+            "gate": "observer-9",
+            "after_do_gate": "posted-9"
+          },
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "bot",
+                "content": {
+                  "type": "text",
+                  "body": "next"
+                },
+                "as": "posted"
+              }
+            ],
+            "gate": "observer-10",
+            "after_do_gate": "posted-10"
+          },
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "bot",
+                "content": {
+                  "type": "text",
+                  "body": "next"
+                },
+                "as": "posted"
+              }
+            ],
+            "gate": "observer-11",
+            "after_do_gate": "posted-11"
+          },
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "bot",
+                "content": {
+                  "type": "text",
+                  "body": "next"
+                },
+                "as": "posted"
+              }
+            ],
+            "gate": "observer-12",
+            "after_do_gate": "posted-12"
+          },
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "bot",
+                "content": {
+                  "type": "text",
+                  "body": "next"
+                },
+                "as": "posted"
+              }
+            ],
+            "gate": "observer-13",
+            "after_do_gate": "posted-13"
+          },
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "bot",
+                "content": {
+                  "type": "text",
+                  "body": "next"
+                },
+                "as": "posted"
+              }
+            ],
+            "gate": "observer-14",
+            "after_do_gate": "posted-14"
+          },
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "bot",
+                "content": {
+                  "type": "text",
+                  "body": "next"
+                },
+                "as": "posted"
+              }
+            ],
+            "gate": "observer-15",
+            "after_do_gate": "posted-15"
+          },
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "bot",
+                "content": {
+                  "type": "text",
+                  "body": "next"
+                },
+                "as": "posted"
+              }
+            ],
+            "gate": "observer-16",
+            "after_do_gate": "posted-16"
+          },
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "bot",
+                "content": {
+                  "type": "text",
+                  "body": "next"
+                },
+                "as": "posted"
+              }
+            ],
+            "gate": "observer-17",
+            "after_do_gate": "posted-17"
+          },
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "bot",
+                "content": {
+                  "type": "text",
+                  "body": "next"
+                },
+                "as": "posted"
+              }
+            ],
+            "gate": "observer-18",
+            "after_do_gate": "posted-18"
+          },
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "bot",
+                "content": {
+                  "type": "text",
+                  "body": "next"
+                },
+                "as": "posted"
+              }
+            ],
+            "gate": "observer-19",
+            "after_do_gate": "posted-19"
+          },
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "bot",
+                "content": {
+                  "type": "text",
+                  "body": "next"
+                },
+                "as": "posted"
+              }
+            ],
+            "gate": "observer-20",
+            "after_do_gate": "posted-20"
+          },
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "bot",
+                "content": {
+                  "type": "text",
+                  "body": "next"
+                },
+                "as": "posted"
+              }
+            ],
+            "gate": "observer-21",
+            "after_do_gate": "posted-21"
+          },
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "bot",
+                "content": {
+                  "type": "text",
+                  "body": "next"
+                },
+                "as": "posted"
+              }
+            ],
+            "gate": "observer-22",
+            "after_do_gate": "posted-22"
+          },
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "bot",
+                "content": {
+                  "type": "text",
+                  "body": "next"
+                },
+                "as": "posted"
+              }
+            ],
+            "gate": "observer-23",
+            "after_do_gate": "posted-23"
+          },
+          {
+            "do": [
+              {
+                "call": "send_event",
+                "room_id": "$room",
+                "channel_id": "bot",
+                "content": {
+                  "type": "text",
+                  "body": "next"
+                },
+                "as": "posted"
+              }
+            ],
+            "gate": "observer-24",
+            "after_do_gate": "posted-24"
+          }
+        ]
+      }
+    ],
+    "kit": {
+      "max_chain_depth": 2
+    }
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "web",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello"
+        }
+      }
+    },
+    {
+      "wait_for": "observer-0"
+    },
+    {
+      "open": "observer-0"
+    },
+    {
+      "wait_for": "posted-0"
+    },
+    {
+      "open": "posted-0"
+    },
+    {
+      "open": "observer-1"
+    },
+    {
+      "wait_for": "posted-1"
+    },
+    {
+      "open": "posted-1"
+    },
+    {
+      "open": "observer-2"
+    },
+    {
+      "wait_for": "posted-2"
+    },
+    {
+      "open": "posted-2"
+    },
+    {
+      "open": "observer-3"
+    },
+    {
+      "wait_for": "posted-3"
+    },
+    {
+      "open": "posted-3"
+    },
+    {
+      "open": "observer-4"
+    },
+    {
+      "wait_for": "posted-4"
+    },
+    {
+      "open": "posted-4"
+    },
+    {
+      "open": "observer-5"
+    },
+    {
+      "wait_for": "posted-5"
+    },
+    {
+      "open": "posted-5"
+    },
+    {
+      "open": "observer-6"
+    },
+    {
+      "wait_for": "posted-6"
+    },
+    {
+      "open": "posted-6"
+    },
+    {
+      "open": "observer-7"
+    },
+    {
+      "wait_for": "posted-7"
+    },
+    {
+      "open": "posted-7"
+    },
+    {
+      "open": "observer-8"
+    },
+    {
+      "wait_for": "posted-8"
+    },
+    {
+      "open": "posted-8"
+    },
+    {
+      "open": "observer-9"
+    },
+    {
+      "wait_for": "posted-9"
+    },
+    {
+      "open": "posted-9"
+    },
+    {
+      "open": "observer-10"
+    },
+    {
+      "wait_for": "posted-10"
+    },
+    {
+      "open": "posted-10"
+    },
+    {
+      "open": "observer-11"
+    },
+    {
+      "wait_for": "posted-11"
+    },
+    {
+      "open": "posted-11"
+    },
+    {
+      "open": "observer-12"
+    },
+    {
+      "wait_for": "posted-12"
+    },
+    {
+      "open": "posted-12"
+    },
+    {
+      "open": "observer-13"
+    },
+    {
+      "wait_for": "posted-13"
+    },
+    {
+      "open": "posted-13"
+    },
+    {
+      "open": "observer-14"
+    },
+    {
+      "wait_for": "posted-14"
+    },
+    {
+      "open": "posted-14"
+    },
+    {
+      "open": "observer-15"
+    },
+    {
+      "wait_for": "posted-15"
+    },
+    {
+      "open": "posted-15"
+    },
+    {
+      "open": "observer-16"
+    },
+    {
+      "wait_for": "posted-16"
+    },
+    {
+      "open": "posted-16"
+    },
+    {
+      "open": "observer-17"
+    },
+    {
+      "wait_for": "posted-17"
+    },
+    {
+      "open": "posted-17"
+    },
+    {
+      "open": "observer-18"
+    },
+    {
+      "wait_for": "posted-18"
+    },
+    {
+      "open": "posted-18"
+    },
+    {
+      "open": "observer-19"
+    },
+    {
+      "wait_for": "posted-19"
+    },
+    {
+      "open": "posted-19"
+    },
+    {
+      "open": "observer-20"
+    },
+    {
+      "wait_for": "posted-20"
+    },
+    {
+      "open": "posted-20"
+    },
+    {
+      "open": "observer-21"
+    },
+    {
+      "wait_for": "posted-21"
+    },
+    {
+      "open": "posted-21"
+    },
+    {
+      "open": "observer-22"
+    },
+    {
+      "wait_for": "posted-22"
+    },
+    {
+      "open": "posted-22"
+    },
+    {
+      "open": "observer-23"
+    },
+    {
+      "wait_for": "posted-23"
+    },
+    {
+      "open": "posted-23"
+    },
+    {
+      "open": "observer-24"
+    },
+    {
+      "wait_for": "posted-24"
+    },
+    {
+      "open": "posted-24"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "actions": {
+      "posted": {
+        "$unordered": [
+          {
+            "result": {
+              "blocked_by": null,
+              "chain_depth": 0
+            }
+          },
+          {
+            "result": {
+              "blocked_by": null,
+              "chain_depth": 0
+            }
+          },
+          {
+            "result": {
+              "blocked_by": null,
+              "chain_depth": 0
+            }
+          },
+          {
+            "result": {
+              "blocked_by": null,
+              "chain_depth": 0
+            }
+          },
+          {
+            "result": {
+              "blocked_by": null,
+              "chain_depth": 0
+            }
+          },
+          {
+            "result": {
+              "blocked_by": null,
+              "chain_depth": 0
+            }
+          },
+          {
+            "result": {
+              "blocked_by": null,
+              "chain_depth": 0
+            }
+          },
+          {
+            "result": {
+              "blocked_by": null,
+              "chain_depth": 0
+            }
+          },
+          {
+            "result": {
+              "blocked_by": null,
+              "chain_depth": 0
+            }
+          },
+          {
+            "result": {
+              "blocked_by": null,
+              "chain_depth": 0
+            }
+          },
+          {
+            "result": {
+              "blocked_by": null,
+              "chain_depth": 0
+            }
+          },
+          {
+            "result": {
+              "blocked_by": null,
+              "chain_depth": 0
+            }
+          },
+          {
+            "result": {
+              "blocked_by": null,
+              "chain_depth": 0
+            }
+          },
+          {
+            "result": {
+              "blocked_by": null,
+              "chain_depth": 0
+            }
+          },
+          {
+            "result": {
+              "blocked_by": null,
+              "chain_depth": 0
+            }
+          },
+          {
+            "result": {
+              "blocked_by": null,
+              "chain_depth": 0
+            }
+          },
+          {
+            "result": {
+              "blocked_by": null,
+              "chain_depth": 0
+            }
+          },
+          {
+            "result": {
+              "blocked_by": null,
+              "chain_depth": 0
+            }
+          },
+          {
+            "result": {
+              "blocked_by": null,
+              "chain_depth": 0
+            }
+          },
+          {
+            "result": {
+              "blocked_by": null,
+              "chain_depth": 0
+            }
+          },
+          {
+            "result": {
+              "blocked_by": null,
+              "chain_depth": 0
+            }
+          },
+          {
+            "result": {
+              "blocked_by": null,
+              "chain_depth": 0
+            }
+          },
+          {
+            "result": {
+              "blocked_by": null,
+              "chain_depth": 0
+            }
+          },
+          {
+            "result": {
+              "blocked_by": null,
+              "chain_depth": 0
+            }
+          },
+          {
+            "result": {
+              "blocked_by": null,
+              "chain_depth": 0
+            }
+          }
+        ]
+      }
+    }
+  }
+}
