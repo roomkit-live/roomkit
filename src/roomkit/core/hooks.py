@@ -6,7 +6,7 @@ import asyncio
 import contextvars
 import functools
 import logging
-from collections.abc import Awaitable, Callable, Coroutine, Iterable
+from collections.abc import Awaitable, Callable, Collection, Coroutine, Iterable
 from dataclasses import dataclass, field, replace
 from typing import Any, ClassVar, Protocol
 
@@ -767,8 +767,11 @@ class HookEngine:
 
         The engine holds no store and reads no room: this call is the
         synchronous, trusted level below the kit's
-        :meth:`RoomKit.add_room_hook`, which reads the room with the
-        caller's organization first (RFC §17.2).
+        :meth:`RoomKit.add_room_hook`, which reads the room first (RFC
+        §17.2). A hook registered here counts as one registered while a room
+        held *room_id*: the kit's next :meth:`RoomKit.create_room` of the id
+        forgets it (RFC §9.1); a hook for a room not created yet is the
+        kit's to register.
 
         A turn executor's room hooks are defined by name instead
         (:meth:`define_room_hook`), the room owner naming a room's in its
@@ -928,6 +931,18 @@ class HookEngine:
             return False
         self.use_room_hooks(room_id, [n for n in names if n != name])
         return True
+
+    def _forget_room(self, room_id: str, keep: Collection[str]) -> None:
+        """Forget the hooks this engine holds for *room_id* alone, those
+        given to it as an executor included, but those named in *keep*: the
+        kit created a room under the id an earlier room left them under (RFC
+        §9.1, §17.2)."""
+        for hooks in (self._room_hooks, self._owner_room_hooks):
+            kept = [hook for hook in hooks.get(room_id, []) if hook.name in keep]
+            if kept:
+                hooks[room_id] = kept
+            else:
+                hooks.pop(room_id, None)
 
     def holds(self, hook: HookRegistration) -> bool:
         """Whether the registration *hook* itself is registered here."""

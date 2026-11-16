@@ -32,6 +32,7 @@ from roomkit.models.room import Room, RoomTimers
 
 if TYPE_CHECKING:
     from roomkit.channels.base import Channel
+    from roomkit.core._room_hook_lifetime import RoomHookLifetime
     from roomkit.core.locks import RoomLockManager
     from roomkit.models.identity import Identity
     from roomkit.orchestration.base import Orchestration
@@ -90,6 +91,8 @@ class RoomLifecycleMixin(HelpersMixin):
     _stop_room_recordings: Any  # see RoomLifecycleHost
     _install_strategy: Any  # see StrategyMixin
     _forget_strategy: Any  # see StrategyMixin
+    _room_hook_lifetime: RoomHookLifetime
+    _presence_watch: Any  # RoomKit's AgentPresenceWatch
 
     async def create_room(
         self,
@@ -159,9 +162,12 @@ class RoomLifecycleMixin(HelpersMixin):
                 else self._default_agent_response_policy
             ),
         )
-        result = await self._store_recorded_room(room, recorders or [])
+        result, names_forgotten = await self._store_recorded_room(room, recorders or [])
         # A strategy recorded for this id belonged to a room that is gone.
         await self._forget_strategy(room.id)
+        if names_forgotten:
+            # Its agents' presence there follows the hooks (RFC §10.6.7).
+            await self._presence_watch.room_changed(room.id)
 
         # Apply orchestration strategy
         orch = (
@@ -186,15 +192,21 @@ class RoomLifecycleMixin(HelpersMixin):
         )
         return result
 
-    async def _store_recorded_room(self, room: Room, recorders: list[RoomRecorderBinding]) -> Room:
-        """Store a new room with its recorders running and announced (RFC §12.11).
+    async def _store_recorded_room(
+        self, room: Room, recorders: list[RoomRecorderBinding]
+    ) -> tuple[Room, bool]:
+        """Store a new room with its recorders running and announced (RFC
+        §12.11); with whether a name enabled for an earlier room of its id
+        was forgotten.
 
         The recorders start first, all or nothing, so one that refuses fails
         the creation before anything is written; a store write that fails
-        stops them. Once the room exists they are filed under it and each is
-        announced: ON_RECORDING_STARTED is the consent point (RFC §17.6), and a
-        room recorder captures nothing until a track is added, so the
-        announcement still precedes any audio.
+        stops them. Once the room exists, the room hooks and enabled names
+        an earlier room of its id left are forgotten, before anything
+        announces it (RFC §9.1, §17.2); then the recorders are filed under
+        it and each is announced: ON_RECORDING_STARTED is the consent point
+        (RFC §17.6), and a room recorder captures nothing until a track is
+        added, so the announcement still precedes any audio.
         """
         started = self._room_recorder_mgr.start(room.id, recorders)
         try:
@@ -202,8 +214,9 @@ class RoomLifecycleMixin(HelpersMixin):
         except BaseException:
             self._room_recorder_mgr.discard(started)
             raise
+        names_forgotten = self._room_hook_lifetime.forget_earlier_room(room.id)
         await self._file_announced(room.id, started, room.organization_id)
-        return stored
+        return stored, names_forgotten
 
     async def get_room(self, room_id: str, *, organization_id: str | None = None) -> Room:
         """Get a room by ID. Raises RoomNotFoundError if missing.

@@ -39,6 +39,7 @@ from roomkit.core._kit_wiring import KitEvents, KitWiringEnv
 from roomkit.core._nested_calls import NestedCall, nested_in
 from roomkit.core._publication_keys import refuse_reserved
 from roomkit.core._reentrance import REENTRY_LOOP_CAP, Entry, RoomWork, chain_floor
+from roomkit.core._room_hook_lifetime import RoomHookLifetime
 from roomkit.core._routing_stamps import without_routing_stamps
 from roomkit.core._timer_transitions import TimerTransitions
 from roomkit.core._turn_host import KitHost
@@ -464,6 +465,10 @@ class RoomKit(
         # executor's (RFC §10.6.6).
         self._kit_turn_hooks = KitTurnHooks(self._turn_hooks, self._channels)
         self._hook_engine.turn_side = self._kit_turn_hooks
+        # A room's hooks end with the room (RFC §9.1, §17.2).
+        self._room_hook_lifetime = RoomHookLifetime(
+            self._hook_engine, self._turn_hooks, self._turns
+        )
         self._given_lock_manager = lock_manager or InMemoryLockManager()
         # A failed release never undoes a locked section (RFC §13.5).
         self._lock_manager = RoomLocks(

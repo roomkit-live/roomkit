@@ -125,6 +125,7 @@ _ON_POSTGRES = (
     "channel-call/",
     "locks/",
     "verification/",
+    "tenancy/a-deleted-room-s-hook-",
     "discussion/a-discussion-regeneration-carries-its-selection-lock-release-error",
     "reentrancy/a-before-ai-generation-handler-",
     "reentrancy/a-tool-call-handler-",

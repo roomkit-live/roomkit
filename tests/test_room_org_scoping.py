@@ -40,6 +40,7 @@ from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.providers.sms.mock import MockSMSProvider
 from roomkit.realtime.base import EphemeralCallback, EphemeralEvent
 from roomkit.realtime.memory import InMemoryRealtime
+from roomkit.recorder import MediaRecordingConfig, MockMediaRecorder, RoomRecorderBinding
 from tests.test_framework import SimpleChannel
 
 
@@ -859,6 +860,59 @@ class TestScopedRoomHooks:
         await _ROOM_HOOK_VERBS["claim_room_strategy"](hooks, organization_id)
         assert kit.hook_engine.room_hook_names("globex-room") == ["acme-hook"]
         assert await kit.disable_room_hook("globex-room", "acme-audit") is True
+        await kit.close()
+
+    async def test_a_deleted_rooms_hooks_end_before_the_room_created_again_is_announced(
+        self,
+    ) -> None:
+        """acme's room hook does not see globex's recording start in the room
+        globex creates under the id of acme's deleted room: the hooks end
+        before the new room's recordings are announced, and a hook given to
+        the new room at that announcement takes the free name and stays
+        (RFC §9.1, §17.2, RMK-963)."""
+        kit = await _two_tenants()
+        acme_read: list[str | None] = []
+
+        async def acme_hook(event: Any, context: Any) -> None:
+            acme_read.append(context.room.organization_id)
+
+        async def globex_hook(event: Any, context: Any) -> None:
+            return None
+
+        async def give_globex_its_hook(event: Any, context: Any) -> None:
+            await kit.add_room_hook(
+                context.room.id,
+                HookTrigger.AFTER_BROADCAST,
+                HookExecution.ASYNC,
+                globex_hook,
+                name="acme-hook",
+                organization_id="globex",
+            )
+
+        await kit.add_room_hook(
+            "acme-room",
+            HookTrigger.ON_RECORDING_STARTED,
+            HookExecution.ASYNC,
+            acme_hook,
+            name="acme-hook",
+            organization_id="acme",
+        )
+        await kit.store.delete_room("acme-room")
+        kit.hook(HookTrigger.ON_RECORDING_STARTED, execution=HookExecution.SYNC, name="give")(
+            give_globex_its_hook
+        )
+
+        await kit.create_room(
+            room_id="acme-room",
+            organization_id="globex",
+            recorders=[
+                RoomRecorderBinding(recorder=MockMediaRecorder(), config=MediaRecordingConfig())
+            ],
+        )
+        await kit.hook_engine.drain_observers()  # its ASYNC hooks have run
+
+        assert acme_read == []
+        assert kit.hook_engine.room_hook_names("acme-room") == ["acme-hook"]
         await kit.close()
 
 

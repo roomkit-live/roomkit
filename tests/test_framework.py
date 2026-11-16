@@ -19,6 +19,7 @@ from roomkit.core.framework import (
     RoomKitError,
     RoomNotFoundError,
 )
+from roomkit.core.hooks import HookRegistration
 from roomkit.identity.base import IdentityResolver
 from roomkit.models.channel import ChannelBinding, ChannelOutput
 from roomkit.models.context import RoomContext
@@ -38,6 +39,7 @@ from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.models.framework_event import FrameworkEvent
 from roomkit.models.hook import HookResult, InjectedEvent
 from roomkit.models.identity import IdentityResult
+from roomkit.store.memory import InMemoryStore
 from tests.loop_clock import HeldClock
 
 
@@ -578,6 +580,83 @@ class TestRoomHooks:
         )
         assert await kit.remove_room_hook("r1", "test_room_hook") is True
         assert await kit.remove_room_hook("r1", "missing") is False
+
+    async def test_a_hook_whose_read_the_rooms_creation_overtakes_ends_with_that_room(
+        self,
+    ) -> None:
+        """A hook whose registration read no room, while the kit created the
+        room before the registration landed, is that room's: it ends with
+        it rather than waiting for the next (RFC §9.1, RMK-963)."""
+        store = _HeldFirstExists()
+        kit = RoomKit(store=store)
+
+        async def hook(event: RoomEvent, ctx: RoomContext) -> None:
+            return None
+
+        adding = asyncio.create_task(
+            kit.add_room_hook(
+                "r1", HookTrigger.AFTER_BROADCAST, HookExecution.ASYNC, hook, name="h"
+            )
+        )
+        await asyncio.wait_for(store.reading.wait(), 1)  # it read no room
+        await kit.create_room(room_id="r1")
+        store.release.set()
+        await asyncio.wait_for(adding, 1)
+        await kit.store.delete_room("r1")
+        await kit.create_room(room_id="r1")
+
+        assert kit.hook_engine.room_hook_names("r1") == []
+        await kit.close()
+
+    async def test_a_hook_registered_below_the_kit_ends_with_the_next_creation(self) -> None:
+        """A room hook registered on the engine, or given straight to the
+        kit's executor, reads no room: it counts as one registered while a
+        room held the id, and the kit's next creation of the id forgets it
+        (RFC §9.1, RMK-963)."""
+        kit = RoomKit()
+
+        async def hook(event: RoomEvent, ctx: RoomContext) -> None:
+            return None
+
+        kit.hook_engine.add_room_hook(
+            "r1",
+            HookRegistration(
+                trigger=HookTrigger.ON_ROOM_CREATED,
+                execution=HookExecution.ASYNC,
+                fn=hook,
+                name="engine",
+            ),
+        )
+        kit.turn_executor.hooks.add_owner_room_hook(
+            "r1",
+            HookRegistration(
+                trigger=HookTrigger.ON_TOOL_CALL,
+                execution=HookExecution.ASYNC,
+                fn=hook,
+                name="executor",
+            ),
+        )
+        await kit.create_room(room_id="r1")
+
+        assert kit.hook_engine.room_hook_names("r1") == []
+        assert not kit.turn_executor.hooks.remove_room_hook("r1", "executor")
+        await kit.close()
+
+
+class _HeldFirstExists(InMemoryStore):
+    """Holds the first existence read's answer until released."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.reading = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def room_exists(self, room_id: str) -> bool:
+        exists = await super().room_exists(room_id)
+        if not self.reading.is_set():
+            self.reading.set()
+            await self.release.wait()
+        return exists
 
 
 class TestIdempotencyRace:

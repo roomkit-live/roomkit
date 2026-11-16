@@ -30,6 +30,7 @@ from roomkit.models.store_filter import RoomFilter
 
 if TYPE_CHECKING:
     from roomkit.channels.base import Channel
+    from roomkit.core._room_hook_lifetime import RoomHookLifetime
     from roomkit.core.hooks import HookEngine, IdentityHookRegistration
     from roomkit.core.mixins.helpers import FrameworkEventHandler, IdentityHookFn
     from roomkit.models.channel import ChannelBinding
@@ -96,6 +97,7 @@ class HooksApiMixin(HelpersMixin):
     _hook_engine: HookEngine
     _turns: Any  # RoomKit's TurnClient
     _presence_watch: Any  # RoomKit's AgentPresenceWatch
+    _room_hook_lifetime: RoomHookLifetime
     turn_executor: Any  # RoomKit's own TurnExecutor
     _event_handlers: list[tuple[str, FrameworkEventHandler]]
     _identity_hooks: dict[HookTrigger, list[IdentityHookRegistration]]
@@ -453,24 +455,32 @@ class HooksApiMixin(HelpersMixin):
         *organization_id* is the organization the caller acts for (RFC
         §17.2): the room is read with it first, and another organization's
         room raises :class:`RoomNotFoundError` with no hook registered.
-        Unset, no room is read, and a room id the store does not hold takes
-        the hook as before. :meth:`HookEngine.add_room_hook` is the
-        synchronous engine call, which reads no room.
+        Unset, the kit reads whether a room of any organization holds
+        *room_id*: a room id the store does not hold takes the hook, which
+        waits for the room created under it (RFC §9.1).
+        :meth:`HookEngine.add_room_hook` is the synchronous engine call,
+        which reads no room.
+
+        A room's hooks end with the room (RFC §17.2): once the store deleted
+        it, :meth:`create_room` under its id forgets them, and keeps those
+        added while no room held the id.
         """
-        if organization_id is not None:
-            await self.get_room(room_id, organization_id=organization_id)
-        return self._hook_engine.add_room_hook(
-            room_id,
-            HookRegistration(
-                trigger=trigger,
-                execution=execution,
-                fn=fn,
-                priority=priority,
-                name=name,
-                fail_closed=fail_closed,
-                needs_lock=needs_lock,
-            ),
-        )
+        with self._room_hook_lifetime.registering(room_id) as registration:
+            registration.held = await self._room_held(room_id, organization_id)
+            registered = self._hook_engine.add_room_hook(
+                room_id,
+                HookRegistration(
+                    trigger=trigger,
+                    execution=execution,
+                    fn=fn,
+                    priority=priority,
+                    name=name,
+                    fail_closed=fail_closed,
+                    needs_lock=needs_lock,
+                ),
+            )
+            registration.note(registered.name)
+        return registered
 
     async def remove_room_hook(
         self, room_id: str, name: str, *, organization_id: str | None = None
@@ -485,7 +495,10 @@ class HooksApiMixin(HelpersMixin):
         """
         if organization_id is not None:
             await self.get_room(room_id, organization_id=organization_id)
-        return self._hook_engine.remove_room_hook(room_id, name)
+        removed = self._hook_engine.remove_room_hook(room_id, name)
+        if removed:
+            self._room_hook_lifetime.released(room_id, name)
+        return removed
 
     async def enable_room_hook(
         self, room_id: str, name: str, *, organization_id: str | None = None
@@ -502,10 +515,20 @@ class HooksApiMixin(HelpersMixin):
 
         *organization_id* is the organization the caller acts for (RFC
         §17.2): another organization's room raises :class:`RoomNotFoundError`
-        with nothing enabled.
+        with nothing enabled. A name enabled for an id no room holds waits
+        for the room created under it, and ends with that room, as a room
+        hook does (:meth:`add_room_hook`).
         """
-        if organization_id is not None:
-            await self.get_room(room_id, organization_id=organization_id)
+        with self._room_hook_lifetime.registering(room_id) as registration:
+            registration.held = await self._room_held(room_id, organization_id)
+            self._enable(room_id, name)
+            registration.note(name)
+        # Its agents' presence there follows the hooks (RFC §10.6.7).
+        await self._presence_watch.room_changed(room_id)
+
+    def _enable(self, room_id: str, name: str) -> None:
+        """Enable *name* for *room_id*'s turns, refusing a name the room's
+        hooks hold (RFC §9.1)."""
         if name in self._hook_engine.room_hook_names(room_id):
             raise ValueError(
                 f"Room {room_id} already holds a hook named {name!r}: a name the room "
@@ -521,8 +544,6 @@ class HooksApiMixin(HelpersMixin):
                 room_id,
             )
         self._turns.enable_room_hook(room_id, name)
-        # Its agents' presence there follows the hooks (RFC §10.6.7).
-        await self._presence_watch.room_changed(room_id)
 
     async def disable_room_hook(
         self, room_id: str, name: str, *, organization_id: str | None = None
@@ -535,5 +556,16 @@ class HooksApiMixin(HelpersMixin):
             await self.get_room(room_id, organization_id=organization_id)
         disabled = self._turns.disable_room_hook(room_id, name)
         if disabled:
+            self._room_hook_lifetime.released(room_id, name)
             await self._presence_watch.room_changed(room_id)
         return disabled
+
+    async def _room_held(self, room_id: str, organization_id: str | None) -> bool:
+        """Whether a room holds *room_id*, for a room hook's registration:
+        read with the caller's organization (RFC §17.2), another
+        organization's room raising :class:`RoomNotFoundError`; unscoped,
+        whether a room of any organization holds it."""
+        if organization_id is not None:
+            await self.get_room(room_id, organization_id=organization_id)
+            return True
+        return await self._store.room_exists(room_id)
