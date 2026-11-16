@@ -11,13 +11,8 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
-import json
-import shutil
-import tempfile
-import weakref
-from collections.abc import AsyncIterator, Callable, Collection, Iterator, Mapping
+from collections.abc import AsyncIterator, Callable, Iterator, Mapping
 from copy import deepcopy
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from roomkit import (
@@ -69,12 +64,12 @@ from roomkit.providers.minimax.ai import MINIMAX_CHAT
 from roomkit.providers.openai.ai import OpenAIAIProvider
 from roomkit.providers.openai.config import OpenAIConfig
 from roomkit.providers.utils import _aclose_stream
-from roomkit.skills.registry import SkillRegistry
 from roomkit.tasks import CancelTaskTool, TaskStatusTool
 from roomkit.tools import current_response_metadata, current_tool_allowed_names, current_tool_call
 from roomkit.tools.human_input import HumanInputToolHandler
 from roomkit.tools.policy import ToolPolicy
 from tests.conformance._memory import Compacted, scripted_memory
+from tests.conformance._skills import scripted_skill_registry
 
 if TYPE_CHECKING:
     from roomkit.channels._turn_config import ConfigProvider
@@ -707,7 +702,7 @@ def scripted_agent(
     if "config_provider" in spec:
         kwargs["config_provider"] = _config_provider(spec["config_provider"], gates)
     if "skills" in spec:
-        kwargs["skills"] = _skill_registry(
+        kwargs["skills"] = scripted_skill_registry(
             spec["skills"], spec.get("skills_requires_match", "exact")
         )
     if "skills_in_prompt" in spec:
@@ -841,7 +836,7 @@ def _config_provider(by_room: Mapping[str, Any], gates: Gates) -> ConfigProvider
         }
         config = AIChannelTurnConfig(**settings)
         if "skills" in spec:
-            config.skills = _skill_registry(
+            config.skills = scripted_skill_registry(
                 spec["skills"], spec.get("skills_requires_match", "exact")
             )
         if (tools := spec.get("tools")) is not None:
@@ -858,55 +853,6 @@ def _config_provider(by_room: Mapping[str, Any], gates: Gates) -> ConfigProvider
         return config
 
     return provider
-
-
-def _skill_registry(
-    skills: list[Mapping[str, Any]], requires_match: str = "exact"
-) -> SkillRegistry:
-    """A scripted skill registry: each skill written to a directory of its
-    own, removed with the registry, and discovered from there (README,
-    "Scripted agents")."""
-    root = Path(tempfile.mkdtemp(prefix="roomkit-conformance-skills-"))
-    for skill in skills:
-        directory = root / skill["name"]
-        (directory / "references").mkdir(parents=True)
-        requirements = "".join(
-            f"{key}: {json.dumps(skill[key])}\n"
-            for key in ("allowed_tools", "requires")
-            if key in skill
-        )
-        (directory / "SKILL.md").write_text(
-            f"---\nname: {skill['name']}\ndescription: {skill['description']}\n"
-            f"{requirements}---\n"
-            f"{skill.get('instructions', '')}",
-            encoding="utf-8",
-        )
-        for name, text in skill.get("references", {}).items():
-            (directory / "references" / name).write_text(text, encoding="utf-8")
-    registry = _registry_with_matcher(requires_match)
-    registry.discover(root)
-    for skill in skills:
-        if "unavailable" in skill:
-            registry.mark_unavailable(skill["name"], skill["unavailable"])
-        if skill.get("unlisted", False):
-            registry.mark_unlisted(skill["name"])
-    weakref.finalize(registry, shutil.rmtree, root, ignore_errors=True)
-    return registry
-
-
-def _registry_with_matcher(mode: str) -> SkillRegistry:
-    """Use the registry's default or the scripted host callback."""
-    if mode == "exact":
-        return SkillRegistry()
-    if mode not in ("hub", "fail"):
-        raise AssertionError(f"Unknown skill matcher: {mode}")
-
-    def match_requirement(required: str, offered: Collection[str]) -> bool:
-        if mode == "fail":
-            raise RuntimeError("Scripted skill matcher failed")
-        return any(name == required or name.startswith(f"{required}_") for name in offered)
-
-    return SkillRegistry(requires_match=match_requirement)
 
 
 def _retry_policy(spec: Mapping[str, Any]) -> RetryPolicy:

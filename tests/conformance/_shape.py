@@ -272,6 +272,7 @@ TURN_CONFIG = {
 }
 TURN_TOOL = {"name", "description", "parameters"}
 SKILL = {
+    "in_memory",
     "name",
     "description",
     "instructions",
@@ -816,6 +817,8 @@ def _turn_config(config: Mapping[str, Any], path: str, found: list[str]) -> None
 def _skills(skills: list[Mapping[str, Any]], path: str, found: list[str]) -> None:
     for index, skill in enumerate(skills):
         _members(skill, SKILL, f"{path}[{index}]", found)
+        if "in_memory" in skill and not isinstance(skill["in_memory"], bool):
+            found.append(f"{path}[{index}].in_memory: expected a boolean")
 
 
 def _memory(memory: Mapping[str, Any], path: str, found: list[str]) -> None:
