@@ -1,0 +1,64 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-status-on-an-unregistered-channel-is-not-the-room-of-the-key-s-recipient",
+  "title": "A status for another number on a channel no longer registered is not given the one room bound to it, whose binding names no participant",
+  "rules": [
+    "§10.4 A delivery status follows its message",
+    "§5.7"
+  ],
+  "notes": "With no channel to read the binding's recipient, bob's number, the binding names no one the status names: alice's status reaches no room, as it reaches none on the channel registered (delivery/the-one-room-delivering-to-another-number-is-not-the-status).",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "status",
+        "trigger": "on_delivery_status",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-1",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "metadata": {
+          "phone_number": "+15550000002"
+        }
+      }
+    },
+    {
+      "call": "unregister_channel",
+      "channel_id": "sms"
+    },
+    {
+      "call": "process_delivery_status",
+      "status": {
+        "provider": "mock",
+        "message_id": "m",
+        "status": "sent",
+        "channel_id": "sms",
+        "recipient": "+15550000001"
+      }
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "status": []
+    }
+  }
+}

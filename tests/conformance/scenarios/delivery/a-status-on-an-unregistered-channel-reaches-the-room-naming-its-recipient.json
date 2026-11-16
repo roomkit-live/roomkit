@@ -1,0 +1,72 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "delivery/a-status-on-an-unregistered-channel-reaches-the-room-naming-its-recipient",
+  "title": "A status on a channel no longer registered reaches the room the channel was attached to for its recipient, whose binding names them",
+  "rules": [
+    "§10.4 A delivery status follows its message",
+    "§5.7"
+  ],
+  "notes": "The attach names the recipient it is given, alice's number, as the binding's correspondent (§5.7): her status is the room's, the channel registered or not.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "status",
+        "trigger": "on_delivery_status",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "attach_channel",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "metadata": {
+        "phone_number": "+15550000001"
+      }
+    },
+    {
+      "call": "unregister_channel",
+      "channel_id": "sms"
+    },
+    {
+      "call": "process_delivery_status",
+      "status": {
+        "provider": "mock",
+        "message_id": "m",
+        "status": "sent",
+        "channel_id": "sms",
+        "recipient": "+15550000001"
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "room-1": {
+        "sms": {
+          "participant_id": "+15550000001"
+        }
+      }
+    },
+    "hooks": {
+      "status": [
+        {
+          "room_id": "room-1"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,108 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/an-advisor-s-resolution-names-the-identity-on-the-binding-delivering-to-the-participant",
+  "title": "An advisor resolving a participant names the identity on the binding delivering to that participant's own number, and their next message is the room's",
+  "rules": [
+    "§5.5",
+    "§5.7",
+    "§10.4",
+    "Appendix B.3"
+  ],
+  "notes": "The binding names no participant and delivers to alice's number: it is her conversation, so resolving her writes the identity on it, as for a binding delivering to no one (members/resolve-participant-identifies-a-pending-record).",
+  "setup": {
+    "identities": [
+      {
+        "id": "id-alice"
+      }
+    ],
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "participants": [
+          {
+            "id": "+15550000001",
+            "channel_id": "sms",
+            "connected_via": [
+              "sms"
+            ],
+            "identification": "pending"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "store.add_binding",
+      "binding": {
+        "room_id": "room-1",
+        "channel_id": "sms",
+        "channel_type": "sms",
+        "metadata": {
+          "phone_number": "+15550000001"
+        }
+      }
+    },
+    {
+      "call": "resolve_participant",
+      "room_id": "room-1",
+      "participant_id": "+15550000001",
+      "identity_id": "id-alice",
+      "expect": {
+        "result": {
+          "identification": "identified",
+          "identity_id": "id-alice"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "alice: hi"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "room-1"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "room-1": {
+        "sms": {
+          "participant_id": "id-alice",
+          "metadata": {
+            "phone_number": "+15550000001"
+          }
+        }
+      }
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "alice: hi"
+          }
+        }
+      ]
+    }
+  }
+}
