@@ -23,6 +23,9 @@ from tests.conformance._mcp_shape import mcp_problems
         {"peer": {"replies": [{"method": "read", "hold": False}]}},
         {"peer": {"replies": [{"method": "read", "error": {"code": True, "message": "x"}}]}},
         {"peer": {"replies": [], "framing": "later"}},
+        {"peer": {"replies": [], "initializations": []}},
+        {"peer": {"replies": [], "initializations": [{"server_info": False}]}},
+        {"peer": {"replies": [], "initializations": [{"instruction": "unknown"}]}},
         {"operations": []},
         {"operations": [{"method": "unknown"}]},
         {"operations": [{"method": "connect", "timeout_ms": 10}]},
@@ -73,6 +76,22 @@ def test_host_request_parameters_are_not_normalized_into_an_empty_object(
         message["params"] = params
     peer._reply(message)
     assert peer.problems
+
+
+def test_only_discovery_ignores_the_sdks_generated_progress_token() -> None:
+    reply = {"method": "tools/list", "params": {}, "result": {"tools": []}}
+    for discovery in (False, True):
+        peer = MCPPeer({"replies": [reply]})
+        peer.discovery = discovery
+        peer._reply(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/list",
+                "params": {"_meta": {"progressToken": 0}},
+            }
+        )
+        assert bool(peer.problems) is not discovery
 
 
 @pytest.mark.parametrize("mutation", ["extra", "missing-null"])

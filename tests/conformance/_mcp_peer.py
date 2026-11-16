@@ -102,6 +102,13 @@ class MCPPeer:
             # SDK discovery may omit the empty first-page parameters. Host
             # requests retain their exact presence and value.
             observed["params"] = {}
+        if method == "tools/list" and self.discovery:
+            params = observed.get("params")
+            meta = params.get("_meta") if isinstance(params, dict) else None
+            if isinstance(meta, dict) and type(meta.get("progressToken")) is int:
+                meta.pop("progressToken")
+                if not meta:
+                    params.pop("_meta")
         self.requests.append(observed)
         replies = self.spec["replies"]
         if self._position >= len(replies):
@@ -129,7 +136,7 @@ class MCPPeer:
         if "extensions" in spec:
             capabilities["extensions"] = copy.deepcopy(spec["extensions"])
         result = {
-            "protocolVersion": message["params"]["protocolVersion"],
+            "protocolVersion": "2025-11-25",
             "capabilities": capabilities,
             "serverInfo": spec.get("server_info", {"name": "host-test", "version": "1"}),
         }

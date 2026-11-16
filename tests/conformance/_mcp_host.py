@@ -8,6 +8,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from mcp.shared.exceptions import McpError
+from pydantic import ValidationError
 
 from roomkit.tools import MCPToolProvider
 from tests.conformance._calls import UnreadableError
@@ -51,6 +52,8 @@ async def _observed(provider: MCPToolProvider, operation: Mapping[str, Any]) -> 
         return {"error": "mcp_error", "message": str(error)}
     except TimeoutError:
         return {"error": "timeout"}
+    except ValidationError:
+        return {"error": "validation_error"}
     except RuntimeError as error:
         if str(error) != "MCPToolProvider is not connected. Use 'async with' to connect first.":
             raise
