@@ -30,6 +30,7 @@ from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.models.hook import HookResult, InjectedEvent
 from roomkit.models.participant import Participant
 from roomkit.models.room import Room
+from roomkit.models.task import Observation, Task
 from roomkit.orchestration.strategies.discussion import (
     Discussion,
     SpeakQueueChange,
@@ -224,6 +225,45 @@ async def test_a_hook_s_injected_instruction_gives_no_turn() -> None:
 
     assert (len(a.calls), len(b.calls)) == (0, 1)
     assert [who for change, who in seen if change == SpeakQueueChange.QUEUED] == [("b",)]
+    await kit.close()
+
+
+async def test_an_instruction_the_discussion_takes_keeps_its_hooks_side_effects() -> None:
+    """The discussion takes the instruction, which has no delivery set: the
+    task and the observation its hook gave are stored by the time the call
+    returns, and the task's ON_TASK_CREATED fires on the instruction (RFC
+    §10.1.1 rule 4, §19.7.5 rule 7). The shared scenario under ``locks/``
+    on the side effects a hook gives an instruction the discussion takes
+    pins that they are stored before the call's cascade ends."""
+    kit = RoomKit()
+    await _room(kit, {"a": _provider("summary: all good")})
+    created: list[RoomEvent] = []
+    fired = asyncio.Event()
+
+    @kit.hook(HookTrigger.BEFORE_BROADCAST)
+    async def triage(event: RoomEvent, ctx: RoomContext) -> HookResult:
+        if event.type != EventType.INSTRUCTION:
+            return HookResult.allow()
+        task = Task(id="t1", room_id=event.room_id, title="Instructed")
+        note = Observation(id="o1", room_id=event.room_id, channel_id="chat", content="asked")
+        return HookResult(action="allow", tasks=[task], observations=[note])
+
+    @kit.hook(HookTrigger.ON_TASK_CREATED, execution=HookExecution.ASYNC)
+    async def follow_up(event: RoomEvent, ctx: RoomContext) -> None:
+        created.append(event)
+        fired.set()
+
+    result = await _say(
+        kit, "summarise the incident", addressed_to=["a"], event_type=EventType.INSTRUCTION
+    )
+
+    assert not result.blocked
+    assert [task.title for task in await kit.store.list_tasks("r1")] == ["Instructed"]
+    assert [o.content for o in await kit.store.list_observations("r1")] == ["asked"]
+    await asyncio.wait_for(fired.wait(), 1)
+    assert [(e.content.body, e.metadata["task_title"]) for e in created] == [
+        ("summarise the incident", "Instructed")
+    ]
     await kit.close()
 
 

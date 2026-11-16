@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **An instruction a discussion takes keeps its hooks' tasks and observations** (RFC §10.1.1, §19.7.5, RMK-1715). A `BEFORE_BROADCAST` hook's tasks and observations on an instruction to an agent of the room's discussion were never stored, nor their `ON_TASK_CREATED` fired: the discussion took the instruction with no delivery set to carry them. They are now stored as the instruction is decided, under the room's lock, as a blocked instruction's are.
+
 - **A handler of a framework event a turn emits sends at least as deep as the turn's answer** (RFC §8.3, RMK-1699). Its sends took the turn's depth or none as the store's awaits fell (`before_ai_generation`: 1 in memory, 0 on SQLite and PostgreSQL) and never for `tool_call` or `ai_response`, so an `ai_response` handler that posted at each answer looped without end. Each handler now keeps the turn's response depth for as long as it runs, the turn over or not, as an ASYNC hook's body does, for an event the turn's work emits after the turn too (an `ai_response` that a slower ASYNC `ON_AI_RESPONSE` hook delays): the loop ends at `max_chain_depth`.
 
 - **Every skill manifest stays within 65,536 escaped characters** (RFC §24.1, RMK-1709). Oversized unavailable reasons, copies and MCP updates fail before changing registry or shared catalog state; rendering also rejects oversized metadata changed through a host alias.

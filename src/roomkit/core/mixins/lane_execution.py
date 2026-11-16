@@ -43,6 +43,7 @@ from roomkit.core.mixins.inbound_locked import (
     _Refused,
     committed_in,
     mutation_plan,
+    takes_instruction,
     target_update,
     with_counters,
     within_answer_scope,
@@ -302,11 +303,7 @@ class LaneExecutionMixin(HelpersMixin):
         # it is delivered to the agent it directs and never stored (RFC
         # §10.1.1).
         discussion = self._discussions.get(room_id)
-        if (
-            event.type == EventType.INSTRUCTION
-            and discussion is not None
-            and any(a in discussion.agents for a in event.addressed_to or ())
-        ):
+        if discussion is not None and takes_instruction(discussion, event):
             # The discussion gives the agent its turn (RFC §19.7.5 rule 7).
             await discussion.queue_instruction(event)
             return None

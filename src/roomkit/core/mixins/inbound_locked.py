@@ -184,6 +184,17 @@ def at_index(event: RoomEvent, index: int | None) -> RoomEvent:
     return event.model_copy(update={"index": index})
 
 
+def takes_instruction(discussion: Any, event: RoomEvent) -> bool:
+    """Whether *discussion*, the one holding the room if any, takes *event*:
+    an instruction to one of its agents, which gives each its turn rather
+    than a delivery set (RFC §19.7.5 rule 7)."""
+    return (
+        discussion is not None
+        and event.type == EventType.INSTRUCTION
+        and any(agent in discussion.agents for agent in event.addressed_to or ())
+    )
+
+
 def within_answer_scope[D: (_Ready, _Blocked)](decision: D, scope: str | None) -> D:
     """*decision*, a response's or a stream row's, its event narrowed back
     within *scope* once its hooks ran (RFC §5.12, §9.4): a hook may change
@@ -241,7 +252,9 @@ class _Proceed:
     Carries the state the caller still needs after the commit — kept off the
     event so the phases stay decoupled. ``mutation_hook`` is the (trigger,
     updated target) pair for an edit/delete (RFC §10.3); it rides the plan
-    and fires from the lane executor.
+    and fires from the lane executor. ``taken`` says that the discussion
+    holding the room took the event, an instruction, with no plan to carry
+    its hooks' side effects (RFC §19.7.5 rule 7).
     """
 
     event: RoomEvent
@@ -249,6 +262,7 @@ class _Proceed:
     sync_result: Any
     context: RoomContext
     mutation_hook: tuple[HookTrigger, RoomEvent] | None = None
+    taken: bool = False
 
 
 @runtime_checkable
@@ -491,6 +505,15 @@ class InboundLockedMixin(HelpersMixin):
             return InboundResult(event=blocked_event, blocked=True, reason=decision.reason)
         self._door_runs.committing(decision.event)
         outcome = await self._run_commit(decision, room_id, cascade)
+        if outcome.taken:
+            # An instruction the discussion takes has no delivery set to
+            # store its hooks' side effects with: they are stored at its
+            # decision, under the lock, as a blocked instruction's are (RFC
+            # §10.1.1 rule 4, §19.7.5 rule 7).
+            hooks = outcome.sync_result
+            await self._persist_side_effects(
+                room_id, hooks.tasks, hooks.observations, outcome.event, outcome.context
+            )
         # Injected events from allow/modify hooks: queued, each committed
         # after the trigger once its section has released the lock (the
         # trigger is committed and must never be contradicted by a late
@@ -907,13 +930,15 @@ class InboundLockedMixin(HelpersMixin):
         event = event.model_copy(update={"status": EventStatus.DELIVERED})
         # The author's record is made from the context the lock read, after
         # the hooks that ran there (step 9a): nothing else writes it since.
+        # Read with no await before the commit, which takes the same branch.
+        taken = takes_instruction(self._discussions.get(room_id), event)
         committed = await self._commit_to_lane(
             room_id, event, cascade, plan_factory, target=target, snapshot=context
         )
         # A persistence-policy-excluded event is delivered but not persisted;
         # it keeps its provisional identity (RFC §14.3 — no index consumed).
         event = event if committed is None else committed
-        return _Proceed(event, source_binding, sync_result, context, mutation_hook)
+        return _Proceed(event, source_binding, sync_result, context, mutation_hook, taken)
 
     async def _handle_block(
         self,
