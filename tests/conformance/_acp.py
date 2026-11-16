@@ -27,6 +27,7 @@ PROMPT = {
     "gate",
     "updates",
     "after_updates_gate",
+    "before_reply_gate",
     "permission",
     "stop_reason",
     "usage",
@@ -142,6 +143,8 @@ class ScriptedACPAgent:
         for step in prompt.get("permission_steps", []):
             await self.permissions.exchange(session, step["request"], writer)
             self._updates(session, step.get("updates", []), writer)
+        if "before_reply_gate" in prompt:
+            await self._gates.hold(prompt["before_reply_gate"])
         if "error" in prompt:
             return None, prompt["error"]
         result = {"stopReason": prompt.get("stop_reason", "end_turn")}

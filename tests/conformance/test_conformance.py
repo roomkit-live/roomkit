@@ -60,6 +60,8 @@ _LOCAL_TURN_CONTEXT = {
         "acp/tools-observer-reentry-bound",
         "acp/handler-on-tool-call-observer-reentry-bound",
         "acp/handler-before-tool-use-observer-reentry-bound",
+        "acp/handler-on-tool-call-observer-after-turn-independent",
+        "acp/handler-before-tool-use-observer-after-turn-independent",
     )
 }
 

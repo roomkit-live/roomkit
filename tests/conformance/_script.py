@@ -134,6 +134,8 @@ async def perform(harness: Harness, reaction: Mapping[str, Any], scope: Mapping[
         await asyncio.sleep(delay / 1000)
     for action in reaction.get("do", []):
         await harness.run_action(action, scope)
+    if (gate := reaction.get("after_do_gate")) is not None:
+        await harness.gates.hold(gate)
     if (later := reaction.get("after_turn")) is not None:
         harness.leave_after_turn(later, scope)
     if (message := reaction.get("fail")) is not None:

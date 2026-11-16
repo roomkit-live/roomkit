@@ -343,6 +343,7 @@ REACTION = {
     "when",
     "repeat",
     "gate",
+    "after_do_gate",
     "delay_ms",
     "do",
     "fail",
@@ -669,8 +670,9 @@ def _acp_thinking(spec: Mapping[str, Any], path: str, found: list[str]) -> None:
     if "publish_thinking_text" in spec and not isinstance(spec["publish_thinking_text"], bool):
         found.append(f"{path}.publish_thinking_text: expected a boolean")
     for index, prompt in enumerate(spec.get("agent", {}).get("prompts", [])):
-        if "after_updates_gate" in prompt and not isinstance(prompt["after_updates_gate"], str):
-            found.append(f"{path}.agent.prompts[{index}].after_updates_gate: expected a gate name")
+        for gate in ("after_updates_gate", "before_reply_gate"):
+            if gate in prompt and not isinstance(prompt[gate], str):
+                found.append(f"{path}.agent.prompts[{index}].{gate}: expected a gate name")
 
 
 def _acp_context(spec: Mapping[str, Any], path: str, found: list[str]) -> None:
@@ -907,6 +909,8 @@ def _reaction(
     _members(reaction, REACTION, path, found)
     if "invalid_result" in reaction:
         _invalid_return(reaction, path, found, permitted=invalid_return)
+    if "after_do_gate" in reaction and not isinstance(reaction["after_do_gate"], str):
+        found.append(f"{path}.after_do_gate: expected a gate name")
     _members(reaction.get("when", {}), WHEN, f"{path}.when", found)
     _members(reaction.get("output", {}), OUTPUT, f"{path}.output", found)
     _provider_result(reaction.get("output", {}), f"{path}.output", found)
