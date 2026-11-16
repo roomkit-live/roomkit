@@ -1,0 +1,63 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skill-scripts/close-without-registry-non-streaming",
+  "title": "A local skill executor: close without registry (non-streaming)",
+  "rules": [
+    "§6.1"
+  ],
+  "notes": "Python: tests/test_skills_integration.py, tests/test_skill_reference_unknown_skill.py, tests/test_tool_policy_exemptions.py and tests/skills/test_script_executor.py. The fixture records actual host invocations; no process is executed.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "script_executor": {
+          "result": {
+            "exit_code": 7,
+            "stdout": "résultat",
+            "stderr": "",
+            "success": true,
+            "metadata": {
+              "attempt": 2
+            }
+          }
+        },
+        "model": {
+          "streaming": false,
+          "rounds": []
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "close"
+    }
+  ],
+  "expect": {
+    "script_executors": {
+      "agent": {
+        "calls": [],
+        "closes": 1
+      }
+    }
+  }
+}
