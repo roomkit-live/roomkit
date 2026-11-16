@@ -679,10 +679,7 @@ def scripted_agent(
     tools = spec.get("tools", [])
     kwargs: dict[str, Any] = {}
     if "tool_policy" in spec:
-        policy = spec["tool_policy"]
-        kwargs["tool_policy"] = ToolPolicy(
-            allow=list(policy.get("allow", [])), deny=list(policy.get("deny", []))
-        )
+        kwargs["tool_policy"] = _tool_policy(spec["tool_policy"])
     if "max_tool_rounds" in spec:
         kwargs["max_tool_rounds"] = spec["max_tool_rounds"]
     if "max_empty_retries" in spec:
@@ -824,6 +821,11 @@ def _told_compacted(
         compacted(room_id, channel_id, {"history": message_records(history), "usage": usage})
 
     return told
+
+
+def _tool_policy(spec: Mapping[str, Any]) -> ToolPolicy:
+    """Construct the public policy, including its validated role overrides."""
+    return ToolPolicy.model_validate(spec)
 
 
 def _audited(handler: Any, spec: Mapping[str, Any], auditors: Auditors | None) -> Any:

@@ -97,3 +97,17 @@ def test_a_whole_response_cannot_also_fail_without_streaming(
     model = {"streaming": False, "rounds": [{"whole_response": {}, **failure}]}
     scenario = _scenario(model, location)
     assert any("whole_response" in problem for problem in unknown_members(scenario))
+
+
+@pytest.mark.parametrize(
+    "policy",
+    [
+        None,
+        {"role_overrides": []},
+        {"role_overrides": {"observer": None}},
+        {"role_overrides": {"observer": {"denny": ["*"]}}},
+    ],
+)
+def test_role_policy_controls_are_not_silently_ignored(policy: Any) -> None:
+    scenario = {"setup": {"channels": [{"id": "agent", "type": "ai", "tool_policy": policy}]}}
+    assert any("tool_policy" in problem for problem in unknown_members(scenario))

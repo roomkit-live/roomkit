@@ -290,7 +290,8 @@ SKILL = {
     "unlisted",
 }
 HUMAN_TOOL = {"name", "description", "parameters"}
-POLICY = {"allow", "deny"}
+POLICY = {"allow", "deny", "role_overrides"}
+ROLE_OVERRIDE = {"allow", "deny", "mode"}
 MEMORY = {
     "max_events",
     "returns_current_event",
@@ -786,7 +787,7 @@ def _channel(channel: Mapping[str, Any], path: str, found: list[str]) -> None:
         if "raises" in tool:
             _members(tool["raises"], RAISES, f"{path}.tools[{index}].raises", found)
     if "tool_policy" in channel:
-        _members(channel["tool_policy"], POLICY, f"{path}.tool_policy", found)
+        _tool_policy(channel["tool_policy"], f"{path}.tool_policy", found)
     for index, server in enumerate(channel.get("mcp_servers", [])):
         _members(server, MCP_SERVER, f"{path}.mcp_servers[{index}]", found)
         for position, tool in enumerate(server.get("tools", [])):
@@ -798,6 +799,19 @@ def _channel(channel: Mapping[str, Any], path: str, found: list[str]) -> None:
     if "memory" in channel:
         _memory(channel["memory"], f"{path}.memory", found)
     _channel_settings(channel, path, found)
+
+
+def _tool_policy(policy: Any, path: str, found: list[str]) -> None:
+    """Reject unknown members inside each role as well as the base policy."""
+    _members(policy, POLICY, path, found)
+    if not isinstance(policy, Mapping):
+        return
+    overrides = policy.get("role_overrides", {})
+    if not isinstance(overrides, Mapping):
+        found.append(f"{path}.role_overrides: not an object")
+        return
+    for role, override in overrides.items():
+        _members(override, ROLE_OVERRIDE, f"{path}.role_overrides.{role}", found)
 
 
 def _channel_settings(channel: Mapping[str, Any], path: str, found: list[str]) -> None:
