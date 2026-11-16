@@ -119,6 +119,7 @@ class MCPPeer:
         expected = {"method": scripted["method"], "params": scripted.get("params", {})}
         if observed != expected:
             self.problems.append(f"MCP request {observed} differs from {expected}")
+            return response | {"error": {"code": -32603, "message": "fixture request mismatch"}}
         if scripted.get("hold"):
             return None
         field = "error" if "error" in scripted else "result"

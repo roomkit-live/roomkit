@@ -42,7 +42,9 @@ def test_malformed_host_controls_are_refused(update: dict[str, Any]) -> None:
     assert mcp_problems(spec, "mcp_session")
 
 
-@pytest.mark.parametrize("replies", [[], [{"method": "another", "result": {}}]])
+@pytest.mark.parametrize(
+    "replies", [[], [{"method": "another", "result": {}}], [{"method": "another", "hold": True}]]
+)
 async def test_an_expected_server_error_cannot_hide_a_wrong_peer_script(
     replies: list[dict[str, Any]],
 ) -> None:
@@ -63,6 +65,18 @@ async def test_an_expected_server_error_cannot_hide_a_wrong_peer_script(
     }
     problems = await Harness(scenario).run()
     assert any("the runner cannot read the call" in problem for problem in problems)
+
+
+def test_a_wrong_held_request_is_refused_instead_of_hanging() -> None:
+    peer = MCPPeer({"replies": [{"method": "vendor/read", "hold": True}]})
+    reply = peer._reply({"jsonrpc": "2.0", "id": 2, "method": "vendor/next", "params": {}})
+    assert reply == {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "error": {"code": -32603, "message": "fixture request mismatch"},
+    }
+    assert len(peer.problems) == 1
+    assert "vendor/next" in peer.problems[0]
 
 
 @pytest.mark.parametrize("params", ["omitted", None, [], False])
