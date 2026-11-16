@@ -180,6 +180,9 @@ class _Comparison:
             recorded = getattr(self.observed, kind)
             for alias, expected in self.expect.get(kind, {}).items():
                 self._check(expected, recorded.get(self._room(alias), []), f"{kind}.{alias}")
+        for name, expected in self.expect.get("subscribers", {}).items():
+            read = self.observed.subscribers.get(name, [])
+            self._check(expected, read, f"subscribers.{name}")
         for label, expected in self.expect.get("actions", {}).items():
             outcomes = self.observed.actions.get(label, [])
             path = f"actions.{label}"

@@ -1,0 +1,178 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tenancy/a-deleted-room-s-turn-runs-none-of-the-hooks-of-the-room-created-again",
+  "title": "The work of a deleted room still running runs none of the hooks of the room created again under its id, and forgets none of them",
+  "rules": [
+    "§17.2",
+    "§9.1"
+  ],
+  "notes": "acme's agent turn waits on a tool; the store deletes the room; the same process creates a room under the same id for globex, which adds an ASYNC AFTER_BROADCAST hook. acme's turn goes on and its delivery set ends: its hooks run with acme's context, of a room earlier than the one the id's hooks are registered for, which runs none of them and leaves them in place. globex's message then reaches globex's hook.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "wait",
+            "description": "Wait.",
+            "gate": "waits",
+            "returns": "done"
+          },
+          {
+            "name": "note",
+            "description": "Note.",
+            "returns": "noted"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "text": "Looking.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "wait"
+                }
+              ]
+            },
+            {
+              "text": "Noting.",
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "note"
+                }
+              ]
+            },
+            {
+              "text": "acme answer"
+            }
+          ]
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "tc",
+        "trigger": "on_tool_call",
+        "execution": "sync"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "create_room",
+      "room": {
+        "id": "shared-id",
+        "organization_id": "acme"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "shared-id",
+      "channel_id": "ws",
+      "organization_id": "acme"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "shared-id",
+      "channel_id": "agent",
+      "category": "intelligence",
+      "organization_id": "acme"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "shared-id",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "acme-user",
+        "content": {
+          "type": "text",
+          "body": "acme secret"
+        }
+      },
+      "background": true,
+      "as": "a"
+    },
+    {
+      "wait_for": "waits"
+    },
+    {
+      "call": "store.delete_room",
+      "room_id": "shared-id"
+    },
+    {
+      "call": "create_room",
+      "room": {
+        "id": "shared-id",
+        "organization_id": "globex"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "shared-id",
+      "channel_id": "ws",
+      "organization_id": "globex"
+    },
+    {
+      "call": "add_room_hook",
+      "room_id": "shared-id",
+      "hook": {
+        "name": "globex_audit",
+        "trigger": "after_broadcast",
+        "execution": "async"
+      },
+      "organization_id": "globex"
+    },
+    {
+      "open": "waits"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "shared-id",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "globex-user",
+        "content": {
+          "type": "text",
+          "body": "globex hello"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "tc": [
+        {
+          "trigger": "on_tool_call"
+        },
+        {
+          "trigger": "on_tool_call"
+        }
+      ],
+      "globex_audit": [
+        {
+          "trigger": "after_broadcast",
+          "room_id": "shared-id",
+          "event": {
+            "content": {
+              "body": "globex hello"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

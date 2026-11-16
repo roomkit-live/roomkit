@@ -1,0 +1,131 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tenancy/a-deleted-room-s-strategy-does-not-run-in-the-room-another-process-creates-again",
+  "title": "A room's strategy ends with its room in every process: once the room is deleted, the strategy a process installed does not run in the room another process creates under its id for another organization",
+  "rules": [
+    "§17.2",
+    "§19.7"
+  ],
+  "notes": "The run's kit installs a discussion in acme's room; the store deletes the room; another process creates a room under the same id for globex, with no strategy, and attaches its channel; a message arrives in it through the run's kit. The deleted room's discussion asks no agent of globex's room.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "a here"
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "b here"
+            }
+          ]
+        }
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a",
+            "b"
+          ]
+        }
+      }
+    ],
+    "processes": [
+      {
+        "id": "p2"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "create_room",
+      "room": {
+        "id": "shared-id",
+        "organization_id": "acme"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "shared-id",
+      "channel_id": "ops",
+      "organization_id": "acme"
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "shared-id",
+      "strategy": "d",
+      "organization_id": "acme"
+    },
+    {
+      "call": "store.delete_room",
+      "room_id": "shared-id"
+    },
+    {
+      "call": "create_room",
+      "kit": "p2",
+      "room": {
+        "id": "shared-id",
+        "organization_id": "globex"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "kit": "p2",
+      "room_id": "shared-id",
+      "channel_id": "ops",
+      "organization_id": "globex"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "shared-id",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "globex-user",
+        "content": {
+          "type": "text",
+          "body": "globex secret"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "shared-id": [
+        {
+          "source": {
+            "channel_id": "ops"
+          },
+          "content": {
+            "body": "globex secret"
+          }
+        }
+      ]
+    }
+  }
+}

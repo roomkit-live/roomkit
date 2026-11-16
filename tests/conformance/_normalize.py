@@ -54,6 +54,8 @@ class Observed:
     tool_events: dict[str, list[Any]] = field(default_factory=dict)
     custom_events: dict[str, list[Any]] = field(default_factory=dict)
     presence_events: dict[str, list[Any]] = field(default_factory=dict)
+    # Per subscriber a `subscribe_room` call named, the events it read.
+    subscribers: dict[str, list[Any]] = field(default_factory=dict)
     text_events: dict[str, list[Any]] = field(default_factory=dict)
     room_callbacks: dict[str, dict[str, list[Any]]] = field(default_factory=dict)
     turns: dict[str, dict[str, list[Any]]] = field(default_factory=dict)

@@ -98,6 +98,7 @@ from tests.conformance._strategies import (
     kit_orchestration,
     strategies,
 )
+from tests.conformance._subscriptions import SUBSCRIPTION_CALLS
 from tests.conformance._tasks import TASK_CALLS
 from tests.conformance._verification import (
     VERIFICATION_CALLS,
@@ -188,6 +189,11 @@ class _TextRecorder(InMemoryRealtime):
 KIT_CALLS = frozenset(
     {
         "process_inbound",
+        "create_room",
+        "attach_channel",
+        "add_room_hook",
+        "subscribe_room",
+        "publish_typing",
         "regenerate_response",
         "install_strategy",
         "uninstall_strategy",
@@ -543,7 +549,7 @@ class Harness:
 
     async def _thinking_read(self) -> None:
         """Finish owner publications before reading ephemeral observations."""
-        if any(kind in self.scenario.get("expect", {}) for kind in _EPHEMERALS):
+        if any(kind in self.scenario.get("expect", {}) for kind in (*_EPHEMERALS, "subscribers")):
             await self.idle()
 
     async def run(self) -> list[str]:
@@ -722,6 +728,7 @@ class Harness:
         calls = CALLS | STORE_CALLS | TASK_CALLS | MEMBER_CALLS | INPUT_CALLS | STRATEGY_CALLS
         calls |= VERIFICATION_CALLS | ROUTING_CALLS | HANDOFF_CALLS | DISCUSSION_CALLS
         calls |= MCP_HOST_CALLS
+        calls |= SUBSCRIPTION_CALLS
         call = (calls | DELEGATE_TOOL_CALLS | EXECUTOR_CALLS | KIT_EXECUTOR_CALLS)[spec["call"]]
         try:
             kit = self.kit_of(spec)

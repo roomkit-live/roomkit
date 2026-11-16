@@ -1,0 +1,146 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tenancy/a-deleted-room-s-agent-session-does-not-go-on-in-the-room-created-again",
+  "title": "An agent's session ends with its room: once the room is deleted, the room another organization creates under its id opens a session of its own",
+  "rules": [
+    "§17.2",
+    "§10.6.3"
+  ],
+  "notes": "An ACP agent answers acme's message in its room's session; the store deletes the room; globex creates a room under the same id, attaches the same agent, and a message arrives in it. The agent does not prompt the deleted room's session with globex's message: globex's room opens a new one.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {}
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "create_room",
+      "room": {
+        "id": "shared-id",
+        "organization_id": "acme"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "shared-id",
+      "channel_id": "ws",
+      "organization_id": "acme"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "shared-id",
+      "channel_id": "claude",
+      "category": "intelligence",
+      "organization_id": "acme"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "shared-id",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "acme-user",
+        "content": {
+          "type": "text",
+          "body": "acme secret"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "store.delete_room",
+      "room_id": "shared-id"
+    },
+    {
+      "call": "create_room",
+      "room": {
+        "id": "shared-id",
+        "organization_id": "globex"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "shared-id",
+      "channel_id": "ws",
+      "organization_id": "globex"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "shared-id",
+      "channel_id": "claude",
+      "category": "intelligence",
+      "organization_id": "globex"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "shared-id",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "globex-user",
+        "content": {
+          "type": "text",
+          "body": "globex question"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "acp_wire": {
+      "claude": [
+        {
+          "method": "initialize"
+        },
+        {
+          "method": "session/new",
+          "params": {
+            "_meta": {
+              "roomkit.live/roomId": "shared-id"
+            }
+          }
+        },
+        {
+          "method": "session/prompt",
+          "params": {
+            "sessionId": "session-1"
+          }
+        },
+        {
+          "method": "session/close",
+          "params": {
+            "sessionId": "session-1"
+          }
+        },
+        {
+          "method": "session/new",
+          "params": {
+            "_meta": {
+              "roomkit.live/roomId": "shared-id"
+            }
+          }
+        },
+        {
+          "method": "session/prompt",
+          "params": {
+            "sessionId": "session-2"
+          }
+        }
+      ]
+    }
+  }
+}

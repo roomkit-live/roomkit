@@ -1,0 +1,79 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tenancy/a-deleted-room-s-subscription-reads-nothing-of-the-room-created-again",
+  "title": "A subscription to a room's ephemerals ends with its room: once the room is deleted, it reads nothing of the room another organization creates under its id",
+  "rules": [
+    "§17.2",
+    "§8.4"
+  ],
+  "notes": "acme subscribes to its room's ephemerals and reads acme's typing; the store deletes the room; globex creates a room under the same id, subscribes, and publishes typing in it. acme's subscription was the deleted room's and reads nothing of globex's; globex's reads its own.",
+  "setup": {},
+  "steps": [
+    {
+      "call": "create_room",
+      "room": {
+        "id": "shared-id",
+        "organization_id": "acme"
+      }
+    },
+    {
+      "call": "subscribe_room",
+      "room_id": "shared-id",
+      "subscriber": "acme_watch",
+      "organization_id": "acme"
+    },
+    {
+      "call": "publish_typing",
+      "room_id": "shared-id",
+      "user_id": "acme-user",
+      "organization_id": "acme"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "store.delete_room",
+      "room_id": "shared-id"
+    },
+    {
+      "call": "create_room",
+      "room": {
+        "id": "shared-id",
+        "organization_id": "globex"
+      }
+    },
+    {
+      "call": "subscribe_room",
+      "room_id": "shared-id",
+      "subscriber": "globex_watch",
+      "organization_id": "globex"
+    },
+    {
+      "call": "publish_typing",
+      "room_id": "shared-id",
+      "user_id": "globex-user",
+      "organization_id": "globex"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "subscribers": {
+      "acme_watch": [
+        {
+          "type": "typing_start",
+          "room_id": "shared-id",
+          "user_id": "acme-user"
+        }
+      ],
+      "globex_watch": [
+        {
+          "type": "typing_start",
+          "room_id": "shared-id",
+          "user_id": "globex-user"
+        }
+      ]
+    }
+  }
+}

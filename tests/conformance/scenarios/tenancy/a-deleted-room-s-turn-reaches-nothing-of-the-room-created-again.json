@@ -1,0 +1,138 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tenancy/a-deleted-room-s-turn-reaches-nothing-of-the-room-created-again",
+  "title": "A turn ends with its room: what a deleted room's turn publishes after it reaches nothing of the room another organization creates under its id",
+  "rules": [
+    "§17.2",
+    "§10.6.3"
+  ],
+  "notes": "An executor's agent answers acme's message and publishes after its turn, held at a gate; the store deletes the room; globex creates a room under the same id, attaches the same agent and subscribes to the room's ephemerals; then the gate opens. The deleted room's turn publishes to no one in globex's room.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "category": "intelligence",
+        "declared": true,
+        "on_event": [
+          {
+            "when": {
+              "text": "A."
+            },
+            "after_turn": [
+              {
+                "call": "channel.publish",
+                "executor": "first",
+                "channel_id": "coder",
+                "room_id": "shared-id",
+                "kind": "thinking_delta",
+                "data": {
+                  "thinking_length": 5,
+                  "round": 0,
+                  "channel_id": "coder"
+                },
+                "gate": "later",
+                "as": "late"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "coder"
+        ],
+        "organizations": [
+          "acme",
+          "globex"
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "create_room",
+      "room": {
+        "id": "shared-id",
+        "organization_id": "acme"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "shared-id",
+      "channel_id": "ws",
+      "organization_id": "acme"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "shared-id",
+      "channel_id": "coder",
+      "category": "intelligence",
+      "organization_id": "acme"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "shared-id",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "acme-user",
+        "content": {
+          "type": "text",
+          "body": "A."
+        }
+      }
+    },
+    {
+      "wait_for": "later"
+    },
+    {
+      "call": "store.delete_room",
+      "room_id": "shared-id"
+    },
+    {
+      "call": "create_room",
+      "room": {
+        "id": "shared-id",
+        "organization_id": "globex"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "shared-id",
+      "channel_id": "ws",
+      "organization_id": "globex"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "shared-id",
+      "channel_id": "coder",
+      "category": "intelligence",
+      "organization_id": "globex"
+    },
+    {
+      "call": "subscribe_room",
+      "room_id": "shared-id",
+      "subscriber": "globex_watch",
+      "organization_id": "globex"
+    },
+    {
+      "open": "later"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "subscribers": {
+      "globex_watch": []
+    }
+  }
+}
