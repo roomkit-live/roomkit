@@ -1,0 +1,310 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "role-policy/interleaved-turns-keep-their-role-streaming",
+  "title": "Interleaved turns keep their role (streaming)",
+  "rules": [
+    "§21.1",
+    "§5.5",
+    "§21.4",
+    "§6.4"
+  ],
+  "notes": "The same AIChannel serves two rooms. Its observer generation is held while the owner reaches its final generation. The resumed observer keeps its captured restriction; neither its reader nor its forced call inherits owner permissions. Gates reserve rounds before holding; no sleep establishes ordering.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "console",
+        "type": "websocket"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tool_search": false,
+        "audit": "tool_auditor",
+        "tools": [
+          {
+            "name": "inspect",
+            "parameters": {
+              "type": "object"
+            },
+            "returns_allowed_names": true
+          },
+          {
+            "name": "refund",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "refund ran"
+          }
+        ],
+        "tool_policy": {
+          "allow": [
+            "inspect"
+          ],
+          "deny": [
+            "refund"
+          ],
+          "role_overrides": {
+            "owner": {
+              "mode": "replace"
+            }
+          }
+        },
+        "model": {
+          "streaming": true,
+          "rounds": [
+            {
+              "gate": "observer-held",
+              "calls": [
+                {
+                  "id": "observer-inspect",
+                  "name": "inspect",
+                  "arguments": {
+                    "turn": "observer"
+                  }
+                },
+                {
+                  "id": "observer-refund",
+                  "name": "refund",
+                  "arguments": {
+                    "turn": "observer"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "owner-inspect",
+                  "name": "inspect",
+                  "arguments": {
+                    "turn": "owner"
+                  }
+                },
+                {
+                  "id": "owner-refund",
+                  "name": "refund",
+                  "arguments": {
+                    "turn": "owner"
+                  }
+                }
+              ]
+            },
+            {
+              "gate": "owner-finished",
+              "text": "Owner done."
+            },
+            {
+              "text": "Observer done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "observer-room",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "console"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "observer",
+            "channel_id": "ws",
+            "role": "observer",
+            "identity_id": null,
+            "joined_at": "2026-01-01T00:00:00Z",
+            "room_id": "observer-room"
+          }
+        ]
+      },
+      {
+        "id": "owner-room",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "console"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "owner",
+            "channel_id": "ws",
+            "role": "owner",
+            "identity_id": null,
+            "joined_at": "2026-01-01T00:00:00Z",
+            "room_id": "owner-room"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "observer-room",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "observer",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "defer_delivery": true,
+      "as": "observer_turn"
+    },
+    {
+      "wait_for": "observer-held"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "owner-room",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "owner",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "defer_delivery": true,
+      "as": "owner_turn"
+    },
+    {
+      "wait_for": "owner-finished"
+    },
+    {
+      "open": "owner-finished"
+    },
+    {
+      "call": "delivery.wait",
+      "of": "owner_turn"
+    },
+    {
+      "open": "observer-held"
+    },
+    {
+      "call": "delivery.wait",
+      "of": "observer_turn"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "inspect": {
+              "$present": true
+            },
+            "refund": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "inspect": {
+              "$present": true
+            },
+            "refund": {
+              "$present": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "inspect": {
+              "$present": true
+            },
+            "refund": {
+              "$present": true
+            }
+          },
+          "tool_results": [
+            {
+              "tool_call_id": "owner-inspect",
+              "is_error": false,
+              "content": "[\"inspect\", \"read_stored_result\", \"refund\"]"
+            },
+            {
+              "tool_call_id": "owner-refund",
+              "is_error": false,
+              "content": "refund ran"
+            }
+          ]
+        },
+        {
+          "tools": {
+            "inspect": {
+              "$present": true
+            },
+            "refund": {
+              "$absent": true
+            }
+          },
+          "tool_results": [
+            {
+              "tool_call_id": "observer-inspect",
+              "is_error": false,
+              "content": "[\"inspect\", \"read_stored_result\"]"
+            },
+            {
+              "tool_call_id": "observer-refund",
+              "is_error": true,
+              "content": {
+                "$contains": "Tool 'refund' is not permitted"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "tool_audit": {
+      "$unordered": [
+        {
+          "tool_name": "inspect",
+          "arguments": {
+            "turn": "observer"
+          },
+          "status": "ok"
+        },
+        {
+          "tool_name": "inspect",
+          "arguments": {
+            "turn": "owner"
+          },
+          "status": "ok"
+        },
+        {
+          "tool_name": "refund",
+          "arguments": {
+            "turn": "owner"
+          },
+          "status": "ok"
+        }
+      ]
+    }
+  }
+}

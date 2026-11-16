@@ -1,0 +1,215 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "role-policy/an-alias-must-pass-both-role-names-streaming",
+  "title": "An MCP alias must pass the role policy under both names (streaming)",
+  "rules": [
+    "§21.1",
+    "§21.2",
+    "§5.5"
+  ],
+  "notes": "Python: test_a_text_turn_judges_an_alias_under_both_names. The observer denies the bare name; the member denies only its alias. Both calls are refused before the exhaustive audited handler, even though the base policy permits them.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "audit": "tool_auditor",
+        "tool_search": false,
+        "tool_policy": {
+          "role_overrides": {
+            "observer": {
+              "deny": [
+                "delete_*"
+              ]
+            },
+            "member": {
+              "deny": [
+                "mcp__archive__*"
+              ]
+            }
+          }
+        },
+        "mcp_servers": [
+          {
+            "label": "archive",
+            "declare": "aliases",
+            "tools": [
+              {
+                "name": "delete_records",
+                "description": "Delete records",
+                "input_schema": {
+                  "type": "object"
+                },
+                "returns": "deleted"
+              }
+            ]
+          }
+        ],
+        "model": {
+          "streaming": true,
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "observer",
+                  "name": "mcp__archive__delete_records",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            },
+            {
+              "calls": [
+                {
+                  "id": "member",
+                  "name": "mcp__archive__delete_records",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-observer",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "observer",
+            "room_id": "room-observer",
+            "channel_id": "ws",
+            "role": "observer"
+          }
+        ]
+      },
+      {
+        "id": "room-member",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "member",
+            "room_id": "room-member",
+            "channel_id": "ws",
+            "role": "member"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-observer",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "observer",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-member",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "member",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "mcp__archive__delete_records": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "mcp__archive__delete_records": {
+              "$absent": true
+            }
+          },
+          "tool_results": [
+            {
+              "tool_call_id": "observer",
+              "name": "mcp__archive__delete_records",
+              "is_error": true,
+              "content": {
+                "$contains": "Tool 'mcp__archive__delete_records' is not permitted"
+              }
+            }
+          ]
+        },
+        {
+          "tools": {
+            "mcp__archive__delete_records": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "mcp__archive__delete_records": {
+              "$absent": true
+            }
+          },
+          "tool_results": [
+            {
+              "tool_call_id": "member",
+              "name": "mcp__archive__delete_records",
+              "is_error": true,
+              "content": {
+                "$contains": "Tool 'mcp__archive__delete_records' is not permitted"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "tool_audit": {
+      "$unordered": []
+    }
+  }
+}

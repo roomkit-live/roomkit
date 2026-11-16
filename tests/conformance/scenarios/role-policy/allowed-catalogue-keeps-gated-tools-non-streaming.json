@@ -1,0 +1,159 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "rules": [
+    "§6.4",
+    "§21.4",
+    "§21.1",
+    "§5.5"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tool_search": false,
+        "tools": [
+          {
+            "name": "inspect",
+            "description": "inspect",
+            "parameters": {
+              "type": "object"
+            },
+            "returns_allowed_names": true
+          },
+          {
+            "name": "publish_site",
+            "description": "publish_site",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "ok"
+          },
+          {
+            "name": "delete_account",
+            "description": "delete_account",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "ok"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "inspect"
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ],
+          "streaming": false
+        },
+        "skills": [
+          {
+            "name": "publisher",
+            "description": "Publish sites",
+            "instructions": "Publish carefully.",
+            "allowed_tools": "publish_site"
+          }
+        ],
+        "tool_policy": {
+          "role_overrides": {
+            "observer": {
+              "allow": [
+                "inspect",
+                "publish_site"
+              ]
+            }
+          }
+        },
+        "audit": "tool_auditor"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "room_id": "r1",
+            "channel_id": "ws",
+            "role": "observer"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "publish_site": {
+              "$absent": true
+            },
+            "delete_account": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "[\"activate_skill\", \"inspect\", \"publish_site\", \"read_skill_reference\", \"read_stored_result\"]",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    },
+    "tool_audit": {
+      "$unordered": [
+        {
+          "tool_name": "inspect",
+          "status": "ok"
+        }
+      ]
+    }
+  },
+  "notes": "Python: tests/test_allowed_names_policy.py::test_a_text_turn_lists_what_its_policy_admits. Skill visibility does not narrow the policy-admitted catalogue; channel-owned skill tools escape the allow-list. Role-selection counterpart of tool-allowed-names/skill-hidden-tools-remain-allowed-but-policy-denied-tools-do-not-streaming; the channel base admits everything except in the owner-replace case. The original public oracle is retained, with an exhaustive wrapped-handler audit.",
+  "id": "role-policy/allowed-catalogue-keeps-gated-tools-non-streaming",
+  "title": "A role policy governs allowed catalogue keeps gated tools (non-streaming)"
+}

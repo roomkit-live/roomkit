@@ -1,0 +1,547 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "role-policy/ai-selects-each-senders-role-streaming",
+  "title": "The ai resolves each sender role for declarations, execution and readers (streaming)",
+  "rules": [
+    "§21.1",
+    "§21.4",
+    "§5.5",
+    "§6.4"
+  ],
+  "notes": "Python: TestRoleBasedPolicy in test_ai_skill_gating.py and test_a_text_turn_resolves_the_policy_for_its_participant. Unknown inbound senders retain the base policy. An Agent descriptive owner role grants nothing. The handler audit is exhaustive: refused calls never reach it.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tool_search": false,
+        "audit": "tool_auditor",
+        "tools": [
+          {
+            "name": "inspect",
+            "parameters": {
+              "type": "object"
+            },
+            "returns_allowed_names": true
+          },
+          {
+            "name": "write_file",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "write ran"
+          },
+          {
+            "name": "admin_panel",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "admin ran"
+          }
+        ],
+        "tool_policy": {
+          "allow": [
+            "inspect",
+            "write_file"
+          ],
+          "deny": [
+            "admin_*"
+          ],
+          "role_overrides": {
+            "observer": {
+              "allow": [
+                "inspect"
+              ]
+            },
+            "owner": {
+              "mode": "replace"
+            }
+          }
+        },
+        "model": {
+          "streaming": true,
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "observer-inspect",
+                  "name": "inspect",
+                  "arguments": {
+                    "turn": "observer"
+                  }
+                },
+                {
+                  "id": "observer-write_file",
+                  "name": "write_file",
+                  "arguments": {
+                    "turn": "observer"
+                  }
+                },
+                {
+                  "id": "observer-admin_panel",
+                  "name": "admin_panel",
+                  "arguments": {
+                    "turn": "observer"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done observer."
+            },
+            {
+              "calls": [
+                {
+                  "id": "member-inspect",
+                  "name": "inspect",
+                  "arguments": {
+                    "turn": "member"
+                  }
+                },
+                {
+                  "id": "member-write_file",
+                  "name": "write_file",
+                  "arguments": {
+                    "turn": "member"
+                  }
+                },
+                {
+                  "id": "member-admin_panel",
+                  "name": "admin_panel",
+                  "arguments": {
+                    "turn": "member"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done member."
+            },
+            {
+              "calls": [
+                {
+                  "id": "owner-inspect",
+                  "name": "inspect",
+                  "arguments": {
+                    "turn": "owner"
+                  }
+                },
+                {
+                  "id": "owner-write_file",
+                  "name": "write_file",
+                  "arguments": {
+                    "turn": "owner"
+                  }
+                },
+                {
+                  "id": "owner-admin_panel",
+                  "name": "admin_panel",
+                  "arguments": {
+                    "turn": "owner"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done owner."
+            },
+            {
+              "calls": [
+                {
+                  "id": "unknown-inspect",
+                  "name": "inspect",
+                  "arguments": {
+                    "turn": "unknown"
+                  }
+                },
+                {
+                  "id": "unknown-write_file",
+                  "name": "write_file",
+                  "arguments": {
+                    "turn": "unknown"
+                  }
+                },
+                {
+                  "id": "unknown-admin_panel",
+                  "name": "admin_panel",
+                  "arguments": {
+                    "turn": "unknown"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done unknown."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-observer",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "observer",
+            "room_id": "room-observer",
+            "channel_id": "ws",
+            "role": "observer"
+          }
+        ]
+      },
+      {
+        "id": "room-member",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "member",
+            "room_id": "room-member",
+            "channel_id": "ws",
+            "role": "member"
+          }
+        ]
+      },
+      {
+        "id": "room-owner",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "owner",
+            "room_id": "room-owner",
+            "channel_id": "ws",
+            "role": "owner"
+          }
+        ]
+      },
+      {
+        "id": "room-unknown",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-observer",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "observer",
+        "content": {
+          "type": "text",
+          "body": "Go observer."
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-member",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "member",
+        "content": {
+          "type": "text",
+          "body": "Go member."
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-owner",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "owner",
+        "content": {
+          "type": "text",
+          "body": "Go owner."
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-unknown",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "unknown",
+        "content": {
+          "type": "text",
+          "body": "Go unknown."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "inspect": "$any",
+            "write_file": {
+              "$absent": true
+            },
+            "admin_panel": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "observer-inspect",
+              "name": "inspect",
+              "is_error": false,
+              "content": "[\"inspect\", \"read_stored_result\"]"
+            },
+            {
+              "tool_call_id": "observer-write_file",
+              "name": "write_file",
+              "is_error": true,
+              "content": {
+                "$contains": "Tool 'write_file' is not permitted"
+              }
+            },
+            {
+              "tool_call_id": "observer-admin_panel",
+              "name": "admin_panel",
+              "is_error": true,
+              "content": {
+                "$contains": "Tool 'admin_panel' is not permitted"
+              }
+            }
+          ],
+          "tools": {
+            "inspect": "$any",
+            "write_file": {
+              "$absent": true
+            },
+            "admin_panel": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "inspect": "$any",
+            "write_file": "$any",
+            "admin_panel": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "member-inspect",
+              "name": "inspect",
+              "is_error": false,
+              "content": "[\"inspect\", \"read_stored_result\", \"write_file\"]"
+            },
+            {
+              "tool_call_id": "member-write_file",
+              "name": "write_file",
+              "is_error": false,
+              "content": "write ran"
+            },
+            {
+              "tool_call_id": "member-admin_panel",
+              "name": "admin_panel",
+              "is_error": true,
+              "content": {
+                "$contains": "Tool 'admin_panel' is not permitted"
+              }
+            }
+          ],
+          "tools": {
+            "inspect": "$any",
+            "write_file": "$any",
+            "admin_panel": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "inspect": "$any",
+            "write_file": "$any",
+            "admin_panel": "$any"
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "owner-inspect",
+              "name": "inspect",
+              "is_error": false,
+              "content": "[\"admin_panel\", \"inspect\", \"read_stored_result\", \"write_file\"]"
+            },
+            {
+              "tool_call_id": "owner-write_file",
+              "name": "write_file",
+              "is_error": false,
+              "content": "write ran"
+            },
+            {
+              "tool_call_id": "owner-admin_panel",
+              "name": "admin_panel",
+              "is_error": false,
+              "content": "admin ran"
+            }
+          ],
+          "tools": {
+            "inspect": "$any",
+            "write_file": "$any",
+            "admin_panel": "$any"
+          }
+        },
+        {
+          "tools": {
+            "inspect": "$any",
+            "write_file": "$any",
+            "admin_panel": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "unknown-inspect",
+              "name": "inspect",
+              "is_error": false,
+              "content": "[\"inspect\", \"read_stored_result\", \"write_file\"]"
+            },
+            {
+              "tool_call_id": "unknown-write_file",
+              "name": "write_file",
+              "is_error": false,
+              "content": "write ran"
+            },
+            {
+              "tool_call_id": "unknown-admin_panel",
+              "name": "admin_panel",
+              "is_error": true,
+              "content": {
+                "$contains": "Tool 'admin_panel' is not permitted"
+              }
+            }
+          ],
+          "tools": {
+            "inspect": "$any",
+            "write_file": "$any",
+            "admin_panel": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    },
+    "tool_audit": {
+      "$unordered": [
+        {
+          "tool_name": "inspect",
+          "arguments": {
+            "turn": "observer"
+          },
+          "status": "ok"
+        },
+        {
+          "tool_name": "inspect",
+          "arguments": {
+            "turn": "member"
+          },
+          "status": "ok"
+        },
+        {
+          "tool_name": "write_file",
+          "arguments": {
+            "turn": "member"
+          },
+          "status": "ok"
+        },
+        {
+          "tool_name": "inspect",
+          "arguments": {
+            "turn": "owner"
+          },
+          "status": "ok"
+        },
+        {
+          "tool_name": "write_file",
+          "arguments": {
+            "turn": "owner"
+          },
+          "status": "ok"
+        },
+        {
+          "tool_name": "admin_panel",
+          "arguments": {
+            "turn": "owner"
+          },
+          "status": "ok"
+        },
+        {
+          "tool_name": "inspect",
+          "arguments": {
+            "turn": "unknown"
+          },
+          "status": "ok"
+        },
+        {
+          "tool_name": "write_file",
+          "arguments": {
+            "turn": "unknown"
+          },
+          "status": "ok"
+        }
+      ]
+    }
+  }
+}

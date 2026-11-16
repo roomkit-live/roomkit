@@ -1,0 +1,194 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "role-policy/deferred-definitions-omit-denied-tools-streaming",
+  "title": "A role policy governs deferred definitions omit denied tools (streaming)",
+  "rules": [
+    "§6.4",
+    "§21.1",
+    "§5.5"
+  ],
+  "notes": "Python: tests/test_deferred_tools.py::test_a_tool_the_policy_denies_is_not_even_held. RMK-1306. Role-selection counterpart of anthropic/a-denied-tool-is-not-held; the channel base admits everything except in the owner-replace case. The original public oracle is retained, with an exhaustive wrapped-handler audit.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look up.",
+            "returns": "ok"
+          },
+          {
+            "name": "track_shipment",
+            "description": "Track a shipment.",
+            "returns": "ok"
+          },
+          {
+            "name": "refund",
+            "description": "Refund an order.",
+            "returns": "ok"
+          }
+        ],
+        "model": {
+          "deferred_tools": true,
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c0",
+                  "name": "find_tools",
+                  "arguments": {
+                    "query": "track shipment",
+                    "max_results": 1
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "track_shipment"
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ],
+          "streaming": true
+        },
+        "tool_search": true,
+        "tool_search_pinned": [
+          "lookup"
+        ],
+        "tool_policy": {
+          "role_overrides": {
+            "observer": {
+              "deny": [
+                "refund"
+              ]
+            }
+          }
+        },
+        "audit": "tool_auditor"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "dev",
+            "room_id": "room-1",
+            "channel_id": "ws",
+            "role": "observer"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "dev",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "deferred_tools": [
+            "track_shipment"
+          ],
+          "tools": {
+            "refund": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "deferred_tools": [
+            "track_shipment"
+          ],
+          "tool_results": [
+            {
+              "name": "find_tools",
+              "references": [
+                "track_shipment"
+              ]
+            }
+          ],
+          "tools": {
+            "refund": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "deferred_tools": [
+            "track_shipment"
+          ],
+          "tool_results": [
+            {
+              "name": "find_tools",
+              "references": [
+                "track_shipment"
+              ]
+            },
+            {
+              "name": "track_shipment",
+              "references": []
+            }
+          ],
+          "tools": {
+            "refund": {
+              "$absent": true
+            }
+          }
+        }
+      ]
+    },
+    "tool_audit": {
+      "$unordered": [
+        {
+          "tool_name": "track_shipment",
+          "status": "ok"
+        }
+      ]
+    }
+  }
+}

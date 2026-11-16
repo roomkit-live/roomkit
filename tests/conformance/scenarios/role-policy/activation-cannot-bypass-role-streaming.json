@@ -1,0 +1,217 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "role-policy/activation-cannot-bypass-role-streaming",
+  "title": "A role policy governs activation cannot bypass role (streaming)",
+  "rules": [
+    "§24.2",
+    "§24.4",
+    "§21.1",
+    "§5.5"
+  ],
+  "notes": "Python: tests/test_channels/test_ai_skill_gating.py::TestPolicyPlusGating::test_policy_deny_overrides_skill_activation and TestPolicyVisibilityFilter::test_skill_infra_tools_never_filtered; channels/_ai_policy.py::_gate_refusal. Role-selection counterpart of skill-gating/activation-never-overrides-policy-and-infrastructure-escapes-both-streaming; the channel base admits everything except in the owner-replace case. The original public oracle is retained, with an exhaustive wrapped-handler audit.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tool_search": false,
+        "audit": "tool_auditor",
+        "tools": [
+          {
+            "name": "search_web",
+            "description": "search web",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "search_web ran"
+          },
+          {
+            "name": "fetch_v1",
+            "description": "fetch v1",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "fetch_v1 ran"
+          },
+          {
+            "name": "safe_read",
+            "description": "safe read",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "safe_read ran"
+          }
+        ],
+        "skills": [
+          {
+            "name": "research",
+            "description": "research procedure",
+            "instructions": "Rules for research.",
+            "allowed_tools": "*",
+            "references": {
+              "guide.md": "Reference rules."
+            }
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "research"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "read_skill_reference",
+                  "arguments": {
+                    "skill_name": "research",
+                    "filename": "guide.md"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c3",
+                  "name": "search_web",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ],
+          "streaming": true
+        },
+        "tool_policy": {
+          "role_overrides": {
+            "observer": {
+              "deny": [
+                "*"
+              ]
+            }
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "room_id": "r1",
+            "channel_id": "ws",
+            "role": "observer"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "activate_skill": {
+              "$present": true
+            },
+            "read_skill_reference": {
+              "$present": true
+            },
+            "search_web": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "activate_skill": {
+              "$present": true
+            },
+            "read_skill_reference": {
+              "$present": true
+            },
+            "search_web": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "search_web": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": {
+                "$contains": "Rules for research."
+              },
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c2",
+              "content": {
+                "$contains": "Reference rules."
+              },
+              "is_error": false
+            },
+            {
+              "tool_call_id": "c3",
+              "content": "{\"error\": \"Tool 'search_web' is not permitted by the agent's tool policy.\"}",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    },
+    "tool_audit": {
+      "$unordered": []
+    }
+  }
+}

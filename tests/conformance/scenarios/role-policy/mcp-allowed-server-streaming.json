@@ -1,0 +1,170 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "role-policy/mcp-allowed-server-streaming",
+  "title": "A role policy governs mcp allowed server (streaming)",
+  "rules": [
+    "§21.1",
+    "§21.2",
+    "§21.4",
+    "§5.5"
+  ],
+  "notes": "Two labelled servers serve delete_records; the archive's handler is first, the CRM's tools are declared bare. The policy admits the CRM's aliases and the bare name (allow mcp__crm__*, delete_records). Role-selection counterpart of mcp/a-bare-name-runs-only-on-the-server-the-policy-admits; the channel base admits everything except in the owner-replace case. The original public oracle is retained, with an exhaustive wrapped-handler audit.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "delete_records",
+                  "arguments": {
+                    "query": "2019"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ],
+          "streaming": true
+        },
+        "mcp_servers": [
+          {
+            "label": "archive",
+            "declare": "none",
+            "tools": [
+              {
+                "name": "delete_records",
+                "description": "Delete the records matching a query.",
+                "input_schema": {
+                  "type": "object",
+                  "properties": {
+                    "query": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "query"
+                  ]
+                },
+                "returns": "archive: deleted the records matching 2019"
+              }
+            ]
+          },
+          {
+            "label": "crm",
+            "declare": "bare",
+            "tools": [
+              {
+                "name": "delete_records",
+                "description": "Delete the records matching a query.",
+                "input_schema": {
+                  "type": "object",
+                  "properties": {
+                    "query": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "query"
+                  ]
+                },
+                "returns": "crm: deleted the records matching 2019"
+              }
+            ]
+          }
+        ],
+        "tool_policy": {
+          "role_overrides": {
+            "observer": {
+              "allow": [
+                "mcp__crm__*",
+                "delete_records"
+              ]
+            }
+          }
+        },
+        "audit": "tool_auditor"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "room_id": "room-1",
+            "channel_id": "ws",
+            "role": "observer"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Delete the 2019 records."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tool_results": "$any"
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "call-1",
+              "name": "delete_records",
+              "content": "crm: deleted the records matching 2019",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    },
+    "tool_audit": {
+      "$unordered": [
+        {
+          "tool_name": "delete_records",
+          "status": "ok"
+        }
+      ]
+    }
+  }
+}

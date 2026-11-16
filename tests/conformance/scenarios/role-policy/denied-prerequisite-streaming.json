@@ -1,0 +1,168 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "role-policy/denied-prerequisite-streaming",
+  "title": "A role policy governs denied prerequisite (streaming)",
+  "rules": [
+    "§24.2",
+    "§24.3",
+    "§24.4",
+    "§21.1",
+    "§5.5"
+  ],
+  "notes": "Python: tests/test_skill_requires_parity.py::test_a_text_turn_refuses_an_activation_missing_its_tool; refusal leaves its gate shut. Role-selection counterpart of skill-prerequisites/a-denied-prerequisite-refuses-activation-streaming; the channel base admits everything except in the owner-replace case. The original public oracle is retained, with an exhaustive wrapped-handler audit.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "audit": "tool_auditor",
+        "tool_search": false,
+        "tools": [
+          {
+            "name": "calendar_write",
+            "description": "calendar_write",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "calendar_write ran"
+          },
+          {
+            "name": "calendar_read",
+            "description": "calendar_read",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "calendar_read ran"
+          }
+        ],
+        "skills": [
+          {
+            "name": "calendar",
+            "description": "calendar procedure",
+            "instructions": "Rules for calendar.",
+            "requires": "calendar_read",
+            "allowed_tools": "calendar_write"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "calendar"
+                  },
+                  "id": "c1"
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "name": "calendar_write",
+                  "arguments": {},
+                  "id": "c2"
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ],
+          "streaming": true
+        },
+        "tool_policy": {
+          "role_overrides": {
+            "observer": {
+              "deny": [
+                "calendar_read"
+              ]
+            }
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "room_id": "r1",
+            "channel_id": "ws",
+            "role": "observer"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "calendar_write": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "calendar_write": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "content": "{\"error\": \"Required tools not available: calendar_read\"}",
+              "is_error": true,
+              "tool_call_id": "c1"
+            },
+            {
+              "content": "{\"error\": \"Tool 'calendar_write' is gated by a skill. Activate the skill first using activate_skill.\"}",
+              "is_error": true,
+              "tool_call_id": "c2"
+            }
+          ]
+        }
+      ]
+    },
+    "tool_audit": {
+      "$unordered": []
+    }
+  }
+}

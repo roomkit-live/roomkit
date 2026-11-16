@@ -1,0 +1,733 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "role-policy/the-named-record-selects-the-role-streaming",
+  "title": "The named record selects the role (streaming)",
+  "rules": [
+    "§21.1",
+    "§5.5",
+    "§21.4",
+    "§6.4"
+  ],
+  "notes": "Python: test_sender_reach.py::TestToolPolicyRole and core/_authors.py::People.named. The reached record, direct-id priority, identity ordering, secondary channel and own-record fallback determine policy. A foreign-channel owner grants no privilege.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "console",
+        "type": "websocket"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tool_search": false,
+        "audit": "tool_auditor",
+        "tools": [
+          {
+            "name": "inspect",
+            "parameters": {
+              "type": "object"
+            },
+            "returns_allowed_names": true
+          },
+          {
+            "name": "refund",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "refund ran"
+          }
+        ],
+        "tool_policy": {
+          "allow": [
+            "inspect"
+          ],
+          "deny": [
+            "refund"
+          ],
+          "role_overrides": {
+            "owner": {
+              "mode": "replace"
+            }
+          }
+        },
+        "model": {
+          "streaming": true,
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "reached-record-inspect",
+                  "name": "inspect",
+                  "arguments": {
+                    "turn": "reached-record"
+                  }
+                },
+                {
+                  "id": "reached-record-refund",
+                  "name": "refund",
+                  "arguments": {
+                    "turn": "reached-record"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            },
+            {
+              "calls": [
+                {
+                  "id": "direct-before-identity-inspect",
+                  "name": "inspect",
+                  "arguments": {
+                    "turn": "direct-before-identity"
+                  }
+                },
+                {
+                  "id": "direct-before-identity-refund",
+                  "name": "refund",
+                  "arguments": {
+                    "turn": "direct-before-identity"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            },
+            {
+              "calls": [
+                {
+                  "id": "identity-tie-inspect",
+                  "name": "inspect",
+                  "arguments": {
+                    "turn": "identity-tie"
+                  }
+                },
+                {
+                  "id": "identity-tie-refund",
+                  "name": "refund",
+                  "arguments": {
+                    "turn": "identity-tie"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            },
+            {
+              "calls": [
+                {
+                  "id": "secondary-channel-inspect",
+                  "name": "inspect",
+                  "arguments": {
+                    "turn": "secondary-channel"
+                  }
+                },
+                {
+                  "id": "secondary-channel-refund",
+                  "name": "refund",
+                  "arguments": {
+                    "turn": "secondary-channel"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            },
+            {
+              "calls": [
+                {
+                  "id": "own-record-inspect",
+                  "name": "inspect",
+                  "arguments": {
+                    "turn": "own-record"
+                  }
+                },
+                {
+                  "id": "own-record-refund",
+                  "name": "refund",
+                  "arguments": {
+                    "turn": "own-record"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            },
+            {
+              "calls": [
+                {
+                  "id": "foreign-channel-inspect",
+                  "name": "inspect",
+                  "arguments": {
+                    "turn": "foreign-channel"
+                  }
+                },
+                {
+                  "id": "foreign-channel-refund",
+                  "name": "refund",
+                  "arguments": {
+                    "turn": "foreign-channel"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "reached-record",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "console"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "canonical",
+            "channel_id": "console",
+            "role": "owner",
+            "identity_id": "person",
+            "joined_at": "2026-01-01T00:00:00Z",
+            "room_id": "reached-record"
+          },
+          {
+            "id": "reached",
+            "channel_id": "ws",
+            "role": "observer",
+            "identity_id": "person",
+            "joined_at": "2026-01-02T00:00:00Z",
+            "room_id": "reached-record"
+          }
+        ]
+      },
+      {
+        "id": "direct-before-identity",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "console"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "identity-record",
+            "channel_id": "ws",
+            "role": "observer",
+            "identity_id": "person",
+            "joined_at": "2026-01-01T00:00:00Z",
+            "room_id": "direct-before-identity"
+          },
+          {
+            "id": "person",
+            "channel_id": "ws",
+            "role": "owner",
+            "identity_id": null,
+            "joined_at": "2026-01-01T00:00:00Z",
+            "room_id": "direct-before-identity"
+          }
+        ]
+      },
+      {
+        "id": "identity-tie",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "console"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "z-owner",
+            "channel_id": "ws",
+            "role": "owner",
+            "identity_id": "person",
+            "joined_at": "2026-01-01T00:00:00Z",
+            "room_id": "identity-tie"
+          },
+          {
+            "id": "a-observer",
+            "channel_id": "ws",
+            "role": "observer",
+            "identity_id": "person",
+            "joined_at": "2026-01-01T00:00:00Z",
+            "room_id": "identity-tie"
+          }
+        ]
+      },
+      {
+        "id": "secondary-channel",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "console"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "owner",
+            "channel_id": "ws",
+            "role": "owner",
+            "identity_id": null,
+            "joined_at": "2026-01-01T00:00:00Z",
+            "connected_via": [
+              "ws",
+              "console"
+            ],
+            "room_id": "secondary-channel"
+          }
+        ]
+      },
+      {
+        "id": "own-record",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "console"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "pending-94f7f30bf1ea5ef1",
+            "channel_id": "ws",
+            "role": "owner",
+            "identity_id": null,
+            "joined_at": "2026-01-01T00:00:00Z",
+            "room_id": "own-record"
+          }
+        ]
+      },
+      {
+        "id": "foreign-channel",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "console"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "owner",
+            "channel_id": "console",
+            "role": "owner",
+            "identity_id": null,
+            "joined_at": "2026-01-01T00:00:00Z",
+            "room_id": "foreign-channel"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "reached-record",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "person",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "direct-before-identity",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "person",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "identity-tie",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "person",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "secondary-channel",
+      "message": {
+        "channel_id": "console",
+        "sender_id": "owner",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "own-record",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "address",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "foreign-channel",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "owner",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "inspect": {
+              "$present": true
+            },
+            "refund": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "inspect": {
+              "$present": true
+            },
+            "refund": {
+              "$absent": true
+            }
+          },
+          "tool_results": [
+            {
+              "tool_call_id": "reached-record-inspect",
+              "is_error": false,
+              "content": "[\"inspect\", \"read_stored_result\"]"
+            },
+            {
+              "tool_call_id": "reached-record-refund",
+              "is_error": true,
+              "content": {
+                "$contains": "Tool 'refund' is not permitted"
+              }
+            }
+          ]
+        },
+        {
+          "tools": {
+            "inspect": {
+              "$present": true
+            },
+            "refund": {
+              "$present": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "inspect": {
+              "$present": true
+            },
+            "refund": {
+              "$present": true
+            }
+          },
+          "tool_results": [
+            {
+              "tool_call_id": "direct-before-identity-inspect",
+              "is_error": false,
+              "content": "[\"inspect\", \"read_stored_result\", \"refund\"]"
+            },
+            {
+              "tool_call_id": "direct-before-identity-refund",
+              "is_error": false,
+              "content": "refund ran"
+            }
+          ]
+        },
+        {
+          "tools": {
+            "inspect": {
+              "$present": true
+            },
+            "refund": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "inspect": {
+              "$present": true
+            },
+            "refund": {
+              "$absent": true
+            }
+          },
+          "tool_results": [
+            {
+              "tool_call_id": "identity-tie-inspect",
+              "is_error": false,
+              "content": "[\"inspect\", \"read_stored_result\"]"
+            },
+            {
+              "tool_call_id": "identity-tie-refund",
+              "is_error": true,
+              "content": {
+                "$contains": "Tool 'refund' is not permitted"
+              }
+            }
+          ]
+        },
+        {
+          "tools": {
+            "inspect": {
+              "$present": true
+            },
+            "refund": {
+              "$present": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "inspect": {
+              "$present": true
+            },
+            "refund": {
+              "$present": true
+            }
+          },
+          "tool_results": [
+            {
+              "tool_call_id": "secondary-channel-inspect",
+              "is_error": false,
+              "content": "[\"inspect\", \"read_stored_result\", \"refund\"]"
+            },
+            {
+              "tool_call_id": "secondary-channel-refund",
+              "is_error": false,
+              "content": "refund ran"
+            }
+          ]
+        },
+        {
+          "tools": {
+            "inspect": {
+              "$present": true
+            },
+            "refund": {
+              "$present": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "inspect": {
+              "$present": true
+            },
+            "refund": {
+              "$present": true
+            }
+          },
+          "tool_results": [
+            {
+              "tool_call_id": "own-record-inspect",
+              "is_error": false,
+              "content": "[\"inspect\", \"read_stored_result\", \"refund\"]"
+            },
+            {
+              "tool_call_id": "own-record-refund",
+              "is_error": false,
+              "content": "refund ran"
+            }
+          ]
+        },
+        {
+          "tools": {
+            "inspect": {
+              "$present": true
+            },
+            "refund": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "inspect": {
+              "$present": true
+            },
+            "refund": {
+              "$absent": true
+            }
+          },
+          "tool_results": [
+            {
+              "tool_call_id": "foreign-channel-inspect",
+              "is_error": false,
+              "content": "[\"inspect\", \"read_stored_result\"]"
+            },
+            {
+              "tool_call_id": "foreign-channel-refund",
+              "is_error": true,
+              "content": {
+                "$contains": "Tool 'refund' is not permitted"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "tool_audit": {
+      "$unordered": [
+        {
+          "tool_name": "inspect",
+          "arguments": {
+            "turn": "reached-record"
+          },
+          "status": "ok"
+        },
+        {
+          "tool_name": "inspect",
+          "arguments": {
+            "turn": "direct-before-identity"
+          },
+          "status": "ok"
+        },
+        {
+          "tool_name": "refund",
+          "arguments": {
+            "turn": "direct-before-identity"
+          },
+          "status": "ok"
+        },
+        {
+          "tool_name": "inspect",
+          "arguments": {
+            "turn": "identity-tie"
+          },
+          "status": "ok"
+        },
+        {
+          "tool_name": "inspect",
+          "arguments": {
+            "turn": "secondary-channel"
+          },
+          "status": "ok"
+        },
+        {
+          "tool_name": "refund",
+          "arguments": {
+            "turn": "secondary-channel"
+          },
+          "status": "ok"
+        },
+        {
+          "tool_name": "inspect",
+          "arguments": {
+            "turn": "own-record"
+          },
+          "status": "ok"
+        },
+        {
+          "tool_name": "refund",
+          "arguments": {
+            "turn": "own-record"
+          },
+          "status": "ok"
+        },
+        {
+          "tool_name": "inspect",
+          "arguments": {
+            "turn": "foreign-channel"
+          },
+          "status": "ok"
+        }
+      ]
+    }
+  }
+}

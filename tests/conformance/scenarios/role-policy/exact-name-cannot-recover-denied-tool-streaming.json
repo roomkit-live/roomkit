@@ -1,0 +1,186 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "role-policy/exact-name-cannot-recover-denied-tool-streaming",
+  "title": "A role policy governs exact name cannot recover denied tool (streaming)",
+  "rules": [
+    "§6.4",
+    "§21.1",
+    "§5.5"
+  ],
+  "notes": "Python: tests/test_tool_search_text.py::TestDeferredCallRecovery::test_policy_denied_catalogue_tool_is_not_recovered. Role-selection counterpart of tool-search/a-denied-tool-is-not-recovered; the channel base admits everything except in the owner-replace case. The original public oracle is retained, with an exhaustive wrapped-handler audit.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "t1",
+                  "name": "send_sms",
+                  "arguments": {
+                    "to": "+15551234567",
+                    "body": "hi"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ],
+          "streaming": true
+        },
+        "tools": [
+          {
+            "name": "widget_0",
+            "description": "Operate widget number 0.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "widget_1",
+            "description": "Operate widget number 1.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "widget_2",
+            "description": "Operate widget number 2.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "widget_3",
+            "description": "Operate widget number 3.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "widget_4",
+            "description": "Operate widget number 4.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"ok\": true}"
+          },
+          {
+            "name": "send_sms",
+            "description": "Send an SMS text message to a phone number.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "to": {
+                  "type": "string"
+                },
+                "body": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "to",
+                "body"
+              ]
+            },
+            "returns": "{\"ok\": true}"
+          }
+        ],
+        "tool_search": true,
+        "tool_policy": {
+          "role_overrides": {
+            "observer": {
+              "allow": [
+                "widget_0"
+              ]
+            }
+          }
+        },
+        "audit": "tool_auditor"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "room_id": "room-1",
+            "channel_id": "ws",
+            "role": "observer"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go 1."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tools": {
+            "send_sms": {
+              "$absent": true
+            }
+          },
+          "tool_results": [
+            {
+              "tool_call_id": "t1",
+              "content": "{\"error\": \"Tool 'send_sms' is not permitted by the agent's tool policy.\"}",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    },
+    "tool_audit": {
+      "$unordered": []
+    }
+  }
+}

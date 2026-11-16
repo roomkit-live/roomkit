@@ -1,0 +1,294 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "role-policy/a-later-turn-reads-the-new-role-non-streaming",
+  "title": "A later turn reads the role of a rejoined participant (non-streaming)",
+  "rules": [
+    "§21.1",
+    "§21.4",
+    "§5.5",
+    "§6.4"
+  ],
+  "notes": "The first turn is restricted. A deliberate leave and rejoin updates the same participant to owner; the next turn resolves its new policy. The model declaration and exhaustive actual-handler audit prove the new permissions; prior tool history is not mistaken for a new invocation.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tool_search": false,
+        "audit": "tool_auditor",
+        "tools": [
+          {
+            "name": "inspect",
+            "parameters": {
+              "type": "object"
+            },
+            "returns_allowed_names": true
+          },
+          {
+            "name": "write_file",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "write ran"
+          },
+          {
+            "name": "admin_panel",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "admin ran"
+          }
+        ],
+        "tool_policy": {
+          "allow": [
+            "inspect",
+            "write_file"
+          ],
+          "deny": [
+            "admin_*"
+          ],
+          "role_overrides": {
+            "observer": {
+              "allow": [
+                "inspect"
+              ]
+            },
+            "owner": {
+              "mode": "replace"
+            }
+          }
+        },
+        "model": {
+          "streaming": false,
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "observer-inspect",
+                  "name": "inspect",
+                  "arguments": {
+                    "turn": "observer"
+                  }
+                },
+                {
+                  "id": "observer-write_file",
+                  "name": "write_file",
+                  "arguments": {
+                    "turn": "observer"
+                  }
+                },
+                {
+                  "id": "observer-admin_panel",
+                  "name": "admin_panel",
+                  "arguments": {
+                    "turn": "observer"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done observer."
+            },
+            {
+              "calls": [
+                {
+                  "id": "owner-inspect",
+                  "name": "inspect",
+                  "arguments": {
+                    "turn": "owner"
+                  }
+                },
+                {
+                  "id": "owner-write_file",
+                  "name": "write_file",
+                  "arguments": {
+                    "turn": "owner"
+                  }
+                },
+                {
+                  "id": "owner-admin_panel",
+                  "name": "admin_panel",
+                  "arguments": {
+                    "turn": "owner"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done owner."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-observer",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "observer",
+            "room_id": "room-observer",
+            "channel_id": "ws",
+            "role": "observer"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-observer",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "observer",
+        "content": {
+          "type": "text",
+          "body": "Go observer."
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "remove_member",
+      "room_id": "room-observer",
+      "participant_id": "observer"
+    },
+    {
+      "call": "add_member",
+      "room_id": "room-observer",
+      "participant_id": "observer",
+      "channel_id": "ws",
+      "role": "owner"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-observer",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "observer",
+        "content": {
+          "type": "text",
+          "body": "Go again after rejoining."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "inspect": "$any",
+            "write_file": {
+              "$absent": true
+            },
+            "admin_panel": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "observer-inspect",
+              "name": "inspect",
+              "is_error": false,
+              "content": "[\"inspect\", \"read_stored_result\"]"
+            },
+            {
+              "tool_call_id": "observer-write_file",
+              "name": "write_file",
+              "is_error": true,
+              "content": {
+                "$contains": "Tool 'write_file' is not permitted"
+              }
+            },
+            {
+              "tool_call_id": "observer-admin_panel",
+              "name": "admin_panel",
+              "is_error": true,
+              "content": {
+                "$contains": "Tool 'admin_panel' is not permitted"
+              }
+            }
+          ],
+          "tools": {
+            "inspect": "$any",
+            "write_file": {
+              "$absent": true
+            },
+            "admin_panel": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "inspect": "$any",
+            "write_file": "$any",
+            "admin_panel": "$any"
+          }
+        },
+        {
+          "tools": {
+            "inspect": "$any",
+            "write_file": "$any",
+            "admin_panel": "$any"
+          }
+        }
+      ]
+    },
+    "tool_audit": {
+      "$unordered": [
+        {
+          "tool_name": "inspect",
+          "arguments": {
+            "turn": "observer"
+          },
+          "status": "ok"
+        },
+        {
+          "tool_name": "inspect",
+          "arguments": {
+            "turn": "owner"
+          },
+          "status": "ok",
+          "result": "[\"admin_panel\", \"inspect\", \"read_stored_result\", \"write_file\"]"
+        },
+        {
+          "tool_name": "write_file",
+          "arguments": {
+            "turn": "owner"
+          },
+          "status": "ok"
+        },
+        {
+          "tool_name": "admin_panel",
+          "arguments": {
+            "turn": "owner"
+          },
+          "status": "ok"
+        }
+      ]
+    }
+  }
+}
