@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Collection
 from pathlib import Path
 
@@ -152,3 +153,15 @@ def test_safe_join_filename_refuses_a_directory_escape_and_a_dangling_child(
     (directory / "guide.md").symlink_to(outside / "missing.md")
     with pytest.raises(SkillPathError, match="escapes"):
         safe_join_filename(directory, "guide.md")
+
+
+def test_safe_join_filename_cycle_matches_the_python_runtime(tmp_path: Path) -> None:
+    directory = tmp_path / "references"
+    directory.mkdir()
+    (directory / "first").symlink_to("second")
+    (directory / "second").symlink_to("first")
+    if sys.version_info < (3, 13):
+        with pytest.raises(SkillPathError, match="cannot be resolved"):
+            safe_join_filename(directory, "first")
+    else:
+        assert safe_join_filename(directory, "first") == directory / "first"
