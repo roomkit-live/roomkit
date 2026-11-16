@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -200,3 +201,49 @@ def test_direct_file_helpers_refuse_a_symlink_loop(tmp_path: Path) -> None:
         skill.read_reference("first")
     with pytest.raises((SkillPathError, FileNotFoundError)):
         skill.resolve_script("first")
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX permission bits")
+@pytest.mark.skipif(sys.version_info >= (3, 14), reason="Newer pathlib masks stat errors")
+def test_directory_stat_permission_errors_are_not_empty_results(tmp_path: Path) -> None:
+    if os.geteuid() == 0:
+        pytest.skip("Root can traverse a mode-zero directory")
+    skill = _skill(tmp_path)
+    for name in ("scripts", "references"):
+        (skill.path / name).mkdir()
+    skill.path.chmod(0)
+    try:
+        for name in ("has_scripts", "has_references", "list_scripts", "list_references"):
+            with pytest.raises(PermissionError):
+                value = getattr(skill, name)
+                if callable(value):
+                    value()
+        with pytest.raises(PermissionError):
+            skill.read_reference("body")
+        with pytest.raises(PermissionError):
+            skill.resolve_script("body")
+    finally:
+        skill.path.chmod(0o700)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX permission bits")
+@pytest.mark.skipif(sys.version_info >= (3, 14), reason="Newer pathlib masks stat errors")
+def test_listing_propagates_permission_errors_on_a_link_target(tmp_path: Path) -> None:
+    if os.geteuid() == 0:
+        pytest.skip("Root can traverse a mode-zero directory")
+    skill = _skill(tmp_path)
+    hidden = skill.path / "hidden"
+    hidden.mkdir()
+    (hidden / "body").write_text("Body", encoding="utf-8")
+    for name in ("scripts", "references"):
+        directory = skill.path / name
+        directory.mkdir()
+        (directory / "link").symlink_to(hidden / "body")
+    hidden.chmod(0)
+    try:
+        with pytest.raises(PermissionError):
+            skill.list_scripts()
+        with pytest.raises(PermissionError):
+            skill.list_references()
+    finally:
+        hidden.chmod(0o700)
