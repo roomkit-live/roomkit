@@ -7,7 +7,7 @@
     "§11.7.5",
     "§9.2"
   ],
-  "notes": "Python: src/roomkit/core/mixins/verification.py; tests/test_identity_verification.py::test_an_unanswered_request_leaves_the_verification_in_force, tests/test_verification_lifecycle.py::test_a_verified_person_s_unanswered_request_leaves_the_verification (RMK-1171). The verification in force is the store's, so that the request's short lifetime is the only one at play.",
+  "notes": "Python: src/roomkit/core/mixins/verification.py; tests/test_identity_verification.py::test_an_unanswered_request_leaves_the_verification_in_force, tests/test_verification_lifecycle.py::test_a_verification_that_outlived_an_unanswered_request_still_ends (RMK-1171). The verification in force is the store's, so that the request's short lifetime is the only one at play.",
   "setup": {
     "kit": {
       "verification_policy": {

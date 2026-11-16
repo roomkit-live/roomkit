@@ -1,0 +1,253 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "locks/the-side-effects-a-hook-gives-an-instruction-the-discussion-takes-are-stored-at-its-decision",
+  "title": "The task and the observation a hook gives an instruction the discussion takes, which has no delivery set, are stored at its decision, before the call's cascade ends, and its task's ON_TASK_CREATED fires once",
+  "rules": [
+    "§10.1 step 15",
+    "§10.1.1 rule 4",
+    "§19.7.5 rule 7",
+    "§9.4"
+  ],
+  "notes": "One process. The application sends `summarise the incident` to `a`, an agent of the discussion holding `r1`, as an instruction. The `triage` hook allows it, gives it the task `Instructed` and an observation, and injects `note` for `ws`. The discussion takes the instruction and gives `a` its turn: the instruction has no delivery set to store its hooks' side effects with, so they are stored at its decision, under the room's lock, as a blocked instruction's are. `note` is committed once the instruction's section released the lock, and its set is held at `held` in its delivery to `ws`: the call's cascade is not over, and the task and the observation are already stored. `a`'s answer and `note` reach `ws` in either order: the answer's turn and `note`'s commit run side by side. Python: core/mixins/inbound_locked.py `_write_decision`.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "deliver": [
+          {
+            "when": {
+              "text": "note"
+            },
+            "gate": "held"
+          }
+        ]
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "summary: all good"
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "model": {
+          "rounds": []
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "triage",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "summarise the incident"
+            },
+            "result": {
+              "action": "allow",
+              "tasks": [
+                {
+                  "title": "Instructed"
+                }
+              ],
+              "observations": [
+                {
+                  "category": "instruction",
+                  "content": "summary asked"
+                }
+              ],
+              "injected_events": [
+                {
+                  "target_channel_ids": [
+                    "ws"
+                  ],
+                  "event": {
+                    "content": {
+                      "type": "text",
+                      "body": "note"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "follow_up",
+        "trigger": "on_task_created",
+        "execution": "async"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ops"
+          },
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "d",
+        "discussion": {
+          "agents": [
+            "a",
+            "b"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "d"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "background": true,
+      "as": "instructed",
+      "message": {
+        "channel_id": "ops",
+        "sender_id": "oncall",
+        "content": {
+          "type": "text",
+          "body": "summarise the incident"
+        },
+        "event_type": "instruction",
+        "addressed_to": [
+          "a"
+        ]
+      }
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "call": "store.list_tasks",
+      "room_id": "r1",
+      "expect": {
+        "result": [
+          {
+            "title": "Instructed",
+            "status": "pending"
+          }
+        ]
+      }
+    },
+    {
+      "call": "list_observations",
+      "room_id": "r1",
+      "expect": {
+        "result": [
+          {
+            "category": "instruction",
+            "content": "summary asked"
+          }
+        ]
+      }
+    },
+    {
+      "open": "held"
+    },
+    {
+      "await": "instructed",
+      "expect": {
+        "result": {
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "deliveries": {
+      "r1": {
+        "ops": [
+          {
+            "source": {
+              "channel_id": "a"
+            },
+            "content": {
+              "body": "summary: all good"
+            }
+          }
+        ],
+        "ws": {
+          "$unordered": [
+            {
+              "content": {
+                "body": "note"
+              }
+            },
+            {
+              "source": {
+                "channel_id": "a"
+              },
+              "content": {
+                "body": "summary: all good"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "tasks": {
+      "r1": [
+        {
+          "title": "Instructed",
+          "status": "pending"
+        }
+      ]
+    },
+    "observations": {
+      "r1": [
+        {
+          "category": "instruction",
+          "content": "summary asked"
+        }
+      ]
+    },
+    "hooks": {
+      "follow_up": [
+        {
+          "trigger": "on_task_created",
+          "room_id": "r1",
+          "event": {
+            "type": "task_created",
+            "content": {
+              "body": "summarise the incident"
+            },
+            "metadata": {
+              "task_title": "Instructed"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
