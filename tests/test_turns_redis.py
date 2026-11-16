@@ -15,7 +15,7 @@ import sys
 import tempfile
 import threading
 import time
-from collections.abc import AsyncIterator, Coroutine
+from collections.abc import AsyncIterator, Awaitable, Coroutine
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -1471,8 +1471,20 @@ def _slow_beat_stop(backend: RedisTurnBackend, delay: float) -> None:
     backend._beat.stop = slow  # type: ignore[method-assign]
 
 
+async def _held_until[T](clock: HeldClock, work: Awaitable[T], what: str) -> T:
+    """*work*'s result, come while *clock* is held: a closing process's
+    window, a bound of the loop's clock, is spent by what the test moves,
+    never by a pause of the worker (RMK-1714)."""
+    task = asyncio.ensure_future(work)
+    await clock.first(task)
+    clock.require(task.done(), f"{what} did not end while the loop's clock was held")
+    clock.require(not task.cancelled(), f"{what} was cancelled")
+    clock.require(task.exception() is None, f"{what} failed: {task.exception()!r}")
+    return task.result()
+
+
 async def test_a_turn_placed_on_a_closing_process_from_an_older_view_goes_elsewhere(
-    prefix: str, redis_client: Any
+    prefix: str, redis_client: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The owner read who is alive just before the room's holder began
     closing: the closing process refuses the turn, which another executor
@@ -1488,16 +1500,20 @@ async def test_a_turn_placed_on_a_closing_process_from_an_older_view_goes_elsewh
     await redis_client.set(f"{prefix}:holder:worker:r", f"{closing_host.node_id}:host-a")
     live = kit._turns.backend._live
     older = await live.current()
+    clock = HeldClock(monkeypatch)
     try:
-        _slow_beat_stop(closing_host, 0.5)
+        clock.hold()
         closing = asyncio.ensure_future(closing_host.close())
-        await asyncio.sleep(0.05)
+        await clock.past(0.05)
 
         async def as_read_before() -> Any:
             return older
 
         live.current = as_read_before  # type: ignore[method-assign]
-        result = await kit.process_inbound(_said("Hi."), room_id="r")
+        result = await _held_until(
+            clock, kit.process_inbound(_said("Hi."), room_id="r"), "the turn"
+        )
+        clock.release()
         await closing
 
         assert result.error is None
@@ -1601,15 +1617,19 @@ async def test_a_beat_built_before_an_executor_was_served_again_does_not_withdra
 
 
 class _SlowOwner:
-    """A room owner whose room calls take *delay*, the calls it ran kept."""
+    """A room owner whose room calls take *delay*, the calls it ran kept;
+    *reached* is done once the first reached it."""
 
     def __init__(self, inner: Any, delay: float) -> None:
         self._inner = inner
-        self._delay = delay
+        self.delay = delay
         self.ran: list[str] = []
+        self.reached: asyncio.Future[None] = asyncio.get_running_loop().create_future()
 
     async def room_call(self, message: RoomCall) -> HostResult:
-        await asyncio.sleep(self._delay)
+        if not self.reached.done():
+            self.reached.set_result(None)
+        await asyncio.sleep(self.delay)
         self.ran.append(message.verb)
         return HostResult(call_id=message.call_id, result="sent")
 
@@ -1626,18 +1646,26 @@ async def test_a_room_call_its_owner_runs_while_closing_is_answered(
     store = InMemoryStore()
     worker = _Worker("worker", MockAIProvider(responses=["Hi."] * 5, streaming=True))
     host, executor = await _hosted(prefix, store, worker)
-    kit = await _owner(prefix, "worker", store=store)
+    # The close waits for the call within its cancel bound: 2 s, so a pause
+    # of the worker (RMK-1714) cannot spend what the call's 0.6 s leaves.
+    timeouts = TurnTimeouts(heartbeat_interval=0.2, heartbeat_timeout=2.0, accept=3.0, cancel=2.0)
+    kit = await _owner(prefix, "worker", store=store, timeouts=timeouts)
     owner_backend = kit._turns.backend
     try:
         await kit.process_inbound(_said("Hi."), room_id="r")
         turn_id = next(iter(host._routes._turn_owners))
         slow = _SlowOwner(owner_backend._routes.owner, delay=0.6)
         owner_backend._routes.owner = slow
+        # The host asks an owner it has read alive: a pause of the worker
+        # must not bring its first check before its first read of the owner.
+        async with asyncio.timeout(5):
+            while not host._routes._live.owner_alive(owner_backend.node_id):
+                await asyncio.sleep(0.01)
         call = RoomCall(
             channel_id="worker", room_id="r", executor_id="host-a", turn_id=turn_id, verb="send"
         )
         asking = asyncio.ensure_future(host._routes.port.room_call(call))
-        await asyncio.sleep(0.05)
+        await asyncio.wait_for(slow.reached, 5)
         closing = asyncio.ensure_future(owner_backend.close())
         result = await asyncio.wait_for(asking, 5)
         await closing
@@ -1651,7 +1679,7 @@ async def test_a_room_call_its_owner_runs_while_closing_is_answered(
 
 
 async def test_work_reaching_a_closing_owner_is_refused_at_once(
-    prefix: str, redis_client: Any
+    prefix: str, redis_client: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """While the owner's process closes, answering the room call it was
     running, another room call reaches it: refused at once, not left to
@@ -1664,25 +1692,33 @@ async def test_work_reaching_a_closing_owner_is_refused_at_once(
     try:
         await kit.process_inbound(_said("Hi."), room_id="r")
         turn_id = next(iter(host._routes._turn_owners))
-        owner_backend._routes.owner = _SlowOwner(owner_backend._routes.owner, delay=0.8)
+        slow = _SlowOwner(owner_backend._routes.owner, delay=0.8)
+        owner_backend._routes.owner = slow
 
         def call(verb: str) -> RoomCall:
             return RoomCall(
                 channel_id="worker", room_id="r", executor_id="host-a", turn_id=turn_id, verb=verb
             )
 
+        # The loop's clock held: the call the owner runs, and the close
+        # waiting for it, last until the test moves it, and a call refused
+        # at once is refused while it stands still.
+        clock = HeldClock(monkeypatch)
+        clock.hold()
         running = asyncio.ensure_future(host._routes.port.room_call(call("send")))
-        await asyncio.sleep(0.05)
+        await clock.first(slow.reached)
+        clock.require(slow.reached.done(), "the first room call did not reach the owner")
         closing = asyncio.ensure_future(owner_backend.close())
-        await asyncio.sleep(0.05)
-        started = time.monotonic()
-        late = await asyncio.wait_for(host._routes.port.room_call(call("send_again")), 5)
-        refused_after = time.monotonic() - started
-        await running
+        await clock.past(0.05)
+        late = await _held_until(
+            clock, host._routes.port.room_call(call("send_again")), "the late room call"
+        )
+        await clock.past(slow.delay)
+        await _held_until(clock, running, "the running room call")
+        clock.release()
         await closing
 
         assert late.error is not None
-        assert refused_after < TIMEOUTS.heartbeat_interval * 2
     finally:
         await kit.close()
         await host.close()
@@ -1690,7 +1726,7 @@ async def test_work_reaching_a_closing_owner_is_refused_at_once(
 
 
 async def test_a_channel_call_and_an_event_for_a_closing_holder_go_to_another_executor(
-    prefix: str, redis_client: Any
+    prefix: str, redis_client: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Placed from a view read just before the room's holder began closing:
     the closing process applies neither and refuses both, which the other
@@ -1706,24 +1742,27 @@ async def test_a_channel_call_and_an_event_for_a_closing_holder_go_to_another_ex
     await redis_client.set(f"{prefix}:holder:worker:r", f"{closing_host.node_id}:host-a")
     live = kit._turns.backend._live
     older = await live.current()
+    clock = HeldClock(monkeypatch)
     try:
-        _slow_beat_stop(closing_host, 0.5)
+        clock.hold()
         closing = asyncio.ensure_future(closing_host.close())
-        await asyncio.sleep(0.05)
+        await clock.past(0.05)
 
         async def as_read_before() -> Any:
             return older
 
         live.current = as_read_before  # type: ignore[method-assign]
-        answer = await kit.channel_call("worker", "r", "set_mode", mode="fast")
+        answer = await _held_until(
+            clock, kit.channel_call("worker", "r", "set_mode", mode="fast"), "the channel call"
+        )
         event = RoomEvent(
             room_id="r",
             source=EventSource(channel_id="tx", channel_type=ChannelType.SMS),
             content=TextContent(body="Remember this."),
         )
-        await kit._turns.backend.control(
-            CommittedEvent(channel_id="worker", room_id="r", event=event)
-        )
+        committed = CommittedEvent(channel_id="worker", room_id="r", event=event)
+        await _held_until(clock, kit._turns.backend.control(committed), "the committed event")
+        clock.release()
         await closing
 
         assert answer == {"verb": "set_mode", "room": "r", "mode": "fast"}
@@ -1948,14 +1987,15 @@ async def test_a_request_that_cannot_be_written_leaves_no_owner_link(
     client = TurnClient(owner)
     try:
         await _turn(client)
-        await asyncio.sleep(0.2)  # the first turn's end read
-        before = set(owner._routes._owner_links)
+        async with asyncio.timeout(5):  # the first turn's end read: its link let go
+            while owner._routes._owner_links:
+                await asyncio.sleep(0.01)
         # Bytes that are not UTF-8 have no text to fall back on: the request
         # cannot be written, and nothing waits for its turn.
         with pytest.raises(ValueError):
             await _turn(client, raw=b"\xff\xfe")
 
-        assert set(owner._routes._owner_links) == before
+        assert not owner._routes._owner_links
     finally:
         await client.close()
         await host.close()
