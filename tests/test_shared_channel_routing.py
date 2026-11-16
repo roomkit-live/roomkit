@@ -40,6 +40,7 @@ from roomkit.providers.sms.mock import MockSMSProvider
 from roomkit.store.base import ConversationStore
 from roomkit.store.memory import InMemoryStore
 from roomkit.store.sqlite import SQLiteStore
+from tests.loop_clock import HeldClock
 from tests.test_framework import SimpleChannel
 
 ALICE, BOB, CAROL = "+15550000001", "+15550000002", "+15550000003"
@@ -699,7 +700,7 @@ class TestADeliveryStatus:
 
 class TestTheClaimFailsClosed:
     async def test_a_claim_the_lock_outlasts_refuses_the_message(
-        self, store: ConversationStore
+        self, store: ConversationStore, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Let in unrecorded, the message would leave the room open to a
         concurrent stranger: it is refused as a process timeout (RFC §13.6).
@@ -709,26 +710,47 @@ class TestTheClaimFailsClosed:
         kit.register_channel(SMSChannel("sms", provider=MockSMSProvider()))
         await kit.create_room(room_id="r")
         await kit.attach_channel("r", "sms")
-        holding = asyncio.Event()
+        holding, asking, free = asyncio.Event(), asyncio.Event(), asyncio.Event()
+        locked = kit._lock_manager.locked  # noqa: SLF001
+
+        def watched(room_id: str, *args: Any, **kwargs: Any) -> Any:
+            if holding.is_set():
+                asking.set()
+            return locked(room_id, *args, **kwargs)
+
+        monkeypatch.setattr(kit._lock_manager, "locked", watched)  # noqa: SLF001
 
         async def squatter() -> None:
             async with kit._lock_manager.locked("r"):  # noqa: SLF001
                 holding.set()
-                await asyncio.sleep(0.08)  # past the budget the claim waits within
+                await free.wait()
 
         holder = asyncio.create_task(squatter())
         await asyncio.wait_for(holding.wait(), 5)
-        try:
-            result = await asyncio.wait_for(
-                kit.process_inbound(
-                    InboundMessage(
-                        channel_id="sms", sender_id=ALICE, content=TextContent(body="hi")
-                    )
-                ),
-                timeout=5.0,
+        # The budget on the loop's clock, held from the call's start: only
+        # what the test moves spends it, never a pause of the worker while
+        # the lock is held (RMK-1714).
+        clock = HeldClock(monkeypatch)
+        clock.hold()
+        call = asyncio.create_task(
+            kit.process_inbound(
+                InboundMessage(channel_id="sms", sender_id=ALICE, content=TextContent(body="hi"))
             )
+        )
+        try:
+            reached = asyncio.create_task(asking.wait())
+            await clock.first(call, reached)
+            reached.cancel()
+            assert asking.is_set(), "the call did not ask for the room's lock"
+            await clock.past(0.05)
+            # The claim gives up, then the lock frees.
+            await clock.first(call, within=0.05)
+            free.set()
+            await clock.first(call)
         finally:
+            clock.release()
             holder.cancel()
+        result = await asyncio.wait_for(call, timeout=5.0)
 
         assert result.blocked is True
         assert result.reason == "process_timeout"
@@ -1389,33 +1411,49 @@ class TestARoomBeingCreated:
         assert all("alice" not in body for body in shop.sent_to(BOB))
         assert all("alice" not in _text(m) for call in shop.ai.calls[:1] for m in call.messages)
 
-    @pytest.mark.wallclock
-    async def test_a_deadline_passed_in_the_second_room_s_hooks_opens_no_third(self) -> None:
+    async def test_a_deadline_passed_in_the_second_room_s_hooks_opens_no_third(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Every new room a hook binds to Bob; the second one's hook waits
         for nothing until its own timeout cuts it: the call's process_timeout
         passes in the second room's hooks, the message is refused
         process_timeout, no third room opened."""
-        # The deadline runs from the call's start, so the first room's path
-        # spends it too: about 1 ms, but a loaded runner's pause once spent
-        # all of a 40 ms budget there (RMK-1705).
-        budget = 0.2
+        # The deadline runs from the call's start (§13.6), so the first
+        # room's path could spend it too: a loaded runner's pause once spent
+        # a 40 ms budget there (RMK-1705), a collection's 0.5 s any budget
+        # (RMK-1714). On the loop's clock, held from the call's start, only
+        # the second room's hook spends it.
+        budget = 0.04
         kit = RoomKit(inbound_router=_NewIds(), process_timeout=budget)
         kit.register_channel(SMSChannel("sms", provider=MockSMSProvider()))
         rooms: list[str] = []
-        never = asyncio.Event()
+        in_the_second = asyncio.Event()
 
-        # Its timeout runs from the hook's start, after the call's: the
-        # call's deadline has passed once the hook is cut.
-        @kit.hook(HookTrigger.ON_ROOM_CREATED, timeout=budget)
+        # Cut past the call's deadline: both run from the held clock.
+        @kit.hook(HookTrigger.ON_ROOM_CREATED, timeout=budget * 2)
         async def bind_to_bob(event: Any, ctx: RoomContext) -> None:
             rooms.append(ctx.room.id)
             await kit.attach_channel(ctx.room.id, "sms", metadata={"phone_number": BOB})
             if len(rooms) == 2:
-                await never.wait()
+                in_the_second.set()
+                await asyncio.Event().wait()
 
-        result = await kit.process_inbound(
-            InboundMessage(channel_id="sms", sender_id=ALICE, content=TextContent(body="hi"))
+        clock = HeldClock(monkeypatch)
+        clock.hold()
+        call = asyncio.create_task(
+            kit.process_inbound(
+                InboundMessage(channel_id="sms", sender_id=ALICE, content=TextContent(body="hi"))
+            )
         )
+        reached = asyncio.create_task(in_the_second.wait())
+        await clock.first(call, reached)
+        reached.cancel()
+        assert in_the_second.is_set(), "the call did not reach the second room's hook"
+        await clock.past(budget * 2)
+        await clock.first(call)
+        clock.release()
+        assert call.done(), "the call did not end once its hook was cut"
+        result = call.result()
         await kit.close()
 
         assert (result.blocked, result.reason) == (True, "process_timeout")

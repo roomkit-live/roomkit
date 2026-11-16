@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import threading
 import time
 from typing import Any
 
@@ -39,6 +38,7 @@ from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.models.framework_event import FrameworkEvent
 from roomkit.models.hook import HookResult, InjectedEvent
 from roomkit.models.identity import IdentityResult
+from tests.loop_clock import HeldClock
 
 
 class SimpleChannel(Channel):
@@ -907,54 +907,6 @@ class TestIdentityIdempotency:
 # -- Changeset 5: Timeout tests --
 
 
-class _HeldClock:
-    """The running loop's clock, held still by the test from :meth:`hold`
-    until :meth:`release`: real time passing does not move it, only
-    :meth:`past` does. A deadline on it is spent by what the test moves,
-    never by how the worker is scheduled."""
-
-    def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        loop = asyncio.get_running_loop()
-        self._real = loop.time
-        self._held: float | None = None
-        self._offset = 0.0
-        monkeypatch.setattr(loop, "time", self)
-
-    def __call__(self) -> float:
-        if self._held is None:
-            return self._real() + self._offset
-        return self._held
-
-    def hold(self) -> None:
-        self._held = self()
-
-    async def first(self, *tasks: asyncio.Future[Any], within: float = 5.0) -> None:
-        """Wait for the first of *tasks*, *within* seconds of real time at
-        most: while the clock is held, a wait on a loop timer never ends."""
-        stop = threading.Event()
-        bound = asyncio.ensure_future(asyncio.to_thread(stop.wait, within))
-        try:
-            await asyncio.wait({*tasks, bound}, return_when=asyncio.FIRST_COMPLETED)
-        finally:
-            stop.set()
-            await bound
-
-    async def past(self, seconds: float) -> None:
-        """Move the held clock *seconds* on; return once the loop has run
-        what fell due by then."""
-        assert self._held is not None
-        self._held += seconds
-        loop = asyncio.get_running_loop()
-        due = loop.create_future()
-        loop.call_at(self._held, lambda: due.cancelled() or due.set_result(None))
-        await due
-
-    def release(self) -> None:
-        assert self._held is not None
-        self._offset = self._held - self._real()
-        self._held = None
-
-
 class TestTimeouts:
     async def test_identity_timeout_falls_back_to_unknown(self) -> None:
         """When identity resolution times out, fall back to UNKNOWN status."""
@@ -1151,7 +1103,7 @@ class TestTimeouts:
         # The budget runs from the call's start (§13.6), on the loop's clock,
         # held from there: only the commit spends it, never a pause of the
         # worker before the commit is reached (RMK-1712).
-        clock = _HeldClock(monkeypatch)
+        clock = HeldClock(monkeypatch)
         clock.hold()
         call = asyncio.create_task(kit.process_inbound(msg))
         reached = asyncio.create_task(committing.wait())

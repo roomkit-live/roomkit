@@ -75,6 +75,7 @@ from roomkit.voice.tts.base import TTSProvider
 from roomkit.voice.tts.mock import MockTTSProvider
 from tests.conference.test_conference_realtime import ROOM, _Source, realtime_kit, until
 from tests.conference.test_conference_tool_calls import LOOKUP
+from tests.loop_clock import HeldClock
 from tests.test_framework import AILikeChannel, SimpleChannel
 
 # max_chain_depth=1: a reentry budget of 10 passes per cascade.
@@ -95,6 +96,15 @@ async def _room(kit: RoomKit, *channels: SimpleChannel) -> RoomKit:
         kit.register_channel(channel)
         await kit.attach_channel("r1", channel.channel_id)
     return kit
+
+
+async def _reached(clock: HeldClock, call: asyncio.Task[Any], step: asyncio.Event) -> None:
+    """Until *step* is set, failing if *call* ends first or the held clock
+    would have to move for it."""
+    reached = asyncio.create_task(step.wait())
+    await clock.first(call, reached)
+    reached.cancel()
+    assert step.is_set(), f"the call did not get there: {call}"
 
 
 async def _messages(kit: RoomKit) -> list[RoomEvent]:
@@ -568,15 +578,16 @@ class TestAnAdoptedCallBeforeItsCommit:
         assert (bye.blocked, [_body(e) for e in await _messages(kit)]) == (False, ["bye"])
         await kit.close()
 
-    @pytest.mark.wallclock
-    async def test_a_call_a_hook_s_task_makes_keeps_its_own_deadline(self) -> None:
+    async def test_a_call_a_hook_s_task_makes_keeps_its_own_deadline(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """A task an off-lock hook starts, 100 ms into the event's work, and
         never awaits makes a call, adopted beside the check; its locked hook
         holds it past the event's process_timeout: the event is refused,
         and the call, whose own deadline runs from its own start, commits
-        once its hook lets it."""
+        once its hook lets it, 90 ms after the event's deadline."""
         kit = await _room(RoomKit(process_timeout=0.2), SimpleChannel("ws"))
-        entered, release = asyncio.Event(), asyncio.Event()
+        noticed, entered, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
         started: list[asyncio.Task[RoomEvent]] = []
 
         @kit.hook(HookTrigger.BEFORE_BROADCAST, name="slow")
@@ -589,22 +600,38 @@ class TestAnAdoptedCallBeforeItsCommit:
         @kit.hook(HookTrigger.BEFORE_BROADCAST, name="notifier", needs_lock=False)
         async def notifier(event: RoomEvent, ctx: RoomContext) -> HookResult:
             if _body(event) == "hello":
+                noticed.set()
                 await asyncio.sleep(0.1)
                 heads_up = kit.send_event("r1", "ws", TextContent(body="Heads up"))
                 started.append(asyncio.create_task(heads_up))  # never awaited
                 await entered.wait()
             return HookResult.allow()
 
-        result = await kit.process_inbound(_message("hello"))
+        # Both deadlines on the loop's clock, held from the event's start:
+        # only what the test moves spends them, never a pause of the worker
+        # (RMK-1714).
+        clock = HeldClock(monkeypatch)
+        clock.hold()
+        call = asyncio.create_task(kit.process_inbound(_message("hello")))
+        await _reached(clock, call, noticed)
+        await clock.past(0.1)
+        await _reached(clock, call, entered)
+        await clock.past(0.1)
+        await clock.first(call)
+        assert call.done(), "the event outlived its deadline"
+        # The call's own deadline, 0.3 s on, has not passed yet.
+        await clock.past(0.09)
         release.set()
+        await clock.first(started[0])
+        clock.release()
         sent = await asyncio.wait_for(started[0], timeout=5)
+        result = call.result()
         outcome = (result.reason, sent.index, [_body(e) for e in await _messages(kit)])
         assert outcome == ("process_timeout", 2, ["Heads up"])
         await kit.close()
 
-    @pytest.mark.wallclock
     async def test_the_event_is_answered_at_its_deadline_while_an_injection_holds_the_lock(
-        self,
+        self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """A task an off-lock hook starts and never awaits makes a call,
         adopted beside the check, whose locked hook injects an event; that
@@ -612,6 +639,7 @@ class TestAnAdoptedCallBeforeItsCommit:
         in its off-lock check: the event is answered then, refused; the call
         commits."""
         kit = await _room(RoomKit(process_timeout=0.2), SimpleChannel("ws"))
+        noticed = asyncio.Event()
         started: list[asyncio.Task[RoomEvent]] = []
 
         @kit.hook(HookTrigger.BEFORE_BROADCAST, name="slow")
@@ -632,14 +660,23 @@ class TestAnAdoptedCallBeforeItsCommit:
             if _body(event) == "hello":
                 heads_up = kit.send_event("r1", "ws", TextContent(body="Heads up"))
                 started.append(asyncio.create_task(heads_up))  # never awaited
+                noticed.set()
                 await asyncio.sleep(0.3)
             return HookResult.allow()
 
-        loop = asyncio.get_running_loop()
-        sent_at = loop.time()
-        result = await kit.process_inbound(_message("hello"))
-        on_time = loop.time() - sent_at < 0.32
+        # The deadline on the loop's clock, held from the event's start: only
+        # what the test moves spends it, never a pause of the worker (RMK-1714).
+        clock = HeldClock(monkeypatch)
+        clock.hold()
+        call = asyncio.create_task(kit.process_inbound(_message("hello")))
+        await _reached(clock, call, noticed)
+        await clock.past(0.2)
+        await clock.first(call)
+        # Answered at its deadline, the off-lock hook's 0.3 s not over.
+        on_time = call.done()
+        clock.release()
         sent = await asyncio.wait_for(started[0], timeout=5)
+        result = await asyncio.wait_for(call, timeout=5)
         assert (result.reason, on_time, sent.index) == ("process_timeout", True, 2)
         await kit.close()
 
@@ -675,8 +712,9 @@ class TestAnAdoptedCallBeforeItsCommit:
         assert (stored, answered) == ([("Heads up", 2), ("hello", 3)], (2, 3))
         await kit.close()
 
-    @pytest.mark.wallclock
-    async def test_a_call_a_locked_hook_s_task_nests_ends_by_the_event_s_deadline(self) -> None:
+    async def test_a_call_a_locked_hook_s_task_nests_ends_by_the_event_s_deadline(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """A task a locked hook starts, 150 ms into the event's 200 ms, makes
         a call nested under the lock, held by its own locked hook for 500 ms:
         the hook's section waits for the call, the event is refused
@@ -684,6 +722,7 @@ class TestAnAdoptedCallBeforeItsCommit:
         nothing of either stored and nothing reported but the event's
         ``process_timeout`` (HITL 57923782)."""
         kit = await _room(RoomKit(process_timeout=0.2), SimpleChannel("ws"))
+        noticed, called = asyncio.Event(), asyncio.Event()
         started: list[asyncio.Task[RoomEvent]] = []
         timeouts: list[FrameworkEvent] = []
 
@@ -700,17 +739,31 @@ class TestAnAdoptedCallBeforeItsCommit:
         @kit.hook(HookTrigger.BEFORE_BROADCAST, name="notifier")
         async def notifier(event: RoomEvent, ctx: RoomContext) -> HookResult:
             if _body(event) == "hello":
+                noticed.set()
                 await asyncio.sleep(0.15)
                 heads_up = kit.send_event("r1", "ws", TextContent(body="Heads up"))
                 started.append(asyncio.create_task(heads_up))  # never awaited
+                called.set()
                 await asyncio.sleep(0.02)
             return HookResult.allow()
 
-        loop = asyncio.get_running_loop()
-        sent_at = loop.time()
-        result = await kit.process_inbound(_message("hello"))
-        on_time = loop.time() - sent_at < 0.32
-        sent = await asyncio.gather(*started, return_exceptions=True)
+        # Both deadlines on the loop's clock, held from the event's start:
+        # only what the test moves spends them, never a pause of the worker
+        # (RMK-1714).
+        clock = HeldClock(monkeypatch)
+        clock.hold()
+        call = asyncio.create_task(kit.process_inbound(_message("hello")))
+        await _reached(clock, call, noticed)
+        await clock.past(0.15)
+        await _reached(clock, call, called)
+        await clock.past(0.02)
+        await clock.past(0.03)
+        await clock.first(call)
+        # Answered at its deadline, the call's hook's 0.5 s not over.
+        on_time = call.done()
+        clock.release()
+        result = await asyncio.wait_for(call, timeout=5)
+        sent = await asyncio.wait_for(asyncio.gather(*started, return_exceptions=True), 5)
         outcome = (
             (result.reason, result.event, on_time),
             [type(error) for error in sent],
@@ -892,7 +945,7 @@ class TestAnAdoptedCallBeforeItsCommit:
         await kit.close()
 
     async def test_a_task_s_call_that_never_ends_holds_the_section_to_the_event_s_deadline(
-        self,
+        self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """A locked hook times out while the call its task nested under the
         lock never ends: the hook's section waits for the call no longer
@@ -928,8 +981,19 @@ class TestAnAdoptedCallBeforeItsCommit:
                 await asyncio.Event().wait()
             return HookResult.allow()
 
-        hello = await kit.process_inbound(_message("hello"))
-        sent = await asyncio.gather(*started, return_exceptions=True)
+        # Both bounds on the loop's clock, held from the event's start: the
+        # hook's times out first, whatever a pause of the worker (RMK-1714).
+        clock = HeldClock(monkeypatch)
+        clock.hold()
+        call = asyncio.create_task(kit.process_inbound(_message("hello")))
+        await _reached(clock, call, entered)
+        await clock.past(0.01)
+        await clock.past(0.04)
+        await clock.first(call)
+        clock.require(call.done(), "the event outlived its deadline")
+        clock.release()
+        hello = await asyncio.wait_for(call, timeout=5)
+        sent = await asyncio.wait_for(asyncio.gather(*started, return_exceptions=True), 5)
         bye = await kit.process_inbound(_message("bye"))
         outcome = (
             hello.reason,
@@ -1011,11 +1075,10 @@ class TestAnAdoptedCallBeforeItsCommit:
         )
         await kit.close()
 
-    @pytest.mark.wallclock
     @pytest.mark.parametrize("cancels", [1, 2], ids=["cancelled", "cancelled_twice"])
     @pytest.mark.parametrize("body_returned", [False, True], ids=["in_the_body", "body_returned"])
     async def test_a_call_a_locked_hook_s_task_nests_ends_by_the_event_s_deadline_past_its_caller(
-        self, body_returned: bool, cancels: int
+        self, body_returned: bool, cancels: int, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """A locked hook's task makes a call nested under the lock, whose own
         locked hook never ends, and the event's caller stops waiting, while
@@ -1027,6 +1090,7 @@ class TestAnAdoptedCallBeforeItsCommit:
         own, which falls later; a message sent then commits (HITL
         2c9d64f7)."""
         kit = await _room(RoomKit(process_timeout=0.05), SimpleChannel("ws"))
+        noticed, go = asyncio.Event(), asyncio.Event()
         entered, returned = asyncio.Event(), asyncio.Event()
         started: list[asyncio.Task[RoomEvent]] = []
         ids: dict[str, str] = {}
@@ -1048,15 +1112,25 @@ class TestAnAdoptedCallBeforeItsCommit:
         async def notifier(event: RoomEvent, ctx: RoomContext) -> HookResult:
             if _body(event) == "hello":
                 ids["hello"] = event.id
-                # Its own deadline then falls well after the event's.
-                await asyncio.sleep(0.02)
+                # Once the test moved the clock: the call's own deadline
+                # then falls well after the event's.
+                noticed.set()
+                await go.wait()
                 heads_up = kit.send_event("r1", "ws", TextContent(body="Heads up"))
                 started.append(asyncio.create_task(heads_up))  # never awaited
                 await entered.wait()
                 returned.set()
             return HookResult.allow()
 
+        # Both deadlines on the loop's clock, held from the event's start:
+        # only what the test moves spends them, never a pause of the worker
+        # (RMK-1714).
+        clock = HeldClock(monkeypatch)
+        clock.hold()
         caller = asyncio.create_task(kit.process_inbound(_message("hello")))
+        await _reached(clock, caller, noticed)
+        await clock.past(0.02)
+        go.set()
         # Woken first, the test cancels the caller ahead of the body's next
         # step; once the body returned, the section is waiting for the call.
         await (returned if body_returned else entered).wait()
@@ -1066,7 +1140,14 @@ class TestAnAdoptedCallBeforeItsCommit:
             for _ in range(3):
                 await asyncio.sleep(0)
             caller.cancel("again")
-        sent = await asyncio.gather(*started, return_exceptions=True)
+        # The section keeps the lock for the call up to the event's deadline.
+        await clock.first(*started, within=0.05)
+        clock.require(not started[0].done(), "the call ended before the event's deadline")
+        await clock.past(0.03)
+        await clock.first(*started)
+        clock.require(started[0].done(), "the event's deadline did not cut the call")
+        clock.release()
+        sent = await asyncio.wait_for(asyncio.gather(*started, return_exceptions=True), 5)
         with pytest.raises(asyncio.CancelledError) as gone:
             await caller
         other = await kit.process_inbound(_message("other"))

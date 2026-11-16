@@ -85,6 +85,7 @@ from roomkit.voice.backends.mock import MockVoiceBackend
 from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
 from roomkit.voice.stt.mock import MockSTTProvider
 from tests import redis_turn_mode
+from tests.loop_clock import HeldClock
 from tests.test_framework import AILikeChannel, SimpleChannel
 from tests.test_kit_close_doors import _STORES
 
@@ -1914,12 +1915,12 @@ def test_the_close_gives_five_seconds_of_grace_and_one_second_of_unwind() -> Non
     assert (framework.CLOSE_GRACE_S, framework.CUT_UNWIND_S) == (5.0, 1.0)
 
 
-@pytest.mark.wallclock
 async def test_the_close_takes_its_grace_with_every_kind_of_work_stuck(
-    close_grace: float,
+    close_grace: float, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A send, a decided write, an observer and a hook holding its room's
-    lock, none ever ending: the close cuts them all once its grace ran out."""
+    lock, none ever ending: the close cuts them all once its grace ran out,
+    one grace for them all."""
     held = _Transport("ws", holds={"held": None})
     store = _NeverWrites()
     rooms = ("send", "write", "observer", "lock")
@@ -1947,10 +1948,17 @@ async def test_the_close_takes_its_grace_with_every_kind_of_work_stuck(
     write = asyncio.ensure_future(kit.process_inbound(_message("slow"), room_id="write"))
     await asyncio.gather(observing.wait(), locking.wait(), store.entered.wait())
     write.cancel()
-    loop = asyncio.get_running_loop()
-    started = loop.time()
+    # The grace on the loop's clock, held from the close's start: only what
+    # the test moves spends it, never a pause of the worker (RMK-1714).
+    clock = HeldClock(monkeypatch)
+    clock.hold()
+    closing = asyncio.ensure_future(kit.close())
+    await clock.first(closing, within=0.05)
+    assert not closing.done(), "the close did not take its grace"
+    await clock.past(close_grace)
+    await clock.first(closing)
+    clock.release()
 
-    await asyncio.wait_for(kit.close(), 1)
-
-    assert loop.time() - started < close_grace + 0.5
+    assert closing.done(), "the close outlived its grace"
+    await closing
     await asyncio.gather(*calls, write, return_exceptions=True)

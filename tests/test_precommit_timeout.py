@@ -31,6 +31,7 @@ from roomkit.models.delivery import InboundMessage
 from roomkit.models.event import RoomEvent, TextContent
 from roomkit.models.room import Room
 from roomkit.store.memory import InMemoryStore
+from tests.loop_clock import HeldClock
 from tests.test_framework import SimpleChannel
 
 FAST = 0.2
@@ -46,6 +47,23 @@ class HangingStore(InMemoryStore):
     async def list_bindings(self, room_id: str):  # noqa: ANN201
         if self.armed:
             await asyncio.sleep(3600)
+        return await super().list_bindings(room_id)
+
+
+class HalfBudgetStore(InMemoryStore):
+    """Healthy until armed, then a read of the bindings spends half of
+    :data:`FAST`, once."""
+
+    armed = False
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.reading = asyncio.Event()
+
+    async def list_bindings(self, room_id: str):  # noqa: ANN201
+        if self.armed and not self.reading.is_set():
+            self.reading.set()
+            await asyncio.sleep(FAST / 2)
         return await super().list_bindings(room_id)
 
 
@@ -161,18 +179,40 @@ class TestTheWindowStopsWhereItShould:
         assert result.blocked is True
         assert [getattr(e.content, "body", None) for e in timeline].count("hi") == 0
 
-    @pytest.mark.wallclock
-    async def test_the_budget_is_spent_once_across_both_regions(self) -> None:
-        """A deadline, not the setting re-applied: 0.2s means 0.2s, not 0.4s."""
-        store = HangingStore()
+    async def test_the_budget_is_spent_once_across_both_regions(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A deadline, not the setting re-applied: 0.2s means 0.2s, not 0.4s.
+        Half the budget spent building the context, the locked hook that
+        hangs is cut at the call's 0.2s, not 0.2s after the lock."""
+        store = HalfBudgetStore()
         kit = await _kit(SimpleChannel("sms1"), store, budget=FAST)
+        locked = asyncio.Event()
+
+        @kit.hook(HookTrigger.BEFORE_BROADCAST)
+        async def hangs(event, ctx):  # noqa: ANN001, ANN202
+            locked.set()
+            await asyncio.Event().wait()
+
         store.armed = True
+        # On the loop's clock, held from the call's start: only what the
+        # test moves spends the budget, never a pause of the worker (RMK-1714).
+        clock = HeldClock(monkeypatch)
+        clock.hold()
+        call = asyncio.create_task(kit.process_inbound(_msg()))
+        reading = asyncio.create_task(store.reading.wait())
+        await clock.first(call, reading)
+        assert store.reading.is_set(), "the call did not build its context"
+        await clock.past(FAST / 2)
+        in_the_lock = asyncio.create_task(locked.wait())
+        await clock.first(call, in_the_lock)
+        assert locked.is_set(), "the call did not reach its locked hook"
+        await clock.past(FAST / 2)
+        await clock.first(call)
+        clock.release()
 
-        started = asyncio.get_running_loop().time()
-        await _within_budget(kit)
-        elapsed = asyncio.get_running_loop().time() - started
-
-        assert elapsed < FAST * 2
+        assert call.done(), "the call outlived its budget"
+        assert (call.result().blocked, call.result().reason) == (True, "process_timeout")
 
 
 class TestDirectInjectionRaisesWhatItCannotReturn:

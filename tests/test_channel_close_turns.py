@@ -39,6 +39,7 @@ from roomkit.tools.external import PolicyExternalToolHandler, ToolDecision
 from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
 from roomkit.voice.realtime.reasoning import AgentReasoningBackend
 from tests.hook_sides import hook_on_its_side
+from tests.loop_clock import HeldClock
 from tests.test_framework import SimpleChannel
 from tests.tool_doors import TOOL, TOOL_DICT
 
@@ -422,20 +423,20 @@ async def test_a_close_from_a_hook_of_the_turn_does_not_wait_for_that_turn(
     assert "still running" not in caplog.text
 
 
-@pytest.mark.wallclock  # the first close waits out its bound, the second does not
 async def test_a_second_close_does_not_wait_again_for_a_turn_the_first_cut(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A call that outlives its cancellation keeps its turn running past the
     first close's wait; the kit's close after it does not wait a second time."""
     monkeypatch.setattr(_ai_steering, "CLOSE_WAIT_S", 0.2)
-    started = asyncio.Event()
+    started, cut = asyncio.Event(), asyncio.Event()
 
     async def outlives(name: str, arguments: dict[str, Any]) -> str:
         started.set()
         try:
             await asyncio.sleep(30)
         except asyncio.CancelledError:
+            cut.set()
             await asyncio.sleep(1)
         return "late"
 
@@ -443,19 +444,31 @@ async def test_a_second_close_does_not_wait_again_for_a_turn_the_first_cut(
     kit, _ = await _text_room(channel)
     turn = asyncio.create_task(kit.process_inbound(_message()))
     await asyncio.wait_for(started.wait(), 3)
-    loop = asyncio.get_running_loop()
+    # The waits on the loop's clock, held from the first close's start: only
+    # what the test moves spends them, never a pause of the worker (RMK-1714).
+    clock = HeldClock(monkeypatch)
+    clock.hold()
 
-    first = loop.time()
-    await channel.close()
-    first_took = loop.time() - first
-    second = loop.time()
-    await kit.close()
-    second_took = loop.time() - second
+    first = asyncio.ensure_future(channel.close())
+    # Once the call is cut, the close waits on its bound.
+    cutting = asyncio.ensure_future(cut.wait())
+    await clock.first(first, cutting)
+    cutting.cancel()
+    await clock.past(0.19)
+    await clock.first(first, within=0.05)
+    waited = cut.is_set() and not first.done()
+    await clock.past(0.01)
+    await clock.first(first)
+    first_ended = first.done()
+    second = asyncio.ensure_future(kit.close())
+    await clock.first(second)
+    second_ended = second.done()
+    clock.release()
+    await asyncio.gather(first, second)
     with contextlib.suppress(asyncio.CancelledError):
         await asyncio.wait_for(turn, 3)
 
-    assert first_took >= 0.2
-    assert second_took < 0.2
+    assert (waited, first_ended, second_ended) == (True, True, True)
 
 
 def _message() -> InboundMessage:
