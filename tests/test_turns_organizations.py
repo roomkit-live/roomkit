@@ -201,7 +201,10 @@ async def test_a_room_s_attach_and_detach_reach_only_the_executors_of_its_organi
 async def test_a_room_s_turn_crosses_redis_only_to_an_executor_of_its_organization() -> None:
     """The owner reads what an executor of another process declares from its
     beat, its organizations among it (RFC §10.6.7)."""
-    timeouts = TurnTimeouts(heartbeat_interval=0.2, heartbeat_timeout=1.0, accept=3.0)
+    # The default silence bound, and the call bound it gives each Redis call
+    # (half of it): a pause of the worker spent a 1 s one's 0.5 s, cutting a
+    # call or taking a side for lost (RMK-1714). No loss is under test.
+    timeouts = TurnTimeouts(heartbeat_interval=0.2, accept=3.0)
     prefix = f"roomkit:test:{uuid4().hex[:12]}"
     owner, elsewhere = (
         RedisTurnBackend(os.environ["REDIS_URL"], key_prefix=prefix, timeouts=timeouts)

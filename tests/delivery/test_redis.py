@@ -10,6 +10,7 @@ import pytest
 
 from roomkit.delivery._redis_scripts import PROMOTE
 from roomkit.delivery.base import DeliveryItem, DeliveryItemStatus
+from tests.loop_clock import HeldClock
 from tests.private_module import load_private_copy
 
 # -- Mock Redis -----------------------------------------------------------
@@ -134,10 +135,23 @@ class TestDequeue:
         backend, client = _make_backend()
         # The private copy's own globals: what its dequeue reads.
         monkeypatch.setitem(type(backend).dequeue.__globals__, "_READ_SLICE_S", 0.05)
-        client.xreadgroup = AsyncMock(side_effect=_reads_nothing)
+        # The wait runs on the loop's clock, held: each read waits its block
+        # by moving it, as Redis would; a pause of the worker spends none of
+        # the wait (RMK-1714).
+        clock = HeldClock(monkeypatch)
 
-        assert await backend.dequeue("w1", timeout=0.175) == []
+        async def reads_nothing(*args: object, block: int | None = None, **kwargs: object) -> list:
+            await clock.past((block or 0) / 1000)
+            return []
 
+        client.xreadgroup = AsyncMock(side_effect=reads_nothing)
+        clock.hold()
+        wait = asyncio.ensure_future(backend.dequeue("w1", timeout=0.175))
+        await clock.first(wait)
+        clock.release()
+
+        assert wait.done(), "the wait outlasted its timeout"
+        assert wait.result() == []
         blocks = [call.kwargs["block"] for call in client.xreadgroup.call_args_list]
         assert len(blocks) >= 3
         assert max(blocks) <= 50

@@ -9,6 +9,8 @@ import contextvars
 import json
 import sys
 import time
+from collections.abc import Callable
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
 
@@ -21,7 +23,14 @@ from roomkit.models.context import RoomContext
 from roomkit.models.enums import ChannelCategory, ChannelType
 from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.models.room import Room
-from roomkit.turns import InMemoryTurnBackend, TurnExecutor, TurnTimeouts, _redis_routes
+from roomkit.turns import (
+    InMemoryTurnBackend,
+    TurnExecutor,
+    TurnTimeouts,
+    _redis_beat,
+    _redis_outbox,
+    _redis_routes,
+)
 from roomkit.turns._error_codec import ROOMKIT_ERRORS
 from roomkit.turns._hosting import Hosted
 from roomkit.turns._organizations import RoomNeeds
@@ -48,6 +57,7 @@ from roomkit.turns.wire import (
     RoomDetached,
     RoomPublication,
 )
+from tests.loop_clock import HeldClock
 from tests.private_module import load_private_copy
 
 QUICK = TurnTimeouts(heartbeat_interval=0.05, heartbeat_timeout=0.2, accept=0.2, cancel=0.2)
@@ -200,12 +210,17 @@ async def test_a_turn_whose_executor_beats_outside_its_messages_is_not_lost() ->
     turn.abandon()
 
 
-async def test_a_turn_whose_executor_stopped_beating_is_lost() -> None:
+async def test_a_turn_whose_executor_stopped_beating_is_lost(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = _held_clock(monkeypatch)
     turn = OwnerTurn(_SilentLink(_request(), beats=False), TICK, ROOMKIT_ERRORS)  # type: ignore[arg-type]
+    output = asyncio.ensure_future(turn.output())
+
+    await _until(clock, output.done, 5 * TICK.heartbeat_timeout)
 
     with pytest.raises(TurnLinkError) as raised:
-        await asyncio.wait_for(turn.output(), 5 * TICK.heartbeat_timeout)
-
+        await output
     assert raised.value.reason == "executor_lost"
 
 
@@ -216,11 +231,17 @@ class _NeverAccepted(_SilentLink):
         await asyncio.Event().wait()
 
 
-async def test_a_beat_before_an_executor_took_the_turn_does_not_hold_it() -> None:
+async def test_a_beat_before_an_executor_took_the_turn_does_not_hold_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = _held_clock(monkeypatch)
     turn = OwnerTurn(_NeverAccepted(_request(), beats=True), TICK, ROOMKIT_ERRORS)  # type: ignore[arg-type]
+    output = asyncio.ensure_future(turn.output())
+
+    await _until(clock, output.done, 5 * TICK.accept)
 
     with pytest.raises(TurnLinkError):
-        await asyncio.wait_for(turn.output(), 5 * TICK.accept)
+        await output
 
 
 # -- The optional dependency --------------------------------------------------------
@@ -504,25 +525,52 @@ class _Registry:
         return {}
 
 
+def _held_clock(monkeypatch: pytest.MonkeyPatch, *modules: Any) -> HeldClock:
+    """The loop's clock held, and the ``time.monotonic`` of each of *modules*
+    read from it: bounds, intervals and the times a module keeps are spent by
+    what the test moves, never by a pause of the worker (RMK-1714)."""
+    clock = HeldClock(monkeypatch)
+    for module in modules:
+        monkeypatch.setattr(module, "time", SimpleNamespace(monotonic=clock))
+    clock.hold()
+    return clock
+
+
+async def _until(
+    clock: HeldClock, done: Callable[[], bool], within: float, step: float = 0.005
+) -> None:
+    """Move the held clock *step* by *step* until *done*, failing past
+    *within*: the time the test grants the view."""
+    for _ in range(round(within / step)):
+        if done():
+            return
+        await clock.past(step)
+    clock.require(done(), f"not within {within} s")
+
+
 async def _read_once(live: LiveExecutors) -> None:
-    """Until *live*'s first read is in: node-a's executor known alive."""
-    async with asyncio.timeout(5):
-        while not live.alive("node-a:w"):
-            await asyncio.sleep(0.005)
+    """Until *live*'s first read is in: node-a's executor known alive. The
+    fake registry answers at once, so the read is in within a few steps of
+    the loop, whatever its clock."""
+    for _ in range(100):
+        if live.alive("node-a:w"):
+            return
+        await asyncio.sleep(0)
+    raise AssertionError("the first read never came in")
 
 
-async def _unread_within(live: LiveExecutors, window: float) -> None:
+async def _unread_within(clock: HeldClock, live: LiveExecutors, window: float) -> None:
     """Until *live* no longer takes node-a's executor for alive, failing past
     *window*: the time the test grants the view to give it up."""
-    async with asyncio.timeout(window):
-        while live.alive("node-a:w"):
-            await asyncio.sleep(0.005)
+    await _until(clock, lambda: not live.alive("node-a:w"), window)
 
 
-@pytest.mark.wallclock
-async def test_the_others_unread_for_the_heartbeat_timeout_are_not_alive() -> None:
+async def test_the_others_unread_for_the_heartbeat_timeout_are_not_alive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Redis unreachable: an owner stops waiting for an executor it cannot
     hear of, rather than trust the last view for good."""
+    clock = _held_clock(monkeypatch, _redis_beat)
     registry = _Registry()
     live = LiveExecutors(registry, 0.01, 0.1, dict)  # type: ignore[arg-type]
     live.start()
@@ -531,11 +579,12 @@ async def test_the_others_unread_for_the_heartbeat_timeout_are_not_alive() -> No
         assert live.owner_alive("node-a")
 
         registry.down = True
-        await _unread_within(live, 0.3)
+        await _unread_within(clock, live, 0.3)
 
         assert not live.owner_alive("node-a")
     finally:
         await live.close()
+        clock.release()
 
 
 # -- The writers --------------------------------------------------------------------
@@ -580,21 +629,21 @@ def _message(body: str) -> Envelope:
     return Envelope("frame", "node-a", body, "turn-1")
 
 
-async def test_a_writer_left_idle_goes_and_the_next_message_starts_another() -> None:
+async def test_a_writer_left_idle_goes_and_the_next_message_starts_another(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = _held_clock(monkeypatch)
     client = _Client()
     outbox = Outbox(client, lambda node: f"inbox:{node}", ttl_ms=50)
     for node in ("a", "b", "c"):
         outbox.post(node, _message(node))
-    async with asyncio.timeout(0.2):  # idle past their ttl, the writers go
-        while _writers():
-            await asyncio.sleep(0.005)
+    await _until(clock, lambda: not _writers(), 0.2)  # idle past their ttl, the writers go
 
     outbox.post("a", _message("again"))
-    async with asyncio.timeout(1):
-        while len(client.written) < 4:
-            await asyncio.sleep(0.005)
+    await _until(clock, lambda: len(client.written) == 4, 1.0)
 
     assert client.written == ["a", "b", "c", "again"]
+    clock.release()
     await outbox.close(drain=1.0)
 
 
@@ -667,17 +716,20 @@ async def test_a_message_redis_refused_is_never_told_written() -> None:
     await outbox.close(drain=0.05)
 
 
-@pytest.mark.wallclock
-async def test_the_others_read_by_a_read_that_hangs_are_not_alive() -> None:
+async def test_the_others_read_by_a_read_that_hangs_are_not_alive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = _held_clock(monkeypatch, _redis_beat)
     registry = _Registry()
     live = LiveExecutors(registry, 0.01, 0.1, dict)  # type: ignore[arg-type]
     live.start()
     try:
         await _read_once(live)
         registry.silent = True
-        await _unread_within(live, 0.5)  # two reads hang a heartbeat timeout each
+        await _unread_within(clock, live, 0.5)  # two reads hang a heartbeat timeout each
     finally:
         await live.close()
+        clock.release()
 
 
 @pytest.mark.wallclock
@@ -716,22 +768,25 @@ class _RefusedPipe(_Pipe):
         raise ConnectionError("OOM command not allowed")
 
 
-async def test_a_message_written_again_keeps_its_place_before_later_ones() -> None:
+async def test_a_message_written_again_keeps_its_place_before_later_ones(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """A typing indicator's start refused once still reaches the room
     before its stop."""
+    clock = _held_clock(monkeypatch)
     client = _RefusesFirst()
     outbox = Outbox(client, lambda node: f"inbox:{node}", ttl_ms=60_000, retry_delay=0.02)
     told: list[str] = []
     outbox.post("a", _message("start"), writes=None)
     outbox.post("a", _message("frame"), lambda error: told.append("frame"))
-    await asyncio.sleep(0.005)
+    await clock.past(0.005)
     outbox.post("a", _message("stop"), writes=None)
-    async with asyncio.timeout(0.1):  # the refused start, written again before the stop
-        while len(client.written) < 2:
-            await asyncio.sleep(0.005)
+    # The refused start, written again before the stop.
+    await _until(clock, lambda: len(client.written) >= 2, 0.1)
 
     assert client.written == ["start", "stop"]
     assert told == ["frame"]  # a turn's message is not written again
+    clock.release()
     await outbox.close(drain=1.0)
 
 
@@ -761,20 +816,22 @@ class _RefusesAll(_Client):
         return _RefusedPipe(self)
 
 
-async def test_a_turn_s_message_gets_its_write_behind_a_batch_written_again() -> None:
+async def test_a_turn_s_message_gets_its_write_behind_a_batch_written_again(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Redis refusing: answers kept to be written again never keep a turn's
     message from its one write, nor its sender from learning it failed."""
+    clock = _held_clock(monkeypatch)
     outbox = Outbox(_RefusesAll(), lambda node: f"inbox:{node}", ttl_ms=60_000, retry_delay=0.01)
     told: list[str] = []
     for i in range(300):
         outbox.post("a", _message(f"answer-{i}"), writes=None)
-    await asyncio.sleep(0.02)
+    await clock.past(0.02)
     outbox.post("a", _message("frame"), lambda error: told.append("frame"))
-    async with asyncio.timeout(0.1):  # its one write behind the batch, refused
-        while not told:
-            await asyncio.sleep(0.005)
+    await _until(clock, lambda: bool(told), 0.1)  # its one write behind the batch, refused
 
     assert told == ["frame"]
+    clock.release()
     await outbox.close(drain=0.05)
 
 
@@ -823,39 +880,44 @@ async def test_what_reaches_a_closing_process_is_refused_without_being_applied()
     assert HostResult.model_validate_json(call_answer).error is not None
 
 
-@pytest.mark.wallclock
-async def test_a_stall_of_this_process_with_a_read_in_flight_then_one_failure_is_not_silence() -> (
-    None
-):
+async def test_a_stall_of_this_process_with_a_read_in_flight_then_one_failure_is_not_silence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """The read in flight across the stall times out, the next one fails
     once: two failures, but not the others' silence for a heartbeat timeout."""
+    clock = _held_clock(monkeypatch, _redis_beat)
     registry = _Registry()
     live = LiveExecutors(registry, 0.02, 0.2, dict)  # type: ignore[arg-type]
     live.start()
     try:
         await _read_once(live)
         registry.silent = True  # the read in flight hangs
-        await registry.hanging.wait()
-        time.sleep(0.3)  # noqa: ASYNC251 - this process's event loop stalls past the timeout
+        await _until(clock, registry.hanging.is_set, 0.1)
+        # This process's event loop stalls past the timeout: the held clock
+        # jumps, and only then does the loop run what fell due meanwhile.
+        await clock.past(0.3)
         registry.silent = False
         registry.fail_once = True
         registry.failed.clear()
-        await registry.failed.wait()
+        await _until(clock, registry.failed.is_set, 0.1)
 
         assert live.alive("node-a:w")
     finally:
         await live.close()
+        clock.release()
 
 
-async def test_a_message_written_again_for_a_while_is_given_up_after_it() -> None:
+async def test_a_message_written_again_for_a_while_is_given_up_after_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = _held_clock(monkeypatch, _redis_outbox)
     outbox = Outbox(_RefusesAll(), lambda node: f"inbox:{node}", ttl_ms=60_000, retry_delay=0.01)
     told: list[str] = []
     outbox.post("a", _message("work"), lambda error: told.append("work"), writes=None, within=0.05)
-    async with asyncio.timeout(0.2):  # given up past its 0.05 s
-        while not told:
-            await asyncio.sleep(0.005)
+    await _until(clock, lambda: bool(told), 0.2)  # given up past its 0.05 s
 
     assert told == ["work"]
+    clock.release()
     await outbox.close(drain=0.05)
 
 
@@ -876,19 +938,20 @@ class _HangsThenRefuses(_Registry):
         return await super().view(forget_after_ms)
 
 
-@pytest.mark.wallclock
-async def test_a_read_that_hung_counts_from_its_start() -> None:
+async def test_a_read_that_hung_counts_from_its_start(monkeypatch: pytest.MonkeyPatch) -> None:
     """A read that hung then one refused: the others are unread within
     about a heartbeat timeout of Redis freezing, not two."""
+    clock = _held_clock(monkeypatch, _redis_beat)
     registry = _HangsThenRefuses()
     live = LiveExecutors(registry, 0.1, 0.5, dict)  # type: ignore[arg-type]
     live.start()
     try:
         await _read_once(live)
         registry.frozen = True
-        await _unread_within(live, 0.9)
+        await _unread_within(clock, live, 0.9)
     finally:
         await live.close()
+        clock.release()
 
 
 class _ClientTimeoutError(Exception):
@@ -916,11 +979,13 @@ class _CutThenRefuses(_Registry):
         return await super().view(forget_after_ms)
 
 
-@pytest.mark.wallclock
-async def test_a_read_its_connection_cut_counts_from_its_start() -> None:
+async def test_a_read_its_connection_cut_counts_from_its_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """RMK-859: a read the client's bound cut counts as one that hung, from
     its start: the others are unread about a heartbeat timeout after Redis
     froze, not that plus the bound."""
+    clock = _held_clock(monkeypatch, _redis_beat)
     registry = _CutThenRefuses(bound=0.5)
     live = LiveExecutors(
         registry,  # type: ignore[arg-type]
@@ -933,31 +998,35 @@ async def test_a_read_its_connection_cut_counts_from_its_start() -> None:
     try:
         await _read_once(live)
         registry.frozen = True
-        await _unread_within(live, 1.35)
+        await _unread_within(clock, live, 1.35)
     finally:
         await live.close()
+        clock.release()
 
 
-@pytest.mark.wallclock
-async def test_a_stall_just_over_the_timeout_with_a_read_in_flight_is_not_silence() -> None:
+async def test_a_stall_just_over_the_timeout_with_a_read_in_flight_is_not_silence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """The read in flight across a stall a little longer than the timeout
     times out late, the next fails once: not the others' silence."""
+    clock = _held_clock(monkeypatch, _redis_beat)
     registry = _Registry()
     live = LiveExecutors(registry, 0.08, 0.2, dict)  # type: ignore[arg-type]
     live.start()
     try:
         await _read_once(live)
         registry.silent = True
-        await registry.hanging.wait()  # a read is in flight
-        time.sleep(0.25)  # noqa: ASYNC251 - this process's event loop stalls, 1.25 timeouts
+        await _until(clock, registry.hanging.is_set, 0.2)  # a read is in flight
+        await clock.past(0.25)  # this process's event loop stalls, 1.25 timeouts
         registry.silent = False
         registry.fail_once = True
         registry.failed.clear()
-        await registry.failed.wait()
+        await _until(clock, registry.failed.is_set, 0.2)
 
         assert live.alive("node-a:w")
     finally:
         await live.close()
+        clock.release()
 
 
 async def test_a_channel_control_for_a_closed_executor_is_refused_to_be_placed_again() -> None:
@@ -1028,7 +1097,10 @@ class _HangingClient:
         return _HangingPipeline()
 
 
-async def test_a_turn_whose_end_write_hangs_stops_running_after_the_end_bound() -> None:
+async def test_a_turn_whose_end_write_hangs_stops_running_after_the_end_bound(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = _held_clock(monkeypatch)
     outbox = Outbox(_HangingClient(), lambda node: f"inbox:{node}", ttl_ms=60_000)
 
     def post(
@@ -1052,14 +1124,13 @@ async def test_a_turn_whose_end_write_hangs_stops_running_after_the_end_bound() 
     try:
         await link.send(End())
         link.turn_ended()
-        await asyncio.sleep(0.01)
+        await clock.past(0.01)
         # Its end is on its way: the turn still runs here.
         assert let_go == []
-        async with asyncio.timeout(0.1):  # past the end bound, it is let go
-            while not let_go:
-                await asyncio.sleep(0.005)
+        await _until(clock, lambda: bool(let_go), 0.1)  # past the end bound, it is let go
         assert let_go == [link]
     finally:
+        clock.release()
         await outbox.close(drain=0.01)
 
 

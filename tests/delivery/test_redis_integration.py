@@ -305,8 +305,10 @@ async def test_a_retry_waits_out_its_delay_on_the_server_clock() -> None:
     redis = pytest.importorskip("redis.asyncio")
     client = redis.from_url(os.environ["REDIS_URL"])
     prefix = f"roomkit:test:{uuid4().hex}"
-    first = RedisDeliveryBackend(client=client, stream_prefix=prefix, retry_delay=0.5)
-    second = RedisDeliveryBackend(client=client, stream_prefix=prefix, retry_delay=0.5)
+    # A delay a pause of the worker between the nack and the first read
+    # cannot spend: a full collection stops it up to about 0.5 s (RMK-1714).
+    first = RedisDeliveryBackend(client=client, stream_prefix=prefix, retry_delay=1.0)
+    second = RedisDeliveryBackend(client=client, stream_prefix=prefix, retry_delay=1.0)
     await client.xgroup_create(first._pending_key, first._group, id="0", mkstream=True)
     try:
         await first.enqueue(DeliveryItem(room_id="r1", content="later"))
@@ -316,7 +318,7 @@ async def test_a_retry_waits_out_its_delay_on_the_server_clock() -> None:
         # Pending, and no worker gets it before its delay has passed.
         assert await second.get_queue_depth() == 1
         assert await second.dequeue("new", timeout=0) == []
-        await asyncio.sleep(0.6)
+        await asyncio.sleep(1.1)
         [retried] = await second.dequeue("new", timeout=0)
         assert retried.id == item.id and retried.retry_count == 1
         assert await second.dequeue("other", timeout=0) == []

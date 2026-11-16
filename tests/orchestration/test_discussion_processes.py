@@ -12,6 +12,7 @@ import contextlib
 import logging
 import time
 from collections.abc import AsyncGenerator, Sequence
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -41,6 +42,7 @@ from roomkit.providers.ai.base import AIResponse, AITool, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.store.memory import InMemoryStore
 from roomkit.tools.context import _current_loop_ctx
+from tests.loop_clock import HeldClock
 from tests.test_framework import SimpleChannel
 
 AGENTS = ("investigator", "sre", "comms")
@@ -57,14 +59,14 @@ def _fast(monkeypatch: pytest.MonkeyPatch) -> None:
 
 class _Log(list[str]):
     """The agents' log across processes, with when each line first came by
-    the wall clock, the lease's clock unless a test stops it."""
+    the lease's clock: the wall clock unless a test replaces it."""
 
     def __init__(self) -> None:
         super().__init__()
         self._first: dict[str, float] = {}
 
     def append(self, line: str) -> None:
-        self._first.setdefault(line, time.time())
+        self._first.setdefault(line, _shared.time.time())
         super().append(line)
 
     def first(self, line: str) -> float | None:
@@ -188,10 +190,19 @@ async def _say(kit: RoomKit, body: str, **extra: Any) -> Any:
     )
 
 
-async def _until(predicate: Any, timeout: float = 5.0) -> None:
-    async with asyncio.timeout(timeout):
-        while not await predicate():
-            await asyncio.sleep(0.02)
+async def _until(predicate: Any, timeout: float = 5.0, clock: _HeldLease | None = None) -> None:
+    """Until *predicate*, within *timeout* seconds: of real time, or of
+    *clock*'s, which the wait then moves."""
+    if clock is None:
+        async with asyncio.timeout(timeout):
+            while not await predicate():
+                await asyncio.sleep(0.02)
+        return
+    for _ in range(round(timeout / _HeldLease.STEP)):
+        if await predicate():
+            return
+        await clock.past(_HeldLease.STEP)
+    assert await predicate(), f"not within {timeout} s"
 
 
 async def _idle(kit: RoomKit) -> None:
@@ -206,7 +217,12 @@ async def _idle(kit: RoomKit) -> None:
     await _until(idle)
 
 
-async def _turn_over(cluster: _Cluster, driver: Any, agent: str = "investigator") -> None:
+async def _turn_over(
+    cluster: _Cluster,
+    driver: Any,
+    agent: str = "investigator",
+    clock: _HeldLease | None = None,
+) -> None:
     """Until the turn *driver* was giving has run to its end, cut or not: its
     generation returned or was cancelled (a stopped driver forgets its turn at
     once, the generation may still run), and an answer it was going to write is
@@ -218,9 +234,10 @@ async def _turn_over(cluster: _Cluster, driver: Any, agent: str = "investigator"
     async def over() -> bool:
         return driver.speaking is None
 
-    await _until(generated)
-    await asyncio.sleep(0.05)  # the write that follows a generation that returned
-    await _until(over)
+    await _until(generated, clock=clock)
+    # The write that follows a generation that returned.
+    await (asyncio.sleep(0.05) if clock is None else clock.past(0.05))
+    await _until(over, clock=clock)
 
 
 def _shorter_lease(monkeypatch: pytest.MonkeyPatch) -> float:
@@ -228,6 +245,39 @@ def _shorter_lease(monkeypatch: pytest.MonkeyPatch) -> float:
     monkeypatch.setattr(_shared, "LEASE_SECONDS", 0.25)
     monkeypatch.setattr(_shared, "_RENEW_BEFORE", 0.15)
     return 0.25
+
+
+class _HeldLease:
+    """The loop's clock held, and the lease's clock (the driver's and the
+    shared state's ``time.time()``) read from it: the lease, the polls and
+    the turns' lengths are spent by what the test moves, never by a pause of
+    the worker (RMK-1714). Each step lets real time pass too, for what waits
+    on I/O meanwhile (a turn across Redis)."""
+
+    STEP = 0.007
+    """How far each step moves the clocks: no divisor of the poll's or the
+    lease's length, so a look never lands on a lease's bound exactly, as one
+    never does in real time."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._loop = HeldClock(monkeypatch)
+        self._loop.hold()
+        self._wall = time.time() - self._loop()
+        lease = SimpleNamespace(time=self.time)
+        monkeypatch.setattr(_shared, "time", lease)
+        monkeypatch.setattr(_driver, "time", lease)
+
+    def time(self) -> float:
+        return self._wall + self._loop()
+
+    async def past(self, seconds: float) -> None:
+        """Move both clocks *seconds* on, a step at a time."""
+        for _ in range(max(1, round(seconds / self.STEP))):
+            await self._loop.past(self.STEP)
+            await asyncio.to_thread(time.sleep, 0.001)
+
+    def release(self) -> None:
+        self._loop.release()
 
 
 async def test_a_process_that_did_not_install_it_follows_the_discussion() -> None:
@@ -270,7 +320,6 @@ async def test_two_processes_never_give_two_turns_at_once() -> None:
     await cluster.close()
 
 
-@pytest.mark.wallclock
 async def test_a_turn_longer_than_the_lease_keeps_it(monkeypatch: pytest.MonkeyPatch) -> None:
     # The process giving a turn renews its lease while the turn runs, so no
     # other process gives a turn meanwhile (rule 16).
@@ -278,15 +327,17 @@ async def test_a_turn_longer_than_the_lease_keeps_it(monkeypatch: pytest.MonkeyP
     cluster = _Cluster()
     a = await cluster.process(install=True, create=True, delay=1.6 * lease)
     b = await cluster.process(install=True, delay=1.6 * lease)
+    clock = _HeldLease(monkeypatch)
     await _say(a, "@investigator what do the logs say?")
-    await _turn_started(cluster)
+    await _turn_started(cluster, clock=clock)
 
     await _say(b, "@sre and the metrics?")
 
     async def both() -> bool:
         return sorted(await cluster.answers()) == ["investigator", "sre"]
 
-    await _until(both)
+    await _until(both, clock=clock)
+    clock.release()
     assert cluster.overlap() == 1
     await cluster.close()
 
@@ -347,7 +398,6 @@ def _turns_ended(kit: RoomKit) -> list[str]:
     return ended
 
 
-@pytest.mark.wallclock
 @pytest.mark.parametrize(
     ("method", "failing"),
     [("editing", False), ("editing", True), ("read", False)],
@@ -368,10 +418,15 @@ async def test_a_turn_whose_lease_ends_unrenewed_is_cut_before_another_process_t
     a = await cluster.process(install=True, create=True, delay=2.0)
     b = await cluster.process(install=True, delay=2.0)
     ended = _turns_ended(a)
+    clock = _HeldLease(monkeypatch)
     await _say(a, "@investigator what do the logs say?")
-    await _turn_started(cluster)
+    await _turn_started(cluster, clock=clock)
     release, entered = _hold(monkeypatch, a, method, failing=failing)
-    await asyncio.wait_for(entered.wait(), 2.0)  # A's renewals stop: the lease is as stored
+
+    async def renewal_held() -> bool:
+        return entered.is_set()
+
+    await _until(renewal_held, 2.0, clock)  # A's renewals stop: the lease is as stored
     expires = (await _stored_queue(cluster))["lease_expires"]
 
     await _say(b, "@investigator anything new?")
@@ -382,13 +437,14 @@ async def test_a_turn_whose_lease_ends_unrenewed_is_cut_before_another_process_t
     async def a_turn_ended() -> bool:
         return ended == ["investigator"]
 
-    await _until(given_again)
+    await _until(given_again, clock=clock)
     log = list(cluster.log)
     release.set()
-    await _until(a_turn_ended)
+    await _until(a_turn_ended, clock=clock)
     queue = await _stored_queue(cluster)
     cluster.release.set()
-    await _turn_over(cluster, b._discussions["r1"].driver)
+    await _turn_over(cluster, b._discussions["r1"].driver, clock=clock)
+    clock.release()
     assert log == ["+investigator", "xinvestigator", "+investigator"]
     # Cut by the lease's end, no read before it: not at the end of a read
     # bounded more tightly than the lease (rule 7).
@@ -943,11 +999,13 @@ async def test_uninstalling_in_another_process_leaves_no_record_behind() -> None
     await cluster.close()
 
 
-async def _turn_started(cluster: _Cluster, agent: str = "investigator") -> None:
+async def _turn_started(
+    cluster: _Cluster, agent: str = "investigator", clock: _HeldLease | None = None
+) -> None:
     async def started() -> bool:
         return f"+{agent}" in cluster.log
 
-    await _until(started)
+    await _until(started, clock=clock)
 
 
 async def _uninstall(kit: RoomKit, *, locked: bool) -> None:

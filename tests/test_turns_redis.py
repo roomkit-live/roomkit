@@ -18,6 +18,7 @@ import time
 from collections.abc import AsyncIterator, Coroutine
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from uuid import uuid4
 
@@ -31,6 +32,7 @@ from roomkit import (
     RoomKit,
     current_turn_host,
 )
+from roomkit.channels._mark_copies import compile_mark_patterns
 from roomkit.channels.agent import Agent
 from roomkit.core.exceptions import TurnLinkError
 from roomkit.core.task_utils import cancel_reason
@@ -46,7 +48,7 @@ from roomkit.store.base import ConversationStore
 from roomkit.store.memory import InMemoryStore
 from roomkit.store.sqlite import SQLiteStore
 from roomkit.tools.context import current_tool_room_id
-from roomkit.turns import TurnClient, TurnExecutor, TurnTimeouts
+from roomkit.turns import TurnClient, TurnExecutor, TurnTimeouts, _redis_beat
 from roomkit.turns._redis_beat import BeatThread, LiveExecutors
 from roomkit.turns._redis_clients import call_bound, read_block, redis_clients
 from roomkit.turns._redis_inbox import Envelope, Inbox
@@ -56,6 +58,7 @@ from roomkit.turns._redis_routes import REFUSED
 from roomkit.turns.redis import RedisTurnBackend
 from roomkit.turns.wire import CommittedEvent, End, HostResult, RoomCall
 from tests import redis_turn_mode
+from tests.loop_clock import HeldClock
 from tests.redis_silencing import Silencing, redis_address, redis_db
 from tests.test_framework import SimpleChannel
 from tests.test_turns_channel_control import _Agent, _Recording, _turn
@@ -63,9 +66,22 @@ from tests.test_turns_own_executor import _Tagged
 
 pytestmark = pytest.mark.skipif(not os.environ.get("REDIS_URL"), reason="REDIS_URL not set")
 
-TIMEOUTS = TurnTimeouts(heartbeat_interval=0.2, heartbeat_timeout=1.0, accept=3.0, cancel=1.0)
+# This process's bounds: a full collection stops the worker up to about half a
+# second (RMK-1714), and each Redis call gives up after half the silence bound,
+# a second here, so a pause of the worker cuts none. The subprocesses keep 1 s:
+# they carry none of the suite's heap, whose collections these are.
+TIMEOUTS = TurnTimeouts(heartbeat_interval=0.2, heartbeat_timeout=2.0, accept=3.0, cancel=1.0)
 EXECUTOR = Path(__file__).with_name("redis_turn_executor.py")
 OWNER = Path(__file__).with_name("redis_turn_owner.py")
+
+
+@pytest.fixture(autouse=True)
+async def _compiled_mark_patterns() -> None:
+    """The patterns that find a copy of a runtime mark compile once per
+    process, as an executor builds its first agent (RMK-888): about a second,
+    over five on a loaded machine. Compiled before the test, so a bound under
+    test measures the turn or the close, not that compilation (RMK-1714)."""
+    await compile_mark_patterns()
 
 
 @pytest.fixture
@@ -190,7 +206,7 @@ async def test_a_turn_runs_on_an_executor_in_another_process(
 async def test_a_turn_whose_cpu_stalls_its_executor_keeps_beating(
     prefix: str, redis_client: Any, database: Path
 ) -> None:
-    """The executor's loop stops three times the heartbeat timeout: its
+    """The executor's loop stops past the owner's heartbeat timeout: its
     thread beats on, so the turn is slow, never lost (RFC §10.6.8)."""
     executor = await _ExecutorProcess.start(prefix, "host-1", database)
     kit = await _owner(prefix, "worker", store=SQLiteStore(database))
@@ -1992,10 +2008,13 @@ async def test_a_live_agent_stays_on_the_kit_s_executor_whoever_holds_the_room(
 
 
 # Short silence bounds for the half-open tests, the heartbeat interval under
-# half of each: the example's, the suite's, and one with room to spare.
+# half of each: the suite's, and one with room to spare. The beat and the view
+# run in this worker, and a full collection stops both up to about half a
+# second (RMK-1714): each bound leaves that pause room past an interval and a
+# call cut at half the bound, which the example's 0.5 s of 2 s and a 0.2 s of
+# 1 s do not.
 _HALF_OPEN = [
-    TurnTimeouts(heartbeat_interval=0.5, heartbeat_timeout=2.0),
-    TurnTimeouts(heartbeat_interval=0.2, heartbeat_timeout=1.0),
+    TurnTimeouts(heartbeat_interval=0.2, heartbeat_timeout=2.0),
     TurnTimeouts(heartbeat_interval=0.5, heartbeat_timeout=4.0),
 ]
 
@@ -2042,10 +2061,12 @@ async def test_a_half_open_beat_connection_takes_nobody_for_lost(
         Registry(redis_client, keys), timeouts.heartbeat_interval, timeouts.heartbeat_timeout, dict
     )
     beat.start()
-    await asyncio.sleep(2 * timeouts.heartbeat_interval)
     live.start()
-    await asyncio.sleep(2 * timeouts.heartbeat_interval)
-    assert live.alive("n:e")
+    # Seen alive first, however long a pause of the worker held the first beat
+    # or read back (RMK-1714).
+    async with asyncio.timeout(5):
+        while not live.alive("n:e"):
+            await asyncio.sleep(0.01)
 
     proxy.silence()
     seen_lost = False
@@ -2106,7 +2127,7 @@ async def test_a_half_open_inbox_reads_within_the_silence_bound(
 
 
 async def test_a_read_cut_by_its_connection_counts_from_its_start(
-    prefix: str, redis_client: Any
+    prefix: str, redis_client: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """RMK-859: Redis freezes, then refuses: the read in flight, cut by its
     connection's bound, counts as one that hung, so the others are unread
@@ -2124,15 +2145,29 @@ async def test_a_read_cut_by_its_connection_counts_from_its_start(
         timeout_errors=clients.timeout_errors,
     )
     beat.start()
-    await asyncio.sleep(0.5)
+    async with asyncio.timeout(5):  # the beat thread's first beat
+        while await redis_client.zscore(keys.alive, "n:e") is None:
+            await asyncio.sleep(0.01)
+    # The loop's clock held, the view's with it: the reads' interval and
+    # bounds, the connection's bound included, are spent by what the test
+    # moves, never by a pause of the worker (RMK-1714).
+    clock = HeldClock(monkeypatch)
+    monkeypatch.setattr(_redis_beat, "time", SimpleNamespace(monotonic=clock))
+    clock.hold()
     live.start()
-    await asyncio.sleep(0.5)
+    for _ in range(500):  # the first read, in real time with the clock still
+        if live.alive("n:e"):
+            break
+        await asyncio.to_thread(time.sleep, 0.01)
     assert live.alive("n:e")
 
     proxy.silence()
     proxy.refuse()
-    await asyncio.sleep(timeouts.heartbeat_timeout + 3 * timeouts.heartbeat_interval)
+    step = 0.005
+    for _ in range(round((timeouts.heartbeat_timeout + 3 * timeouts.heartbeat_interval) / step)):
+        await clock.past(step)
     unread = not live.alive("n:e")
+    clock.release()
 
     await asyncio.to_thread(beat.stop)
     await live.close()
@@ -2208,11 +2243,11 @@ async def test_a_turn_elsewhere_shows_in_the_owner_s_trace(
     await backend.close()
     await executor.close()
 
+    assert result.error is None
     spans = exporter.get_finished_spans()
     by_id = {s.context.span_id: s for s in spans}
     generate = next(s for s in spans if s.name == "roomkit.llm.generate")
     tool = next(s for s in spans if s.name == "roomkit.tool.get_weather")
-    assert result.error is None
     assert {s.context.trace_id for s in spans} == {generate.context.trace_id}
     assert generate.parent is not None and tool.parent is not None
     assert by_id[generate.parent.span_id].name == "roomkit.framework.broadcast"
