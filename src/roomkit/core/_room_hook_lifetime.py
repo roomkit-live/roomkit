@@ -105,7 +105,10 @@ class RoomHookLifetime:
             self._waiting.setdefault(room_id, set()).add(name)
             return
         self._release_waiting(room_id, name)
-        if mark is not None:
+        current = self._marks.get(room_id)
+        # A mark is never lowered: the room the registration read may be gone
+        # already, the id's hooks a later room's.
+        if mark is not None and (current is None or current < mark):
             self._marks[room_id] = mark
 
     def released(self, room_id: str, name: str) -> None:

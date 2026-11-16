@@ -39,6 +39,7 @@ from roomkit.models.enums import ChannelCategory, ChannelType
 from roomkit.models.event import RoomEvent, TextContent
 from roomkit.models.hook import HookResult
 from roomkit.models.identity import Identity
+from roomkit.models.room import Room
 from roomkit.models.steering import Cancel, InjectMessage
 from roomkit.providers.ai.base import AIResponse, AITool, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
@@ -48,7 +49,7 @@ from roomkit.realtime.memory import InMemoryRealtime
 from roomkit.realtime.redis import RedisRealtimeBackend
 from roomkit.recorder import MediaRecordingConfig, MockMediaRecorder, RoomRecorderBinding
 from roomkit.store.memory import InMemoryStore
-from tests.test_framework import AILikeChannel, SimpleChannel
+from tests.test_framework import SimpleChannel
 
 
 async def _two_tenants() -> RoomKit:
@@ -226,6 +227,23 @@ class TestUnscopedRooms:
         assert (await kit.get_room("solo")).id == "solo"
         with pytest.raises(RoomNotFoundError):
             await kit.get_room("solo", organization_id="acme")
+
+
+class _HeldFirstRead(InMemoryStore):
+    """Holds the answer of its first room read once armed, until released."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.armed = False
+        self.reading = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def get_room(self, room_id: str) -> Room | None:
+        room = await super().get_room(room_id)
+        if self.armed and not self.reading.is_set():
+            self.reading.set()
+            await self.release.wait()
+        return room
 
 
 def _text(body: str) -> InboundMessage:
@@ -926,6 +944,50 @@ class TestScopedRoomHooks:
         assert kit.hook_engine.room_hook_names("acme-room") == ["acme-hook"]
         await kit.close()
 
+    async def test_a_registration_that_read_a_room_gone_keeps_the_later_rooms_hooks(
+        self,
+    ) -> None:
+        """A registration reads acme's room; meanwhile another process creates
+        the room again for globex, whose hook this process registers on it.
+        The registration that read acme's room, gone, ends after: globex's
+        hook still runs on globex's message (RFC §9.1, §17.2)."""
+        store = _HeldFirstRead()
+        acme, globex = RoomKit(store=store), RoomKit(store=store)
+        for kit in (acme, globex):
+            kit.register_channel(SimpleChannel("sms"))
+        read: list[str] = []
+
+        async def note(event: RoomEvent, context: RoomContext) -> None:
+            read.append(event.content.body)
+
+        await acme.create_room(room_id="shared-id", organization_id="acme")
+        store.armed = True
+        late = asyncio.create_task(
+            acme.add_room_hook(
+                "shared-id", HookTrigger.AFTER_BROADCAST, HookExecution.ASYNC, note, name="late"
+            )
+        )
+        await store.reading.wait()
+        await store.delete_room("shared-id")
+        await globex.create_room(room_id="shared-id", organization_id="globex")
+        await globex.attach_channel("shared-id", "sms")
+        await acme.add_room_hook(
+            "shared-id",
+            HookTrigger.AFTER_BROADCAST,
+            HookExecution.ASYNC,
+            note,
+            name="globex-hook",
+            organization_id="globex",
+        )
+        store.release.set()
+        await late
+        await acme.process_inbound(_text("globex secret"), room_id="shared-id")
+        await acme.hook_engine.drain_observers()
+        for kit in (acme, globex):
+            await kit.close()
+
+        assert "globex secret" in read
+
     async def test_a_hook_given_to_the_engine_ends_with_the_first_room_it_ran_in(self) -> None:
         """A room hook given to the kit's engine itself, below the kit, is the
         first room's it runs in: another process creating the room again
@@ -960,46 +1022,6 @@ class TestScopedRoomHooks:
             await kit.close()
 
         assert read == ["acme:acme note"]
-
-    async def test_names_another_process_left_follow_the_presence_they_forget(self) -> None:
-        """The process holding a deleted room's enabled names forgets them on
-        reading the room created again, within a publication of its agents'
-        presence under the watch's lock, which the change of names does not
-        wait for: it is published apart (RFC §10.6.7, §17.2)."""
-        store = InMemoryStore()
-        acme, globex = RoomKit(store=store), RoomKit(store=store)
-        for kit in (acme, globex):
-            kit.register_channel(AILikeChannel("agent"))
-        published: list[str] = []
-        publish = acme.publish_presence
-
-        async def spy(room_id: str, user_id: str, status: str, **options: Any) -> None:
-            published.append(status)
-            await publish(room_id, user_id, status, **options)
-
-        acme.publish_presence = spy  # type: ignore[method-assign]
-        await acme.create_room(room_id="shared-id", organization_id="acme")
-        await acme.attach_channel("shared-id", "agent", category=ChannelCategory.INTELLIGENCE)
-        await acme.enable_room_hook("shared-id", "acme-name", organization_id="acme")
-        await store.delete_room("shared-id")
-        await globex.create_room(room_id="shared-id", organization_id="globex")
-        before = len(published)
-        await asyncio.wait_for(
-            acme.attach_channel(
-                "shared-id",
-                "agent",
-                category=ChannelCategory.INTELLIGENCE,
-                organization_id="globex",
-            ),
-            5,
-        )
-        # The presence the forget changed, published apart.
-        await asyncio.wait_for(asyncio.gather(*acme._presence_watch._changing), 5)
-        for kit in (acme, globex):
-            await kit.close()
-
-        assert acme._turns.room_hook_names("shared-id") == []
-        assert published[before:] == ["online"]
 
 
 class _RecordingRealtime(InMemoryRealtime):

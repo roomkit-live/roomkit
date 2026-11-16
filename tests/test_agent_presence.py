@@ -487,3 +487,47 @@ async def test_a_room_s_close_forgets_its_agents_presence_before_a_new_attach() 
         await host.close()
 
     assert heard == {"r1": [("online", "coder"), ("online", "coder")]}
+
+
+async def test_names_another_process_s_room_left_publish_the_presence_they_change() -> None:
+    """An enabled name keeps its agent offline in the room; another process
+    deletes the room and creates it again. This process forgets the name on
+    reading the room created again, and publishes the agent's presence it
+    changes (RFC §10.6.7, §17.2)."""
+    store, backend = InMemoryStore(), InMemoryTurnBackend()
+    plain = TurnExecutor(lambda _: None, hosts={"coder"}, executor_id="plain", organizations=["*"])
+    audited = TurnExecutor(
+        lambda _: None, hosts={"coder"}, executor_id="audited", organizations=["*"]
+    )
+
+    @audited.room_hook("audit", HookTrigger.BEFORE_TOOL_USE)
+    async def audit(event: Any, context: Any) -> None: ...
+
+    await backend.serve(plain)
+    acme, globex = RoomKit(store=store, turn_backend=backend), RoomKit(store=store)
+    for kit in (acme, globex):
+        kit.register_channel(SimpleChannel("ws"))
+        kit.register_channel(ChannelDeclaration(channel_id="coder"))
+    acme.register_channel(SimpleChannel("ws2"))
+    heard: list[tuple[str, str]] = []
+
+    async def record(event: EphemeralEvent) -> None:
+        if event.type in (EphemeralEventType.PRESENCE_ONLINE, EphemeralEventType.PRESENCE_OFFLINE):
+            heard.append((event.type.value, event.user_id))
+
+    await acme.create_room(room_id="r1", organization_id="acme")
+    await acme.attach_channel("r1", "coder", category=ChannelCategory.INTELLIGENCE)
+    await acme.enable_room_hook("r1", "audit", organization_id="acme")
+    await store.delete_room("r1")
+    await globex.create_room(room_id="r1", organization_id="globex")
+    await globex.attach_channel("r1", "coder", category=ChannelCategory.INTELLIGENCE)
+    await acme.realtime.subscribe_to_room("r1", record)
+    # acme reads the room created again: the attach's hooks settle it.
+    await acme.attach_channel("r1", "ws2", organization_id="globex")
+    await asyncio.wait_for(asyncio.gather(*acme._presence_watch._changing), 5)
+    for kit in (acme, globex):
+        await kit.close()
+    await plain.close()
+    await audited.close()
+
+    assert (acme._turns.room_hook_names("r1"), heard) == ([], [("presence_online", "coder")])
