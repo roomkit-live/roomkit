@@ -649,30 +649,46 @@ class TestADeliveryStatus:
         assert seen == ["acme-alice"]
 
     @pytest.mark.parametrize(
-        ("held", "taken"),
+        ("held", "registered", "taken"),
         [
-            (ALICE, False),
-            (True, False),
-            ({"number": BOB}, False),
-            ([BOB], False),
-            (15550000002.0, False),
-            (None, True),
-            ("  ", True),
+            (ALICE, True, False),
+            (True, True, False),
+            ({"number": BOB}, True, False),
+            ([BOB], True, False),
+            (15550000002.0, True, False),
+            (None, True, True),
+            ("  ", True, True),
+            (ALICE, False, False),
+            (None, False, False),
         ],
-        ids=["another-number", "true", "object", "list", "float", "null", "blank"],
+        ids=[
+            "another-number",
+            "true",
+            "object",
+            "list",
+            "float",
+            "null",
+            "blank",
+            "another-number-unregistered",
+            "null-unregistered",
+        ],
     )
     async def test_the_one_room_delivering_to_another_number_is_not_the_status(
-        self, store: ConversationStore, held: object, taken: bool
+        self, store: ConversationStore, held: object, registered: bool, taken: bool
     ) -> None:
         """The fallback of the one ACTIVE room reads its binding's recipient as
         step 3 does: Bob's room is closed, Alice's, delivering to her number
         and naming no correspondent, is not Bob's. A value that is not a
         recipient (RFC §5.7: a boolean, a float, a list, an object) reads as
         someone else's too; no value (null, a blank string) delivers to no
-        one: the room takes Bob's status."""
+        one: the room takes Bob's status. With the channel no longer
+        registered, nothing reads the binding's recipient: naming no
+        participant, it names no one the status names (RFC §10.4, RMK-1420)."""
         shop = _Shop(store)
         bob_room = await shop.room_of(BOB)
         await shop.kit.close_room(bob_room)
+        if not registered:
+            shop.kit.unregister_channel("sms")
         await shop.kit.create_room(room_id="alice")
         await store.add_binding(
             ChannelBinding(
@@ -810,6 +826,43 @@ class TestABindingNamingAnIdentity:
 
         assert await shop.room_of(ALICE) == room
         assert calls == [ALICE]
+
+    @pytest.mark.parametrize(
+        ("named", "registered"),
+        [(BOB, True), (None, True), (None, False)],
+        ids=["by-the-attach", "by-its-recipient", "by-its-recipient-unregistered"],
+    )
+    async def test_a_resolved_participant_does_not_take_another_correspondents_binding(
+        self, store: ConversationStore, named: str | None, registered: bool
+    ) -> None:
+        """RFC §5.5: resolving alice, a member the host reached through the
+        channel, identifies her and leaves the binding delivering to bob as
+        it was, naming him or, stored before an attach named him, naming no
+        one with his number: her message opens a room of her own, and bob's
+        is still his room's (RMK-1421). Resolved while the kit holds no
+        channel to read that number, the binding naming no one is left as it
+        was too."""
+        shop = _Shop(store)
+        await store.create_identity(Identity(id="id-alice"))
+        room = await shop.open_room_for(BOB, member=ALICE)
+        if named is None:
+            binding = await store.get_binding(room, "sms")
+            assert binding is not None
+            await store.update_binding(binding.model_copy(update={"participant_id": None}))
+        if not registered:
+            shop.kit.unregister_channel("sms")
+
+        resolved = await shop.kit.resolve_participant(room, ALICE, "id-alice")
+        if not registered:
+            shop.kit.register_channel(SMSChannel("sms", provider=shop.sms))
+
+        assert (resolved.identification, resolved.identity_id) == (
+            IdentificationStatus.IDENTIFIED,
+            "id-alice",
+        )
+        assert await shop.named_on(room) == named
+        assert await shop.room_of(ALICE) != room
+        assert await shop.room_of(BOB) == room
 
 
 class TestEitherNameFindsTheNewestRoom:

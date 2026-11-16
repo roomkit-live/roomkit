@@ -12,7 +12,7 @@ from roomkit.models.channel import ChannelBinding
 from roomkit.models.delivery import SYSTEM_SENDER_ID
 from roomkit.models.enums import ChannelType, RoomStatus
 from roomkit.models.identity import Identity
-from roomkit.models.participant import own_record_id
+from roomkit.models.participant import Participant, own_record_id
 from roomkit.models.room import Room
 from roomkit.models.store_filter import EventFilter, RoomFilter
 from roomkit.store.base import ConversationStore
@@ -445,6 +445,37 @@ def binding_admits(binding: ChannelBinding, known_as: frozenset[str]) -> bool:
     or anyone while it names no one.
     """
     return binding.group or binding.participant_id is None or binding.participant_id in known_as
+
+
+def delivers_to_another_than(
+    channel: Channel | None, binding: ChannelBinding, participant: Participant, identity_id: str
+) -> bool:
+    """Whether *binding* is the conversation of someone other than
+    *participant*, resolved as *identity_id* (RFC §5.5, §5.7): it names
+    another correspondent, the framework's own name included, or names none
+    and routing reads its recipient as another address, or as a value that
+    is not a recipient. On a channel not registered nothing reads that
+    recipient: a binding naming no one is read as another's then.
+
+    The participant is known by their id, the identity they had and the one
+    they get, and the address whose own record they are
+    (:func:`own_record_id`). A ``group`` binding names no correspondent, and
+    one delivering to no one is no one's: neither is another's.
+    """
+    if binding.group:
+        return False
+    named = binding.participant_id
+    if named is None:
+        if channel is None:
+            return True
+        recipient = routed_recipient(channel, binding)
+        if recipient is None:
+            return False
+        if isinstance(recipient, UnreadableRecipient):
+            return True
+        named = recipient
+    theirs = {participant.id, participant.identity_id, identity_id}
+    return named not in theirs and own_record_id(binding.channel_id, named) != participant.id
 
 
 async def _heard_from_other(

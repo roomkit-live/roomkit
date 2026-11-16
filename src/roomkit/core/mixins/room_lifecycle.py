@@ -18,6 +18,7 @@ from roomkit.core.exceptions import (
     RoomNotFoundError,
     TransitionRefusedError,
 )
+from roomkit.core.inbound_router import delivers_to_another_than
 from roomkit.core.mixins.helpers import HelpersMixin
 from roomkit.models.enums import (
     AgentResponsePolicy,
@@ -594,7 +595,9 @@ class RoomLifecycleMixin(HelpersMixin):
         """Resolve a pending participant to a known identity (RFC 7.4).
 
         Called by an advisor or automated process when a pending/ambiguous
-        participant has been identified.
+        participant has been identified. The binding of the participant's
+        channel names the identity from then on, unless it is someone else's
+        conversation (RFC §5.5): it then keeps its correspondent.
         """
         async with self._lock_manager.locked(room_id):
             if organization_id is not None:
@@ -606,6 +609,7 @@ class RoomLifecycleMixin(HelpersMixin):
                 )
 
             identity = await self._identity_to_resolve(identity_id, organization_id)
+            pending = participant
 
             # Update participant fields
             participant = participant.model_copy(
@@ -619,12 +623,7 @@ class RoomLifecycleMixin(HelpersMixin):
                 }
             )
             await self._store.update_participant(participant)
-
-            # Update binding if present
-            binding = await self._store.get_binding(room_id, participant.channel_id)
-            if binding:
-                binding = binding.model_copy(update={"participant_id": identity_id})
-                await self._store.update_binding(binding)
+            await self._name_on_binding(room_id, pending, identity_id)
 
             # Emit system event
             await self._emit_system_event(
@@ -653,6 +652,24 @@ class RoomLifecycleMixin(HelpersMixin):
             )
 
             return participant
+
+    async def _name_on_binding(
+        self, room_id: str, participant: Participant, identity_id: str
+    ) -> None:
+        """The binding of *participant*'s primary channel names *identity_id*
+        from now on, unless it is someone else's conversation (RFC §5.5):
+        the advisor identifies a person, and does not choose whom the room
+        answers. A message from that person then gets a room of their own.
+        *participant* is the record as it was before the resolution: the
+        identity it had is theirs too."""
+        binding = await self._store.get_binding(room_id, participant.channel_id)
+        if binding is None:
+            return
+        channel = self._channels.get(participant.channel_id)
+        if delivers_to_another_than(channel, binding, participant, identity_id):
+            return
+        named = binding.model_copy(update={"participant_id": identity_id})
+        await self._store.update_binding(named)
 
     async def _identity_to_resolve(
         self, identity_id: str, organization_id: str | None

@@ -46,9 +46,12 @@ def _delivers_to_another(
 ) -> bool:
     """Whether *binding*, naming no participant and not ``group``, is the
     conversation of someone other than *recipient* (RFC §5.7, §10.4): a status
-    for them is not its room's."""
+    for them is not its room's. On a channel not registered, nothing reads its
+    recipient: it names no one a status names, whatever its metadata holds."""
     if binding.group or binding.participant_id is not None:
         return False
+    if channel is None:
+        return True
     return routed_recipient(channel, binding) not in (None, recipient)
 
 
@@ -370,12 +373,13 @@ class HooksApiMixin(HelpersMixin):
         The newest ACTIVE or PAUSED room whose binding of the channel names
         the status's recipient, as step 1 finds a sender's, else the one
         ACTIVE room bound to the channel, unless its binding names another
-        correspondent. Never one of several: on a number shared by many
-        correspondents, the oldest room is another customer's, and the
-        status (its recipient's number among it) would be dispatched with
-        that room's context. A status is no activity, and resumes no room
-        (§5.1). Among the rooms of *organization_id* only, when one is named
-        (§17.2).
+        correspondent; on a channel not registered, a status naming a recipient
+        has no room through a binding naming no participant and not ``group``.
+        Never one of several: on a number shared by many correspondents, the
+        oldest room is another customer's, and the status (its recipient's
+        number among it) would be dispatched with that room's context. A status
+        is no activity, and resumes no room (§5.1). Among the rooms of
+        *organization_id* only, when one is named (§17.2).
         """
         active = RoomFilter(statuses=[RoomStatus.ACTIVE], organization_id=organization_id)
         channel = self._channels.get(channel_id)
