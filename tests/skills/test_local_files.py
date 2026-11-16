@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -146,3 +147,54 @@ def test_lists_preserve_child_names_but_reading_still_checks_containment(tmp_pat
         skill.read_reference("escape")
     with pytest.raises(SkillPathError):
         skill.resolve_script("escape")
+
+
+@pytest.mark.parametrize("text", ["one\r\ntwo\rthree\n", "\ufeffHeader\n"])
+def test_direct_reference_read_uses_utf8_with_universal_newlines(
+    tmp_path: Path, text: str
+) -> None:
+    skill = _skill(tmp_path)
+    references = skill.path / "references"
+    references.mkdir()
+    (references / "text.md").write_bytes(text.encode("utf-8"))
+    assert skill.read_reference("text.md") == text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX filenames can contain arbitrary bytes")
+def test_lists_preserve_non_utf8_filenames_and_python_sort_order(tmp_path: Path) -> None:
+    skill = _skill(tmp_path)
+    names = [b"\xff", b"a", "😀".encode(), "\ue000".encode()]
+    for name in ("scripts", "references"):
+        directory = skill.path / name
+        directory.mkdir()
+        for filename in names:
+            (directory / os.fsdecode(filename)).write_text("Body", encoding="utf-8")
+    expected = sorted(os.fsdecode(name) for name in names)
+    assert skill.list_scripts() == expected
+    assert skill.list_references() == expected
+
+
+def test_direct_file_helpers_follow_links_that_stay_inside_the_skill(tmp_path: Path) -> None:
+    skill = _skill(tmp_path)
+    content = skill.path / "content"
+    content.mkdir()
+    (content / "body").write_text("Contents", encoding="utf-8")
+    (content / "alias").symlink_to("body")
+    for name in ("scripts", "references"):
+        (skill.path / name).symlink_to("content", target_is_directory=True)
+    assert skill.read_reference("alias") == "Contents"
+    assert skill.resolve_script("alias") == content / "body"
+    assert skill.has_scripts and skill.has_references
+
+
+def test_direct_file_helpers_refuse_a_symlink_loop(tmp_path: Path) -> None:
+    skill = _skill(tmp_path)
+    for name in ("scripts", "references"):
+        directory = skill.path / name
+        directory.mkdir()
+        (directory / "first").symlink_to("second")
+        (directory / "second").symlink_to("first")
+    with pytest.raises(SkillPathError, match="cannot be resolved"):
+        skill.read_reference("first")
+    with pytest.raises(SkillPathError, match="cannot be resolved"):
+        skill.resolve_script("first")
