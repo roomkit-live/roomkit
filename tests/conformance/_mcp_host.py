@@ -31,6 +31,8 @@ async def _operation(provider: MCPToolProvider, operation: Mapping[str, Any]) ->
         return None
     if method == "tool_meta":
         return provider.tool_meta()
+    if method == "get_tools_as_dicts":
+        return provider.get_tools_as_dicts()
     if method in {"connected", "tool_names", "server_info", "server_extensions"}:
         return getattr(provider, method)
     options = {"timeout": operation["timeout_ms"] / 1000} if "timeout_ms" in operation else {}

@@ -11,6 +11,7 @@ OPERATIONS = {
     "close": set(),
     "connected": set(),
     "tool_names": set(),
+    "get_tools_as_dicts": set(),
     "tool_meta": {"mutate"},
     "server_info": {"mutate"},
     "server_extensions": {"mutate"},
