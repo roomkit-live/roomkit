@@ -25,9 +25,9 @@ from typing import Any
 from roomkit._lookalike import (
     INVISIBLE,
     behind_any_bracket,
-    bracket_gap,
     closing_bracket,
     hidden_mark_offsets,
+    mark_gap,
     phrase_pattern,
     phrase_words,
     replaced_past_hidden_marks,
@@ -99,12 +99,13 @@ def _opening(mark: str) -> str | None:
 
 
 def _people_note_words() -> str:
-    """The note on who takes part, with anything but a letter, a digit or an
-    opening bracket between its words, and its closing bracket: behind any
-    opening bracket it reads as the runtime's, and this long a phrase is
-    seldom prose (RFC §6.4)."""
+    """The note on who takes part, with anything but a letter or a digit
+    between its words and their letters (:func:`~roomkit._lookalike.mark_gap`),
+    and its closing bracket: behind any opening bracket it reads as the
+    runtime's, and this long a phrase is seldom prose (RFC §6.4)."""
     words = phrase_words(PEOPLE_NOTE_OPENING)
-    body = bracket_gap().join(word_pattern(word, phrase=True) for word in words)
+    gap = mark_gap()
+    body = gap.join(word_pattern(word, phrase=True, join=gap) for word in words)
     return rf"{body}(?![^\W_]){closing_bracket()}?"
 
 

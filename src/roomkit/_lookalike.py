@@ -189,18 +189,20 @@ _MAX_SPELLINGS = 64
 runs from the left, without overlap."""
 
 
-def word_pattern(word: str, *, phrase: bool = False) -> str:
+def word_pattern(word: str, *, phrase: bool = False, join: str = _NAME_JOIN) -> str:
     """*word* as a model reads it, a regular expression to compile with
     ``re.IGNORECASE``: each letter in any of its forms, any run of its letters
-    as the one character that reads as it (``ⅵ`` for ``vi``), an invisible,
-    control or combining character between them. Every way to spell the word
-    with such runs is held, up to :data:`_MAX_SPELLINGS`; each run's class
-    shares no character with its first letter's, so the alternatives never
-    read the same text twice. *phrase* when the word sits in a phrase."""
+    as the one character that reads as it (``ⅵ`` for ``vi``), *join* between
+    them (by default, invisible, control or combining characters; a mark's
+    word reads any character but a letter or a digit there,
+    :func:`mark_gap`). Every way to spell the word with such runs is held, up
+    to :data:`_MAX_SPELLINGS`; each run's class shares no character with its
+    first letter's, so the alternatives never read the same text twice.
+    *phrase* when the word sits in a phrase."""
     runs = _runs(word, phrase)
     if _spellings(word, runs) > _MAX_SPELLINGS:
         runs = _leftmost(word, runs)
-    return _spelled(word, 0, runs, phrase, frozenset())
+    return _spelled(word, 0, runs, phrase, frozenset(), join)
 
 
 def name_pattern(name: str) -> str:
@@ -286,17 +288,23 @@ def _leftmost(word: str, runs: dict[int, list[int]]) -> dict[int, list[int]]:
 
 
 def _spelled(
-    word: str, at: int, runs: dict[int, list[int]], phrase: bool, breaks: frozenset[int]
+    word: str,
+    at: int,
+    runs: dict[int, list[int]],
+    phrase: bool,
+    breaks: frozenset[int],
+    join: str = _NAME_JOIN,
 ) -> str:
     """The pattern of *word* from *at*: its letter there, or a run's character;
-    a name's separator before each position of *breaks*."""
+    a name's separator before each position of *breaks*, *join* before each
+    other."""
     if at == len(word):
         return ""
     unit = char_class(word[at], phrase=phrase)
-    choices = [_then(unit, word, at + 1, runs, phrase, breaks)]
+    choices = [_then(unit, word, at + 1, runs, phrase, breaks, join)]
     for size in runs.get(at, []):
         glyphs = _sequences(phrase=phrase)[word[at : at + size].lower()]
-        choices.append(_then(glyphs, word, at + size, runs, phrase, breaks))
+        choices.append(_then(glyphs, word, at + size, runs, phrase, breaks, join))
     return choices[0] if len(choices) == 1 else f"(?:{'|'.join(choices)})"
 
 
@@ -307,27 +315,43 @@ def _then(
     runs: dict[int, list[int]],
     phrase: bool,
     breaks: frozenset[int],
+    join: str,
 ) -> str:
-    rest = _spelled(word, at, runs, phrase, breaks)
-    join = _SEPARATED if at in breaks else _NAME_JOIN
-    return f"{unit}{join}{rest}" if rest else unit
+    rest = _spelled(word, at, runs, phrase, breaks, join)
+    between = _SEPARATED if at in breaks else join
+    return f"{unit}{between}{rest}" if rest else unit
 
 
 def phrase_pattern(phrase: str, *, bracketed: bool = False) -> str:
     """*phrase* as a model reads it, a regular expression to compile with
     ``re.IGNORECASE``: its words in order (:func:`word_pattern`), with any
-    spacing, its own punctuation, markup (bold, struck, code, hyphens,
-    slashes), combining marks and invisible characters between them (none
-    included), its opening bracket, square or fullwidth, optional unless
+    character but a letter or a digit between them and between their letters
+    (:func:`mark_gap`: punctuation, spacing, markup, invisible characters;
+    none included), its opening bracket, square or fullwidth, optional unless
     *bracketed*, its last word not part of a longer one, and a closing
     bracket of any kind (:func:`closing_bracket`) or its own closing
-    punctuation taken with the copy.
+    punctuation taken with the copy. A *bracketed* phrase, a short mark whose
+    words alone are prose, reads only spacing, its own punctuation, markup,
+    combining marks and invisible characters between its words, and the
+    latter three between its letters (RFC §6.4).
+
+    A phrase of two words written as one token, nothing but punctuation
+    between them and no space or invisible character
+    (``conversation_summary``, ``ConversationSummary``,
+    ``conversation.summary``), is an identifier, not the phrase: code names
+    such words (HITL d63a7011). A longer phrase reads however its words are
+    joined.
 
     One quantified class between two words, never two in a row: a long run of
     spaces after a partial copy is then scanned once, not once per split."""
     marks = phrase_marks(phrase)
     gap = f"{phrase_space(marks)}*"
-    body = gap.join(word_pattern(word, phrase=True) for word in phrase_words(phrase))
+    join = _NAME_JOIN if bracketed else mark_gap()
+    words = phrase_words(phrase)
+    between = gap if bracketed else join
+    if len(words) == 2:
+        between = _spaced(marks, bracketed=bracketed)
+    body = between.join(word_pattern(word, phrase=True, join=join) for word in words)
     closing = closing_bracket()
     end = rf"(?:{closing}|[{marks}]+)?" if marks else rf"(?:{closing})?"
     bracket = rf"[\[\uff3b]{gap}"
@@ -393,6 +417,33 @@ def _gap_char() -> str:
     """One character of :func:`bracket_gap`."""
     other = f"[^\\w{opening_brackets()}{_letter_forms()}]"
     return rf"(?:{other}|[_{_INVISIBLE_LETTERS}])"
+
+
+_WORD_BREAK = rf"\s{INVISIBLE}\u2800"
+"""What makes two words of a phrase two words for a reader, as the body of a
+class: spacing, an invisible character, a braille blank."""
+
+
+def _spaced(marks: str, *, bracketed: bool) -> str:
+    """The gap between a two-word phrase's words, holding a space or an
+    invisible character (:data:`_WORD_BREAK`): what :func:`phrase_pattern`
+    reads there otherwise, cut where the first such character sits, so that
+    each of its characters is read by one class alone."""
+    if bracketed:
+        before = rf"(?:[{_COMBINING}{_MARKUP}{marks}]|{_IOTA})*"
+        return rf"{before}[{_WORD_BREAK}]{phrase_space(marks)}*"
+    before = rf"(?:[^\w{_letter_forms()}{_WORD_BREAK}]|_)*"
+    return rf"{before}[{_WORD_BREAK}]{mark_gap()}"
+
+
+@functools.cache
+def mark_gap() -> str:
+    """What a mark's letters and words are read across: any run of
+    characters but a letter (in any of its forms) or a digit a reader sees,
+    as roomkit-rs reads them (HITL 7371b8c4): ``[Instruction%from&the
+    appli...cation: …]`` reads as the application's instruction. Its class
+    shares no character with a letter's, so a run of it is scanned once."""
+    return rf"(?:[^\w{_letter_forms()}]|[_{_INVISIBLE_LETTERS}])*"
 
 
 def behind_any_bracket(pattern: str) -> str:
