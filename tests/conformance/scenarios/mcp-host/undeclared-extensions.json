@@ -1,0 +1,51 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "mcp-host/undeclared-extensions",
+  "title": "A server without declared extensions yields an empty snapshot",
+  "rules": [
+    "§21.2"
+  ],
+  "notes": "Public MCPToolProvider over a bounded local HTTP peer; operation results and wire requests are both observed. Native stdio and lifecycle assertions are mapped separately in the lot checklist.",
+  "steps": [
+    {
+      "call": "mcp_session",
+      "peer": {
+        "replies": []
+      },
+      "operations": [
+        {
+          "method": "connect"
+        },
+        {
+          "method": "server_extensions"
+        },
+        {
+          "method": "close"
+        }
+      ],
+      "discover": false,
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "result": null
+            },
+            {
+              "result": {}
+            },
+            {
+              "result": null
+            }
+          ],
+          "requests": [
+            {
+              "method": "initialize"
+            }
+          ],
+          "results_json": "[{\"result\":null},{\"result\":{}},{\"result\":null}]",
+          "requests_json": "[{\"method\":\"initialize\"}]"
+        }
+      }
+    }
+  ]
+}

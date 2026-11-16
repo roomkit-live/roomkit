@@ -1,0 +1,84 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "mcp-host/resource-uri-normalization",
+  "title": "Resource URIs are normalized on the outgoing request and returned contents",
+  "rules": [
+    "§21.2"
+  ],
+  "notes": "Public MCPToolProvider over a bounded local HTTP peer; operation results and wire requests are both observed. Native stdio and lifecycle assertions are mapped separately in the lot checklist.",
+  "steps": [
+    {
+      "call": "mcp_session",
+      "peer": {
+        "replies": [
+          {
+            "method": "resources/read",
+            "params": {
+              "uri": "https://example.com/a%20b"
+            },
+            "result": {
+              "contents": [
+                {
+                  "uri": "https://EXAMPLE.com/a b",
+                  "text": "normalized",
+                  "mimeType": null,
+                  "_meta": null
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "operations": [
+        {
+          "method": "connect"
+        },
+        {
+          "method": "read_resource",
+          "uri": "https://EXAMPLE.com/a b"
+        },
+        {
+          "method": "close"
+        }
+      ],
+      "discover": false,
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "result": null
+            },
+            {
+              "result": {
+                "contents": [
+                  {
+                    "uri": "https://example.com/a%20b",
+                    "text": "normalized",
+                    "mimeType": null,
+                    "_meta": null
+                  }
+                ]
+              }
+            },
+            {
+              "result": null
+            }
+          ],
+          "requests": [
+            {
+              "method": "initialize"
+            },
+            {
+              "method": "resources/read",
+              "params": {
+                "uri": "https://example.com/a%20b"
+              }
+            }
+          ],
+          "results_json": "[{\"result\":null},{\"result\":{\"contents\":[{\"_meta\":null,\"mimeType\":null,\"text\":\"normalized\",\"uri\":\"https://example.com/a%20b\"}]}},{\"result\":null}]",
+          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"resources/read\",\"params\":{\"uri\":\"https://example.com/a%20b\"}}]"
+        }
+      }
+    }
+  ]
+}

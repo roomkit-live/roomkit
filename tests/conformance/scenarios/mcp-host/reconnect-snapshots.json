@@ -1,0 +1,168 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "mcp-host/reconnect-snapshots",
+  "title": "Reconnecting replaces the prior information, extension and tool metadata snapshots",
+  "rules": [
+    "§21.2"
+  ],
+  "notes": "Public MCPToolProvider over a bounded local HTTP peer; operation results and wire requests are both observed. Native stdio and lifecycle assertions are mapped separately in the lot checklist.",
+  "steps": [
+    {
+      "call": "mcp_session",
+      "peer": {
+        "initializations": [
+          {
+            "server_info": {
+              "name": "first",
+              "version": "1"
+            },
+            "extensions": {
+              "vendor/first": {
+                "on": true
+              }
+            }
+          },
+          {
+            "server_info": {
+              "name": "second",
+              "version": "2"
+            }
+          }
+        ],
+        "replies": [
+          {
+            "method": "tools/list",
+            "params": {},
+            "result": {
+              "tools": [
+                {
+                  "name": "board",
+                  "description": "board",
+                  "inputSchema": {
+                    "type": "object"
+                  },
+                  "_meta": {
+                    "ui": {
+                      "resourceUri": "ui://board/view.html",
+                      "csp": "self"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "method": "tools/list",
+            "params": {},
+            "result": {
+              "tools": []
+            }
+          }
+        ]
+      },
+      "operations": [
+        {
+          "method": "connect"
+        },
+        {
+          "method": "server_info"
+        },
+        {
+          "method": "server_extensions"
+        },
+        {
+          "method": "tool_meta"
+        },
+        {
+          "method": "close"
+        },
+        {
+          "method": "connect"
+        },
+        {
+          "method": "server_info"
+        },
+        {
+          "method": "server_extensions"
+        },
+        {
+          "method": "tool_meta"
+        },
+        {
+          "method": "close"
+        }
+      ],
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "result": null
+            },
+            {
+              "result": {
+                "name": "first",
+                "version": "1"
+              }
+            },
+            {
+              "result": {
+                "vendor/first": {
+                  "on": true
+                }
+              }
+            },
+            {
+              "result": {
+                "board": {
+                  "ui": {
+                    "resourceUri": "ui://board/view.html",
+                    "csp": "self"
+                  }
+                }
+              }
+            },
+            {
+              "result": null
+            },
+            {
+              "result": null
+            },
+            {
+              "result": {
+                "name": "second",
+                "version": "2"
+              }
+            },
+            {
+              "result": {}
+            },
+            {
+              "result": {}
+            },
+            {
+              "result": null
+            }
+          ],
+          "requests": [
+            {
+              "method": "initialize"
+            },
+            {
+              "method": "tools/list",
+              "params": {}
+            },
+            {
+              "method": "initialize"
+            },
+            {
+              "method": "tools/list",
+              "params": {}
+            }
+          ],
+          "results_json": "[{\"result\":null},{\"result\":{\"name\":\"first\",\"version\":\"1\"}},{\"result\":{\"vendor/first\":{\"on\":true}}},{\"result\":{\"board\":{\"ui\":{\"csp\":\"self\",\"resourceUri\":\"ui://board/view.html\"}}}},{\"result\":null},{\"result\":null},{\"result\":{\"name\":\"second\",\"version\":\"2\"}},{\"result\":{}},{\"result\":{}},{\"result\":null}]",
+          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"tools/list\",\"params\":{}},{\"method\":\"initialize\"},{\"method\":\"tools/list\",\"params\":{}}]"
+        }
+      }
+    }
+  ]
+}

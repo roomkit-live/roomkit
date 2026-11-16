@@ -1,0 +1,186 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "mcp-host/listing-metadata",
+  "title": "Tool metadata follows the one paged filtered listing and is copied deeply",
+  "rules": [
+    "§21.2"
+  ],
+  "notes": "Public MCPToolProvider over a bounded local HTTP peer; operation results and wire requests are both observed. Native stdio and lifecycle assertions are mapped separately in the lot checklist.",
+  "steps": [
+    {
+      "call": "mcp_session",
+      "peer": {
+        "replies": [
+          {
+            "method": "tools/list",
+            "params": {},
+            "result": {
+              "tools": [
+                {
+                  "name": "board",
+                  "description": "board",
+                  "inputSchema": {
+                    "type": "object"
+                  },
+                  "_meta": {
+                    "ui": {
+                      "resourceUri": "ui://board/view.html",
+                      "csp": "self"
+                    }
+                  }
+                },
+                {
+                  "name": "hidden",
+                  "description": "hidden",
+                  "inputSchema": {
+                    "type": "object"
+                  },
+                  "_meta": {
+                    "private": true
+                  }
+                },
+                {
+                  "name": "bad name",
+                  "description": "bad name",
+                  "inputSchema": {
+                    "type": "object"
+                  },
+                  "_meta": {
+                    "invalid": true
+                  }
+                }
+              ],
+              "nextCursor": "next"
+            }
+          },
+          {
+            "method": "tools/list",
+            "params": {
+              "cursor": "next"
+            },
+            "result": {
+              "tools": [
+                {
+                  "name": "plain",
+                  "description": "plain",
+                  "inputSchema": {
+                    "type": "object"
+                  }
+                },
+                {
+                  "name": "later",
+                  "description": "later",
+                  "inputSchema": {
+                    "type": "object"
+                  },
+                  "_meta": {
+                    "vendor": {
+                      "keep": 1
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "operations": [
+        {
+          "method": "connect"
+        },
+        {
+          "method": "tool_names"
+        },
+        {
+          "method": "tool_meta",
+          "mutate": {
+            "path": [
+              "board",
+              "ui",
+              "csp"
+            ],
+            "value": "*"
+          }
+        },
+        {
+          "method": "tool_meta"
+        },
+        {
+          "method": "close"
+        }
+      ],
+      "tool_filter": [
+        "board",
+        "plain",
+        "later",
+        "bad name"
+      ],
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "result": null
+            },
+            {
+              "result": [
+                "board",
+                "plain",
+                "later"
+              ]
+            },
+            {
+              "result": {
+                "board": {
+                  "ui": {
+                    "resourceUri": "ui://board/view.html",
+                    "csp": "*"
+                  }
+                },
+                "later": {
+                  "vendor": {
+                    "keep": 1
+                  }
+                }
+              }
+            },
+            {
+              "result": {
+                "board": {
+                  "ui": {
+                    "resourceUri": "ui://board/view.html",
+                    "csp": "self"
+                  }
+                },
+                "later": {
+                  "vendor": {
+                    "keep": 1
+                  }
+                }
+              }
+            },
+            {
+              "result": null
+            }
+          ],
+          "requests": [
+            {
+              "method": "initialize"
+            },
+            {
+              "method": "tools/list",
+              "params": {}
+            },
+            {
+              "method": "tools/list",
+              "params": {
+                "cursor": "next"
+              }
+            }
+          ],
+          "results_json": "[{\"result\":null},{\"result\":[\"board\",\"plain\",\"later\"]},{\"result\":{\"board\":{\"ui\":{\"csp\":\"*\",\"resourceUri\":\"ui://board/view.html\"}},\"later\":{\"vendor\":{\"keep\":1}}}},{\"result\":{\"board\":{\"ui\":{\"csp\":\"self\",\"resourceUri\":\"ui://board/view.html\"}},\"later\":{\"vendor\":{\"keep\":1}}}},{\"result\":null}]",
+          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"tools/list\",\"params\":{}},{\"method\":\"tools/list\",\"params\":{\"cursor\":\"next\"}}]"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,83 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "mcp-host/request-timeout",
+  "title": "request obeys its explicit deadline and does not poison the next request",
+  "rules": [
+    "§21.2"
+  ],
+  "notes": "Public MCPToolProvider over a bounded local HTTP peer; operation results and wire requests are both observed. Native stdio and lifecycle assertions are mapped separately in the lot checklist.",
+  "steps": [
+    {
+      "call": "mcp_session",
+      "peer": {
+        "replies": [
+          {
+            "method": "vendor/read",
+            "params": {},
+            "hold": true
+          },
+          {
+            "method": "vendor/next",
+            "params": {},
+            "result": {
+              "alive": true
+            }
+          }
+        ]
+      },
+      "operations": [
+        {
+          "method": "connect"
+        },
+        {
+          "method": "request",
+          "timeout_ms": 10,
+          "name": "vendor/read"
+        },
+        {
+          "method": "request",
+          "name": "vendor/next"
+        },
+        {
+          "method": "close"
+        }
+      ],
+      "discover": false,
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "result": null
+            },
+            {
+              "error": "timeout"
+            },
+            {
+              "result": {
+                "alive": true
+              }
+            },
+            {
+              "result": null
+            }
+          ],
+          "requests": [
+            {
+              "method": "initialize"
+            },
+            {
+              "method": "vendor/read",
+              "params": {}
+            },
+            {
+              "method": "vendor/next",
+              "params": {}
+            }
+          ],
+          "results_json": "[{\"result\":null},{\"error\":\"timeout\"},{\"result\":{\"alive\":true}},{\"result\":null}]",
+          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"vendor/read\",\"params\":{}},{\"method\":\"vendor/next\",\"params\":{}}]"
+        }
+      }
+    }
+  ]
+}

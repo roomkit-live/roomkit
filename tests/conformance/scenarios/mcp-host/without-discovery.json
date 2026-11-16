@@ -1,0 +1,75 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "mcp-host/without-discovery",
+  "title": "A resource-only connection never lists tools",
+  "rules": [
+    "§21.2"
+  ],
+  "notes": "Public MCPToolProvider over a bounded local HTTP peer; operation results and wire requests are both observed. Native stdio and lifecycle assertions are mapped separately in the lot checklist.",
+  "steps": [
+    {
+      "call": "mcp_session",
+      "peer": {
+        "replies": []
+      },
+      "operations": [
+        {
+          "method": "connected"
+        },
+        {
+          "method": "connect"
+        },
+        {
+          "method": "connected"
+        },
+        {
+          "method": "tool_names"
+        },
+        {
+          "method": "tool_meta"
+        },
+        {
+          "method": "close"
+        },
+        {
+          "method": "connected"
+        }
+      ],
+      "discover": false,
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "result": false
+            },
+            {
+              "result": null
+            },
+            {
+              "result": true
+            },
+            {
+              "result": []
+            },
+            {
+              "result": {}
+            },
+            {
+              "result": null
+            },
+            {
+              "result": false
+            }
+          ],
+          "requests": [
+            {
+              "method": "initialize"
+            }
+          ],
+          "results_json": "[{\"result\":false},{\"result\":null},{\"result\":true},{\"result\":[]},{\"result\":{}},{\"result\":null},{\"result\":false}]",
+          "requests_json": "[{\"method\":\"initialize\"}]"
+        }
+      }
+    }
+  ]
+}

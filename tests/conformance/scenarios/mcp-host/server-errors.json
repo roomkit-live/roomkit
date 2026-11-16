@@ -1,0 +1,90 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "mcp-host/server-errors",
+  "title": "Raw requests and resource reads preserve a refusal as a server error",
+  "rules": [
+    "§21.2"
+  ],
+  "notes": "Public MCPToolProvider over a bounded local HTTP peer; operation results and wire requests are both observed. Native stdio and lifecycle assertions are mapped separately in the lot checklist.",
+  "steps": [
+    {
+      "call": "mcp_session",
+      "peer": {
+        "replies": [
+          {
+            "method": "vendor/read",
+            "params": {},
+            "error": {
+              "code": -32602,
+              "message": "unknown skill"
+            }
+          },
+          {
+            "method": "resources/read",
+            "params": {
+              "uri": "resource://missing"
+            },
+            "error": {
+              "code": -32602,
+              "message": "unknown resource"
+            }
+          }
+        ]
+      },
+      "operations": [
+        {
+          "method": "connect"
+        },
+        {
+          "method": "request",
+          "name": "vendor/read"
+        },
+        {
+          "method": "read_resource",
+          "uri": "resource://missing"
+        },
+        {
+          "method": "close"
+        }
+      ],
+      "discover": false,
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "result": null
+            },
+            {
+              "error": "mcp_error",
+              "message": "unknown skill"
+            },
+            {
+              "error": "mcp_error",
+              "message": "unknown resource"
+            },
+            {
+              "result": null
+            }
+          ],
+          "requests": [
+            {
+              "method": "initialize"
+            },
+            {
+              "method": "vendor/read",
+              "params": {}
+            },
+            {
+              "method": "resources/read",
+              "params": {
+                "uri": "resource://missing"
+              }
+            }
+          ],
+          "results_json": "[{\"result\":null},{\"error\":\"mcp_error\",\"message\":\"unknown skill\"},{\"error\":\"mcp_error\",\"message\":\"unknown resource\"},{\"result\":null}]",
+          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"vendor/read\",\"params\":{}},{\"method\":\"resources/read\",\"params\":{\"uri\":\"resource://missing\"}}]"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,223 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "mcp-host/raw-results-json",
+  "title": "Raw host requests preserve fields that resemble known SDK results (json)",
+  "rules": [
+    "§21.2"
+  ],
+  "notes": "Public MCPToolProvider over a bounded local HTTP peer; operation results and wire requests are both observed. Native stdio and lifecycle assertions are mapped separately in the lot checklist.",
+  "steps": [
+    {
+      "call": "mcp_session",
+      "peer": {
+        "framing": "json",
+        "replies": [
+          {
+            "method": "vendor/read",
+            "params": {
+              "index": 0
+            },
+            "result": {
+              "contents": [],
+              "vendor": {
+                "revision": 7
+              }
+            }
+          },
+          {
+            "method": "vendor/read",
+            "params": {
+              "index": 1
+            },
+            "result": {
+              "tools": [],
+              "vendor": {
+                "revision": 7
+              }
+            }
+          },
+          {
+            "method": "vendor/read",
+            "params": {
+              "index": 2
+            },
+            "result": {
+              "skills": [],
+              "vendor": {
+                "revision": 7
+              }
+            }
+          },
+          {
+            "method": "vendor/read",
+            "params": {
+              "index": 3
+            },
+            "result": {
+              "content": [],
+              "vendor": {
+                "revision": 7
+              }
+            }
+          },
+          {
+            "method": "vendor/read",
+            "params": {
+              "index": 4
+            },
+            "result": {
+              "_meta": {
+                "inner": null
+              },
+              "optional": null,
+              "inner": {
+                "optional": null
+              },
+              "items": [
+                null
+              ]
+            }
+          }
+        ]
+      },
+      "operations": [
+        {
+          "method": "connect"
+        },
+        {
+          "method": "request",
+          "name": "vendor/read",
+          "params": {
+            "index": 0
+          }
+        },
+        {
+          "method": "request",
+          "name": "vendor/read",
+          "params": {
+            "index": 1
+          }
+        },
+        {
+          "method": "request",
+          "name": "vendor/read",
+          "params": {
+            "index": 2
+          }
+        },
+        {
+          "method": "request",
+          "name": "vendor/read",
+          "params": {
+            "index": 3
+          }
+        },
+        {
+          "method": "request",
+          "name": "vendor/read",
+          "params": {
+            "index": 4
+          }
+        },
+        {
+          "method": "close"
+        }
+      ],
+      "discover": false,
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "result": null
+            },
+            {
+              "result": {
+                "contents": [],
+                "vendor": {
+                  "revision": 7
+                }
+              }
+            },
+            {
+              "result": {
+                "tools": [],
+                "vendor": {
+                  "revision": 7
+                }
+              }
+            },
+            {
+              "result": {
+                "skills": [],
+                "vendor": {
+                  "revision": 7
+                }
+              }
+            },
+            {
+              "result": {
+                "content": [],
+                "vendor": {
+                  "revision": 7
+                }
+              }
+            },
+            {
+              "result": {
+                "_meta": {
+                  "inner": null
+                },
+                "inner": {
+                  "optional": null
+                },
+                "items": [
+                  null
+                ]
+              }
+            },
+            {
+              "result": null
+            }
+          ],
+          "requests": [
+            {
+              "method": "initialize"
+            },
+            {
+              "method": "vendor/read",
+              "params": {
+                "index": 0
+              }
+            },
+            {
+              "method": "vendor/read",
+              "params": {
+                "index": 1
+              }
+            },
+            {
+              "method": "vendor/read",
+              "params": {
+                "index": 2
+              }
+            },
+            {
+              "method": "vendor/read",
+              "params": {
+                "index": 3
+              }
+            },
+            {
+              "method": "vendor/read",
+              "params": {
+                "index": 4
+              }
+            }
+          ],
+          "results_json": "[{\"result\":null},{\"result\":{\"contents\":[],\"vendor\":{\"revision\":7}}},{\"result\":{\"tools\":[],\"vendor\":{\"revision\":7}}},{\"result\":{\"skills\":[],\"vendor\":{\"revision\":7}}},{\"result\":{\"content\":[],\"vendor\":{\"revision\":7}}},{\"result\":{\"_meta\":{\"inner\":null},\"inner\":{\"optional\":null},\"items\":[null]}},{\"result\":null}]",
+          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"vendor/read\",\"params\":{\"index\":0}},{\"method\":\"vendor/read\",\"params\":{\"index\":1}},{\"method\":\"vendor/read\",\"params\":{\"index\":2}},{\"method\":\"vendor/read\",\"params\":{\"index\":3}},{\"method\":\"vendor/read\",\"params\":{\"index\":4}}]"
+        }
+      }
+    }
+  ]
+}

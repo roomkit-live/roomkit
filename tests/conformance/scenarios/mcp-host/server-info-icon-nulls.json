@@ -1,0 +1,98 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "mcp-host/server-info-icon-nulls",
+  "title": "Server information omits null fields at known Icon model boundaries and preserves nested JSON nulls",
+  "rules": [
+    "§21.2"
+  ],
+  "notes": "Independent preliminary transport review witness. Python public provider.server_info uses model_dump(exclude_none=True), including nested Icon models; null values inside arbitrary JSON maps remain. No URI is fetched. The Python SDK treats description and icon theme as arbitrary extra fields; a newer Rust SDK must not reject their values.",
+  "steps": [
+    {
+      "call": "mcp_session",
+      "discover": false,
+      "peer": {
+        "server_info": {
+          "name": "host-test",
+          "version": "1",
+          "icons": [
+            {
+              "src": "https://example.invalid/icon.png",
+              "mimeType": null,
+              "sizes": null,
+              "theme": null,
+              "vendor": null,
+              "nested": {
+                "keep": null
+              }
+            },
+            {
+              "src": "icon.png",
+              "theme": "vendor-theme"
+            }
+          ],
+          "vendor": {
+            "keep": null
+          },
+          "description": {
+            "vendor": true
+          }
+        },
+        "replies": []
+      },
+      "operations": [
+        {
+          "method": "connect"
+        },
+        {
+          "method": "server_info"
+        },
+        {
+          "method": "close"
+        }
+      ],
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "result": null
+            },
+            {
+              "result": {
+                "name": "host-test",
+                "version": "1",
+                "icons": [
+                  {
+                    "src": "https://example.invalid/icon.png",
+                    "nested": {
+                      "keep": null
+                    }
+                  },
+                  {
+                    "src": "icon.png",
+                    "theme": "vendor-theme"
+                  }
+                ],
+                "vendor": {
+                  "keep": null
+                },
+                "description": {
+                  "vendor": true
+                }
+              }
+            },
+            {
+              "result": null
+            }
+          ],
+          "results_json": "[{\"result\":null},{\"result\":{\"description\":{\"vendor\":true},\"icons\":[{\"nested\":{\"keep\":null},\"src\":\"https://example.invalid/icon.png\"},{\"src\":\"icon.png\",\"theme\":\"vendor-theme\"}],\"name\":\"host-test\",\"vendor\":{\"keep\":null},\"version\":\"1\"}},{\"result\":null}]",
+          "requests": [
+            {
+              "method": "initialize"
+            }
+          ],
+          "requests_json": "[{\"method\":\"initialize\"}]"
+        }
+      }
+    }
+  ]
+}

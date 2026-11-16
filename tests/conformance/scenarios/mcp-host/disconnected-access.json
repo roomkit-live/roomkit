@@ -1,0 +1,109 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "mcp-host/disconnected-access",
+  "title": "Every new host accessor refuses outside its connection",
+  "rules": [
+    "§21.2"
+  ],
+  "notes": "Public MCPToolProvider over a bounded local HTTP peer; operation results and wire requests are both observed. Native stdio and lifecycle assertions are mapped separately in the lot checklist.",
+  "steps": [
+    {
+      "call": "mcp_session",
+      "peer": {
+        "replies": []
+      },
+      "operations": [
+        {
+          "method": "tool_meta"
+        },
+        {
+          "method": "server_info"
+        },
+        {
+          "method": "server_extensions"
+        },
+        {
+          "method": "request",
+          "name": "vendor/read"
+        },
+        {
+          "method": "read_resource",
+          "uri": "resource://body"
+        },
+        {
+          "method": "connect"
+        },
+        {
+          "method": "close"
+        },
+        {
+          "method": "tool_meta"
+        },
+        {
+          "method": "server_info"
+        },
+        {
+          "method": "server_extensions"
+        },
+        {
+          "method": "request",
+          "name": "vendor/read"
+        },
+        {
+          "method": "read_resource",
+          "uri": "resource://body"
+        }
+      ],
+      "discover": false,
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "error": "not_connected"
+            },
+            {
+              "error": "not_connected"
+            },
+            {
+              "error": "not_connected"
+            },
+            {
+              "error": "not_connected"
+            },
+            {
+              "error": "not_connected"
+            },
+            {
+              "result": null
+            },
+            {
+              "result": null
+            },
+            {
+              "error": "not_connected"
+            },
+            {
+              "error": "not_connected"
+            },
+            {
+              "error": "not_connected"
+            },
+            {
+              "error": "not_connected"
+            },
+            {
+              "error": "not_connected"
+            }
+          ],
+          "requests": [
+            {
+              "method": "initialize"
+            }
+          ],
+          "results_json": "[{\"error\":\"not_connected\"},{\"error\":\"not_connected\"},{\"error\":\"not_connected\"},{\"error\":\"not_connected\"},{\"error\":\"not_connected\"},{\"result\":null},{\"result\":null},{\"error\":\"not_connected\"},{\"error\":\"not_connected\"},{\"error\":\"not_connected\"},{\"error\":\"not_connected\"},{\"error\":\"not_connected\"}]",
+          "requests_json": "[{\"method\":\"initialize\"}]"
+        }
+      }
+    }
+  ]
+}

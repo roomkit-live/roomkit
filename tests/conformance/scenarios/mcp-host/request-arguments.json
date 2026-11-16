@@ -1,0 +1,261 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "mcp-host/request-arguments",
+  "title": "Host parameters preserve explicit empty objects and caller-owned metadata",
+  "rules": [
+    "§21.2"
+  ],
+  "notes": "Public MCPToolProvider over a bounded local HTTP peer; operation results and wire requests are both observed. Native stdio and lifecycle assertions are mapped separately in the lot checklist.",
+  "steps": [
+    {
+      "call": "mcp_session",
+      "peer": {
+        "replies": [
+          {
+            "method": "vendor/read",
+            "params": {},
+            "result": {
+              "value": 0
+            }
+          },
+          {
+            "method": "vendor/read",
+            "params": {},
+            "result": {
+              "value": 1
+            }
+          },
+          {
+            "method": "vendor/read",
+            "params": {},
+            "result": {
+              "value": 2
+            }
+          },
+          {
+            "method": "vendor/read",
+            "params": {
+              "nested": {
+                "value": 3
+              }
+            },
+            "result": {
+              "value": 3
+            }
+          },
+          {
+            "method": "vendor/read",
+            "params": {
+              "_meta": {
+                "progressToken": "host-token",
+                "io.modelcontextprotocol/protocolVersion": "host-version",
+                "custom": null
+              }
+            },
+            "result": {
+              "value": 4
+            }
+          },
+          {
+            "method": "vendor/read",
+            "params": {
+              "_meta": null
+            },
+            "result": {
+              "value": 5
+            }
+          },
+          {
+            "method": "vendor/read",
+            "params": {
+              "_meta": "opaque"
+            },
+            "result": {
+              "value": 6
+            }
+          },
+          {
+            "method": "vendor/read",
+            "params": {
+              "_meta": {}
+            },
+            "result": {
+              "value": 7
+            }
+          }
+        ]
+      },
+      "operations": [
+        {
+          "method": "connect"
+        },
+        {
+          "method": "request",
+          "name": "vendor/read"
+        },
+        {
+          "method": "request",
+          "name": "vendor/read",
+          "params": null
+        },
+        {
+          "method": "request",
+          "name": "vendor/read",
+          "params": {}
+        },
+        {
+          "method": "request",
+          "name": "vendor/read",
+          "params": {
+            "nested": {
+              "value": 3
+            }
+          }
+        },
+        {
+          "method": "request",
+          "name": "vendor/read",
+          "params": {
+            "_meta": {
+              "progressToken": "host-token",
+              "io.modelcontextprotocol/protocolVersion": "host-version",
+              "custom": null
+            }
+          }
+        },
+        {
+          "method": "request",
+          "name": "vendor/read",
+          "params": {
+            "_meta": null
+          }
+        },
+        {
+          "method": "request",
+          "name": "vendor/read",
+          "params": {
+            "_meta": "opaque"
+          }
+        },
+        {
+          "method": "request",
+          "name": "vendor/read",
+          "params": {
+            "_meta": {}
+          }
+        },
+        {
+          "method": "close"
+        }
+      ],
+      "discover": false,
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "result": null
+            },
+            {
+              "result": {
+                "value": 0
+              }
+            },
+            {
+              "result": {
+                "value": 1
+              }
+            },
+            {
+              "result": {
+                "value": 2
+              }
+            },
+            {
+              "result": {
+                "value": 3
+              }
+            },
+            {
+              "result": {
+                "value": 4
+              }
+            },
+            {
+              "result": {
+                "value": 5
+              }
+            },
+            {
+              "result": {
+                "value": 6
+              }
+            },
+            {
+              "result": {
+                "value": 7
+              }
+            },
+            {
+              "result": null
+            }
+          ],
+          "requests": [
+            {
+              "method": "initialize"
+            },
+            {
+              "method": "vendor/read",
+              "params": {}
+            },
+            {
+              "method": "vendor/read",
+              "params": {}
+            },
+            {
+              "method": "vendor/read",
+              "params": {}
+            },
+            {
+              "method": "vendor/read",
+              "params": {
+                "nested": {
+                  "value": 3
+                }
+              }
+            },
+            {
+              "method": "vendor/read",
+              "params": {
+                "_meta": {
+                  "progressToken": "host-token",
+                  "io.modelcontextprotocol/protocolVersion": "host-version",
+                  "custom": null
+                }
+              }
+            },
+            {
+              "method": "vendor/read",
+              "params": {
+                "_meta": null
+              }
+            },
+            {
+              "method": "vendor/read",
+              "params": {
+                "_meta": "opaque"
+              }
+            },
+            {
+              "method": "vendor/read",
+              "params": {
+                "_meta": {}
+              }
+            }
+          ],
+          "results_json": "[{\"result\":null},{\"result\":{\"value\":0}},{\"result\":{\"value\":1}},{\"result\":{\"value\":2}},{\"result\":{\"value\":3}},{\"result\":{\"value\":4}},{\"result\":{\"value\":5}},{\"result\":{\"value\":6}},{\"result\":{\"value\":7}},{\"result\":null}]",
+          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"vendor/read\",\"params\":{}},{\"method\":\"vendor/read\",\"params\":{}},{\"method\":\"vendor/read\",\"params\":{}},{\"method\":\"vendor/read\",\"params\":{\"nested\":{\"value\":3}}},{\"method\":\"vendor/read\",\"params\":{\"_meta\":{\"custom\":null,\"io.modelcontextprotocol/protocolVersion\":\"host-version\",\"progressToken\":\"host-token\"}}},{\"method\":\"vendor/read\",\"params\":{\"_meta\":null}},{\"method\":\"vendor/read\",\"params\":{\"_meta\":\"opaque\"}},{\"method\":\"vendor/read\",\"params\":{\"_meta\":{}}}]"
+        }
+      }
+    }
+  ]
+}

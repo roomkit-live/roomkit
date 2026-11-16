@@ -1,0 +1,100 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "mcp-host/resource-validation",
+  "title": "Invalid resource input and malformed contents fail without poisoning the next request",
+  "rules": [
+    "§21.2"
+  ],
+  "notes": "Public MCPToolProvider over a bounded local HTTP peer; operation results and wire requests are both observed. Native stdio and lifecycle assertions are mapped separately in the lot checklist.",
+  "steps": [
+    {
+      "call": "mcp_session",
+      "peer": {
+        "replies": [
+          {
+            "method": "resources/read",
+            "params": {
+              "uri": "resource://body"
+            },
+            "result": {
+              "contents": [
+                {
+                  "uri": "not-a-uri",
+                  "text": "invalid"
+                }
+              ]
+            }
+          },
+          {
+            "method": "vendor/next",
+            "params": {},
+            "result": {
+              "alive": true
+            }
+          }
+        ]
+      },
+      "operations": [
+        {
+          "method": "connect"
+        },
+        {
+          "method": "read_resource",
+          "uri": "relative"
+        },
+        {
+          "method": "read_resource",
+          "uri": "resource://body"
+        },
+        {
+          "method": "request",
+          "name": "vendor/next"
+        },
+        {
+          "method": "close"
+        }
+      ],
+      "discover": false,
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "result": null
+            },
+            {
+              "error": "validation_error"
+            },
+            {
+              "error": "validation_error"
+            },
+            {
+              "result": {
+                "alive": true
+              }
+            },
+            {
+              "result": null
+            }
+          ],
+          "requests": [
+            {
+              "method": "initialize"
+            },
+            {
+              "method": "resources/read",
+              "params": {
+                "uri": "resource://body"
+              }
+            },
+            {
+              "method": "vendor/next",
+              "params": {}
+            }
+          ],
+          "results_json": "[{\"result\":null},{\"error\":\"validation_error\"},{\"error\":\"validation_error\"},{\"result\":{\"alive\":true}},{\"result\":null}]",
+          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"resources/read\",\"params\":{\"uri\":\"resource://body\"}},{\"method\":\"vendor/next\",\"params\":{}}]"
+        }
+      }
+    }
+  ]
+}

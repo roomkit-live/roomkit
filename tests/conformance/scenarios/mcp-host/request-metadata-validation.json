@@ -1,0 +1,163 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "mcp-host/request-metadata-validation",
+  "title": "Raw host results still validate the known metadata field",
+  "rules": [
+    "§21.2"
+  ],
+  "notes": "Public MCPToolProvider model boundaries; exact observations retain the distinction between arbitrary JSON extensions and typed metadata.",
+  "steps": [
+    {
+      "call": "mcp_session",
+      "discover": false,
+      "peer": {
+        "replies": [
+          {
+            "method": "vendor/read",
+            "result": {
+              "_meta": false,
+              "ok": true
+            }
+          },
+          {
+            "method": "vendor/read",
+            "result": {
+              "_meta": "opaque",
+              "ok": true
+            }
+          },
+          {
+            "method": "vendor/read",
+            "result": {
+              "_meta": [],
+              "ok": true
+            }
+          },
+          {
+            "method": "vendor/read",
+            "result": {
+              "_meta": 1,
+              "ok": true
+            }
+          },
+          {
+            "method": "vendor/read",
+            "result": {
+              "_meta": null,
+              "ok": true
+            }
+          },
+          {
+            "method": "vendor/read",
+            "result": {
+              "_meta": {
+                "nested": null
+              },
+              "ok": true
+            }
+          }
+        ]
+      },
+      "operations": [
+        {
+          "method": "connect"
+        },
+        {
+          "method": "request",
+          "name": "vendor/read"
+        },
+        {
+          "method": "request",
+          "name": "vendor/read"
+        },
+        {
+          "method": "request",
+          "name": "vendor/read"
+        },
+        {
+          "method": "request",
+          "name": "vendor/read"
+        },
+        {
+          "method": "request",
+          "name": "vendor/read"
+        },
+        {
+          "method": "request",
+          "name": "vendor/read"
+        },
+        {
+          "method": "close"
+        }
+      ],
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "result": null
+            },
+            {
+              "error": "validation_error"
+            },
+            {
+              "error": "validation_error"
+            },
+            {
+              "error": "validation_error"
+            },
+            {
+              "error": "validation_error"
+            },
+            {
+              "result": {
+                "ok": true
+              }
+            },
+            {
+              "result": {
+                "_meta": {
+                  "nested": null
+                },
+                "ok": true
+              }
+            },
+            {
+              "result": null
+            }
+          ],
+          "requests": [
+            {
+              "method": "initialize"
+            },
+            {
+              "method": "vendor/read",
+              "params": {}
+            },
+            {
+              "method": "vendor/read",
+              "params": {}
+            },
+            {
+              "method": "vendor/read",
+              "params": {}
+            },
+            {
+              "method": "vendor/read",
+              "params": {}
+            },
+            {
+              "method": "vendor/read",
+              "params": {}
+            },
+            {
+              "method": "vendor/read",
+              "params": {}
+            }
+          ],
+          "results_json": "[{\"result\":null},{\"error\":\"validation_error\"},{\"error\":\"validation_error\"},{\"error\":\"validation_error\"},{\"error\":\"validation_error\"},{\"result\":{\"ok\":true}},{\"result\":{\"_meta\":{\"nested\":null},\"ok\":true}},{\"result\":null}]",
+          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"vendor/read\",\"params\":{}},{\"method\":\"vendor/read\",\"params\":{}},{\"method\":\"vendor/read\",\"params\":{}},{\"method\":\"vendor/read\",\"params\":{}},{\"method\":\"vendor/read\",\"params\":{}},{\"method\":\"vendor/read\",\"params\":{}}]"
+        }
+      }
+    }
+  ]
+}

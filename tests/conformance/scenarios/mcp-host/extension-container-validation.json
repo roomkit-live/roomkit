@@ -1,0 +1,128 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "mcp-host/extension-container-validation",
+  "title": "A non-object extension declaration admits no extension and does not reject connection",
+  "rules": [
+    "§21.2"
+  ],
+  "notes": "Public MCPToolProvider model boundaries; exact observations retain the distinction between arbitrary JSON extensions and typed metadata.",
+  "steps": [
+    {
+      "call": "mcp_session",
+      "discover": false,
+      "peer": {
+        "replies": [],
+        "initializations": [
+          {
+            "extensions": false
+          },
+          {
+            "extensions": "opaque"
+          },
+          {
+            "extensions": []
+          },
+          {
+            "extensions": null
+          }
+        ]
+      },
+      "operations": [
+        {
+          "method": "connect"
+        },
+        {
+          "method": "server_extensions"
+        },
+        {
+          "method": "close"
+        },
+        {
+          "method": "connect"
+        },
+        {
+          "method": "server_extensions"
+        },
+        {
+          "method": "close"
+        },
+        {
+          "method": "connect"
+        },
+        {
+          "method": "server_extensions"
+        },
+        {
+          "method": "close"
+        },
+        {
+          "method": "connect"
+        },
+        {
+          "method": "server_extensions"
+        },
+        {
+          "method": "close"
+        }
+      ],
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "result": null
+            },
+            {
+              "result": {}
+            },
+            {
+              "result": null
+            },
+            {
+              "result": null
+            },
+            {
+              "result": {}
+            },
+            {
+              "result": null
+            },
+            {
+              "result": null
+            },
+            {
+              "result": {}
+            },
+            {
+              "result": null
+            },
+            {
+              "result": null
+            },
+            {
+              "result": {}
+            },
+            {
+              "result": null
+            }
+          ],
+          "requests": [
+            {
+              "method": "initialize"
+            },
+            {
+              "method": "initialize"
+            },
+            {
+              "method": "initialize"
+            },
+            {
+              "method": "initialize"
+            }
+          ],
+          "results_json": "[{\"result\":null},{\"result\":{}},{\"result\":null},{\"result\":null},{\"result\":{}},{\"result\":null},{\"result\":null},{\"result\":{}},{\"result\":null},{\"result\":null},{\"result\":{}},{\"result\":null}]",
+          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"initialize\"},{\"method\":\"initialize\"},{\"method\":\"initialize\"}]"
+        }
+      }
+    }
+  ]
+}

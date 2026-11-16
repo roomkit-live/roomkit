@@ -1,0 +1,183 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "mcp-host/resource-results-sse",
+  "title": "Resource reads retain ordered contents and extension fields and reach the peer again (sse)",
+  "rules": [
+    "§21.2"
+  ],
+  "notes": "Public MCPToolProvider over a bounded local HTTP peer; operation results and wire requests are both observed. Native stdio and lifecycle assertions are mapped separately in the lot checklist.",
+  "steps": [
+    {
+      "call": "mcp_session",
+      "peer": {
+        "framing": "sse",
+        "replies": [
+          {
+            "method": "resources/read",
+            "params": {
+              "uri": "resource://body"
+            },
+            "result": {
+              "contents": [
+                {
+                  "uri": "resource://body",
+                  "mimeType": "text/plain",
+                  "text": "Résumé",
+                  "vendor": 7,
+                  "optional": null
+                },
+                {
+                  "uri": "resource://blob",
+                  "mimeType": "application/octet-stream",
+                  "blob": "AAEC",
+                  "vendor": 8
+                }
+              ],
+              "_meta": {
+                "server": "test"
+              },
+              "vendor": {
+                "revision": 8
+              },
+              "optional": null,
+              "ttlMs": 60000
+            }
+          },
+          {
+            "method": "resources/read",
+            "params": {
+              "uri": "resource://body"
+            },
+            "result": {
+              "contents": [
+                {
+                  "uri": "resource://body",
+                  "mimeType": "text/plain",
+                  "text": "Résumé",
+                  "vendor": 7,
+                  "optional": null
+                },
+                {
+                  "uri": "resource://blob",
+                  "mimeType": "application/octet-stream",
+                  "blob": "AAEC",
+                  "vendor": 8
+                }
+              ],
+              "_meta": {
+                "server": "test"
+              },
+              "vendor": {
+                "revision": 8
+              },
+              "optional": null,
+              "ttlMs": 60000
+            }
+          }
+        ]
+      },
+      "operations": [
+        {
+          "method": "connect"
+        },
+        {
+          "method": "read_resource",
+          "uri": "resource://body"
+        },
+        {
+          "method": "read_resource",
+          "uri": "resource://body"
+        },
+        {
+          "method": "close"
+        }
+      ],
+      "discover": false,
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "result": null
+            },
+            {
+              "result": {
+                "contents": [
+                  {
+                    "uri": "resource://body",
+                    "mimeType": "text/plain",
+                    "text": "Résumé",
+                    "vendor": 7,
+                    "optional": null
+                  },
+                  {
+                    "uri": "resource://blob",
+                    "mimeType": "application/octet-stream",
+                    "blob": "AAEC",
+                    "vendor": 8
+                  }
+                ],
+                "_meta": {
+                  "server": "test"
+                },
+                "vendor": {
+                  "revision": 8
+                },
+                "optional": null,
+                "ttlMs": 60000
+              }
+            },
+            {
+              "result": {
+                "contents": [
+                  {
+                    "uri": "resource://body",
+                    "mimeType": "text/plain",
+                    "text": "Résumé",
+                    "vendor": 7,
+                    "optional": null
+                  },
+                  {
+                    "uri": "resource://blob",
+                    "mimeType": "application/octet-stream",
+                    "blob": "AAEC",
+                    "vendor": 8
+                  }
+                ],
+                "_meta": {
+                  "server": "test"
+                },
+                "vendor": {
+                  "revision": 8
+                },
+                "optional": null,
+                "ttlMs": 60000
+              }
+            },
+            {
+              "result": null
+            }
+          ],
+          "requests": [
+            {
+              "method": "initialize"
+            },
+            {
+              "method": "resources/read",
+              "params": {
+                "uri": "resource://body"
+              }
+            },
+            {
+              "method": "resources/read",
+              "params": {
+                "uri": "resource://body"
+              }
+            }
+          ],
+          "results_json": "[{\"result\":null},{\"result\":{\"_meta\":{\"server\":\"test\"},\"contents\":[{\"mimeType\":\"text/plain\",\"optional\":null,\"text\":\"Résumé\",\"uri\":\"resource://body\",\"vendor\":7},{\"blob\":\"AAEC\",\"mimeType\":\"application/octet-stream\",\"uri\":\"resource://blob\",\"vendor\":8}],\"optional\":null,\"ttlMs\":60000,\"vendor\":{\"revision\":8}}},{\"result\":{\"_meta\":{\"server\":\"test\"},\"contents\":[{\"mimeType\":\"text/plain\",\"optional\":null,\"text\":\"Résumé\",\"uri\":\"resource://body\",\"vendor\":7},{\"blob\":\"AAEC\",\"mimeType\":\"application/octet-stream\",\"uri\":\"resource://blob\",\"vendor\":8}],\"optional\":null,\"ttlMs\":60000,\"vendor\":{\"revision\":8}}},{\"result\":null}]",
+          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"resources/read\",\"params\":{\"uri\":\"resource://body\"}},{\"method\":\"resources/read\",\"params\":{\"uri\":\"resource://body\"}}]"
+        }
+      }
+    }
+  ]
+}

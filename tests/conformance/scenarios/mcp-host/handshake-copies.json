@@ -1,0 +1,126 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "mcp-host/handshake-copies",
+  "title": "Host information and extension snapshots preserve the handshake and are owned copies",
+  "rules": [
+    "§21.2"
+  ],
+  "notes": "Public MCPToolProvider over a bounded local HTTP peer; operation results and wire requests are both observed. Native stdio and lifecycle assertions are mapped separately in the lot checklist.",
+  "steps": [
+    {
+      "call": "mcp_session",
+      "peer": {
+        "server_info": {
+          "name": "host-test",
+          "version": "1",
+          "vendor": {
+            "revision": 7
+          },
+          "optional": null
+        },
+        "extensions": {
+          "io.modelcontextprotocol/skills": {
+            "directoryRead": true,
+            "nested": {
+              "unchanged": true
+            }
+          }
+        },
+        "replies": []
+      },
+      "operations": [
+        {
+          "method": "connect"
+        },
+        {
+          "method": "server_info",
+          "mutate": {
+            "path": [
+              "vendor",
+              "revision"
+            ],
+            "value": 99
+          }
+        },
+        {
+          "method": "server_info"
+        },
+        {
+          "method": "server_extensions",
+          "mutate": {
+            "path": [
+              "io.modelcontextprotocol/skills",
+              "nested",
+              "unchanged"
+            ],
+            "value": false
+          }
+        },
+        {
+          "method": "server_extensions"
+        },
+        {
+          "method": "close"
+        }
+      ],
+      "discover": false,
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "result": null
+            },
+            {
+              "result": {
+                "name": "host-test",
+                "version": "1",
+                "vendor": {
+                  "revision": 99
+                }
+              }
+            },
+            {
+              "result": {
+                "name": "host-test",
+                "version": "1",
+                "vendor": {
+                  "revision": 7
+                }
+              }
+            },
+            {
+              "result": {
+                "io.modelcontextprotocol/skills": {
+                  "directoryRead": true,
+                  "nested": {
+                    "unchanged": false
+                  }
+                }
+              }
+            },
+            {
+              "result": {
+                "io.modelcontextprotocol/skills": {
+                  "directoryRead": true,
+                  "nested": {
+                    "unchanged": true
+                  }
+                }
+              }
+            },
+            {
+              "result": null
+            }
+          ],
+          "requests": [
+            {
+              "method": "initialize"
+            }
+          ],
+          "results_json": "[{\"result\":null},{\"result\":{\"name\":\"host-test\",\"vendor\":{\"revision\":99},\"version\":\"1\"}},{\"result\":{\"name\":\"host-test\",\"vendor\":{\"revision\":7},\"version\":\"1\"}},{\"result\":{\"io.modelcontextprotocol/skills\":{\"directoryRead\":true,\"nested\":{\"unchanged\":false}}}},{\"result\":{\"io.modelcontextprotocol/skills\":{\"directoryRead\":true,\"nested\":{\"unchanged\":true}}}},{\"result\":null}]",
+          "requests_json": "[{\"method\":\"initialize\"}]"
+        }
+      }
+    }
+  ]
+}

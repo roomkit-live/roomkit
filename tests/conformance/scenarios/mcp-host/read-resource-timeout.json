@@ -1,0 +1,87 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "mcp-host/read-resource-timeout",
+  "title": "read_resource obeys its explicit deadline and does not poison the next request",
+  "rules": [
+    "§21.2"
+  ],
+  "notes": "Public MCPToolProvider over a bounded local HTTP peer; operation results and wire requests are both observed. Native stdio and lifecycle assertions are mapped separately in the lot checklist.",
+  "steps": [
+    {
+      "call": "mcp_session",
+      "peer": {
+        "replies": [
+          {
+            "method": "resources/read",
+            "params": {
+              "uri": "resource://body"
+            },
+            "hold": true
+          },
+          {
+            "method": "vendor/next",
+            "params": {},
+            "result": {
+              "alive": true
+            }
+          }
+        ]
+      },
+      "operations": [
+        {
+          "method": "connect"
+        },
+        {
+          "method": "read_resource",
+          "timeout_ms": 10,
+          "uri": "resource://body"
+        },
+        {
+          "method": "request",
+          "name": "vendor/next"
+        },
+        {
+          "method": "close"
+        }
+      ],
+      "discover": false,
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "result": null
+            },
+            {
+              "error": "timeout"
+            },
+            {
+              "result": {
+                "alive": true
+              }
+            },
+            {
+              "result": null
+            }
+          ],
+          "requests": [
+            {
+              "method": "initialize"
+            },
+            {
+              "method": "resources/read",
+              "params": {
+                "uri": "resource://body"
+              }
+            },
+            {
+              "method": "vendor/next",
+              "params": {}
+            }
+          ],
+          "results_json": "[{\"result\":null},{\"error\":\"timeout\"},{\"result\":{\"alive\":true}},{\"result\":null}]",
+          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"resources/read\",\"params\":{\"uri\":\"resource://body\"}},{\"method\":\"vendor/next\",\"params\":{}}]"
+        }
+      }
+    }
+  ]
+}
