@@ -15,6 +15,7 @@ from roomkit import (
     VoiceChannel,
 )
 from roomkit.channels import SMSChannel
+from roomkit.channels._mark_copies import compile_mark_patterns
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import Access, EventType
 from roomkit.models.event import RoomEvent, TextContent
@@ -694,7 +695,10 @@ class TestTextSessionStarted:
         """A greeting's delivery to another intelligence channel waits on no gate
         of its own: the message is processed, not refused process_timeout (RMK-503).
         The budget only matters on failure, where the gate waits for ever: short,
-        a pause of the worker spent it (RMK-1714)."""
+        a pause of the worker spent it (RMK-1714). The runtime mark patterns are
+        compiled first: a worker's first agent compiles them, over 5 s on a
+        loaded machine, and the budget measures the message, not that."""
+        await compile_mark_patterns()
         kit = RoomKit(process_timeout=5)
         sms = SMSChannel("sms-1", provider=MockSMSProvider())
         agent = Agent(

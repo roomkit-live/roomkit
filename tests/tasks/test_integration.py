@@ -13,6 +13,7 @@ from roomkit import (
     RoomKit,
     RoomNotFoundError,
 )
+from roomkit.channels._mark_copies import compile_mark_patterns
 from roomkit.channels.agent import Agent
 from roomkit.channels.ai import AIChannel
 from roomkit.models.enums import HookExecution, HookTrigger, TaskStatus
@@ -116,6 +117,10 @@ class TestDelegateIntegration:
         """A delegation cancelled by the caller's timeout (asyncio.wait_for) must
         still fire ON_TASK_COMPLETED (failed) — otherwise a consumer that closes a
         step on completion (the orchestration timeline) leaves it stuck 'running'."""
+        # Compiled first: the first agent of a worker compiles the runtime mark
+        # patterns, over 5 s on a loaded machine, past the bound on the worker's
+        # start below (RMK-1714).
+        await compile_mark_patterns()
         kit = RoomKit()
         kit.register_channel(_make_agent("w1", "done"))
         await kit.create_room(room_id="r1")
