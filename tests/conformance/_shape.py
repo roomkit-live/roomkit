@@ -808,7 +808,7 @@ def _channel_settings(channel: Mapping[str, Any], path: str, found: list[str]) -
             "result": {"exit_code", "stdout", "stderr", "success", "metadata"},
             "raises": {"kind", "message"},
         }.items():
-            if key in executor:
+            if isinstance(executor, Mapping) and key in executor:
                 _members(executor[key], allowed, f"{path}.script_executor.{key}", found)
     if "human_input" in channel:
         human = channel["human_input"]

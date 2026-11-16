@@ -41,10 +41,13 @@ async def test_entry_is_recorded_before_the_fixture_checks_the_path() -> None:
         ({"reslut": {}}, "reslut"),
         ({"result": {"exit_code": 0, "sucess": False}}, "sucess"),
         ({"raises": {"kind": "Error", "mesage": "failure"}}, "mesage"),
+        (None, "script_executor: not an object"),
+        ({"result": None}, "script_executor.result: not an object"),
+        ({"raises": None}, "script_executor.raises: not an object"),
     ],
 )
 def test_executor_controls_do_not_silently_ignore_unknown_members(
-    executor: dict[str, Any], member: str
+    executor: Any, member: str
 ) -> None:
     scenario = {
         "setup": {"channels": [{"id": "agent", "type": "ai", "script_executor": executor}]}
