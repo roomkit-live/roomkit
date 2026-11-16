@@ -1,0 +1,51 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "mcp-host/tool-dictionaries-without-discovery",
+  "title": "Tool dictionaries without discovery",
+  "rules": [
+    "§21.2"
+  ],
+  "notes": "Python: tests/test_mcp_tool_provider.py::test_get_tools_as_dicts and the dictionary slice of test_not_connected_guard. Exact six-field snapshots and request counts complement those source assertions.",
+  "steps": [
+    {
+      "call": "mcp_session",
+      "peer": {
+        "replies": []
+      },
+      "operations": [
+        {
+          "method": "connect"
+        },
+        {
+          "method": "get_tools_as_dicts"
+        },
+        {
+          "method": "close"
+        }
+      ],
+      "discover": false,
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "result": null
+            },
+            {
+              "result": []
+            },
+            {
+              "result": null
+            }
+          ],
+          "requests": [
+            {
+              "method": "initialize"
+            }
+          ],
+          "results_json": "[{\"result\":null},{\"result\":[]},{\"result\":null}]",
+          "requests_json": "[{\"method\":\"initialize\"}]"
+        }
+      }
+    }
+  ]
+}

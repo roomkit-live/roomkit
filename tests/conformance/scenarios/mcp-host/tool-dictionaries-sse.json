@@ -1,0 +1,197 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "mcp-host/tool-dictionaries-sse",
+  "title": "Tool dictionaries sse",
+  "rules": [
+    "§21.2"
+  ],
+  "notes": "Python: tests/test_mcp_tool_provider.py::test_get_tools_as_dicts and the dictionary slice of test_not_connected_guard. Exact six-field snapshots and request counts complement those source assertions.",
+  "steps": [
+    {
+      "call": "mcp_session",
+      "peer": {
+        "framing": "sse",
+        "replies": [
+          {
+            "method": "tools/list",
+            "params": {},
+            "result": {
+              "tools": [
+                {
+                  "name": "search",
+                  "description": "Find records",
+                  "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                      "q": {
+                        "type": "string",
+                        "default": null
+                      }
+                    }
+                  },
+                  "_meta": {
+                    "fastmcp": {
+                      "tags": [
+                        "crm",
+                        "lookup"
+                      ]
+                    },
+                    "ui": {
+                      "resourceUri": "ui://search"
+                    }
+                  },
+                  "annotations": {
+                    "readOnlyHint": true
+                  },
+                  "outputSchema": {
+                    "type": "object"
+                  }
+                },
+                {
+                  "name": "hidden",
+                  "inputSchema": {}
+                }
+              ],
+              "nextCursor": "next"
+            }
+          },
+          {
+            "method": "tools/list",
+            "params": {
+              "cursor": "next"
+            },
+            "result": {
+              "tools": [
+                {
+                  "name": "plain",
+                  "inputSchema": {}
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "operations": [
+        {
+          "method": "get_tools_as_dicts"
+        },
+        {
+          "method": "connect"
+        },
+        {
+          "method": "get_tools_as_dicts"
+        },
+        {
+          "method": "get_tools_as_dicts"
+        },
+        {
+          "method": "close"
+        },
+        {
+          "method": "get_tools_as_dicts"
+        }
+      ],
+      "tool_filter": [
+        "search",
+        "plain"
+      ],
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "error": "not_connected"
+            },
+            {
+              "result": null
+            },
+            {
+              "result": [
+                {
+                  "name": "search",
+                  "description": "Find records",
+                  "parameters": {
+                    "type": "object",
+                    "properties": {
+                      "q": {
+                        "type": "string",
+                        "default": null
+                      }
+                    }
+                  },
+                  "tags": [
+                    "crm",
+                    "lookup"
+                  ],
+                  "defer_loading": false,
+                  "changes_state": false
+                },
+                {
+                  "name": "plain",
+                  "description": "",
+                  "parameters": {},
+                  "tags": [],
+                  "defer_loading": false,
+                  "changes_state": false
+                }
+              ]
+            },
+            {
+              "result": [
+                {
+                  "name": "search",
+                  "description": "Find records",
+                  "parameters": {
+                    "type": "object",
+                    "properties": {
+                      "q": {
+                        "type": "string",
+                        "default": null
+                      }
+                    }
+                  },
+                  "tags": [
+                    "crm",
+                    "lookup"
+                  ],
+                  "defer_loading": false,
+                  "changes_state": false
+                },
+                {
+                  "name": "plain",
+                  "description": "",
+                  "parameters": {},
+                  "tags": [],
+                  "defer_loading": false,
+                  "changes_state": false
+                }
+              ]
+            },
+            {
+              "result": null
+            },
+            {
+              "error": "not_connected"
+            }
+          ],
+          "requests": [
+            {
+              "method": "initialize"
+            },
+            {
+              "method": "tools/list",
+              "params": {}
+            },
+            {
+              "method": "tools/list",
+              "params": {
+                "cursor": "next"
+              }
+            }
+          ],
+          "results_json": "[{\"error\":\"not_connected\"},{\"result\":null},{\"result\":[{\"changes_state\":false,\"defer_loading\":false,\"description\":\"Find records\",\"name\":\"search\",\"parameters\":{\"properties\":{\"q\":{\"default\":null,\"type\":\"string\"}},\"type\":\"object\"},\"tags\":[\"crm\",\"lookup\"]},{\"changes_state\":false,\"defer_loading\":false,\"description\":\"\",\"name\":\"plain\",\"parameters\":{},\"tags\":[]}]},{\"result\":[{\"changes_state\":false,\"defer_loading\":false,\"description\":\"Find records\",\"name\":\"search\",\"parameters\":{\"properties\":{\"q\":{\"default\":null,\"type\":\"string\"}},\"type\":\"object\"},\"tags\":[\"crm\",\"lookup\"]},{\"changes_state\":false,\"defer_loading\":false,\"description\":\"\",\"name\":\"plain\",\"parameters\":{},\"tags\":[]}]},{\"result\":null},{\"error\":\"not_connected\"}]",
+          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"tools/list\",\"params\":{}},{\"method\":\"tools/list\",\"params\":{\"cursor\":\"next\"}}]"
+        }
+      }
+    }
+  ]
+}
