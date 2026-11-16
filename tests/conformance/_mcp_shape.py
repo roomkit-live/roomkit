@@ -128,8 +128,7 @@ def mcp_problems(spec: Mapping[str, Any], path: str) -> list[str]:
 
 
 def _initialization(value: Mapping[str, Any], path: str, found: list[str]) -> None:
-    for field in ("server_info", "extensions"):
-        if field in value and not isinstance(value[field], Mapping):
-            found.append(f"{path}.{field}: expected an object")
+    if "server_info" in value and not isinstance(value["server_info"], Mapping):
+        found.append(f"{path}.server_info: expected an object")
     if "instructions" in value and not isinstance(value["instructions"], str):
         found.append(f"{path}.instructions: expected a string")

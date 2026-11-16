@@ -106,3 +106,29 @@ async def test_host_result_oracles_reject_extra_fields_and_missing_nulls(mutatio
             reply["result"].pop("optional", None)
             reply["result"]["contents"][0].pop("optional", None)
     assert await Harness(scenario).run()
+
+
+@pytest.mark.parametrize(
+    "operation",
+    [
+        {"method": "connect"},
+        {"method": "server_info", "mutate": {"path": ["absent", "child"], "value": True}},
+        {"method": "server_info", "mutate": {"path": ["name", "child"], "value": True}},
+    ],
+)
+async def test_invalid_observations_are_independent_fixture_failures(
+    operation: dict[str, Any],
+) -> None:
+    scenario = {
+        "steps": [
+            {
+                "call": "mcp_session",
+                "discover": False,
+                "peer": {"replies": []},
+                "operations": [{"method": "connect"}, operation],
+                "expect": {"error": {"name": "<unreadable>"}},
+            }
+        ]
+    }
+    problems = await Harness(scenario).run()
+    assert any("the runner cannot read the call" in problem for problem in problems)

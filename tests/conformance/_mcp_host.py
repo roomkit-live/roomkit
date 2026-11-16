@@ -56,15 +56,23 @@ async def _observed(provider: MCPToolProvider, operation: Mapping[str, Any]) -> 
         return {"error": "validation_error"}
     except RuntimeError as error:
         if str(error) != "MCPToolProvider is not connected. Use 'async with' to connect first.":
-            raise
+            raise UnreadableError(f"Unexpected MCP host error: {error}") from error
         return {"error": "not_connected"}
+    except Exception as error:
+        raise UnreadableError(f"Unexpected MCP host error: {error}") from error
     if "mutate" in operation:
-        mutation = operation["mutate"]
-        target = value
+        _mutate(value, operation["mutate"])
+    return {"result": copy.deepcopy(value)}
+
+
+def _mutate(value: Any, mutation: Mapping[str, Any]) -> None:
+    target = value
+    try:
         for key in mutation["path"][:-1]:
             target = target[key]
         target[mutation["path"][-1]] = mutation["value"]
-    return {"result": copy.deepcopy(value)}
+    except (KeyError, TypeError) as error:
+        raise UnreadableError(f"Invalid MCP snapshot mutation: {error}") from error
 
 
 async def session(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> dict[str, Any]:
