@@ -319,16 +319,17 @@ def phrase_pattern(phrase: str, *, bracketed: bool = False) -> str:
     spacing, its own punctuation, markup (bold, struck, code, hyphens,
     slashes), combining marks and invisible characters between them (none
     included), its opening bracket, square or fullwidth, optional unless
-    *bracketed*, its last word not part of a longer one, and its own closing
-    punctuation or a closing bracket of any kind taken with the copy.
+    *bracketed*, its last word not part of a longer one, and a closing
+    bracket of any kind (:func:`closing_bracket`) or its own closing
+    punctuation taken with the copy.
 
     One quantified class between two words, never two in a row: a long run of
     spaces after a partial copy is then scanned once, not once per split."""
     marks = phrase_marks(phrase)
     gap = f"{phrase_space(marks)}*"
     body = gap.join(word_pattern(word, phrase=True) for word in phrase_words(phrase))
-    closing = closing_brackets()
-    end = rf"(?:{gap}[{closing}]|[{marks}]+)?" if marks else rf"(?:{gap}[{closing}])?"
+    closing = closing_bracket()
+    end = rf"(?:{closing}|[{marks}]+)?" if marks else rf"(?:{closing})?"
     bracket = rf"[\[\uff3b]{gap}"
     opening = bracket if bracketed else f"(?:{bracket})?"
     return rf"{opening}{body}(?![^\W_]){end}"
@@ -377,8 +378,21 @@ def bracket_gap() -> str:
     sees, or another opening bracket (``[)Instruction``). Its two classes
     share no character, nor with a word's letters: a run of them is then
     scanned once, and a run of brackets starts no scan of its own."""
+    return f"{_gap_char()}*"
+
+
+def closing_bracket() -> str:
+    """A closing bracket of any kind (general category Pe) that a copy takes
+    with it, with nothing but what :func:`bracket_gap` holds before it, the
+    first one: ``.)`` after ``(Instruction from the application``."""
+    return f"(?:{_gap_char()}*?[{closing_brackets()}])"
+
+
+@functools.cache
+def _gap_char() -> str:
+    """One character of :func:`bracket_gap`."""
     other = f"[^\\w{opening_brackets()}{_letter_forms()}]"
-    return rf"(?:{other}|[_{_INVISIBLE_LETTERS}])*"
+    return rf"(?:{other}|[_{_INVISIBLE_LETTERS}])"
 
 
 def behind_any_bracket(pattern: str) -> str:

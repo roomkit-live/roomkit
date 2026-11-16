@@ -26,6 +26,7 @@ from roomkit._lookalike import (
     INVISIBLE,
     behind_any_bracket,
     bracket_gap,
+    closing_bracket,
     hidden_mark_offsets,
     phrase_pattern,
     phrase_words,
@@ -82,7 +83,7 @@ _SHORT_MARKS = (
     SAID_BEFORE_MARK,
 )
 """The runtime's marks that count only with their square or fullwidth bracket,
-the people note apart (:func:`_people_note_pattern`): their words
+the people note apart (:func:`_people_note_words`): their words
 alone are prose (``the room context``, ``a handoff``, ``people taking
 part``). The handoff's record and the context handed on are written outside
 a model's input, into the timeline and a memory, and kept there by their
@@ -99,11 +100,12 @@ def _opening(mark: str) -> str | None:
 
 def _people_note_words() -> str:
     """The note on who takes part, with anything but a letter, a digit or an
-    opening bracket between its words: behind any opening bracket it reads
-    as the runtime's, and this long a phrase is seldom prose (RFC §6.4)."""
+    opening bracket between its words, and its closing bracket: behind any
+    opening bracket it reads as the runtime's, and this long a phrase is
+    seldom prose (RFC §6.4)."""
     words = phrase_words(PEOPLE_NOTE_OPENING)
     body = bracket_gap().join(word_pattern(word, phrase=True) for word in words)
-    return rf"{body}(?![^\W_])"
+    return rf"{body}(?![^\W_]){closing_bracket()}?"
 
 
 @functools.cache
