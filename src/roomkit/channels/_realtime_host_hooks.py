@@ -13,7 +13,11 @@ import logging
 from typing import TYPE_CHECKING, Literal
 
 from roomkit._text import quoted
-from roomkit.channels._mark_copies import compile_mark_patterns, without_mark_copies
+from roomkit.channels._mark_copies import (
+    compile_mark_patterns,
+    handback_text,
+    without_mark_copies,
+)
 from roomkit.channels._room_hooks import RoomHooks
 from roomkit.channels._runtime_record import delivered_record, written_by_runtime
 from roomkit.channels._speaker import channel_label, turn_labels
@@ -75,11 +79,11 @@ async def injected_text(text: str) -> str:
     runtime keeping its own marks. The runtime's own text the delivery path
     injects (a background result handed back, :func:`delivering
     <roomkit.channels._runtime_record.delivering>`) was cleaned as it was
-    written, and keeps its marks."""
-    if delivered_record() is not None:
-        return text
+    written, and keeps its header: a copy after it, a hook's rewrite
+    included, is replaced (:func:`~roomkit.channels._mark_copies.handback_text`)."""
+    runtime = delivered_record() is not None
     await compile_mark_patterns()
-    return without_mark_copies(text)
+    return handback_text(text) if runtime else without_mark_copies(text)
 
 
 def serves(held: VoiceSession | None, session: VoiceSession) -> bool:

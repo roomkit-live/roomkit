@@ -30,10 +30,11 @@ from roomkit.channels._mark_copies import (
     compile_mark_patterns,
     content_without_mark_copies,
     cut_split_copies,
+    handback_text,
     without_mark_copies,
     without_split_blocks,
 )
-from roomkit.channels._runtime_record import written_by_runtime
+from roomkit.channels._runtime_record import HANDBACK, RUNTIME_RECORD, written_by_runtime
 from roomkit.channels._server_instructions import with_server_instructions
 from roomkit.channels._skill_constants import (
     SERVED_SKILLS_PREAMBLE as _SERVED_SKILLS_PREAMBLE,
@@ -1158,6 +1159,9 @@ class AIContextMixin(_AIChannelContract):
         if not content and isinstance(event.content, MediaContent):
             # A media the host does not describe reads as its label (RFC §6.6).
             content = media_label(event.content)
+        if event.metadata.get(RUNTIME_RECORD) == HANDBACK and isinstance(content, str):
+            # A result handed back: its header kept, a copy after it replaced.
+            return handback_text(content)
         if written_by_runtime(event.metadata):
             # The runtime's own record (a handoff's): its marks are its own.
             return content
@@ -1278,7 +1282,7 @@ def _instruction_input(text: str, *, runtime: bool = False) -> str | None:
     it (RFC §10.1.1)."""
     if not text:
         return None
-    return mark_instruction(text if runtime else without_mark_copies(text))
+    return mark_instruction(handback_text(text) if runtime else without_mark_copies(text))
 
 
 def _replayed_instruction(text: str, runtime: bool) -> str | None:

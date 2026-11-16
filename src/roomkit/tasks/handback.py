@@ -14,12 +14,8 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from roomkit._text import bounded_text, one_line
-from roomkit.channels._mark_copies import compile_mark_patterns, without_mark_copies
-from roomkit.channels._runtime_record import (
-    DELEGATION_HANDBACK_OPENING,
-    HANDBACK,
-    HANDBACK_OPENING,
-)
+from roomkit.channels._mark_copies import compile_mark_patterns, handback_text
+from roomkit.channels._runtime_record import HANDBACK
 from roomkit.channels.base import hosts_realtime_model
 from roomkit.models.enums import ChannelCategory
 from roomkit.tools.fence import fence
@@ -150,10 +146,7 @@ async def _written(text: str) -> str:
     reader keeps as it is (RFC §6.4). The patterns are compiled off the
     event loop first."""
     await compile_mark_patterns()
-    opening = next(
-        (o for o in (HANDBACK_OPENING, DELEGATION_HANDBACK_OPENING) if text.startswith(o)), ""
-    )
-    return opening + without_mark_copies(text[len(opening) :])
+    return handback_text(text)
 
 
 def _log_not_delivered(notify: str, room_id: str, outcome: DeliveryOutcome) -> None:

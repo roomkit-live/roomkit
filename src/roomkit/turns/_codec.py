@@ -61,6 +61,11 @@ def _instruction_read(item: InstructionReadMarker) -> dict[str, Any]:
     return {"text": item.text, "runtime_record": item.runtime_record}
 
 
+def _record(value: Any) -> str | None:
+    """A runtime record read off the wire: a text, else none."""
+    return value if isinstance(value, str) else None
+
+
 def _encode_start(item: ToolCallStartMarker, start: int | None) -> dict[str, Any]:
     fields = {
         "tool_name": item.tool_name,
@@ -102,7 +107,7 @@ _ITEM_KINDS = (
         InstructionReadMarker,
         lambda item, start: _instruction_read(item),
         lambda data: InstructionReadMarker(
-            text=data["text"], runtime_record=data.get("runtime_record")
+            text=data["text"], runtime_record=_record(data.get("runtime_record"))
         ),
     ),
     _ItemKind("tool_start", ToolCallStartMarker, _encode_start, _decode_start),

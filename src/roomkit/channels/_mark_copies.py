@@ -176,6 +176,17 @@ def _compile() -> None:
         header_copies()
 
 
+def handback_text(text: str) -> str:
+    """*text*, a background result the runtime hands back, as a reader keeps
+    it: the opening of its header kept, the runtime's mark, and each copy of
+    a mark after it replaced, what a model or a hook wrote into it included
+    (RFC §6.4). The runtime writes it so, and every reader reads it so."""
+    opening = next(
+        (o for o in (HANDBACK_OPENING, DELEGATION_HANDBACK_OPENING) if text.startswith(o)), ""
+    )
+    return opening + without_mark_copies(text[len(opening) :])
+
+
 def content_without_mark_copies(content: Any) -> Any:
     """*content* (a text, or a list of parts) with each copy of a runtime mark in
     its text replaced, one that runs over adjacent text parts included."""
