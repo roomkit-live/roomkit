@@ -97,7 +97,9 @@
           "tools": {
             "run_skill_script": {
               "$absent": true
-            }
+            },
+            "activate_skill": 0,
+            "read_skill_reference": 1
           },
           "system_prompt": {
             "$contains": "Script execution is not available"
