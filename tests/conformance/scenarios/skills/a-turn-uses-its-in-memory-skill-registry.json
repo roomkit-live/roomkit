@@ -1,0 +1,149 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "skills/a-turn-uses-its-in-memory-skill-registry",
+  "title": "A per-turn registry activates a skill built in memory and reads its reference through the registered path",
+  "rules": [
+    "§24.3",
+    "§24.4",
+    "§24.6"
+  ],
+  "notes": "Python: tests/test_skill_registry_copy.py::test_a_skill_built_in_memory_is_registered_and_found. The fixture calls public SkillRegistry.add without creating SKILL.md. The name with capitals and a space is valid for in-memory add, so directory discovery cannot substitute for it. Both successful tool results are observed by the next real model generation.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "skills": [],
+        "config_provider": {
+          "room-1": {
+            "skills": [
+              {
+                "name": "Turn Handbook",
+                "description": "A handbook from a store",
+                "instructions": "Follow the handbook stored in memory.",
+                "references": {
+                  "notes.md": "Reference from the registered skill path."
+                },
+                "in_memory": true
+              }
+            ]
+          }
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "activate",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "Turn Handbook"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "read",
+                  "name": "read_skill_reference",
+                  "arguments": {
+                    "skill_name": "Turn Handbook",
+                    "filename": "notes.md"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Use the handbook."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "system_prompt": {
+            "$contains": "Turn Handbook"
+          },
+          "tools": {
+            "activate_skill": {
+              "$present": true
+            },
+            "read_skill_reference": {
+              "$present": true
+            }
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "activate",
+              "content": {
+                "$contains": "Follow the handbook stored in memory."
+              },
+              "is_error": false
+            }
+          ]
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "activate",
+              "content": {
+                "$contains": "Follow the handbook stored in memory."
+              },
+              "is_error": false
+            },
+            {
+              "tool_call_id": "read",
+              "content": {
+                "$contains": "Reference from the registered skill path."
+              },
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
