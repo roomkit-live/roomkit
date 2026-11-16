@@ -19,6 +19,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import httpx
+import mcp.types as mt
 import pytest
 
 from roomkit.core.exceptions import UnservedToolCallError
@@ -333,6 +334,38 @@ def test_a_tag_a_server_wrote_badly_costs_it_no_tool(meta: Any, tags: list[str])
     definition = _definition(listed, "server")
     assert definition is not None
     assert definition.tags == tags
+
+
+async def test_a_name_listed_twice_keeps_its_first_output_schema() -> None:
+    """The first definition of a name listed twice stands, its output schema
+    with it: a result is checked against the schema the kept tool was listed
+    with (RFC §21.2, RMK-1001)."""
+
+    def count(required: str) -> SimpleNamespace:
+        schema = {"type": "object", "properties": {required: {"type": "integer"}}}
+        return SimpleNamespace(
+            name="count",
+            description="",
+            inputSchema=_OBJECT,
+            meta=None,
+            outputSchema={**schema, "required": [required]},
+        )
+
+    class _Session:
+        async def list_tools(self, params: Any = None) -> Any:
+            return SimpleNamespace(tools=[count("n"), count("m")], nextCursor=None)
+
+        async def send_request(self, request: Any, result_type: Any) -> Any:
+            return mt.CallToolResult(content=[], structuredContent={"n": 1}, isError=False)
+
+    provider = MCPToolProvider("http://tools.invalid/mcp")
+    provider._connected = True
+    provider._session = _Session()
+    await provider._discover_tools(provider._session)
+
+    result = await provider.call_tool_result("count", {})
+
+    assert result.structuredContent == {"n": 1}
 
 
 _LONG = " ".join(["lookup"] * 700)

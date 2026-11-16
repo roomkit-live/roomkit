@@ -543,11 +543,11 @@ class MCPToolProvider:
         """
         listed = await _list_tools(session, self._target)
         self._catalogue(listed)
-        self._output_schemas = {
-            tool.name: schema
-            for tool in listed
-            if isinstance(schema := getattr(tool, "outputSchema", None), dict)
-        }
+        self._output_schemas = {}
+        for tool in listed:
+            # A name listed twice keeps its first definition, schema included.
+            if isinstance(schema := getattr(tool, "outputSchema", None), dict):
+                self._output_schemas.setdefault(tool.name, schema)
 
     def _catalogue(self, listed: Sequence[Any]) -> None:
         """Keep the listed tools the filter admits and a provider accepts,
@@ -819,8 +819,8 @@ class MCPToolProvider:
         (``deny=["mcp__b__*"]``) cannot hold a call to it. A labelled
         provider serves a bare name (``delete_records``) unless the turn's
         tool policy names its server to keep it out, through a deny pattern
-        covering its alias (``mcp__<label>__delete_records``) or an allow list
-        of aliases none of which covers it: it then raises
+        covering its alias (``mcp__<label>__delete_records``) or allow
+        patterns naming aliases none of which covers it: it then raises
         ``UnservedToolCallError``, so a bare name runs on the first server of
         the chain the policy admits, and on none when it keeps each out.
 

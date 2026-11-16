@@ -652,12 +652,12 @@ A policy judges an alias under both its names, the alias and the tool's
 aliases; to admit one server only, allow its aliases and its tools' names.
 A call under a bare name (`delete_records`) names no server: a labelled
 provider serves it unless the policy names its server to keep it out, through
-a deny pattern covering its alias (`mcp__archive__delete_records`) or an allow
-list of aliases none of which covers it. The call runs on the first server of
-the chain the policy does not keep out, and on none when it keeps each out; a
-policy that names no server (`allow=["delete_records"]`) leaves it on the
-first server that has it (RFC §21.2). Declared under aliases alone, a bare name
-is refused as not declared:
+a deny pattern covering its alias (`mcp__archive__delete_records`) or allow
+patterns naming aliases none of which covers it. The call runs on the first
+server of the chain the policy does not keep out, and on none when it keeps
+each out; a policy that names no server (`allow=["delete_records"]`) leaves it
+on the first server that has it (RFC §21.2). Declared under aliases alone, a
+bare name is refused as not declared:
 
 ```python
 async with (

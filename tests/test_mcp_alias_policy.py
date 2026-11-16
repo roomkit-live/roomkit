@@ -29,7 +29,14 @@ from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.tools.compose import ToolHandler, compose_tool_handlers
 from roomkit.tools.external import PolicyExternalToolHandler
 from roomkit.tools.mcp import MCPToolProvider
-from roomkit.tools.policy import ToolPolicy, judged_names, policy_refusal, served_tool_name
+from roomkit.tools.policy import (
+    RoleOverride,
+    ToolPolicy,
+    alias_admitted,
+    judged_names,
+    policy_refusal,
+    served_tool_name,
+)
 from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
 from tests.conference.test_conference_realtime import ROOM, realtime_kit, until
 from tests.conftest import make_event
@@ -71,6 +78,32 @@ def test_an_alias_is_judged_under_both_names() -> None:
     assert served_tool_name("delete_records") == "delete_records"
     assert judged_names(ALIAS) == (ALIAS, "delete_records")
     assert judged_names("search_records") == ("search_records",)
+
+
+@pytest.mark.parametrize(
+    ("policy", "kept_out"),
+    [
+        (ToolPolicy(deny=["mcp__b__*"]), {"b"}),
+        (ToolPolicy(allow=["mcp__a__*", "lookup"]), {"b"}),
+        (ToolPolicy(allow=["lookup"]), set()),
+        (
+            ToolPolicy(
+                role_overrides={
+                    "member": RoleOverride(mode="restrict", allow=["mcp__a__*", "lookup"])
+                }
+            ).resolve("member"),
+            {"b"},
+        ),
+    ],
+    ids=["deny", "allow-aliases", "allow-bare", "role-restrict"],
+)
+def test_a_policy_keeps_out_only_the_servers_it_names(
+    policy: ToolPolicy, kept_out: set[str]
+) -> None:
+    """Which labelled servers a policy keeps a bare name off (RMK-957): one a
+    deny pattern or an allow list of aliases names, a role's restricting
+    list included; an allow list of bare names alone names none."""
+    assert {s for s in ("a", "b") if not alias_admitted(policy, f"mcp__{s}__lookup")} == kept_out
 
 
 async def _on_session(
