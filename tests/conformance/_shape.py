@@ -836,7 +836,9 @@ def _skills(skills: list[Mapping[str, Any]], path: str, found: list[str]) -> Non
 def _memory(memory: Mapping[str, Any], path: str, found: list[str]) -> None:
     _members(memory, MEMORY, path, found)
     for index, message in enumerate(memory.get("messages", [])):
-        _members(message, MEMORY_MESSAGE, f"{path}.messages[{index}]", found)
+        _members(message, MEMORY_MESSAGE | {"metadata"}, f"{path}.messages[{index}]", found)
+        if "metadata" in message and not isinstance(message["metadata"], Mapping):
+            found.append(f"{path}.messages[{index}].metadata: expected an object")
     for index, answer in enumerate(memory.get("compacts", [])):
         if answer is None:
             continue

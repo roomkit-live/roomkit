@@ -33,11 +33,12 @@ history and the usage it was handed."""
 
 def _built(message: Mapping[str, Any]) -> AIMessage:
     """A message the scenario says the memory built: its text, or its text
-    parts in order."""
+    parts in order, with its metadata."""
+    metadata = message.get("metadata", {})
     if "parts" in message:
         parts = [AITextPart(text=text) for text in message["parts"]]
-        return AIMessage(role=message["role"], content=parts)
-    return AIMessage(role=message["role"], content=message["text"])
+        return AIMessage(role=message["role"], content=parts, metadata=metadata)
+    return AIMessage(role=message["role"], content=message["text"], metadata=metadata)
 
 
 class ScriptedMemory(MemoryProvider):
