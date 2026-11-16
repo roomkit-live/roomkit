@@ -82,6 +82,13 @@
           }
         ]
       }
+    ],
+    "hooks": [
+      {
+        "name": "audit",
+        "trigger": "on_tool_call",
+        "execution": "async"
+      }
     ]
   },
   "steps": [
@@ -131,6 +138,31 @@
               "is_error": true
             }
           ]
+        }
+      ]
+    },
+    "hooks": {
+      "audit": [
+        {
+          "trigger": "on_tool_call",
+          "room_id": "room-1",
+          "tool_call": {
+            "name": "run_skill_script",
+            "tool_call_id": "s1",
+            "arguments": {
+              "skill_name": "local",
+              "script_name": "build.sh",
+              "arguments": {
+                "target": "release"
+              }
+            },
+            "result": {
+              "$contains": "Tool 'run_skill_script' is not permitted"
+            },
+            "is_error": true,
+            "refused": true,
+            "cancelled": false
+          }
         }
       ]
     }
