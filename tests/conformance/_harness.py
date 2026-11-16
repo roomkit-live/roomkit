@@ -79,6 +79,7 @@ from tests.conformance._inputs import INPUT_CALLS, request_record
 from tests.conformance._kit_executor import KIT_EXECUTOR_CALLS
 from tests.conformance._locks import LOCK_EVENTS, lock_options, set_lock_releases
 from tests.conformance._mcp import MCPServers
+from tests.conformance._mcp_host import MCP_HOST_CALLS
 from tests.conformance._media import media_options
 from tests.conformance._members import MEMBER_CALLS, store_identities
 from tests.conformance._normalize import Observed, is_lifecycle_record
@@ -720,6 +721,7 @@ class Harness:
         resolved = await self.resolve(dict(spec), scope)
         calls = CALLS | STORE_CALLS | TASK_CALLS | MEMBER_CALLS | INPUT_CALLS | STRATEGY_CALLS
         calls |= VERIFICATION_CALLS | ROUTING_CALLS | HANDOFF_CALLS | DISCUSSION_CALLS
+        calls |= MCP_HOST_CALLS
         call = (calls | DELEGATE_TOOL_CALLS | EXECUTOR_CALLS | KIT_EXECUTOR_CALLS)[spec["call"]]
         try:
             kit = self.kit_of(spec)

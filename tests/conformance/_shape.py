@@ -31,6 +31,8 @@ from tests.conformance._executors import EXECUTOR_ARGUMENTS
 from tests.conformance._handoff import HANDOFF_ARGUMENTS
 from tests.conformance._inputs import INPUT_ARGUMENTS
 from tests.conformance._kit_executor import KIT_EXECUTOR_ARGUMENTS
+from tests.conformance._mcp_shape import MCP_HOST_ARGUMENTS
+from tests.conformance._mcp_shape import mcp_problems as host_mcp_problems
 from tests.conformance._media import ATTACHED_MEDIA, MEDIA_RESOLVER
 from tests.conformance._members import MEMBER_ARGUMENTS
 from tests.conformance._routing import (
@@ -538,6 +540,7 @@ CALLS |= HANDOFF_ARGUMENTS
 CALLS |= DELEGATE_TOOL_ARGUMENTS
 CALLS |= DISCUSSION_ARGUMENTS
 CALLS |= EXECUTOR_ARGUMENTS | KIT_EXECUTOR_ARGUMENTS
+CALLS |= MCP_HOST_ARGUMENTS
 STEPS = {"await": {"await", "expect"}, "concurrent": {"concurrent"}, "wait_for": {"wait_for"}}
 STEPS |= {"open": {"open"}, "idle": {"idle"}, "wait_for_lock": {"wait_for_lock", "waiters"}}
 STEPS |= {"lock_releases": {"lock_releases"}}
@@ -1011,6 +1014,8 @@ def _call(call: Mapping[str, Any], extra: set[str], path: str, found: list[str])
         found.append(f"{path}: no call {name!r}")
         return
     _members(call, CALLS[name] | extra | {"call", "organization_id"}, path, found)
+    if name == "mcp_session":
+        found.extend(host_mcp_problems(call, path))
     if "expect" in call:
         _outcome(call["expect"], f"{path}.expect", found)
     if name == "create_room":
