@@ -62,7 +62,9 @@ kit = RoomKit(orchestration=Supervisor(
 
 ### Loop
 
-Producer/reviewer cycle. The reviewer has an `approve_output` tool to break the loop.
+Producer/reviewer cycle. Each reviewer gives its verdict by calling the
+`submit_review` tool its review's task declares (`approved`, `feedback`); a
+review without an approving verdict approves nothing, whatever its words.
 A message the loop's tasks cannot carry (a photo, a text with a photo, an empty
 text) is answered by the producer alone, which sees the media: the tasks carry
 text only.

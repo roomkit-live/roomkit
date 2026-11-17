@@ -7,6 +7,7 @@ loop execution, reviewer strategies, async delivery, edge cases.
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -18,10 +19,13 @@ from roomkit.models.context import RoomContext
 from roomkit.models.enums import ChannelType
 from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.models.room import Room
+from roomkit.orchestration._worker_run import WorkerOutcome
 from roomkit.orchestration.state import get_conversation_state
+from roomkit.orchestration.status_bus import StatusLevel
 from roomkit.orchestration.strategies.loop import (
     Loop,
     _execute_loop,
+    _review_ended,
     _review_parallel,
     _review_sequential,
     _run_loop,
@@ -30,6 +34,7 @@ from roomkit.orchestration.strategies.loop import (
 from roomkit.orchestration.strategies.supervisor import WorkerStrategy
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.tasks.models import DelegatedTaskResult
+from tests.loop_review import APPROVAL
 
 # -- Helpers ------------------------------------------------------------------
 
@@ -274,13 +279,13 @@ class TestWrappedOnEvent:
 
 class TestRunLoop:
     async def test_run_loop_returns_output(self) -> None:
-        """Full loop: producer → reviewer (APPROVED) → returns output."""
+        """Full loop: producer → reviewer (approves) → returns output."""
         kit = _make_mock_kit(Room(id="r1"))
         producer = _make_agent("writer")
         reviewer = _make_agent("editor")
 
         producer_task = _delegated_task_with_output("Great content")
-        reviewer_task = _delegated_task_with_output("APPROVED")
+        reviewer_task = _delegated_task_with_output(APPROVAL)
         kit.delegate = AsyncMock(side_effect=[producer_task, reviewer_task])
 
         event = _make_event(body="Write something")
@@ -305,7 +310,7 @@ class TestRunLoop:
         kit.delegate = AsyncMock(
             side_effect=[
                 _delegated_task_with_output("Great content"),
-                _delegated_task_with_output("APPROVED"),
+                _delegated_task_with_output(APPROVAL),
             ]
         )
         event = _make_event(body="Write something").model_copy(
@@ -358,7 +363,7 @@ class TestExecuteLoop:
             call_count += 1
             if call_count == 1:
                 return _delegated_task_with_output("My content")
-            return _delegated_task_with_output("APPROVED")
+            return _delegated_task_with_output(APPROVAL)
 
         kit.delegate = AsyncMock(side_effect=mock_delegate)
 
@@ -383,7 +388,7 @@ class TestExecuteLoop:
             _delegated_task_with_output("Draft 1"),  # producer iter 1
             _delegated_task_with_output("Needs work"),  # reviewer iter 1 (reject)
             _delegated_task_with_output("Draft 2"),  # producer iter 2
-            _delegated_task_with_output("APPROVED"),  # reviewer iter 2 (approve)
+            _delegated_task_with_output(APPROVAL),  # reviewer iter 2 (approve)
         ]
         kit.delegate = AsyncMock(side_effect=call_seq)
 
@@ -437,7 +442,7 @@ class TestExecuteLoop:
         kit.delegate = AsyncMock(
             side_effect=[
                 _delegated_task_with_output("Content"),
-                _delegated_task_with_output("APPROVED"),
+                _delegated_task_with_output(APPROVAL),
             ]
         )
 
@@ -464,7 +469,7 @@ class TestRunReviewers:
     async def test_sequential_single_reviewer(self) -> None:
         kit = _make_mock_kit(Room(id="r1"))
         reviewer = _make_agent("editor", role="Editor")
-        kit.delegate = AsyncMock(return_value=_delegated_task_with_output("APPROVED"))
+        kit.delegate = AsyncMock(return_value=_delegated_task_with_output(APPROVAL))
 
         results = await _run_reviewers(kit, "r1", [reviewer], None, "content")
 
@@ -479,7 +484,7 @@ class TestRunReviewers:
         kit.delegate = AsyncMock(
             side_effect=[
                 _delegated_task_with_output("Fix SQL injection"),
-                _delegated_task_with_output("APPROVED"),
+                _delegated_task_with_output(APPROVAL),
             ]
         )
 
@@ -495,8 +500,8 @@ class TestRunReviewers:
         r2 = _make_agent("r2", role="Style")
         kit.delegate = AsyncMock(
             side_effect=[
-                _delegated_task_with_output("APPROVED"),
-                _delegated_task_with_output("APPROVED"),
+                _delegated_task_with_output(APPROVAL),
+                _delegated_task_with_output(APPROVAL),
             ]
         )
 
@@ -518,7 +523,7 @@ class TestReviewSequential:
         kit.delegate = AsyncMock(
             side_effect=[
                 _delegated_task_with_output("Fix this issue"),
-                _delegated_task_with_output("APPROVED"),
+                _delegated_task_with_output(APPROVAL),
             ]
         )
 
@@ -541,7 +546,7 @@ class TestReviewSequential:
     async def test_reviewer_uses_role_for_name(self) -> None:
         kit = _make_mock_kit(Room(id="r1"))
         reviewer = _make_agent("r1", role="QA Lead")
-        kit.delegate = AsyncMock(return_value=_delegated_task_with_output("APPROVED"))
+        kit.delegate = AsyncMock(return_value=_delegated_task_with_output(APPROVAL))
 
         results = await _review_sequential(kit, "r1", [reviewer], "Review")
         assert results[0]["reviewer"] == "QA Lead"
@@ -550,7 +555,7 @@ class TestReviewSequential:
         kit = _make_mock_kit(Room(id="r1"))
         reviewer = _make_agent("r1")
         reviewer.role = None
-        kit.delegate = AsyncMock(return_value=_delegated_task_with_output("APPROVED"))
+        kit.delegate = AsyncMock(return_value=_delegated_task_with_output(APPROVAL))
 
         results = await _review_sequential(kit, "r1", [reviewer], "Review")
         assert results[0]["reviewer"] == "r1"
@@ -567,7 +572,7 @@ class TestReviewParallel:
 
         kit.delegate = AsyncMock(
             side_effect=[
-                _delegated_task_with_output("APPROVED"),
+                _delegated_task_with_output(APPROVAL),
                 _delegated_task_with_output("Fix something"),
             ]
         )
@@ -612,6 +617,58 @@ class TestReviewParallel:
 # -- Tests: Feedback combination in _execute_loop ----------------------------
 
 
+class TestReviewVerdict:
+    """A review approves only through an approving ``submit_review`` verdict:
+    a refusal, words holding APPROVED, or no verdict at all approve nothing,
+    on the review the loop reads as on its terminal entry (RMK-597, RFC
+    §19.7.4)."""
+
+    @pytest.mark.parametrize(
+        ("output", "approved", "detail"),
+        [
+            ("Not approved: the intro is missing.", False, "Not approved: the intro is missing."),
+            ("DISAPPROVED", False, "DISAPPROVED"),
+            ("I cannot mark this APPROVED yet.", False, "I cannot mark this APPROVED yet."),
+            ("APPROVED", False, "APPROVED"),
+            (
+                json.dumps({"approved": False, "feedback": "Add the intro."}),
+                False,
+                "Add the intro.",
+            ),
+            (json.dumps({"approved": "true", "feedback": ""}), False, "Not approved."),
+            ("", False, "Not approved."),
+            (APPROVAL, True, "Approved."),
+        ],
+        ids=[
+            "not-approved",
+            "disapproved",
+            "mentions-approved",
+            "words-without-a-verdict",
+            "verdict-refuses",
+            "verdict-not-a-boolean",
+            "nothing",
+            "verdict-approves",
+        ],
+    )
+    async def test_only_an_approving_verdict_approves(
+        self, output: str, approved: bool, detail: str
+    ) -> None:
+        room = Room(id="r1")
+        kit = _make_mock_kit(room)
+        reviewed = _delegated_task_with_output(output)
+        kit.delegate = AsyncMock(return_value=reviewed)
+
+        reviews = await _review_sequential(kit, "r1", [_make_agent("editor")], "Review it.")
+        ended = _review_ended(WorkerOutcome(output, True, reviewed))
+
+        assert [r["approved"] for r in reviews] == [approved]
+        assert (ended.level, ended.detail, ended.metadata) == (
+            StatusLevel.COMPLETED if approved else StatusLevel.INFO,
+            detail,
+            {"approved": approved},
+        )
+
+
 class TestFeedbackCombination:
     async def test_multiple_reviewer_feedback_combined(self) -> None:
         kit = _make_mock_kit(Room(id="r1"))
@@ -625,8 +682,8 @@ class TestFeedbackCombination:
             _delegated_task_with_output("SQL injection"),  # r1 rejects
             _delegated_task_with_output("Bad naming"),  # r2 rejects
             _delegated_task_with_output("Draft 2"),  # producer revised
-            _delegated_task_with_output("APPROVED"),  # r1 approves
-            _delegated_task_with_output("APPROVED"),  # r2 approves
+            _delegated_task_with_output(APPROVAL),  # r1 approves
+            _delegated_task_with_output(APPROVAL),  # r2 approves
         ]
         kit.delegate = AsyncMock(side_effect=call_seq)
 

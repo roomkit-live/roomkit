@@ -30,6 +30,7 @@ from roomkit.orchestration.strategies.supervisor import Supervisor
 from roomkit.providers.ai.base import AIContext, AIResponse, AITool, AIToolCall, ProviderError
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
+from tests.loop_review import review_answers
 from tests.test_framework import SimpleChannel
 
 LOOKUP = AITool(name="lookup", description="look up", parameters={"type": "object"})
@@ -70,7 +71,7 @@ async def _sync_loop(
     kit = RoomKit()
     kit.register_channel(SimpleChannel("sms"))
     kit.register_channel(producer)
-    reviewer = Agent("reviewer", provider=MockAIProvider(responses=reviews))
+    reviewer = Agent("reviewer", provider=review_answers(*reviews))
     await kit.create_room(
         room_id="r",
         orchestration=Loop(agent=producer, reviewer=reviewer, max_iterations=max_iterations),
@@ -196,7 +197,7 @@ async def _async_text(producer: Agent) -> str:
     kit = RoomKit()
     kit.register_channel(SimpleChannel("sms"))
     kit.register_channel(producer)
-    reviewer = Agent("reviewer", provider=MockAIProvider(responses=["APPROVED"]))
+    reviewer = Agent("reviewer", provider=review_answers("APPROVED"))
     kit.register_channel(reviewer)
     await kit.create_room(room_id="r")
     await kit.attach_channel("r", "sms")

@@ -26,6 +26,7 @@ from roomkit.providers.ai.base import AIContext, AIResponse
 from roomkit.providers.ai.mock import MockAIProvider
 from tests.bounds import CUT, expire, opened_with_cut
 from tests.conference.test_conference_realtime import until
+from tests.loop_review import review_answers
 from tests.test_framework import SimpleChannel
 
 PROCESS_TIMEOUT = 0.2
@@ -79,7 +80,7 @@ async def _kit_with(
         await kit.create_room(room_id="r")
         await kit.attach_channel("r", "producer", category=ChannelCategory.INTELLIGENCE)
     else:
-        reviewer = Agent("reviewer", provider=MockAIProvider(responses=["APPROVED"]))
+        reviewer = Agent("reviewer", provider=review_answers("APPROVED"))
         await kit.create_room(
             room_id="r", orchestration=Loop(agent=producer, reviewer=reviewer, max_iterations=2)
         )

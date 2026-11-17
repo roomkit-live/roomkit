@@ -15,6 +15,7 @@ Run with:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import sys
 from pathlib import Path
@@ -39,6 +40,15 @@ from roomkit.providers.anthropic import AnthropicAIProvider, AnthropicConfig
 setup_logging("loop_cli")
 logging.getLogger("roomkit").setLevel(logging.WARNING)
 logging.getLogger("roomkit.orchestration.strategies.loop").setLevel(logging.INFO)
+
+
+def _approves(body: str) -> bool:
+    """Whether a review's result, its submit_review verdict as JSON, approves."""
+    try:
+        verdict = json.loads(body)
+    except ValueError:
+        return False
+    return isinstance(verdict, dict) and verdict.get("approved") is True
 
 
 async def main() -> None:
@@ -71,7 +81,7 @@ async def main() -> None:
         role="Quality reviewer",
         system_prompt=(
             "You review content for overall quality and clarity. "
-            "If the content is clear and well-structured, say APPROVED. "
+            "Approve the content if it is clear and well-structured. "
             "Otherwise, provide specific feedback."
         ),
         memory=SlidingWindowMemory(max_events=50),
@@ -83,7 +93,7 @@ async def main() -> None:
         role="Accuracy reviewer",
         system_prompt=(
             "You review content for factual accuracy. "
-            "If all facts are correct, say APPROVED. "
+            "Approve the content if all facts are correct. "
             "Otherwise, point out inaccuracies."
         ),
         memory=SlidingWindowMemory(max_events=50),
@@ -95,7 +105,7 @@ async def main() -> None:
         role="Style reviewer",
         system_prompt=(
             "You review content for writing style and tone. "
-            "If the style is appropriate and consistent, say APPROVED. "
+            "Approve the content if its style is appropriate and consistent. "
             "Otherwise, suggest improvements."
         ),
         memory=SlidingWindowMemory(max_events=50),
@@ -128,7 +138,8 @@ async def main() -> None:
         duration = event.metadata.get("duration_ms", 0)
         body = getattr(event.content, "body", "")
         if agent in reviewer_ids:
-            approved = "APPROVED" in body.upper() if body else False
+            # A review's result is its submit_review verdict, as JSON.
+            approved = _approves(body)
             color = "\033[32m" if approved else "\033[33m"
             status = "approved" if approved else "feedback"
             print(f"{color}[{status}] {agent} ({duration:.0f}ms)\033[0m")

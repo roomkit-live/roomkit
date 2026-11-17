@@ -17,6 +17,7 @@ from roomkit.channels.agent import Agent
 from roomkit.orchestration.status_bus import StatusLevel
 from roomkit.orchestration.strategies.loop import _execute_loop
 from roomkit.providers.ai.mock import MockAIProvider
+from tests.loop_review import review_answers
 
 
 class _Raising(MockAIProvider):
@@ -27,7 +28,7 @@ class _Raising(MockAIProvider):
 @pytest.mark.parametrize(
     ("reviewer", "level"),
     [
-        (MockAIProvider(responses=["APPROVED"]), StatusLevel.COMPLETED),
+        (review_answers("APPROVED"), StatusLevel.COMPLETED),
         (MockAIProvider(responses=["Needs work."]), StatusLevel.INFO),
         (_Raising(), StatusLevel.FAILED),
     ],

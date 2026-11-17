@@ -28,6 +28,7 @@ from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.tasks.handback import MAX_RESULT_CHARS
 from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
 from tests.conference.test_conference_realtime import until
+from tests.loop_review import review_answers
 
 
 def _terminal(kit: RoomKit) -> list[tuple[Any, ...]]:
@@ -42,7 +43,7 @@ def _terminal(kit: RoomKit) -> list[tuple[Any, ...]]:
 
 def _agents(draft: str = "Draft 1.") -> tuple[Agent, Agent]:
     producer = Agent("producer", provider=MockAIProvider(responses=[draft]), tool_search=False)
-    reviewer = Agent("reviewer", provider=MockAIProvider(responses=["APPROVED"]))
+    reviewer = Agent("reviewer", provider=review_answers("APPROVED"))
     return producer, reviewer
 
 

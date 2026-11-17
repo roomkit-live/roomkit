@@ -4,8 +4,10 @@ Demonstrates a produce/review loop where a writer generates content,
 a reviewer evaluates it, and the cycle repeats until the reviewer
 approves or max iterations are reached.
 
-The framework controls the flow — agents just produce content.
-No handoff tools, no approve_output tool.
+The framework controls the flow — agents just produce content. The
+reviewer gives its verdict by calling the ``submit_review`` tool the loop
+hands it (approved, feedback): its words never approve, so a review that
+says "Not APPROVED yet" sends the work back.
 
 Run with:
     uv run python examples/orchestration_approval_loop.py
@@ -32,7 +34,7 @@ from roomkit import (
     WebSocketChannel,
 )
 from roomkit.memory import SlidingWindowMemory
-from roomkit.providers.ai import MockAIProvider
+from roomkit.providers.ai import AIResponse, AIToolCall, MockAIProvider
 
 # Warnings from everything, plus the loop strategy's per-iteration progress.
 setup_logging("example.approval_loop", level=logging.WARNING)
@@ -51,6 +53,16 @@ def find_reply(events: list[RoomEvent], agent_id: str, start: int = 0) -> RoomEv
         if event.source.channel_id == agent_id and event.type == EventType.MESSAGE:
             return event
     return None
+
+
+def review(approved: bool, feedback: str) -> list[AIResponse]:
+    """A scripted review: the reviewer's submit_review call, then its closing line."""
+    verdict = AIToolCall(
+        id=f"review-{approved}",
+        name="submit_review",
+        arguments={"approved": approved, "feedback": feedback},
+    )
+    return [AIResponse(content="", tool_calls=[verdict]), AIResponse(content="Reviewed.")]
 
 
 # --- Main --------------------------------------------------------------------
@@ -72,13 +84,13 @@ async def main() -> None:
         memory=SlidingWindowMemory(max_events=50),
     )
 
-    # Reviewer — first rejects, then approves
+    # Reviewer — first rejects, then approves, each time through submit_review
     reviewer = Agent(
         "agent-reviewer",
         provider=MockAIProvider(
-            responses=[
-                "Needs more detail: mention async and the plugin architecture.",
-                "APPROVED. Clear, accurate, and concise.",
+            ai_responses=[
+                *review(False, "Not APPROVED yet: mention async and the plugin architecture."),
+                *review(True, ""),
             ]
         ),
         role="Content reviewer",

@@ -42,6 +42,7 @@ from roomkit.voice.backends.mock import MockVoiceBackend
 from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
 from roomkit.voice.stt.mock import MockSTTProvider
 from roomkit.voice.tts.mock import MockTTSProvider
+from tests.loop_review import verdict
 from tests.test_framework import SimpleChannel
 
 
@@ -147,7 +148,7 @@ async def test_a_supervisor_delegates_to_a_declared_worker_through_the_owner() -
 async def test_a_loop_reviews_a_declared_producer_with_a_declared_reviewer() -> None:
     host = _Host(
         writer=[AIResponse(content="Draft: sunny tomorrow.")],
-        critic=[AIResponse(content="APPROVED.")],
+        critic=verdict(True),
     )
     kit = await host.kit(_declared("writer", role="Writer"), _declared("critic", role="Critic"))
     await _room(kit, Loop(agent="writer", reviewer="critic"))
