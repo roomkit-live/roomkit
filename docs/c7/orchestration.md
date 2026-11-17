@@ -755,9 +755,9 @@ its results carries back to the agent.
 `wait_in_task_rooms=True` makes a call from a task's room, a worker delegating in
 turn, run its task inline: it answers with the task's `status` and its `result`
 (empty for a failed task), and cancelling the worker's task cancels it too; a
-host's own `handler.handle(...)` on a task's room waits the same way. Without it, the call starts a
-background task, as from any room, and the worker's own task may end before its
-result comes back.
+host's own `handler.handle(...)` on a task's room waits the same way. Without it,
+the call starts a background task, as from any room, and the worker's own task
+may end before its result comes back.
 An intelligence channel shared into the child room stops the previous tasks and
 the conversation, not `context`.
 `DelegateHandler(cache=CompletedTaskCache())` answers a repeat, the same agent's
