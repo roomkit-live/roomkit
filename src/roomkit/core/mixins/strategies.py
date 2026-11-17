@@ -164,6 +164,8 @@ class StrategyMixin(HelpersMixin):
         takes the discussion back, and how the host changes its agents.
 
         Raises:
+            RoomClosedError: the room is CLOSED or ARCHIVED, read under its
+                lock: a room holds a strategy only while it lives (RFC §19.7).
             ValueError: the room holds a strategy already (uninstall it first),
                 or the strategy refuses the room.
         """

@@ -250,7 +250,7 @@ class Channel(ABC):
         served) may still be answering for a turn that captured it, and
         ``close`` on an intelligence channel ends that turn rather than
         waiting for it — an ACP channel cancels it on both sides of the wire,
-        an AI channel tears the provider down under it. A channel that counts
+        an AI channel cuts its calls. A channel that counts
         its turns answers here so the
         caller can wait until it is idle; one that does not count them
         answers 0 and is treated as idle.
