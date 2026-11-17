@@ -293,7 +293,7 @@ class _Held(MockAIProvider):
                 await self._release.wait()
 
 
-def _kit_delegating_in_turn(digger: MockAIProvider) -> tuple[RoomKit, AIChannel]:
+def _kit_delegating_in_turn(digger: MockAIProvider, **options: Any) -> tuple[RoomKit, AIChannel]:
     """A kit whose researcher delegates "Dig." to the digger, answering *digger*,
     then says "Dug."."""
     kit = RoomKit()
@@ -315,6 +315,7 @@ def _kit_delegating_in_turn(digger: MockAIProvider) -> tuple[RoomKit, AIChannel]
                 AIResponse(content="Dug."),
             ]
         ),
+        **options,
     )
     kit.register_channel(researcher)
     kit.register_channel(AIChannel("digger", provider=digger))

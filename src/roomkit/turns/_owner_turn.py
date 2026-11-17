@@ -420,7 +420,8 @@ class OwnerTurn:
                 # End confirms the executor's cleanup, not the handlers it
                 # withdrew on this owner. Their inline tasks end before the
                 # caller continues, within the same cancellation budget.
-                await self._calls.drain()
+                if bound is not None:
+                    await self._calls.drain()
         except TimeoutError:
             self._cleanup_incomplete = True
             logger.warning(
