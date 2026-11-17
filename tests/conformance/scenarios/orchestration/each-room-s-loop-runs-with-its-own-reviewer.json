@@ -42,34 +42,10 @@
         "model": {
           "rounds": [
             {
-              "calls": [
-                {
-                  "id": "bank_editor-v1",
-                  "name": "submit_review",
-                  "arguments": {
-                    "approved": false,
-                    "feedback": "Revise the bank draft."
-                  }
-                }
-              ]
+              "text": "Revise the bank draft."
             },
             {
-              "text": "Reviewed."
-            },
-            {
-              "calls": [
-                {
-                  "id": "bank_editor-v2",
-                  "name": "submit_review",
-                  "arguments": {
-                    "approved": true,
-                    "feedback": ""
-                  }
-                }
-              ]
-            },
-            {
-              "text": "Reviewed."
+              "text": "APPROVED"
             }
           ]
         }
@@ -81,19 +57,7 @@
         "model": {
           "rounds": [
             {
-              "calls": [
-                {
-                  "id": "clinic_editor-v1",
-                  "name": "submit_review",
-                  "arguments": {
-                    "approved": false,
-                    "feedback": "Needs another draft."
-                  }
-                }
-              ]
-            },
-            {
-              "text": "Reviewed."
+              "text": "Needs another draft."
             }
           ]
         }
@@ -332,15 +296,6 @@
               }
             }
           ]
-        },
-        {
-          "tool_results": [
-            {
-              "tool_call_id": "clinic_editor-v1",
-              "content": "{\"status\": \"received\"}",
-              "is_error": false
-            }
-          ]
         }
       ],
       "bank_editor": [
@@ -354,29 +309,11 @@
           ]
         },
         {
-          "tool_results": [
-            {
-              "tool_call_id": "bank_editor-v1",
-              "content": "{\"status\": \"received\"}",
-              "is_error": false
-            }
-          ]
-        },
-        {
           "messages": [
             {
               "text": {
                 "$contains": "Bank revision."
               }
-            }
-          ]
-        },
-        {
-          "tool_results": [
-            {
-              "tool_call_id": "bank_editor-v2",
-              "content": "{\"status\": \"received\"}",
-              "is_error": false
             }
           ]
         }
