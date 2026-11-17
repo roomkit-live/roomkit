@@ -162,6 +162,15 @@ class Normalizer:
     def _indexes_of(self, value: dict[str, Any]) -> dict[str, Any]:
         """How the members of *value* that hold an index of its room are read."""
         room_id = value.get("room_id")
+        context_room = value.get("room")
+        if isinstance(context_room, dict) and "history_start_index" in value:
+            context_id = context_room.get("id")
+            if isinstance(context_id, str):
+                return {
+                    "history_start_index": lambda raw: (
+                        0 if raw == 0 else self.index(context_id, raw)
+                    )
+                }
         if isinstance(room_id, str) and "source" in value and "index" in value:
             return {"index": lambda raw: self.index(room_id, raw)}
         room = value.get("id")

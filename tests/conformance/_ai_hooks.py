@@ -16,7 +16,7 @@ from typing import Any
 from roomkit.models.response_metadata import ResponseMetadata
 from roomkit.models.tool_call import AIGenerationEvent, AIResponseEvent, ToolRoundEvent
 from roomkit.providers.ai import AIMessage, AITool
-from tests.conformance._agent import messages, result_content
+from tests.conformance._agent import messages, provider_room_context, result_content
 
 _GENERATION_PATCH = frozenset(
     {
@@ -49,6 +49,7 @@ def generation_record(payload: AIGenerationEvent) -> dict[str, Any]:
         "system_prompt": context.system_prompt,
         "messages": messages(context),
         "tools": [tool.name for tool in context.tools or []],
+        **provider_room_context(context),
     }
 
 

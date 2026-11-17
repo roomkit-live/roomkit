@@ -306,6 +306,7 @@ class ScriptedModel(AIProvider):
                 "thinking_budget": context.thinking_budget,
                 "enable_thinking": context.enable_thinking,
                 "response_schema": context.response_schema,
+                **provider_room_context(context),
                 "tools": {
                     tool.name: position for position, tool in enumerate(context.tools or [])
                 },
@@ -330,6 +331,19 @@ class ScriptedModel(AIProvider):
         if position >= len(self._rounds):
             raise ModelPastItsScriptError(f"generation {position + 1} is past the script")
         return self._rounds[position]
+
+
+def provider_room_context(context: AIContext) -> dict[str, Any]:
+    """Snapshot the room and outgoing-target metadata the provider is handed."""
+    return {
+        "room": context.room.model_dump(mode="json") if context.room is not None else None,
+        "target_capabilities": (
+            context.target_capabilities.model_dump(mode="json")
+            if context.target_capabilities is not None
+            else None
+        ),
+        "target_media_types": [kind.value for kind in context.target_media_types],
+    }
 
 
 def _refused(done: StreamDone) -> str | None:
