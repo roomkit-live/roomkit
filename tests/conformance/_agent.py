@@ -86,6 +86,7 @@ from tests.conformance._sandbox import sandbox_options
 from tests.conformance._script_executor import ScriptedScriptExecutor
 from tests.conformance._skills import scripted_skill_registry
 from tests.conformance._speaking import speaking_options
+from tests.conformance._thinking import thinking_options
 
 if TYPE_CHECKING:
     from roomkit.channels._turn_config import ConfigProvider
@@ -726,6 +727,7 @@ def scripted_agent(
     skills: SkillRegistry | None = None,
     sandbox_executors: dict[str, Any] | None = None,
     speak_turns: dict[str, list[Any]] | None = None,
+    thinker_calls: dict[str, list[Any]] | None = None,
 ) -> tuple[AIChannel, dict[str, ScriptedModel]]:
     """The AI channel of a scripted agent, and its models by the name
     ``expect.models`` gives them: its own under its id, its memory's
@@ -744,6 +746,7 @@ def scripted_agent(
     tools = spec.get("tools", [])
     kwargs = continuation_options(spec, continuation_calls)
     kwargs.update(speaking_options(spec, gates, speak_turns))
+    kwargs.update(thinking_options(spec, gates, thinker_calls, thinking_context))
     kwargs.update(_external_handler_options(spec, external_handlers, gates))
     if "tool_policy" in spec:
         kwargs["tool_policy"] = _tool_policy(spec["tool_policy"])
@@ -1024,3 +1027,13 @@ def _external_handler_options(
     handler = ScriptedExternalHandler(spec["external_tool_handler"], gates.hold)
     handlers[spec["id"]] = handler
     return {"external_tool_handler": handler}
+
+
+def thinking_context(context: AIContext) -> dict[str, Any]:
+    """The real context handed to a scripted thinker, using model observations."""
+    return {
+        "messages": messages(context),
+        "system_prompt": context.system_prompt,
+        "tools": [tool.name for tool in context.tools or []],
+        **provider_room_context(context),
+    }

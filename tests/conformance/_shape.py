@@ -64,6 +64,7 @@ from tests.conformance._strategies import (
     SWARM,
 )
 from tests.conformance._tasks import TASK_ARGUMENTS
+from tests.conformance._thinking import channel_problems as thinking_problems
 from tests.conformance._verification import VERIFICATION_ARGUMENTS
 
 TOP = {"$schema", "id", "title", "rules", "reentrancy", "notes", "setup", "steps", "expect"}
@@ -156,6 +157,8 @@ CHANNEL = {
     "continuation",
     "speak_policy",
     "speak_timeout_ms",
+    "thinker",
+    "think_wait_ms",
     "external_tool_handler",
     "max_context_events",
     "tool_timeout_ms",
@@ -464,6 +467,7 @@ EXPECT = {
     "sandbox_executors",
     "continuations",
     "speak_turns",
+    "thinker_calls",
     "external_handlers",
 }
 NEW_ROOM = {"id", "organization_id", "metadata", "timers"}
@@ -859,6 +863,7 @@ def _channel(channel: Mapping[str, Any], path: str, found: list[str]) -> None:
     _channel_settings(channel, path, found)
     found.extend(continuation_problems(channel, path))
     found.extend(speaking_problems(channel, path))
+    found.extend(thinking_problems(channel, path))
     if "external_tool_handler" in channel:
         found.extend(
             handler_problems(channel["external_tool_handler"], f"{path}.external_tool_handler")

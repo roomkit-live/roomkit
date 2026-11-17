@@ -35,7 +35,7 @@ from roomkit.orchestration import DispatchDecisionEvent, HandoffHandler, SpeakQu
 from roomkit.orchestration.base import Orchestration
 from roomkit.orchestration.status_bus import StatusEntry
 from roomkit.realtime import EphemeralEvent, EphemeralEventType, InMemoryRealtime
-from roomkit.speaking import SpeakDecisionEvent
+from roomkit.speaking import SpeakDecisionEvent, ThoughtEvent
 from roomkit.store.base import ConversationStore
 from roomkit.store.sqlite import SQLiteStore
 from roomkit.tasks import DelegatedTask, DelegateHandler
@@ -105,6 +105,7 @@ from tests.conformance._strategies import (
 )
 from tests.conformance._subscriptions import SUBSCRIPTION_CALLS
 from tests.conformance._tasks import TASK_CALLS
+from tests.conformance._thinking import thought_record
 from tests.conformance._verification import (
     VERIFICATION_CALLS,
     VERIFICATION_EVENTS,
@@ -445,6 +446,8 @@ class Harness:
         if isinstance(payload, PendingInputEvent):
             self.saw_request(payload.pending_id)
             call["request"] = request_record(payload)
+        if isinstance(payload, ThoughtEvent):
+            call["thought"] = thought_record(payload)
         if isinstance(payload, SpeakDecisionEvent):
             call["speak_decision"] = decision_record(payload)
         if isinstance(payload, AIGenerationEvent):

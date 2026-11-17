@@ -173,9 +173,10 @@ class _Comparison:
             self._check(expected, actual, f"continuations.{channel_id}")
 
     def speaking(self) -> None:
-        for channel_id, expected in self.expect.get("speak_turns", {}).items():
-            actual = self.observed.speak_turns.get(channel_id, MISSING)
-            self._check(expected, actual, f"speak_turns.{channel_id}")
+        for kind in ("speak_turns", "thinker_calls"):
+            for channel_id, expected in self.expect.get(kind, {}).items():
+                actual = getattr(self.observed, kind).get(channel_id, MISSING)
+                self._check(expected, actual, f"{kind}.{channel_id}")
 
     def acp(self) -> None:
         for kind in (

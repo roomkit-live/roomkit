@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from roomkit.speaking import SpeakDecision, SpeakDecisionEvent, SpeakPolicy, SpeakTurn
+from tests.conformance._thinking import thought_value
 
 if TYPE_CHECKING:
     from tests.conformance._script import Gates
@@ -160,7 +161,7 @@ def turn_record(turn: SpeakTurn) -> dict[str, Any]:
         "people": list(turn.people),
         "channel_id": turn.channel_id,
         "speakers": dict(turn.speakers),
-        "thought": dataclasses.asdict(turn.thought) if turn.thought is not None else None,
+        "thought": thought_value(turn.thought) if turn.thought is not None else None,
     }
 
 
@@ -173,7 +174,7 @@ def decision_record(report: SpeakDecisionEvent) -> dict[str, Any]:
         "duration_ms": report.duration_ms,
         "asked_again": report.asked_again,
         "late": report.late,
-        "thought": dataclasses.asdict(report.thought) if report.thought is not None else None,
+        "thought": thought_value(report.thought) if report.thought is not None else None,
     }
 
 
