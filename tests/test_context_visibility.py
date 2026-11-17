@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import pytest
 
+from roomkit import received_events
 from roomkit.channels.ai import AIChannel
 from roomkit.channels.websocket import WebSocketChannel
 from roomkit.core.framework import RoomKit
@@ -362,6 +363,23 @@ class TestCommittedVisibility:
 
     def test_a_detached_source_leaves_the_event_speaking_for_itself(self) -> None:
         assert committed_visibility(Visibility.INTERNAL, None, []) == Visibility.INTERNAL
+
+
+def test_received_events_preserves_order_duplicates_and_objects() -> None:
+    blocked = _event("ws1", "blocked", status=EventStatus.BLOCKED)
+    kept = [
+        _event("ws1", status.value, status=status)
+        for status in EventStatus
+        if status != EventStatus.BLOCKED
+    ]
+    rows = [blocked, *kept, blocked, kept[0]]
+    received = received_events(iter(rows))
+    assert received == [*kept, kept[0]]
+    assert all(
+        actual is original for actual, original in zip(received, [*kept, kept[0]], strict=True)
+    )
+    assert received_events(iter([blocked])) == []
+    assert received_events(iter([])) == []
 
 
 class TestVisibleEvents:
