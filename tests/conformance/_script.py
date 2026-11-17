@@ -373,6 +373,17 @@ class ScriptedChannel(Channel):
             raise ScriptedFailureError(message)
         return self._side_effects(reaction.get("output", {}), room_id)
 
+    async def deliver_cut(
+        self,
+        event: RoomEvent,
+        row: RoomEvent | None,
+        binding: ChannelBinding,
+        context: RoomContext,
+    ) -> None:
+        """Records the end of a stream cut from outside, the row it is handed."""
+        cut = {"cut": None if row is None else row.model_dump(mode="json")}
+        self._harness.record_streamed(binding.room_id, self.channel_id, cut)
+
     def update_binding(self, room_id: str, binding: ChannelBinding) -> None:
         """Record the synchronous callback when its fixture is enabled."""
         if self._binding_update is None:

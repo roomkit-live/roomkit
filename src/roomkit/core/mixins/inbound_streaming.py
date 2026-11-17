@@ -103,6 +103,25 @@ async def _close_handed_stream(segments: Any, room_id: str) -> None:
         )
 
 
+async def _deliver_cut(
+    channel: Channel,
+    event: RoomEvent,
+    row: RoomEvent | None,
+    binding: ChannelBinding,
+    context: RoomContext,
+) -> None:
+    """Hand a channel cut mid-stream its stream's end; what it raises is its
+    own, logged: the cancellation goes on (RFC §12.2 step 13s)."""
+    try:
+        await channel.deliver_cut(event, row, binding, context)
+    except Exception as exc:
+        log_failure(
+            logger,
+            exc,
+            f"streaming channel {binding.channel_id} ending a cut stream in room {event.room_id}",
+        )
+
+
 class InboundStreamingMixin(HelpersMixin):
     """Streaming response handling extracted from the inbound pipeline.
 
@@ -327,12 +346,13 @@ class InboundStreamingMixin(HelpersMixin):
         context: RoomContext,
     ) -> Exception | None:
         """Run the channel's deliver_stream over *segments*; the error it raised, if any."""
+        reading = True
         try:
-            if (
-                error := await self._hand_segments(
-                    channel, binding, placeholder, segments, sr, writer, context
-                )
-            ) is not None:
+            error = await self._hand_segments(
+                channel, binding, placeholder, segments, sr, writer, context
+            )
+            reading = False
+            if error is not None:
                 return error
             if writer.read_to_end or writer.failure is not None:
                 return None
@@ -354,7 +374,11 @@ class InboundStreamingMixin(HelpersMixin):
             # context missing what it already said. Not an error — nobody
             # failed — so ON_ERROR stays silent and the cancellation
             # propagates untouched.
-            await writer.end_cancelled(reader, cancel_reason(cut))
+            row = await writer.end_cancelled(reader, cancel_reason(cut))
+            if reading:
+                # The channel was cut mid-stream: it learns the stream's end,
+                # and the row the stream can no longer carry (RFC §12.2 13s).
+                await _deliver_cut(channel, placeholder, row, binding, context)
             raise
         except Exception as exc:
             return exc

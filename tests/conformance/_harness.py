@@ -358,8 +358,9 @@ class Harness:
 
     def record_streamed(self, room_id: str, channel_id: str, item: dict[str, Any]) -> None:
         """One item a streaming channel's ``deliver_stream`` read, as the
-        scenario reads it: ``{"text": ...}``, ``{"row": event}``, or
-        ``{"failed": true}`` where the stream raised."""
+        scenario reads it: ``{"text": ...}``, ``{"row": event}``,
+        ``{"failed": true}`` where the stream raised, or ``{"cut": event}``
+        for the end of a stream cut from outside."""
         if not self._recording:
             return
         per_room = self.observed.streamed.setdefault(room_id, {})

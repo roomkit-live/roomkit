@@ -6,6 +6,7 @@ import asyncio
 import logging
 import uuid
 from collections.abc import AsyncIterator, Callable, Coroutine
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from pydantic import BaseModel
@@ -67,6 +68,18 @@ StreamMessage = StreamStart | StreamChunk | StreamEnd | StreamError
 StreamSendFn = Callable[[str, StreamMessage], Coroutine[Any, Any, None]]
 
 
+@dataclass(frozen=True)
+class _CutStream:
+    """A stream cut from outside, kept until :meth:`WebSocketChannel.deliver_cut`
+    ends it: the connections it started with, and whether it handed rows."""
+
+    room_id: str
+    stream_id: str
+    streaming_conns: list[tuple[str, StreamSendFn, object]]
+    room_conns: list[tuple[str, SendFn, object]]
+    handed: bool
+
+
 class WebSocketChannel(Channel):
     """WebSocket transport channel with connection registry."""
 
@@ -102,6 +115,9 @@ class WebSocketChannel(Channel):
         # function a registration again passes (one shared by every socket
         # included).
         self._registrations: dict[str, object] = {}
+        # The streams cut from outside, by the event each was delivered
+        # under, until the framework hands each its end (deliver_cut).
+        self._cut_streams: dict[str, _CutStream] = {}
 
     @property
     def info(self) -> dict[str, Any]:
@@ -467,12 +483,12 @@ class WebSocketChannel(Channel):
 
         # Send stream_start to this room's streaming connections
         start_msg = StreamStart(room_id=room_id, stream_id=stream_id, source=source)
-        await self._fan_out_stream(streaming_conns, start_msg)
 
         # Stream: text deltas as stream_chunk, RoomEvents as event messages
         running_text = ""
         segment_events: list[RoomEvent] = []
         try:
+            await self._fan_out_stream(streaming_conns, start_msg)
             async for delta in text_stream:
                 if isinstance(delta, str):
                     running_text += delta
@@ -492,6 +508,12 @@ class WebSocketChannel(Channel):
                             for conn_id, send_fn, token in room_conns
                         )
                     )
+        except asyncio.CancelledError:
+            # Cut from outside: its end comes once the cut text is stored.
+            self._cut_streams[event.id] = _CutStream(
+                room_id, stream_id, streaming_conns, room_conns, handed=bool(segment_events)
+            )
+            raise
         except Exception as exc:
             error_msg = StreamError(room_id=room_id, stream_id=stream_id, error=str(exc))
             await self._fan_out_stream(streaming_conns, error_msg)
@@ -504,6 +526,38 @@ class WebSocketChannel(Channel):
         await self._fan_out_stream(streaming_conns, end_msg)
 
         return ChannelOutput.empty()
+
+    async def deliver_cut(
+        self,
+        event: RoomEvent,
+        row: RoomEvent | None,
+        binding: ChannelBinding,
+        context: RoomContext,
+    ) -> None:
+        """End a stream cut from outside with what the room holds of it.
+
+        Its streaming connections read ``stream_end`` carrying *row*, the cut
+        text's stored row, marked cancelled; the others read *row* as a row
+        the stream hands. Without a row (a blank text, refused, kept out or
+        narrowed away), ``stream_end`` carries no text and the others read
+        nothing (RFC §12.2 step 13s, Appendix A.8). Each send goes to the
+        registrations the stream started with (RFC §17.2).
+        """
+        cut = self._cut_streams.pop(event.id, None)
+        if cut is None:
+            return
+        streaming = {conn_id for conn_id, _, _ in cut.streaming_conns}
+        if row is not None:
+            await asyncio.gather(
+                *(
+                    self._send_one(conn_id, send_fn, row, token)
+                    for conn_id, send_fn, token in cut.room_conns
+                    if conn_id not in streaming
+                )
+            )
+        final_event = row if row is not None else _end_event(event, handed=cut.handed)
+        end_msg = StreamEnd(room_id=cut.room_id, stream_id=cut.stream_id, event=final_event)
+        await self._fan_out_stream(cut.streaming_conns, end_msg)
 
     async def _fan_out_stream(
         self, conns: list[tuple[str, StreamSendFn, object]], msg: StreamMessage

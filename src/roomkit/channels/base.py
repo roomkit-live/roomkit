@@ -447,6 +447,29 @@ class Channel(ABC):
             raise
         return await self.deliver(_buffered(event, chunks), binding, context)
 
+    async def deliver_cut(  # noqa: B027
+        self,
+        event: RoomEvent,
+        row: RoomEvent | None,
+        binding: ChannelBinding,
+        context: RoomContext,
+    ) -> None:
+        """Take the end of a stream cut from outside while this channel read it.
+
+        A delivery cancelled, a steering cut or the kit's close cancels the
+        channel's :meth:`deliver_stream` mid-stream. Once the text it was
+        handed is stored, marked cancelled, the framework calls this with
+        *event*, the event that stream was delivered under, and *row*, that
+        stored row, or ``None`` when no row is the channel's (a blank text, a
+        hook's refusal, a row kept out or narrowed away from it). The row is
+        not delivered to the channel otherwise: it was handed every token of
+        it (RFC §12.2 step 13s).
+
+        Default: nothing, as for a channel that rendered what it was handed
+        (a voice already spoke it). A channel that must close what it opened
+        for the stream overrides it.
+        """
+
     async def connect_session(  # noqa: B027
         self,
         session: Any,

@@ -3204,7 +3204,17 @@ async def on_stream(conn_id: str, msg) -> None:
 A connection registered without `stream_send_fn` reads, through its `send_fn`,
 the rows the stream hands once they are stored (each text segment, each
 call's start and end), each once, and no end event: nothing of a row a hook
-blocked or narrowed away, the store kept out, or of a blank answer.
+blocked or narrowed away, the store kept out, or of a blank answer. A
+streaming connection's `StreamEnd` carries an event with no text: its
+metadata holds `_segmented` when rows were handed, and without it no row was,
+so drop the bubble.
+
+A stream cut from outside (`kit.cancel_delivery()`, a steering cut, the kit's
+close) ends once its text is stored, marked cancelled: the framework hands the
+row to the channel's `deliver_cut()`, and the WebSocket channel sends its
+streaming connections a `StreamEnd` carrying that row (`metadata["cancelled"]`
+true), and the row to its other connections; with no row (a hook refused it),
+the `StreamEnd` carries no text and the others read nothing.
 
 ### Why a streaming tool loop stopped
 

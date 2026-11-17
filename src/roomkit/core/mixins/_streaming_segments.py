@@ -531,7 +531,9 @@ class SegmentWriter:
             await self.end_failed(reader)
             raise
 
-    async def end_cancelled(self, reader: ResponseReader, reason: str | None = None) -> None:
+    async def end_cancelled(
+        self, reader: ResponseReader, reason: str | None = None
+    ) -> RoomEvent | None:
         """Write what a cancelled turn leaves: open calls closed, text kept as
         cancelled, and its record ``cancelled``, as a turn its reader stopped.
 
@@ -539,15 +541,20 @@ class SegmentWriter:
         call closed ``failed``, so no start row stays pending (RFC §12.2 step
         13s): its error ``kit_closed`` when the kit's close cut it (RFC
         §12.10.4), else ``cancelled``.
+
+        Returns the row of the cut text when the channel reading the stream
+        is handed it, which the stream can no longer carry: none when the
+        text was blank, refused, kept out or narrowed away from that channel.
         """
         error = KIT_CLOSED if reason == KIT_CLOSED else "cancelled"
         await self.close_calls(await reader.abandon(error, reason=reason))
         self.end_stopped()
-        await self.flush_text(cancelled=True)
+        row = await self.flush_text(cancelled=True)
         # Text already written at a call's boundary carries no record of its
         # own: the turn's end goes on the last message now, or its last row, as
         # a stopped read's does, since no later step of a cancelled read writes it.
         await self.write_owed_record()
+        return row if row is not None and row.id in self._streamed_rows else None
 
     async def end_failed(self, reader: ResponseReader) -> None:
         """Write what a failed turn leaves: open calls closed as ``turn failed``, text kept."""

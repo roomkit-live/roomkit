@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest
@@ -23,7 +25,14 @@ from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.models.framework_event import FrameworkEvent
 from roomkit.models.hook import HookResult
 from roomkit.models.room import Room
-from roomkit.providers.ai.base import AIResponse, AITool, AIToolCall
+from roomkit.providers.ai.base import (
+    AIContext,
+    AIResponse,
+    AITool,
+    AIToolCall,
+    StreamEvent,
+    StreamTextDelta,
+)
 from roomkit.providers.ai.mock import MockAIProvider
 from tests.test_framework import SimpleChannel
 
@@ -82,6 +91,17 @@ async def _block_the_agent(event: RoomEvent, context: RoomContext) -> HookResult
     if event.source.channel_id == "ai":
         return HookResult.block("withheld")
     return HookResult.allow()
+
+
+class _Stalls(MockAIProvider):
+    """Streams its first words, then waits until its turn is cut."""
+
+    def __init__(self) -> None:
+        super().__init__(streaming=True)
+
+    async def _scripted_events(self, context: AIContext) -> AsyncIterator[StreamEvent]:
+        yield StreamTextDelta(text="Partial ")
+        await asyncio.Event().wait()
 
 
 class TestConnectWebSocket:
@@ -424,6 +444,78 @@ class TestStreamingDelivery:
             assert [_row(event) for event in plain] == rows
             assert [event.id for event in plain] == delivered
             assert streamed == ["stream_start", *["stream_chunk"] * len(responses), "end ''"]
+        finally:
+            await kit.close()
+
+    @pytest.mark.parametrize(
+        ("blocked", "streaming_reads", "plain_reads"),
+        [
+            pytest.param(False, "end 'Partial ' cancelled", ["Partial "], id="kept"),
+            pytest.param(True, "end '' None", [], id="blocked"),
+        ],
+    )
+    async def test_a_stream_cut_from_outside_ends_with_its_cut_row(
+        self, blocked: bool, streaming_reads: str, plain_reads: list[str]
+    ) -> None:
+        """A streamed answer cut from outside ends for every connection with
+        what the room holds: the streaming one reads an end carrying the cut
+        row, marked cancelled, the plain one reads the row; a cut row a hook
+        refused leaves an end with no text, and nothing for the plain one
+        (RFC §12.2 step 13s, Appendix A.8, RMK-1756)."""
+        kit = RoomKit()
+        kit.register_channel(AIChannel("ai", provider=_Stalls()))
+        ws = WebSocketChannel("ws")
+        sms = SimpleChannel("sms")
+        for channel in (ws, sms):
+            kit.register_channel(channel)
+        await kit.create_room(room_id="room-1")
+        for channel_id in ("ai", "ws", "sms"):
+            await kit.attach_channel("room-1", channel_id)
+        if blocked:
+            kit.hook(HookTrigger.BEFORE_BROADCAST)(_block_the_agent)
+        plain: list[RoomEvent] = []
+        streamed: list[str] = []
+        shown = asyncio.Event()
+
+        async def send(conn_id: str, event: RoomEvent) -> None:
+            if event.source.channel_id == "ai":
+                plain.append(event)
+
+        async def stream_send(conn_id: str, msg: StreamMessage) -> None:
+            if isinstance(msg, StreamEnd):
+                cancelled = msg.event.metadata.get("cancelled")
+                streamed.append(f"end {_row(msg.event)!r} {'cancelled' if cancelled else None}")
+            else:
+                streamed.append(msg.type)
+                if isinstance(msg, StreamChunk):
+                    shown.set()
+
+        ws.register_connection("plain", send, room_id="room-1")
+        ws.register_connection(
+            "streaming", _noop_send, room_id="room-1", stream_send_fn=stream_send
+        )
+        try:
+            call = asyncio.ensure_future(
+                kit.process_inbound(
+                    InboundMessage(
+                        channel_id="sms",
+                        sender_id="alice",
+                        content=TextContent(body="Hi"),
+                        delivery_key="k",
+                    ),
+                    room_id="room-1",
+                )
+            )
+            await asyncio.wait_for(shown.wait(), 5)
+            assert await kit.cancel_delivery("k") == 1
+            await asyncio.wait_for(call, 5)
+
+            assert streamed == ["stream_start", "stream_chunk", streaming_reads]
+            assert [_row(event) for event in plain] == plain_reads
+            if plain_reads:
+                stored = (await kit.store.list_events("room-1"))[-1]
+                assert stored.metadata.get("cancelled") is True
+                assert plain[0].id == stored.id
         finally:
             await kit.close()
 
