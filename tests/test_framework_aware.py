@@ -9,6 +9,8 @@ wanted.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from roomkit import (
@@ -27,6 +29,7 @@ from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import ChannelType
 from roomkit.models.event import RoomEvent
+from roomkit.store import SQLiteStore
 
 
 class _Inert(Channel):
@@ -78,6 +81,28 @@ class TestFrameworkInjection:
         kit.register_channel(channel)
 
         assert channel.framework is kit
+
+    async def test_an_application_channel_uses_the_configured_store(self, tmp_path: Path) -> None:
+        store = SQLiteStore(tmp_path / "rooms.db")
+        async with RoomKit(store=store) as kit:
+            channel = _Declared("application")
+            kit.register_channel(channel)
+            assert channel.framework is kit
+            assert channel.framework.store is store
+            await channel.framework.create_room(room_id="example")
+            assert (await kit.get_room("example")).id == "example"
+
+    def test_injection_failure_leaves_the_inserted_channel_registered(self) -> None:
+        class Refuses(_Declared):
+            def set_framework(self, framework: RoomKit) -> None:
+                assert framework.get_channel(self.channel_id) is self
+                raise RuntimeError("setup failed")
+
+        kit = RoomKit()
+        channel = Refuses("application")
+        with pytest.raises(RuntimeError, match="^setup failed$"):
+            kit.register_channel(channel)
+        assert kit.get_channel("application") is channel
 
     def test_a_homonym_is_left_alone(self) -> None:
         """Selecting by name would call a method that means something else."""
