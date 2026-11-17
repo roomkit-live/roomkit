@@ -221,3 +221,23 @@ async def test_reporting_is_synchronous_and_keeps_the_decision_and_handle() -> N
     assert result.event is event
     assert (result.blocked, result.reason, result.duplicate) == (True, "decided", True)
     assert result.delivery is handle
+
+
+async def test_concurrent_calls_keep_both_turns_in_the_shared_record() -> None:
+    record = ResponseMetadata()
+    start = asyncio.Barrier(2)
+
+    async def report(name: str) -> None:
+        result = InboundResult(response_metadata=record)
+        cascade = _Report(
+            response_metadata=ResponseMetadata(
+                {"payload": [{"sample": 1}], "turns": {name: {"end": "done"}}}
+            )
+        )
+        await start.wait()
+        result.report_cascade(cast(Any, cascade))
+
+    await asyncio.gather(report("a"), report("b"))
+
+    assert record["turns"] == {"a": {"end": "done"}, "b": {"end": "done"}}
+    assert record.writes == 6
