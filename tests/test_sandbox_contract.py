@@ -137,6 +137,18 @@ def test_a_catalogue_failure_reaches_the_constructor_without_running_a_command()
     assert sandbox.calls == []
 
 
+@pytest.mark.parametrize(
+    ("definition", "error"), [({}, KeyError), ({"name": None}, AttributeError)]
+)
+def test_a_catalogue_with_no_readable_name_fails_before_execution(
+    definition: dict[str, Any], error: type[Exception]
+) -> None:
+    sandbox = RecordingSandbox([definition])
+    with pytest.raises(error):
+        AIChannel("ai1", provider=MockAIProvider(), sandbox=sandbox)
+    assert sandbox.calls == []
+
+
 async def test_a_returned_nonzero_result_is_served_with_its_computed_success(
     streaming: bool,
 ) -> None:
