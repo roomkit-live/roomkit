@@ -864,7 +864,8 @@ def thinking_parts_of(response: AIResponse) -> list[AIThinkingPart]:
 
 
 def stream_call_of(call: AIToolCall) -> StreamToolCall:
-    """The streamed form of a tool call, every field it carries kept."""
+    """Copy a tool call into an independent streamed event, preserving every field."""
+    call = call.model_copy(deep=True)
     return StreamToolCall(
         id=call.id,
         name=call.name,
@@ -878,7 +879,8 @@ def stream_call_of(call: AIToolCall) -> StreamToolCall:
 
 
 def tool_call_of(event: StreamToolCall) -> AIToolCall:
-    """The tool call a streamed one is, every field it carries kept."""
+    """Copy a streamed event into an independent tool call, preserving every field."""
+    event = event.model_copy(deep=True)
     return AIToolCall(
         id=event.id,
         name=event.name,

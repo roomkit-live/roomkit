@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 
 from roomkit.channels.ai import AIChannel
-from roomkit.providers.ai.base import (
+from roomkit.providers.ai import (
     AIResponse,
     AIToolCall,
     ServedCall,
@@ -179,3 +179,39 @@ async def test_an_external_handler_decides_a_call_whatever_keys_the_model_wrote(
     assert proxy.told == ["proxy ran it"]
     [end] = await room.ends()
     assert (end.status, end.result) == ("completed", "proxy ran it")
+
+
+def test_converted_calls_own_their_nested_values_in_both_directions() -> None:
+    original = AIToolCall(
+        id="call",
+        name="lookup",
+        arguments={"query": {"terms": ["one"]}},
+        metadata={"receipt": {"id": 1}},
+        served=ServedCall(result="first"),
+        intent="Look it up.",
+        garbled=True,
+        partial=True,
+    )
+    streamed = stream_call_of(original)
+    returned = tool_call_of(streamed)
+    assert returned == original
+
+    assert (
+        streamed.served is not None and returned.served is not None and original.served is not None
+    )
+    streamed.arguments["query"]["terms"].append("two")
+    streamed.metadata["receipt"]["id"] = 2
+    streamed.served.result = "second"
+    returned.arguments["query"]["terms"].append("three")
+    returned.metadata["receipt"]["id"] = 3
+    returned.served.result = "third"
+
+    assert original.arguments == {"query": {"terms": ["one"]}}
+    assert streamed.arguments == {"query": {"terms": ["one", "two"]}}
+    assert returned.arguments == {"query": {"terms": ["one", "three"]}}
+    assert [call.metadata["receipt"]["id"] for call in (original, streamed, returned)] == [1, 2, 3]
+    assert [original.served.result, streamed.served.result, returned.served.result] == [
+        "first",
+        "second",
+        "third",
+    ]
