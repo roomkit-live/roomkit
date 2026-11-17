@@ -1,0 +1,153 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/extra-tools-collision-host-channel-stream",
+  "title": "Host tool definitions: collision-host (AIChannel, streaming)",
+  "rules": [
+    "§6.4",
+    "§21.1"
+  ],
+  "notes": "Python reference: tests/test_channels/test_ai_extra_tools.py and test_ai_extra_tools_turns.py. Edits happen before the next turn is prepared.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "model": {
+          "streaming": true,
+          "rounds": [
+            {
+              "text": "done"
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "first",
+            "description": "first host",
+            "parameters": {},
+            "tags": [],
+            "changes_state": false,
+            "returns": "ok"
+          },
+          {
+            "name": "second",
+            "description": "second host",
+            "parameters": {},
+            "tags": [],
+            "changes_state": false,
+            "returns": "ok"
+          }
+        ],
+        "tool_search": false
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ai",
+            "category": "intelligence",
+            "metadata": {
+              "tools": [
+                {
+                  "name": "from_binding",
+                  "description": "binding"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "agent.replace_extra_tool",
+      "channel_id": "ai",
+      "index": 0,
+      "definition": {
+        "name": "second",
+        "description": "first host",
+        "parameters": {},
+        "tags": [],
+        "changes_state": false,
+        "defer_loading": false
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "agent.extra_tools",
+      "channel_id": "ai",
+      "as": "host",
+      "expect": {
+        "result": [
+          {
+            "name": "second",
+            "description": "first host",
+            "parameters": {},
+            "tags": [],
+            "changes_state": false,
+            "defer_loading": false
+          },
+          {
+            "name": "second",
+            "description": "second host",
+            "parameters": {},
+            "tags": [],
+            "changes_state": false,
+            "defer_loading": false
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "ai": [
+        {
+          "tools": {
+            "from_binding": 0,
+            "second": 1,
+            "read_stored_result": 2
+          },
+          "tool_definitions": {
+            "from_binding": {
+              "description": "binding"
+            },
+            "second": {
+              "description": "second host"
+            }
+          },
+          "tool_names": [
+            "from_binding",
+            "second",
+            "read_stored_result"
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,192 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/extra-tools-live-fields-agent-stream",
+  "title": "Host tool definitions: live-fields (Agent, streaming)",
+  "rules": [
+    "§6.4",
+    "§21.1"
+  ],
+  "notes": "Python reference: tests/test_channels/test_ai_extra_tools.py and test_ai_extra_tools_turns.py. Edits happen before the next turn is prepared.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "model": {
+          "streaming": true,
+          "rounds": [
+            {
+              "text": "first"
+            },
+            {
+              "text": "second"
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "read",
+            "description": "original",
+            "parameters": {},
+            "tags": [],
+            "changes_state": false,
+            "returns": "ok"
+          }
+        ],
+        "tool_search": false,
+        "agent": {}
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ai",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "agent.extra_tools",
+      "channel_id": "ai",
+      "as": "before",
+      "expect": {
+        "result": [
+          {
+            "name": "read",
+            "description": "original",
+            "parameters": {},
+            "tags": [],
+            "changes_state": false,
+            "defer_loading": false
+          }
+        ]
+      }
+    },
+    {
+      "call": "agent.replace_extra_tool",
+      "channel_id": "ai",
+      "index": 0,
+      "definition": {
+        "name": "read",
+        "description": "original",
+        "parameters": {},
+        "tags": [],
+        "changes_state": false,
+        "defer_loading": true
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "first"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "agent.replace_extra_tool",
+      "channel_id": "ai",
+      "index": 0,
+      "definition": {
+        "name": "read",
+        "description": "updated",
+        "parameters": {
+          "type": "object"
+        },
+        "tags": [
+          "updated"
+        ],
+        "changes_state": true,
+        "defer_loading": false
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "second"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "agent.extra_tools",
+      "channel_id": "ai",
+      "as": "after",
+      "expect": {
+        "result": [
+          {
+            "name": "read",
+            "description": "updated",
+            "parameters": {
+              "type": "object"
+            },
+            "tags": [
+              "updated"
+            ],
+            "changes_state": true,
+            "defer_loading": false
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "ai": [
+        {
+          "tools": {
+            "read_stored_result": 0
+          },
+          "tool_names": [
+            "read_stored_result"
+          ]
+        },
+        {
+          "tools": {
+            "read": 0,
+            "read_stored_result": 1
+          },
+          "tool_definitions": {
+            "read": {
+              "description": "updated",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          },
+          "tool_names": [
+            "read",
+            "read_stored_result"
+          ]
+        }
+      ]
+    }
+  }
+}

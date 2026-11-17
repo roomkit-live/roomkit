@@ -1,0 +1,175 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/extra-tools-separate-sources-agent-stream",
+  "title": "Host tool definitions: separate-sources (Agent, streaming)",
+  "rules": [
+    "§6.4",
+    "§21.1"
+  ],
+  "notes": "Python reference: tests/test_channels/test_ai_extra_tools.py and test_ai_extra_tools_turns.py. Edits happen before the next turn is prepared.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "model": {
+          "streaming": true,
+          "rounds": [
+            {
+              "text": "done"
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "host",
+            "description": "constructor",
+            "parameters": {},
+            "tags": [],
+            "changes_state": false,
+            "returns": "ok"
+          }
+        ],
+        "tool_search": false,
+        "agent": {},
+        "config_provider": {
+          "r1": {
+            "tools": [
+              {
+                "name": "configured",
+                "description": "per turn"
+              }
+            ]
+          }
+        },
+        "human_input": {
+          "tool_names": [
+            "ask"
+          ],
+          "tools": [
+            {
+              "name": "ask",
+              "description": "Ask"
+            }
+          ]
+        },
+        "skills": [
+          {
+            "name": "guide",
+            "description": "Guide",
+            "instructions": "Be helpful"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ai",
+            "category": "intelligence",
+            "metadata": {
+              "tools": [
+                {
+                  "name": "binding"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "setup_task_tools",
+      "agent_id": "ai"
+    },
+    {
+      "call": "agent.extra_tools",
+      "channel_id": "ai",
+      "as": "before",
+      "expect": {
+        "result": [
+          {
+            "name": "host",
+            "description": "constructor",
+            "parameters": {},
+            "tags": [],
+            "changes_state": false,
+            "defer_loading": false
+          }
+        ]
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "user",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "agent.extra_tools",
+      "channel_id": "ai",
+      "as": "after",
+      "expect": {
+        "result": [
+          {
+            "name": "host",
+            "description": "constructor",
+            "parameters": {},
+            "tags": [],
+            "changes_state": false,
+            "defer_loading": false
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "ai": [
+        {
+          "tools": {
+            "configured": 0,
+            "host": 1,
+            "task_status": 2,
+            "cancel_task": 3,
+            "ask": 4,
+            "activate_skill": 5,
+            "read_skill_reference": 6,
+            "read_stored_result": 7
+          },
+          "tool_names": [
+            "configured",
+            "host",
+            "task_status",
+            "cancel_task",
+            "ask",
+            "activate_skill",
+            "read_skill_reference",
+            "read_stored_result"
+          ]
+        }
+      ]
+    }
+  }
+}

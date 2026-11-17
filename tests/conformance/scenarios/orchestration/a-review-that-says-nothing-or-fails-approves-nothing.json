@@ -171,7 +171,7 @@
           "messages": [
             {
               "role": "user",
-              "text": "Revise your previous work based on the reviewers' feedback. Your previous output and their feedback are set apart below.\n\n[Your previous output]\n<worker_output>\nDraft one.\n</worker_output>\n\n[Feedback from Editor]\n<worker_output>\n(no output)\n</worker_output>"
+              "text": "Your task:\n<task>\nWrite it.\n</task>\n\nRevise your previous work based on the reviewers' feedback. Your previous output and their feedback are set apart below.\n\n[Your previous output]\n<worker_output>\nDraft one.\n</worker_output>\n\n[Feedback from Editor]\n<worker_output>\n(no output)\n</worker_output>"
             }
           ]
         }
