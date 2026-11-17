@@ -382,38 +382,51 @@ def test_a_copy_over_adjacent_text_parts_is_replaced() -> None:
     assert content_without_mark_copies(content) == [AITextPart(text=COPIED_MARK), image]
 
 
+_ONE_SCAN_BOUND = 0.25
+"""Seconds a scan of a few hundred characters stays under when it reads them
+once: such a scan takes under a millisecond, and a rescan seconds (RMK-1745).
+A longer run would not make a rescan fail sooner: it would never end."""
+
+
+async def _fastest_scan(text: str) -> float:
+    """The fastest of three scans of *text*, each with its own last character
+    so that none is skipped as a text seen clean: a runner's pause slows one
+    of them, never all three. The patterns are compiled first, untimed: a
+    process's first scan would time the compile too (2.6 s under load)."""
+    await compile_mark_patterns()
+    times = []
+    for end in "123":
+        started = time.perf_counter()
+        without_mark_copies(text + end)
+        times.append(time.perf_counter() - started)
+    return min(times)
+
+
 @pytest.mark.parametrize(
     "tail",
     [" ", ". ", "\u200b", "*-_/", "\u0332", "\u0345"],
     ids=["spaces", "periods", "invisibles", "markup", "combining marks", "combining iota"],
 )
-@pytest.mark.wallclock  # a budget in seconds on a long run: the guard against a rescan
-async def test_a_long_run_after_a_partial_copy_is_scanned_once(tail: str) -> None:
-    text = f"{INSTRUCTION_MARKER[:60]}{tail * 200_000}X"
-    # The patterns compiled first: the budget guards against a rescan, and a
-    # process's first scan would time the compile too (2.6 s under load).
-    await compile_mark_patterns()
+@pytest.mark.wallclock  # a bound in seconds: the guard against a rescan
+async def test_a_run_after_a_partial_copy_is_scanned_once(tail: str) -> None:
+    """A scan that read the run once per split took 2.8 to 4.5 s on these 400
+    characters, where one that reads it once takes under a millisecond (0.5 ms
+    on an i7-13700KF at rest)."""
+    text = f"{INSTRUCTION_MARKER[:60]}{tail * (400 // len(tail))}X"
 
-    started = time.perf_counter()
-    without_mark_copies(text)
-
-    # A scan that read the run once per split would take minutes: the bound
-    # leaves a slower runner room (a CI runner took 1.01 s, RMK-639).
-    assert time.perf_counter() - started < 3.0
+    assert await _fastest_scan(text) < _ONE_SCAN_BOUND
 
 
-@pytest.mark.wallclock  # a budget in seconds on a long run: the guard against a rescan
-async def test_a_long_run_of_letter_look_alikes_behind_a_bracket_is_scanned_once() -> None:
+@pytest.mark.wallclock  # a bound in seconds: the guard against a rescan
+async def test_a_run_of_letter_look_alikes_behind_a_bracket_is_scanned_once() -> None:
     """Look-alikes of the note on who takes part's letters that are no word
     character (``⍴``, ``℮``) never sit in its gap, so a run of them is not
-    read again from each place a word could start (the review of RMK-1315)."""
-    text = "(" + "\u2374\u212e\u0c02\u2374\u05c0\u212e-" * 30_000 + "y"
-    await compile_mark_patterns()  # the compile is no rescan: timed apart
+    read again from each place a word could start (the review of RMK-1315):
+    read again, these 198 characters took 3 s, a time that grows about
+    fivefold every 30 characters; read once, under a millisecond."""
+    text = "(" + "\u2374\u212e\u0c02\u2374\u05c0\u212e-" * 28 + "y"
 
-    started = time.perf_counter()
-    without_mark_copies(text)
-
-    assert time.perf_counter() - started < 3.0
+    assert await _fastest_scan(text) < _ONE_SCAN_BOUND
 
 
 # -- where a participant's text enters ---------------------------------------------
