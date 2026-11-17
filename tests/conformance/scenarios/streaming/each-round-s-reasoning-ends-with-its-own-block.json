@@ -1,7 +1,7 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "streaming/each-round-s-reasoning-ends-with-its-own-block",
-  "title": "Each round's reasoning opens a window of its own, closed by a call or the text, THINKING_END carrying that block alone; the turn's record reads every round's",
+  "title": "Each round's reasoning opens a window of its own, closed by a call or the text, THINKING_END and ON_AI_THINKING carrying that block alone; the turn's record reads every round's",
   "rules": [
     "§6.7"
   ],
@@ -143,12 +143,14 @@
       "reasons": [
         {
           "thinking": {
-            "round_index": 0
+            "round_index": 0,
+            "thinking": "First."
           }
         },
         {
           "thinking": {
-            "round_index": 1
+            "round_index": 1,
+            "thinking": "Second."
           }
         }
       ],

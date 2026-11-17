@@ -1,0 +1,150 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-room-s-subscriber-reads-no-call-arguments-or-result-by-default",
+  "title": "A room's realtime subscriber reads a tool call's id, tool and status by default, not its arguments nor its result: a BEFORE_BROADCAST hook that blocks the call's rows and the answer judges no ephemeral",
+  "rules": [
+    "§6.4",
+    "§8.4",
+    "§9.5"
+  ],
+  "notes": "A hook blocks every row the agent writes, the tool-call rows and the answer. The call's arguments and its result, which those rows carry, reach the room's subscriber only for an agent that publishes them.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup_card",
+                  "arguments": {
+                    "card": "4111 1111 1111 1111"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "The card is Alice Martin's."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup_card",
+            "description": "Find a card's holder.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "card": {
+                  "type": "string"
+                }
+              }
+            },
+            "returns": "holder: Alice Martin"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "redact",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "source_channel_id": "agent"
+            },
+            "result": {
+              "action": "block",
+              "reason": "card data"
+            },
+            "repeat": true
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Whose card is 4111 1111 1111 1111?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "tool_events": {
+      "room-1": [
+        {
+          "type": "tool_call_start",
+          "tool_calls": [
+            {
+              "id": "$e1",
+              "name": "lookup_card",
+              "arguments": {
+                "$absent": true
+              }
+            }
+          ],
+          "round": 0,
+          "channel_id": "agent"
+        },
+        {
+          "type": "tool_call_end",
+          "tool_calls": [
+            {
+              "id": "$e1",
+              "name": "lookup_card",
+              "result": {
+                "$absent": true
+              },
+              "status": "completed"
+            }
+          ],
+          "round": 0,
+          "channel_id": "agent",
+          "duration_ms": {
+            "$present": true
+          }
+        }
+      ]
+    }
+  }
+}

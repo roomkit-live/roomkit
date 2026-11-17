@@ -17,6 +17,7 @@
       {
         "id": "agent",
         "type": "ai",
+        "publish_tool_call_text": true,
         "model": {
           "rounds": [
             {

@@ -64,6 +64,11 @@
         "name": "answered",
         "trigger": "on_ai_response",
         "execution": "async"
+      },
+      {
+        "name": "reasons",
+        "trigger": "on_ai_thinking",
+        "execution": "async"
       }
     ]
   },
@@ -167,6 +172,22 @@
           "response": {
             "response_content": "Asked again.",
             "thinking": "Again."
+          }
+        }
+      ],
+      "reasons": [
+        {
+          "thinking": {
+            "channel_id": "agent",
+            "thinking": "Let me think.",
+            "round_index": 0
+          }
+        },
+        {
+          "thinking": {
+            "channel_id": "agent",
+            "thinking": "Again.",
+            "round_index": 0
           }
         }
       ]

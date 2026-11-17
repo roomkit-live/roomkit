@@ -1,7 +1,7 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "streaming/a-model-s-reasoning-publishes-its-start-its-deltas-and-its-end",
-  "title": "A model's reasoning publishes its start, its deltas and its end, each naming the round and the agent, and fires ON_AI_THINKING once, its text empty; the turn's record reads the reasoning",
+  "title": "A model's reasoning publishes its start, its deltas and its end, each naming the round and the agent, and fires ON_AI_THINKING once, as the block closes, with the block's text; the turn's record reads the reasoning",
   "rules": [
     "§6.7",
     "§9.2"
@@ -108,7 +108,7 @@
           "room_id": "room-1",
           "thinking": {
             "channel_id": "agent",
-            "thinking": "",
+            "thinking": "user asked the meaning",
             "round_index": 0
           }
         }

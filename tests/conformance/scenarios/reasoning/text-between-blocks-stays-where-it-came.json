@@ -91,6 +91,13 @@
           }
         ]
       }
+    ],
+    "hooks": [
+      {
+        "name": "reasons",
+        "trigger": "on_ai_thinking",
+        "execution": "async"
+      }
     ]
   },
   "steps": [
@@ -155,6 +162,24 @@
               "role": "tool"
             }
           ]
+        }
+      ]
+    },
+    "hooks": {
+      "reasons": [
+        {
+          "thinking": {
+            "channel_id": "agent",
+            "thinking": "Weather first.",
+            "round_index": 0
+          }
+        },
+        {
+          "thinking": {
+            "channel_id": "agent",
+            "thinking": "Now the time.",
+            "round_index": 0
+          }
         }
       ]
     }

@@ -16,6 +16,7 @@
       {
         "id": "agent",
         "type": "ai",
+        "publish_tool_call_text": true,
         "tool_call_intents": true,
         "tools": [
           {

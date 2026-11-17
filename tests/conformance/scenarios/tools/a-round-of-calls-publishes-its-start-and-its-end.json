@@ -1,7 +1,7 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "tools/a-round-of-calls-publishes-its-start-and-its-end",
-  "title": "A round of tool calls publishes TOOL_CALL_START with each call's id, tool and arguments before it runs them, and TOOL_CALL_END with each call's result and status once they ended, the round's duration with it",
+  "title": "A round of tool calls of an agent that publishes its calls' text publishes TOOL_CALL_START with each call's id, tool and arguments before it runs them, and TOOL_CALL_END with each call's result and status once they ended, the round's duration with it",
   "rules": [
     "§6.4",
     "§8.4"
@@ -17,6 +17,7 @@
       {
         "id": "agent",
         "type": "ai",
+        "publish_tool_call_text": true,
         "model": {
           "rounds": [
             {

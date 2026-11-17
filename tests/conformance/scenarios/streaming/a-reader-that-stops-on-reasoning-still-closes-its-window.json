@@ -62,6 +62,13 @@
           }
         ]
       }
+    ],
+    "hooks": [
+      {
+        "name": "reasons",
+        "trigger": "on_ai_thinking",
+        "execution": "async"
+      }
     ]
   },
   "steps": [
@@ -107,6 +114,17 @@
         {
           "type": "thinking_end",
           "thinking": "Let me think."
+        }
+      ]
+    },
+    "hooks": {
+      "reasons": [
+        {
+          "thinking": {
+            "channel_id": "agent",
+            "thinking": "Let me think.",
+            "round_index": 0
+          }
         }
       ]
     }
