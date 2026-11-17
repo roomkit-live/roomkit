@@ -70,6 +70,7 @@ from roomkit.tools import current_response_metadata, current_tool_allowed_names,
 from roomkit.tools.compose import compose_tool_handlers
 from roomkit.tools.human_input import HumanInputToolHandler
 from roomkit.tools.policy import ToolPolicy
+from tests.conformance._continuation import continuation_options
 from tests.conformance._mcp import Connected, declared_tools, tool_handlers
 from tests.conformance._memory import Compacted, scripted_memory
 from tests.conformance._script_executor import ScriptedScriptExecutor
@@ -683,6 +684,7 @@ def scripted_agent(
     compacted: Callable[[str, str, dict[str, Any]], None] | None = None,
     script_executors: dict[str, Any] | None = None,
     mcp: Connected = (),
+    continuation_calls: dict[str, list[str]] | None = None,
 ) -> tuple[AIChannel, dict[str, ScriptedModel]]:
     """The AI channel of a scripted agent, and its models by the name
     ``expect.models`` gives them: its own under its id, its memory's
@@ -699,7 +701,7 @@ def scripted_agent(
     model = shared.get(spec["id"]) or _scripted_model(spec["model"], gates, labelled)
     models = {spec["id"]: model}
     tools = spec.get("tools", [])
-    kwargs: dict[str, Any] = {}
+    kwargs = continuation_options(spec, continuation_calls)
     if "tool_policy" in spec:
         kwargs["tool_policy"] = _tool_policy(spec["tool_policy"])
     if "max_tool_rounds" in spec:

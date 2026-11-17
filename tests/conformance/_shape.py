@@ -21,6 +21,7 @@ from tests.conformance._acp_context import context_problems
 from tests.conformance._acp_handler import handler_problems
 from tests.conformance._acp_mcp import mcp_problems
 from tests.conformance._acp_permissions import permission_problems
+from tests.conformance._continuation import channel_problems as continuation_problems
 from tests.conformance._delegate_tool import DELEGATE_TOOL_ARGUMENTS
 from tests.conformance._discussion import (
     DISCUSSION_ARGUMENTS,
@@ -143,6 +144,7 @@ CHANNEL = {
     "tool_policy",
     "max_tool_rounds",
     "max_empty_retries",
+    "continuation",
     "max_context_events",
     "tool_timeout_ms",
     "tool_timeouts_ms",
@@ -439,6 +441,7 @@ EXPECT = {
     "session_audit",
     "executors",
     "script_executors",
+    "continuations",
 }
 NEW_ROOM = {"id", "organization_id", "metadata", "timers"}
 
@@ -823,6 +826,7 @@ def _channel(channel: Mapping[str, Any], path: str, found: list[str]) -> None:
     if "memory" in channel:
         _memory(channel["memory"], f"{path}.memory", found)
     _channel_settings(channel, path, found)
+    found.extend(continuation_problems(channel, path))
 
 
 def _tool_policy(policy: Any, path: str, found: list[str]) -> None:
