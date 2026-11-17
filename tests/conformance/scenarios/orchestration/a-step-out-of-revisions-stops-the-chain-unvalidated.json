@@ -50,9 +50,6 @@
               ]
             },
             {
-              "text": "Judged."
-            },
-            {
               "text": "Acme could not be reviewed."
             }
           ]
@@ -77,9 +74,6 @@
                   }
                 }
               ]
-            },
-            {
-              "text": "Done."
             }
           ]
         }
@@ -197,7 +191,6 @@
     "models": {
       "critic": [],
       "sup": [
-        {},
         {},
         {},
         {},

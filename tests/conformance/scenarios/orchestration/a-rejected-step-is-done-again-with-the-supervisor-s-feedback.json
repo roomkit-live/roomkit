@@ -50,9 +50,6 @@
               ]
             },
             {
-              "text": "Judged."
-            },
-            {
               "calls": [
                 {
                   "id": "v2",
@@ -64,9 +61,6 @@
                   }
                 }
               ]
-            },
-            {
-              "text": "Judged."
             },
             {
               "text": "Acme, reviewed."
@@ -95,9 +89,6 @@
               ]
             },
             {
-              "text": "Done."
-            },
-            {
               "calls": [
                 {
                   "id": "w2",
@@ -108,9 +99,6 @@
                   }
                 }
               ]
-            },
-            {
-              "text": "Done."
             }
           ]
         }
@@ -278,7 +266,6 @@
             }
           ]
         },
-        {},
         {
           "messages": [
             {
@@ -287,7 +274,6 @@
             }
           ]
         },
-        {},
         {
           "tool_results": [
             {
@@ -308,28 +294,10 @@
           ]
         },
         {
-          "tool_results": [
-            {
-              "tool_call_id": "w1",
-              "content": "{\"status\": \"received\"}",
-              "is_error": false
-            }
-          ]
-        },
-        {
           "messages": [
             {
               "role": "user",
               "text": "Your task:\n<task>\nAnalyse Acme's numbers.\n</task>\n\n--- Revision requested by the supervisor ---\nYour previous attempt was NOT accepted. The supervisor's feedback and your previous output (for reference) are set apart below.\n\n[Supervisor feedback]\n<worker_output>\nAdd the margins.\n</worker_output>\n\n[Your previous output]\n<worker_output>\nstatus: completed\nsummary: Revenue.\n</worker_output>\n\nProduce a corrected, complete result that addresses the feedback."
-            }
-          ]
-        },
-        {
-          "tool_results": [
-            {
-              "tool_call_id": "w2",
-              "content": "{\"status\": \"received\"}",
-              "is_error": false
             }
           ]
         }

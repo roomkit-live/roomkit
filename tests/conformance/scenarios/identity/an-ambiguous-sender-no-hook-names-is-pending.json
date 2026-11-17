@@ -1,7 +1,7 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "identity/an-ambiguous-sender-no-hook-names-is-pending",
-  "title": "An ambiguous sender no identity hook names is processed and joins pending, under a record of its own named for its channel and its address, with the resolver's candidates",
+  "title": "An ambiguous sender no identity hook names is processed and joins pending, under a record of its own named for its channel and its address, with the resolver's candidates and the name a hook's pending() gives",
   "rules": [
     "§10.1 step 5",
     "§11.2",
@@ -97,7 +97,7 @@
       }
     }
   ],
-  "notes": "The second hook answers PENDING, which ON_IDENTITY_AMBIGUOUS does not act on: read as null, the sender joins pending with the resolver's candidates. The pending record's id is own_record_id(channel, sender): `pending-` and the first 16 hexadecimal digits of the SHA-256 of the channel id, U+001F and the sender id, never the id the channel gave, which may be an identity's.",
+  "notes": "The second hook answers PENDING: on ON_IDENTITY_AMBIGUOUS the sender joins pending with the resolver's candidates, not the hook's, and the record takes the display name the hook gives. Python: tests/test_identity_unknown_outcomes.py::TestAnIdentityHookCanPend::test_a_pending_participant_is_created_under_the_hooks_name. The pending record's id is own_record_id(channel, sender): `pending-` and the first 16 hexadecimal digits of the SHA-256 of the channel id, U+001F and the sender id, never the id the channel gave, which may be an identity's.",
   "expect": {
     "hooks": {
       "abstains": [
@@ -135,7 +135,7 @@
             "alice-id",
             "bob-id"
           ],
-          "display_name": null
+          "display_name": "Maybe Alice"
         }
       ]
     },

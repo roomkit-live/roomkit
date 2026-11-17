@@ -1,11 +1,11 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "tasks/a-result-submitted-before-the-worker-s-failure-still-counts",
-  "title": "A structured delegation whose worker submits its result, then fails on the next generation, completes with the submitted payload, normalized",
+  "title": "A structured delegation whose worker submits its result through the gateway's tool (mcp__gateway__submit_result), which the room's owner does not serve and which therefore does not end the turn, then fails on the next generation, completes with the submitted payload, normalized",
   "rules": [
     "§23.3"
   ],
-  "notes": "Python: tests/tasks/test_failed_worker_turn.py::test_a_result_submitted_before_the_failure_still_counts; core/mixins/_child_execution.py _run_with_structured_result, _scan_for_submitted_result (the served call in the child room's trace counts whatever the turn's end).",
+  "notes": "Python: tests/tasks/test_failed_worker_turn.py::test_a_result_submitted_before_the_failure_still_counts; core/mixins/_child_execution.py _run_with_structured_result, _scan_for_submitted_result (a served call of the result tool, bare or under a server's prefix, counts whatever the turn's end). Only the result tool the owner serves ends the turn (RMK-357): the gateway's is the worker's own, so its model is asked again, and that request fails.",
   "setup": {
     "channels": [
       {
@@ -18,7 +18,7 @@
               "calls": [
                 {
                   "id": "s1",
-                  "name": "submit_result",
+                  "name": "mcp__gateway__submit_result",
                   "arguments": {
                     "status": "completed",
                     "summary": "found it",
@@ -34,7 +34,16 @@
               }
             }
           ]
-        }
+        },
+        "tools": [
+          {
+            "name": "mcp__gateway__submit_result",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "{\"status\": \"received\"}"
+          }
+        ]
       }
     ],
     "rooms": [
@@ -66,5 +75,12 @@
       "idle": true
     }
   ],
-  "expect": {}
+  "expect": {
+    "models": {
+      "worker": [
+        {},
+        {}
+      ]
+    }
+  }
 }

@@ -49,9 +49,6 @@
               "text": "Public answer."
             },
             {
-              "text": "Captured."
-            },
-            {
               "text": "After capture."
             },
             {
@@ -210,14 +207,6 @@
               "tool_call_id": "stray",
               "is_error": true,
               "content": "{\"error\": \"Tool 'submit_result' is not declared.\"}"
-            }
-          ]
-        },
-        {
-          "tool_results": [
-            {
-              "tool_call_id": "child",
-              "content": "{\"status\": \"received\"}"
             }
           ]
         },

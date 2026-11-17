@@ -1,12 +1,12 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "tasks/a-worker-owing-a-result-is-held-to-what-it-submitted-before-its-cut",
-  "title": "A worker owing a result that submitted it before its round cap cut its turn completes the task with it; one cut without submitting it fails the task with its narration, its error and its metadata naming how the turn ended, never re-prompted",
+  "title": "A worker owing a result that submits it ends its turn there, before its round cap could cut it, and completes the task with it; one cut without submitting it fails the task with its narration, its error and its metadata naming how the turn ended, never re-prompted",
   "rules": [
     "§23.3 step 6",
     "§6.4"
   ],
-  "notes": "Python: tests/tasks/test_worker_cut_short.py::test_a_result_submitted_before_the_cut_counts, test_a_worker_owing_a_result_fails_when_cut_without_one; core/mixins/_child_execution.py _run_with_structured_result (a cut turn is not re-prompted; _scan_for_submitted_result reads a served call whatever the turn's end). submitter submits on its first round, then loops on lookup past max_tool_rounds 1; looper loops without submitting: its model is asked twice, no re-prompt.",
+  "notes": "Python: tests/tasks/test_worker_cut_short.py::test_a_worker_owing_a_result_fails_when_cut_without_one, tests/tasks/test_structured_result.py::TestTheWorkersResultCall::test_a_served_call_is_the_result_and_ends_the_turn; core/mixins/_child_execution.py _run_with_structured_result (a cut turn is not re-prompted; _scan_for_submitted_result reads a served call whatever the turn's end). submitter submits on its first round, which ends its turn (RMK-357): its model is asked once, never for the lookups past max_tool_rounds 1; looper loops without submitting: its model is asked twice, no re-prompt.",
   "setup": {
     "channels": [
       {
@@ -173,6 +173,9 @@
     "models": {
       "looper": [
         {},
+        {}
+      ],
+      "submitter": [
         {}
       ]
     }

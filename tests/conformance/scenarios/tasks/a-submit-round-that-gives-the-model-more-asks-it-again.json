@@ -1,0 +1,113 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-submit-round-that-gives-the-model-more-asks-it-again",
+  "title": "A worker's served submit_result ends its turn unless its round gives the model more to read: a message an AFTER_TOOL_ROUND hook adds to that round is read in one more request, the call's result reading received, and the task completes with the submitted payload",
+  "rules": [
+    "§23.3",
+    "§6.4"
+  ],
+  "notes": "Python: tests/tasks/test_structured_result.py::TestTheWorkersResultCall::test_a_message_its_round_gives_the_model_is_read[after_tool_round]; channels/_ai_streaming.py (turn.submitted, _after_tool_round). The worker's second request carries the submit call's result, {\"status\": \"received\"}, and the hook's message after it; nothing is asked after that answer.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "s1",
+                  "name": "submit_result",
+                  "arguments": {
+                    "status": "completed",
+                    "summary": "Found it.",
+                    "data": {}
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Noted."
+            },
+            {
+              "text": "Never asked."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "remind",
+        "trigger": "after_tool_round",
+        "reactions": [
+          {
+            "result": {
+              "action": "modify",
+              "event": {
+                "messages": [
+                  "One more thing: say so in a word."
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "Look it up.",
+      "wait": true,
+      "require_structured_result": true,
+      "expect": {
+        "result": {
+          "status": "completed",
+          "result": {
+            "status": "completed",
+            "output": "{\"status\": \"completed\", \"summary\": \"Found it.\", \"data\": {}, \"deliverables\": [], \"reason\": \"\"}",
+            "error": null
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "worker": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "s1",
+              "content": "{\"status\": \"received\"}",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

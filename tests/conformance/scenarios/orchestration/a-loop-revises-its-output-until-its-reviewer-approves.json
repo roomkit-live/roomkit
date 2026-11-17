@@ -60,9 +60,6 @@
               ]
             },
             {
-              "text": "Reviewed."
-            },
-            {
               "calls": [
                 {
                   "id": "editor-v2",
@@ -73,9 +70,6 @@
                   }
                 }
               ]
-            },
-            {
-              "text": "Reviewed."
             }
           ]
         }
@@ -434,15 +428,6 @@
           }
         },
         {
-          "tool_results": [
-            {
-              "tool_call_id": "editor-v1",
-              "content": "{\"status\": \"received\"}",
-              "is_error": false
-            }
-          ]
-        },
-        {
           "messages": [
             {
               "role": "user",
@@ -460,15 +445,6 @@
               "$present": true
             }
           }
-        },
-        {
-          "tool_results": [
-            {
-              "tool_call_id": "editor-v2",
-              "content": "{\"status\": \"received\"}",
-              "is_error": false
-            }
-          ]
         }
       ]
     }

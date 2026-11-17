@@ -1,7 +1,7 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "identity/an-unknown-sender-s-hook-names-or-pends-it",
-  "title": "An identity hook on ON_IDENTITY_UNKNOWN names the sender, who joins identified, or pends it, its own candidates carried, else the resolver's",
+  "title": "An identity hook on ON_IDENTITY_UNKNOWN names the sender, who joins identified, or pends it under the name it gives, its own candidates carried, else the resolver's",
   "rules": [
     "§10.1 step 5",
     "§11.2",
@@ -211,7 +211,7 @@
             "candidates": [
               "bob-id"
             ],
-            "display_name": null
+            "display_name": "Maybe Bob"
           }
         ]
       }
