@@ -91,6 +91,16 @@ def test_plan_event_defaults_are_independent_and_its_public_shape_is_preserved()
         first.room_id = "changed"  # type: ignore[misc]
 
 
+@pytest.mark.parametrize(("room_id", "channel_id"), [("", ""), ("room", "all"), ("room", "a b")])
+def test_plan_event_keeps_identifiers_without_applying_record_validation(
+    room_id: str, channel_id: str
+) -> None:
+    event = PlanUpdatedEvent(room_id, channel_id)
+    assert (event.room_id, event.channel_id) == (room_id, channel_id)
+    assert asdict(event)["room_id"] == room_id
+    assert asdict(event)["channel_id"] == channel_id
+
+
 async def test_the_private_planner_waits_for_its_publisher_before_its_callback() -> None:
     planner, realtime = TaskPlanner(), PlanPublication()
     seen: list[list[dict[str, str]]] = []
