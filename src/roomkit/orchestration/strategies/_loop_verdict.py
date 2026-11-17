@@ -4,8 +4,9 @@ through, and how it is read.
 A reviewer judges the producer's output by calling ``submit_review`` once,
 forced as a worker's ``submit_result`` and a supervisor's ``submit_verdict``
 are (re-prompts included). The verdict fails closed: a review that never
-called the tool, a reviewer channel that answered in text, or a task that
-failed approves nothing, whatever words its text holds.
+called the tool, a reviewer whose turns take no owner tools (never given the
+tool, it answers in text), or a task that failed approves nothing, whatever
+words its text holds.
 """
 
 from __future__ import annotations
@@ -19,10 +20,11 @@ from roomkit.providers.ai.base import AITool
 
 def _normalize_review(arguments: dict[str, Any]) -> dict[str, Any]:
     """A ``submit_review`` call's arguments as a verdict: approved only when
-    ``approved`` is the boolean true."""
+    ``approved`` is the boolean true; a feedback that is no text is none."""
+    feedback = arguments.get("feedback")
     return {
         "approved": arguments.get("approved") is True,
-        "feedback": str(arguments.get("feedback") or ""),
+        "feedback": feedback if isinstance(feedback, str) else "",
     }
 
 
@@ -63,11 +65,14 @@ SUBMIT_REVIEW = ResultTool(
 )
 
 
-def read_review(output: str) -> dict[str, Any]:
+def read_review(output: str, *, judged: bool) -> dict[str, Any]:
     """The verdict a review's task handed back: the JSON payload of its
-    ``submit_review`` call. Anything else (a reviewer channel that answered in
-    text, a task that failed and handed back nothing) is no approval, its text
-    the feedback."""
+    ``submit_review`` call, when the reviewer was *judged* through the tool
+    (its turns take the owner's tools). Anything else (the text of a reviewer
+    never given the tool, even a verdict's JSON; a task that failed and handed
+    back nothing) is no approval, its text the feedback."""
+    if not judged:
+        return {"approved": False, "feedback": output}
     try:
         payload = json.loads(output)
     except (TypeError, ValueError):

@@ -19,6 +19,7 @@ from roomkit.channels.declared import named_agent, register_strategy_agents
 from roomkit.core._changes import opens_no_turn
 from roomkit.core._failure_log import mark_reported
 from roomkit.core.exceptions import RoomKitError
+from roomkit.core.mixins._child_execution import _takes_owner_tools
 from roomkit.core.task_utils import gather_or_cut
 from roomkit.models.channel import ChannelBinding, ChannelOutput
 from roomkit.models.context import RoomContext
@@ -72,7 +73,11 @@ class Loop(Orchestration):
 
     The producing agent generates output, then reviewers evaluate it.
     If all reviewers approve, the loop ends. Otherwise, feedback is
-    routed back to the producer for revision.
+    routed back to the producer for revision, with its original task.
+
+    A reviewer approves only by calling the ``submit_review`` tool its
+    review's task declares (``approved``, ``feedback``); its words never
+    approve, so a reviewer must be an agent whose turns call tools.
 
     Examples::
 
@@ -731,11 +736,13 @@ async def _review(
     kit: RoomKit, room_id: str, reviewer: HeldAgent, review_input: str, strategy: str
 ) -> dict[str, Any]:
     """One reviewer's review of *review_input*, with its status posts:
-    ``{reviewer, approved, feedback}``."""
+    ``{reviewer, approved, feedback}``. A reviewer whose turns take no owner
+    tools is never given ``submit_review``: its text is no verdict."""
+    judged = _takes_owner_tools(kit.channels.get(reviewer.channel_id))
     status = WorkerStatus(
         {"room_id": room_id, "role": "reviewer", "strategy": strategy},
         action="review",
-        ended=_review_ended,
+        ended=_review_ended if judged else _unjudged_review_ended,
     )
     reviewed = await run_worker(
         kit,
@@ -747,7 +754,7 @@ async def _review(
         require_structured_result=True,
         result_tool=SUBMIT_REVIEW,
     )
-    verdict = read_review(task_work(reviewed.result))
+    verdict = read_review(task_work(reviewed.result), judged=judged)
     return {
         "reviewer": getattr(reviewer, "role", None) or reviewer.channel_id,
         "approved": verdict["approved"],
@@ -755,14 +762,20 @@ async def _review(
     }
 
 
-def _review_ended(reviewed: WorkerOutcome) -> WorkerEnd:
+def _review_ended(reviewed: WorkerOutcome, *, judged: bool = True) -> WorkerEnd:
     """A review's terminal entry: completed when it approves, info when it
     asks for a revision, failed when the reviewer's task did not complete.
     Its detail is the reviewer's feedback, or the verdict when it gave none."""
     if not reviewed.completed:
         return WorkerEnd(StatusLevel.FAILED, reviewed.output, {"approved": False})
-    verdict = read_review(task_work(reviewed.result))
+    verdict = read_review(task_work(reviewed.result), judged=judged)
     approved = verdict["approved"]
     level = StatusLevel.COMPLETED if approved else StatusLevel.INFO
     detail = verdict["feedback"] or ("Approved." if approved else "Not approved.")
     return WorkerEnd(level, detail, {"approved": approved})
+
+
+def _unjudged_review_ended(reviewed: WorkerOutcome) -> WorkerEnd:
+    """The terminal entry of a review by a reviewer never given
+    ``submit_review``: its text approves nothing."""
+    return _review_ended(reviewed, judged=False)

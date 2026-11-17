@@ -59,6 +59,15 @@ def _make_agent(
     )
 
 
+class _AgentsByAnyId(dict[str, Any]):
+    """A mocked kit's channels: any id it is asked for reads as an agent
+    whose turns take the owner's tools, as a reviewer given ``submit_review``
+    is (RFC §19.7.4); none is registered."""
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return super().get(key) or _make_agent(key)
+
+
 def _make_mock_kit(room: Room) -> MagicMock:
     kit = MagicMock()
     kit.claim_room_strategy = AsyncMock(return_value=None)
@@ -67,7 +76,7 @@ def _make_mock_kit(room: Room) -> MagicMock:
     kit.store.patch_room_metadata = AsyncMock(return_value=room)
     kit.hook_engine = MagicMock()
     kit.hook_engine.add_room_hook = MagicMock()
-    kit.channels = {}
+    kit.channels = _AgentsByAnyId()
     kit.register_channel = MagicMock()
     kit.deliver = AsyncMock()
     return kit
@@ -650,6 +659,7 @@ class TestReviewVerdict:
                 "Add the intro.",
             ),
             (json.dumps({"approved": "true", "feedback": ""}), False, "Not approved."),
+            (json.dumps({"approved": False, "feedback": ["Add it."]}), False, "Not approved."),
             ("", False, "Not approved."),
             (APPROVAL, True, "Approved."),
         ],
@@ -660,6 +670,7 @@ class TestReviewVerdict:
             "words-without-a-verdict",
             "verdict-refuses",
             "verdict-not-a-boolean",
+            "feedback-not-a-text",
             "nothing",
             "verdict-approves",
         ],
