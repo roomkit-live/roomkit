@@ -2,17 +2,21 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import FrozenInstanceError, asdict
 from datetime import UTC, datetime
 
 import pytest
 
-from roomkit import PlanUpdatedEvent
+from roomkit import Agent, PlanUpdatedEvent
 from roomkit.channels._task_planner import TaskPlanner
+from roomkit.channels.ai import AIChannel
 from roomkit.models.enums import EventType
 from roomkit.models.event import ToolCallContent
+from roomkit.providers.ai import AITool, MockAIProvider
 from tests.planning_support import answer, message, plan, room
+from tests.test_planning_hooks import PlanPublication
 
 
 @pytest.mark.parametrize(("count", "length"), [(100, 500), (101, 1), (1, 501)])
@@ -88,10 +92,6 @@ def test_plan_event_defaults_are_independent_and_its_public_shape_is_preserved()
 
 
 async def test_the_private_planner_waits_for_its_publisher_before_its_callback() -> None:
-    import asyncio
-
-    from tests.test_planning_hooks import PlanPublication
-
     planner, realtime = TaskPlanner(), PlanPublication()
     seen: list[list[dict[str, str]]] = []
     tasks = [{"title": "one", "status": "pending"}]
@@ -142,10 +142,6 @@ async def test_a_private_callback_without_a_backend_can_fail_after_the_plan_is_w
 
 @pytest.mark.parametrize("agent", [False, True])
 def test_enabling_planning_refuses_a_host_tool_of_its_reserved_name(agent: bool) -> None:
-    from roomkit import Agent
-    from roomkit.channels.ai import AIChannel
-    from roomkit.providers.ai import AITool, MockAIProvider
-
     constructor = Agent if agent else AIChannel
     with pytest.raises(ValueError, match="plan_tasks"):
         constructor(

@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from roomkit import HookResult, HookTrigger
+from roomkit.models.enums import EventType
+from roomkit.models.event import TextContent
 from roomkit.models.tool_call import AIGenerationEvent
 from tests.planning_support import answer, message, plan, room
 
@@ -58,9 +60,6 @@ async def test_detaching_and_reattaching_forgets_notes_but_keeps_tool_history(
 async def test_a_standalone_instruction_reads_no_plan_then_the_room_still_does(
     streaming: bool,
 ) -> None:
-    from roomkit.models.enums import EventType
-    from roomkit.models.event import TextContent
-
     kit, _, model = await room(
         [plan([{"title": "Room-only plan", "status": "pending"}]), answer(), answer(), answer()],
         streaming,
