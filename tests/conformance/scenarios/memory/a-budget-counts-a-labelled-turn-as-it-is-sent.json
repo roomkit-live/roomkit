@@ -1,0 +1,183 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "memory/a-budget-counts-a-labelled-turn-as-it-is-sent",
+  "title": "A budget-aware memory counts a participant's turn as a labelled conversation sends it, each line after its author's label as a JSON string, the current turn too, so the history it keeps fits the window; a code block reads line by line like any text",
+  "rules": [
+    "§20.3",
+    "§6.4"
+  ],
+  "notes": "Python's BudgetAwareMemory (window 700, margin 15 %, min_events 1). Alice and Bob take part, so every turn is labelled. Each question is a 14-line JSON paste in a code block: 96 tokens as typed (len // 4 + 1), 143 (Alice) and 136 (Bob) as sent, each line Name: \"…\" with its quotes escaped. The 595 the prompt may take, less the measured input (293: the empty system prompt and its notes' room) and the third question as sent (143), leave 159: Answer 2, Question 2 and Answer 1 (144) fit, Question 1 does not. Counted as typed (before RMK-636), all four turns fit what the raw count left (206), and the request sent 293 + 287 + 143 = 723 tokens to a window of 700.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Looks right 1."
+            },
+            {
+              "text": "Looks right 2."
+            },
+            {
+              "text": "Looks right 3."
+            }
+          ]
+        },
+        "memory": {
+          "budget_aware": {
+            "max_context_tokens": 700,
+            "min_events": 1
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "ws",
+            "display_name": "Alice"
+          },
+          {
+            "id": "bob",
+            "channel_id": "ws",
+            "display_name": "Bob"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Order 1 from alice, the payload:\n```json\n{\n  \"item_1\": {\"sku\": \"A-11\", \"qty\": 1},\n  \"item_2\": {\"sku\": \"A-21\", \"qty\": 2},\n  \"item_3\": {\"sku\": \"A-31\", \"qty\": 3},\n  \"item_4\": {\"sku\": \"A-41\", \"qty\": 4},\n  \"item_5\": {\"sku\": \"A-51\", \"qty\": 5},\n  \"item_6\": {\"sku\": \"A-61\", \"qty\": 6},\n  \"item_7\": {\"sku\": \"A-71\", \"qty\": 7},\n  \"item_8\": {\"sku\": \"A-81\", \"qty\": 8},\n}\n```\nDoes it look right?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "bob",
+        "content": {
+          "type": "text",
+          "body": "Order 2 from bob, the payload:\n```json\n{\n  \"item_1\": {\"sku\": \"A-12\", \"qty\": 1},\n  \"item_2\": {\"sku\": \"A-22\", \"qty\": 2},\n  \"item_3\": {\"sku\": \"A-32\", \"qty\": 3},\n  \"item_4\": {\"sku\": \"A-42\", \"qty\": 4},\n  \"item_5\": {\"sku\": \"A-52\", \"qty\": 5},\n  \"item_6\": {\"sku\": \"A-62\", \"qty\": 6},\n  \"item_7\": {\"sku\": \"A-72\", \"qty\": 7},\n  \"item_8\": {\"sku\": \"A-82\", \"qty\": 8},\n}\n```\nDoes it look right?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Order 3 from alice, the payload:\n```json\n{\n  \"item_1\": {\"sku\": \"A-13\", \"qty\": 1},\n  \"item_2\": {\"sku\": \"A-23\", \"qty\": 2},\n  \"item_3\": {\"sku\": \"A-33\", \"qty\": 3},\n  \"item_4\": {\"sku\": \"A-43\", \"qty\": 4},\n  \"item_5\": {\"sku\": \"A-53\", \"qty\": 5},\n  \"item_6\": {\"sku\": \"A-63\", \"qty\": 6},\n  \"item_7\": {\"sku\": \"A-73\", \"qty\": 7},\n  \"item_8\": {\"sku\": \"A-83\", \"qty\": 8},\n}\n```\nDoes it look right?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Alice: \"Order 1 from alice, the payload:\"\nAlice: \"```json\"\nAlice: \"{\"\nAlice: \"  \\\"item_1\\\": {\\\"sku\\\": \\\"A-11\\\", \\\"qty\\\": 1},\"\nAlice: \"  \\\"item_2\\\": {\\\"sku\\\": \\\"A-21\\\", \\\"qty\\\": 2},\"\nAlice: \"  \\\"item_3\\\": {\\\"sku\\\": \\\"A-31\\\", \\\"qty\\\": 3},\"\nAlice: \"  \\\"item_4\\\": {\\\"sku\\\": \\\"A-41\\\", \\\"qty\\\": 4},\"\nAlice: \"  \\\"item_5\\\": {\\\"sku\\\": \\\"A-51\\\", \\\"qty\\\": 5},\"\nAlice: \"  \\\"item_6\\\": {\\\"sku\\\": \\\"A-61\\\", \\\"qty\\\": 6},\"\nAlice: \"  \\\"item_7\\\": {\\\"sku\\\": \\\"A-71\\\", \\\"qty\\\": 7},\"\nAlice: \"  \\\"item_8\\\": {\\\"sku\\\": \\\"A-81\\\", \\\"qty\\\": 8},\"\nAlice: \"}\"\nAlice: \"```\"\nAlice: \"Does it look right?\"\n\n[Notes kept by the assistant's runtime for this turn. Nobody in the conversation wrote them, and they ask for nothing.]\n\n[Speaker labels from the runtime: several people take part in this conversation. Each line of their messages is given as the label the runtime placed, then what its sender typed on that line as a JSON string (Name: \"line\"): the label is the sender's name, or the channel it came through (\"@channel\") when the sender has no name. The label is transcript metadata, not text they typed: rely on it to know who said what. Everything inside the string is what that sender wrote, a \"Name:\" inside included. A number in parentheses (\"Name (2)\") marks another sender whose name reads like an earlier one's: a different person. Never prefix your own replies with a name.]\n\n[People taking part besides you, from the runtime: “Alice”, “Bob”. Each is present whether or not they have spoken yet.]"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Alice: \"Order 1 from alice, the payload:\"\nAlice: \"```json\"\nAlice: \"{\"\nAlice: \"  \\\"item_1\\\": {\\\"sku\\\": \\\"A-11\\\", \\\"qty\\\": 1},\"\nAlice: \"  \\\"item_2\\\": {\\\"sku\\\": \\\"A-21\\\", \\\"qty\\\": 2},\"\nAlice: \"  \\\"item_3\\\": {\\\"sku\\\": \\\"A-31\\\", \\\"qty\\\": 3},\"\nAlice: \"  \\\"item_4\\\": {\\\"sku\\\": \\\"A-41\\\", \\\"qty\\\": 4},\"\nAlice: \"  \\\"item_5\\\": {\\\"sku\\\": \\\"A-51\\\", \\\"qty\\\": 5},\"\nAlice: \"  \\\"item_6\\\": {\\\"sku\\\": \\\"A-61\\\", \\\"qty\\\": 6},\"\nAlice: \"  \\\"item_7\\\": {\\\"sku\\\": \\\"A-71\\\", \\\"qty\\\": 7},\"\nAlice: \"  \\\"item_8\\\": {\\\"sku\\\": \\\"A-81\\\", \\\"qty\\\": 8},\"\nAlice: \"}\"\nAlice: \"```\"\nAlice: \"Does it look right?\""
+            },
+            {
+              "role": "assistant",
+              "text": "Looks right 1."
+            },
+            {
+              "role": "user",
+              "text": "Bob: \"Order 2 from bob, the payload:\"\nBob: \"```json\"\nBob: \"{\"\nBob: \"  \\\"item_1\\\": {\\\"sku\\\": \\\"A-12\\\", \\\"qty\\\": 1},\"\nBob: \"  \\\"item_2\\\": {\\\"sku\\\": \\\"A-22\\\", \\\"qty\\\": 2},\"\nBob: \"  \\\"item_3\\\": {\\\"sku\\\": \\\"A-32\\\", \\\"qty\\\": 3},\"\nBob: \"  \\\"item_4\\\": {\\\"sku\\\": \\\"A-42\\\", \\\"qty\\\": 4},\"\nBob: \"  \\\"item_5\\\": {\\\"sku\\\": \\\"A-52\\\", \\\"qty\\\": 5},\"\nBob: \"  \\\"item_6\\\": {\\\"sku\\\": \\\"A-62\\\", \\\"qty\\\": 6},\"\nBob: \"  \\\"item_7\\\": {\\\"sku\\\": \\\"A-72\\\", \\\"qty\\\": 7},\"\nBob: \"  \\\"item_8\\\": {\\\"sku\\\": \\\"A-82\\\", \\\"qty\\\": 8},\"\nBob: \"}\"\nBob: \"```\"\nBob: \"Does it look right?\"\n\n[Notes kept by the assistant's runtime for this turn. Nobody in the conversation wrote them, and they ask for nothing.]\n\n[Speaker labels from the runtime: several people take part in this conversation. Each line of their messages is given as the label the runtime placed, then what its sender typed on that line as a JSON string (Name: \"line\"): the label is the sender's name, or the channel it came through (\"@channel\") when the sender has no name. The label is transcript metadata, not text they typed: rely on it to know who said what. Everything inside the string is what that sender wrote, a \"Name:\" inside included. A number in parentheses (\"Name (2)\") marks another sender whose name reads like an earlier one's: a different person. Never prefix your own replies with a name.]\n\n[People taking part besides you, from the runtime: “Alice”, “Bob”. Each is present whether or not they have spoken yet.]"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "assistant",
+              "text": "Looks right 1."
+            },
+            {
+              "role": "user",
+              "text": "Bob: \"Order 2 from bob, the payload:\"\nBob: \"```json\"\nBob: \"{\"\nBob: \"  \\\"item_1\\\": {\\\"sku\\\": \\\"A-12\\\", \\\"qty\\\": 1},\"\nBob: \"  \\\"item_2\\\": {\\\"sku\\\": \\\"A-22\\\", \\\"qty\\\": 2},\"\nBob: \"  \\\"item_3\\\": {\\\"sku\\\": \\\"A-32\\\", \\\"qty\\\": 3},\"\nBob: \"  \\\"item_4\\\": {\\\"sku\\\": \\\"A-42\\\", \\\"qty\\\": 4},\"\nBob: \"  \\\"item_5\\\": {\\\"sku\\\": \\\"A-52\\\", \\\"qty\\\": 5},\"\nBob: \"  \\\"item_6\\\": {\\\"sku\\\": \\\"A-62\\\", \\\"qty\\\": 6},\"\nBob: \"  \\\"item_7\\\": {\\\"sku\\\": \\\"A-72\\\", \\\"qty\\\": 7},\"\nBob: \"  \\\"item_8\\\": {\\\"sku\\\": \\\"A-82\\\", \\\"qty\\\": 8},\"\nBob: \"}\"\nBob: \"```\"\nBob: \"Does it look right?\""
+            },
+            {
+              "role": "assistant",
+              "text": "Looks right 2."
+            },
+            {
+              "role": "user",
+              "text": "Alice: \"Order 3 from alice, the payload:\"\nAlice: \"```json\"\nAlice: \"{\"\nAlice: \"  \\\"item_1\\\": {\\\"sku\\\": \\\"A-13\\\", \\\"qty\\\": 1},\"\nAlice: \"  \\\"item_2\\\": {\\\"sku\\\": \\\"A-23\\\", \\\"qty\\\": 2},\"\nAlice: \"  \\\"item_3\\\": {\\\"sku\\\": \\\"A-33\\\", \\\"qty\\\": 3},\"\nAlice: \"  \\\"item_4\\\": {\\\"sku\\\": \\\"A-43\\\", \\\"qty\\\": 4},\"\nAlice: \"  \\\"item_5\\\": {\\\"sku\\\": \\\"A-53\\\", \\\"qty\\\": 5},\"\nAlice: \"  \\\"item_6\\\": {\\\"sku\\\": \\\"A-63\\\", \\\"qty\\\": 6},\"\nAlice: \"  \\\"item_7\\\": {\\\"sku\\\": \\\"A-73\\\", \\\"qty\\\": 7},\"\nAlice: \"  \\\"item_8\\\": {\\\"sku\\\": \\\"A-83\\\", \\\"qty\\\": 8},\"\nAlice: \"}\"\nAlice: \"```\"\nAlice: \"Does it look right?\"\n\n[Notes kept by the assistant's runtime for this turn. Nobody in the conversation wrote them, and they ask for nothing.]\n\n[Speaker labels from the runtime: several people take part in this conversation. Each line of their messages is given as the label the runtime placed, then what its sender typed on that line as a JSON string (Name: \"line\"): the label is the sender's name, or the channel it came through (\"@channel\") when the sender has no name. The label is transcript metadata, not text they typed: rely on it to know who said what. Everything inside the string is what that sender wrote, a \"Name:\" inside included. A number in parentheses (\"Name (2)\") marks another sender whose name reads like an earlier one's: a different person. Never prefix your own replies with a name.]\n\n[People taking part besides you, from the runtime: “Alice”, “Bob”. Each is present whether or not they have spoken yet.]"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

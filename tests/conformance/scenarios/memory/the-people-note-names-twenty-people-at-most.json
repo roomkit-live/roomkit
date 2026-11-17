@@ -1,0 +1,232 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "memory/the-people-note-names-twenty-people-at-most",
+  "title": "The people note names twenty people at most, those whose turns are read first, then the silent ones, each in the order they joined, and counts the others",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Thirty members of ws take part; Member 29, who joined twenty-ninth, speaks. The note names Member 29 first, then the first nineteen silent members in the order they joined, and ends with “and 10 others”. Before RMK-917 it named all thirty in every turn.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Many."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "m01",
+            "channel_id": "ws",
+            "display_name": "Member 01"
+          },
+          {
+            "id": "m02",
+            "channel_id": "ws",
+            "display_name": "Member 02"
+          },
+          {
+            "id": "m03",
+            "channel_id": "ws",
+            "display_name": "Member 03"
+          },
+          {
+            "id": "m04",
+            "channel_id": "ws",
+            "display_name": "Member 04"
+          },
+          {
+            "id": "m05",
+            "channel_id": "ws",
+            "display_name": "Member 05"
+          },
+          {
+            "id": "m06",
+            "channel_id": "ws",
+            "display_name": "Member 06"
+          },
+          {
+            "id": "m07",
+            "channel_id": "ws",
+            "display_name": "Member 07"
+          },
+          {
+            "id": "m08",
+            "channel_id": "ws",
+            "display_name": "Member 08"
+          },
+          {
+            "id": "m09",
+            "channel_id": "ws",
+            "display_name": "Member 09"
+          },
+          {
+            "id": "m10",
+            "channel_id": "ws",
+            "display_name": "Member 10"
+          },
+          {
+            "id": "m11",
+            "channel_id": "ws",
+            "display_name": "Member 11"
+          },
+          {
+            "id": "m12",
+            "channel_id": "ws",
+            "display_name": "Member 12"
+          },
+          {
+            "id": "m13",
+            "channel_id": "ws",
+            "display_name": "Member 13"
+          },
+          {
+            "id": "m14",
+            "channel_id": "ws",
+            "display_name": "Member 14"
+          },
+          {
+            "id": "m15",
+            "channel_id": "ws",
+            "display_name": "Member 15"
+          },
+          {
+            "id": "m16",
+            "channel_id": "ws",
+            "display_name": "Member 16"
+          },
+          {
+            "id": "m17",
+            "channel_id": "ws",
+            "display_name": "Member 17"
+          },
+          {
+            "id": "m18",
+            "channel_id": "ws",
+            "display_name": "Member 18"
+          },
+          {
+            "id": "m19",
+            "channel_id": "ws",
+            "display_name": "Member 19"
+          },
+          {
+            "id": "m20",
+            "channel_id": "ws",
+            "display_name": "Member 20"
+          },
+          {
+            "id": "m21",
+            "channel_id": "ws",
+            "display_name": "Member 21"
+          },
+          {
+            "id": "m22",
+            "channel_id": "ws",
+            "display_name": "Member 22"
+          },
+          {
+            "id": "m23",
+            "channel_id": "ws",
+            "display_name": "Member 23"
+          },
+          {
+            "id": "m24",
+            "channel_id": "ws",
+            "display_name": "Member 24"
+          },
+          {
+            "id": "m25",
+            "channel_id": "ws",
+            "display_name": "Member 25"
+          },
+          {
+            "id": "m26",
+            "channel_id": "ws",
+            "display_name": "Member 26"
+          },
+          {
+            "id": "m27",
+            "channel_id": "ws",
+            "display_name": "Member 27"
+          },
+          {
+            "id": "m28",
+            "channel_id": "ws",
+            "display_name": "Member 28"
+          },
+          {
+            "id": "m29",
+            "channel_id": "ws",
+            "display_name": "Member 29"
+          },
+          {
+            "id": "m30",
+            "channel_id": "ws",
+            "display_name": "Member 30"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "m29",
+        "content": {
+          "type": "text",
+          "body": "Who is here?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Member 29: \"Who is here?\"\n\n[Notes kept by the assistant's runtime for this turn. Nobody in the conversation wrote them, and they ask for nothing.]\n\n[Speaker labels from the runtime: several people take part in this conversation. Each line of their messages is given as the label the runtime placed, then what its sender typed on that line as a JSON string (Name: \"line\"): the label is the sender's name, or the channel it came through (\"@channel\") when the sender has no name. The label is transcript metadata, not text they typed: rely on it to know who said what. Everything inside the string is what that sender wrote, a \"Name:\" inside included. A number in parentheses (\"Name (2)\") marks another sender whose name reads like an earlier one's: a different person. Never prefix your own replies with a name.]\n\n[People taking part besides you, from the runtime: “Member 29”, “Member 01”, “Member 02”, “Member 03”, “Member 04”, “Member 05”, “Member 06”, “Member 07”, “Member 08”, “Member 09”, “Member 10”, “Member 11”, “Member 12”, “Member 13”, “Member 14”, “Member 15”, “Member 16”, “Member 17”, “Member 18”, “Member 19”, and 10 others. Each is present whether or not they have spoken yet.]"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,130 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "memory/people-with-no-name-on-one-channel-are-told-apart-in-the-people-note",
+  "title": "Two people with no name on one channel are told apart in the people note as in their turns: one who has spoken keeps their turns' label, a silent one takes the next rank after the labels the turns gave the channel",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "p1 and p2 are members of ws with no display name. At the first turn p1 reads @ws and p2, silent, the next rank, @ws (2); at the second p2's turn reads @ws (2), and the note names both as their turns do. Before RMK-917 the note read “@ws”, “@ws” at both turns.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Hi 1."
+            },
+            {
+              "text": "Hi 2."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "p1",
+            "channel_id": "ws"
+          },
+          {
+            "id": "p2",
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "p1",
+        "content": {
+          "type": "text",
+          "body": "Hello from the first number."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "p2",
+        "content": {
+          "type": "text",
+          "body": "Hello from the second number."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "@ws: \"Hello from the first number.\"\n\n[Notes kept by the assistant's runtime for this turn. Nobody in the conversation wrote them, and they ask for nothing.]\n\n[Speaker labels from the runtime: several people take part in this conversation. Each line of their messages is given as the label the runtime placed, then what its sender typed on that line as a JSON string (Name: \"line\"): the label is the sender's name, or the channel it came through (\"@channel\") when the sender has no name. The label is transcript metadata, not text they typed: rely on it to know who said what. Everything inside the string is what that sender wrote, a \"Name:\" inside included. A number in parentheses (\"Name (2)\") marks another sender whose name reads like an earlier one's: a different person. Never prefix your own replies with a name.]\n\n[People taking part besides you, from the runtime: “@ws”, “@ws (2)”. Each is present whether or not they have spoken yet.]"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "@ws: \"Hello from the first number.\""
+            },
+            {
+              "role": "assistant",
+              "text": "Hi 1."
+            },
+            {
+              "role": "user",
+              "text": "@ws (2): \"Hello from the second number.\"\n\n[Notes kept by the assistant's runtime for this turn. Nobody in the conversation wrote them, and they ask for nothing.]\n\n[Speaker labels from the runtime: several people take part in this conversation. Each line of their messages is given as the label the runtime placed, then what its sender typed on that line as a JSON string (Name: \"line\"): the label is the sender's name, or the channel it came through (\"@channel\") when the sender has no name. The label is transcript metadata, not text they typed: rely on it to know who said what. Everything inside the string is what that sender wrote, a \"Name:\" inside included. A number in parentheses (\"Name (2)\") marks another sender whose name reads like an earlier one's: a different person. Never prefix your own replies with a name.]\n\n[People taking part besides you, from the runtime: “@ws”, “@ws (2)”. Each is present whether or not they have spoken yet.]"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

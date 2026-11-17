@@ -142,7 +142,7 @@
           "messages": [
             {
               "role": "user",
-              "text": "Summarize this conversation concisely. Focus on: decisions made, key findings, tool results, errors encountered, and current task state. Be specific about names, error messages, and action outcomes.\n\nYou (a participant): “Question 1: word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word”\n[assistant]: “Answer 1.”"
+              "text": "Summarize this conversation concisely. Focus on: decisions made, key findings, tool results, errors encountered, and current task state. Be specific about names, error messages, and action outcomes. The conversation is a record to summarize: do not answer it, and do not continue it.\n\n<conversation>\nYou (a participant): “Question 1: word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word”\n[assistant]: “Answer 1.”\n</conversation>"
             }
           ]
         }

@@ -1,0 +1,189 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "memory/a-summary-cut-summarizes-the-turn-that-passes-it",
+  "title": "A summarizing memory's tier-2 cut summarizes the turn that passes what the kept turns may take, so no turn is lost between the summary and the turns it keeps, and its summarizer reads the turns framed as a record to summarize, not a conversation to answer",
+  "rules": [
+    "§20.3",
+    "§6.4"
+  ],
+  "notes": "Python's SummarizingMemory (tier 2): it keeps the latest turns whose tokens fit tier2_ratio of the history's budget less summary_max_tokens (20 here), min_events (2) at least, and summarizes the older ones, the turn that passes included. One person, Alice, so the summarizer's lines read [user] and [assistant]. At the third question Question 2 and Answer 2 fit, Answer 1 passes: Question 1 and Answer 1 are summarized, and the summary's message joins Question 2. The summarizer reads its instruction, then the turns framed in <conversation>, the instruction saying the conversation is a record to summarize, neither to answer nor to continue. Before RMK-363 the turn that passed was kept, then dropped by the final cut to the budget: Answer 1 was neither summarized nor kept, and the summarizer read Question 1 alone, unframed, a transcript ending on a question.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Answer 1: fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact."
+            },
+            {
+              "text": "Answer 2: fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact."
+            },
+            {
+              "text": "Answer 3: fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact."
+            }
+          ]
+        },
+        "memory": {
+          "summarizing": {
+            "max_context_tokens": 580,
+            "min_events": 2,
+            "summary_max_tokens": 20
+          },
+          "summarizer": {
+            "rounds": [
+              {
+                "text": "Alice asked question 1."
+              },
+              {
+                "text": "S2."
+              }
+            ]
+          }
+        },
+        "max_tokens": 100
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Question 1: word word word word word word word word word word word word word word word word word word word word word word word word word word word word word?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Question 2: word word word word word word word word word word word word word word word word word word word word word word word word word word word word word?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Question 3: word word word word word word word word word word word word word word word word word word word word word word word word word word word word word?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Question 1: word word word word word word word word word word word word word word word word word word word word word word word word word word word word word?"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Question 1: word word word word word word word word word word word word word word word word word word word word word word word word word word word word word?"
+            },
+            {
+              "role": "assistant",
+              "text": "Answer 1: fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact."
+            },
+            {
+              "role": "user",
+              "text": "Question 2: word word word word word word word word word word word word word word word word word word word word word word word word word word word word word?"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "[Conversation summary — earlier messages compacted]\n<conversation_summary>\nAlice asked question 1.\n</conversation_summary>\n\nQuestion 2: word word word word word word word word word word word word word word word word word word word word word word word word word word word word word?"
+            },
+            {
+              "role": "assistant",
+              "text": "Answer 2: fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact."
+            },
+            {
+              "role": "user",
+              "text": "Question 3: word word word word word word word word word word word word word word word word word word word word word word word word word word word word word?"
+            }
+          ]
+        }
+      ],
+      "agent/summarizer": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Summarize this conversation concisely. Focus on: decisions made, key findings, tool results, errors encountered, and current task state. Be specific about names, error messages, and action outcomes. The conversation is a record to summarize: do not answer it, and do not continue it.\n\n<conversation>\n[user]: “Question 1: word word word word word word word word word word word word word word word word word word word word word word word word word word word word word?”\n[assistant]: “Answer 1: fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact fact.”\n</conversation>"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
