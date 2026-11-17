@@ -1,0 +1,215 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/a-deferred-code-reply-returns-before-its-release",
+  "title": "A code reply made with defer_delivery returns verification_code as soon as it is known for one, with no handle: its attempt, the release and the agents' answer go on as the kit's work",
+  "rules": [
+    "§11.7.4",
+    "§11.7.6",
+    "§10.1 step 18"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/verification.py (_apply_verification, _code_reply, _attempt_code: a deferred reply's attempt started as a decided write of the kit); RMK-913. The agent holds at its gate: the call returned before the answer, which the gate opened lets in.",
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "when": {
+              "sender_id": "+15551234567"
+            },
+            "repeat": true,
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "alice-id"
+              }
+            }
+          }
+        ]
+      },
+      "verification_policy": {}
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "on_event": [
+          {
+            "when": {
+              "text": "What's my balance?"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer"
+                }
+              }
+            ],
+            "gate": "answering"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "What's my balance?"
+        }
+      }
+    },
+    {
+      "call": "request_verification",
+      "identity_id": "alice-id",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "as": "req",
+      "window_start": "2000-01-01T00:00:00Z",
+      "method": "code"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "$req.secret"
+        }
+      },
+      "defer_delivery": true,
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "verification_code",
+          "event": null
+        }
+      }
+    },
+    {
+      "wait_for": "answering"
+    },
+    {
+      "call": "store.get_timeline",
+      "room_id": "room-1",
+      "event_filter": {
+        "event_types": [
+          "message"
+        ]
+      },
+      "expect": {
+        "result": [
+          {
+            "content": {
+              "body": "What's my balance?"
+            },
+            "visibility": "all"
+          }
+        ]
+      }
+    },
+    {
+      "call": "store.get_verification_request",
+      "request_id": "$req",
+      "expect": {
+        "result": {
+          "status": "completed"
+        }
+      }
+    },
+    {
+      "open": "answering"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "What's my balance?"
+          },
+          "visibility": "all",
+          "source": {
+            "channel_id": "sms",
+            "participant_id": "alice-id",
+            "verification": "unverified"
+          },
+          "metadata": {
+            "roomkit:verification_held": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "index": 1,
+          "content": {
+            "body": "answer"
+          },
+          "source": {
+            "channel_id": "ai",
+            "direction": "outbound"
+          },
+          "responds_to": "room-1#0"
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "ai": [
+          {
+            "content": {
+              "body": "What's my balance?"
+            },
+            "visibility": "intelligence"
+          }
+        ]
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [
+          {
+            "content": {
+              "body": "answer"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

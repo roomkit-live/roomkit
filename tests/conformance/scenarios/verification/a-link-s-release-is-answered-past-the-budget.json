@@ -1,0 +1,193 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/a-link-s-release-is-answered-past-the-budget",
+  "title": "A completion through the link door answers its release past process_timeout too: the answer is in once complete_verification returns",
+  "rules": [
+    "§11.7.6",
+    "§13.6"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/verification.py (complete_verification, _release_held), src/roomkit/core/mixins/regenerate.py (_rerun_agents_on: the budget bounds the wait for the room's lock alone); RMK-913, the code door's neighbour. The agent takes twice the budget.",
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "when": {
+              "sender_id": "+15551234567"
+            },
+            "repeat": true,
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "alice-id"
+              }
+            }
+          }
+        ]
+      },
+      "verification_policy": {},
+      "process_timeout_ms": 300
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai",
+        "on_event": [
+          {
+            "when": {
+              "text": "What's my balance?"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "answer"
+                }
+              }
+            ],
+            "delay_ms": 600
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "What's my balance?"
+        }
+      }
+    },
+    {
+      "call": "request_verification",
+      "identity_id": "alice-id",
+      "room_id": "room-1",
+      "channel_id": "sms",
+      "as": "req",
+      "window_start": "2000-01-01T00:00:00Z"
+    },
+    {
+      "call": "complete_verification",
+      "request_id": "$req",
+      "secret": "$req.secret",
+      "expect": {
+        "result": {
+          "status": "verified",
+          "method": "link"
+        }
+      }
+    },
+    {
+      "call": "store.get_timeline",
+      "room_id": "room-1",
+      "expect": {
+        "result": [
+          {
+            "content": {
+              "body": "What's my balance?"
+            },
+            "visibility": "all"
+          },
+          {
+            "content": {
+              "body": "answer"
+            },
+            "responds_to": "room-1#0"
+          }
+        ]
+      },
+      "event_filter": {
+        "event_types": [
+          "message"
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "What's my balance?"
+          },
+          "visibility": "all",
+          "source": {
+            "channel_id": "sms",
+            "participant_id": "alice-id",
+            "verification": "unverified"
+          },
+          "metadata": {
+            "roomkit:verification_held": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "index": 1,
+          "content": {
+            "body": "answer"
+          },
+          "source": {
+            "channel_id": "ai",
+            "direction": "outbound"
+          },
+          "responds_to": "room-1#0"
+        }
+      ]
+    },
+    "turns": {
+      "room-1": {
+        "ai": [
+          {
+            "content": {
+              "body": "What's my balance?"
+            },
+            "visibility": "intelligence"
+          }
+        ]
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "sms": [
+          {
+            "content": {
+              "body": "answer"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

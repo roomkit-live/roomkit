@@ -1,0 +1,128 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "verification/a-verification-hook-past-process-timeout-expires-its-message",
+  "title": "process_timeout bounds step 5b's ON_VERIFICATION_REQUIRED hooks, which only a code's attempt is free of: past it the message is refused process_timeout, the hook cut with no hook_timeout, and nothing of it is stored",
+  "rules": [
+    "§13.6",
+    "§10.1 step 5b",
+    "§11.7.3"
+  ],
+  "notes": "Python: src/roomkit/core/mixins/verification.py (_apply_verification: the read and the hooks under the call's deadline, _bounded_by; the attempt not); RMK-913, the boundary of the code reply's rule.",
+  "setup": {
+    "kit": {
+      "identity_resolver": {
+        "answers": [
+          {
+            "repeat": true,
+            "result": {
+              "status": "identified",
+              "identity": {
+                "id": "alice-id"
+              }
+            }
+          }
+        ]
+      },
+      "verification_policy": {},
+      "process_timeout_ms": 300
+    },
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms"
+      },
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "ai",
+        "type": "ai"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "ai"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "slow",
+        "trigger": "on_verification_required",
+        "timeout_ms": 3000,
+        "reactions": [
+          {
+            "gate": "never"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "hello"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": true,
+          "reason": "process_timeout",
+          "event": null
+        }
+      }
+    },
+    {
+      "open": "never"
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": []
+    },
+    "hooks": {
+      "slow": [
+        {
+          "trigger": "on_verification_required",
+          "room_id": "room-1",
+          "event": {
+            "content": {
+              "body": "hello"
+            },
+            "source": {
+              "verification": "unverified"
+            }
+          }
+        }
+      ]
+    },
+    "framework_events": {
+      "room-1": [
+        {
+          "event": "identity_resolved",
+          "identity_id": "alice-id"
+        },
+        {
+          "event": "process_timeout"
+        }
+      ]
+    }
+  }
+}
