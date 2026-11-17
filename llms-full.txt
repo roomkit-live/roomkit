@@ -3201,6 +3201,11 @@ async def on_stream(conn_id: str, msg) -> None:
     print(f"Stream: {msg}")
 ```
 
+A connection registered without `stream_send_fn` reads, through its `send_fn`,
+the rows the stream hands once they are stored (each text segment, each
+call's start and end), each once, and no end event: nothing of a row a hook
+blocked or narrowed away, the store kept out, or of a blank answer.
+
 ### Why a streaming tool loop stopped
 
 The streaming tool loop ends on rules of its own — the round cap, the

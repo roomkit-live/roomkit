@@ -454,14 +454,15 @@ class TestOrganizationScope:
         for conn, org in (("acme-final", "acme"), ("globex-final", "globex")):
             ws.register_connection(conn, send, room_id="room-a", organization_id=org)
 
-        async def text_stream() -> AsyncIterator[str]:
+        async def text_stream() -> AsyncIterator[str | RoomEvent]:
             yield "hello"
+            yield _event("room-a", "hello")  # the row the stream hands once stored
 
         context = RoomContext(room=Room(id="room-a", organization_id="acme"))
         await ws.deliver_stream(text_stream(), _event("room-a", ""), _binding("room-a"), context)
 
         assert set(streamed) == {"acme-live"}
-        assert sent == ["acme-final"]
+        assert sorted(sent) == ["acme-final", "acme-live"]
 
     @pytest.mark.parametrize("door", _TAKEOVER_DOORS)
     async def test_another_organization_cannot_take_over_a_connection(self, door: str) -> None:

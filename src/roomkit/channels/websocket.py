@@ -423,9 +423,10 @@ class WebSocketChannel(Channel):
         - ``event`` — persisted event (tool call, text segment)
         - ``stream_end`` — streaming complete
 
-        Non-streaming connections receive all persisted events via
-        the regular ``send_fn``, each once; a stream that hands none gives
-        them its text as one final event.
+        Non-streaming connections receive the persisted events the stream
+        hands via the regular ``send_fn``, each once, and nothing more: no
+        end event, not even for a stream that hands none (its rows blocked,
+        kept out or narrowed away, or no text at all) (RFC Appendix A.8).
 
         A stream sends only to the registrations present when it started,
         checked as each send starts: an id unregistered, evicted or
@@ -500,8 +501,7 @@ class WebSocketChannel(Channel):
         # otherwise use the full accumulated text
         if segment_events:
             # Segments were delivered inline — stream_end carries no event
-            # (the UI already has all events), and the connections that do
-            # not stream read each row: they get nothing more (RMK-994)
+            # (the UI already has all events)
             segmented_meta = {**event.metadata, "_segmented": True}
             final_event = event.model_copy(
                 update={"content": TextContent(body=""), "metadata": segmented_meta}
@@ -512,21 +512,10 @@ class WebSocketChannel(Channel):
             body = running_text if running_text.strip() else ""
             final_event = event.model_copy(update={"content": TextContent(body=body)})
 
-        # Send stream_end to streaming connections
+        # Send stream_end to streaming connections. The others read the rows
+        # the stream handed, and nothing of a row it did not hand (RMK-994)
         end_msg = StreamEnd(room_id=room_id, stream_id=stream_id, event=final_event)
         await self._fan_out_stream(streaming_conns, end_msg)
-
-        if segment_events:
-            return ChannelOutput.empty()
-        # A stream that handed no row: this room's non-streaming connections
-        # read its text as the final event
-        await asyncio.gather(
-            *(
-                self._send_one(conn_id, send_fn, final_event, token)
-                for conn_id, send_fn, token in room_conns
-                if conn_id not in self._stream_send_fns
-            )
-        )
 
         return ChannelOutput.empty()
 

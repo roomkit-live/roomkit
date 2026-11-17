@@ -18,9 +18,10 @@ from roomkit.core.framework import ChannelNotRegisteredError, RoomKit
 from roomkit.models.channel import ChannelBinding, ChannelCapabilities
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
-from roomkit.models.enums import ChannelMediaType, ChannelType
+from roomkit.models.enums import ChannelMediaType, ChannelType, EventStatus, HookTrigger
 from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.models.framework_event import FrameworkEvent
+from roomkit.models.hook import HookResult
 from roomkit.models.room import Room
 from roomkit.providers.ai.base import AIResponse, AITool, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
@@ -71,10 +72,16 @@ async def _found(name: str, arguments: dict[str, Any]) -> str:
 
 
 def _row(event: RoomEvent) -> str:
-    """A row as a connection reads it: its index, then its text or type."""
+    """A row as a connection reads it: its text, else its type."""
     if isinstance(event.content, TextContent):
-        return f"#{event.index} {event.content.body}"
-    return f"#{event.index} {event.type.value}"
+        return event.content.body
+    return event.type.value
+
+
+async def _block_the_agent(event: RoomEvent, context: RoomContext) -> HookResult:
+    if event.source.channel_id == "ai":
+        return HookResult.block("withheld")
+    return HookResult.allow()
 
 
 class TestConnectWebSocket:
@@ -258,28 +265,14 @@ class TestStreamingDelivery:
 
         assert [c.delta for c in chunks] == ["Hello", " ", "world"]
 
-    async def test_deliver_stream_non_streaming_connections_get_final(self) -> None:
-        """Connections without stream_send_fn receive the final event via send_fn."""
-        ws = WebSocketChannel("ws1")
-        final_events: list[RoomEvent] = []
-
-        async def regular_send(conn_id: str, event: RoomEvent) -> None:
-            final_events.append(event)
-
-        # c1 has no stream_send_fn — should receive final event
-        ws.register_connection("c1", regular_send, room_id="room-1")
-
-        await ws.deliver_stream(
-            _text_stream("Hi", " there"), _make_event(), _make_binding(), _make_context()
-        )
-
-        assert len(final_events) == 1
-        assert isinstance(final_events[0].content, TextContent)
-        assert final_events[0].content.body == "Hi there"
-
-    async def test_a_blank_stream_gives_a_non_streaming_connection_no_text(self) -> None:
-        """A stream of line breaks is no message in the room (RMK-1300): what a
-        connection reads of it is the empty answer, as with no text at all."""
+    @pytest.mark.parametrize("chunks", [("Hi", " there"), ("\n", "\n")], ids=["text", "blank"])
+    async def test_a_plain_connection_reads_nothing_of_a_stream_that_hands_no_row(
+        self, chunks: tuple[str, ...]
+    ) -> None:
+        """A connection without stream_send_fn reads the rows a stream hands,
+        and no event the stream's text would make, which the room never held:
+        a row blocked, kept out or narrowed away is not handed, and a blank
+        text is no row (RFC Appendix A.8, RMK-994, RMK-1300)."""
         ws = WebSocketChannel("ws1")
         final_events: list[RoomEvent] = []
 
@@ -289,10 +282,10 @@ class TestStreamingDelivery:
         ws.register_connection("c1", regular_send, room_id="room-1")
 
         await ws.deliver_stream(
-            _text_stream("\n", "\n"), _make_event(), _make_binding(), _make_context()
+            _text_stream(*chunks), _make_event(), _make_binding(), _make_context()
         )
 
-        assert [event.content.body for event in final_events] == [""]
+        assert final_events == []
 
     async def test_deliver_stream_error_removes_connection(self) -> None:
         """Streaming send failures increment error count and remove after threshold."""
@@ -333,7 +326,8 @@ class TestStreamingDelivery:
         assert received[1].event.content.body == ""
 
     async def test_deliver_stream_mixed_connections(self) -> None:
-        """Mixed: streaming connections get protocol, non-streaming get final event."""
+        """Mixed: streaming connections get protocol, a non-streaming one gets
+        nothing of a stream that hands no row."""
         ws = WebSocketChannel("ws1")
         stream_msgs: list[StreamMessage] = []
         regular_events: list[RoomEvent] = []
@@ -357,15 +351,12 @@ class TestStreamingDelivery:
         assert isinstance(stream_msgs[0], StreamStart)
         assert isinstance(stream_msgs[-1], StreamEnd)
 
-        # Regular connection got the final event
-        assert len(regular_events) == 1
-        assert isinstance(regular_events[0].content, TextContent)
-        assert regular_events[0].content.body == "foobar"
+        assert regular_events == []
 
     @pytest.mark.parametrize(
-        ("responses", "rows"),
+        ("responses", "blocked", "rows"),
         [
-            pytest.param([AIResponse(content="Answer.")], ["#3 Answer."], id="answer"),
+            pytest.param([AIResponse(content="Answer.")], False, ["Answer."], id="answer"),
             pytest.param(
                 [
                     AIResponse(
@@ -374,17 +365,21 @@ class TestStreamingDelivery:
                     ),
                     AIResponse(content="Done."),
                 ],
-                ["#3 Looking.", "#4 tool_call_start", "#5 tool_call_end", "#6 Done."],
+                False,
+                ["Looking.", "tool_call_start", "tool_call_end", "Done."],
                 id="after-a-call",
             ),
+            pytest.param([AIResponse(content="\n")], False, [], id="blank"),
+            pytest.param([AIResponse(content="Secret.")], True, [], id="blocked"),
         ],
     )
     async def test_a_plain_connection_reads_a_streamed_answer_as_its_rows_once(
-        self, responses: list[AIResponse], rows: list[str]
+        self, responses: list[AIResponse], blocked: bool, rows: list[str]
     ) -> None:
         """A connection that does not stream reads the rows the stream hands
-        it, each once, and not the empty event the answer streamed under
-        (RMK-994); the streaming connection reads its deltas, then the end."""
+        it, each once, and no event the answer streamed under: not the empty
+        one after its rows, nor its text when no row was handed (RFC Appendix
+        A.8, RMK-994); the streaming connection reads its deltas, then the end."""
         kit = RoomKit()
         kit.register_channel(
             AIChannel(
@@ -399,11 +394,13 @@ class TestStreamingDelivery:
         await kit.create_room(room_id="room-1")
         await kit.attach_channel("room-1", "ai")
         await kit.attach_channel("room-1", "ws")
-        plain: list[str] = []
+        if blocked:
+            kit.hook(HookTrigger.BEFORE_BROADCAST)(_block_the_agent)
+        plain: list[RoomEvent] = []
         streamed: list[str] = []
 
         async def send(conn_id: str, event: RoomEvent) -> None:
-            plain.append(_row(event))
+            plain.append(event)
 
         async def stream_send(conn_id: str, msg: StreamMessage) -> None:
             streamed.append(msg.type)
@@ -418,7 +415,13 @@ class TestStreamingDelivery:
                 room_id="room-1",
             )
 
-            assert plain == rows
+            delivered = [
+                event.id
+                for event in await kit.store.list_events("room-1")
+                if event.source.channel_id == "ai" and event.status == EventStatus.DELIVERED
+            ]
+            assert [_row(event) for event in plain] == rows
+            assert [event.id for event in plain] == delivered
             assert streamed == ["stream_start", *["stream_chunk"] * len(responses), "stream_end"]
         finally:
             await kit.close()

@@ -3,7 +3,7 @@
 Demonstrates progressive text delivery over WebSocket using the
 stream_start / stream_chunk / stream_end protocol.  A streaming-capable
 connection sees each token arrive in real time, while a legacy connection
-receives only the final complete message.
+receives only the stored message row the stream hands, once.
 
 Run with:
     uv run python examples/websocket_streaming.py
@@ -70,11 +70,19 @@ async def main() -> None:
 
     print(f"supports_streaming_delivery = {ws.supports_streaming_delivery}\n")
 
-    async def ai_token_stream() -> AsyncIterator[str]:
+    async def ai_token_stream() -> AsyncIterator[str | RoomEvent]:
         tokens = ["Hello", ",", " how", " can", " I", " help", " you", " today", "?"]
         for token in tokens:
             await asyncio.sleep(0.05)  # simulate LLM latency
             yield token
+        # Once stored, the framework hands the answer's row: what a
+        # connection without streaming reads, once (RFC Appendix A.8).
+        yield RoomEvent(
+            room_id="room-1",
+            index=1,
+            source=EventSource(channel_id="ai", channel_type=ChannelType.AI),
+            content=TextContent(body="".join(tokens)),
+        )
 
     placeholder_event = RoomEvent(
         room_id="room-1",
