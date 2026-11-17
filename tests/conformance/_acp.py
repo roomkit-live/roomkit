@@ -270,7 +270,7 @@ def scripted_acp_channel(
     """The channel a scenario's `acp` member describes, and its agent."""
     spec = channel["acp"]
     handler = (
-        ScriptedExternalHandler(spec["external_tool_handler"])
+        ScriptedExternalHandler(spec["external_tool_handler"], gates.hold)
         if "external_tool_handler" in spec
         else None
     )

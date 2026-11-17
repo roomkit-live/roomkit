@@ -12,9 +12,14 @@ from roomkit.tools import PolicyExternalToolHandler, ToolDecision, ToolPolicy
 class ScriptedExternalHandler(PolicyExternalToolHandler):
     """Delegate to the policy handler unless the script supplies a decision."""
 
-    def __init__(self, spec: Mapping[str, Any]) -> None:
+    def __init__(
+        self, spec: Mapping[str, Any], hold: Callable[[str], Awaitable[None]] | None = None
+    ) -> None:
         super().__init__(policy=ToolPolicy(**spec["policy"]) if "policy" in spec else None)
         self.spec = spec
+        self._hold = hold
+        if hold is None and any(key in spec for key in ("decision_gate", "report_gate")):
+            raise ValueError("external_tool_handler: gates require a gate reader")
         self.calls: list[dict[str, Any]] = []
         self.problems: list[str] = []
         self._decisions = iter(spec.get("decisions", []))
@@ -32,6 +37,7 @@ class ScriptedExternalHandler(PolicyExternalToolHandler):
         self, tool_name: str, tool_input: dict[str, Any], **kwargs: Any
     ) -> ToolDecision:
         self._record("process_tool_call", name=tool_name, arguments=tool_input, **kwargs)
+        await self._gate("decision_gate")
         if "decisions" not in self.spec:
             return await super().process_tool_call(tool_name, tool_input, **kwargs)
         decision = next(self._decisions, None)
@@ -42,7 +48,12 @@ class ScriptedExternalHandler(PolicyExternalToolHandler):
             raise RuntimeError(decision["raise"])
         return ToolDecision(**decision)
 
+    async def _gate(self, key: str) -> None:
+        if self._hold is not None and key in self.spec:
+            await self._hold(self.spec[key])
+
     async def _report(self, delegate: Callable[[], Awaitable[None]]) -> None:
+        await self._gate("report_gate")
         mode = self.spec.get("reports", "delegate")
         if mode == "raise_before":
             raise RuntimeError("audit sink down")
@@ -79,9 +90,18 @@ class ScriptedExternalHandler(PolicyExternalToolHandler):
 
 def handler_problems(spec: Any, path: str) -> list[str]:
     """Refuse malformed controls before an SDK callback can hide the error."""
-    if not isinstance(spec, dict) or set(spec) - {"policy", "decisions", "reports"}:
+    if not isinstance(spec, dict) or set(spec) - {
+        "policy",
+        "decisions",
+        "reports",
+        "decision_gate",
+        "report_gate",
+    }:
         return [f"{path}: expected policy, decisions or reports"]
     found = []
+    for key in ("decision_gate", "report_gate"):
+        if key in spec and not isinstance(spec[key], str):
+            found.append(f"{path}.{key}: expected a gate name")
     if "policy" in spec:
         policy = spec["policy"]
         if (

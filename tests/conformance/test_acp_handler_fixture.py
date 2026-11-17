@@ -24,6 +24,8 @@ from tests.conformance._shape import unknown_members
         {"policy": []},
         {"policy": {"deny": "Read"}},
         {"reports": "ignore"},
+        {"decision_gate": False},
+        {"report_gate": []},
     ],
 )
 def test_handler_fixture_rejects_malformed_controls(spec: Any) -> None:

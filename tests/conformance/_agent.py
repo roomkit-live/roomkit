@@ -734,7 +734,7 @@ def scripted_agent(
     models = {spec["id"]: model}
     tools = spec.get("tools", [])
     kwargs = continuation_options(spec, continuation_calls)
-    kwargs.update(_external_handler_options(spec, external_handlers))
+    kwargs.update(_external_handler_options(spec, external_handlers, gates))
     if "tool_policy" in spec:
         kwargs["tool_policy"] = _tool_policy(spec["tool_policy"])
     if "max_tool_rounds" in spec:
@@ -1001,12 +1001,12 @@ def patched_tool_call(payload: ToolCallEvent, patch: Mapping[str, Any]) -> ToolC
 
 
 def _external_handler_options(
-    spec: Mapping[str, Any], handlers: dict[str, ScriptedExternalHandler] | None
+    spec: Mapping[str, Any], handlers: dict[str, ScriptedExternalHandler] | None, gates: Gates
 ) -> dict[str, Any]:
     if "external_tool_handler" not in spec:
         return {}
     if handlers is None:
         raise ValueError("external_tool_handler: an observation sink is required")
-    handler = ScriptedExternalHandler(spec["external_tool_handler"])
+    handler = ScriptedExternalHandler(spec["external_tool_handler"], gates.hold)
     handlers[spec["id"]] = handler
     return {"external_tool_handler": handler}
