@@ -424,7 +424,8 @@ class WebSocketChannel(Channel):
         - ``stream_end`` — streaming complete
 
         Non-streaming connections receive all persisted events via
-        the regular ``send_fn``.
+        the regular ``send_fn``, each once; a stream that hands none gives
+        them its text as one final event.
 
         A stream sends only to the registrations present when it started,
         checked as each send starts: an id unregistered, evicted or
@@ -499,7 +500,8 @@ class WebSocketChannel(Channel):
         # otherwise use the full accumulated text
         if segment_events:
             # Segments were delivered inline — stream_end carries no event
-            # (the UI already has all events)
+            # (the UI already has all events), and the connections that do
+            # not stream read each row: they get nothing more (RMK-994)
             segmented_meta = {**event.metadata, "_segmented": True}
             final_event = event.model_copy(
                 update={"content": TextContent(body=""), "metadata": segmented_meta}
@@ -514,7 +516,10 @@ class WebSocketChannel(Channel):
         end_msg = StreamEnd(room_id=room_id, stream_id=stream_id, event=final_event)
         await self._fan_out_stream(streaming_conns, end_msg)
 
-        # Deliver final event to this room's non-streaming connections
+        if segment_events:
+            return ChannelOutput.empty()
+        # A stream that handed no row: this room's non-streaming connections
+        # read its text as the final event
         await asyncio.gather(
             *(
                 self._send_one(conn_id, send_fn, final_event, token)

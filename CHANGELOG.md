@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A WebSocket connection that does not stream reads a streamed answer's rows once, and nothing more** (RFC Appendix A.8, RMK-994). After an answer whose rows the stream handed it, `WebSocketChannel.deliver_stream` also sent its non-streaming connections the event the answer streamed under: an empty message at index 0, which the room never held.
+
 - **A supervisor's per-worker tool is named as every built-in provider accepts** (RFC §19.7.3, RMK-521). A worker's tool was `delegate_to_<channel id>`, so a host that names its agent channels `agent:<uuid>` declared `delegate_to_agent:<uuid>`, which Anthropic, OpenAI and DeepSeek refuse (`[A-Za-z0-9_-]{1,128}`): the provider raised before the request and the supervisor never answered. An id that makes no such name has each other character replaced by `_` (`delegate_to_agent_<uuid>`); a replaced name that meets another worker's, or passes 128 characters, ends with `_` and 8 hex digits of the id's SHA-256. An id that already makes such a name keeps `delegate_to_<id>`, and a call on the name reaches its worker.
 
 - **A revision starts from the original task, with only the latest output and feedback** (RFC §19.7, RMK-598). A supervised step's rework was composed from the previous rework, so the worker's prompt nested one `Revision requested` section per pass, each with every earlier output and feedback (423, 825, 1,227 characters after 1, 2, 3 revisions of a one-line task). Each rework now starts from the step's own task. A Loop's revision, which carried no task at all, now opens with the producer's original task in a `<task>` block.

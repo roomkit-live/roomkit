@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 
+from roomkit.channels.ai import AIChannel
 from roomkit.channels.websocket import (
     StreamChunk,
     StreamEnd,
@@ -16,10 +17,13 @@ from roomkit.channels.websocket import (
 from roomkit.core.framework import ChannelNotRegisteredError, RoomKit
 from roomkit.models.channel import ChannelBinding, ChannelCapabilities
 from roomkit.models.context import RoomContext
+from roomkit.models.delivery import InboundMessage
 from roomkit.models.enums import ChannelMediaType, ChannelType
 from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.models.framework_event import FrameworkEvent
 from roomkit.models.room import Room
+from roomkit.providers.ai.base import AIResponse, AITool, AIToolCall
+from roomkit.providers.ai.mock import MockAIProvider
 from tests.test_framework import SimpleChannel
 
 
@@ -60,6 +64,17 @@ async def _noop_stream_send(conn_id: str, msg: StreamMessage) -> None:
 async def _text_stream(*chunks: str) -> Any:
     for chunk in chunks:
         yield chunk
+
+
+async def _found(name: str, arguments: dict[str, Any]) -> str:
+    return "found"
+
+
+def _row(event: RoomEvent) -> str:
+    """A row as a connection reads it: its index, then its text or type."""
+    if isinstance(event.content, TextContent):
+        return f"#{event.index} {event.content.body}"
+    return f"#{event.index} {event.type.value}"
 
 
 class TestConnectWebSocket:
@@ -346,6 +361,67 @@ class TestStreamingDelivery:
         assert len(regular_events) == 1
         assert isinstance(regular_events[0].content, TextContent)
         assert regular_events[0].content.body == "foobar"
+
+    @pytest.mark.parametrize(
+        ("responses", "rows"),
+        [
+            pytest.param([AIResponse(content="Answer.")], ["#3 Answer."], id="answer"),
+            pytest.param(
+                [
+                    AIResponse(
+                        content="Looking.",
+                        tool_calls=[AIToolCall(id="c1", name="lookup", arguments={})],
+                    ),
+                    AIResponse(content="Done."),
+                ],
+                ["#3 Looking.", "#4 tool_call_start", "#5 tool_call_end", "#6 Done."],
+                id="after-a-call",
+            ),
+        ],
+    )
+    async def test_a_plain_connection_reads_a_streamed_answer_as_its_rows_once(
+        self, responses: list[AIResponse], rows: list[str]
+    ) -> None:
+        """A connection that does not stream reads the rows the stream hands
+        it, each once, and not the empty event the answer streamed under
+        (RMK-994); the streaming connection reads its deltas, then the end."""
+        kit = RoomKit()
+        kit.register_channel(
+            AIChannel(
+                "ai",
+                provider=MockAIProvider(ai_responses=responses, streaming=True),
+                tools=[AITool(name="lookup", description="Look it up.")],
+                tool_handler=_found,
+            )
+        )
+        ws = WebSocketChannel("ws")
+        kit.register_channel(ws)
+        await kit.create_room(room_id="room-1")
+        await kit.attach_channel("room-1", "ai")
+        await kit.attach_channel("room-1", "ws")
+        plain: list[str] = []
+        streamed: list[str] = []
+
+        async def send(conn_id: str, event: RoomEvent) -> None:
+            plain.append(_row(event))
+
+        async def stream_send(conn_id: str, msg: StreamMessage) -> None:
+            streamed.append(msg.type)
+
+        ws.register_connection("plain", send, room_id="room-1")
+        ws.register_connection(
+            "streaming", _noop_send, room_id="room-1", stream_send_fn=stream_send
+        )
+        try:
+            await kit.process_inbound(
+                InboundMessage(channel_id="ws", sender_id="alice", content=TextContent(body="Hi")),
+                room_id="room-1",
+            )
+
+            assert plain == rows
+            assert streamed == ["stream_start", *["stream_chunk"] * len(responses), "stream_end"]
+        finally:
+            await kit.close()
 
     async def test_unregister_clears_stream_send_fn(self) -> None:
         """unregister_connection removes stream_send_fn too."""
