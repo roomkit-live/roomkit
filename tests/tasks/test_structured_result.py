@@ -243,6 +243,27 @@ class TestOnlyTheWorkersServedResultCounts:
 
 
 class TestResultHelpers:
+    def test_public_default_result_tool(self) -> None:
+        from roomkit import SUBMIT_RESULT, ResultTool
+        from roomkit.orchestration import SUBMIT_RESULT as ORCHESTRATION_RESULT
+
+        assert SUBMIT_RESULT is ORCHESTRATION_RESULT
+        assert isinstance(SUBMIT_RESULT, ResultTool)
+        assert SUBMIT_RESULT.tool.parameters["required"] == ["status", "summary"]
+        assert SUBMIT_RESULT.matches("other__submit_result")
+        assert not SUBMIT_RESULT.matches("submit_result_extra")
+        payload = SUBMIT_RESULT.normalize({"summary": ["a", True], "reason": {"why": None}})
+        assert list(payload) == ["status", "summary", "data", "deliverables", "reason"]
+        assert payload["summary"] == "['a', True]"
+        assert payload["reason"] == "{'why': None}"
+        assert SUBMIT_RESULT.on_missing(role="Worker", last_output="unfinished", attempts=2) == {
+            "status": "failed",
+            "by": "orchestration",
+            "reason": "no_structured_result_after_2_attempts",
+            "role": "Worker",
+            "last_output": "unfinished",
+        }
+
     def test_is_submit_result_matches_bare_and_prefixed(self) -> None:
         assert is_submit_result("submit_result")
         assert is_submit_result("mcp__gateway__submit_result")

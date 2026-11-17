@@ -1,0 +1,96 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-submitted-result-normalizes-nested-summary-and-reason-values",
+  "title": "A delegated worker returns nested summary and reason values as text in its structured result",
+  "rules": [
+    "§23.3"
+  ],
+  "notes": "Python: tests/tasks/test_structured_result.py::TestResultHelpers::test_public_default_result_tool and roomkit.orchestration.result.normalize_result. A caller can read the same normalized fields through the default result tool or the output of a delegation. The worker uses its gateway tool, whose own schema accepts the values. The delegation reads the served call from the worker's trace.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "mcp__gateway__submit_result",
+                  "arguments": {
+                    "summary": [
+                      "a",
+                      true
+                    ],
+                    "reason": {
+                      "why": null
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Submitted."
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "mcp__gateway__submit_result",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "received"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "worker",
+      "task": "Look it up.",
+      "wait": true,
+      "require_structured_result": true,
+      "expect": {
+        "result": {
+          "status": "completed",
+          "result": {
+            "status": "completed",
+            "output": "{\"status\": \"completed\", \"summary\": \"['a', True]\", \"data\": {}, \"deliverables\": [], \"reason\": \"{'why': None}\"}",
+            "error": null
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "worker": [
+        {},
+        {}
+      ]
+    }
+  }
+}
