@@ -1908,6 +1908,7 @@ class TestConnectionTenure:
             with pytest.raises(TimeoutError):
                 async with asyncio.timeout(0), store.connection():
                     pytest.fail("the pool is full")
+        assert store._pool.get_idle_size() == store._pool.get_max_size()
         async with asyncio.timeout(2), store.connection():
             assert await store.get_room("missing") is None
 
@@ -1966,10 +1967,11 @@ async def _cancel_scoped_write(store: Any, holder: Any, exit_mode: str) -> int:
                 with pytest.raises(TimeoutError):
                     async with asyncio.timeout(None) as deadline:
                         await write(deadline)
-                if exit_mode == "continue":
-                    room = await store.get_room("r1")
-                    assert room is not None and room.metadata == {}
-                    assert store._bound().get_server_pid() == pid
+                if exit_mode == "return":
+                    return pid
+                room = await store.get_room("r1")
+                assert room is not None and room.metadata == {}
+                assert store._bound().get_server_pid() == pid
         await observer
         return pid
     finally:
