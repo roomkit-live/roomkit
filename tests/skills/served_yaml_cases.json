@@ -1,0 +1,1035 @@
+[
+  {
+    "expression": "0",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: 0\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": 0
+    }
+  },
+  {
+    "expression": "-0",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: -0\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": 0
+    }
+  },
+  {
+    "expression": "01",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: 01\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": 1
+    }
+  },
+  {
+    "expression": "08",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: 08\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": "08"
+    }
+  },
+  {
+    "expression": "0_1",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: 0_1\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": 1
+    }
+  },
+  {
+    "expression": "0x_ff",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: 0x_ff\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": 255
+    }
+  },
+  {
+    "expression": "0b1_0",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: 0b1_0\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": 2
+    }
+  },
+  {
+    "expression": "1:02",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: 1:02\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": 62
+    }
+  },
+  {
+    "expression": "1:60",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: 1:60\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": "1:60"
+    }
+  },
+  {
+    "expression": "0:12",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: 0:12\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": "0:12"
+    }
+  },
+  {
+    "expression": "+1",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: +1\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": 1
+    }
+  },
+  {
+    "expression": "--1",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: --1\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": "--1"
+    }
+  },
+  {
+    "expression": "1.0",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: 1.0\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": 1.0
+    }
+  },
+  {
+    "expression": "1e2",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: 1e2\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": "1e2"
+    }
+  },
+  {
+    "expression": "1.0e2",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: 1.0e2\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": "1.0e2"
+    }
+  },
+  {
+    "expression": "1.0e+2",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: 1.0e+2\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": 100.0
+    }
+  },
+  {
+    "expression": ".5",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: .5\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": 0.5
+    }
+  },
+  {
+    "expression": "-.5",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: -.5\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": "-.5"
+    }
+  },
+  {
+    "expression": "+.5",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: +.5\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": "+.5"
+    }
+  },
+  {
+    "expression": "1:02.5",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: 1:02.5\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": 62.5
+    }
+  },
+  {
+    "expression": "0:12.5",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: 0:12.5\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": 12.5
+    }
+  },
+  {
+    "expression": "1:60.5",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: 1:60.5\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": "1:60.5"
+    }
+  },
+  {
+    "expression": "yes",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: yes\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": true
+    }
+  },
+  {
+    "expression": "YES",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: YES\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": true
+    }
+  },
+  {
+    "expression": "Yes",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: Yes\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": true
+    }
+  },
+  {
+    "expression": "y",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: y\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": "y"
+    }
+  },
+  {
+    "expression": "True",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: True\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": true
+    }
+  },
+  {
+    "expression": "null",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: null\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": null
+    }
+  },
+  {
+    "expression": "~",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: ~\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": null
+    }
+  },
+  {
+    "expression": "2001-12-15",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: 2001-12-15\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": "2001-12-15"
+    }
+  },
+  {
+    "expression": "2001-1-1",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: 2001-1-1\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": "2001-1-1"
+    }
+  },
+  {
+    "expression": "2001-1-1 bad",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: 2001-1-1 bad\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": "2001-1-1 bad"
+    }
+  },
+  {
+    "expression": "2001-01-01Tnot-a-time",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: 2001-01-01Tnot-a-time\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": "2001-01-01Tnot-a-time"
+    }
+  },
+  {
+    "expression": "2001-12-15T02:59:43.12Z",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: 2001-12-15T02:59:43.12Z\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": "2001-12-15 02:59:43.120000+00:00"
+    }
+  },
+  {
+    "expression": "2001-12-15 2:59:43.10 -5",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: 2001-12-15 2:59:43.10 -5\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": "2001-12-15 02:59:43.100000-05:00"
+    }
+  },
+  {
+    "expression": "2001-12-15 02:59:43 +05:99",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: 2001-12-15 02:59:43 +05:99\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": "2001-12-15 02:59:43+06:39"
+    }
+  },
+  {
+    "expression": "2001-12-15 02:59:43 -00:00",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: 2001-12-15 02:59:43 -00:00\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": "2001-12-15 02:59:43+00:00"
+    }
+  },
+  {
+    "expression": "!!str true",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: !!str true\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": "true"
+    }
+  },
+  {
+    "expression": "!!int 08",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: !!int 08\n",
+    "valid": false,
+    "error": "_FrontmatterNotReadError"
+  },
+  {
+    "expression": "!!int 0:12",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: !!int 0:12\n",
+    "valid": false,
+    "error": "_FrontmatterNotReadError"
+  },
+  {
+    "expression": "!!float .5",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: !!float .5\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": 0.5
+    }
+  },
+  {
+    "expression": "!!float 1e2",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: !!float 1e2\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": 100.0
+    }
+  },
+  {
+    "expression": "!!bool YeS",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: !!bool YeS\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": true
+    }
+  },
+  {
+    "expression": "!!null arbitrary",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: !!null arbitrary\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": null
+    }
+  },
+  {
+    "expression": "!!binary aGVsbG8=",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: !!binary aGVsbG8=\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": "b'hello'"
+    }
+  },
+  {
+    "expression": "!!binary aG!VsbG8=",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: !!binary aG!VsbG8=\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": "b'hello'"
+    }
+  },
+  {
+    "expression": "!!binary YQ======",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: !!binary YQ======\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": "b'a'"
+    }
+  },
+  {
+    "expression": "!!set {}",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: !!set {}\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": []
+    }
+  },
+  {
+    "expression": "!!set {1: null}",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: !!set {1: null}\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": [
+        1
+      ]
+    }
+  },
+  {
+    "expression": "!!set {true: null}",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: !!set {true: null}\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": [
+        true
+      ]
+    }
+  },
+  {
+    "expression": "!!omap [{x: 1}, {y: 2}]",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: !!omap [{x: 1}, {y: 2}]\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": [
+        [
+          "x",
+          1
+        ],
+        [
+          "y",
+          2
+        ]
+      ]
+    }
+  },
+  {
+    "expression": "!!pairs [{x: 1}, {x: 2}]",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: !!pairs [{x: 1}, {x: 2}]\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": [
+        [
+          "x",
+          1
+        ],
+        [
+          "x",
+          2
+        ]
+      ]
+    }
+  },
+  {
+    "expression": "{true: first, 1: second}",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: {true: first, 1: second}\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": {
+        "true": "second"
+      }
+    }
+  },
+  {
+    "expression": "{1: first, true: second}",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: {1: first, true: second}\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": {
+        "1": "second"
+      }
+    }
+  },
+  {
+    "expression": "{1.0: first, 1: second}",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: {1.0: first, 1: second}\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": {
+        "1.0": "second"
+      }
+    }
+  },
+  {
+    "expression": "{null: zero, \"null\": text}",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: {null: zero, \"null\": text}\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": {
+        "null": "text"
+      }
+    }
+  },
+  {
+    "expression": "{1: one, \"1\": text}",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: {1: one, \"1\": text}\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": {
+        "1": "text"
+      }
+    }
+  },
+  {
+    "expression": "{1e-5: value}",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: {1e-5: value}\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": {
+        "1e-5": "value"
+      }
+    }
+  },
+  {
+    "expression": "{.inf: value}",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: {.inf: value}\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": {
+        "Infinity": "value"
+      }
+    }
+  },
+  {
+    "expression": "{2001-01-01: value}",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: {2001-01-01: value}\n",
+    "valid": false,
+    "error": "_FrontmatterNotReadError"
+  },
+  {
+    "expression": "{!!binary YQ==: value}",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: {!!binary YQ==: value}\n",
+    "valid": false,
+    "error": "_FrontmatterNotReadError"
+  },
+  {
+    "expression": "{[x]: value}",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: {[x]: value}\n",
+    "valid": false,
+    "error": "_FrontmatterNotReadError"
+  },
+  {
+    "expression": "{\"<<\": value}",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: {\"<<\": value}\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": {
+        "<<": "value"
+      }
+    }
+  },
+  {
+    "expression": "{<<: [{x: first},{x: second}]}",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: {<<: [{x: first},{x: second}]}\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": {
+        "x": "first"
+      }
+    }
+  },
+  {
+    "expression": "!!set {a: !!map [1]}",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: !!set {a: !!map [1]}\n",
+    "valid": false
+  },
+  {
+    "expression": "!!set {a: {2020-01-01: null}}",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: !!set {a: {2020-01-01: null}}\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": [
+        "a"
+      ]
+    }
+  },
+  {
+    "expression": "!!set {a: .inf}",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: !!set {a: .inf}\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": [
+        "a"
+      ]
+    }
+  },
+  {
+    "expression": "{a: {2020-01-01: null}, a: 1}",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: {a: {2020-01-01: null}, a: 1}\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": {
+        "a": 1
+      }
+    }
+  },
+  {
+    "expression": "{a: !!map [1], a: 1}",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: {a: !!map [1], a: 1}\n",
+    "valid": false
+  },
+  {
+    "expression": "{<<: !!set {a: 1}}",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: {<<: !!set {a: 1}}\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": {
+        "a": 1
+      }
+    }
+  },
+  {
+    "expression": "{<<: !ignored {a: 1}}",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: {<<: !ignored {a: 1}}\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": {
+        "a": 1
+      }
+    }
+  },
+  {
+    "expression": "!!omap [!!set {a: 1}]",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: !!omap [!!set {a: 1}]\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": [
+        [
+          "a",
+          1
+        ]
+      ]
+    }
+  },
+  {
+    "expression": "!!pairs [!ignored {a: 1}]",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: !!pairs [!ignored {a: 1}]\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": [
+        [
+          "a",
+          1
+        ]
+      ]
+    }
+  },
+  {
+    "expression": "=",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: =\n",
+    "valid": false
+  },
+  {
+    "expression": "{=: 1}",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: {=: 1}\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": {
+        "=": 1
+      }
+    }
+  },
+  {
+    "expression": "<<",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: <<\n",
+    "valid": false
+  },
+  {
+    "expression": "!!set {2020-01-01: null, \"2020-01-01\": null}",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: !!set {2020-01-01: null, \"2020-01-01\": null}\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": [
+        "2020-01-01",
+        "2020-01-01"
+      ]
+    }
+  },
+  {
+    "expression": "!!set {!!binary YQ==: null, \"b'a'\": null}",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: !!set {!!binary YQ==: null, \"b'a'\": null}\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": [
+        "b'a'",
+        "b'a'"
+      ]
+    }
+  },
+  {
+    "expression": "!!set {2001-12-15T02:59:43.100000Z: null, 2001-12-14T21:59:43.100000-05:00: null}",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: !!set {2001-12-15T02:59:43.100000Z: null, 2001-12-14T21:59:43.100000-05:00: null}\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": [
+        "2001-12-15 02:59:43.100000+00:00"
+      ]
+    }
+  },
+  {
+    "expression": "!!set {2001-12-15T02:59:43.100001Z: null, 2001-12-14T21:59:43.100000-05:00: null}",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: !!set {2001-12-15T02:59:43.100001Z: null, 2001-12-14T21:59:43.100000-05:00: null}\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": [
+        "2001-12-14 21:59:43.100000-05:00",
+        "2001-12-15 02:59:43.100001+00:00"
+      ]
+    }
+  },
+  {
+    "expression": "!!int ١",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: !!int ١\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": 1
+    }
+  },
+  {
+    "expression": "!!float ١.٥",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: !!float ١.٥\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": 1.5
+    }
+  },
+  {
+    "expression": "١",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: ١\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": "١"
+    }
+  },
+  {
+    "expression": "!!int ०८",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: !!int ०८\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": 8
+    }
+  },
+  {
+    "expression": "!!int 0١٠",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: !!int 0١٠\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": 8
+    }
+  },
+  {
+    "expression": "!!int 0x١f",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: !!int 0x١f\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": 31
+    }
+  },
+  {
+    "expression": "!!int -१२",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: !!int -१२\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": -12
+    }
+  },
+  {
+    "expression": "!!int ١:٢",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: !!int ١:٢\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": 62
+    }
+  },
+  {
+    "expression": "!!int ١:٦١",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: !!int ١:٦١\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": 121
+    }
+  },
+  {
+    "expression": "!!float ١e٢",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: !!float ١e٢\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": 100.0
+    }
+  },
+  {
+    "expression": "!!float ١:٢.٥",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: !!float ١:٢.٥\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": 62.5
+    }
+  },
+  {
+    "expression": "!!int ²",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: !!int ²\n",
+    "valid": false
+  },
+  {
+    "expression": "!!float ①",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: !!float ①\n",
+    "valid": false
+  },
+  {
+    "expression": "{a: !!float 1e999, a: 1}",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: {a: !!float 1e999, a: 1}\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": {
+        "a": 1
+      }
+    }
+  },
+  {
+    "expression": "!!set {a: !!float 1e999}",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: !!set {a: !!float 1e999}\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": [
+        "a"
+      ]
+    }
+  },
+  {
+    "expression": "{a: !!float -1e999, a: 1}",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: {a: !!float -1e999, a: 1}\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": {
+        "a": 1
+      }
+    }
+  },
+  {
+    "expression": "{<<: {a: !!float 1e999}, a: 1}",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: {<<: {a: !!float 1e999}, a: 1}\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": {
+        "a": 1
+      }
+    }
+  },
+  {
+    "expression": "{!!float 1e999: 1, .inf: 2}",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: {!!float 1e999: 1, .inf: 2}\n",
+    "valid": true,
+    "frontmatter": {
+      "name": "guide",
+      "description": "Read the guide",
+      "meta": {
+        "Infinity": 2
+      }
+    }
+  },
+  {
+    "expression": "{a: 1, a: !!float 1e999}",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: {a: 1, a: !!float 1e999}\n",
+    "valid": false
+  },
+  {
+    "expression": "!!set {!!float 1e999: null}",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: !!set {!!float 1e999: null}\n",
+    "valid": false
+  },
+  {
+    "expression": "!!float 1e999",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: !!float 1e999\n",
+    "valid": false
+  },
+  {
+    "expression": "!!int 0xＦ",
+    "yaml": "name: guide\ndescription: Read the guide\nmeta: !!int 0xＦ\n",
+    "valid": false
+  }
+]

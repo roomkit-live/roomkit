@@ -6,7 +6,33 @@ import json
 import os
 import subprocess
 import sys
+from pathlib import Path
 from typing import Any
+
+import pytest
+
+from roomkit.skills.errors import SkillVerificationError
+from roomkit.skills.mcp.entry import parse_entry
+from roomkit.skills.mcp.verify import verify_frontmatter
+from roomkit.skills.parser import read_frontmatter_yaml
+
+_CASES = json.loads(Path(__file__).with_name("served_yaml_cases.json").read_text())
+
+
+@pytest.mark.parametrize("case", _CASES, ids=lambda case: case["expression"])
+def test_served_yaml_normalization_matches_the_frozen_corpus(case: dict[str, Any]) -> None:
+    frontmatter = case.get("frontmatter", {"name": "guide", "description": "Read the guide"})
+    entry = parse_entry(
+        {"uri": "skill://guide/SKILL.md", "frontmatter": frontmatter, "resources": "dynamic"}
+    )
+    text = f"---\n{case['yaml']}---\nBody"
+    if case["valid"]:
+        assert read_frontmatter_yaml(case["yaml"]) == frontmatter
+        assert verify_frontmatter(entry, text) == "Body"
+    else:
+        with pytest.raises(SkillVerificationError):
+            verify_frontmatter(entry, text)
+
 
 _SCRIPT = r"""
 import hashlib
