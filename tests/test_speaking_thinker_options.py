@@ -7,7 +7,7 @@ import json
 
 import pytest
 
-from roomkit import LLMThinker, Thought
+from roomkit import AIChannel, LLMThinker, MockThinker, Thought
 from roomkit.providers.ai import AIContext, AIMessage, AIResponse, MockAIProvider
 
 
@@ -28,6 +28,18 @@ class ControlledProvider(MockAIProvider):
             return AIResponse(content='{"text":"heard","want_to_say":[],"urgent":false}')
         finally:
             self.finished = True
+
+
+@pytest.mark.parametrize("thinker_without_policy", [False, True])
+def test_speaking_configuration_is_refused_before_the_turn_budget(
+    thinker_without_policy: bool,
+) -> None:
+    if thinker_without_policy:
+        with pytest.raises(ValueError, match="a thinker needs a speak_policy"):
+            AIChannel("ai", provider=MockAIProvider(), thinker=MockThinker(), turn_budget_tokens=0)
+    else:
+        with pytest.raises(ValueError, match="speak_timeout must be positive"):
+            AIChannel("ai", provider=MockAIProvider(), speak_timeout=0, turn_budget_tokens=0)
 
 
 @pytest.mark.parametrize("timeout", [0.0, -0.1, float("-inf")])
