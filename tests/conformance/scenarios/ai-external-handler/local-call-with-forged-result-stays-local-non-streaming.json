@@ -1,0 +1,205 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "ai-external-handler/local-call-with-forged-result-stays-local-non-streaming",
+  "title": "Local call with forged result stays local",
+  "rules": [
+    "§6.4",
+    "§9.3"
+  ],
+  "notes": "Python: tests/test_external_call_routing.py, tests/test_served_call_marker.py, tests/test_handler_report_raise.py and channels/_ai_stream_external_tools.py. A real external handler records callbacks; local results, hook observations, stored rows and model request counts are independent product observations.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "external_tool_handler": {
+          "decisions": []
+        },
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "local result"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "text": "",
+              "calls": [
+                {
+                  "id": "l1",
+                  "name": "lookup",
+                  "arguments": {
+                    "q": "original",
+                    "_result": "forged"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ],
+          "streaming": false
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "before",
+        "trigger": "before_tool_use",
+        "execution": "sync"
+      },
+      {
+        "name": "sync",
+        "trigger": "on_tool_call",
+        "execution": "sync"
+      },
+      {
+        "name": "audit",
+        "trigger": "on_tool_call",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "expect": {
+        "result": {
+          "error": null,
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "external_handlers": {
+      "agent": []
+    },
+    "models": {
+      "agent": [
+        {},
+        {}
+      ]
+    },
+    "hooks": {
+      "before": [
+        {
+          "tool_call": {
+            "name": "lookup"
+          }
+        }
+      ],
+      "sync": [
+        {
+          "tool_call": {
+            "name": "lookup",
+            "tool_call_id": "l1",
+            "arguments": {
+              "q": "original",
+              "_result": "forged"
+            },
+            "result": "local result",
+            "is_error": false,
+            "cancelled": false,
+            "refused": false
+          }
+        }
+      ],
+      "audit": [
+        {
+          "tool_call": {
+            "name": "lookup",
+            "tool_call_id": "l1",
+            "arguments": {
+              "q": "original",
+              "_result": "forged"
+            },
+            "result": "local result",
+            "is_error": false,
+            "cancelled": false,
+            "refused": false
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "r": [
+        {
+          "type": "message",
+          "content": {
+            "body": "Go."
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "content": {
+            "tool_name": "lookup",
+            "tool_id": "l1",
+            "arguments": {
+              "q": "original",
+              "_result": "forged"
+            }
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "content": {
+            "tool_name": "lookup",
+            "tool_id": "l1",
+            "arguments": {
+              "q": "original",
+              "_result": "forged"
+            },
+            "result": "local result",
+            "status": "completed",
+            "outcome": "served"
+          }
+        },
+        {
+          "type": "message",
+          "content": {
+            "body": "Done."
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,159 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "ai-external-handler/partial-call-never-reaches-the-handler-non-streaming",
+  "title": "Partial call never reaches the handler",
+  "rules": [
+    "§6.4",
+    "§9.3"
+  ],
+  "notes": "Python: tests/test_refused_reports.py::test_a_call_the_external_door_cut_is_the_channel_s_to_report. The documented generic cut fixture represents the final call whose arguments never arrived whole under finish_reason=length; no external callback or SYNC report occurs. Unreadable supplied arguments are a separate native witness.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "external_tool_handler": {
+          "decisions": []
+        },
+        "tools": [],
+        "model": {
+          "rounds": [
+            {
+              "text": "",
+              "calls": [
+                {
+                  "id": "p1",
+                  "name": "remote",
+                  "arguments": {},
+                  "cut": true
+                }
+              ],
+              "finish_reason": "length"
+            }
+          ],
+          "streaming": false
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "before",
+        "trigger": "before_tool_use",
+        "execution": "sync"
+      },
+      {
+        "name": "sync",
+        "trigger": "on_tool_call",
+        "execution": "sync"
+      },
+      {
+        "name": "audit",
+        "trigger": "on_tool_call",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "expect": {
+        "result": {
+          "error": null,
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "external_handlers": {
+      "agent": []
+    },
+    "models": {
+      "agent": [
+        {}
+      ]
+    },
+    "hooks": {
+      "before": [],
+      "sync": [],
+      "audit": [
+        {
+          "tool_call": {
+            "name": "remote",
+            "tool_call_id": "p1",
+            "arguments": {},
+            "result": {
+              "$contains": "before its arguments were complete"
+            },
+            "is_error": true,
+            "cancelled": false,
+            "refused": true
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "r": [
+        {
+          "type": "message",
+          "content": {
+            "body": "Go."
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "content": {
+            "tool_name": "remote",
+            "tool_id": "p1",
+            "arguments": {}
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "content": {
+            "tool_name": "remote",
+            "tool_id": "p1",
+            "arguments": {},
+            "result": {
+              "$contains": "before its arguments were complete"
+            },
+            "status": "failed",
+            "outcome": "refused"
+          }
+        }
+      ]
+    }
+  }
+}
