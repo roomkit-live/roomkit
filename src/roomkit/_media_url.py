@@ -19,6 +19,9 @@ _REFERENCE = re.compile(r"^([A-Za-z][A-Za-z0-9+.-]+)://(.*)$", re.DOTALL)
 _CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 # What ends a path segment for a reader: a slash, or the query or fragment.
 _SEGMENT_END = re.compile(r"[/?#]")
+# The percent-decodings a reference is read through; one still encoded after
+# them is refused.
+_MOST_DECODINGS = 3
 # A scheme a reader could fetch or open itself, or run.
 _REFUSED_SCHEMES = frozenset({"file", "ftp", "javascript", "vbscript"})
 _TYPE_ALIASES = {"image/jpg": "image/jpeg", "image/pjpeg": "image/jpeg"}
@@ -58,14 +61,20 @@ def is_safe_reference(url: str) -> bool:
     """Whether *url* is a reference no reader could take for something else:
     two letters of scheme at least (one reads as a Windows drive), not a scheme
     a reader fetches, opens or runs, and nothing a path reader could follow
-    once it has percent-decoded the rest, as many times as it may: no
-    backslash, no control character, no segment that is ``..`` with the
-    whitespace around it trimmed."""
+    once it has percent-decoded the rest, up to three times, the most an
+    ordinary reference is encoded: no backslash, no control character, no
+    segment that is ``..`` with the whitespace around it trimmed, and no
+    escape left to decode."""
     match = _REFERENCE.match(url)
     if match is None or match.group(1).lower() in _REFUSED_SCHEMES:
         return False
-    rest = _fully_decoded(match.group(2))
-    return "\\" not in rest and not _holds_control(rest) and not _holds_parent(rest)
+    rest = _decoded(match.group(2))
+    return (
+        rest is not None
+        and "\\" not in rest
+        and not _holds_control(rest)
+        and not _holds_parent(rest)
+    )
 
 
 def _holds_control(text: str) -> bool:
@@ -81,13 +90,17 @@ def _holds_parent(text: str) -> bool:
     return ".." in text and any(segment.strip() == ".." for segment in _SEGMENT_END.split(text))
 
 
-def _fully_decoded(text: str) -> str:
-    """*text* percent-decoded until it no longer changes (each pass shortens
-    it, so the loop ends): ``%252e`` reads as ``.`` to a reader that decodes
-    twice."""
-    while "%" in text and (decoded := unquote(text)) != text:
+def _decoded(text: str) -> str | None:
+    """*text* percent-decoded until it no longer changes, as a reader that
+    decodes once or more reads it (``%252e`` reads as ``.`` to one that
+    decodes twice); None when it still changes after
+    :data:`_MOST_DECODINGS`, a nesting no reference holds and whose cost
+    would grow with the square of its length."""
+    for _ in range(_MOST_DECODINGS + 1):
+        if "%" not in text or (decoded := unquote(text)) == text:
+            return text
         text = decoded
-    return text
+    return None
 
 
 def media_type(mime_type: str) -> str:

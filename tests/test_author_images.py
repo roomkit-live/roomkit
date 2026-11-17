@@ -412,6 +412,7 @@ class TestReferenceURL:
             "app-media://bucket/folder%2Ffile.png",
             "app-media://photos/My Photo.png?size=large#top",
             "app-media://photos/100%",
+            "app-media://photos/%252541.png",
         ],
     )
     def test_a_reference_link_or_data_uri_is_accepted(self, url: str) -> None:
@@ -448,6 +449,9 @@ class TestReferenceURL:
             "app-media://a/b\x00",
             "app-media://a/b\x7f",
             "app-media://a/b\x85",
+            # Encoded more than three times: no reference is, and decoding it
+            # until it no longer changes would cost the square of its length.
+            "app-media://photos/%25252541.png",
         ],
     )
     def test_a_url_a_transport_could_read_or_run_is_refused(self, url: str) -> None:
