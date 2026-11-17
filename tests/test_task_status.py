@@ -8,6 +8,8 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
+import pytest
+
 from roomkit import HookExecution, HookResult, HookTrigger, RoomKit
 from roomkit.channels._discussion_turn import DISCUSSION_CONFIG
 from roomkit.channels._tasks_note import render_tasks_note
@@ -23,8 +25,8 @@ from roomkit.orchestration.status_bus import (
 from roomkit.orchestration.strategies.supervisor._inject_strategy import _follow_hint
 from roomkit.providers.ai.base import AIContext, AIResponse, AITool
 from roomkit.providers.ai.mock import MockAIProvider
-from roomkit.tasks import TASK_STATUS_TOOL, TaskStatusTool
-from roomkit.tasks.status import room_task_lines, room_tasks
+from roomkit.tasks import TASK_STATUS_TOOL, TaskStatusTool, room_tasks
+from roomkit.tasks.status import room_task_lines
 from roomkit.tools.compose import extract_tools
 from roomkit.tools.context import tool_turn_context
 from tests.conference.test_conference_realtime import until
@@ -248,6 +250,30 @@ async def test_task_status_lists_the_room_tasks_only() -> None:
     assert one["tasks"] == answer["tasks"]
     assert unknown["tasks"] == []
     assert "error" in outside
+
+
+@pytest.mark.parametrize("action", ["task", "review"])
+def test_projected_results_can_be_edited_without_changing_the_entries(action: str) -> None:
+    pending = StatusEntry(
+        ts="2026-10-05T18:00:00+00:00",
+        agent_id="worker",
+        action="task",
+        status=StatusLevel.PENDING,
+        detail="Draft",
+        metadata={"task_id": "t1"},
+    )
+    terminal = StatusEntry(
+        ts="2026-10-05T18:01:00+00:00",
+        agent_id="worker",
+        action=action,
+        status=StatusLevel.COMPLETED,
+        metadata={"task_id": "t1", "result": {"pages": [1]}},
+    )
+    entries = [pending, terminal]
+    first, second = room_tasks(entries), room_tasks(iter(entries))
+    first[0]["result"]["pages"].append(2)
+    assert terminal.metadata["result"] == {"pages": [1]}
+    assert second[0]["result"] == {"pages": [1]}
 
 
 def test_a_running_task_reads_running_and_an_orchestration_run_reads_as_one_task() -> None:

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable
+from copy import deepcopy
 from typing import TYPE_CHECKING, Any
 
 from roomkit.channels._discussion_turn import discussion_handles
@@ -107,7 +108,8 @@ async def post_task_progress(kit: RoomKit, detail: str) -> bool:
 def room_tasks(entries: Iterable[StatusEntry]) -> list[dict[str, Any]]:
     """One line per task, from its entries in posting order: the task from its
     ``pending`` entry, its state and result from its latest terminal one, its
-    progress from its latest ``info`` one, which never ends it.
+    progress from its latest ``info`` one, which never ends it. Returned rows
+    and their nested results can be edited independently of the source entries.
 
     An orchestration worker run posts its ``pending`` entry before its task has
     an id: the run's terminal entry, which names the task, joins it. A run
@@ -143,7 +145,7 @@ def room_tasks(entries: Iterable[StatusEntry]) -> list[dict[str, Any]]:
         line.update(status=status, ended=entry.ts)
         if status == str(TaskStatus.COMPLETED):
             # The whole outcome when the summary was cut (RFC §19.8).
-            line["result"] = entry.metadata.get("result", entry.detail)
+            line["result"] = deepcopy(entry.metadata.get("result", entry.detail))
     return list(tasks.values())
 
 
@@ -156,7 +158,7 @@ def _end_run_line(line: dict[str, Any] | None, entry: StatusEntry) -> None:
     status = str(TaskStatus.FAILED if entry.status == StatusLevel.FAILED else TaskStatus.COMPLETED)
     line.update(status=status, ended=entry.ts)
     if status == str(TaskStatus.COMPLETED):
-        line["result"] = entry.metadata.get("result", entry.detail)
+        line["result"] = deepcopy(entry.metadata.get("result", entry.detail))
 
 
 class TaskStatusTool:

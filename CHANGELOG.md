@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Editing a nested result returned by `roomkit.tasks.room_tasks` now leaves its status entries and other projections intact.
+
 - **BREAKING** (RMK-1747). Room subscribers now receive ACP tool arguments, result previews and full intermediate progress only when the host sets `ACPChannel(publish_tool_call_text=True)`. The default publishes each call's identity and status. Stored tool rows and hook payloads retain their full contents.
 
 - **A delegated agent's turn ends once its result tool's call is served** (RFC §23.3, RMK-357). After `submit_result`, `submit_verdict` or `submit_review`, the turn asked its model once more, and re-prompted it when it said nothing, as models often do after a submit: a supervised review cost three calls where one does. Nothing is asked after the served call now; a call an `ON_TOOL_CALL` hook blocks is no result and the turn goes on. `OwnerTool.ends_turn` carries it to an executor.
