@@ -13,7 +13,7 @@ from __future__ import annotations
 import functools
 import json
 import re
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import NamedTuple
 
 from roomkit._lookalike import skeletons
@@ -70,6 +70,10 @@ without taking part (a supervisor, an auditor). An agent, a human advisor,
 takes part like any member. The discussion's people are the same (§19.7.5
 rule 2)."""
 
+PEOPLE_NOTE_LIMIT = 20
+"""People the people note names at most (:func:`people_note`): past them it
+counts the others, so a large group does not put every name in every turn."""
+
 _PERSON_LIMIT = 96
 """Characters of a person's label the people note quotes at most: a name's
 64, its rank and ``(a participant)``."""
@@ -107,25 +111,60 @@ def several_speakers(
     return len(people) >= 2 or len(sources) >= 2
 
 
-def people_taking_part(context: RoomContext, channel_id: str | None) -> tuple[str, ...]:
-    """Who takes part besides the agent of *channel_id*, silent or not, by the
-    room's record of them (RFC §6.4): the room's active participants who are
-    neither agents, bots nor observers, nor on the agent's own channel, and
-    whose messages reach the agent (RFC §7.5), one per person, in the order
-    they joined. No one for an agent the room does not bind."""
+def people_taking_part(
+    context: RoomContext,
+    channel_id: str | None,
+    speakers: Mapping[str, TurnSpeaker | None] | None = None,
+) -> tuple[str, ...]:
+    """Who takes part besides the agent of *channel_id*, silent or not (RFC
+    §6.4): the room's active participants who are neither agents, bots nor
+    observers, nor on the agent's own channel, and whose messages reach the
+    agent (RFC §7.5), one per person, in the order they joined. No one for an
+    agent the room does not bind.
+
+    Each is named as the turns the reader reads name them: a person among
+    *speakers* (:func:`turn_speakers` of those turns) by the label of their
+    latest turn, a name their transport stamped included; a silent one by
+    the room's record of them, their name and its rank, or, without a name,
+    their channel ranked after the labels the turns gave it (``@sms1 (2)``),
+    so that two people with no name never read as one."""
     bindings = {binding.channel_id: binding for binding in context.bindings}
     reader = bindings.get(channel_id) if channel_id is not None else None
     if reader is None:
         return ()
     unrecorded = _Unrecorded(context)
+    latest = {s.source: s for s in (speakers or {}).values() if s is not None}
+    taken = {speaker.label for speaker in latest.values() if not speaker.named}
     return tuple(
-        unrecorded.person(person)
+        _person_label(person, latest, taken, unrecorded)
         for person in unrecorded.people.persons
         if person.status == ParticipantStatus.ACTIVE
         and person.role not in NOT_PEOPLE
         and person.channel_id != channel_id
         and _reaches(person, bindings, reader)
     )
+
+
+def _person_label(
+    person: Participant,
+    latest: dict[str, TurnSpeaker],
+    taken: set[str],
+    unrecorded: _Unrecorded,
+) -> str:
+    """*person*'s label: their latest turn's among *latest*, else the room's
+    record of them, a channel's label ranked past those *taken*, which it
+    then takes."""
+    spoken = latest.get(digest(unrecorded.salt, ["participant", person.id]))
+    if spoken is not None:
+        return spoken.label
+    label = unrecorded.person(person)
+    if person_name(person.display_name):
+        return label
+    rank = 1
+    while (ranked := label if rank == 1 else f"{label} ({rank})") in taken:
+        rank += 1
+    taken.add(ranked)
+    return ranked
 
 
 def _reaches(
@@ -142,15 +181,25 @@ def _reaches(
     )
 
 
-def people_note(people: Sequence[str]) -> str | None:
+def people_note(people: Sequence[str], spoken: Iterable[str] = ()) -> str | None:
     """The note that names who takes part (:func:`people_taking_part`) when
     two people or more do, those who have not spoken yet included, so the
     agent knows who is there before each has spoken (RFC §6.4); ``None``
     otherwise. Each name is quoted: a participant may choose theirs, and it
-    must not read as the runtime's words."""
+    must not read as the runtime's words.
+
+    It names :data:`PEOPLE_NOTE_LIMIT` people at most: those whose turns the
+    reader reads (*spoken*, their labels) first, then the silent ones, each
+    in the order they joined, and counts the others."""
     if len(people) < 2:
         return None
-    names = ", ".join(quoted(person, _PERSON_LIMIT) for person in people)
+    said = set(spoken)
+    ordered = [p for p in people if p in said] + [p for p in people if p not in said]
+    named = ordered[:PEOPLE_NOTE_LIMIT]
+    names = ", ".join(quoted(person, _PERSON_LIMIT) for person in named)
+    others = len(people) - len(named)
+    if others:
+        names += f", and {others} other{'s' if others > 1 else ''}"
     return (
         f"{PEOPLE_NOTE_OPENING}, from the runtime: {names}. Each is present "
         "whether or not they have spoken yet.]"

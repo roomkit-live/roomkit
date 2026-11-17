@@ -35,6 +35,7 @@ from roomkit.channels._speaker import (
     SPEAKER_ATTRIBUTION_NOTE,
     people_note,
     people_taking_part,
+    turn_speakers,
 )
 from roomkit.channels._tool_history import EarlierTurns
 from roomkit.channels._turn_notes import split_turn_notes
@@ -145,6 +146,51 @@ class TestWhoTakesPart:
 
         assert people_taking_part(_context(people, [], sms_visibility="none"), "ai1") == ()
         assert people_taking_part(_context(people, []), "unbound") == ()
+
+    def test_a_person_the_turns_read_is_named_by_their_latest_turn_s_label(self) -> None:
+        """A name the transport stamps is the one the turn reads under: the
+        note names the person so, a silent one by the room's record (RMK-917)."""
+        people = [_person("u-alice", "Alice M"), _person("u-bob", "Bob")]
+        turn = _turn("u-alice", "Who is here?", 1)
+        turn = turn.model_copy(update={"metadata": {"sender_name": "Alice Martin"}})
+        context = _context(people, [turn])
+
+        named = people_taking_part(context, "ai1", turn_speakers([turn], context))
+
+        assert named == ("Alice Martin", "Bob")
+
+    @pytest.mark.parametrize(
+        ("spoke", "named"),
+        [((), ("@sms1", "@sms1 (2)")), (("u-2",), ("@sms1 (2)", "@sms1"))],
+        ids=["silent", "the-second-spoke"],
+    )
+    def test_nameless_people_of_one_channel_are_told_apart_as_their_turns_are(
+        self, spoke: tuple[str, ...], named: tuple[str, ...]
+    ) -> None:
+        """One who has spoken keeps their turns' label; a silent one takes
+        the next rank after those labels, in the order they joined (RMK-917)."""
+        people = [_person("u-1", None), _person("u-2", None)]
+        turns = [_turn(pid, "hello", i) for i, pid in enumerate(spoke, 1)]
+        context = _context(people, turns)
+
+        assert people_taking_part(context, "ai1", turn_speakers(turns, context)) == named
+
+    @pytest.mark.parametrize(
+        ("count", "ending"),
+        [(20, "“P20”."), (21, "“P19”, and 1 other."), (30, "“P19”, and 10 others.")],
+    )
+    def test_the_note_names_twenty_people_at_most_those_who_spoke_first(
+        self, count: int, ending: str
+    ) -> None:
+        people = [f"P{k:02d}" for k in range(1, count + 1)]
+        spoken = ["P20"] if count > 20 else []
+
+        note = people_note(people, spoken) or ""
+
+        names = note.split("from the runtime: ")[1].split(". Each")[0] + "."
+        assert names.startswith("“P20”, “P01”," if spoken else "“P01”,")
+        assert names.endswith(ending)
+        assert names.count("“") == min(count, 20)
 
     def test_the_note_names_them_only_when_two_or_more_take_part(self) -> None:
         assert people_note(()) is None

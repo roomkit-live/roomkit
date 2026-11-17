@@ -9,7 +9,13 @@ import time
 from typing import TYPE_CHECKING
 
 from roomkit.channels._ai_cuts import cut_records, cut_reply
-from roomkit.channels._speaker import author_name, people_taking_part, turn_labels
+from roomkit.channels._speaker import (
+    TurnSpeaker,
+    author_name,
+    labels_of,
+    people_taking_part,
+    turn_speakers,
+)
 from roomkit.core.visibility import visible_events
 from roomkit.models.enums import ChannelType, EventType
 from roomkit.models.event import is_tool_call_record
@@ -139,7 +145,8 @@ def _speak_turn(
         if e.id != event.id and e.type == EventType.MESSAGE and not is_tool_call_record(e)
     )
     # The labels the AI context gives, the agent's own turns aside (RFC §6.4).
-    labels = turn_labels((*recent, event), context)
+    said = turn_speakers((*recent, event), context)
+    labels = labels_of(said)
     speakers = {
         e.id: label
         for e in (*recent, event)
@@ -148,7 +155,7 @@ def _speak_turn(
     return SpeakTurn(
         event=event,
         recent=recent,
-        people=_people(context, (*recent, event), speakers, channel_id),
+        people=_people(context, (*recent, event), speakers, channel_id, said),
         channel_id=channel_id,
         speakers=speakers,
         thought=thought,
@@ -161,11 +168,13 @@ def _people(
     events: tuple[RoomEvent, ...],
     speakers: dict[str, str],
     channel_id: str,
+    said: dict[str, TurnSpeaker | None],
 ) -> tuple[str, ...]:
-    """Who takes part besides the agent (:func:`people_taking_part`), or the
-    distinct speakers of *events* when more: one microphone is one
-    participant but may carry several diarized voices."""
-    participants = people_taking_part(context, channel_id)
+    """Who takes part besides the agent (:func:`people_taking_part`), named
+    as the turns read name them (*said*), or the distinct speakers of
+    *events* when more: one microphone is one participant but may carry
+    several diarized voices."""
+    participants = people_taking_part(context, channel_id, said)
     voices = tuple(
         dict.fromkeys(
             speakers[e.id]

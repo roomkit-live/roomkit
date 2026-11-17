@@ -386,9 +386,12 @@ class AIContextMixin(_AIChannelContract):
         event = with_attached_media(event, self._attached_media)
         memory_result = await self._visible_memory(event, context, standalone)
         loop_ctx.author_images = await self._author_images(event, memory_result)
-        people = self._people(context, standalone)
+        # Who said each turn read, ranked once: the conversation's labels and
+        # the people note name each person the same way (RFC §6.4).
+        speakers = turn_speakers([*memory_result.events, event], context)
+        people = self._people(context, standalone, speakers)
         messages, attribute_speakers, requester = self._turn_messages(
-            event, context, memory_result, loop_ctx, people, earlier
+            event, context, memory_result, loop_ctx, people, speakers, earlier
         )
         answered = next(
             (i for i, message in enumerate(messages) if message is loop_ctx.answered_input), None
@@ -400,6 +403,7 @@ class AIContextMixin(_AIChannelContract):
             own_notes,
             speakers=attribute_speakers,
             people=people,
+            spoken=[speaker.label for speaker in speakers.values() if speaker is not None],
             cut=bool(self._cut_answers(context, memory_result)),
             retrieved=memory_result.notes,
         )
@@ -525,10 +529,16 @@ class AIContextMixin(_AIChannelContract):
             tools.append(ToolEviction.tool_definition())
         return (system_prompt or "") + (self._prompt_identity(context) or "") or None
 
-    def _people(self, context: RoomContext, standalone: bool) -> tuple[str, ...]:
-        """Who takes part besides the agent (RFC §6.4); no one for a standalone
-        turn, which reads nothing of the room (RFC §10.1.1)."""
-        return () if standalone else people_taking_part(context, self.channel_id)
+    def _people(
+        self,
+        context: RoomContext,
+        standalone: bool,
+        speakers: dict[str, TurnSpeaker | None] | None = None,
+    ) -> tuple[str, ...]:
+        """Who takes part besides the agent (RFC §6.4), each named as the
+        turns read (*speakers*) name them; no one for a standalone turn,
+        which reads nothing of the room (RFC §10.1.1)."""
+        return () if standalone else people_taking_part(context, self.channel_id, speakers)
 
     def _turn_messages(
         self,
@@ -537,6 +547,7 @@ class AIContextMixin(_AIChannelContract):
         memory_result: MemoryResult,
         loop_ctx: _ToolLoopContext,
         people: tuple[str, ...],
+        speakers: dict[str, TurnSpeaker | None],
         earlier: EarlierTurns,
     ) -> tuple[list[AIMessage], bool, str | None]:
         """The turn's messages, its history with what it replays of its
@@ -556,7 +567,6 @@ class AIContextMixin(_AIChannelContract):
         untouched, except in a thinker's context, which names its one speaker too
         (``loop_ctx.names_every_speaker``, RFC §6.4).
         """
-        speakers = turn_speakers([*memory_result.events, event], context)
         past_turns, past_indexes = self._past_turns(memory_result, context, speakers, loop_ctx)
         current_content, current_speaker = self._turn_input(event, loop_ctx, speakers)
         said = [speaker for _, _, speaker in past_turns if speaker is not None]
@@ -679,6 +689,7 @@ class AIContextMixin(_AIChannelContract):
         speakers: bool,
         people: tuple[str, ...],
         retrieved: list[str],
+        spoken: list[str] | None = None,
         cut: bool = False,
     ) -> str | None:
         """What changes from one turn to the next, as the notes the turn's
@@ -691,7 +702,7 @@ class AIContextMixin(_AIChannelContract):
         copy of a runtime mark in them is replaced; the speaker and people
         notes are the runtime's."""
         blocks = [SPEAKER_ATTRIBUTION_NOTE] if speakers else []
-        if note := people_note(people):
+        if note := people_note(people, spoken or ()):
             blocks.append(note)
         if cut:
             blocks.append(CUT_NOTE)
