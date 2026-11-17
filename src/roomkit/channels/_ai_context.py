@@ -87,7 +87,14 @@ from roomkit.memory.token_estimator import (
 from roomkit.models.channel import ChannelCapabilities
 from roomkit.models.delivery import SUPERSEDED
 from roomkit.models.enums import ChannelCategory, ChannelMediaType, EventType
-from roomkit.models.event import CompositeContent, MediaContent, TextContent
+from roomkit.models.event import (
+    CompositeContent,
+    EventContent,
+    LocationContent,
+    MediaContent,
+    TemplateContent,
+    TextContent,
+)
 from roomkit.providers.ai.base import (
     AIContext,
     AIImagePart,
@@ -1193,7 +1200,7 @@ class AIContextMixin(_AIChannelContract):
             for index, part in enumerate(content.parts):
                 if isinstance(part, MediaContent):
                     parts.extend(images.parts(event.id, index, part))
-                elif text := content_text(part):
+                elif text := _read_as_text(part):
                     # Any other part as a text-only reader reads it (RFC §6.6).
                     parts.append(AITextPart(text=text))
             return parts or ""
@@ -1215,11 +1222,21 @@ class AIContextMixin(_AIChannelContract):
             texts = (
                 _text_of(images.parts(event.id, index, part))
                 if isinstance(part, MediaContent)
-                else content_text(part)
+                else _read_as_text(part)
                 for index, part in enumerate(content.parts)
             )
             return "\n".join(text for text in texts if text)
-        return content_text(content) or ""
+        return _read_as_text(content)
+
+
+def _read_as_text(content: EventContent) -> str:
+    """What a model reads of a content that is no image: its text, a media
+    by its label, a location and a template by their text form (RFC §6.6).
+    The event a turn answers reaches the AI channel transcoded to that text;
+    the history reads the stored event, so it reads it the same (§6.4)."""
+    if isinstance(content, LocationContent | TemplateContent):
+        return text_form(content)
+    return content_text(content) or ""
 
 
 def _text_of(parts: list[AITextPart | AIImagePart]) -> str:

@@ -35,6 +35,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A shared location and a template read in a model's later history as its turn read them** (RFC §6.4, §6.6, RMK-1743). The turn a location started read it as `[Location: Head office (45.5, -73.6)]`, then the turns after dropped it from their history, a template and a composite's location part alike: the history reads the stored event, which no text reader took. They now read by their text form, as the turn did.
+
 - Cancelling a worker waits for its inline delegation to finish within the existing cancellation deadline; normal completion keeps its previous behavior (RFC §23.3, §23.4).
 
 - **A supervisor's per-worker tool is named as every built-in provider accepts** (RFC §19.7.3, RMK-521). A worker's tool was `delegate_to_<channel id>`, so a host that names its agent channels `agent:<uuid>` declared `delegate_to_agent:<uuid>`, which Anthropic, OpenAI and DeepSeek refuse (`[A-Za-z0-9_-]{1,128}`): the provider raised before the request and the supervisor never answered. An id that makes no such name has each other character replaced by `_` (`delegate_to_agent_<uuid>`); a replaced name that meets another worker's, or passes 128 characters, ends with `_` and 8 hex digits of the id's SHA-256. An id that already makes such a name keeps `delegate_to_<id>`, and a call on the name reaches its worker.
