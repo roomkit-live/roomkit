@@ -9,6 +9,7 @@ so no other turn's text is published (RMK-972).
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -25,6 +26,7 @@ from roomkit import (
     SMSChannel,
     TextContent,
 )
+from roomkit.channels import _ai_coalescers
 from roomkit.channels.agent import Agent
 from roomkit.providers.ai.base import (
     AIContext,
@@ -46,8 +48,14 @@ class _Rounds(AIProvider):
     """Streams scripted rounds: each a list of text tokens, then an optional
     tool call ending the round."""
 
-    def __init__(self, rounds: list[tuple[list[str], StreamToolCall | None]]) -> None:
+    def __init__(
+        self,
+        rounds: list[tuple[list[str], StreamToolCall | None]],
+        *,
+        first_token_delay: float = 0.0,
+    ) -> None:
         self._rounds = list(rounds)
+        self._first_token_delay = first_token_delay
 
     @property
     def model_name(self) -> str:
@@ -71,6 +79,8 @@ class _Rounds(AIProvider):
 
     async def generate_structured_stream(self, context: AIContext) -> AsyncIterator[StreamEvent]:
         tokens, call = self._rounds.pop(0)
+        if self._first_token_delay:
+            await asyncio.sleep(self._first_token_delay)
         for token in tokens:
             yield StreamTextDelta(text=token)
         if call is not None:
@@ -110,6 +120,24 @@ async def _delegated_texts(kit: RoomKit, agent: Agent, task: str = "go") -> _Obs
     return observer
 
 
+class _Clock:
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def monotonic(self) -> float:
+        return self.now
+
+
+@pytest.fixture
+def text_window_clock(monkeypatch: pytest.MonkeyPatch) -> _Clock:
+    # Only the coalescers read this clock; asyncio and Redis keep real time.
+    clock = _Clock()
+    monkeypatch.setattr(_ai_coalescers, "time", clock)
+    return clock
+
+
+@pytest.mark.usefixtures("text_window_clock")
+@pytest.mark.parametrize("first_token_delay", [0.0, 0.12], ids=["immediate", "delayed"])
 @pytest.mark.parametrize(
     ("coalesce_ms", "publishes"),
     # 690 characters: one publish per token, or one per 256-character window.
@@ -117,11 +145,11 @@ async def _delegated_texts(kit: RoomKit, agent: Agent, task: str = "go") -> _Obs
     ids=["window off: one per token", "default window: by size"],
 )
 async def test_a_delegated_answer_is_published_as_its_text_on_a_window(
-    kit, coalesce_ms, publishes
-):
+    kit: RoomKit, coalesce_ms: float, publishes: int, first_token_delay: float
+) -> None:
     agent = Agent(
         "worker",
-        provider=_Rounds([(WORDS, None)]),
+        provider=_Rounds([(WORDS, None)], first_token_delay=first_token_delay),
         publish_text_deltas=True,
         text_coalesce_ms=coalesce_ms,
     )
@@ -130,6 +158,36 @@ async def test_a_delegated_answer_is_published_as_its_text_on_a_window(
 
     assert "".join(data["text"] for data in texts) == ANSWER
     assert len(texts) == publishes
+    assert {data["channel_id"] for data in texts} == {"worker"}
+
+
+async def test_elapsed_time_publishes_a_small_first_piece_before_the_size_window(
+    kit: RoomKit, text_window_clock: _Clock
+) -> None:
+    class AfterTheWindow(_Rounds):
+        async def generate_structured_stream(
+            self, context: AIContext
+        ) -> AsyncIterator[StreamEvent]:
+            text_window_clock.now = 0.08
+            async for event in super().generate_structured_stream(context):
+                yield event
+
+    agent = Agent(
+        "worker",
+        provider=AfterTheWindow([(WORDS, None)]),
+        publish_text_deltas=True,
+        text_coalesce_ms=80,
+    )
+
+    texts = (await _delegated_texts(kit, agent)).texts()
+
+    assert [data["text"] for data in texts] == [
+        WORDS[0],
+        "".join(WORDS[1:39]),
+        "".join(WORDS[39:76]),
+        "".join(WORDS[76:]),
+    ]
+    assert "".join(data["text"] for data in texts) == ANSWER
     assert {data["channel_id"] for data in texts} == {"worker"}
 
 
