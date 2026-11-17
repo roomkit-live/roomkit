@@ -60,16 +60,19 @@ async def test_renaming_a_host_definition_follows_human_interception(
         assert pending.tool_call_id == "c1"
         assert human.handler.resolve(pending.pending_id, "human answer")
 
-    work = asyncio.gather(
-        respond(channel, make_event(body="hello"), binding, RoomContext(room=Room(id="r1"))),
-        answer(),
-    )
+    tasks = [
+        asyncio.create_task(
+            respond(channel, make_event(body="hello"), binding, RoomContext(room=Room(id="r1")))
+        ),
+        asyncio.create_task(answer()),
+    ]
     try:
-        await asyncio.wait_for(work, 3)
+        await asyncio.wait_for(asyncio.gather(*tasks), 3)
     finally:
-        if not work.done():
-            work.cancel()
-        await asyncio.gather(work, return_exceptions=True)
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
         await channel.close()
     results = [
         part
