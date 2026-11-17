@@ -9,6 +9,15 @@ from typing import Any
 from roomkit import SandboxExecutor, SandboxResult
 
 
+def sandbox_options(channel: Mapping[str, Any], observed: dict[str, Any] | None) -> dict[str, Any]:
+    if "sandbox" not in channel:
+        return {}
+    if observed is None:
+        raise AssertionError("sandbox: no observation sink")
+    record = observed.setdefault(channel["id"], {"calls": [], "closes": 0})
+    return {"sandbox": ScriptedSandbox(channel["sandbox"], record)}
+
+
 class ScriptedSandbox(SandboxExecutor):
     def __init__(self, spec: Mapping[str, Any], record: dict[str, Any]) -> None:
         if not isinstance(spec, Mapping):

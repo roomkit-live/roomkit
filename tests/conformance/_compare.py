@@ -151,9 +151,7 @@ class _Comparison:
         for channel_id, expected in self.expect.get("script_executors", {}).items():
             actual = self.observed.script_executors.get(channel_id, MISSING)
             self._check(expected, actual, f"script_executors.{channel_id}")
-        for channel_id, expected in self.expect.get("sandbox_executors", {}).items():
-            actual = self.observed.sandbox_executors.get(channel_id, MISSING)
-            self._check(expected, actual, f"sandbox_executors.{channel_id}")
+        self.sandbox_executors()
         for kind in ("tool_audit", "session_audit"):
             if kind in self.expect:
                 self._check(self.expect[kind], getattr(self.observed, kind), kind)
@@ -162,6 +160,11 @@ class _Comparison:
         for channel_id, expected in self.expect.get("external_handlers", {}).items():
             actual = self.observed.external_handlers.get(channel_id, MISSING)
             self._check(expected, actual, f"external_handlers.{channel_id}")
+
+    def sandbox_executors(self) -> None:
+        for channel_id, expected in self.expect.get("sandbox_executors", {}).items():
+            actual = self.observed.sandbox_executors.get(channel_id, MISSING)
+            self._check(expected, actual, f"sandbox_executors.{channel_id}")
 
     def continuations(self) -> None:
         for channel_id, expected in self.expect.get("continuations", {}).items():
