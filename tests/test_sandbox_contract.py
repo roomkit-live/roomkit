@@ -288,3 +288,70 @@ async def test_only_bash_escapes_the_default_and_a_named_bound_still_wins(
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
         await channel.close()
+
+
+async def test_repeated_sandbox_declarations_do_not_reject_the_executor(streaming: bool) -> None:
+    sandbox = RecordingSandbox([{"name": "sandbox_bash"}, {"name": "sandbox_bash"}])
+    channel, _ = channel_with_call(sandbox, streaming)
+    run = await answer(channel)
+    await channel.close()
+    assert sandbox.calls == [("bash", {})]
+    assert len(run.calls) == 1 and not run.calls[0].failed
+
+
+class LaterFailingDefinitions(RecordingSandbox):
+    unavailable = False
+
+    def tool_definitions(self) -> list[dict[str, Any]]:
+        if self.unavailable:
+            raise ConnectionError("catalogue unavailable")
+        return super().tool_definitions()
+
+
+async def test_a_later_catalogue_failure_keeps_its_class_without_running_a_command(
+    streaming: bool,
+) -> None:
+    sandbox = LaterFailingDefinitions()
+    channel, provider = channel_with_call(sandbox, streaming)
+    sandbox.unavailable = True
+    with pytest.raises(ConnectionError, match="catalogue unavailable"):
+        await answer(channel)
+    assert sandbox.calls == []
+    assert provider.calls == []
+    await channel.close()
+
+
+async def test_an_attached_sandbox_keeps_the_bash_default_even_when_the_host_serves_it(
+    streaming: bool,
+) -> None:
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def host(name: str, arguments: dict[str, Any]) -> str:
+        assert name == "sandbox_bash" and arguments == {}
+        entered.set()
+        await release.wait()
+        return "host ran"
+
+    sandbox = RecordingSandbox([])
+    channel, _ = channel_with_call(
+        sandbox,
+        streaming,
+        tools=[AITool(name="sandbox_bash", description="Host bash")],
+        tool_handler=host,
+        tool_timeout_seconds=0.02,
+    )
+    task = asyncio.create_task(answer(channel))
+    try:
+        await asyncio.wait_for(entered.wait(), 3)
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(asyncio.shield(task), 0.06)
+        release.set()
+        run = await asyncio.wait_for(task, 3)
+        assert run.calls[0].result == "host ran" and not run.calls[0].failed
+        assert sandbox.calls == []
+    finally:
+        release.set()
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        await channel.close()
