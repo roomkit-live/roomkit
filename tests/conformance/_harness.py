@@ -92,6 +92,7 @@ from tests.conformance._script import (
     ScriptedRouter,
     event_handler,
 )
+from tests.conformance._skill_registry import SKILL_REGISTRY_CALLS
 from tests.conformance._store import STORE_CALLS
 from tests.conformance._strategies import (
     STRATEGY_CALLS,
@@ -730,6 +731,7 @@ class Harness:
         calls = CALLS | STORE_CALLS | TASK_CALLS | MEMBER_CALLS | INPUT_CALLS | STRATEGY_CALLS
         calls |= VERIFICATION_CALLS | ROUTING_CALLS | HANDOFF_CALLS | DISCUSSION_CALLS
         calls |= MCP_HOST_CALLS
+        calls |= SKILL_REGISTRY_CALLS
         calls |= SUBSCRIPTION_CALLS
         call = (calls | DELEGATE_TOOL_CALLS | EXECUTOR_CALLS | KIT_EXECUTOR_CALLS)[spec["call"]]
         try:

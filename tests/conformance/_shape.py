@@ -43,6 +43,7 @@ from tests.conformance._routing import (
     ROUTING_RULE,
     TRANSITION,
 )
+from tests.conformance._skill_registry_shape import SKILL_REGISTRY_ARGUMENTS, registry_problems
 from tests.conformance._store import READ_MARKER_ARGUMENTS, STORE_ARGUMENTS
 from tests.conformance._strategies import (
     LOOP,
@@ -570,6 +571,7 @@ CALLS |= DELEGATE_TOOL_ARGUMENTS
 CALLS |= DISCUSSION_ARGUMENTS
 CALLS |= EXECUTOR_ARGUMENTS | KIT_EXECUTOR_ARGUMENTS
 CALLS |= MCP_HOST_ARGUMENTS
+CALLS |= SKILL_REGISTRY_ARGUMENTS
 STEPS = {"await": {"await", "expect"}, "concurrent": {"concurrent"}, "wait_for": {"wait_for"}}
 STEPS |= {"open": {"open"}, "idle": {"idle"}, "wait_for_lock": {"wait_for_lock", "waiters"}}
 STEPS |= {"lock_releases": {"lock_releases"}}
@@ -1107,6 +1109,8 @@ def _call(call: Mapping[str, Any], extra: set[str], path: str, found: list[str])
     _members(call, CALLS[name] | extra | {"call", "organization_id"}, path, found)
     if name == "mcp_session":
         found.extend(host_mcp_problems(call, path))
+    if name == "skill_registry_session":
+        found.extend(registry_problems(call, path))
     if "expect" in call:
         _outcome(call["expect"], f"{path}.expect", found)
     if name == "create_room":
