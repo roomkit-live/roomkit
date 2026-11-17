@@ -272,6 +272,7 @@ def test_a_part_carries_its_outcome(kind: OutcomeKind, is_error: bool) -> None:
     part = ToolOutcome(kind, "body").as_part("c1", "lookup", references=["x"])
 
     assert (part.is_error, part.result, part.references) == (is_error, "body", ["x"])
+    assert part.outcome == kind.value
 
 
 def test_a_dangling_call_patched_as_cancelled_reads_as_failed() -> None:
