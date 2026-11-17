@@ -9,10 +9,36 @@ from typing import Any
 import pytest
 
 from roomkit import HookExecution, HookTrigger, PlanUpdatedEvent
+from roomkit.models import ChannelType
 from roomkit.realtime import EphemeralEvent, EphemeralEventType, InMemoryRealtime
 from tests.planning_support import answer, message, plan, room
 
 _TASKS = [{"title": "Follow up", "status": "pending"}]
+
+
+async def test_a_failing_plan_observer_ignores_channel_type_filters_and_keeps_the_plan(
+    streaming: bool,
+) -> None:
+    kit, _, model = await room([plan(_TASKS), answer(), answer()], streaming)
+    seen: list[PlanUpdatedEvent] = []
+    heard = asyncio.Event()
+
+    @kit.hook(HookTrigger.ON_PLAN_UPDATED, channel_types={ChannelType.SMS})
+    async def observe(event: PlanUpdatedEvent, context: Any) -> None:
+        seen.append(event)
+        heard.set()
+        raise RuntimeError("observer failed")
+
+    try:
+        result = await kit.process_inbound(message())
+        await asyncio.wait_for(heard.wait(), 3)
+        assert result.error is None and len(model.calls) == 2
+        assert len(seen) == 1 and seen[0].tasks == _TASKS
+        await kit.process_inbound(message("Continue."))
+        assert "Follow up" in str(model.calls[-1].messages[-1].content)
+        assert "## Current Task Plan" in str(model.calls[-1].messages[-1].content)
+    finally:
+        await kit.close()
 
 
 class PlanPublication(InMemoryRealtime):
