@@ -24,6 +24,12 @@ from roomkit.orchestration.state import get_conversation_state
 from roomkit.orchestration.strategies.supervisor import Supervisor
 from roomkit.providers.ai.base import AIResponse, AITool, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
+from roomkit.providers.anthropic.request import ANTHROPIC_TOOL_NAMES
+from roomkit.providers.deepseek.ai import DEEPSEEK_TOOL_NAMES
+from roomkit.providers.gemini.schema import GEMINI_TOOL_NAMES
+from roomkit.providers.kimi.ai import KIMI_TOOL_NAMES
+from roomkit.providers.mistral.ai import MISTRAL_TOOL_NAMES
+from roomkit.providers.openai.ai import OPENAI_TOOL_NAMES
 from roomkit.turns._registry_tools import OwnerToolStore
 from tests.conference.test_conference_realtime import until
 from tests.strategy_turns import owner_turn
@@ -36,6 +42,20 @@ from tests.tool_room import (
 )
 
 # -- Helpers ------------------------------------------------------------------
+
+
+#: A host that names its agent channels ``agent:<uuid>``, and the tool name
+#: its worker gets (RMK-521).
+_HOST_AGENT = "agent:6f1c2a9e-1111-2222-3333-444455556666"
+_HOST_AGENT_TOOL = "delegate_to_agent_6f1c2a9e-1111-2222-3333-444455556666"
+_BUILT_IN_TOOL_NAME_RULES = (
+    ANTHROPIC_TOOL_NAMES,
+    DEEPSEEK_TOOL_NAMES,
+    GEMINI_TOOL_NAMES,
+    KIMI_TOOL_NAMES,
+    MISTRAL_TOOL_NAMES,
+    OPENAI_TOOL_NAMES,
+)
 
 
 class _NoopLock:
@@ -126,9 +146,31 @@ class TestSupervisorInstall:
 
         kit.register_channel.assert_not_called()
 
-    async def test_injects_delegation_tools(self):
+    @pytest.mark.parametrize(
+        ("worker_ids", "names"),
+        [
+            (["w1", "w2"], ["delegate_to_w1", "delegate_to_w2"]),
+            ([_HOST_AGENT, "researcher"], [_HOST_AGENT_TOOL, "delegate_to_researcher"]),
+            (["agent_x", "agent:x"], ["delegate_to_agent_x", "delegate_to_agent_x_c9d679f9"]),
+            (
+                ["agent:x", "agent.x"],
+                ["delegate_to_agent_x_c9d679f9", "delegate_to_agent_x_53d74197"],
+            ),
+            (["a" * 120], [f"delegate_to_{'a' * 107}_2f3d3354"]),
+        ],
+        ids=[
+            "ids-that-are-names",
+            "a-host-s-agent-id",
+            "meets-a-kept-name",
+            "two-meet",
+            "too-long",
+        ],
+    )
+    async def test_injects_delegation_tools(self, worker_ids: list[str], names: list[str]):
+        # Each worker's tool is named as every built-in provider accepts: an id
+        # that makes such a name keeps delegate_to_<id> (RMK-521, RFC §19.7.3).
         boss = _make_agent("boss")
-        workers = [_make_agent("w1", "Worker 1"), _make_agent("w2", "Worker 2")]
+        workers = [_make_agent(worker_id) for worker_id in worker_ids]
         kit = _make_mock_kit(Room(id="r1"))
 
         s = Supervisor(supervisor=boss, workers=workers)
@@ -136,7 +178,9 @@ class TestSupervisorInstall:
 
         # Declared in the room it was installed in (RFC §19.7), not channel-wide.
         tool_names = room_tool_names(kit, "boss", "r1")
-        assert tool_names == ["delegate_to_w1", "delegate_to_w2"]
+        assert tool_names == names
+        for rule in _BUILT_IN_TOOL_NAME_RULES:
+            rule.check(tool_names)
         assert owner_tool_definitions(kit, "boss") == []
 
     async def test_sets_initial_state(self):
@@ -152,10 +196,16 @@ class TestSupervisorInstall:
         assert state.active_agent_id == "boss"
         assert state.phase == "supervisor"
 
-    async def test_delegation_tool_handler(self):
-        """Test that the delegation tool handler calls kit.delegate."""
+    @pytest.mark.parametrize(
+        ("worker_id", "tool"),
+        [("w1", "delegate_to_w1"), (_HOST_AGENT, _HOST_AGENT_TOOL)],
+        ids=["id-that-is-a-name", "a-host-s-agent-id"],
+    )
+    async def test_delegation_tool_handler(self, worker_id: str, tool: str):
+        """Test that the delegation tool handler calls kit.delegate, for the
+        worker its tool's name maps to."""
         boss = _make_agent("boss")
-        w1 = _make_agent("w1")
+        w1 = _make_agent(worker_id)
         kit = _make_mock_kit(Room(id="r1"))
 
         mock_task = MagicMock()
@@ -167,11 +217,11 @@ class TestSupervisorInstall:
 
         # Call the delegation tool handler
         with owner_tool_call_in(kit, "boss", "r1"):
-            result = await boss._channel_tool_handler("delegate_to_w1", {"task": "Do something"})
+            result = await boss._channel_tool_handler(tool, {"task": "Do something"})
         parsed = json.loads(result)
 
         assert parsed["status"] == "delegated"
-        assert parsed["worker"] == "w1"
+        assert parsed["worker"] == worker_id
         await until(lambda: kit.delegate.called)  # in the background run
         kit.delegate.assert_called_once()
 

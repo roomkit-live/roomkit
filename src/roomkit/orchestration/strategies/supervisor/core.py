@@ -114,7 +114,12 @@ class Supervisor(
                   same task.
                 - ``None`` (default): per-worker ``delegate_to_<id>``
                   tools are injected and the AI decides when to call
-                  them.
+                  them. An id that makes no tool name every provider
+                  accepts (``agent:<uuid>``) has each character outside
+                  ``[A-Za-z0-9_-]`` replaced by ``_``
+                  (``delegate_to_agent_<uuid>``), with a digest of the id
+                  added when that name meets another worker's or passes
+                  128 characters.
 
             auto_delegate: If ``True``, the framework triggers workers
                 automatically — no tool needed. For sync channels (CLI),

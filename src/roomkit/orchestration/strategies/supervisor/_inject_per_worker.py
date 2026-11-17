@@ -32,6 +32,7 @@ from roomkit.orchestration.strategies.supervisor._common import (
     _post_worker_status,
     logger,
 )
+from roomkit.orchestration.strategies.supervisor._worker_tool_names import worker_tool_names
 from roomkit.providers.ai.base import AITool
 from roomkit.tasks.handback import CALLER_HANDS_BACK, bounded, result_text
 
@@ -58,7 +59,8 @@ class _PerWorkerToolMixin:
         room the supervisor serves, and reach this install's workers with its
         settings; a call delegates from the room of the call (RFC §23.4).
         """
-        tool_to_worker = {f"delegate_to_{w.channel_id}": w.channel_id for w in self._workers}
+        names = worker_tool_names([w.channel_id for w in self._workers])
+        tool_to_worker = {name: worker_id for worker_id, name in names.items()}
         server = _PerWorkerToolServer(
             kit,
             self._supervisor,
@@ -69,7 +71,7 @@ class _PerWorkerToolMixin:
         )
         entries = [
             orchestration_tool(tool, in_call_room(tool.name, server.serve), waits=True)
-            for tool in map(_worker_tool, self._workers)
+            for tool in (_worker_tool(w, names[w.channel_id]) for w in self._workers)
         ]
         owner_tools_of(kit, self._supervisor).register_all(entries, room_id=room_id, owner=self)
 
@@ -254,11 +256,12 @@ def _dispatched(worker_id: str, task_id: str) -> str:
     )
 
 
-def _worker_tool(worker: HeldAgent) -> AITool:
-    """The ``delegate_to_<id>`` declaration for one worker."""
+def _worker_tool(worker: HeldAgent, name: str) -> AITool:
+    """The ``delegate_to_<id>`` declaration for one worker, under *name*: its
+    id's tool name (:func:`worker_tool_names`). The description names the id."""
     desc = getattr(worker, "description", None) or f"Worker agent {worker.channel_id}"
     return AITool(
-        name=f"delegate_to_{worker.channel_id}",
+        name=name,
         description=f"Delegate a task to {worker.channel_id}. {desc}",
         parameters={
             "type": "object",
