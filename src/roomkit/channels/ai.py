@@ -214,6 +214,7 @@ class AIChannel(
         text_coalesce_chars: int = 256,
         *,
         publish_thinking_text: bool = False,
+        publish_tool_call_text: bool = False,
         publish_text_deltas: bool = False,
         serialize_room_turns: bool = False,
         steer_room_turns: bool = False,
@@ -258,6 +259,11 @@ class AIChannel(
         # channel has no visibility gate: its text goes to the subscribers only
         # when the host asks. Its length and its round always do.
         self._publish_thinking_text = publish_thinking_text
+        # A call's arguments and its result's preview, the same way: what a
+        # BEFORE_BROADCAST hook blocks or redacts on the call's rows would
+        # reach a subscriber in clear, so they go only when the host asks.
+        # Each call's id, tool, status and intent always do (RFC §8.4).
+        self._publish_tool_call_text = publish_tool_call_text
         # The answer's text as it is written, the same way: one TEXT_DELTA per
         # window, for the code that delegated a task (RFC §6.4). Off unless
         # the host asks, and published by the room's owner only for a turn a

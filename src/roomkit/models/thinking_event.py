@@ -12,11 +12,13 @@ def _utcnow() -> datetime:
 
 @dataclass(frozen=True)
 class ThinkingEvent:
-    """An intelligence channel began (or finished) extended reasoning.
+    """A block of an intelligence channel's extended reasoning, as it closed.
 
-    Carried to ``ON_AI_THINKING`` hooks. The same reasoning is also published
-    as an ephemeral event for live UIs; the hook is for hosts that want to
-    observe or record it without a realtime backend.
+    Carried to ``ON_AI_THINKING`` hooks, once per block, when the block
+    closes: the model starts its answer's text or composes a call, or its
+    generation ends, fails or stops (RFC §8.4). The same reasoning is also
+    published as ephemeral events for live UIs; the hook is for hosts that
+    want to observe or record it without a realtime backend.
     """
 
     room_id: str
@@ -26,7 +28,7 @@ class ThinkingEvent:
     """The intelligence channel doing the reasoning."""
 
     thinking: str
-    """The reasoning text. Empty when the model only signalled that it began."""
+    """The block's whole reasoning text."""
 
     round_index: int = 0
     """Tool-loop round this reasoning belongs to."""

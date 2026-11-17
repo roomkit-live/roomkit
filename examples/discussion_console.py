@@ -63,6 +63,9 @@ async def main() -> None:
             role=role,
             description=description,
             system_prompt=f"{prompt} Keep answers short: this is a chat.",
+            # The console shows each call's arguments and result as they
+            # reach the room's realtime events, which carry them only then.
+            publish_tool_call_text=True,
         )
         for handle, (role, description, prompt) in TEAM.items()
     ]

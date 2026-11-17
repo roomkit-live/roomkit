@@ -98,8 +98,12 @@ def _tool_events(
     return starts, ends
 
 
-async def test_streaming_tool_loop_publishes_tool_events() -> None:
-    """Internal-handler streaming loop: one START + one END per round."""
+@pytest.mark.parametrize("text", [False, True], ids=["private-by-default", "opted-in"])
+async def test_streaming_tool_loop_publishes_tool_events(text: bool) -> None:
+    """Internal-handler streaming loop: one START + one END per round. A
+    call's arguments and its result's preview reach a subscriber only for a
+    channel that publishes its calls' text: no hook judges an ephemeral, so
+    what a hook blocks on the call's rows would reach it in clear (RMK-970)."""
 
     async def tool_handler(name: str, args: dict[str, Any]) -> str:
         return f"result of {name}"
@@ -117,21 +121,27 @@ async def test_streaming_tool_loop_publishes_tool_events() -> None:
         ],
     )
     kit = RoomKit()
-    ai = AIChannel("ai1", provider=provider, tool_handler=tool_handler, thinking_budget=4096)
+    ai = AIChannel(
+        "ai1",
+        provider=provider,
+        tool_handler=tool_handler,
+        thinking_budget=4096,
+        publish_tool_call_text=text,
+    )
 
     received = await _run_turn(kit, ai)
     starts, ends = _tool_events(received)
 
     assert len(starts) == 1
-    assert starts[0].data["tool_calls"] == [
-        {"id": "tc1", "name": "search", "arguments": {"q": "x"}}
-    ]
+    arguments = {"arguments": {"q": "x"}} if text else {}
+    result = {"result": "result of search"} if text else {}
+    assert starts[0].data["tool_calls"] == [{"id": "tc1", "name": "search", **arguments}]
     assert starts[0].data["round"] == 0
     assert starts[0].channel_id == "ai1"
 
     assert len(ends) == 1
     assert ends[0].data["tool_calls"] == [
-        {"id": "tc1", "name": "search", "result": "result of search", "status": "completed"}
+        {"id": "tc1", "name": "search", **result, "status": "completed"}
     ]
     assert ends[0].data["round"] == 0
     assert isinstance(ends[0].data["duration_ms"], int)
@@ -160,7 +170,9 @@ async def test_streaming_tool_end_result_preview_capped() -> None:
         ],
     )
     kit = RoomKit()
-    ai = AIChannel("ai1", provider=provider, tool_handler=tool_handler)
+    ai = AIChannel(
+        "ai1", publish_tool_call_text=True, provider=provider, tool_handler=tool_handler
+    )
 
     received = await _run_turn(kit, ai)
     _, ends = _tool_events(received)
@@ -191,6 +203,7 @@ async def test_non_streaming_tool_loop_publishes_tool_events() -> None:
     kit = RoomKit()
     ai = AIChannel(
         "ai1",
+        publish_tool_call_text=True,
         provider=provider,
         tool_handler=tool_handler,
         tools=[AITool(name="calc", description="Calculate", parameters={})],
@@ -259,7 +272,9 @@ async def test_external_handler_streaming_publishes_tool_events() -> None:
     handler = PolicyExternalToolHandler()
     process_tool_call = AsyncMock(wraps=handler.process_tool_call)
     handler.process_tool_call = process_tool_call  # type: ignore[method-assign]
-    ai = AIChannel("ai1", provider=provider, external_tool_handler=handler)
+    ai = AIChannel(
+        "ai1", publish_tool_call_text=True, provider=provider, external_tool_handler=handler
+    )
 
     received = await _run_turn(kit, ai)
     starts, ends = _tool_events(received)
@@ -301,7 +316,9 @@ async def test_external_handler_is_not_asked_about_a_cut_call() -> None:
     handler = PolicyExternalToolHandler()
     process_tool_call = AsyncMock(wraps=handler.process_tool_call)
     handler.process_tool_call = process_tool_call  # type: ignore[method-assign]
-    ai = AIChannel("ai1", provider=provider, external_tool_handler=handler)
+    ai = AIChannel(
+        "ai1", publish_tool_call_text=True, provider=provider, external_tool_handler=handler
+    )
 
     received = await _run_turn(kit, ai)
     _, ends = _tool_events(received)
@@ -496,6 +513,7 @@ async def test_composition_deltas_reach_the_bus_before_the_call_completes() -> N
     # below read the composition rather than one coalesced snapshot.
     ai = AIChannel(
         "ai1",
+        publish_tool_call_text=True,
         provider=provider,
         tool_handler=tool_handler,
         thinking_coalesce_ms=0,
@@ -552,6 +570,7 @@ async def test_composition_delta_never_carries_the_argument_content() -> None:
     kit = RoomKit()
     ai = AIChannel(
         "ai1",
+        publish_tool_call_text=True,
         provider=provider,
         tool_handler=tool_handler,
         thinking_coalesce_ms=0,
@@ -1320,7 +1339,7 @@ async def test_a_turn_cancelled_while_a_tool_runs_closes_its_start(streaming: bo
         ],
     )
     kit = RoomKit(realtime=InMemoryRealtime())
-    ai = AIChannel("ai1", provider=provider, tool_handler=slow)
+    ai = AIChannel("ai1", publish_tool_call_text=True, provider=provider, tool_handler=slow)
     kit.register_channel(SimpleChannel("sms1"))
     kit.register_channel(ai)
     await kit.create_room(room_id="r1")
@@ -1425,7 +1444,9 @@ async def test_a_call_its_handler_decides_ends_as_stored_when_its_turn_is_cut(
     provider = MockAIProvider(
         streaming=True, ai_responses=[AIResponse(content="", tool_calls=[call])]
     )
-    ai = AIChannel("ai1", provider=provider, external_tool_handler=_Waits())
+    ai = AIChannel(
+        "ai1", publish_tool_call_text=True, provider=provider, external_tool_handler=_Waits()
+    )
 
     published, stored = await _ends_of_a_cut_turn(ai, running)
 
@@ -1454,7 +1475,9 @@ async def test_a_call_that_ended_before_its_turn_was_cut_ends_as_it_did() -> Non
         ai_responses=[AIResponse(content="", tool_calls=calls), AIResponse(content="never")],
     )
     tools = [AITool(name=name, description=name) for name in ("search", "slow")]
-    ai = AIChannel("ai1", provider=provider, tool_handler=handler, tools=tools)
+    ai = AIChannel(
+        "ai1", publish_tool_call_text=True, provider=provider, tool_handler=handler, tools=tools
+    )
 
     published, stored = await _ends_of_a_cut_turn(ai, running)
 

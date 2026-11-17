@@ -5,8 +5,10 @@ TOOL_CALL_END ephemeral events during tool execution. Shows:
 - Subscribing to tool call events in a room
 - TOOL_CALL_DELTA fires while the model composes the call's arguments,
   carrying the tool's name and how much it has produced — never the content
-- TOOL_CALL_START fires before tool execution with tool names and arguments
-- TOOL_CALL_END fires after with results and duration_ms
+- TOOL_CALL_START fires before tool execution with tool names, and their
+  arguments for a channel built with publish_tool_call_text=True
+- TOOL_CALL_END fires after with statuses and duration_ms, and a preview of
+  each result for that channel
 - The streamed text stays clean — no inline XML
 - publish_tool_call() for manual broadcasting (e.g., custom agents)
 
@@ -65,11 +67,14 @@ async def main() -> None:
     # the composition is legible in this short example (the default 80 ms
     # window is what you want in production).
     provider = MockAIProvider(ai_responses=responses, streaming=True, tool_call_delta_chunks=5)
+    # publish_tool_call_text=True adds each call's arguments and its result's
+    # preview to the events: no hook judges them, so they are off by default.
     ai = AIChannel(
         "ai-agent",
         provider=provider,
         tool_handler=tool_handler,
         thinking_coalesce_ms=0,
+        publish_tool_call_text=True,
     )
 
     ws = WebSocketChannel("ws-user")

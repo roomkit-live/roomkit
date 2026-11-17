@@ -717,6 +717,7 @@ def scripted_agent(
         "thinking_coalesce_ms",
         "thinking_coalesce_chars",
         "publish_thinking_text",
+        "publish_tool_call_text",
         "text_coalesce_ms",
         "text_coalesce_chars",
         "publish_text_deltas",

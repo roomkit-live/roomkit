@@ -1969,7 +1969,7 @@ member management API.
 | Trigger | Execution | Signature | Description |
 |---------|-----------|-----------|-------------|
 | `BEFORE_AI_GENERATION` | SYNC | `(AIGenerationEvent, ctx) -> HookResult` | Before the AI provider is invoked. `event.ai_context` (messages, system prompt, tools) may be mutated in place; block skips generation. Its `tools` are the turn's toolset after the tool policy and skill gating, under Tool Search the whole catalogue: a tool it removes is declared at no round, named by no `find_tools`, and refused; a tool it adds is declared at every round, never deferred. |
-| `ON_AI_THINKING` | ASYNC | `(ThinkingEvent, ctx) -> None` | A reasoning window opened (`THINKING_START`) on an AIChannel; fires whether or not a realtime backend is configured. The reasoning text streams on the ephemeral `THINKING_DELTA` / `THINKING_END` events only for a channel built with `publish_thinking_text=True`; `event.thinking` is empty here. |
+| `ON_AI_THINKING` | ASYNC | `(ThinkingEvent, ctx) -> None` | A reasoning block closed on an AIChannel (the model starts its answer's text or composes a call, or its generation ends, fails or stops): once per block, `event.thinking` the block's whole text; fires whether or not a realtime backend is configured. Subscribers read the block's opening as the ephemeral `THINKING_START`, and its text only from a channel built with `publish_thinking_text=True`. |
 | `ON_AI_RESPONSE` | ASYNC | `(AIResponseEvent, ctx) -> None` | AI generation completed. Carries the turn's text — `response_content`, the segments a tool call cut joined with a blank line, and `segments` one by one — plus usage, latency, tool call count, and `loop_end_reason` — which of the tool loop's rules ended the turn (`completed`, `max_rounds`, `timeout`, `budget_exceeded`, `cancelled`, `force_stopped`, `truncated`, `empty_response`, `unfinished`, `error`). Read that rather than inferring a cut-off from `tool_calls_count`, which counts the calls the turn ran. |
 
 ### Protocol Observability
@@ -3822,16 +3822,25 @@ await kit.subscribe_room("room-1", my_callback)
 
 # Callback receives:
 # TOOL_CALL_DELTA: {tool_calls: [{id, name, arguments_chars}], round, channel_id}
-# TOOL_CALL_START: {tool_calls: [{id, name, arguments}], round, channel_id}
-# TOOL_CALL_END: {tool_calls: [{id, name, result, status}], round, channel_id, duration_ms}
+# TOOL_CALL_START: {tool_calls: [{id, name}], round, channel_id}
+# TOOL_CALL_END: {tool_calls: [{id, name, status}], round, channel_id, duration_ms}
 ```
+
+A call's arguments and its result's preview (500 characters) are opt-in, as
+the reasoning text is: no hook judges an ephemeral, so what a
+`BEFORE_BROADCAST` hook blocks or redacts on the call's rows would otherwise
+reach a subscriber in clear. Build the channel with
+`AIChannel(publish_tool_call_text=True)` to add `arguments` to each
+`TOOL_CALL_START` call and `result` to each `TOOL_CALL_END` call. A call's
+`intent` is published either way.
 
 `TOOL_CALL_DELTA` is streaming-only. It reports the running argument size while
 the model composes a call, but never exposes the argument content. An empty
 `tool_calls` is the terminal frame for that composition, including cancellation,
 provider failure, retry, and a router handing the generation over. Each retry is a new attempt, so its
 cumulative `arguments_chars` counts restart from zero. These projection events
-are not persisted; the complete arguments still arrive in `TOOL_CALL_START`.
+are not persisted; with `publish_tool_call_text=True`, the complete arguments arrive
+in `TOOL_CALL_START`.
 ---
 
 `OllamaAIProvider` talks to the native Ollama `/api/chat` endpoint
@@ -7066,8 +7075,8 @@ and subscribed to as given, as before.
 | `READ_RECEIPT` | User read a message |
 | `REACTION` | User reacted to a message |
 | `TOOL_CALL_DELTA` | AI is composing a tool call (streaming only) |
-| `TOOL_CALL_START` | AI started executing a tool |
-| `TOOL_CALL_END` | AI finished executing a tool |
+| `TOOL_CALL_START` | AI started executing a tool (`id`, `name`; its `arguments` only with `publish_tool_call_text=True`) |
+| `TOOL_CALL_END` | AI finished executing a tool (`id`, `name`, `status`; its `result` preview only with `publish_tool_call_text=True`) |
 | `THINKING_START` / `THINKING_DELTA` / `THINKING_END` | AI reasoning, coalesced (`thinking_length`, `round`, `channel_id`); its text, up to 1000 characters, only with `publish_thinking_text=True` |
 | `TEXT_DELTA` | A delegated task's answer text as it is written, coalesced (`text`, `round`, `channel_id`); opt-in |
 | `CUSTOM` | Custom ephemeral event |
@@ -7076,7 +7085,7 @@ AI channels publish `TOOL_CALL_DELTA` with the tool name and cumulative
 `arguments_chars`, never the argument content. A terminal frame with an empty
 `tool_calls` closes every composition attempt, including cancellation, provider
 failure, retry, and fallback; counts restart for a retry. The complete call
-still arrives in `TOOL_CALL_START`.
+arrives in `TOOL_CALL_START` for a channel built with `publish_tool_call_text=True`.
 
 With `AIChannel(publish_text_deltas=True)`, an agent's answer text is
 published as `TEXT_DELTA` while it is written, for the code that delegated a

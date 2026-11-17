@@ -1727,13 +1727,22 @@ await kit.subscribe_room("room-1", my_callback)
 
 # Callback receives:
 # TOOL_CALL_DELTA: {tool_calls: [{id, name, arguments_chars}], round, channel_id}
-# TOOL_CALL_START: {tool_calls: [{id, name, arguments}], round, channel_id}
-# TOOL_CALL_END: {tool_calls: [{id, name, result, status}], round, channel_id, duration_ms}
+# TOOL_CALL_START: {tool_calls: [{id, name}], round, channel_id}
+# TOOL_CALL_END: {tool_calls: [{id, name, status}], round, channel_id, duration_ms}
 ```
+
+A call's arguments and its result's preview (500 characters) are opt-in, as
+the reasoning text is: no hook judges an ephemeral, so what a
+`BEFORE_BROADCAST` hook blocks or redacts on the call's rows would otherwise
+reach a subscriber in clear. Build the channel with
+`AIChannel(publish_tool_call_text=True)` to add `arguments` to each
+`TOOL_CALL_START` call and `result` to each `TOOL_CALL_END` call. A call's
+`intent` is published either way.
 
 `TOOL_CALL_DELTA` is streaming-only. It reports the running argument size while
 the model composes a call, but never exposes the argument content. An empty
 `tool_calls` is the terminal frame for that composition, including cancellation,
 provider failure, retry, and a router handing the generation over. Each retry is a new attempt, so its
 cumulative `arguments_chars` counts restart from zero. These projection events
-are not persisted; the complete arguments still arrive in `TOOL_CALL_START`.
+are not persisted; with `publish_tool_call_text=True`, the complete arguments arrive
+in `TOOL_CALL_START`.

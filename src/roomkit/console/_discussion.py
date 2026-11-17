@@ -73,6 +73,12 @@ class DiscussionConsole:
         console = DiscussionConsole(kit, room_id, channel_id="oncall")
         await console.run()  # until Ctrl-C or /quit
 
+    The room pane reads each tool call from the room's realtime events: its
+    arguments and its result, and the task a ``work_in_background`` call
+    started, come only from an agent built with
+    ``publish_tool_call_text=True`` (RFC §8.4); without it, a call shows its
+    tool alone and its task is the room's.
+
     Args:
         kit: The kit the room lives in.
         room_id: A room a :class:`~roomkit.orchestration.Discussion` holds.

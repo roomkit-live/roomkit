@@ -341,14 +341,18 @@ class TurnWiring:
     def build_thinking_hook(self, channel_id: str) -> ThinkingHook:
         """An ON_AI_THINKING callback (RFC §9.2). The same reasoning also goes
         out as an ephemeral event for live UIs; the hook is what makes it
-        observable to a host that runs no realtime backend."""
+        observable to a host that runs no realtime backend. It returns at
+        once: a block closes as the answer's text begins, which never waits
+        for the hooks' room context (RFC §9.3)."""
 
         async def _callback(room_id: str, thinking: str, round_idx: int) -> None:
             trigger = HookTrigger.ON_AI_THINKING
+            if not self._hooks.has_hooks(trigger):
+                return
             event = ThinkingEvent(
                 room_id=room_id, channel_id=channel_id, thinking=thinking, round_index=round_idx
             )
-            await self._observe(room_id, trigger, event)
+            self._hooks._hold(self._observe(room_id, trigger, event), name=str(trigger))
 
         return _callback
 

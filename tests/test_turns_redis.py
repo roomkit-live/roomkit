@@ -773,6 +773,7 @@ async def test_calls_answering_once_their_turn_elsewhere_is_cut_end_as_stored(
         ),
         tools=[AITool(name=name, description=name) for name in names],
         tool_handler=handler,
+        publish_tool_call_text=True,
     )
     host, executor = await _hosted(prefix, store, agent)
     kit = await _owner(prefix, "worker", store=store)

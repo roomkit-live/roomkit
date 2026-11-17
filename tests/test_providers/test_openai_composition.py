@@ -279,7 +279,9 @@ async def test_wire_composition_reaches_the_bus_before_execution() -> None:
         [_chunk({"content": "Done."}), _chunk({}, "stop")],
     ]
     kit = RoomKit()
-    ai = AIChannel("ai1", provider=_provider(replies), thinking_coalesce_ms=0)
+    ai = AIChannel(
+        "ai1", provider=_provider(replies), thinking_coalesce_ms=0, publish_tool_call_text=True
+    )
     try:
         received = await _run_turn(kit, ai)
         events = [e for e in received if e.type.value.startswith("tool_call_")]

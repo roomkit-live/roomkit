@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
+
 from roomkit import HookExecution, HookTrigger, RoomKit
 from roomkit.channels.ai import AIChannel
 from roomkit.core.circuit_breaker import CircuitBreaker
@@ -20,7 +22,7 @@ from roomkit.models.event import RoomEvent, TextContent
 from roomkit.models.framework_event import FrameworkEvent
 from roomkit.models.hook import HookResult
 from roomkit.orchestration.status_bus import StatusLevel
-from roomkit.providers.ai.base import AIResponse
+from roomkit.providers.ai.base import AIResponse, AITool, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
 from tests.test_framework import SimpleChannel
 
@@ -163,31 +165,90 @@ class TestTriggersThatReachHooks:
     """
 
     async def test_on_ai_thinking_fires(self) -> None:
-        """RFC §9.2 — reasoning reaches hooks, not only ephemeral events."""
+        """RFC §8.4, §9.2 — reasoning reaches hooks, not only ephemeral
+        events: once per block, as it closes, with the block's text
+        (RMK-817), whose opening fired with an empty text before."""
         kit = RoomKit()
         kit.register_channel(SimpleChannel("sms1"))
+        call = AIToolCall(id="c1", name="lookup", arguments={})
         provider = MockAIProvider(
-            ai_responses=[AIResponse(content="done", thinking="weighing the options")]
+            ai_responses=[
+                AIResponse(content="", thinking="weighing the options", tool_calls=[call]),
+                AIResponse(content="done", thinking="the lookup settles it"),
+            ]
         )
-        kit.register_channel(AIChannel("ai1", provider=provider))
+
+        async def lookup(name: str, arguments: dict[str, object]) -> str:
+            return "found"
+
+        tools = [AITool(name="lookup", description="Look up")]
+        kit.register_channel(AIChannel("ai1", provider=provider, tool_handler=lookup, tools=tools))
         await kit.create_room(room_id="r1")
         await kit.attach_channel("r1", "sms1")
         await kit.attach_channel("r1", "ai1")
 
         thinking: list[object] = []
+        both = asyncio.Event()
 
         @kit.hook(HookTrigger.ON_AI_THINKING, HookExecution.ASYNC)
         async def on_thinking(event, context):  # noqa: ANN001
             thinking.append(event)
+            if len(thinking) == 2:
+                both.set()
 
         await kit.process_inbound(
             InboundMessage(channel_id="sms1", sender_id="u1", content=TextContent(body="hi"))
         )
-        await asyncio.sleep(0.05)
+        await asyncio.wait_for(both.wait(), 1.0)
 
-        assert len(thinking) == 1
-        assert thinking[0].room_id == "r1"
-        assert thinking[0].channel_id == "ai1"
+        read = [(e.room_id, e.channel_id, e.thinking, e.round_index) for e in thinking]
+        assert read == [
+            ("r1", "ai1", "weighing the options", 0),
+            ("r1", "ai1", "the lookup settles it", 1),
+        ]
+        await kit.close()
+
+    async def test_an_on_ai_thinking_hook_never_holds_up_the_answer(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """RFC §9.3 (RMK-817): the block closes as the answer's text begins;
+        reading the room for its ON_AI_THINKING hooks keeps the answer
+        waiting for nothing, and the hook still reads the block once it may."""
+        kit = RoomKit()
+        kit.register_channel(SimpleChannel("sms1"))
+        provider = MockAIProvider(
+            streaming=True,
+            ai_responses=[AIResponse(content="done", thinking="weighing the options")],
+        )
+        kit.register_channel(AIChannel("ai1", provider=provider))
+        await kit.create_room(room_id="r1")
+        await kit.attach_channel("r1", "sms1")
+        await kit.attach_channel("r1", "ai1")
+        wiring = kit.turn_executor.wiring
+        read_room = wiring.hook_context
+        readable = asyncio.Event()
+
+        async def held(room_id: str, trigger: HookTrigger) -> object:
+            await readable.wait()
+            return await read_room(room_id, trigger)
+
+        monkeypatch.setattr(wiring, "hook_context", held)
+        thought: list[str] = []
+        seen = asyncio.Event()
+
+        @kit.hook(HookTrigger.ON_AI_THINKING, HookExecution.ASYNC)
+        async def on_thinking(event, context):  # noqa: ANN001
+            thought.append(event.thinking)
+            seen.set()
+
+        message = InboundMessage(channel_id="sms1", sender_id="u1", content=TextContent(body="hi"))
+        await asyncio.wait_for(kit.process_inbound(message), 1.0)
+
+        assert thought == []
+        readable.set()
+        await asyncio.wait_for(seen.wait(), 1.0)
+        assert thought == ["weighing the options"]
+        await kit.close()
 
     async def test_on_status_posted_fires_for_room_scoped_status(self) -> None:
         """RFC §9.2 — a room-scoped status reaches the room's hooks, not

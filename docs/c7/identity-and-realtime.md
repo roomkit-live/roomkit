@@ -179,8 +179,8 @@ and subscribed to as given, as before.
 | `READ_RECEIPT` | User read a message |
 | `REACTION` | User reacted to a message |
 | `TOOL_CALL_DELTA` | AI is composing a tool call (streaming only) |
-| `TOOL_CALL_START` | AI started executing a tool |
-| `TOOL_CALL_END` | AI finished executing a tool |
+| `TOOL_CALL_START` | AI started executing a tool (`id`, `name`; its `arguments` only with `publish_tool_call_text=True`) |
+| `TOOL_CALL_END` | AI finished executing a tool (`id`, `name`, `status`; its `result` preview only with `publish_tool_call_text=True`) |
 | `THINKING_START` / `THINKING_DELTA` / `THINKING_END` | AI reasoning, coalesced (`thinking_length`, `round`, `channel_id`); its text, up to 1000 characters, only with `publish_thinking_text=True` |
 | `TEXT_DELTA` | A delegated task's answer text as it is written, coalesced (`text`, `round`, `channel_id`); opt-in |
 | `CUSTOM` | Custom ephemeral event |
@@ -189,7 +189,7 @@ AI channels publish `TOOL_CALL_DELTA` with the tool name and cumulative
 `arguments_chars`, never the argument content. A terminal frame with an empty
 `tool_calls` closes every composition attempt, including cancellation, provider
 failure, retry, and fallback; counts restart for a retry. The complete call
-still arrives in `TOOL_CALL_START`.
+arrives in `TOOL_CALL_START` for a channel built with `publish_tool_call_text=True`.
 
 With `AIChannel(publish_text_deltas=True)`, an agent's answer text is
 published as `TEXT_DELTA` while it is written, for the code that delegated a

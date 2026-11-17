@@ -256,6 +256,7 @@ def _agent_with_a_tool() -> Agent:
         provider=provider,
         tools=[AITool(name="query_logs", description="Reads the logs.", parameters={})],
         tool_handler=query_logs,
+        publish_tool_call_text=True,
     )
 
 

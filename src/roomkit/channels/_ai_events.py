@@ -36,6 +36,7 @@ class AIEventsMixin(_AIChannelContract):
     _realtime: RealtimeBackend | None
     _thinking_hook: ThinkingHook | None
     _publish_thinking_text: bool
+    _publish_tool_call_text: bool
     channel_id: str
 
     async def _publish_tool_event(
@@ -62,12 +63,13 @@ class AIEventsMixin(_AIChannelContract):
         # Payload build is inside the try to honour the best-effort contract in
         # this method's docstring.
         try:
+            text = self._publish_tool_call_text
             if event_type == EphemeralEventType.TOOL_CALL_START:
-                tc_data = _started_calls(tool_calls)
+                tc_data = _started_calls(tool_calls, text=text)
             elif event_type == EphemeralEventType.TOOL_CALL_DELTA:
                 tc_data = _composing_calls(tool_calls)
             else:  # TOOL_CALL_END — tool_calls are AIToolResultPart
-                tc_data = _ended_calls(tool_calls, for_calls)
+                tc_data = _ended_calls(tool_calls, for_calls, text=text)
             data: dict[str, Any] = {
                 "tool_calls": tc_data,
                 "round": round_idx,
@@ -97,17 +99,24 @@ class AIEventsMixin(_AIChannelContract):
     ) -> None:
         """Publish a thinking ephemeral event and fire ON_AI_THINKING.
 
-        Best-effort, never breaks the loop. The hook fires whether or not a
-        realtime backend is configured (RFC §9.2) — reasoning is observable
-        without a live UI attached.
+        Best-effort, never breaks the loop. The hook fires once per block,
+        as the block closes and after its ``THINKING_END``, with the block's
+        whole text (RFC §8.4, §9.2), whether or not a realtime backend is
+        configured — reasoning is observable without a live UI attached. It
+        never holds up the answer's text, which closes the block.
         """
         if not room_id:
             return
-        if event_type == EphemeralEventType.THINKING_START and self._thinking_hook is not None:
+        await self._publish_thinking(event_type, room_id, thinking, round_idx)
+        if event_type == EphemeralEventType.THINKING_END and self._thinking_hook is not None:
             try:
                 await self._thinking_hook(room_id, thinking, round_idx)
             except Exception:
                 logger.debug("ON_AI_THINKING hook failed", exc_info=True)
+
+    async def _publish_thinking(
+        self, event_type: EphemeralEventType, room_id: str, thinking: str, round_idx: int
+    ) -> None:
         if self._realtime is None:
             return
         data: dict[str, Any] = {
@@ -151,12 +160,13 @@ class AIEventsMixin(_AIChannelContract):
             logger.debug("Failed to publish text event", exc_info=True)
 
 
-def _started_calls(calls: list[Any]) -> list[dict[str, Any]]:
-    """A TOOL_CALL_START's calls: each one's id, name and arguments, and its
-    intent when it has one (RFC §6.4)."""
+def _started_calls(calls: list[Any], *, text: bool) -> list[dict[str, Any]]:
+    """A TOOL_CALL_START's calls: each one's id and name, its arguments for a
+    channel that publishes its calls' text (RFC §8.4), and its intent when it
+    has one (RFC §6.4)."""
     return [
         with_intent_field(
-            {"id": tc.id, "name": tc.name, "arguments": tc.arguments},
+            {"id": tc.id, "name": tc.name, **({"arguments": tc.arguments} if text else {})},
             getattr(tc, "intent", None),
         )
         for tc in calls
@@ -178,9 +188,10 @@ def _composing_calls(calls: list[Any]) -> list[dict[str, Any]]:
     ]
 
 
-def _ended_calls(parts: list[Any], calls: Sequence[Any]) -> list[dict[str, Any]]:
-    """A TOOL_CALL_END's calls: each one's result preview and status, and the
-    intent of the call in *calls* at its place, when it has one.
+def _ended_calls(parts: list[Any], calls: Sequence[Any], *, text: bool) -> list[dict[str, Any]]:
+    """A TOOL_CALL_END's calls: each one's status, its result's preview for a
+    channel that publishes its calls' text (RFC §8.4), and the intent of the
+    call in *calls* at its place, when it has one.
 
     ``status`` as the stored row and the ACP channel's END carry it, so a
     live surface tells a failed call from a served one without reading the
@@ -195,7 +206,7 @@ def _ended_calls(parts: list[Any], calls: Sequence[Any]) -> list[dict[str, Any]]
             {
                 "id": part.tool_call_id,
                 "name": part.name,
-                "result": part.as_text()[:_RESULT_PREVIEW],
+                **({"result": part.as_text()[:_RESULT_PREVIEW]} if text else {}),
                 "status": "failed" if part.is_error else "completed",
             },
             intent,
