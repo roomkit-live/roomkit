@@ -1,0 +1,313 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "executors/a-provider-the-factory-hands-every-build-outlives-a-build-let-go",
+  "title": "A provider the host's factory hands every build stays open when the executor lets a build go, past its bound or on a release: the next build answers on it, and the build let go is still closed",
+  "rules": [
+    "§10.6.3",
+    "§6.4"
+  ],
+  "notes": "RMK-1635. Each agent's model is one object every build of the agent is handed, as a host's factory shares one client; it fails once closed, as a real client does. An executor closes a build it lets go of (§10.6.3); what the build was handed is its owner's.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "fails_once_closed": true,
+          "rounds": [
+            {
+              "text": "A."
+            },
+            {
+              "text": "C."
+            },
+            {
+              "text": "D."
+            }
+          ]
+        }
+      },
+      {
+        "id": "helper",
+        "type": "ai",
+        "declared": true,
+        "model": {
+          "fails_once_closed": true,
+          "rounds": [
+            {
+              "text": "B."
+            }
+          ]
+        }
+      }
+    ],
+    "executors": [
+      {
+        "id": "first",
+        "hosts": [
+          "coder",
+          "helper"
+        ],
+        "max_channels": 1
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "helper",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "One."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Two."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Three."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "release_channel",
+      "channel_id": "coder",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Four."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "One."
+          }
+        },
+        {
+          "source": {
+            "channel_id": "coder"
+          },
+          "content": {
+            "type": "text",
+            "body": "A."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Three."
+          }
+        },
+        {
+          "source": {
+            "channel_id": "coder"
+          },
+          "content": {
+            "type": "text",
+            "body": "C."
+          }
+        },
+        {
+          "content": {
+            "type": "text",
+            "body": "Four."
+          }
+        },
+        {
+          "source": {
+            "channel_id": "coder"
+          },
+          "content": {
+            "type": "text",
+            "body": "D."
+          }
+        }
+      ],
+      "r2": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Two."
+          }
+        },
+        {
+          "source": {
+            "channel_id": "helper"
+          },
+          "content": {
+            "type": "text",
+            "body": "B."
+          }
+        }
+      ]
+    },
+    "executors": {
+      "first": {
+        "$unordered": [
+          {
+            "call": "built",
+            "channel_id": "coder",
+            "build": 1
+          },
+          {
+            "call": "on_event",
+            "channel_id": "coder",
+            "room_id": "r1",
+            "build": 1
+          },
+          {
+            "call": "built",
+            "channel_id": "helper",
+            "build": 1
+          },
+          {
+            "call": "close",
+            "channel_id": "coder",
+            "build": 1
+          },
+          {
+            "call": "on_event",
+            "channel_id": "helper",
+            "room_id": "r2",
+            "build": 1
+          },
+          {
+            "call": "built",
+            "channel_id": "coder",
+            "build": 2
+          },
+          {
+            "call": "close",
+            "channel_id": "helper",
+            "build": 1
+          },
+          {
+            "call": "on_event",
+            "channel_id": "coder",
+            "room_id": "r1",
+            "build": 2
+          },
+          {
+            "call": "close",
+            "channel_id": "coder",
+            "build": 2
+          },
+          {
+            "call": "built",
+            "channel_id": "coder",
+            "build": 3
+          },
+          {
+            "call": "on_event",
+            "channel_id": "coder",
+            "room_id": "r1",
+            "build": 3
+          }
+        ]
+      }
+    }
+  }
+}

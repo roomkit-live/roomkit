@@ -1,0 +1,98 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "providers/a-kit-s-close-leaves-open-the-provider-its-agent-was-handed",
+  "title": "A kit's close closes its agents but leaves open the provider each was handed: another kit's agent handed the same provider still answers on it",
+  "rules": [
+    "§6.4",
+    "§12.10.4"
+  ],
+  "notes": "RMK-1635. The process p2 holds its own copy of the agent, handed the one model of the agent's id, as a host shares one client between the agents it builds; the model fails once closed, as a real client does.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "coder",
+        "type": "ai",
+        "model": {
+          "fails_once_closed": true,
+          "rounds": [
+            {
+              "text": "Still here."
+            }
+          ]
+        }
+      }
+    ],
+    "processes": [
+      {
+        "id": "p2"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "coder",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "close",
+      "kit": "p2"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Hello."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Hello."
+          }
+        },
+        {
+          "source": {
+            "channel_id": "coder"
+          },
+          "content": {
+            "type": "text",
+            "body": "Still here."
+          }
+        }
+      ]
+    }
+  }
+}

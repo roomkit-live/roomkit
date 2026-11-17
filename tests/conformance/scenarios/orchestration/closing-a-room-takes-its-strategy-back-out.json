@@ -1,0 +1,399 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/closing-a-room-takes-its-strategy-back-out",
+  "title": "A room closed, by the host or by its timers, or archived while still open, holds its strategy no more: its close is written and announced, then what the install added for it is taken back, as an uninstall does; a closed room takes no strategy; a room that stays open keeps its own install of the same strategy",
+  "rules": [
+    "§19.7",
+    "§5.1"
+  ],
+  "notes": "RMK-341. One Pipeline installed in four rooms over shared agents. r1 is closed by close_room, r3 by its timers, r4 archived while active; r2 stays open. The room_closed event comes before the detach events of the strategy's agents. A closed room refuses an install; a reopened room holds no strategy: the agent bound before the install answers there alone.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "a",
+        "type": "ai",
+        "agent": {
+          "role": "A"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "A goes on."
+            }
+          ]
+        }
+      },
+      {
+        "id": "b",
+        "type": "ai",
+        "agent": {
+          "role": "B"
+        },
+        "model": {
+          "rounds": []
+        }
+      },
+      {
+        "id": "z",
+        "type": "ai",
+        "agent": {
+          "role": "Z"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Z alone."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "z"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      },
+      {
+        "id": "r3",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      },
+      {
+        "id": "r4",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "pipeline": {
+          "agents": [
+            "a",
+            "b"
+          ]
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r2",
+      "strategy": "team"
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r3",
+      "strategy": "team"
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r4",
+      "strategy": "team"
+    },
+    {
+      "call": "close_room",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "status": "closed"
+        }
+      }
+    },
+    {
+      "call": "set_room_timers",
+      "room_id": "r3",
+      "timers": {
+        "inactive_after_seconds": 0,
+        "closed_after_seconds": 0,
+        "last_activity_at": "2020-01-01T00:00:00Z"
+      }
+    },
+    {
+      "call": "check_all_timers",
+      "expect": {
+        "result": [
+          {
+            "id": "r3",
+            "status": "closed"
+          }
+        ]
+      }
+    },
+    {
+      "call": "archive_room",
+      "room_id": "r4",
+      "expect": {
+        "result": {
+          "status": "archived"
+        }
+      }
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r3",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r2",
+      "expect": {
+        "result": "team"
+      }
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r4",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team",
+      "expect": {
+        "error": "room_closed"
+      }
+    },
+    {
+      "call": "room_strategy",
+      "room_id": "r1",
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "call": "reopen_room",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "status": "active"
+        }
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Four."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r2",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Five."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "r1": {
+        "metadata": {
+          "_conversation_state": {
+            "$absent": true
+          }
+        }
+      },
+      "r2": {
+        "metadata": {
+          "_conversation_state": {
+            "phase": "a",
+            "active_agent_id": "a",
+            "handoff_count": 0
+          }
+        }
+      },
+      "r3": {
+        "metadata": {
+          "_conversation_state": {
+            "$absent": true
+          }
+        }
+      },
+      "r4": {
+        "metadata": {
+          "_conversation_state": {
+            "$absent": true
+          }
+        }
+      }
+    },
+    "bindings": {
+      "r1": {
+        "a": {
+          "$absent": true
+        },
+        "b": {
+          "$absent": true
+        },
+        "z": {
+          "category": "intelligence"
+        }
+      },
+      "r2": {
+        "a": {
+          "category": "intelligence"
+        },
+        "b": {
+          "category": "intelligence"
+        }
+      },
+      "r3": {
+        "a": {
+          "$absent": true
+        },
+        "b": {
+          "$absent": true
+        }
+      },
+      "r4": {
+        "a": {
+          "$absent": true
+        },
+        "b": {
+          "$absent": true
+        }
+      }
+    },
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Four."
+          },
+          "metadata": {
+            "_routed_to": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "source": {
+            "channel_id": "z"
+          },
+          "content": {
+            "type": "text",
+            "body": "Z alone."
+          }
+        }
+      ],
+      "r2": [
+        {
+          "content": {
+            "type": "text",
+            "body": "Five."
+          },
+          "metadata": {
+            "_routed_to": "a"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "a"
+          },
+          "content": {
+            "type": "text",
+            "body": "A goes on."
+          }
+        }
+      ]
+    },
+    "models": {
+      "b": []
+    },
+    "framework_events": {
+      "r1": [
+        {
+          "event": "room_channel_attached"
+        },
+        {
+          "event": "room_channel_attached"
+        },
+        {
+          "event": "room_closed"
+        },
+        {
+          "event": "room_channel_detached"
+        },
+        {
+          "event": "room_channel_detached"
+        },
+        {
+          "event": "event_processed"
+        }
+      ]
+    }
+  }
+}
