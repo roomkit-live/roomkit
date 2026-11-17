@@ -7,7 +7,7 @@ own child rooms. The final user-facing summary is left to the supervisor's own
 turn (see ``prompts._format_supervised_digest``).
 
 ``_delegate_and_wait`` and its three callers (``_supervisor_dispatch``,
-``_supervisor_review``, ``_run_supervised_sequential``) are co-located so a
+``_supervisor_review``, ``_run_step``) are co-located so a
 single test seam over ``_delegate_and_wait`` covers the whole flow.
 """
 
@@ -216,62 +216,21 @@ async def _run_supervised_sequential(
     )
     for i, worker in enumerate(workers):
         next_worker = workers[i + 1] if i + 1 < len(workers) else None
-        revisions = 0
-        approved = False
-        rendered = ""
-        ok = False
-        verdict: dict[str, Any] = {}
-        while True:
-            # The worker MUST hand its work back via submit_result (forced
-            # structure + a guaranteed result); ``output`` is the JSON payload.
-            output, ok = await _delegate_and_wait(
-                kit,
-                room_id,
-                worker.channel_id,
-                task,
-                share_channels=share_channels,
-                task_timeout=task_timeout,
-                require_structured_result=True,
-                status=status,
-            )
-            rendered = _render_result(output)
-            if not ok:
-                # The delegation itself FAILED — a timeout, or a provider error
-                # like an exhausted credit balance. This is infrastructure, not
-                # content quality: re-running the same task won't fix it, and it
-                # must NEVER be waved through the supervisor's review (which can't
-                # repair infra and might approve the error blob, making the run
-                # look successful). Leave the step unapproved and stop the chain;
-                # the supervisor reports the failure in its final summary.
-                break
-            verdict = await _supervisor_review(
-                kit,
-                supervisor,
-                room_id,
-                goal=task_desc,
-                worker=worker,
-                output=rendered,
-                next_worker=next_worker,
-                share_channels=share_channels,
-                task_timeout=task_timeout,
-            )
-            if verdict["approved"]:
-                approved = True
-                break
-            revisions += 1
-            if revisions >= max_revisions:
-                break
-            task = _compose_rework(task, rendered, verdict["feedback"])
-        steps.append(
-            {
-                "worker": worker.channel_id,
-                "role": _worker_label(worker),
-                "output": rendered,
-                "approved": approved,
-                "completed": ok,
-            }
+        step, verdict = await _run_step(
+            kit,
+            room_id,
+            supervisor,
+            worker,
+            task,
+            goal=task_desc,
+            next_worker=next_worker,
+            status=status,
+            max_revisions=max_revisions,
+            share_channels=share_channels,
+            task_timeout=task_timeout,
         )
-        if not approved:
+        steps.append(step)
+        if not step["approved"]:
             # Exhausted max_revisions without an accepted result. Continuing on
             # unvalidated work would only propagate the failure, so the chain
             # STOPS here — the supervisor reports the failure to the user in its
@@ -284,3 +243,76 @@ async def _run_supervised_sequential(
         framing = verdict.get("next_task") or task_desc
         task = _compose_supervised_handoff(framing, steps)
     return steps
+
+
+async def _run_step(
+    kit: RoomKit,
+    room_id: str,
+    supervisor: HeldAgent,
+    worker: HeldAgent,
+    first_task: str,
+    *,
+    goal: str,
+    next_worker: HeldAgent | None,
+    status: WorkerStatus,
+    max_revisions: int,
+    share_channels: list[str] | None,
+    task_timeout: float,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """One worker's step: its task delegated, judged by the supervisor, and
+    reworked until the supervisor approves it or *max_revisions* run out; a
+    delegation that failed is never judged nor run again. Returns the reviewed
+    step and the supervisor's last verdict."""
+    task = first_task
+    revisions = 0
+    approved = False
+    verdict: dict[str, Any] = {}
+    while True:
+        # The worker MUST hand its work back via submit_result (forced
+        # structure + a guaranteed result); ``output`` is the JSON payload.
+        output, ok = await _delegate_and_wait(
+            kit,
+            room_id,
+            worker.channel_id,
+            task,
+            share_channels=share_channels,
+            task_timeout=task_timeout,
+            require_structured_result=True,
+            status=status,
+        )
+        rendered = _render_result(output)
+        if not ok:
+            # The delegation itself FAILED — a timeout, or a provider error
+            # like an exhausted credit balance. This is infrastructure, not
+            # content quality: re-running the same task won't fix it, and it
+            # must NEVER be waved through the supervisor's review (which can't
+            # repair infra and might approve the error blob, making the run
+            # look successful). Leave the step unapproved and stop the chain;
+            # the supervisor reports the failure in its final summary.
+            break
+        verdict = await _supervisor_review(
+            kit,
+            supervisor,
+            room_id,
+            goal=goal,
+            worker=worker,
+            output=rendered,
+            next_worker=next_worker,
+            share_channels=share_channels,
+            task_timeout=task_timeout,
+        )
+        if verdict["approved"]:
+            approved = True
+            break
+        revisions += 1
+        if revisions >= max_revisions:
+            break
+        task = _compose_rework(task, rendered, verdict["feedback"])
+    step = {
+        "worker": worker.channel_id,
+        "role": _worker_label(worker),
+        "output": rendered,
+        "approved": approved,
+        "completed": ok,
+    }
+    return step, verdict
