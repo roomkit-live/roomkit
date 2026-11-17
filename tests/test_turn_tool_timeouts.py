@@ -111,3 +111,32 @@ async def test_simultaneous_turns_keep_independent_bounds(streaming: bool) -> No
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+
+
+async def test_the_turn_budget_is_validated_before_its_tool_bounds(streaming: bool) -> None:
+    provider = _calling("slow", streaming)
+
+    async def resolve(_binding: ChannelBinding, _context: RoomContext) -> AIChannelTurnConfig:
+        return AIChannelTurnConfig(tool_timeouts={"slow": 0.0})
+
+    channel = AIChannel("ai1", provider=provider, config_provider=resolve)
+    binding = _binding().model_copy(update={"metadata": {"turn_budget_tokens": 0}})
+    with pytest.raises(ValueError, match="turn_budget_tokens must be a positive"):
+        await respond(channel, make_event(), binding, RoomContext(room=Room(id="r1")))
+    assert provider.calls == []
+
+
+async def test_the_router_is_asked_before_a_turn_bound_is_refused(streaming: bool) -> None:
+    from tests.test_channels.test_ai_router import _Picks
+
+    provider = _calling("slow", streaming)
+    router = _Picks(provider)
+
+    async def resolve(_binding: ChannelBinding, _context: RoomContext) -> AIChannelTurnConfig:
+        return AIChannelTurnConfig(tool_timeouts={"slow": 0.0})
+
+    channel = AIChannel("ai1", router=router, config_provider=resolve)
+    with pytest.raises(ValueError, match="tool timeout for 'slow' must be positive or None"):
+        await _turn(channel)
+    assert len(router.requests) == 1
+    assert provider.calls == []
