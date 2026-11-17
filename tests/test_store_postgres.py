@@ -1872,52 +1872,109 @@ class TestConnectionTenure:
         finally:
             await other.close()
 
-    async def test_a_timed_out_write_keeps_the_connection_for_the_next_call(
-        self, store, checkouts
+    async def test_nested_stores_restore_the_previous_binding(self, store, checkouts) -> None:
+        from roomkit.store.postgres import PostgresStore
+
+        other = PostgresStore(dsn=POSTGRES_DSN)
+        await other.init(min_size=1, max_size=1)
+        first, second = checkouts(store), checkouts(other)
+        first.reset()
+        second.reset()
+        try:
+            async with store.connection():
+                original = store._bound().get_server_pid()
+                async with other.connection():
+                    borrowed = other._bound()
+                    assert borrowed is not None
+                    middle = borrowed.get_server_pid()
+                    with pytest.raises(RuntimeError, match="inner"):
+                        async with store.connection():
+                            inner = store._bound().get_server_pid()
+                            assert len({original, middle, inner}) == 3
+                            await store.create_room(Room(id="inner"))
+                            raise RuntimeError("inner")
+                    assert other._bound() is borrowed
+                    assert await other.room_exists("inner")
+                assert store._bound().get_server_pid() == original
+                assert await store.room_exists("inner")
+            assert (first.total, second.total) == (2, 1)
+        finally:
+            await other.close()
+
+    async def test_cancelling_acquisition_leaves_the_pool_available(self, store) -> None:
+        async with contextlib.AsyncExitStack() as held:
+            for _ in range(store._pool.get_max_size()):
+                await held.enter_async_context(store._pool.acquire())
+            with pytest.raises(TimeoutError):
+                async with asyncio.timeout(0), store.connection():
+                    pytest.fail("the pool is full")
+        async with asyncio.timeout(2), store.connection():
+            assert await store.get_room("missing") is None
+
+    @pytest.mark.parametrize("exit_mode", ["continue", "return", "cancel_block"])
+    async def test_a_cancelled_write_in_a_connection_scope(
+        self, store, checkouts, exit_mode: str
     ) -> None:
-        """Cancel the blocked statement, then keep the same connection and scope."""
+        """Wait for the server-side lock, then cancel the statement or the whole block."""
         import asyncpg
 
         await store.create_room(Room(id="r1"))
         recorder = checkouts(store)
         recorder.reset()
-        idle_before = store._pool.get_idle_size()
         holder = await asyncpg.connect(POSTGRES_DSN)
         try:
-            async with holder.transaction():
+            async with holder.transaction(), asyncio.timeout(5):
                 await holder.execute("SELECT 1 FROM rooms WHERE id = 'r1' FOR UPDATE")
-                ready: asyncio.Future[asyncio.Timeout] = asyncio.get_running_loop().create_future()
-
-                async def expire_when_blocked() -> None:
-                    deadline = await ready
-                    await _until_blocked_by(holder)
-                    deadline.reschedule(asyncio.get_running_loop().time())
-
-                # Start outside the binding: no child task inherits the held connection.
-                observer = asyncio.create_task(expire_when_blocked())
-                try:
-                    async with asyncio.timeout(2), store.connection():
-                        pid = store._bound().get_server_pid()
-                        with pytest.raises(TimeoutError):
-                            async with asyncio.timeout(None) as deadline:
-                                ready.set_result(deadline)
-                                await store.update_room(Room(id="r1", metadata={"cut": True}))
-                        await observer
-                        room = await store.get_room("r1")
-                        assert room is not None and room.metadata == {}
-                        assert store._bound().get_server_pid() == pid
-                        assert recorder.total == 1
-                        assert await holder.fetchval("SELECT pg_blocking_pids($1)", pid) == []
-                finally:
-                    observer.cancel()
-                    await asyncio.gather(observer, return_exceptions=True)
-            assert store._bound() is None
-            assert store._pool.get_idle_size() == idle_before
+                pid = await _cancel_scoped_write(store, holder, exit_mode)
+                assert recorder.total == 1
+                assert store._bound() is None
+                assert store._pool.get_idle_size() == store._pool.get_size()
+                assert await holder.fetchval("SELECT pg_blocking_pids($1)", pid) == []
+                room = await store.get_room("r1")
+                assert room is not None and room.metadata == {}
             room = await store.get_room("r1")
             assert room is not None and room.metadata == {}
-            assert recorder.total == 2
         finally:
             await holder.close()
+
+
+async def _cancel_scoped_write(store: Any, holder: Any, exit_mode: str) -> int:
+    loop = asyncio.get_running_loop()
+    ready: asyncio.Future[asyncio.Timeout] = loop.create_future()
+
+    async def expire_when_blocked() -> None:
+        deadline = await ready
+        await _until_blocked_by(holder)
+        deadline.reschedule(loop.time())
+
+    # The observer starts outside the binding so it never borrows the store connection.
+    observer = asyncio.create_task(expire_when_blocked())
+
+    async def write(deadline: asyncio.Timeout) -> None:
+        ready.set_result(deadline)
+        await store.update_room(Room(id="r1", metadata={"cut": True}))
+
+    try:
+        if exit_mode == "cancel_block":
+            with pytest.raises(TimeoutError):
+                async with asyncio.timeout(None) as deadline, store.connection():
+                    pid = store._bound().get_server_pid()
+                    await write(deadline)
+        else:
+            async with store.connection():
+                pid = store._bound().get_server_pid()
+                with pytest.raises(TimeoutError):
+                    async with asyncio.timeout(None) as deadline:
+                        await write(deadline)
+                if exit_mode == "continue":
+                    room = await store.get_room("r1")
+                    assert room is not None and room.metadata == {}
+                    assert store._bound().get_server_pid() == pid
+        await observer
+        return pid
+    finally:
+        observer.cancel()
+        await asyncio.gather(observer, return_exceptions=True)
 
 
 class TestContextManager:
