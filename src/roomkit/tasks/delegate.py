@@ -240,8 +240,9 @@ class DelegateHandler:
             back to the agent: past it, the output is cut and says so (RFC
             §23.3 step 8).
         wait_in_task_rooms: Whether a call made from a task's room, by a
-            worker delegating in turn, runs its task inline: the call answers
-            once the task ended, with its result, and cancelling the worker's
+            worker delegating in turn or by the host itself, runs its task
+            inline: the call answers once the task ended, with its status and
+            its result (empty for a failed task), and cancelling the worker's
             task cancels it too. ``False``, the default: it starts a
             background task, as from any room.
 

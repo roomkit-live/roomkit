@@ -151,18 +151,20 @@ class TestWaitInTaskRooms:
     """A worker's ``delegate_task`` call, made from its task's room (RFC §23.4)."""
 
     @pytest.mark.parametrize(
-        ("waits", "limit", "answer"),
+        ("waits", "limit", "digger", "answer"),
         [
-            (True, MAX_RESULT_CHARS, {"status": "completed", "result": "Found it."}),
-            (True, 5, {"status": "completed", "result": "Found\n[...truncated]"}),
-            (False, MAX_RESULT_CHARS, {"status": "delegated", "result": None}),
+            (True, MAX_RESULT_CHARS, "Found it.", {"status": "completed", "result": "Found it."}),
+            (True, 5, "Found it.", {"status": "completed", "result": "Found\n[...truncated]"}),
+            (True, MAX_RESULT_CHARS, None, {"status": "failed", "result": ""}),
+            (False, MAX_RESULT_CHARS, "Found it.", {"status": "delegated", "result": None}),
         ],
-        ids=["inline", "inline-bounded", "background"],
+        ids=["inline", "inline-bounded", "inline-failed", "background"],
     )
     async def test_the_call_answers_with_its_task_s_result_on_the_option(
-        self, waits: bool, limit: int, answer: dict[str, Any]
+        self, waits: bool, limit: int, digger: str | None, answer: dict[str, Any]
     ):
-        kit, researcher = _kit_delegating_in_turn(MockAIProvider(responses=["Found it."]))
+        model = _Failing() if digger is None else MockAIProvider(responses=[digger])
+        kit, researcher = _kit_delegating_in_turn(model)
         handler = DelegateHandler(kit, wait_in_task_rooms=waits, max_result_chars=limit)
         setup_delegation(researcher, handler)
         await kit.create_room(room_id="call")
@@ -207,6 +209,13 @@ class TestWaitInTaskRooms:
         assert dug.metadata["task_status"] == "cancelled"
         assert len(researcher._provider.calls) == 1
         await kit.close()
+
+
+class _Failing(MockAIProvider):
+    """A model whose every generation fails."""
+
+    async def generate(self, context: AIContext) -> Any:
+        raise RuntimeError("Broke.")
 
 
 class _Held(MockAIProvider):
