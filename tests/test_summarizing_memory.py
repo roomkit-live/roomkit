@@ -556,6 +556,23 @@ class TestTier2Cut:
         read = [str(m.content) for m in result.messages]
         assert all("S1." not in text for text in [*read, *later])
 
+    async def test_a_summary_ends_once_turns_after_it_left_the_window(self) -> None:
+        """The room's history holds more than the window: once turns after
+        those the summary covers are out of the window, a read giving the
+        summary then the window would skip them, neither summarized nor
+        read; the read starts from the window again (RMK-363)."""
+        room = Room(id="room-1")
+        inner = StubInnerMemory(events=[*_pair(0), *_pair(1)])
+        sm = _chained(inner, "S1.", "S2.")
+        await sm.retrieve("room-1", _make_event("current"), _history(room, 2))
+
+        inner._events = [*_pair(4), *_pair(5)]
+        result = await sm.retrieve("room-1", _make_event("current"), _history(room, 6))
+
+        later = [str(call.messages[0].content) for call in sm._provider.calls[1:]]
+        read = [str(m.content) for m in result.messages]
+        assert all("S1." not in text for text in [*read, *later])
+
 
 def _history(room: Room, pairs: int) -> RoomContext:
     """The room's history as the channel reads it: its first *pairs*

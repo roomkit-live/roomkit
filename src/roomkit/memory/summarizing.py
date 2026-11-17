@@ -124,8 +124,11 @@ class SummarizingMemory(_MemoryWrapper):
         # turns it covers, which the read goes on from (RFC §20.3).
         now = asyncio.get_running_loop().time()
         chain = self._chains.get(room_id, channel_id, now)
-        if chain is not None and not chain.holds(context):
-            # A room created again, or a turn it covers deleted or changed.
+        if chain is not None and not (
+            chain.holds(context) and chain.reaches(inner_result.events, context, current_event)
+        ):
+            # A room created again, a turn it covers deleted or changed, or
+            # turns after it the window no longer holds.
             self._chains.drop(room_id, channel_id)
             chain = None
         result = chain.carried(inner_result) if chain is not None else inner_result

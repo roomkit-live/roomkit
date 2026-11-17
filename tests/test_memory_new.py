@@ -5,9 +5,11 @@ from __future__ import annotations
 import pytest
 
 from roomkit.channels._speaker import labelled_lines
+from roomkit.memory.base import MemoryProvider
 from roomkit.memory.budget_aware import BudgetAwareMemory
 from roomkit.memory.compacting import CompactingMemory
 from roomkit.memory.mock import MockMemoryProvider
+from roomkit.memory.summarizing import SummarizingMemory
 from roomkit.memory.token_estimator import (
     estimate_context_tokens,
     estimate_event_tokens,
@@ -16,6 +18,7 @@ from roomkit.memory.token_estimator import (
     history_budget,
 )
 from roomkit.models.context import RoomContext
+from roomkit.models.event import RoomEvent
 from roomkit.models.room import Room
 from roomkit.providers.ai.base import (
     AIContext,
@@ -387,35 +390,68 @@ class TestBudgetAwareMemory:
         # Budget = 10000 * 0.85 = 8500.  8 events = 8008 tokens (fits), 9 = 9009 (over).
         assert len(result.events) == 8
 
-    @pytest.mark.parametrize(
-        ("names", "kept"),
-        [(("Alice", "Brian"), 2), (("Alice", "Alice"), 3)],
-        ids=["labelled", "one-to-one"],
+
+_PASTE = "".join(f'"item_{k}": {{"sku": "A-{k}", "qty": {k}}},\n' for k in range(8))
+"""Eight JSON lines, which a labelled turn sends each after its label, its
+quotes escaped: about half as long again as typed."""
+
+
+def _pasted(name: str) -> RoomEvent:
+    return make_event(body=_PASTE, participant_id=name, metadata={"sender_name": name})
+
+
+def _counting(kind: str, inner: MemoryProvider, typed: int) -> MemoryProvider:
+    """A memory of *kind* whose window holds three pastes as typed, and the
+    current one, but not as sent: below its threshold, or past it."""
+    if kind == "budget-aware":
+        return BudgetAwareMemory(inner, 4 * typed, safety_margin_ratio=0.0, min_events=1)
+    if kind == "compacting":
+        provider = MockAIProvider(responses=["Summary."])
+        return CompactingMemory(inner, provider, 4 * typed, safety_margin_ratio=0.0, min_events=1)
+    provider = MockAIProvider(responses=["Summary."])
+    return SummarizingMemory(inner, provider, int(typed + 3 * typed / 0.85) + 2, min_events=1)
+
+
+@pytest.mark.parametrize("kind", ["budget-aware", "compacting", "summarizing"])
+@pytest.mark.parametrize(
+    ("names", "labelled"),
+    [(("Alice", "Brian"), True), (("Alice", "Alice"), False)],
+    ids=["labelled", "one-to-one"],
+)
+async def test_a_turn_counts_as_it_is_sent(
+    kind: str, names: tuple[str, str], labelled: bool
+) -> None:
+    """Where the turns hold two speakers each line is sent after its
+    author's label as a JSON string, and is counted so: a window that holds
+    three pastes as typed holds fewer as sent, and the memory trims,
+    compacts or summarizes (RMK-636). A one-to-one conversation is sent and
+    counted as typed."""
+    typed = estimate_tokens(_PASTE)
+    assert 4 * typed <= 3 * estimate_tokens(labelled_lines(_PASTE, "Alice"))
+    events = [_pasted(names[k % 2]) for k in range(4)]
+    memory = _counting(kind, MockMemoryProvider(events=events[:3]), typed)
+
+    result = await memory.retrieve("r1", events[3], RoomContext(room=Room(id="r1")))
+
+    assert (result.events != events[:3]) is labelled
+
+
+async def test_the_current_turn_counts_as_it_is_sent() -> None:
+    """The current turn is counted with its label too: a window that holds
+    Brian's paste as sent beside Alice's as typed does not hold both as
+    sent (RMK-636)."""
+    question, current = _pasted("Brian"), _pasted("Alice")
+    sent = estimate_tokens(labelled_lines(_PASTE, "Brian"))
+    memory = BudgetAwareMemory(
+        MockMemoryProvider(events=[question]),
+        sent + estimate_tokens(_PASTE),
+        safety_margin_ratio=0.0,
+        min_events=0,
     )
-    async def test_a_turn_counts_as_it_is_sent(self, names: tuple[str, str], kept: int) -> None:
-        """Where the turns hold two speakers each line is sent after its
-        author's label as a JSON string, and is counted so, the current turn
-        too: the window that holds three pastes as typed holds two as sent
-        (RMK-636). A one-to-one conversation is sent and counted as typed."""
-        paste = "".join(f'"item_{k}": {{"sku": "A-{k}", "qty": {k}}},\n' for k in range(8))
-        senders = [names[k % 2] for k in range(4)]
-        events = [
-            make_event(body=paste, participant_id=name, metadata={"sender_name": name})
-            for name in senders
-        ]
-        typed = estimate_tokens(paste)
-        sent = estimate_tokens(labelled_lines(paste, "Alice"))
-        assert 4 * typed <= 3 * sent  # three pastes as sent pass what holds four as typed
-        mem = BudgetAwareMemory(
-            inner=MockMemoryProvider(events=events[:3]),
-            max_context_tokens=3 * sent + 1,
-            safety_margin_ratio=0.0,
-            min_events=1,
-        )
 
-        result = await mem.retrieve("r1", events[3], RoomContext(room=Room(id="r1")))
+    result = await memory.retrieve("r1", current, RoomContext(room=Room(id="r1")))
 
-        assert result.events == events[3 - kept : 3]
+    assert result.events == []
 
 
 class TestCompactingMemory:

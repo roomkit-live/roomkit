@@ -40,6 +40,17 @@ class SummaryChain:
         said = {event.id: fingerprint(event) for event in context.recent_events}
         return all(said.get(event_id) == print_ for event_id, print_ in self.covers)
 
+    def reaches(self, events: list[RoomEvent], context: RoomContext, current: RoomEvent) -> bool:
+        """Whether the window's *events* go on from the summary: the turn
+        right after the last one it covers in the room's history, *current*
+        aside, is among them, or there is none. A turn between the two would
+        be neither summarized nor read."""
+        covered = {event_id for event_id, _ in self.covers}
+        history = [event for event in context.recent_events if event.id != current.id]
+        last = max((at for at, event in enumerate(history) if event.id in covered), default=-1)
+        following = history[last + 1 : last + 2]
+        return not following or any(event.id == following[0].id for event in events)
+
     def after(self, prior: SummaryChain | None) -> SummaryChain:
         """This chain, built on *prior*: the turns and speakers both cover."""
         if prior is None:
