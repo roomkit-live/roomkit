@@ -123,7 +123,9 @@ class _StreamTurnState:
     def count_generation(self, state: _StreamRoundState, served_by: AIProvider) -> None:
         """Take what a generation that returned leaves the turn's record."""
         self.last_usage = dict(state.usage)
-        self.usage_complete = self.usage_complete and reports_counters(state.usage)
+        self.usage_complete = (
+            self.usage_complete and state.usage_whole and reports_counters(state.usage)
+        )
         self.model = served_by.model_name
         self.provider = served_by.name
 
@@ -399,6 +401,14 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                 attributes={"channel_id": self.channel_id},
             )
 
+    def _told_usage(self, usage: dict[str, Any]) -> UsageMarker:
+        """What a generation told it used before its end, for its reader: a
+        partial marker, which the generation's own replaces (RFC §6.4)."""
+        served_by = self._turn_provider()
+        return UsageMarker(
+            usage=dict(usage), model=served_by.model_name, provider=served_by.name, partial=True
+        )
+
     def _new_turn_state(
         self, loop_ctx: _ToolLoopContext, room_id: str | None, parent_span_id: str | None
     ) -> _StreamTurnState:
@@ -503,6 +513,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                         declared_tools=list(turn.loop_ctx.declared_tools.values()),
                         thinking="\n\n".join(turn.thinking),
                         usage={"input_tokens": 0, "output_tokens": 0, **turn.usage},
+                        usage_complete=turn.usage_complete,
                         latency_ms=int((time.monotonic() - turn.started_at) * 1000),
                         streaming=True,
                     )
@@ -853,6 +864,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
             publish_thinking=self._publish_thinking_event,
             close_thinking=self._close_thinking_window,
             record_usage=partial(self._record_stream_usage, turn.usage, rules),
+            told=self._told_usage,
             prefix=turn.dedup_prefix,
             external_tools=external,
             take_intent=self._intent_taker(context, turn.loop_ctx),

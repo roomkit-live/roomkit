@@ -117,7 +117,7 @@
     "session_ended": ["async def", "session_id"]
   },
   "roomkit.AIResponseEvent": {
-    "__init__": ["def", "channel_id", "response_content", "room_id=None", "tool_calls_count=0", "usage=<factory>", "thinking=''", "round_count=0", "loop_end_reason=None", "latency_ms=0", "streaming=False", "timestamp=<factory>", "segments=<factory>", "usage_metadata=<factory>", "declared_tools=<factory>"]
+    "__init__": ["def", "channel_id", "response_content", "room_id=None", "tool_calls_count=0", "usage=<factory>", "thinking=''", "round_count=0", "loop_end_reason=None", "latency_ms=0", "streaming=False", "timestamp=<factory>", "segments=<factory>", "usage_metadata=<factory>", "declared_tools=<factory>", "usage_complete=True"]
   },
   "roomkit.AIRouter": {
     "close": ["async def"],
@@ -3318,7 +3318,7 @@
     "__init__": ["def", "*", "type='update_system_prompt'", "append"]
   },
   "roomkit.models.UsageMarker": {
-    "__init__": ["def", "usage=<factory>", "model=None", "provider=None"]
+    "__init__": ["def", "usage=<factory>", "model=None", "provider=None", "partial=False"]
   },
   "roomkit.models.VideoContent": {
     "__init__": ["def", "*", "type='video'", "url", "mime_type='video/mp4'", "duration_seconds=None", "thumbnail_url=None"]
@@ -3547,6 +3547,9 @@
   },
   "roomkit.providers.ai.StreamToolCallDelta": {
     "__init__": ["def", "*", "type='tool_call_delta'", "id", "name", "index=0", "arguments_delta=''"]
+  },
+  "roomkit.providers.ai.StreamUsage": {
+    "__init__": ["def", "*", "type='usage'", "usage=<factory>"]
   },
   "roomkit.providers.ai.ThinkingBlocks": {
     "__init__": ["def"],

@@ -453,6 +453,11 @@ class AIResponseEvent:
     not RoomKit's to declare (an external ACP agent).
     """
 
+    usage_complete: bool = True
+    """Whether :attr:`usage` counts every generation of the turn whole: false
+    when one reported no counters, or was cut before its end, which counts
+    only the input its provider told as its stream started (RFC §6.4)."""
+
 
 # Callback type for AI response observation (fire-and-forget).
 AfterResponseCallback = Callable[["AIResponseEvent"], Awaitable[None]]

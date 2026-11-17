@@ -795,6 +795,19 @@ class StreamToolCallDelta(BaseModel):
     arguments_delta: str = ""
 
 
+class StreamUsage(BaseModel):
+    """What the generation used so far, as its provider told it before its end.
+
+    A provider that tells its input counters as its stream starts (Anthropic's
+    ``message_start``) yields them here. A generation cut before its end counts
+    them; the usage of its :class:`StreamDone`, when it comes, replaces them
+    (RFC §6.4).
+    """
+
+    type: Literal["usage"] = "usage"
+    usage: dict[str, int] = Field(default_factory=dict)
+
+
 class StreamDone(BaseModel):
     """Signals the end of a streaming AI response."""
 
@@ -805,7 +818,12 @@ class StreamDone(BaseModel):
 
 
 StreamEvent = (
-    StreamThinkingDelta | StreamTextDelta | StreamToolCallDelta | StreamToolCall | StreamDone
+    StreamThinkingDelta
+    | StreamTextDelta
+    | StreamToolCallDelta
+    | StreamToolCall
+    | StreamUsage
+    | StreamDone
 )
 
 

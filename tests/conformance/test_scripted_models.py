@@ -70,7 +70,16 @@ def _scenario(model: dict[str, Any], location: str) -> dict[str, Any]:
 
 
 @pytest.mark.parametrize(
-    "field", ["deltas", "thinking", "stream", "done", "failure_after_calls", "failure_after_done"]
+    "field",
+    [
+        "deltas",
+        "thinking",
+        "stream",
+        "done",
+        "usage_at_start",
+        "failure_after_calls",
+        "failure_after_done",
+    ],
 )
 @pytest.mark.parametrize("location", ["model", "fallback_model", "summarizer"])
 def test_stream_only_round_fields_are_refused_without_streaming(field: str, location: str) -> None:

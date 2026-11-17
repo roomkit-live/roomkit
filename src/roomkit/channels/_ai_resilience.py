@@ -31,6 +31,7 @@ from roomkit.providers.ai.base import (
     StreamEvent,
     StreamThinkingDelta,
     StreamToolCallDelta,
+    StreamUsage,
     is_context_overflow_message,
 )
 from roomkit.providers.ai.response_schema import hold_until_checked
@@ -96,7 +97,8 @@ class _Shown:
             self._composition = True
         elif isinstance(event, StreamThinkingDelta):
             self._reasoning = True
-        else:
+        elif not isinstance(event, StreamUsage):
+            # What the attempt told it used is no output to replay.
             self.emitted = True
 
     def boundary(self) -> _StreamRetryBoundary | None:

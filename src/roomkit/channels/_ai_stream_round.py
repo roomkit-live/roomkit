@@ -15,7 +15,12 @@ from roomkit.channels._ai_coalescers import (
 )
 from roomkit.channels._ai_resilience import _StreamRetryBoundary
 from roomkit.channels._ai_stream_external_tools import _ExternalStreamTools
-from roomkit.models.streaming import StreamDelta, ThinkingDeltaMarker, ToolCallEndMarker
+from roomkit.models.streaming import (
+    StreamDelta,
+    ThinkingDeltaMarker,
+    ToolCallEndMarker,
+    UsageMarker,
+)
 from roomkit.providers.ai.base import (
     AIToolResultPart,
     StreamDone,
@@ -24,6 +29,7 @@ from roomkit.providers.ai.base import (
     StreamThinkingDelta,
     StreamToolCall,
     StreamToolCallDelta,
+    StreamUsage,
 )
 from roomkit.providers.ai.round_parts import RoundTranscript
 from roomkit.providers.utils import _aclose_stream
@@ -55,9 +61,13 @@ class _StreamRoundState:
     # a response schema holds included: its answer began, so it took the
     # request (RFC §6.4).
     received: bool = False
-    # What the generation used, as its done event reports it; empty when it
-    # reported nothing, or was cut before it.
+    # What the generation used, as its done event reports it, else what it
+    # told before its end (a cut's included); empty when it reported nothing.
     usage: dict[str, Any] = field(default_factory=dict)
+    # What the provider told it used before its end, and whether ``usage``
+    # is its done event's, the generation's whole (RFC §6.4).
+    told_usage: dict[str, Any] = field(default_factory=dict)
+    usage_whole: bool = False
 
     def note_received(self) -> None:
         """The provider handed an event."""
@@ -145,6 +155,9 @@ class _StreamRound:
     publish_thinking: Callable[[EphemeralEventType, str, str, int], Awaitable[None]]
     close_thinking: _ThinkingWindowCloser
     record_usage: Callable[[dict[str, Any]], None]
+    # The marker that hands the reader what the generation told it used
+    # before its end (RFC §6.4).
+    told: Callable[[dict[str, Any]], UsageMarker] | None = None
     text_coalescer: _TextCoalescer | None = None
     prefix: str = ""
     external_tools: _ExternalStreamTools | None = None
@@ -225,6 +238,16 @@ class _StreamRound:
             if self.room_id:
                 await self._composition.close()
 
+    def _count_told(self) -> None:
+        """Count, once, what a generation whose end reported no usage told
+        before it: a cut's, a failure's, a done event's without counters
+        (RFC §6.4)."""
+        state = self.state
+        if state.usage or not state.told_usage:
+            return
+        state.usage = dict(state.told_usage)
+        self.record_usage(state.usage)
+
     async def _take_call(self, call: StreamToolCall) -> AsyncGenerator[StreamDelta, None]:
         """Keep a call for the loop to serve, or report the provider's own
         inline and keep it with its result for the next round's transcript."""
@@ -281,11 +304,16 @@ class _StreamRound:
                     async with aclosing(self._take_call(event)) as deltas:
                         async for delta in deltas:
                             yield delta
+                elif isinstance(event, StreamUsage):
+                    state.told_usage = dict(event.usage)
+                    if self.told is not None:
+                        yield self.told(state.told_usage)
                 elif isinstance(event, StreamDone):
                     state.finish_reason = event.finish_reason
                     state.refusal = event.metadata.get("refusal")
                     if event.usage:
                         state.usage = event.usage
+                        state.usage_whole = True
                         self.record_usage(event.usage)
 
             finished = list(self._dedup.finish())
@@ -295,6 +323,7 @@ class _StreamRound:
                 yield text
             await self.close()
         finally:
+            self._count_told()
             try:
                 await _aclose_stream(source)
             finally:

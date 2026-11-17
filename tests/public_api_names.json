@@ -810,6 +810,7 @@
     "StreamThinkingDelta",
     "StreamToolCall",
     "StreamToolCallDelta",
+    "StreamUsage",
     "TRANSCRIPTION_CAPABILITY",
     "ThinkingBlocks",
     "ToolNameRule",

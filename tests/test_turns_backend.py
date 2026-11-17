@@ -36,6 +36,7 @@ from roomkit.models.streaming import (
     ThinkingDeltaMarker,
     ToolCallEndMarker,
     ToolCallStartMarker,
+    UsageMarker,
 )
 from roomkit.providers.ai.base import AIImagePart, AITextPart, AITool
 from roomkit.turns import InMemoryTurnBackend, TurnClient, TurnExecutor, TurnTimeouts
@@ -165,6 +166,7 @@ async def _read_all(output: ChannelOutput) -> list[Any]:
             intent="I search.",
         ),
         SegmentBreakMarker(),
+        UsageMarker(usage={"input_tokens": 5}, model="m", provider="p", partial=True),
         LoopEndMarker(reason="max_rounds", rounds=3, usage={"input_tokens": 5}, max_rounds=3),
     ],
 )

@@ -21,12 +21,14 @@ from roomkit.providers.ai.base import (
     ProviderError,
     StreamDone,
     StreamTextDelta,
+    StreamUsage,
 )
 from roomkit.providers.ai.response_schema import ResponseSchemaError
 from roomkit.providers.anthropic.config import AnthropicConfig
 from roomkit.providers.anthropic.models import MODELS as ANTHROPIC_MODELS
 from roomkit.providers.anthropic.request import build_kwargs, format_content
-from roomkit.providers.anthropic.stream_events import done_event
+from roomkit.providers.anthropic.stream_events import done_event, stream_events
+from roomkit.providers.anthropic.tool_blocks import ToolUseBlocks
 from tests.private_module import load_private_copy
 
 
@@ -1572,6 +1574,30 @@ class TestAnthropicUsageCounters:
 
         assert done.usage["cache_creation_input_tokens"] == 5
         assert done.usage["cache_read_input_tokens"] == 3
+
+    @pytest.mark.parametrize(
+        ("write", "read", "told"),
+        [
+            (None, None, {"input_tokens": 11}),
+            (
+                5,
+                3,
+                {
+                    "input_tokens": 11,
+                    "cache_creation_input_tokens": 5,
+                    "cache_read_input_tokens": 3,
+                },
+            ),
+        ],
+    )
+    def test_a_message_start_tells_its_input(
+        self, write: int | None, read: int | None, told: dict[str, int]
+    ) -> None:
+        """What a cut generation counts (RFC §6.4, RMK-369): its input, the
+        output the start tells no count yet."""
+        start = SimpleNamespace(type="message_start", message=self._final(write, read))
+
+        assert stream_events(start, ToolUseBlocks()) == [StreamUsage(usage=told)]
 
 
 class TestAnthropicRefusal:

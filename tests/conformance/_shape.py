@@ -229,6 +229,7 @@ MODEL_ROUND = {
     "calls",
     "finish_reason",
     "usage",
+    "usage_at_start",
     "fails",
     "done",
     "gate",
@@ -954,6 +955,7 @@ def _model(model: Mapping[str, Any], path: str, found: list[str]) -> None:
                 "thinking",
                 "stream",
                 "done",
+                "usage_at_start",
                 "failure_after_calls",
                 "failure_after_done",
             ):

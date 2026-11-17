@@ -1189,10 +1189,11 @@ answer, or, for a turn that ended without one (a cancellation between rounds, an
 interruption), the last round's text. A turn that wrote no message at all (a
 first turn cut while its call runs) holds them on its last row, the call's end. A
 turn cut once it began records the same from what its generations told, its end
-`cancelled`: a generation in flight is
-not counted, and `ai_usage_complete` is then false. A stream cut before anything
-told what it used (in its first generation, or an ACP agent's) records only its
-end. A streamed turn
+`cancelled`: a generation in flight counts only the input its provider told as
+its stream started (Anthropic, Gemini), and `ai_usage_complete` is then false.
+A steering `Cancel` counts it the same way, and `ON_AI_RESPONSE` says so with
+`usage_complete`. A stream cut before anything told what it used (in its first
+generation, or an ACP agent's) records only its end. A streamed turn
 learns its end after that message was written: its stored row is updated once
 the turn's deliveries are done (`ON_EVENT_UPDATED` fires), so read it from the
 store or the `InboundResult`, not from the frames a channel was streamed.
@@ -1211,7 +1212,9 @@ The framework's inbound streaming path hands a channel's `deliver_stream` an
 the text deltas, a `ThinkingDeltaMarker` (from `roomkit.models`) per chunk of
 reasoning, a `UsageMarker` after each generation (what it used, its model and
 provider, so a screen can follow a long turn; a channel that does not show it
-skips it), each row of the response once stored (a text segment, a tool call's
+skips it; one `partial` before it, the input a provider tells as its stream
+starts, which the generation's own replaces, so a channel that sums skips it),
+each row of the response once stored (a text segment, a tool call's
 start or end), and last the turn's `LoopEndMarker`, before the response's failure
 when it fails. A turn whose last row is a tool call's end has its record written
 on that row once the stream ended, so the row the channel was handed carries none:

@@ -128,7 +128,10 @@ _ITEM_KINDS = (
         UsageMarker,
         lambda item, start: dataclasses.asdict(item),
         lambda data: UsageMarker(
-            usage=data["usage"], model=data.get("model"), provider=data.get("provider")
+            usage=data["usage"],
+            model=data.get("model"),
+            provider=data.get("provider"),
+            partial=data.get("partial", False),
         ),
         # Read ahead as text is, or the loop would wait at it for its reader
         # where it went on to decide the round: what a stop finds would change.

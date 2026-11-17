@@ -348,6 +348,7 @@ class ScriptedChannel(Channel):
                     if self._reads_usage:
                         told = {
                             "usage": item.usage,
+                            "partial": item.partial,
                             "model": item.model,
                             "provider": item.provider,
                         }

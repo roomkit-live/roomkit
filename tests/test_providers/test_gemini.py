@@ -20,6 +20,7 @@ from roomkit.providers.ai.base import (
     StreamDone,
     StreamTextDelta,
     StreamToolCall,
+    StreamUsage,
 )
 from roomkit.providers.ai.response_schema import ResponseSchemaError
 from roomkit.providers.ai.tool_calls import MALFORMED_CALL_NUDGE
@@ -587,14 +588,17 @@ class TestGeminiAIProvider:
             async for event in provider.generate_structured_stream(_context()):
                 events.append(event)
 
-            assert len(events) == 3
+            assert len(events) == 4
             assert isinstance(events[0], StreamTextDelta)
             assert events[0].text == "Hello"
             assert isinstance(events[1], StreamTextDelta)
             assert events[1].text == " world"
-            assert isinstance(events[2], StreamDone)
-            assert events[2].usage == {"input_tokens": 5, "output_tokens": 10}
-            assert events[2].metadata["model"] == "gemini-3.8-flash"
+            # The input, told as the chunk that carries it comes, which a cut
+            # generation counts (RFC §6.4, RMK-369).
+            assert events[2] == StreamUsage(usage={"input_tokens": 5})
+            assert isinstance(events[3], StreamDone)
+            assert events[3].usage == {"input_tokens": 5, "output_tokens": 10}
+            assert events[3].metadata["model"] == "gemini-3.8-flash"
 
     @pytest.mark.asyncio
     async def test_structured_stream_surfaces_thought_parts(self) -> None:

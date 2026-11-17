@@ -2,7 +2,8 @@
 
 Each content block becomes the stream events RoomKit reads: reasoning deltas
 naming their block (a redacted block as its opaque data), text deltas, a tool
-call's composition and the call itself (RFC §6.4).
+call's composition and the call itself (RFC §6.4). The message's start
+tells its input counters, which a generation cut before its end counts.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from roomkit.providers.ai.base import (
     StreamEvent,
     StreamTextDelta,
     StreamThinkingDelta,
+    StreamUsage,
     answered_by,
 )
 from roomkit.providers.anthropic.tool_blocks import ToolUseBlocks
@@ -22,8 +24,11 @@ from roomkit.providers.anthropic.tool_blocks import ToolUseBlocks
 
 def stream_events(event: Any, blocks: ToolUseBlocks) -> list[StreamEvent]:
     """The stream events one SDK event carries; none for an event that says
-    nothing to the loop (message start and stop, pings)."""
+    nothing to the loop (message stop, pings)."""
     kind = getattr(event, "type", None)
+    if kind == "message_start":
+        told = input_usage(getattr(event.message, "usage", None))
+        return [StreamUsage(usage=told)] if told else []
     if kind == "content_block_start":
         return _block_start(event, blocks)
     if kind == "content_block_delta" and hasattr(event.delta, "type"):
@@ -41,6 +46,19 @@ def is_first_output(event: StreamEvent) -> bool:
     return isinstance(event, StreamTextDelta) or (
         isinstance(event, StreamThinkingDelta) and bool(event.thinking)
     )
+
+
+def input_usage(usage: Any) -> dict[str, int]:
+    """The input counters a message's start tells (RFC §6.4): its input and
+    its cache reads and writes, a cache counter at zero omitted. The output
+    it tells then is no count yet."""
+    told: dict[str, int] = {}
+    if (tokens := getattr(usage, "input_tokens", None)) is not None:
+        told["input_tokens"] = tokens
+    for counter in ("cache_creation_input_tokens", "cache_read_input_tokens"):
+        if value := getattr(usage, counter, None):
+            told[counter] = value
+    return told
 
 
 def done_event(final: Any, asked: str) -> StreamDone:

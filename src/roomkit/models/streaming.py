@@ -106,14 +106,20 @@ class UsageMarker:
     so a channel can show what a long turn uses as it goes. ``usage`` is that
     generation's alone, empty when it reported no counters; ``model`` and
     ``provider`` name what served it, a fallback provider when it did. The
-    store holds none of it, and a generation in flight has told nothing: the
-    record of a turn cut there holds what the generations before it told
-    (RFC §6.4). A channel that does not show usage ignores it.
+    store holds none of it.
+
+    A generation whose provider tells its input as its stream starts yields
+    it first, ``partial``: what the generation used so far, which the marker
+    after it replaces. A channel that sums usage skips a partial marker. A
+    generation in flight has told only that: the record of a turn cut there
+    holds what the generations before it told, and what it told (RFC §6.4).
+    A channel that does not show usage ignores it.
     """
 
     usage: dict[str, Any] = field(default_factory=dict)
     model: str | None = None
     provider: str | None = None
+    partial: bool = False
 
 
 @dataclass(slots=True)

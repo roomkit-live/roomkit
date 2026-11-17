@@ -51,6 +51,7 @@ from roomkit.providers.ai.base import (
     StreamTextDelta,
     StreamThinkingDelta,
     StreamToolCallDelta,
+    StreamUsage,
     response_stream_events,
     stream_call_of,
 )
@@ -268,6 +269,9 @@ class ScriptedModel(AIProvider):
         so each reaches the reader apart: deltas yielded without waiting may
         cross as one (RFC §10.6.4)."""
         round_ = self._next_round(context, "generate_structured_stream")
+        # What the model tells it used as its stream starts, before its gate.
+        if (told := round_.get("usage_at_start")) is not None:
+            yield StreamUsage(usage=dict(told))
         await self._hold(round_)
         if "whole_response" in round_:
             for event in response_stream_events(_response(round_, self._labelled)):

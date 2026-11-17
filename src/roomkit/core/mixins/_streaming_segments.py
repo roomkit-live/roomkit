@@ -153,8 +153,10 @@ class _GenerationsRead:
 
     A generation told its usage ends one. The next counts as in flight from the
     end of the calls that followed it, or from a segment break, until it tells:
-    the safe side, a reader that stops right there reading incomplete. A
-    provider's own calls run within a generation and change nothing.
+    the safe side, a reader that stops right there reading incomplete. What a
+    generation in flight told before its end (a partial marker) counts if the
+    turn is cut there. A provider's own calls run within a generation and
+    change nothing.
     """
 
     def __init__(self) -> None:
@@ -165,10 +167,15 @@ class _GenerationsRead:
         self.provider: str | None = None
         self._in_flight = True
         self._open_calls = 0
+        # What the generation in flight told before its end.
+        self._told: UsageMarker | None = None
 
     def read(self, item: Any) -> None:
         """Take in one item of the stream."""
-        if isinstance(item, UsageMarker):
+        if isinstance(item, UsageMarker) and item.partial:
+            self._told = item
+        elif isinstance(item, UsageMarker):
+            self._told = None
             add_usage(self.usage, item.usage)
             self.last_usage = item.usage
             self.complete = self.complete and reports_counters(item.usage)
@@ -191,19 +198,24 @@ class _GenerationsRead:
         agent's or a text-only channel's reports no usage at all, and a first
         generation in flight cannot be told from them.
         """
-        if self.last_usage is None:
+        usage = dict(self.usage)
+        last, model, provider = self.last_usage, self.model, self.provider
+        if (told := self._told) is not None:
+            add_usage(usage, told.usage)
+            last, model, provider = told.usage, told.model, told.provider
+        if last is None:
             return {"loop_end_reason": "cancelled"}
         record = _ended_record(
             LoopEndMarker(
                 reason="cancelled",
-                usage=dict(self.usage),
-                last_usage=self.last_usage,
+                usage=usage,
+                last_usage=last,
                 usage_complete=self.complete and not self._in_flight,
-                model=self.model,
-                provider=self.provider,
+                model=model,
+                provider=provider,
             )
         )
-        if not self.usage:
+        if not usage:
             del record["ai_usage"]
         return record
 

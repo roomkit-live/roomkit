@@ -25,6 +25,7 @@ from roomkit.providers.ai.base import (
     StreamTextDelta,
     StreamThinkingDelta,
     StreamToolCall,
+    StreamUsage,
     answered_by,
     nonempty_stream,
     tool_call_of,
@@ -102,6 +103,16 @@ def _usage_from_metadata(meta: Any) -> dict[str, int]:
     if thoughts:
         usage["reasoning_tokens"] = thoughts
     return usage
+
+
+def _input_counters(usage: dict[str, int]) -> dict[str, int]:
+    """The input counters of *usage*, what a chunk tells of a generation
+    before its end that its cut counts (RFC §6.4)."""
+    return {
+        counter: value
+        for counter, value in usage.items()
+        if counter in ("input_tokens", "cache_read_input_tokens")
+    }
 
 
 def _call_key(
@@ -375,6 +386,7 @@ class GeminiAIProvider(AIProvider):
         fcalls: dict[str, dict[str, Any]] = {}
         fcall_order: list[str] = []
         usage: dict[str, int] = {}
+        told_input = False
         finish_reason: str | None = None
         block_reason: str | None = None
         answered: str | None = None
@@ -389,6 +401,10 @@ class GeminiAIProvider(AIProvider):
                 # Extract usage from each chunk (last one has the totals)
                 if chunk.usage_metadata:
                     usage = _usage_from_metadata(chunk.usage_metadata)
+                    # Its input, told once, which a cut counts (RFC §6.4).
+                    if not told_input and chunk.usage_metadata.prompt_token_count:
+                        told_input = True
+                        yield StreamUsage(usage=_input_counters(usage))
                 answered = getattr(chunk, "model_version", None) or answered
 
                 block_reason = prompt_block_reason(chunk) or block_reason

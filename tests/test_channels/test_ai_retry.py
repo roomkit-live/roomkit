@@ -15,8 +15,10 @@ from roomkit.providers.ai.base import (
     AIResponse,
     ProviderError,
     StreamDone,
+    StreamEvent,
     StreamTextDelta,
     StreamThinkingDelta,
+    StreamUsage,
 )
 from roomkit.providers.ai.mock import MockAIProvider
 from tests.routed_generation import routed_generation
@@ -321,28 +323,39 @@ class TestStreamRetry:
         assert len(text_events) == 1
         assert text_events[0].text == "fallback stream"
 
-    @pytest.mark.parametrize(("spoke", "tries"), [(False, 2), (True, 1)])
-    async def test_a_stream_that_only_reasoned_is_tried_again(
-        self, spoke: bool, tries: int
+    @pytest.mark.parametrize(
+        ("first", "tries"),
+        [
+            pytest.param([StreamThinkingDelta(thinking="Let me think.")], 2, id="reasoned"),
+            pytest.param(
+                [StreamThinkingDelta(thinking="Let me think."), StreamTextDelta(text="Partial")],
+                1,
+                id="spoke",
+            ),
+            pytest.param([StreamUsage(usage={"input_tokens": 40})], 2, id="told-its-input"),
+        ],
+    )
+    async def test_a_stream_that_handed_no_answer_is_tried_again(
+        self, first: list[StreamEvent], tries: int
     ) -> None:
         """Reasoning alone is no part of the answer handed (RFC §6.4,
-        RMK-1542): a stream cut after it is tried again; one that also
+        RMK-1542), nor is the input a provider tells as its stream starts
+        (RMK-369): a stream cut after them is tried again; one that also
         wrote text is not."""
         calls = 0
 
-        async def cut_after_reasoning(context: AIContext):
+        async def cut_after_first(context: AIContext):
             nonlocal calls
             calls += 1
             if calls == 1:
-                yield StreamThinkingDelta(thinking="Let me think.")
-                if spoke:
-                    yield StreamTextDelta(text="Partial")
+                for event in first:
+                    yield event
                 raise ProviderError("connection reset", retryable=True)
             yield StreamTextDelta(text="Asked again.")
             yield StreamDone(finish_reason="stop")
 
         provider = MockAIProvider(streaming=True)
-        provider.generate_structured_stream = cut_after_reasoning  # type: ignore[assignment]
+        provider.generate_structured_stream = cut_after_first  # type: ignore[assignment]
         ch = AIChannel(
             "ai1",
             provider=provider,
@@ -350,7 +363,7 @@ class TestStreamRetry:
         )
         context = AIContext(messages=[AIMessage(role="user", content="hi")])
 
-        if spoke:
+        if tries == 1:
             with pytest.raises(ProviderError):
                 await _answer(ch, context)
         else:

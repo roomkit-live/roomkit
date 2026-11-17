@@ -82,7 +82,9 @@ class Screen(Channel):
         context: RoomContext,
     ) -> ChannelOutput:
         async for item in text_stream:
-            if isinstance(item, UsageMarker):
+            # A partial marker is the input a provider tells as its stream
+            # starts, which the generation's own marker replaces.
+            if isinstance(item, UsageMarker) and not item.partial:
                 print(f"  context: {item.usage['input_tokens']} tokens on {item.model}")
         return ChannelOutput.empty()
 
