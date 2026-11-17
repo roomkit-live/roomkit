@@ -34,6 +34,8 @@ from tests.tool_loop_modes import respond
         ("on", True),
         ("  TrUe  ", True),
         ("enabled", False),
+        ("\x1c\x1dTrUe\x1e\x1f", True),
+        ("tr\x1cue", False),
     ],
 )
 def test_environment_is_read_once_and_the_public_setter_overrides_it(value, expected):
