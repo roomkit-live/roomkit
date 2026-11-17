@@ -1,0 +1,171 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-record/a-cancel-during-a-generation-counts-the-input-it-told",
+  "title": "A steering Cancel during a generation that told what it used as its stream started counts what it told: ON_AI_RESPONSE and the turn's record carry it beside what the generations before it used, and read incomplete, its end never told",
+  "rules": [
+    "§6.4 The turn's record",
+    "§21.3"
+  ],
+  "notes": "RMK-369 (HITL 69bc2a10, 242a9f5e). The second generation tells what it used as its stream starts, its input and a first output count, then holds; the Cancel stops it before its end, so the record reads incomplete whatever it told. Python: channels/_ai_stream_round.py _StreamRound.stream (StreamUsage), channels/_ai_streaming.py _StreamTurnState.count_generation. roomkit-rs: tool_loop/generation.rs.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up.",
+            "returns": "found"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "text": "Checking.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 100,
+                "output_tokens": 10
+              }
+            },
+            {
+              "gate": "second",
+              "usage_at_start": {
+                "input_tokens": 40,
+                "cache_read_input_tokens": 80,
+                "output_tokens": 1
+              },
+              "text": "Never.",
+              "usage": {
+                "input_tokens": 40,
+                "output_tokens": 7
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "report",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "background": true,
+      "as": "a"
+    },
+    {
+      "wait_for": "second"
+    },
+    {
+      "call": "steer",
+      "channel_id": "agent",
+      "room_id": "room-1",
+      "directive": {
+        "type": "cancel"
+      }
+    },
+    {
+      "open": "second"
+    },
+    {
+      "await": "a"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "report": [
+        {
+          "trigger": "on_ai_response",
+          "response": {
+            "loop_end_reason": "cancelled",
+            "usage": {
+              "input_tokens": 140,
+              "output_tokens": 11,
+              "cache_read_input_tokens": 80
+            },
+            "usage_complete": false
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0
+        },
+        {
+          "index": 1,
+          "content": {
+            "body": "Checking."
+          },
+          "metadata": {
+            "loop_end_reason": "cancelled",
+            "ai_usage": {
+              "input_tokens": 140,
+              "output_tokens": 11,
+              "cache_read_input_tokens": 80
+            },
+            "ai_last_usage": {
+              "input_tokens": 40,
+              "cache_read_input_tokens": 80,
+              "output_tokens": 1
+            },
+            "ai_usage_complete": false,
+            "ai_model": "scripted",
+            "ai_provider": "scripted"
+          }
+        },
+        {
+          "index": 2
+        },
+        {
+          "index": 3
+        }
+      ]
+    }
+  }
+}

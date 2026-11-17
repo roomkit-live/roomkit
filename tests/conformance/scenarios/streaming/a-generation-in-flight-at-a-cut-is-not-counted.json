@@ -1,7 +1,7 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "streaming/a-generation-in-flight-at-a-cut-is-not-counted",
-  "title": "A generation in flight when its turn is cut is not counted: the record keeps what the generations before it used, and reads incomplete",
+  "title": "A generation in flight that told nothing when its turn is cut is not counted: the record keeps what the generations before it used, and reads incomplete",
   "rules": [
     "§6.1",
     "§6.4 The turn's record",

@@ -1,0 +1,146 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-record/a-generation-that-told-its-input-then-failed-counts-it",
+  "title": "A generation that told its input as its stream started, then failed, counts that input: the turn's usage and ON_AI_RESPONSE carry it, its last usage is none, and both read incomplete",
+  "rules": [
+    "§6.4 The turn's record"
+  ],
+  "notes": "RMK-369 (HITL 69bc2a10). The second generation tells its input, then its provider fails before its end: the turn ends error after a round. Python: channels/_ai_stream_round.py _count_told (in the round's finally), _StreamTurnState.generation_failed. roomkit-rs: tool_loop/generation.rs count_told on the failure, tool_loop/mod.rs failed.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "text": "Checking.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 100,
+                "output_tokens": 10
+              }
+            },
+            {
+              "usage_at_start": {
+                "input_tokens": 40
+              },
+              "fails": "provider unavailable"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "report",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": {
+            "$contains": "provider unavailable"
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "report": [
+        {
+          "trigger": "on_ai_response",
+          "response": {
+            "loop_end_reason": "error",
+            "usage": {
+              "input_tokens": 140,
+              "output_tokens": 10
+            },
+            "usage_complete": false
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0
+        },
+        {
+          "index": 1,
+          "content": {
+            "body": "Checking."
+          },
+          "metadata": {
+            "loop_end_reason": "error",
+            "ai_usage": {
+              "input_tokens": 140,
+              "output_tokens": 10
+            },
+            "ai_last_usage": null,
+            "ai_usage_complete": false
+          }
+        },
+        {
+          "index": 2
+        },
+        {
+          "index": 3
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,159 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-record/a-turn-that-finishes-reports-to-its-hook-what-every-generation-used",
+  "title": "A turn that finishes fires ON_AI_RESPONSE with what every generation used, the input a generation told as its stream started counted once, and reads complete",
+  "rules": [
+    "§6.4 The turn's record"
+  ],
+  "notes": "RMK-369, the neighbour of turn-record/a-cancel-during-a-generation-counts-the-input-it-told: the done event's usage replaces what the generation told first. Python: channels/_ai_streaming.py _StreamTurnState.count_generation.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up.",
+            "returns": "found"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "text": "Checking.",
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup"
+                }
+              ],
+              "usage": {
+                "input_tokens": 100,
+                "output_tokens": 10
+              }
+            },
+            {
+              "usage_at_start": {
+                "input_tokens": 40,
+                "cache_read_input_tokens": 80
+              },
+              "text": "Done.",
+              "usage": {
+                "input_tokens": 40,
+                "cache_read_input_tokens": 80,
+                "output_tokens": 7
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "report",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "background": true,
+      "as": "a"
+    },
+    {
+      "await": "a"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "report": [
+        {
+          "trigger": "on_ai_response",
+          "response": {
+            "loop_end_reason": "completed",
+            "usage": {
+              "input_tokens": 140,
+              "output_tokens": 17,
+              "cache_read_input_tokens": 80
+            },
+            "usage_complete": true
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0
+        },
+        {
+          "index": 1,
+          "content": {
+            "body": "Checking."
+          }
+        },
+        {
+          "index": 2
+        },
+        {
+          "index": 3
+        },
+        {
+          "index": 4,
+          "content": {
+            "body": "Done."
+          },
+          "metadata": {
+            "loop_end_reason": "completed",
+            "ai_usage": {
+              "input_tokens": 140,
+              "output_tokens": 17,
+              "cache_read_input_tokens": 80
+            },
+            "ai_last_usage": {
+              "input_tokens": 40,
+              "cache_read_input_tokens": 80,
+              "output_tokens": 7
+            },
+            "ai_usage_complete": true
+          }
+        }
+      ]
+    }
+  }
+}

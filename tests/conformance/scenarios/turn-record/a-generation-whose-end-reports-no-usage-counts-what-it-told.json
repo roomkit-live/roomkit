@@ -1,0 +1,117 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-record/a-generation-whose-end-reports-no-usage-counts-what-it-told",
+  "title": "A generation whose done event reports no usage counts what it told as its stream started: the turn's record and ON_AI_RESPONSE carry it, and read incomplete",
+  "rules": [
+    "§6.4 The turn's record"
+  ],
+  "notes": "RMK-369 (HITL 69bc2a10). Python: channels/_ai_stream_round.py _count_told, _StreamTurnState.count_generation (usage_whole). roomkit-rs: tool_loop/generation.rs count_told.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "name": "opus",
+          "provider": "anthropic",
+          "rounds": [
+            {
+              "usage_at_start": {
+                "input_tokens": 40
+              },
+              "text": "Done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "report",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "report": [
+        {
+          "trigger": "on_ai_response",
+          "response": {
+            "loop_end_reason": "completed",
+            "usage": {
+              "input_tokens": 40,
+              "output_tokens": 0
+            },
+            "usage_complete": false
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0
+        },
+        {
+          "index": 1,
+          "content": {
+            "body": "Done."
+          },
+          "metadata": {
+            "loop_end_reason": "completed",
+            "ai_usage": {
+              "input_tokens": 40
+            },
+            "ai_last_usage": {
+              "input_tokens": 40,
+              "output_tokens": {
+                "$absent": true
+              }
+            },
+            "ai_usage_complete": false,
+            "ai_model": "opus",
+            "ai_provider": "anthropic"
+          }
+        }
+      ]
+    }
+  }
+}

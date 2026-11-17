@@ -1,0 +1,135 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-generation-that-tells-its-input-first-tells-a-streaming-channel-so",
+  "title": "A generation whose provider tells its input as its stream starts hands a streaming channel that reads usage that input first, marked partial, then what it used at its end, which the record counts once",
+  "rules": [
+    "§6.1",
+    "§6.4 The turn's record"
+  ],
+  "notes": "RMK-369 (HITL 242a9f5e): UsageMarker.partial. Python: channels/_ai_stream_round.py _StreamRound.stream (StreamUsage), channels/_ai_streaming.py _stream_generation.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true,
+        "reads_usage": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "name": "opus",
+          "provider": "anthropic",
+          "rounds": [
+            {
+              "usage_at_start": {
+                "input_tokens": 1000
+              },
+              "text": "One.",
+              "usage": {
+                "input_tokens": 1000,
+                "output_tokens": 10
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "streamed": {
+      "room-1": {
+        "ws": [
+          {
+            "usage": {
+              "input_tokens": 1000,
+              "output_tokens": {
+                "$absent": true
+              }
+            },
+            "partial": true,
+            "model": "opus",
+            "provider": "anthropic"
+          },
+          {
+            "text": "One."
+          },
+          {
+            "usage": {
+              "input_tokens": 1000,
+              "output_tokens": 10
+            },
+            "partial": false,
+            "model": "opus",
+            "provider": "anthropic"
+          },
+          {
+            "row": {
+              "content": {
+                "body": "One."
+              }
+            }
+          }
+        ]
+      }
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0
+        },
+        {
+          "index": 1,
+          "content": {
+            "body": "One."
+          },
+          "metadata": {
+            "loop_end_reason": "completed",
+            "ai_usage": {
+              "input_tokens": 1000,
+              "output_tokens": 10
+            },
+            "ai_last_usage": {
+              "input_tokens": 1000,
+              "output_tokens": 10
+            },
+            "ai_usage_complete": true
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,134 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-generation-a-fallback-serves-names-it-on-what-it-told-and-on-its-cut",
+  "title": "A generation the router handed to a fallback names the fallback on the input it told as its stream started and on what it used once a steering Cancel cut it",
+  "rules": [
+    "§6.1",
+    "§6.4 The turn's record",
+    "§21.3"
+  ],
+  "notes": "RMK-369 (HITL 242a9f5e). The primary refuses, the fallback tells its input, then holds; the Cancel stops it. Python: channels/_ai_resilience.py (the loop's serving provider), channels/_ai_streaming.py _told_usage and _stream_generation. roomkit-rs: tool_loop/resilience.rs rerouted.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true,
+        "reads_usage": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "name": "opus",
+          "provider": "anthropic",
+          "rounds": [
+            {
+              "refuses": {
+                "status": 503,
+                "message": "overloaded",
+                "retryable": true
+              }
+            }
+          ]
+        },
+        "retry_policy": {
+          "max_retries": 0,
+          "base_delay_ms": 1
+        },
+        "fallback_model": {
+          "name": "gpt",
+          "provider": "openai",
+          "rounds": [
+            {
+              "usage_at_start": {
+                "input_tokens": 40
+              },
+              "gate": "second",
+              "text": "Never.",
+              "usage": {
+                "input_tokens": 40,
+                "output_tokens": 7
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "background": true,
+      "as": "a"
+    },
+    {
+      "wait_for": "second"
+    },
+    {
+      "call": "steer",
+      "channel_id": "agent",
+      "room_id": "room-1",
+      "directive": {
+        "type": "cancel"
+      }
+    },
+    {
+      "open": "second"
+    },
+    {
+      "await": "a"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "streamed": {
+      "room-1": {
+        "ws": [
+          {
+            "usage": {
+              "input_tokens": 40
+            },
+            "partial": true,
+            "model": "gpt",
+            "provider": "openai"
+          },
+          {
+            "usage": {
+              "input_tokens": 40
+            },
+            "partial": false,
+            "model": "gpt",
+            "provider": "openai"
+          }
+        ]
+      }
+    }
+  }
+}
