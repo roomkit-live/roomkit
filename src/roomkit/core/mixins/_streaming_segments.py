@@ -493,6 +493,8 @@ class SegmentWriter:
                 yield row
             if self._end_marker is not None and not self._stopping:
                 yield self._end_marker
+            # The failure is the stream's end: the channel is handed it next.
+            self.handed_end = True
             raise
         if self._stopping:
             # The room no longer lets the channel read the response: its

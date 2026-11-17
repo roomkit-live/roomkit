@@ -457,13 +457,14 @@ class Channel(ABC):
         """Take the end of a stream cut from outside while this channel read it.
 
         A delivery cancelled, a steering cut, a held task's cut or the kit's
-        close cancels the channel's :meth:`deliver_stream` mid-stream. Once the text it was
-        handed is stored, marked cancelled, the framework calls this with
-        *event*, the event that stream was delivered under, and *row*, that
-        stored row, or ``None`` when no row is the channel's (a blank text, a
-        hook's refusal, a row kept out or narrowed away from it). The row is
-        not delivered to the channel otherwise: it was handed every token of
-        it (RFC §12.2 step 13s).
+        close cancels the channel's :meth:`deliver_stream` mid-stream. Once
+        the text it was handed is stored, marked cancelled, the framework
+        calls this with *event*, the event that stream was delivered under,
+        and *row*, that stored row, or ``None`` when no row is the channel's
+        (a blank text, a hook's refusal, a row kept out or narrowed away from
+        it, or storing it failed). The row is not delivered to the channel
+        otherwise: it was handed every token of it (RFC §12.2 step 13s). A
+        channel the cut finds past its stream's end is not called.
 
         Default: nothing, as for a channel that rendered what it was handed
         (a voice already spoke it). A channel that must close what it opened

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -17,6 +18,7 @@ from roomkit.channels.websocket import (
     WebSocketChannel,
 )
 from roomkit.core.framework import ChannelNotRegisteredError, RoomKit
+from roomkit.core.mixins._streaming_segments import SegmentWriter
 from roomkit.models.channel import ChannelBinding, ChannelCapabilities
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
@@ -102,6 +104,60 @@ class _Stalls(MockAIProvider):
     async def _scripted_events(self, context: AIContext) -> AsyncIterator[StreamEvent]:
         yield StreamTextDelta(text="Partial ")
         await asyncio.Event().wait()
+
+
+class _Fails(MockAIProvider):
+    """Streams its first words, then fails."""
+
+    def __init__(self) -> None:
+        super().__init__(streaming=True)
+
+    async def _scripted_events(self, context: AIContext) -> AsyncIterator[StreamEvent]:
+        yield StreamTextDelta(text="Partial ")
+        raise RuntimeError("provider down")
+
+
+class _WorksOn(WebSocketChannel):
+    """Reads its stream to its end, or to its failure, then keeps working."""
+
+    def __init__(self, channel_id: str) -> None:
+        super().__init__(channel_id)
+        self.cuts: list[RoomEvent | None] = []
+        self.read_all = asyncio.Event()
+
+    async def deliver_stream(
+        self, text_stream: Any, event: RoomEvent, binding: ChannelBinding, context: RoomContext
+    ) -> Any:
+        with contextlib.suppress(RuntimeError):
+            async for _ in text_stream:
+                pass
+        self.read_all.set()
+        await asyncio.Event().wait()
+
+    async def deliver_cut(
+        self,
+        event: RoomEvent,
+        row: RoomEvent | None,
+        binding: ChannelBinding,
+        context: RoomContext,
+    ) -> None:
+        self.cuts.append(row)
+
+
+async def _cut_room(provider: MockAIProvider, ws: WebSocketChannel) -> RoomKit:
+    kit = RoomKit()
+    kit.register_channel(AIChannel("ai", provider=provider))
+    kit.register_channel(ws)
+    await kit.create_room(room_id="room-1")
+    for channel_id in ("ai", ws.channel_id):
+        await kit.attach_channel("room-1", channel_id)
+    return kit
+
+
+def _keyed(key: str) -> InboundMessage:
+    return InboundMessage(
+        channel_id="ws", sender_id="alice", content=TextContent(body="Hi"), delivery_key=key
+    )
 
 
 class TestConnectWebSocket:
@@ -516,6 +572,71 @@ class TestStreamingDelivery:
                 stored = (await kit.store.list_events("room-1"))[-1]
                 assert stored.metadata.get("cancelled") is True
                 assert plain[0].id == stored.id
+        finally:
+            await kit.close()
+
+    @pytest.mark.parametrize(
+        "provider",
+        [
+            pytest.param(lambda: MockAIProvider(streaming=True), id="read-to-end"),
+            pytest.param(_Fails, id="failed"),
+        ],
+    )
+    async def test_a_cut_after_the_channel_read_its_stream_hands_it_no_end(
+        self, provider: Any
+    ) -> None:
+        """A channel handed its stream's end, or its failure, no longer reads
+        it: a cut while it works on hands it no deliver_cut, as in Rust
+        (RFC §12.2 step 13s, RMK-1756)."""
+        ws = _WorksOn("ws")
+        kit = await _cut_room(provider(), ws)
+        ws.register_connection(
+            "streaming", _noop_send, room_id="room-1", stream_send_fn=_noop_stream_send
+        )
+        try:
+            call = asyncio.ensure_future(kit.process_inbound(_keyed("k"), room_id="room-1"))
+            await asyncio.wait_for(ws.read_all.wait(), 5)
+            assert await kit.cancel_delivery("k") == 1
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(call, 5)
+
+            assert ws.cuts == []
+        finally:
+            await kit.close()
+
+    async def test_a_cut_whose_text_could_not_be_stored_still_ends_the_stream(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Storing what a cut leaves failed: the streaming connection still
+        reads the stream's end, with no text (RMK-1756)."""
+        stored = SegmentWriter.end_cancelled
+
+        async def fails(self: SegmentWriter, reader: Any, reason: str | None = None) -> None:
+            await stored(self, reader, reason)
+            raise RuntimeError("store down")
+
+        monkeypatch.setattr(SegmentWriter, "end_cancelled", fails)
+        ws = WebSocketChannel("ws")
+        kit = await _cut_room(_Stalls(), ws)
+        streamed: list[str] = []
+        shown = asyncio.Event()
+
+        async def stream_send(conn_id: str, msg: StreamMessage) -> None:
+            streamed.append(f"end {_row(msg.event)!r}" if isinstance(msg, StreamEnd) else msg.type)
+            if isinstance(msg, StreamChunk):
+                shown.set()
+
+        ws.register_connection(
+            "streaming", _noop_send, room_id="room-1", stream_send_fn=stream_send
+        )
+        try:
+            call = asyncio.ensure_future(kit.process_inbound(_keyed("k"), room_id="room-1"))
+            await asyncio.wait_for(shown.wait(), 5)
+            assert await kit.cancel_delivery("k") == 1
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(call, 5)
+
+            assert streamed == ["stream_start", "stream_chunk", "end ''"]
         finally:
             await kit.close()
 
