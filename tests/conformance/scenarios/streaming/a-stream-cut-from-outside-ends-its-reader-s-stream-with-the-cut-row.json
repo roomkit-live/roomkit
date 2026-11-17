@@ -1,0 +1,275 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-stream-cut-from-outside-ends-its-reader-s-stream-with-the-cut-row",
+  "title": "A streamed answer cut from outside ends its reader's stream with the row of the text it was handed, marked cancelled, or with none when a hook refused it; the row is never delivered to it again",
+  "rules": [
+    "§6.1",
+    "§12.2 step 13s",
+    "§12.2 step 14s"
+  ],
+  "notes": "Python: core/mixins/inbound_streaming.py _deliver_segments (deliver_cut once end_cancelled stored the cut text), core/mixins/_streaming_segments.py SegmentWriter.end_cancelled (the row the reader is handed), channels/websocket.py WebSocketChannel.deliver_cut. Room 1: the cut text is stored and handed to the reader by deliver_cut. Room 2: a BEFORE_BROADCAST hook blocks the cut text, so the reader is handed no row (RMK-1756, HITL b5081bcf).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true,
+        "deliver_stream": [
+          {
+            "when": {
+              "room_id": "room-1"
+            },
+            "hold_after": "Partial ",
+            "hold_gate": "read-1"
+          },
+          {
+            "when": {
+              "room_id": "room-2"
+            },
+            "hold_after": "Secret ",
+            "hold_gate": "read-2"
+          }
+        ]
+      },
+      {
+        "id": "web",
+        "type": "webhook",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "Partial ",
+                "more."
+              ]
+            },
+            {
+              "deltas": [
+                "Secret ",
+                "more."
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "blocker",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "room_id": "room-2",
+              "source_channel_id": "agent"
+            },
+            "result": {
+              "action": "block",
+              "reason": "withheld"
+            },
+            "repeat": true
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "web",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        },
+        "delivery_key": "k1"
+      },
+      "background": true,
+      "as": "first"
+    },
+    {
+      "wait_for": "read-1"
+    },
+    {
+      "call": "cancel_delivery",
+      "key": "k1",
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "open": "read-1"
+    },
+    {
+      "await": "first"
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "web",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        },
+        "delivery_key": "k2"
+      },
+      "background": true,
+      "as": "second"
+    },
+    {
+      "wait_for": "read-2"
+    },
+    {
+      "call": "cancel_delivery",
+      "key": "k2",
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "open": "read-2"
+    },
+    {
+      "await": "second"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "id": "room-1#0",
+          "content": {
+            "body": "Go."
+          }
+        },
+        {
+          "id": "room-1#1",
+          "status": "delivered",
+          "content": {
+            "body": "Partial "
+          },
+          "metadata": {
+            "cancelled": true
+          }
+        }
+      ],
+      "room-2": [
+        {
+          "id": "room-2#0",
+          "content": {
+            "body": "Go."
+          }
+        },
+        {
+          "id": "room-2#1",
+          "status": "blocked",
+          "content": {
+            "body": "Secret "
+          },
+          "metadata": {
+            "cancelled": true
+          }
+        }
+      ]
+    },
+    "streamed": {
+      "room-1": {
+        "ws": [
+          {
+            "text": "Partial "
+          },
+          {
+            "cut": {
+              "id": "room-1#1",
+              "content": {
+                "body": "Partial "
+              },
+              "metadata": {
+                "cancelled": true
+              }
+            }
+          }
+        ]
+      },
+      "room-2": {
+        "ws": [
+          {
+            "text": "Secret "
+          },
+          {
+            "cut": null
+          }
+        ]
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "id": "room-1#0"
+          }
+        ],
+        "web": [
+          {
+            "id": "room-1#1"
+          }
+        ]
+      },
+      "room-2": {
+        "ws": [
+          {
+            "id": "room-2#0"
+          }
+        ],
+        "web": []
+      }
+    }
+  }
+}
