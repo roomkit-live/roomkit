@@ -762,6 +762,7 @@ def scripted_agent(
         "response_schema",
         "thinking_budget",
         "enable_thinking",
+        "enable_planning",
         "thinking_coalesce_ms",
         "thinking_coalesce_chars",
         "publish_thinking_text",

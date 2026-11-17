@@ -171,6 +171,7 @@ CHANNEL = {
     "sandbox",
     "thinking_budget",
     "enable_thinking",
+    "enable_planning",
     "thinking_coalesce_ms",
     "thinking_coalesce_chars",
     "publish_thinking_text",
@@ -799,6 +800,8 @@ def _acp(spec: Mapping[str, Any], path: str, found: list[str]) -> None:
 
 def _channel(channel: Mapping[str, Any], path: str, found: list[str]) -> None:
     _members(channel, CHANNEL, path, found)
+    if "enable_planning" in channel and not isinstance(channel["enable_planning"], bool):
+        found.append(f"{path}.enable_planning: expected a boolean")
     if "update_binding" in channel:
         update = channel["update_binding"]
         _members(update, {"fail"}, f"{path}.update_binding", found)

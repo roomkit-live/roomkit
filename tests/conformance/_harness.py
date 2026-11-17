@@ -22,6 +22,7 @@ from roomkit.models.delivery import DeliveryHandle, DeliveryStatus
 from roomkit.models.event import RoomEvent
 from roomkit.models.framework_event import FrameworkEvent
 from roomkit.models.pending_input import PendingInputEvent
+from roomkit.models.plan_event import PlanUpdatedEvent
 from roomkit.models.store_filter import EventFilter, PersistencePolicy
 from roomkit.models.task import Observation
 from roomkit.models.tool_call import (
@@ -453,6 +454,13 @@ class Harness:
                 "channel_id": payload.channel_id,
                 "thinking": payload.thinking,
                 "round_index": payload.round_index,
+            }
+        if isinstance(payload, PlanUpdatedEvent):
+            call["plan"] = {
+                "room_id": payload.room_id,
+                "channel_id": payload.channel_id,
+                "tasks": payload.tasks,
+                "timestamp": payload.timestamp.isoformat(),
             }
         self.observed.hooks.setdefault(name, []).append(call)
         self.observed.hook_order.append(name)
