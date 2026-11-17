@@ -29,10 +29,12 @@ from roomkit.models.participant import Participant
 from roomkit.models.pending_input import PendingInputEvent
 from roomkit.models.task import Observation, Task
 from roomkit.models.tool_call import AIGenerationEvent, ToolCallEvent, ToolRoundEvent
+from roomkit.speaking import SpeakDecisionEvent
 from roomkit.tools import current_response_metadata
 from tests.conformance._agent import patched_tool_call
 from tests.conformance._ai_hooks import patched_generation, patched_tool_round
 from tests.conformance._routing import router_hook
+from tests.conformance._speaking import patched_decision
 
 if TYPE_CHECKING:
     from roomkit.models.framework_event import FrameworkEvent
@@ -630,7 +632,9 @@ def hook_result(spec: Mapping[str, Any] | None, payload: Any, room_id: str) -> H
     if data.get("action") == "modify" and "event" in data and isinstance(payload, ToolCallEvent):
         data["event"] = patched_tool_call(payload, data["event"])
     if data.get("action") == "modify" and "event" in data:
-        if isinstance(payload, AIGenerationEvent):
+        if isinstance(payload, SpeakDecisionEvent):
+            data["event"] = patched_decision(payload, data["event"])
+        elif isinstance(payload, AIGenerationEvent):
             data["event"] = patched_generation(payload, data["event"])
         elif isinstance(payload, ToolRoundEvent):
             data["event"] = patched_tool_round(payload, data["event"])

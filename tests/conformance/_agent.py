@@ -85,6 +85,7 @@ from tests.conformance._memory import Compacted, scripted_memory
 from tests.conformance._sandbox import sandbox_options
 from tests.conformance._script_executor import ScriptedScriptExecutor
 from tests.conformance._skills import scripted_skill_registry
+from tests.conformance._speaking import speaking_options
 
 if TYPE_CHECKING:
     from roomkit.channels._turn_config import ConfigProvider
@@ -724,6 +725,7 @@ def scripted_agent(
     external_handlers: dict[str, ScriptedExternalHandler] | None = None,
     skills: SkillRegistry | None = None,
     sandbox_executors: dict[str, Any] | None = None,
+    speak_turns: dict[str, list[Any]] | None = None,
 ) -> tuple[AIChannel, dict[str, ScriptedModel]]:
     """The AI channel of a scripted agent, and its models by the name
     ``expect.models`` gives them: its own under its id, its memory's
@@ -741,6 +743,7 @@ def scripted_agent(
     models = {spec["id"]: model}
     tools = spec.get("tools", [])
     kwargs = continuation_options(spec, continuation_calls)
+    kwargs.update(speaking_options(spec, gates, speak_turns))
     kwargs.update(_external_handler_options(spec, external_handlers, gates))
     if "tool_policy" in spec:
         kwargs["tool_policy"] = _tool_policy(spec["tool_policy"])

@@ -50,6 +50,8 @@ from tests.conformance._routing import (
     TRANSITION,
 )
 from tests.conformance._skill_registry_shape import SKILL_REGISTRY_ARGUMENTS, registry_problems
+from tests.conformance._speaking import channel_problems as speaking_problems
+from tests.conformance._speaking import hook_problems as speaking_hook_problems
 from tests.conformance._store import READ_MARKER_ARGUMENTS, STORE_ARGUMENTS
 from tests.conformance._strategies import (
     LOOP,
@@ -152,6 +154,8 @@ CHANNEL = {
     "max_tool_rounds",
     "max_empty_retries",
     "continuation",
+    "speak_policy",
+    "speak_timeout_ms",
     "external_tool_handler",
     "max_context_events",
     "tool_timeout_ms",
@@ -459,6 +463,7 @@ EXPECT = {
     "script_executors",
     "sandbox_executors",
     "continuations",
+    "speak_turns",
     "external_handlers",
 }
 NEW_ROOM = {"id", "organization_id", "metadata", "timers"}
@@ -853,6 +858,7 @@ def _channel(channel: Mapping[str, Any], path: str, found: list[str]) -> None:
         _memory(channel["memory"], f"{path}.memory", found)
     _channel_settings(channel, path, found)
     found.extend(continuation_problems(channel, path))
+    found.extend(speaking_problems(channel, path))
     if "external_tool_handler" in channel:
         found.extend(
             handler_problems(channel["external_tool_handler"], f"{path}.external_tool_handler")
@@ -1059,6 +1065,7 @@ def _model_call(call: Mapping[str, Any], path: str, found: list[str]) -> None:
 
 def _hook(hook: Mapping[str, Any], path: str, found: list[str], members: set[str] = HOOK) -> None:
     _members(hook, members, path, found)
+    found.extend(speaking_hook_problems(hook, path))
     for index, reaction in enumerate(hook.get("reactions", [])):
         _reaction(
             reaction,

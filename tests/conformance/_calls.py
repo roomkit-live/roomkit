@@ -483,6 +483,7 @@ def scripted_channel(
                 harness.observed.script_executors,
                 harness.mcp.by_channel.get(channel["id"], ()),
                 continuation_calls=harness.observed.continuations,
+                speak_turns=harness.observed.speak_turns,
                 external_handlers=harness.external_handlers,
                 skills=skills,
                 sandbox_executors=harness.observed.sandbox_executors,
