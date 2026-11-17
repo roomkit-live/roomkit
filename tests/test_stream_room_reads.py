@@ -220,6 +220,36 @@ async def test_a_close_during_the_hooks_refuses_the_row() -> None:
     await kit.close()
 
 
+async def test_a_room_deleted_before_a_row_s_hooks_read_it_refuses_the_row_there() -> None:
+    """A row's hooks read the room as it stands when the row comes (RMK-1297):
+    a room deleted after the row found it there, but before that read,
+    refuses the row then, its hooks never run on the stream's first
+    context (RFC §5.1, §13.5)."""
+    kit = await _room(rounds=1)
+    refused = _refusals(kit)
+    hooked: list[EventType] = []
+    read_status = kit._room_refuses_writes
+
+    async def deleting(room_id: str) -> bool:
+        refuses = await read_status(room_id)
+        await kit.store.delete_room(room_id)
+        return refuses
+
+    kit._room_refuses_writes = deleting  # type: ignore[method-assign]
+
+    @kit.hook(HookTrigger.BEFORE_BROADCAST, name="reads")
+    async def reads(event: RoomEvent, ctx: RoomContext) -> HookResult:
+        if event.source.channel_id == "ai1":
+            hooked.append(event.type)
+        return HookResult.allow()
+
+    await _say(kit)
+
+    assert hooked == []
+    assert refused[0] == (None, "reentry", EventType.MESSAGE)
+    await kit.close()
+
+
 async def test_a_close_before_the_first_row_is_read() -> None:
     """The context a stream was built from may predate a close the kit never
     counted (the store written directly): the first row reads the status."""

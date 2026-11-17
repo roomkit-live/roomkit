@@ -34,7 +34,7 @@ from roomkit.models.enums import (
 from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.models.framework_event import FrameworkEvent
 from roomkit.models.hook import HookResult
-from roomkit.models.store_filter import EventFilter
+from roomkit.models.store_filter import EventFilter, PersistencePolicy
 from roomkit.models.task import Task
 from roomkit.providers.ai.base import AIResponse, AITool, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
@@ -470,27 +470,46 @@ async def test_a_binding_change_during_a_stream_holds_from_its_next_row(
     await kit.close()
 
 
+_NO_MESSAGES = PersistencePolicy(exclude_types={EventType.MESSAGE})
+
+
 @pytest.mark.parametrize(
-    ("narrowed", "live", "delivered"),
+    ("narrowed", "policy", "live", "delivered"),
     [
-        (EventType.MESSAGE, ["Let me check."], ["tool_call_start", "tool_call_end", "message"]),
+        (
+            EventType.MESSAGE,
+            None,
+            ["Let me check."],
+            ["tool_call_start", "tool_call_end", "message"],
+        ),
+        (
+            EventType.MESSAGE,
+            _NO_MESSAGES,
+            ["Let me check."],
+            ["tool_call_start", "tool_call_end", "message"],
+        ),
         (
             EventType.TOOL_CALL_START,
+            None,
             ["Let me check.", "message", "tool_call_end", "Done.", "message"],
             [],
         ),
     ],
-    ids=["message", "tool-call-row"],
+    ids=["message", "message-the-store-keeps-out", "tool-call-row"],
 )
 async def test_a_row_its_hook_narrows_away_from_the_streaming_target_is_kept_from_it(
-    narrowed: EventType, live: list[str], delivered: list[str]
+    narrowed: EventType,
+    policy: PersistencePolicy | None,
+    live: list[str],
+    delivered: list[str],
 ) -> None:
     """RFC §7.3, §7.5 rule 2 (RMK-1007): a streamed row a BEFORE_BROADCAST
     hook narrows to web never reaches ws, the streaming target, which read
-    its text before the hook ran. A message withdraws the response: ws
-    reads nothing more of the stream and the rows after are delivered to it;
-    a tool-call row is only kept from it, the stream going on."""
-    kit = RoomKit()
+    its text before the hook ran. A message withdraws the response, stored
+    or kept out of the timeline: ws reads nothing more of the stream and
+    the rows after are delivered to it; a tool-call row is only kept from
+    it, the stream going on."""
+    kit = RoomKit(persistence_policy=policy)
     ws = _StreamingTransport("ws")
     agent, _ = _tool_turn(kit)
     await _streaming_room(kit, ws, agent)

@@ -953,7 +953,11 @@ class LaneSink:
         room_id = self._room_id
         # The row carries its cascade's scope (TurnScope), before its hooks.
         scope = event.response_visibility
-        event, context = await self._seen_by_hooks(event)
+        seen = await self._seen_by_hooks(event)
+        if seen is None:
+            await self._refuse_gone(event)
+            return None
+        event, context = seen
         decision = await self._kit._gate_commit(
             room_id, event, context, under_lock=False, observed=observed
         )
@@ -980,21 +984,24 @@ class LaneSink:
             return None
         return decision.event, decision.sync_result
 
-    async def _seen_by_hooks(self, event: RoomEvent) -> tuple[RoomEvent, RoomContext]:
+    async def _seen_by_hooks(self, event: RoomEvent) -> tuple[RoomEvent, RoomContext] | None:
         """The row and the room its BEFORE_BROADCAST hooks read: the room as
         it stands when the row comes, read off the lock, and the row at the
-        room's next index, as its delivery reads them (RFC §9.5, §10.1 step
-        12); its ASYNC observers and a blocked row's record read them too.
-        Read only when a hook or an observer runs: the stream's first
-        context otherwise, and for a room gone meanwhile, which the row's
-        commit refuses."""
+        room's next index as read then, as its delivery reads them (RFC
+        §9.5.1, §10.1 step 12); its ASYNC observers and a blocked row's
+        record read them too. Read only when a hook or an observer runs: the
+        stream's first context otherwise. ``None`` for a room the read finds
+        gone, or created again under its id, which refuses the row before its
+        hooks (RFC §5.1, §13.5)."""
         hooks = self._kit._hook_engine
         if not hooks.has_hooks_for(self._room_id, HookTrigger.BEFORE_BROADCAST, event):
             return event, self._context
         try:
             context = await self._kit._build_context(self._room_id)
         except RoomNotFoundError:
-            return event, self._context
+            return None
+        if _unless_created_again(context.room, self._room_created_at) is None:
+            return None
         return at_index(event, context.room.event_count), context
 
     async def _record_blocked(self, decision: _Blocked, observed: Observed) -> None:
@@ -1095,8 +1102,10 @@ class LaneSink:
                 policy_aware=True,
             )
         self._readers = _readers(bindings, event.source.channel_id, scope, exclude)
-        if stored is not None:
-            self._keep_from_readers(stored, bindings)
+        # A row the persistence policy keeps out is committed all the same.
+        self._keep_from_readers(
+            stored or with_committed_visibility(event, source, bindings), bindings
+        )
         if hook_result.injected_events:
             await kit._lane_injected_events(
                 hook_result.injected_events, room_id, self._cascade, cause=stored or event
