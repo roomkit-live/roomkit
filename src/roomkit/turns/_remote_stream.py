@@ -57,8 +57,8 @@ class RemoteStream:
 
     @property
     def end_owed(self) -> bool:
-        """Whether its turn ended for the owner without the executor's end:
-        its cleanup is not known to be done (RFC §10.6.8)."""
+        """Whether its turn ended with cleanup not known to be done:
+        the executor's end or an owner call outlasted its bound (RFC §10.6.8)."""
         return self._turn.end_owed
 
     async def __anext__(self) -> Any:

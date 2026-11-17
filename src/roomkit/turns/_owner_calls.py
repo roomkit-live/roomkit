@@ -12,7 +12,8 @@ spares the turn it serves, as when the call ran in the owner's own code; it
 reads no turn's host nor turn's tools, being the owner's code. Its answer
 goes back once, as a ``tool_result`` or a ``host_result``. A call the
 executor withdraws is cancelled, and so is every call of a turn that ends for
-the owner; the client that submitted the turn waits for them when it closes.
+the owner; the turn drains them within its cancellation bound, and the client
+that submitted the turn waits for them when it closes.
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ from typing import TYPE_CHECKING, Any
 from roomkit.channels._tool_registry import set_turn_owner_tools
 from roomkit.core._turn_scope import enter_turn
 from roomkit.core.exceptions import ToolRefusedError, UnservedToolCallError
-from roomkit.core.task_utils import acting_tasks, close_callers
+from roomkit.core.task_utils import acting_tasks, close_callers, wait_for_unspared
 from roomkit.tools.context import ToolCallContext, owner_served_call
 from roomkit.tools.result import as_tool_result
 from roomkit.turns._call_record import changes_of
@@ -110,6 +111,13 @@ class OwnerCalls:
         for task in list(self._running.values()):
             if task not in acting and not task.cancelling():
                 task.cancel("turn_ended")
+
+    async def drain(self) -> None:
+        """Join this turn's cancelled calls, including inline delegations
+        their cleanup ends; a call closing the kit never waits for itself."""
+        await wait_for_unspared(
+            lambda: set(self._running.values()) - acting_tasks() - close_callers()
+        )
 
     def _forget(self, call_id: str, task: asyncio.Task[None]) -> None:
         self._running.pop(call_id, None)

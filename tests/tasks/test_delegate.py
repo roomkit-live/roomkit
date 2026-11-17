@@ -193,22 +193,72 @@ class TestWaitInTaskRooms:
         assert told["status"] == "delegated" and "result" not in told
         await kit.close()
 
-    async def test_cancelling_the_worker_s_task_cancels_the_task_it_waits_for(self):
+    @pytest.mark.parametrize("gate", ["ready", "held-cleanup", "held-terminal-write"])
+    async def test_cancelling_the_worker_s_task_cancels_the_task_it_waits_for(
+        self, gate: str, monkeypatch: pytest.MonkeyPatch
+    ):
         digging = asyncio.Event()
-        kit, researcher = _kit_delegating_in_turn(_Held(digging))
+        cleaning = asyncio.Event()
+        release = asyncio.Event()
+        if gate == "ready":
+            release.set()
+        model = (
+            _Held(digging) if gate == "held-terminal-write" else _Held(digging, cleaning, release)
+        )
+        kit, researcher = _kit_delegating_in_turn(model)
+        if gate == "held-terminal-write":
+            _hold_child_terminal_write(kit, cleaning, release, monkeypatch)
         setup_delegation(researcher, DelegateHandler(kit, wait_in_task_rooms=True))
         await kit.create_room(room_id="call")
 
         task = await kit.delegate("call", "researcher", "Look it up.")
         await asyncio.wait_for(digging.wait(), 5)
-        assert await kit.cancel_task(task.id)
-        ended = await task.wait(timeout=5)
+        cancelling = asyncio.create_task(kit.cancel_task(task.id))
+        try:
+            await asyncio.wait_for(cleaning.wait(), 5)
+            if gate != "ready":
+                # The child runs within the worker's call (RFC §23.4). The
+                # parent cannot finish cancelling while that child unwinds.
+                done, _ = await asyncio.wait({cancelling}, timeout=0.05)
+                (dug,) = await kit.store.find_rooms(metadata_filter={"task_agent_id": "digger"})
+                assert not done, (
+                    f"The parent ended {task.status!s} before its child's cleanup; "
+                    f"child status: {dug.metadata['task_status']}"
+                )
+            release.set()
+            assert await asyncio.wait_for(asyncio.shield(cancelling), 5)
+            ended = await task.wait(timeout=5)
 
-        (dug,) = await kit.store.find_rooms(metadata_filter={"task_agent_id": "digger"})
-        assert ended.status == TaskStatus.CANCELLED
-        assert dug.metadata["task_status"] == "cancelled"
-        assert len(researcher._provider.calls) == 1
-        await kit.close()
+            (dug,) = await kit.store.find_rooms(metadata_filter={"task_agent_id": "digger"})
+            assert ended.status == TaskStatus.CANCELLED
+            assert dug.metadata["task_status"] == "cancelled"
+            assert len(researcher._provider.calls) == 1
+        finally:
+            release.set()
+            await asyncio.wait_for(asyncio.shield(cancelling), 5)
+            await kit.close()
+
+
+def _hold_child_terminal_write(
+    kit: RoomKit,
+    reached: asyncio.Event,
+    release: asyncio.Event,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    patch_room = kit.store.patch_room_metadata
+
+    async def patch(room_id: str, metadata: dict[str, Any]) -> Any:
+        room = await kit.store.get_room(room_id)
+        if (
+            metadata.get("task_status") == TaskStatus.CANCELLED
+            and room is not None
+            and room.metadata.get("task_agent_id") == "digger"
+        ):
+            reached.set()
+            await release.wait()
+        return await patch_room(room_id, metadata)
+
+    monkeypatch.setattr(kit.store, "patch_room_metadata", patch)
 
 
 class _Failing(MockAIProvider):
@@ -221,13 +271,26 @@ class _Failing(MockAIProvider):
 class _Held(MockAIProvider):
     """A model that sets *started* once asked, then answers never."""
 
-    def __init__(self, started: asyncio.Event) -> None:
+    def __init__(
+        self,
+        started: asyncio.Event,
+        cleaning: asyncio.Event | None = None,
+        release: asyncio.Event | None = None,
+    ) -> None:
         super().__init__()
         self._started = started
+        self._cleaning = cleaning
+        self._release = release
 
     async def generate(self, context: AIContext) -> Any:
         self._started.set()
-        await asyncio.Event().wait()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            if self._cleaning is not None:
+                self._cleaning.set()
+            if self._release is not None:
+                await self._release.wait()
 
 
 def _kit_delegating_in_turn(digger: MockAIProvider) -> tuple[RoomKit, AIChannel]:

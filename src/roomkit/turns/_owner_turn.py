@@ -129,6 +129,7 @@ class OwnerTurn:
         # The executor's end of the turn came: what it cleaned up is done; or
         # the owner gave the turn up itself, and waits for nothing of it.
         self._ended = False
+        self._cleanup_incomplete = False
         self._abandoned = False
         loop = asyncio.get_running_loop()
         self._beat = loop.create_task(self._beat_while_open())
@@ -141,10 +142,10 @@ class OwnerTurn:
 
     @property
     def end_owed(self) -> bool:
-        """Whether the turn is over for the owner without the executor's end:
-        a drain past its bound, a lost executor. What the executor cleans up
-        is then not known to be done (RFC §10.6.8)."""
-        return self._over and not self._ended and not self._abandoned
+        """Whether the turn is over with cleanup not known to be done:
+        its executor's end is missing or its owner calls outlasted the
+        cancellation bound (RFC §10.6.8)."""
+        return self._over and (not self._ended or self._cleanup_incomplete) and not self._abandoned
 
     @property
     def over(self) -> bool:
@@ -388,10 +389,11 @@ class OwnerTurn:
     async def _cancel(self, reason: str) -> None:
         """Cut the turn and wait for its end within the cancel bound; a
         second cancellation does not cut the wait short."""
-        if self._over:
+        if self._abandoned:
             self.reader_stopped()
             return
-        await self._send_best_effort(Cancel(reason=reason))
+        if not self._over:
+            await self._send_best_effort(Cancel(reason=reason))
         drain = asyncio.get_running_loop().create_task(self._drain_to_end(self._timeouts.cancel))
         while not drain.done():
             try:
@@ -406,18 +408,26 @@ class OwnerTurn:
         incomplete drainage and drop the rest."""
         try:
             async with asyncio.timeout(bound):
-                while not self._over or not self._main.empty():
-                    frame = await self._next_main()
-                    if isinstance(frame, End):
-                        break
+                try:
+                    while not self._over or not self._main.empty():
+                        frame = await self._next_main()
+                        if isinstance(frame, End):
+                            break
+                except TurnLinkError:
+                    pass
+                finally:
+                    self._finish()
+                # End confirms the executor's cleanup, not the handlers it
+                # withdrew on this owner. Their inline tasks end before the
+                # caller continues, within the same cancellation budget.
+                await self._calls.drain()
         except TimeoutError:
+            self._cleanup_incomplete = True
             logger.warning(
                 "Turn %s did not end within %ss of its cancellation: drainage incomplete",
                 self._link.request.turn_id,
                 bound,
             )
-        except TurnLinkError:
-            pass
         finally:
             self.reader_stopped()
             self._finish()
