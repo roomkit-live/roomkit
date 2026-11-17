@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -17,9 +18,11 @@ from roomkit.models.enums import (
     EventType,
     HookExecution,
     HookTrigger,
+    RoomStatus,
 )
 from roomkit.models.event import RoomEvent, TextContent
 from roomkit.models.hook import HookResult
+from roomkit.models.room import RoomTimers
 from roomkit.orchestration.base import Orchestration
 from roomkit.orchestration.state import get_conversation_state
 from roomkit.providers.ai.base import AIResponse, AIToolCall
@@ -306,6 +309,50 @@ async def test_a_strategy_that_runs_turns_gives_them_back(kind: str) -> None:
     assert [
         e.source.channel_id for e in result.response_events if e.type == EventType.MESSAGE
     ] == ["writer"]
+    await kit.close()
+
+
+@pytest.mark.parametrize("closed_by", ["close_room", "timers"])
+@pytest.mark.parametrize("kind", ["loop", "supervisor"])
+async def test_a_closed_room_gives_back_what_its_strategy_set_up(
+    kind: str, closed_by: str
+) -> None:
+    """A room holds a strategy only while it lives (RFC §19.7): its close,
+    by its host or by its timers, takes the strategy back out as an
+    uninstall does, so a kit that closes rooms keeps nothing of them; a room
+    left open keeps its own install of the same strategy."""
+    lead, worker = _agent("lead"), _agent("worker")
+    strategy: Orchestration = (
+        Loop(agent=lead, reviewers=[worker], max_iterations=1)
+        if kind == "loop"
+        else Supervisor(supervisor=lead, workers=[worker])
+    )
+    kit = RoomKit(orchestration=strategy)
+    for room_id in ("r1", "r2"):
+        await kit.create_room(room_id=room_id)
+
+    if closed_by == "close_room":
+        await kit.close_room("r1")
+    else:
+        past = datetime.now(UTC) - timedelta(hours=1)
+        await kit.set_room_timers(
+            "r1",
+            RoomTimers(inactive_after_seconds=0, closed_after_seconds=0, last_activity_at=past),
+        )
+        assert (await kit.check_room_timers("r1")).status is RoomStatus.CLOSED
+
+    def held(room_id: str) -> tuple[Any, ...]:
+        return (
+            kit.room_strategy(room_id),
+            kit._turn_runners.get(room_id, lead.channel_id) is not None,
+            room_tool_names(kit, lead.channel_id, room_id) != [],
+            room_id in kit.hook_engine._room_hooks,
+        )
+
+    assert held("r1") == (None, False, False, False)
+    assert held("r2") == (strategy, kind == "loop", kind == "supervisor", kind == "supervisor")
+    assert {b.channel_id for b in await kit.list_bindings("r1")} == set()
+    assert await kit.uninstall_strategy("r1") is False
     await kit.close()
 
 

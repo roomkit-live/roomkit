@@ -327,6 +327,11 @@ own `uninstall()` step, then takes back what its install added for the room:
 room hooks, tools set up on the agents, the turn runners the kit keeps for
 them, agents it attached, room metadata it wrote.
 
+A room holds its strategy only while it lives: its close, by `close_room` or
+by its timers, takes the strategy back out as `uninstall_strategy` does, so
+a kit that closes its rooms keeps nothing of them on the agents they share.
+A reopened room holds no strategy; install one again if it should have one.
+
 ```python
 await kit.install_strategy(room_id, Discussion([assistant, dev]))   # on a live room
 await kit.uninstall_strategy(room_id)                               # back to the room's policy

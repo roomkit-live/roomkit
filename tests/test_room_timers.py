@@ -397,12 +397,16 @@ async def test_the_component_applies_a_due_pause_with_what_it_was_given() -> Non
     async def stop(room_id: str) -> None:
         reports.append("stopped")
 
+    async def uninstall(room: Room) -> None:
+        reports.append("uninstalled")
+
     timers = TimerTransitions(
         store=store,
         lock_manager=locks,
         read_room=read_room,
         count_closed=lambda: None,
         stop_recordings=stop,
+        uninstall_closed=uninstall,
         write_record=record,
         emit=emit,
         fire_hook=fire_hook,

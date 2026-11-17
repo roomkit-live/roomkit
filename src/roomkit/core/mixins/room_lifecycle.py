@@ -93,6 +93,7 @@ class RoomLifecycleMixin(HelpersMixin):
     _stop_room_recordings: Any  # see RoomLifecycleHost
     _install_strategy: Any  # see StrategyMixin
     _forget_strategy: Any  # see StrategyMixin
+    _uninstall_closed: Any  # see StrategyMixin
     _room_hook_lifetime: RoomHookLifetime
     _room_subscriptions: RoomSubscriptions
     _realtime: RealtimeBackend
@@ -248,7 +249,8 @@ class RoomLifecycleMixin(HelpersMixin):
         return room
 
     async def close_room(self, room_id: str, *, organization_id: str | None = None) -> Room:
-        """Close a room (RFC §5.1).
+        """Close a room (RFC §5.1): its strategy is taken back out, as
+        :meth:`uninstall_strategy` does, its timeline kept (RFC §19.7).
 
         The room's due timer transitions apply first. A room already CLOSED
         is returned as it is: nothing is written, no hook fires and no
@@ -284,6 +286,8 @@ class RoomLifecycleMixin(HelpersMixin):
             update={"status": RoomStatus.CLOSED, "closed_at": datetime.now(UTC), "paused_at": None}
         )
         result = await self._store_refusing_room(room)
+        # A closed room holds no strategy (RFC §19.7).
+        await self._uninstall_closed(result)
         await self._fire_lifecycle_hook(
             room_id,
             HookTrigger.ON_ROOM_CLOSED,
@@ -343,8 +347,9 @@ class RoomLifecycleMixin(HelpersMixin):
 
     async def reopen_room(self, room_id: str, *, organization_id: str | None = None) -> Room:
         """Reopen a CLOSED room (RFC §5.1): it accepts events again, its
-        inactivity timer counting from now. Fires no hook and emits no
-        framework event, as the RFC names none.
+        inactivity timer counting from now. It holds no strategy, its close
+        took it back out (RFC §19.7): install one again if it should. Fires
+        no hook and emits no framework event, as the RFC names none.
 
         Raises:
             TransitionRefusedError: the room is not CLOSED: an ACTIVE or a

@@ -673,6 +673,7 @@ class RoomKit(
             read_room=self.get_room,
             count_closed=self._count_room_closed,
             stop_recordings=self._stop_room_recordings,
+            uninstall_closed=self._uninstall_closed,
             write_record=self._emit_system_event,
             emit=self._emit_framework_event,
             fire_hook=self._fire_lifecycle_hook,

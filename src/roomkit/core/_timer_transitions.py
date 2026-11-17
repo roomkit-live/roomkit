@@ -78,7 +78,8 @@ class TimerTransitions:
     *read_room* is the kit's scoped read (``get_room``); *count_closed*
     counts a room stored in a status that refuses events, for the streams
     that read the status once (RFC §5.1); *stop_recordings*
-    stops a closing room's recordings; *write_record* writes a lifecycle
+    stops a closing room's recordings; *uninstall_closed* takes a closed
+    room's strategy back out (RFC §19.7); *write_record* writes a lifecycle
     record (``_emit_system_event``); *emit* a framework event; *fire_hook*
     a lifecycle hook in a given context; *build_context* reads a room's
     context. *background* is the set of the kit's background tasks, which
@@ -94,6 +95,7 @@ class TimerTransitions:
         read_room: RoomRead,
         count_closed: Callable[[], None],
         stop_recordings: Callable[[str], Awaitable[Any]],
+        uninstall_closed: Callable[[Room], Awaitable[None]],
         write_record: Callable[..., Awaitable[None]],
         emit: Callable[..., Awaitable[None]],
         fire_hook: Callable[..., Awaitable[None]],
@@ -106,6 +108,7 @@ class TimerTransitions:
         self._read_room = read_room
         self._count_closed = count_closed
         self._stop_recordings = stop_recordings
+        self._uninstall_closed = uninstall_closed
         self._write_record = write_record
         self._emit = emit
         self._fire_hook = fire_hook
@@ -196,6 +199,7 @@ class TimerTransitions:
         if room.status is RoomStatus.CLOSED:
             self._count_closed()
             await self._stop_recordings(room.id)
+            await self._uninstall_closed(room)
         for transition in due:
             await self._announce(room.id, transition)
         # Read once the records are written: the room as stored, which the

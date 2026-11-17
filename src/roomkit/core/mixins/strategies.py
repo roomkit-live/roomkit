@@ -7,7 +7,8 @@ strategy's own uninstall step, then takes back exactly what was recorded: the
 room hooks, the tools set up on the room's agents, the turn runners the kit
 keeps for them, the agents the install attached and the room metadata it
 wrote. A room can then
-take another strategy; its timeline stays. Recording what changed, rather
+take another strategy; its timeline stays. A room's close, by its host or by
+its timers, uninstalls its strategy the same way. Recording what changed, rather
 than asking each strategy what it set up, holds for the host's own
 strategies too.
 """
@@ -30,6 +31,7 @@ if TYPE_CHECKING:
     from roomkit.core._turn_runners import TurnRunners
     from roomkit.core.hooks import HookEngine
     from roomkit.core.locks import RoomLockManager
+    from roomkit.models.room import Room
     from roomkit.orchestration.base import Orchestration
     from roomkit.store.base import ConversationStore
     from roomkit.turns._registry_tools import OwnerToolStore
@@ -179,6 +181,11 @@ class StrategyMixin(HelpersMixin):
         where no host installed it included (RFC §19.7.5 rule 16). Whether a
         strategy was installed."""
         room = await self.get_room(room_id, organization_id=organization_id)
+        return await self._uninstall(room)
+
+    async def _uninstall(self, room: Room) -> bool:
+        """:meth:`uninstall_strategy` for *room*, read in its scope already."""
+        room_id = room.id
         installed = await self._installed_once_over(room_id)
         if installed is not None and installed.installing and not installed.ended.is_set():
             # An install the caller holds the room's lock against, or runs
@@ -194,6 +201,18 @@ class StrategyMixin(HelpersMixin):
         await self._take_back(room_id, installed)
         del self._room_strategies[room_id]
         return True
+
+    async def _uninstall_closed(self, room: Room) -> None:
+        """*room* was just closed, by its host or by its timers, under its
+        lock: a room holds a strategy only while it lives, so its close takes
+        the strategy back out as :meth:`uninstall_strategy` does, its
+        timeline kept (RFC §19.7). A reopened room holds none; its host
+        installs one again. The room is closed whatever this meets: a
+        failure is logged, what stays recorded for a later uninstall."""
+        try:
+            await self._uninstall(room)
+        except Exception:
+            logger.exception("Taking the strategy of closed room %s back out failed", room.id)
 
     async def _installed_once_over(self, room_id: str) -> _Installed | None:
         """The record of *room_id*'s strategy once no install of it runs: an

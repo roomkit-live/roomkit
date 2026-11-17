@@ -920,9 +920,13 @@ class HookEngine:
         """Remove a room hook by name, one a kit's engine gave its own
         executor included. The engine reads no room: the synchronous, trusted
         level below :meth:`RoomKit.remove_room_hook`, which reads the room
-        with the caller's organization first (RFC §17.2)."""
-        for hooks in (self._room_hooks.get(room_id, []), self._owner_room_hooks.get(room_id, [])):
+        with the caller's organization first (RFC §17.2). A room left with
+        no hook is forgotten: a kit that closes rooms keeps nothing of them."""
+        for registry in (self._room_hooks, self._owner_room_hooks):
+            hooks = registry.get(room_id, [])
             if self._removed(hooks, name):
+                if not hooks:
+                    registry.pop(room_id, None)
                 return True
         if self._unnamed(room_id, name):
             return True
