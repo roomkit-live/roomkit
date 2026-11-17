@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator
 
 import pytest
 
+from roomkit.channels._mark_copies import compile_mark_patterns
 from roomkit.channels.ai import AIChannel
 from roomkit.models.context import RoomContext
 from roomkit.models.room import Room
@@ -249,6 +250,8 @@ async def test_interleaved_rounds_keep_room_state_and_usage_separate() -> None:
         assert output.response_stream is not None
         return "".join([item async for item in output.response_stream if isinstance(item, str)])
 
+    # The deadline measures the overlapping turns, not cold pattern compilation.
+    await compile_mark_patterns()
     result = await asyncio.wait_for(asyncio.gather(run("a"), run("b")), 2)
     assert result == ["Working a.Done a.", "Working b.Done b."]
     assert sorted(executions) == [("a", "a"), ("b", "b")]
