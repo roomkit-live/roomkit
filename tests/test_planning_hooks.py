@@ -76,16 +76,24 @@ class PlanPublication(InMemoryRealtime):
         self.entered = asyncio.Event()
         self.release = asyncio.Event()
         self.fail = fail
+        self.failed = False
+        self.finished = asyncio.Event()
         self.plans: list[EphemeralEvent] = []
 
     async def publish_to_room(self, room_id: str, event: EphemeralEvent) -> None:
-        if event.type == EphemeralEventType.CUSTOM and event.data.get("type") == "plan_updated":
-            self.plans.append(event)
-            self.entered.set()
-            await self.release.wait()
+        if event.type != EphemeralEventType.CUSTOM or event.data.get("type") != "plan_updated":
+            await super().publish_to_room(room_id, event)
+            return
+        self.plans.append(event)
+        self.entered.set()
+        await self.release.wait()
+        try:
             if self.fail:
+                self.failed = True
                 raise RuntimeError("plan publisher failed")
-        await super().publish_to_room(room_id, event)
+            await super().publish_to_room(room_id, event)
+        finally:
+            self.finished.set()
 
 
 @pytest.mark.parametrize("fail", [False, True])
@@ -93,7 +101,9 @@ async def test_a_plan_hook_observes_stored_state_without_waiting_for_the_owner_p
     fail: bool, streaming: bool
 ) -> None:
     realtime = PlanPublication(fail=fail)
-    kit, channel, model = await room([plan(_TASKS), answer()], streaming, realtime=realtime)
+    kit, channel, model = await room(
+        [plan(_TASKS), answer(), answer()], streaming, realtime=realtime
+    )
     seen: list[PlanUpdatedEvent] = []
     heard = asyncio.Event()
     before = datetime.now(UTC)
@@ -128,6 +138,15 @@ async def test_a_plan_hook_observes_stored_state_without_waiting_for_the_owner_p
         assert seen[0].channel_id == "agent"
         assert before <= seen[0].timestamp <= datetime.now(UTC)
         assert len(model.calls) == 2
+        await asyncio.wait_for(realtime.finished.wait(), 3)
+        assert realtime.failed is fail
+        result = await kit.process_inbound(message("Continue."))
+        assert result.error is None
+        assert len(model.calls) == 3
+        current_input = str(model.calls[-1].messages[-1].content)
+        assert "## Current Task Plan" in current_input
+        assert "- [ ] “Follow up” (pending)" in current_input
+        assert len(realtime.plans) == 1 and len(seen) == 1
     finally:
         realtime.release.set()
         turn.cancel()
