@@ -1,0 +1,559 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "author-images/a-scheme-a-reader-fetches-is-no-reference",
+  "title": "A reference in a scheme a reader fetches, opens or runs by itself is refused when its content is built, whatever its case, and so is a compound scheme one of whose parts joined by '+' is such a scheme or a link's; an application's own scheme, mixed-case or compound, and a cloud store the application resolves stay references",
+  "notes": "Python's MediaContent._validate_url (roomkit._media_url.is_safe_reference) and roomkit-rs's model::media_url: a reference's scheme, lower-cased and split on +, has no part among the schemes the RFC lists (files on the machine, in an archive or on a share, the network protocols generic readers fetch, the wrappers that read through another protocol, a file or a descriptor, code to run, http and https). A link and a data URI are not read this way. A refused content takes no index: the first accepted event is index 0.",
+  "rules": [
+    "§6.4"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "FILE:///etc/passwd",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "ftp://host/x.png",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "javascript://x/%0aalert(1)",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "VBScript://x",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "smb://host/share/x.png",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "SMB://host/share/x.png",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "sftp://host/x.png",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "ftps://host/x.png",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "gopher://host/x",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "ws://host/x",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "wss://host/x",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "ldap://host/x",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "jar://host/x.jar",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "rtmp://host/live",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "rtsp://host/live",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "nfs://host/x",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "ssh://host/x",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "tftp://host/x",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "udp://host:1234",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "hls+http://host/x.m3u8",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "crypto+file://x",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "git+ssh://host/x",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "cache:///tmp/x.wav",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "concat:///tmp/x.wav",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "admin:///etc/shadow",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "local:///etc/passwd",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "zip://x.png::file:///tmp/a.zip",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "php://filter/x",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "expect://id",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "app-media://photo-1",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "result": {
+          "index": 0,
+          "content": {
+            "type": "media",
+            "url": "app-media://photo-1"
+          }
+        }
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "App-Media://photo-1",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "result": {
+          "index": 1,
+          "content": {
+            "type": "media",
+            "url": "App-Media://photo-1"
+          }
+        }
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "x-app://media/1",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "result": {
+          "index": 2,
+          "content": {
+            "type": "media",
+            "url": "x-app://media/1"
+          }
+        }
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "myapp+v2://media/1",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "result": {
+          "index": 3,
+          "content": {
+            "type": "media",
+            "url": "myapp+v2://media/1"
+          }
+        }
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "s3://bucket/key.png",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "result": {
+          "index": 4,
+          "content": {
+            "type": "media",
+            "url": "s3://bucket/key.png"
+          }
+        }
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "gs://bucket/key.png",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "result": {
+          "index": 5,
+          "content": {
+            "type": "media",
+            "url": "gs://bucket/key.png"
+          }
+        }
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "https://cdn.example/x.png",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "result": {
+          "index": 6,
+          "content": {
+            "type": "media",
+            "url": "https://cdn.example/x.png"
+          }
+        }
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "data:image/png;base64,AQIDBA==",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "result": {
+          "index": 7,
+          "content": {
+            "type": "media",
+            "url": "data:image/png;base64,AQIDBA=="
+          }
+        }
+      }
+    }
+  ]
+}

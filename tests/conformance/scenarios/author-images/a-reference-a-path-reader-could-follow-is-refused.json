@@ -1,0 +1,705 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "author-images/a-reference-a-path-reader-could-follow-is-refused",
+  "title": "A reference a path reader could follow is refused when its content is built, in every spelling a reader decodes or trims: a '..' segment percent-encoded once or more, padded with whitespace or ended by '?' or '#', a backslash raw or encoded, a control character raw or encoded, an escape left after three decodings, a rest that starts once decoded with '~', a drive letter or a slash only decoding writes; a link, a data URI and an ordinary reference holding dots, an encoded dot or slash, a space, an escape that is no UTF-8, three nested encodings, an empty authority (///), a tilde or a colon further on, or a mixed-case scheme stay accepted",
+  "rules": [
+    "§6.4"
+  ],
+  "notes": "Python's MediaContent._validate_url (roomkit._media_url.is_safe_reference) and roomkit-rs's model::media_url: the rest after the scheme's :// is percent-decoded until it no longer changes, three times at most, a byte sequence that is no UTF-8 reading as U+FFFD; one a fourth decoding would still change is refused, and so is one where a backslash, a control character (Unicode Cc) or a segment, between /, ? and #, that is .. once trimmed of Unicode White_Space is left, or when the decoded rest starts with ~, a letter and a colon, or a / the raw rest does not start with. A link and a data URI are not read this way. A refused content takes no index: the first accepted event is index 0.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "app://a/../secret",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "app://a\\secret",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "app://a/%2e%2e/secret",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "app://a/%2E%2E%2Fsecret",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "app://a/.%2E/secret",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "app://a/%252e%252e/secret",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "app://a/%25252e%25252E/secret",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "app://a/%25252541.png",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "app://a/..%2fsecret",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "app://a/..%5Csecret",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "app://a/%5csecret",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "app://a/ ../secret",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "app://a/.. /secret",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "app://a/%20..%09/secret",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "app://a/ ../secret",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "app://a/..?secret",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "app://a/b#..",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "app://a/..\t/secret",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "app://a/b\nc",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "app://a/b%0Ac",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "app://a/b\u0000",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "app://a/b",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "app://a/b",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "app://~root/.ssh/id_rsa",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "app://%7Eroot/secret",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "app://C:/Windows/win.ini",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "app://%2Fetc/passwd",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "app://%252Fetc/passwd",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "ap\tp://a/b",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": " app://a/b",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "error": "invalid_argument"
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "https://cdn.example/a/%2e%2e/b..c.png?name=..x&v=%2E%2E",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "result": {
+          "index": 0,
+          "content": {
+            "type": "media",
+            "url": "https://cdn.example/a/%2e%2e/b..c.png?name=..x&v=%2E%2E"
+          }
+        }
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "HTTPS://cdn.example/a/../b.png",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "result": {
+          "index": 1,
+          "content": {
+            "type": "media",
+            "url": "https://cdn.example/a/../b.png"
+          }
+        }
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "data:image/png;base64,AQIDBA==",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "result": {
+          "index": 2,
+          "content": {
+            "type": "media",
+            "url": "data:image/png;base64,AQIDBA=="
+          }
+        }
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "app-media://photos/a..b.png",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "result": {
+          "index": 3,
+          "content": {
+            "type": "media",
+            "url": "app-media://photos/a..b.png"
+          }
+        }
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "app-media://photos/./.../1.png",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "result": {
+          "index": 4,
+          "content": {
+            "type": "media",
+            "url": "app-media://photos/./.../1.png"
+          }
+        }
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "app-media://photos/file%2Ename.png",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "result": {
+          "index": 5,
+          "content": {
+            "type": "media",
+            "url": "app-media://photos/file%2Ename.png"
+          }
+        }
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "app-media://bucket/folder%2Ffile.png",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "result": {
+          "index": 6,
+          "content": {
+            "type": "media",
+            "url": "app-media://bucket/folder%2Ffile.png"
+          }
+        }
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "app-media://photos/My Photo.png?size=large#top",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "result": {
+          "index": 7,
+          "content": {
+            "type": "media",
+            "url": "app-media://photos/My Photo.png?size=large#top"
+          }
+        }
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "app-media://photos/100%",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "result": {
+          "index": 8,
+          "content": {
+            "type": "media",
+            "url": "app-media://photos/100%"
+          }
+        }
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "app-media://photos/%e9t%C3%A9.png",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "result": {
+          "index": 9,
+          "content": {
+            "type": "media",
+            "url": "app-media://photos/%e9t%C3%A9.png"
+          }
+        }
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "app-media://photos/%252541.png",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "result": {
+          "index": 10,
+          "content": {
+            "type": "media",
+            "url": "app-media://photos/%252541.png"
+          }
+        }
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "app-media:///photos/1.png",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "result": {
+          "index": 11,
+          "content": {
+            "type": "media",
+            "url": "app-media:///photos/1.png"
+          }
+        }
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "app-media://a~b/C:x.png",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "result": {
+          "index": 12,
+          "content": {
+            "type": "media",
+            "url": "app-media://a~b/C:x.png"
+          }
+        }
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "app-media://ab:8080/c.png",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "result": {
+          "index": 13,
+          "content": {
+            "type": "media",
+            "url": "app-media://ab:8080/c.png"
+          }
+        }
+      }
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "ws",
+      "content": {
+        "type": "media",
+        "url": "App-Media://photos/1",
+        "mime_type": "image/png"
+      },
+      "expect": {
+        "result": {
+          "index": 14,
+          "content": {
+            "type": "media",
+            "url": "App-Media://photos/1"
+          }
+        }
+      }
+    }
+  ]
+}
