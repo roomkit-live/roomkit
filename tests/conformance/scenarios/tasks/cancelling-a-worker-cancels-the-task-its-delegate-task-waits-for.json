@@ -1,0 +1,152 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/cancelling-a-worker-cancels-the-task-its-delegate-task-waits-for",
+  "title": "With its handler's wait_in_task_rooms, cancelling a task whose worker's delegate_task call waits for the task it started cancels that task too: both end cancelled, and the cancelled worker is never asked again",
+  "rules": [
+    "§23.4",
+    "§23.3"
+  ],
+  "notes": "RMK-1621, HITL 2b8ac53e and d4ede844. Python: tests/tasks/test_delegate.py::TestWaitInTaskRooms::test_cancelling_the_worker_s_task_cancels_the_task_it_waits_for; tasks/delegate.py DelegateHandler. The digger is held at its gate while the researcher's call waits for it, so the cancel lands on the researcher's turn. Without the option, the digger's task runs on and completes once the gate opens.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "front",
+        "type": "ai",
+        "category": "intelligence"
+      },
+      {
+        "id": "researcher",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "delegate_task",
+                  "arguments": {
+                    "agent": "digger",
+                    "task": "Dig."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Dug: found it."
+            }
+          ]
+        }
+      },
+      {
+        "id": "digger",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "source_channel_id": "system",
+              "type": "message"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Found it."
+                }
+              }
+            ],
+            "gate": "digging"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "front"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate_handler",
+      "handler": "tool",
+      "wait_in_task_rooms": true
+    },
+    {
+      "call": "setup_delegation",
+      "agent_id": "researcher",
+      "handler": "tool"
+    },
+    {
+      "call": "delegate",
+      "room_id": "room-1",
+      "agent_id": "researcher",
+      "task": "Look it up.",
+      "notify": "front",
+      "as": "a"
+    },
+    {
+      "wait_for": "digging"
+    },
+    {
+      "call": "cancel_task",
+      "task_id": "$a",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "task.wait",
+      "task_id": "$a",
+      "expect": {
+        "result": {
+          "status": "cancelled",
+          "output": null
+        }
+      }
+    },
+    {
+      "open": "digging"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "$r1": {
+        "metadata": {
+          "parent_room_id": "room-1",
+          "task_agent_id": "researcher",
+          "task_status": "cancelled"
+        }
+      },
+      "$r2": {
+        "metadata": {
+          "parent_room_id": "$r1",
+          "task_agent_id": "digger",
+          "task_status": "cancelled"
+        }
+      }
+    },
+    "models": {
+      "researcher": [
+        {}
+      ]
+    }
+  }
+}

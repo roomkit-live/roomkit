@@ -1,0 +1,201 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tasks/a-worker-s-delegate-task-waits-for-its-task-on-the-handler-s-option",
+  "title": "With its handler's wait_in_task_rooms, a delegate_task call made from a task's room runs its task inline: the calling worker's tool answers with the task's end and its result, the worker ends its own task with that, and its result reaches the conversation; the worker is never woken again in its room. A call made from the conversation's own room still starts a background task and answers with its receipt",
+  "rules": [
+    "§23.4",
+    "§23.3"
+  ],
+  "notes": "RMK-1621, HITL 2b8ac53e and d4ede844. Python: tests/tasks/test_delegate.py::TestWaitInTaskRooms::test_the_call_answers_with_its_task_s_result_on_the_option, test_a_call_from_the_conversation_s_room_starts_a_background_task; tasks/delegate.py DelegateHandler. A task's room is a child room the kit made for a delegated task (its metadata names the task). Without the option, the researcher's call answers with the receipt, its task ends with that, and the digger's result comes back after it.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "front",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "delegate_task",
+                  "arguments": {
+                    "agent": "researcher",
+                    "task": "Look it up."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "On it."
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        }
+      },
+      {
+        "id": "researcher",
+        "type": "ai",
+        "category": "intelligence",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "delegate_task",
+                  "arguments": {
+                    "agent": "digger",
+                    "task": "Dig."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Dug: found it."
+            }
+          ]
+        }
+      },
+      {
+        "id": "digger",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "when": {
+              "source_channel_id": "system",
+              "type": "message"
+            },
+            "respond": [
+              {
+                "content": {
+                  "type": "text",
+                  "body": "Found it."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          },
+          {
+            "channel_id": "front"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "delegate_handler",
+      "handler": "tool",
+      "wait_in_task_rooms": true
+    },
+    {
+      "call": "setup_delegation",
+      "agent_id": "front",
+      "handler": "tool"
+    },
+    {
+      "call": "setup_delegation",
+      "agent_id": "researcher",
+      "handler": "tool"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15551234567",
+        "content": {
+          "type": "text",
+          "body": "Look it up."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "rooms": {
+      "$r1": {
+        "metadata": {
+          "parent_room_id": "room-1",
+          "task_agent_id": "researcher",
+          "task_status": "completed"
+        }
+      },
+      "$r2": {
+        "metadata": {
+          "parent_room_id": "$r1",
+          "task_agent_id": "digger",
+          "task_status": "completed"
+        }
+      }
+    },
+    "models": {
+      "front": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "is_error": false,
+              "content": {
+                "$starts_with": "{\"status\": \"delegated\""
+              }
+            }
+          ]
+        },
+        {
+          "messages": [
+            {},
+            {},
+            {},
+            {
+              "role": "assistant",
+              "text": "On it."
+            },
+            {
+              "role": "user",
+              "text": {
+                "$contains": "Dug: found it."
+              }
+            }
+          ]
+        }
+      ],
+      "researcher": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c2",
+              "is_error": false,
+              "content": {
+                "$contains": "\"agent_id\": \"digger\", \"result\": \"Found it.\""
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
