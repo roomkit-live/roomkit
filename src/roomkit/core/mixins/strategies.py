@@ -22,9 +22,10 @@ from typing import TYPE_CHECKING, Any
 
 from roomkit.channels._tool_registry import ChannelRegistry
 from roomkit.channels.declared import id_of, register_strategy_agents
+from roomkit.core.exceptions import RoomClosedError
 from roomkit.core.locks import _has_room_lock
 from roomkit.core.mixins.helpers import HelpersMixin
-from roomkit.models.enums import ChannelCategory
+from roomkit.models.enums import ChannelCategory, RoomStatus
 
 if TYPE_CHECKING:
     from roomkit.channels.base import Channel
@@ -203,10 +204,10 @@ class StrategyMixin(HelpersMixin):
         return True
 
     async def _uninstall_closed(self, room: Room) -> None:
-        """*room* was just closed, by its host or by its timers, under its
-        lock: a room holds a strategy only while it lives, so its close takes
-        the strategy back out as :meth:`uninstall_strategy` does, its
-        timeline kept (RFC §19.7). A reopened room holds none; its host
+        """*room* was just closed, by its host or by its timers, or archived,
+        under its lock: a room holds a strategy only while it lives, so its
+        close takes the strategy back out as :meth:`uninstall_strategy` does,
+        its timeline kept (RFC §19.7). A reopened room holds none; its host
         installs one again. The room is closed whatever this meets: a
         failure is logged, what stays recorded for a later uninstall."""
         try:
@@ -316,6 +317,7 @@ class StrategyMixin(HelpersMixin):
             async with self._lock_manager.locked(room_id):
                 before = await self._snapshot(room_id)
                 try:
+                    await self._refuse_closed(room_id)
                     if not replacing:
                         # A discussion taking another's place binds its new agents
                         # itself, once it holds the room (RFC §19.7.5 rule 1).
@@ -332,6 +334,17 @@ class StrategyMixin(HelpersMixin):
             )
         finally:
             claimed.ended.set()
+
+    async def _refuse_closed(self, room_id: str) -> None:
+        """Refuse an install in a room no longer live, read under its lock: a
+        room holds a strategy only while it lives (RFC §19.7).
+
+        Raises:
+            RoomClosedError: the room is CLOSED or ARCHIVED.
+        """
+        room = await self._store.get_room(room_id)
+        if room is not None and room.status in (RoomStatus.CLOSED, RoomStatus.ARCHIVED):
+            raise RoomClosedError(f"Room {room_id} is {room.status}: it takes no strategy")
 
     def _claim_install(
         self, room_id: str, strategy: Orchestration, organization_id: str | None

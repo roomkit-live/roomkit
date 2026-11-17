@@ -133,7 +133,10 @@ async def main() -> None:
     await asyncio.gather(stt.warmup(), tts.warmup(), llm.start())
     await kit.attach_channel("offline", "voice")  # opens the mic; the agent greets
     logger.info("Ready: speak into the microphone. Ctrl+C to stop.")
-    await run_until_stopped(kit)  # closing the kit stops llama-server
+    try:
+        await run_until_stopped(kit)
+    finally:
+        await llm.close()  # stops llama-server: the provider is ours, not the kit's
 
 
 if __name__ == "__main__":

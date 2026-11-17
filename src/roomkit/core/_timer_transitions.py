@@ -199,7 +199,6 @@ class TimerTransitions:
         if room.status is RoomStatus.CLOSED:
             self._count_closed()
             await self._stop_recordings(room.id)
-            await self._uninstall_closed(room)
         for transition in due:
             await self._announce(room.id, transition)
         # Read once the records are written: the room as stored, which the
@@ -208,6 +207,10 @@ class TimerTransitions:
         task = self._fire_hooks(room.id, due, context)
         if hooks is not None:
             hooks.append(task)
+        if room.status is RoomStatus.CLOSED:
+            # Its strategy taken back once the close is written and announced
+            # (RFC §19.7).
+            await self._uninstall_closed(room)
         return context.room
 
     async def _write_due(self, room: Room) -> tuple[Room, list[DueTransition]]:

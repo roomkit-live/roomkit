@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 
 from roomkit import Agent, Discussion, Loop, RoomKit, Supervisor, Swarm
+from roomkit.core.exceptions import RoomClosedError
 from roomkit.core.hooks import HookRegistration
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
@@ -312,15 +313,16 @@ async def test_a_strategy_that_runs_turns_gives_them_back(kind: str) -> None:
     await kit.close()
 
 
-@pytest.mark.parametrize("closed_by", ["close_room", "timers"])
+@pytest.mark.parametrize("closed_by", ["close_room", "timers", "archive_room"])
 @pytest.mark.parametrize("kind", ["loop", "supervisor"])
 async def test_a_closed_room_gives_back_what_its_strategy_set_up(
     kind: str, closed_by: str
 ) -> None:
     """A room holds a strategy only while it lives (RFC §19.7): its close,
-    by its host or by its timers, takes the strategy back out as an
-    uninstall does, so a kit that closes rooms keeps nothing of them; a room
-    left open keeps its own install of the same strategy."""
+    by its host or by its timers, or its archiving while still open, takes
+    the strategy back out as an uninstall does, so a kit that closes rooms
+    keeps nothing of them; a room left open keeps its own install of the
+    same strategy."""
     lead, worker = _agent("lead"), _agent("worker")
     strategy: Orchestration = (
         Loop(agent=lead, reviewers=[worker], max_iterations=1)
@@ -333,6 +335,8 @@ async def test_a_closed_room_gives_back_what_its_strategy_set_up(
 
     if closed_by == "close_room":
         await kit.close_room("r1")
+    elif closed_by == "archive_room":
+        await kit.archive_room("r1")
     else:
         past = datetime.now(UTC) - timedelta(hours=1)
         await kit.set_room_timers(
@@ -353,6 +357,9 @@ async def test_a_closed_room_gives_back_what_its_strategy_set_up(
     assert held("r2") == (strategy, kind == "loop", kind == "supervisor", kind == "supervisor")
     assert {b.channel_id for b in await kit.list_bindings("r1")} == set()
     assert await kit.uninstall_strategy("r1") is False
+    with pytest.raises(RoomClosedError):
+        await kit.install_strategy("r1", strategy)
+    assert kit.room_strategy("r1") is None
     await kit.close()
 
 

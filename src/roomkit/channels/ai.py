@@ -673,9 +673,8 @@ class AIChannel(
         steering, from the start of its generation to its ``finally``. The
         span starts when the turn is *consumed*: a streaming output handed
         back by ``on_event`` and not yet iterated reads 0, a window the
-        caller's own wait has to cover. ``close()`` tears the provider down
-        under whichever turn is running, so a caller retiring this object
-        waits for zero first.
+        caller's own wait has to cover. ``close()`` cuts whichever turn is
+        running, so a caller retiring this object waits for zero first.
         """
         return len(self._active_loops)
 

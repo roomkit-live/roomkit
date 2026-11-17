@@ -349,7 +349,10 @@ async def main() -> None:
     await kit.attach_channel("local-vui", "voice")  # opens the mic
     logger.info("Ready: speak English into the microphone. Ctrl+C to stop.")
 
-    await run_until_stopped(kit)
+    try:
+        await run_until_stopped(kit)
+    finally:
+        await ai_provider.close()  # the provider is ours: the kit's close leaves it open
 
 
 if __name__ == "__main__":

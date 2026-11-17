@@ -328,8 +328,8 @@ kit = RoomKit(
 |--------|-------------|
 | `create_room(room_id?, metadata?, orchestration?)` | Create a room; a key of *metadata* only the framework writes is dropped with a warning, the rest written: any `roomkit:` key (a detach's revocation, what the room keeps for a channel) and a key of the room's private state (`author_register`, `_speak_queue_results`) |
 | `get_room(room_id)` | Get room by ID |
-| `close_room(room_id)` | Close a room; a CLOSED room is returned as stored, an ARCHIVED one raises `TransitionRefusedError` |
-| `archive_room(room_id)` | Archive a room, the terminal status; an ARCHIVED room is returned as stored |
+| `close_room(room_id)` | Close a room, then uninstall its strategy as `uninstall_strategy` does; a CLOSED room is returned as stored, an ARCHIVED one raises `TransitionRefusedError` |
+| `archive_room(room_id)` | Archive a room, the terminal status, its strategy uninstalled as a close does; an ARCHIVED room is returned as stored |
 | `update_room_metadata(room_id, metadata)` | Update room metadata; a key only the framework writes is dropped with a warning, the rest written: any `roomkit:` key (a detach's revocation `roomkit:detached_channels`, what the room keeps for a channel `roomkit:channel_state:`, written by `channel_call` alone) and a key of the room's private state (`author_register`, `_speak_queue_results`). A read-modify-write (`{**room.metadata, ...}`) writes and leaves those keys as they are; a turn's `TurnHost.update_room_metadata` drops them the same way |
 | `check_room_timers(room_id)` | Apply one room's due timer transitions, each at the instant it fell due (RFC §5.1) |
 | `check_all_timers()` | Check every ACTIVE and PAUSED room; returns those that transitioned |

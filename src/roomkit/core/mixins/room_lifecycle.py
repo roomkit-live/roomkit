@@ -286,8 +286,6 @@ class RoomLifecycleMixin(HelpersMixin):
             update={"status": RoomStatus.CLOSED, "closed_at": datetime.now(UTC), "paused_at": None}
         )
         result = await self._store_refusing_room(room)
-        # A closed room holds no strategy (RFC §19.7).
-        await self._uninstall_closed(result)
         await self._fire_lifecycle_hook(
             room_id,
             HookTrigger.ON_ROOM_CLOSED,
@@ -297,6 +295,9 @@ class RoomLifecycleMixin(HelpersMixin):
             data={"room_id": room_id},
         )
         await self._emit_framework_event("room_closed", room_id=room_id, data={"room_id": room_id})
+        # A closed room holds no strategy, taken back once its close is
+        # written and announced (RFC §19.7).
+        await self._uninstall_closed(result)
         return result
 
     async def pause_room(self, room_id: str, *, organization_id: str | None = None) -> Room:
@@ -414,8 +415,10 @@ class RoomLifecycleMixin(HelpersMixin):
 
         ARCHIVED refuses new events exactly as CLOSED does; the difference is
         intent. A closed room MAY be reopened by returning it to ACTIVE; an
-        archived one is done. History, participants and bindings stay readable
-        at every status, archived included.
+        archived one is done. A room archived while still open has its
+        strategy taken back out, as a closed one (RFC §19.7). History,
+        participants and bindings stay readable at every status, archived
+        included.
 
         This is the only path to the status, and therefore the only source of
         the ``room_archived`` framework event (§8.2). The room's due timer
@@ -442,6 +445,8 @@ class RoomLifecycleMixin(HelpersMixin):
                 await self._emit_framework_event(
                     "room_archived", room_id=room_id, data={"room_id": room_id}
                 )
+                # An archived room holds no strategy, as a closed one (RFC §19.7).
+                await self._uninstall_closed(result)
                 return result
         finally:
             await self._room_timers.settle(room_id, hooks)

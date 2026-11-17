@@ -114,11 +114,6 @@ class LocalOrHosted(AIRouter):
         logger.info("  router: load %.2f per core, %s", load, complexity)
         return self.hosted if complexity == "complex" else self.local
 
-    async def close(self) -> None:
-        await self.local.close()
-        await self.hosted.close()
-        await self.classifier.close()
-
 
 class Model(MockAIProvider):
     """A scripted chat model named *model*, standing in for a real one."""
@@ -195,6 +190,11 @@ async def main() -> None:
             )
     finally:
         await kit.close()
+        # The providers and the classifier are this script's: the channel's
+        # close leaves what it was handed open (RFC §6.4).
+        await local.close()
+        await hosted.close()
+        await classifier.close()
 
 
 if __name__ == "__main__":
