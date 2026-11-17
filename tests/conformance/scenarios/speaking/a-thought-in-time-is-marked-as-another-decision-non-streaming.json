@@ -1,0 +1,318 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "speaking/a-thought-in-time-is-marked-as-another-decision-non-streaming",
+  "title": "A thought in time is marked as another decision (non-streaming)",
+  "rules": [
+    "§6.4",
+    "§9.2"
+  ],
+  "notes": "Python: tests/test_thinker.py::test_the_decision_taken_again_after_thinking_says_so. Real policy, thinker, hooks and model boundaries are observed separately; gates make late return explicit, without wall-clock duration assertions. The two changes during one answering turn retain exact previous/new pairs without imposing an order on async observers.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "speak_policy": {
+          "decisions": [
+            {
+              "decision": {
+                "mode": "silent",
+                "reason": "listening",
+                "judgments": {},
+                "notes": [],
+                "final": false
+              }
+            },
+            {
+              "decision": {
+                "mode": "speak",
+                "reason": "has something to add",
+                "judgments": {},
+                "notes": [],
+                "final": false
+              }
+            }
+          ]
+        },
+        "thinker": {
+          "thoughts": [
+            {
+              "thought": {
+                "text": "They need the price.",
+                "want_to_say": [
+                  "It costs 1,200 a year."
+                ],
+                "urgent": true
+              }
+            }
+          ]
+        },
+        "think_wait_ms": 1000,
+        "model": {
+          "rounds": [
+            {
+              "text": "Hi.",
+              "finish_reason": "stop"
+            }
+          ],
+          "streaming": false
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "decisions",
+        "trigger": "on_speak_decision",
+        "execution": "async"
+      },
+      {
+        "name": "thoughts",
+        "trigger": "on_thought",
+        "execution": "async"
+      },
+      {
+        "name": "generation",
+        "trigger": "before_ai_generation"
+      },
+      {
+        "name": "answer",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "We need the price."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "text": {
+                "$contains": [
+                  "Your impression:",
+                  "They need the price.",
+                  "It costs 1,200 a year."
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "thinker_calls": {
+      "agent": [
+        {
+          "previous": {
+            "text": "",
+            "want_to_say": [],
+            "urgent": false
+          },
+          "context": {
+            "messages": [
+              {
+                "role": "user",
+                "text": {
+                  "$contains": "We need the price."
+                }
+              }
+            ],
+            "room": {
+              "room": {
+                "id": "room-1"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "speak_turns": {
+      "agent": [
+        {
+          "event": {
+            "content": {
+              "body": "We need the price."
+            }
+          },
+          "thought": {
+            "text": "",
+            "want_to_say": [],
+            "urgent": false
+          }
+        },
+        {
+          "event": {
+            "content": {
+              "body": "We need the price."
+            }
+          },
+          "thought": {
+            "text": "They need the price.",
+            "want_to_say": [
+              "It costs 1,200 a year."
+            ],
+            "urgent": true
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "decisions": [
+        {
+          "speak_decision": {
+            "decision": {
+              "mode": "silent",
+              "reason": "listening",
+              "judgments": {},
+              "notes": [],
+              "final": false
+            },
+            "asked_again": false,
+            "late": false,
+            "thought": {
+              "text": "",
+              "want_to_say": [],
+              "urgent": false
+            }
+          }
+        },
+        {
+          "speak_decision": {
+            "decision": {
+              "mode": "speak",
+              "reason": "has something to add",
+              "judgments": {},
+              "notes": [],
+              "final": false
+            },
+            "asked_again": true,
+            "late": false,
+            "thought": {
+              "text": "They need the price.",
+              "want_to_say": [
+                "It costs 1,200 a year."
+              ],
+              "urgent": true
+            }
+          }
+        }
+      ],
+      "thoughts": {
+        "$unordered": [
+          {
+            "thought": {
+              "room_id": "room-1",
+              "channel_id": "agent",
+              "thought": {
+                "text": "They need the price.",
+                "want_to_say": [
+                  "It costs 1,200 a year."
+                ],
+                "urgent": true
+              },
+              "previous": {
+                "text": "",
+                "want_to_say": [],
+                "urgent": false
+              },
+              "duration_ms": {
+                "$present": true
+              }
+            }
+          },
+          {
+            "thought": {
+              "thought": {
+                "text": "They need the price.",
+                "want_to_say": [],
+                "urgent": false
+              },
+              "previous": {
+                "text": "They need the price.",
+                "want_to_say": [
+                  "It costs 1,200 a year."
+                ],
+                "urgent": true
+              },
+              "duration_ms": null
+            }
+          }
+        ]
+      },
+      "generation": [
+        {
+          "generation": {
+            "purpose": "thought"
+          }
+        },
+        {
+          "generation": {
+            "purpose": "answer"
+          }
+        }
+      ],
+      "answer": [
+        {
+          "response": {
+            "loop_end_reason": "completed"
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "body": "We need the price."
+          }
+        },
+        {
+          "content": {
+            "body": "Hi."
+          }
+        }
+      ]
+    }
+  }
+}

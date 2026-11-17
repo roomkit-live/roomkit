@@ -1,0 +1,173 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "speaking/policy-timeout-falls-back-to-speak-non-streaming",
+  "title": "Policy timeout falls back to speak (non-streaming)",
+  "rules": [
+    "§6.4",
+    "§9.2"
+  ],
+  "notes": "Python: tests/test_speak_policy.py::test_a_policy_that_fails_or_is_late_does_not_silence_the_agent. The policy records actual public calls; generation and observation counts are independently asserted.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "speak_policy": {
+          "decisions": [
+            {
+              "decision": {
+                "mode": "speak",
+                "reason": "from policy",
+                "judgments": {
+                  "addressed": 0.75
+                },
+                "notes": [],
+                "final": false
+              },
+              "gate": "held-policy"
+            }
+          ]
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Hi.",
+              "finish_reason": "stop"
+            }
+          ],
+          "streaming": false
+        },
+        "speak_timeout_ms": 50
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "decision-observer",
+        "trigger": "on_speak_decision",
+        "execution": "async"
+      },
+      {
+        "name": "generated",
+        "trigger": "before_ai_generation"
+      },
+      {
+        "name": "answer",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Nova, a question."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {}
+      ]
+    },
+    "speak_turns": {
+      "agent": [
+        {
+          "channel_id": "agent",
+          "event": {
+            "content": {
+              "body": "Nova, a question."
+            }
+          },
+          "recent": [],
+          "thought": null
+        }
+      ]
+    },
+    "hooks": {
+      "decision-observer": [
+        {
+          "speak_decision": {
+            "room_id": "room-1",
+            "channel_id": "agent",
+            "event": {
+              "content": {
+                "body": "Nova, a question."
+              }
+            },
+            "decision": {
+              "mode": "speak",
+              "reason": "fallback",
+              "judgments": {},
+              "notes": [],
+              "final": false
+            },
+            "asked_again": false,
+            "late": false,
+            "thought": null
+          }
+        }
+      ],
+      "generated": [
+        {}
+      ],
+      "answer": [
+        {
+          "response": {
+            "loop_end_reason": "completed"
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "type": "message",
+          "content": {
+            "body": "Nova, a question."
+          }
+        },
+        {
+          "content": {
+            "body": "Hi."
+          }
+        }
+      ]
+    }
+  }
+}

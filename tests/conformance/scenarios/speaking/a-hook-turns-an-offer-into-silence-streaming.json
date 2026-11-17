@@ -1,0 +1,192 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "speaking/a-hook-turns-an-offer-into-silence-streaming",
+  "title": "A hook turns an offer into silence (streaming)",
+  "rules": [
+    "§6.4",
+    "§9.2"
+  ],
+  "notes": "Python: tests/test_speak_decision_hooks.py::test_an_offer_raises_the_hand_in_code_and_the_agent_stays_silent. The policy records actual public calls; generation and observation counts are independently asserted.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "speak_policy": {
+          "decisions": [
+            {
+              "decision": {
+                "mode": "offer",
+                "reason": "from policy",
+                "judgments": {
+                  "addressed": 0.75
+                },
+                "notes": [],
+                "final": false
+              }
+            }
+          ]
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Hi.",
+              "finish_reason": "stop"
+            }
+          ],
+          "streaming": true
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "first",
+        "trigger": "on_speak_decision",
+        "priority": 0,
+        "reactions": [
+          {
+            "result": {
+              "action": "modify",
+              "event": {
+                "decision": {
+                  "mode": "silent",
+                  "reason": "hand raised",
+                  "judgments": {},
+                  "notes": [],
+                  "final": false
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "decision-observer",
+        "trigger": "on_speak_decision",
+        "execution": "async"
+      },
+      {
+        "name": "generated",
+        "trigger": "before_ai_generation"
+      },
+      {
+        "name": "answer",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Nova, a question."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": []
+    },
+    "speak_turns": {
+      "agent": [
+        {
+          "channel_id": "agent",
+          "event": {
+            "content": {
+              "body": "Nova, a question."
+            }
+          },
+          "recent": [],
+          "thought": null
+        }
+      ]
+    },
+    "hooks": {
+      "first": [
+        {
+          "speak_decision": {
+            "decision": {
+              "mode": "offer",
+              "reason": "from policy",
+              "judgments": {
+                "addressed": 0.75
+              },
+              "notes": [],
+              "final": false
+            }
+          }
+        }
+      ],
+      "decision-observer": [
+        {
+          "speak_decision": {
+            "room_id": "room-1",
+            "channel_id": "agent",
+            "event": {
+              "content": {
+                "body": "Nova, a question."
+              }
+            },
+            "decision": {
+              "mode": "silent",
+              "reason": "hand raised",
+              "judgments": {},
+              "notes": [],
+              "final": false
+            },
+            "asked_again": false,
+            "late": false,
+            "thought": null
+          }
+        }
+      ],
+      "generated": [],
+      "answer": []
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "type": "message",
+          "content": {
+            "body": "Nova, a question."
+          }
+        }
+      ]
+    }
+  }
+}

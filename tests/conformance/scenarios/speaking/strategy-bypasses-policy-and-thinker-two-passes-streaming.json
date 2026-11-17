@@ -1,0 +1,175 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "speaking/strategy-bypasses-policy-and-thinker-two-passes-streaming",
+  "title": "A strategy bypasses a silent policy and its thinker (two-passes-streaming)",
+  "rules": [
+    "§6.4",
+    "§10.6.1",
+    "§19.7.3"
+  ],
+  "notes": "Python: tests/test_speaking_strategy.py::test_strategy_passes_bypass_both_the_silent_policy_and_its_thinker; tests/orchestration/test_strategy_turns.py::test_a_supervisors_passes_are_strategy_turns_its_on_event_sees. Actual model requests and the absence of both admission callbacks and reports are asserted.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "boss",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "speak_policy": {
+          "decisions": [
+            {
+              "decision": {
+                "mode": "silent"
+              }
+            }
+          ]
+        },
+        "thinker": {
+          "thoughts": [
+            {
+              "thought": {
+                "text": "Unexpected."
+              }
+            }
+          ]
+        },
+        "model": {
+          "streaming": true,
+          "rounds": [
+            {
+              "text": "Task."
+            },
+            {
+              "text": "Presented."
+            }
+          ]
+        }
+      },
+      {
+        "id": "worker",
+        "type": "ai",
+        "agent": {
+          "role": "Researcher"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Found."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "boss",
+          "workers": [
+            "worker"
+          ],
+          "strategy": "parallel",
+          "auto_delegate": true,
+          "refine_task": true
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "decisions",
+        "trigger": "on_speak_decision",
+        "execution": "async"
+      },
+      {
+        "name": "thoughts",
+        "trigger": "on_thought",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "expect": {
+        "result": {
+          "error": null,
+          "response_events": [
+            {
+              "content": {
+                "body": "Presented."
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "boss": [
+        {},
+        {}
+      ],
+      "worker": [
+        {}
+      ]
+    },
+    "speak_turns": {
+      "boss": []
+    },
+    "thinker_calls": {
+      "boss": []
+    },
+    "hooks": {
+      "decisions": [],
+      "thoughts": []
+    },
+    "timeline": {
+      "r1": [
+        {
+          "content": {
+            "body": "Go."
+          }
+        },
+        {
+          "content": {
+            "body": "Presented."
+          }
+        }
+      ]
+    }
+  }
+}

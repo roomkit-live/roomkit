@@ -1,0 +1,134 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "memory/history-omits-only-responses-marked-superseded",
+  "title": "A text model reads ordinary history and skips a stored response marked superseded",
+  "rules": [
+    "§6.4",
+    "§12.3.12"
+  ],
+  "notes": "The text channel reads already stored rows on its next turn. The stored cancellation reason is the public SUPERSEDED marker. Another cancellation reason keeps the response in history.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "OK."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "agent",
+      "content": {
+        "type": "text",
+        "body": "Heard."
+      },
+      "metadata": {
+        "cancelled": true,
+        "cancellation_reason": "cancelled"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "agent",
+      "content": {
+        "type": "text",
+        "body": "Unheard."
+      },
+      "metadata": {
+        "cancelled": true,
+        "cancellation_reason": "superseded"
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "send_event",
+      "room_id": "room-1",
+      "channel_id": "agent",
+      "content": {
+        "type": "text",
+        "body": "Ordinary."
+      },
+      "metadata": {}
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Next?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "assistant",
+              "text": "Heard."
+            },
+            {
+              "role": "assistant",
+              "text": "Ordinary."
+            },
+            {
+              "role": "user",
+              "text": "Next?"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
