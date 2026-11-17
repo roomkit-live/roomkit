@@ -56,9 +56,14 @@ async def _closed(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> bo
     return kit.turn_executor.closed
 
 
+async def _executor_id(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> str:
+    return kit.turn_executor.executor_id
+
+
 KIT_EXECUTOR_CALLS: dict[str, Call] = {
     "kit_executor.close": _close,
     "kit_executor.closed": _closed,
+    "kit_executor.executor_id": _executor_id,
     "kit_executor.hook": _hook,
     "kit_executor.room_hook": _hook,
     "kit_executor.remove_room_hook": _remove,
@@ -67,6 +72,7 @@ KIT_EXECUTOR_CALLS: dict[str, Call] = {
 KIT_EXECUTOR_ARGUMENTS = {
     "kit_executor.close": set(),
     "kit_executor.closed": set(),
+    "kit_executor.executor_id": set(),
     "kit_executor.hook": {"hook"},
     "kit_executor.room_hook": {"hook"},
     "kit_executor.remove_room_hook": {"name"},

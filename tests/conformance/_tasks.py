@@ -98,6 +98,7 @@ TASK_ARGUMENTS: dict[str, set[str]] = {
     },
     "host.wait_task": {"task_id", "timeout_ms"},
     "host.room_tasks": set(),
+    "host.room_context": set(),
     "host.post_status": _STATUS,
     "host.update_room_metadata": {"room_id", "metadata"},
     "host.add_observation": {"observation"},
@@ -215,6 +216,10 @@ async def _host_room_tasks(kit: RoomKit, harness: Harness, spec: Mapping[str, An
     return await _host().room_tasks()
 
 
+async def _host_room_context(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
+    return await _host().room_context()
+
+
 async def _host_post_status(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
     options = _named(spec, {"detail", "metadata"})
     return await _host().post_status(spec["agent_id"], spec["action"], spec["status"], **options)
@@ -253,6 +258,7 @@ TASK_CALLS: dict[str, Call] = {
     "host.delegate": _host_delegate,
     "host.wait_task": _host_wait_task,
     "host.room_tasks": _host_room_tasks,
+    "host.room_context": _host_room_context,
     "host.post_status": _host_post_status,
     "host.update_room_metadata": _host_update_room_metadata,
     "host.add_observation": _host_add_observation,
