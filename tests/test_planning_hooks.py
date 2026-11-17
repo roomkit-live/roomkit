@@ -16,6 +16,35 @@ from tests.planning_support import answer, message, plan, room
 _TASKS = [{"title": "Follow up", "status": "pending"}]
 
 
+async def test_plan_observers_copy_the_list_but_share_its_stored_task_objects(
+    streaming: bool,
+) -> None:
+    kit, _, model = await room([plan(_TASKS), answer(), answer()], streaming)
+    heard = asyncio.Event()
+
+    @kit.hook(HookTrigger.ON_PLAN_UPDATED)
+    async def observe(event: PlanUpdatedEvent, context: Any) -> None:
+        event.tasks[0]["title"] = "Edited by observer"
+        event.tasks[0]["status"] = "completed"
+        event.tasks.append({"title": "Observer list only", "status": "pending"})
+        event.tasks.clear()
+        heard.set()
+
+    try:
+        result = await kit.process_inbound(message())
+        await asyncio.wait_for(heard.wait(), 3)
+        assert result.error is None
+        result = await kit.process_inbound(message("Continue."))
+        assert result.error is None
+        current_input = str(model.calls[-1].messages[-1].content)
+        assert "## Current Task Plan" in current_input
+        assert "- [x] “Edited by observer” (completed)" in current_input
+        assert "Follow up" not in current_input
+        assert "Observer list only" not in current_input
+    finally:
+        await kit.close()
+
+
 async def test_a_failing_plan_observer_ignores_channel_type_filters_and_keeps_the_plan(
     streaming: bool,
 ) -> None:
