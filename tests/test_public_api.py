@@ -31,6 +31,13 @@ _EXPORTED = Path(__file__).with_name("public_api_names.json")
 
 
 class TestPublicAPI:
+    def test_text_history_marker_values(self) -> None:
+        from roomkit.models import STANDALONE, TURNS_KEY
+
+        assert roomkit.SUPERSEDED == "superseded"
+        assert STANDALONE == "standalone"
+        assert TURNS_KEY == "turns"
+
     def test_version_string(self) -> None:
         assert isinstance(roomkit.__version__, str)
         # PEP 440 release identifier: ``MAJOR.MINOR.PATCH`` with an
