@@ -3481,9 +3481,13 @@ reference that does not resolve, `[Image refused by the model's provider: …]`
 for an image a provider refused on an earlier turn (the turn's first request
 failed on a non-retried error that is no authentication, payment, permission,
 missing model or rate limit, nor a refusal before any request, which
-`ProviderError.before_request` marks). A `file:`, `ftp:`, `javascript:`, `vbscript:` or
-schemeless URL, a one-letter scheme, a `..` segment or a backslash is refused
-when the `MediaContent` is built, and a link's or a `data:` URI's scheme is
+`ProviderError.before_request` marks). A schemeless URL, a one-letter scheme,
+and a scheme a reader fetches, opens or runs by itself (`file:`, `ftp:`, `smb:`,
+`sftp:`, `ws:`, `rtsp:`, `javascript:` and the others the RFC lists, alone or
+joined by `+`, as in `hls+http:`) are refused when the `MediaContent` is built,
+and so is a reference holding a `..` segment, a backslash or a control
+character, percent-encoded or not (`app://a/%2e%2e/b`, `app://a/ ../b`); an
+application's own scheme, `s3:` or `gs:` stays a reference, and a link's or a `data:` URI's scheme is
 stored in lower case (`HTTP://…` as `http://…`). A transport channel receives the reference
 as it is: resolve it yourself where a transport needs the media. An AI channel
 takes media whatever its model sees, so the turn reads a live event as it reads

@@ -413,6 +413,8 @@ class TestReferenceURL:
             "app-media://photos/My Photo.png?size=large#top",
             "app-media://photos/100%",
             "app-media://photos/%252541.png",
+            "x-app://media/1",
+            "s3://bucket/key.png",
         ],
     )
     def test_a_reference_link_or_data_uri_is_accepted(self, url: str) -> None:
@@ -425,6 +427,14 @@ class TestReferenceURL:
             "FILE:///etc/passwd",
             "ftp://example.com/a.png",
             "javascript://x",
+            # A scheme a reader fetches or opens itself, alone or joined by "+".
+            "smb://host/share/a.png",
+            "SFTP://host/a.png",
+            "ws://host/a",
+            "rtsp://host/live",
+            "jar://host/a.jar",
+            "hls+http://host/a.m3u8",
+            "crypto+file://a",
             "/etc/passwd",
             "lamp.png",
             "C://Windows/win.ini",

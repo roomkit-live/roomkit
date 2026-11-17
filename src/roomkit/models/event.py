@@ -57,13 +57,15 @@ class MediaContent(BaseModel):
 
     ``url`` is a link (``http``, ``https``), a ``data:`` URI, or a reference:
     ``<scheme>://…`` in a scheme the application chooses, naming a media it
-    holds and resolves for the AI channels (RFC §6.4). A scheme a reader could
-    fetch or open itself (``file``, ``ftp``) or run (``javascript``,
-    ``vbscript``) is refused, and so is a reference a path reader could follow
-    (a one-letter scheme; a ``..`` segment, a backslash or a control character,
-    percent-encoded or not, a ``..`` padded with whitespace or ended by ``?``
-    or ``#``): some transports read a URL they are handed as a local path,
-    after decoding or trimming it.
+    holds and resolves for the AI channels (RFC §6.4). A scheme a reader
+    fetches or opens itself (``file``, ``ftp``, ``smb``, ``sftp``, ``ws``,
+    ``rtsp`` and the other protocols generic readers fetch) or runs
+    (``javascript``, ``vbscript``, ``jar``) is refused, alone or as a part of
+    a scheme joined by ``+`` (``hls+http``), and so is a reference a path
+    reader could follow (a one-letter scheme; a ``..`` segment, a backslash
+    or a control character, percent-encoded or not, a ``..`` padded with
+    whitespace or ended by ``?`` or ``#``): some transports read a URL they
+    are handed as a local path, after decoding or trimming it.
     """
 
     type: Literal["media"] = "media"
@@ -82,9 +84,10 @@ class MediaContent(BaseModel):
             return v
         raise ValueError(
             "URL must be a link (http://, https://), a data: URI, or a reference "
-            "<scheme>://... (two letters of scheme at least, not file, ftp, "
-            "javascript or vbscript, no '..' segment, backslash or control "
-            "character, even percent-encoded)"
+            "<scheme>://... (two letters of scheme at least, no part of it "
+            "between '+' a scheme a reader fetches, opens or runs, such as file, "
+            "ftp, http, smb, sftp, ws or javascript, no '..' segment, backslash "
+            "or control character, even percent-encoded)"
         )
 
 

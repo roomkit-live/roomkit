@@ -22,8 +22,26 @@ _SEGMENT_END = re.compile(r"[/?#]")
 # The percent-decodings a reference is read through; one still encoded after
 # them is refused.
 _MOST_DECODINGS = 3
-# A scheme a reader could fetch or open itself, or run.
-_REFUSED_SCHEMES = frozenset({"file", "ftp", "javascript", "vbscript"})
+# A scheme a reader fetches, opens or runs by itself, without the
+# application: files on the machine or on a share, the network protocols
+# generic readers (curl, ffmpeg, GIO) fetch, code to run, and a link's, which
+# a reader that splits a compound scheme on "+" fetches.
+_REFUSED_SCHEMES = frozenset(
+    {
+        # Files, on the machine or on a share.
+        "afp", "cifs", "dav", "davs", "file", "ftp", "ftps", "nfs", "scp",
+        "sftp", "smb", "smbs", "tftp", "webdav",
+        # Network protocols a generic reader fetches.
+        "dict", "gopher", "gophers", "hls", "http", "https", "icecast",
+        "imap", "imaps", "ipfs", "ipns", "ldap", "ldaps", "mmsh", "mmst",
+        "mqtt", "pop3", "pop3s", "rtmp", "rtmpe", "rtmps", "rtmpt", "rtmpte",
+        "rtmpts", "rtp", "rtsp", "rtsps", "sctp", "smtp", "smtps", "srt",
+        "srtp", "ssh", "tcp", "telnet", "tls", "udp", "udplite", "unix", "ws",
+        "wss", "zmq",
+        # Code to run.
+        "jar", "javascript", "vbscript",
+    }
+)  # fmt: skip
 _TYPE_ALIASES = {"image/jpg": "image/jpeg", "image/pjpeg": "image/jpeg"}
 
 VISION_IMAGE_TYPES = frozenset({"image/png", "image/jpeg", "image/gif", "image/webp"})
@@ -59,14 +77,15 @@ def lowercase_scheme(url: str) -> str:
 
 def is_safe_reference(url: str) -> bool:
     """Whether *url* is a reference no reader could take for something else:
-    two letters of scheme at least (one reads as a Windows drive), not a scheme
-    a reader fetches, opens or runs, and nothing a path reader could follow
+    two letters of scheme at least (one reads as a Windows drive), no part of
+    it between ``+`` a scheme a reader fetches, opens or runs (a link's
+    included), and nothing a path reader could follow
     once it has percent-decoded the rest, up to three times, the most an
     ordinary reference is encoded: no backslash, no control character, no
     segment that is ``..`` with the whitespace around it trimmed, and no
     escape left to decode."""
     match = _REFERENCE.match(url)
-    if match is None or match.group(1).lower() in _REFUSED_SCHEMES:
+    if match is None or _refused_scheme(match.group(1)):
         return False
     rest = _decoded(match.group(2))
     return (
@@ -75,6 +94,12 @@ def is_safe_reference(url: str) -> bool:
         and not _holds_control(rest)
         and not _holds_parent(rest)
     )
+
+
+def _refused_scheme(scheme: str) -> bool:
+    """Whether *scheme*, or one of its parts joined by ``+`` (``hls+http``,
+    ``crypto+file``), is a scheme a reader fetches, opens or runs."""
+    return any(part in _REFUSED_SCHEMES for part in scheme.lower().split("+"))
 
 
 def _holds_control(text: str) -> bool:
