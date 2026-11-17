@@ -1,0 +1,143 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "sandbox/removes-only-the-first-prefix-streaming",
+  "title": "A sandbox command removes only the initial prefix (streaming)",
+  "rules": [
+    "§6.4",
+    "§9.3",
+    "§21.1"
+  ],
+  "notes": "Python: tests/test_sandbox_contract.py and tests/test_tool_policy_exemptions.py. The host fixture records invocations; it starts no process and applies no framework guards.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "system_prompt": "Host instructions.",
+        "sandbox": {
+          "tools": [
+            {
+              "name": "sandbox_sandbox_echo",
+              "description": "Run a command.",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          ]
+        },
+        "model": {
+          "streaming": true,
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "s1",
+                  "name": "sandbox_sandbox_echo",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "audit",
+        "trigger": "on_tool_call",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Read"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "sandbox_executors": {
+      "agent": {
+        "calls": [
+          {
+            "command": "sandbox_echo",
+            "arguments": {}
+          }
+        ],
+        "closes": 1
+      }
+    },
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "sandbox_sandbox_echo": {
+              "$present": true
+            }
+          },
+          "system_prompt": {
+            "$contains": "Do not assume it is isolated from the host machine."
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "s1",
+              "name": "sandbox_sandbox_echo",
+              "content": "{\"exit_code\":0,\"output\":\"\",\"error\":\"\",\"metadata\":{},\"success\":true}",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    },
+    "hooks": {
+      "audit": [
+        {
+          "trigger": "on_tool_call",
+          "room_id": "room-1",
+          "tool_call": {
+            "name": "sandbox_sandbox_echo",
+            "tool_call_id": "s1",
+            "arguments": {},
+            "result": "{\"exit_code\":0,\"output\":\"\",\"error\":\"\",\"metadata\":{},\"success\":true}",
+            "is_error": false,
+            "cancelled": false
+          }
+        }
+      ]
+    }
+  }
+}
