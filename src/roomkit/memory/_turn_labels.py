@@ -58,14 +58,14 @@ def label_cost(event: RoomEvent, labels: Mapping[str, str] | None) -> int:
     if not label or not text:
         return 0
     key = (hashlib.blake2b(text.encode(), digest_size=16).digest(), label)
-    cost = _LABEL_COSTS.get(key)
+    # Taken out and put back, never moved in place: a read on another thread
+    # may drop the key in between.
+    cost = _LABEL_COSTS.pop(key, None)
     if cost is None:
         cost = max(0, estimate_tokens(labelled_lines(text, label)) - estimate_tokens(text))
-        _LABEL_COSTS[key] = cost
-        if len(_LABEL_COSTS) > _LABEL_COSTS_KEPT:
-            _LABEL_COSTS.popitem(last=False)
-    else:
-        _LABEL_COSTS.move_to_end(key)
+    _LABEL_COSTS[key] = cost
+    while len(_LABEL_COSTS) > _LABEL_COSTS_KEPT:
+        _LABEL_COSTS.popitem(last=False)
     return cost
 
 
