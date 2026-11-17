@@ -80,6 +80,20 @@ def test_the_tool_declares_the_one_schema_every_channel_declares(tmp_path: Path)
     assert set(tool.definition["parameters"]["required"]) == {"skill_name", "script_name"}
 
 
+def test_standalone_definitions_own_their_nested_schema() -> None:
+    first = RunSkillScriptTool(SkillRegistry(), MockScriptExecutor())
+    second = RunSkillScriptTool(SkillRegistry(), MockScriptExecutor())
+    parameters = first.definition["parameters"]
+    parameters["properties"]["skill_name"]["description"] = "Custom wording"
+    parameters["required"].clear()
+    for definition in (first.definition, second.definition):
+        assert (
+            definition["parameters"]["properties"]["skill_name"]["description"]
+            == "Name of the skill."
+        )
+        assert definition["parameters"]["required"] == ["skill_name", "script_name"]
+
+
 async def test_standalone_tool_serves_the_registry_supplied_by_the_host(tmp_path: Path) -> None:
     skills = SkillRegistry()
     executor = MockScriptExecutor()

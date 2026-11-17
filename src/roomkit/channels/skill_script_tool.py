@@ -9,6 +9,7 @@ the one handler every channel uses.
 
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from roomkit.channels._skill_constants import RUN_SCRIPT_SCHEMA, TOOL_RUN_SCRIPT
@@ -36,8 +37,8 @@ class RunSkillScriptTool:
 
     @property
     def definition(self) -> dict[str, Any]:
-        """The ``run_skill_script`` schema."""
-        return dict(RUN_SCRIPT_SCHEMA)
+        """An independent copy of the ``run_skill_script`` schema."""
+        return deepcopy(RUN_SCRIPT_SCHEMA)
 
     async def handler(self, name: str, arguments: dict[str, Any]) -> str:
         """Run the script *arguments* names; the script's result as JSON."""

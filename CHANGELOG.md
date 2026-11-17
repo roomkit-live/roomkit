@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- `RunSkillScriptTool.definition` returns an independent schema, including its nested parameters.
+
 ### Added
 
 - **`Channel.deliver_cut(event, row, binding, context)`: a stream cut from outside ends for the channel that read it** (RFC §6.1, §12.2 step 13s, Appendix A.8, RMK-1756). A `cancel_delivery`, a steering cut, a held task's cut or the kit's close cancelled the channel's `deliver_stream` mid-stream, and the cut text's row, stored marked cancelled, was delivered to every channel but that one, so a WebSocket's streaming connections never read a `stream_end` and its other connections never read the row. Once the row is stored, the framework hands it to the channel's `deliver_cut`, `None` when no row is the channel's; the default does nothing (a voice spoke what it was handed). `WebSocketChannel` ends the stream with `stream_end` carrying the row, and sends the row to its non-streaming connections.
