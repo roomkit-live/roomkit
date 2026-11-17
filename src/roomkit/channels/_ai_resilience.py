@@ -167,6 +167,8 @@ class AIResilienceMixin(_AIChannelContract):
           next rounds on the compacted history.
         """
         provider = self._turn_provider()
+        loop_ctx = self._get_loop_ctx()
+        loop_ctx.serving = None
         policy = self._retry_policy or RetryPolicy(max_retries=0)
         last_error: ProviderError | None = None
         compacted = False
@@ -229,11 +231,13 @@ class AIResilienceMixin(_AIChannelContract):
         if other is None:
             raise last_error
         rerouted = self._rerouted_stream(other, context, last_error, received)
+        # It serves the generation from here, a cut included (RFC §6.4).
+        loop_ctx.serving = other
         async with aclosing(rerouted) as events:
             async for event in events:
                 yield event
         # It served the generation: the turn's later rounds stay on it.
-        self._get_loop_ctx().provider = other
+        loop_ctx.provider = other
 
     async def _rerouted(self, provider: AIProvider, error: ProviderError) -> AIProvider | None:
         """The provider the router hands a generation to once *provider*

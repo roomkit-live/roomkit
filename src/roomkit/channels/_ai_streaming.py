@@ -401,10 +401,16 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                 attributes={"channel_id": self.channel_id},
             )
 
+    def _serving_provider(self) -> AIProvider:
+        """The provider serving the generation in flight: the one a router
+        handed it to, once it did, else the turn's (RFC §6.4)."""
+        serving = self._get_loop_ctx().serving
+        return serving if serving is not None else self._turn_provider()
+
     def _told_usage(self, usage: dict[str, Any]) -> UsageMarker:
         """What a generation told it used before its end, for its reader: a
         partial marker, which the generation's own replaces (RFC §6.4)."""
-        served_by = self._turn_provider()
+        served_by = self._serving_provider()
         return UsageMarker(
             usage=dict(usage), model=served_by.model_name, provider=served_by.name, partial=True
         )
@@ -719,7 +725,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
             turn.thinking.append(round_.state.thinking)
         # The provider that served it: the turn's, which a retry the router
         # handed to another provider moved to that one (RFC §6.4).
-        turn.count_generation(round_.state, self._turn_provider())
+        turn.count_generation(round_.state, self._serving_provider())
         yield UsageMarker(usage=dict(round_.state.usage), model=turn.model, provider=turn.provider)
 
     def _forget_sent_images(self, turn: _StreamTurnState, context: AIContext) -> None:

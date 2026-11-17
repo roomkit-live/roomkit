@@ -423,7 +423,9 @@ class Channel(ABC):
         *text_stream* yields the response's text as it is written, a
         :class:`~roomkit.models.ThinkingDeltaMarker` for each chunk of the
         model's reasoning, a :class:`~roomkit.models.UsageMarker` after each
-        generation, and each row of the response once the store holds it (a
+        generation (and one marked ``partial`` before it, the input a provider
+        tells as its stream starts, which a channel that sums usage skips),
+        and each row of the response once the store holds it (a
         text segment, a tool call's start or end), in order; then, last, a
         :class:`~roomkit.models.LoopEndMarker` saying how the turn's loop
         ended, before the response's failure when it fails (RFC §6.4), which

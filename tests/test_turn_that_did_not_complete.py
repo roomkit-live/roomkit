@@ -30,6 +30,7 @@ from roomkit.providers.ai.base import (
     ProviderError,
     StreamDone,
     StreamEvent,
+    StreamUsage,
 )
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.providers.ai.response_schema import ResponseSchemaError
@@ -120,20 +121,37 @@ async def test_a_barge_in_on_a_streamed_tool_turn_reports_nothing() -> None:
     assert message.metadata.get("cancelled") is True
 
 
-async def test_a_barge_in_keeps_what_the_rounds_used_on_the_span() -> None:
-    """Nothing is reported for the turn, so its span keeps its tokens."""
+class _TellsItsInput(MockAIProvider):
+    """A provider that tells its second generation's input as its stream
+    starts, as Anthropic's ``message_start`` does."""
+
+    async def _scripted_events(self, context: AIContext) -> AsyncIterator[StreamEvent]:
+        if self.calls:
+            yield StreamUsage(usage={"input_tokens": 40})
+        async for event in super()._scripted_events(context):
+            yield event
+
+
+@pytest.mark.parametrize(
+    ("provider", "input_tokens"), [(MockAIProvider, 1000), (_TellsItsInput, 1040)]
+)
+async def test_a_barge_in_keeps_what_the_rounds_used_on_the_span(
+    provider: type[MockAIProvider], input_tokens: int
+) -> None:
+    """Nothing is reported for the turn, so its span keeps its tokens, the
+    input the generation it cut told included (RMK-369)."""
     turn = _Turn()
     turn.kit.register_channel(_BargeIn("tts1"))
     used = {"input_tokens": 1000, "output_tokens": 50}
     first = _round("").model_copy(update={"usage": used})
-    await turn.build(MockAIProvider(streaming=True, ai_responses=[first, _round("Here.")]))
+    await turn.build(provider(streaming=True, ai_responses=[first, _round("Here.")]))
     await turn.kit.attach_channel("r1", "tts1")
 
     await turn.say()
 
     [span] = turn.spans()
     assert span.status == "cancelled"
-    assert span.attributes[Attr.LLM_INPUT_TOKENS] == 1000
+    assert span.attributes[Attr.LLM_INPUT_TOKENS] == input_tokens
     assert span.attributes[Attr.LLM_OUTPUT_TOKENS] == 50
     assert span.attributes[Attr.LLM_TOOL_COUNT] == 1
 

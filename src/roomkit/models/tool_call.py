@@ -455,8 +455,10 @@ class AIResponseEvent:
 
     usage_complete: bool = True
     """Whether :attr:`usage` counts every generation of the turn whole: false
-    when one reported no counters, or was cut before its end, which counts
-    only the input its provider told as its stream started (RFC §6.4)."""
+    when one reported no counters, failed, or was cut before its end, which
+    counts only the input its provider told as its stream started (RFC §6.4).
+    An external agent's turn (ACP) keeps the default: its counters are relayed
+    as the agent reports them."""
 
 
 # Callback type for AI response observation (fire-and-forget).

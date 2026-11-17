@@ -200,6 +200,10 @@ class _ToolLoopContext:
     # the turn started, then the one a retry handed a generation to, which
     # every later round stays on; the channel's own without a router (RFC §6.4).
     provider: AIProvider | None = None
+    # The provider serving the generation in flight once a router handed it
+    # over, before that generation ends and the turn moves to it: what the
+    # generation tells and its cut name it (RFC §6.4).
+    serving: AIProvider | None = None
     # The provider the turn started on, whatever a retry handed over since:
     # whether the turn holds tools unseen, and its budget's rate, are its.
     started_on: AIProvider | None = None
