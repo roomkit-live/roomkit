@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A retained `turn_report_claim` callback no longer consumes another turn's report when it reuses the same call id; each turn keeps its `ON_TOOL_CALL` observation (RFC §9.3).
+
 - **A streamed row's BEFORE_BROADCAST hooks read the room at the row** (RFC §9.5, RMK-1297). A row's hooks, its observers and a blocked row's record read the stream's first context, with the row at index 0: the hook of the answer after a tool call did not see a message the room took while the tool ran. The room is now read when the row comes, off the lock as before, and only when a hook or an observer runs for the row: one read of the room's context per row then; a room that read finds gone refuses the row before its hooks.
 
 - **A streamed row its hook narrows away from the streaming target no longer reaches it** (RFC §7.3, §7.5, RMK-1007). A BEFORE_BROADCAST hook that narrowed a streamed message's visibility to another channel left the channel reading the stream handed the row and the rest of the stream. The message now withdraws the response from it, stored or kept out of the timeline by the persistence policy, its later rows delivered to it as their plans say; a tool-call row so narrowed is only kept from it.

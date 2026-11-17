@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections.abc import Generator
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -39,6 +39,8 @@ class AnnouncedCall:
     """Its report, once the model read its outcome: one cut before its
     observers heard it owes them that outcome."""
     reported: bool = False
+    # A retained callback may run under another turn's reporting context.
+    _owner: object | None = field(default=None, repr=False)
 
     def as_ran(self) -> Any:
         """The call with the arguments it ran with, when its gate fixed them."""
@@ -65,6 +67,7 @@ class TurnCalls:
     """The turn's announced calls and the ids in flight in its round."""
 
     def __init__(self) -> None:
+        self._owner = object()
         self.entries: list[AnnouncedCall] = []
         self._holders: dict[str, AnnouncedCall] = {}
         # Reports claimed under an id no announced call carries (a call a
@@ -76,7 +79,9 @@ class TurnCalls:
     ) -> AnnouncedCall:
         """Announce *call*, a duplicate when another call of the round holds
         its id, which then keeps it."""
-        entry = AnnouncedCall(call, marker, external, duplicate=call.id in self._holders)
+        entry = AnnouncedCall(
+            call, marker, external, duplicate=call.id in self._holders, _owner=self._owner
+        )
         if not entry.duplicate:
             self._holders[call.id] = entry
         self.entries.append(entry)
@@ -95,7 +100,7 @@ class TurnCalls:
         """The call a report under *call_id* is for: the one being reported
         now, else the one holding the id, else the latest under it."""
         current = _reporting.get()
-        if current is not None and current.call.id == call_id:
+        if current is not None and current._owner is self._owner and current.call.id == call_id:
             return current
         held = self._holders.get(call_id)
         if held is not None:
