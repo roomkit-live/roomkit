@@ -86,6 +86,21 @@ async def test_peer_closes_connections_accepted_at_shutdown_without_starting_the
         {"operations": [{"method": "tool_meta", "mutate": {"path": [], "value": None}}]},
         {"discover": None},
         {"tool_filter": "all"},
+        {"constructor": "later"},
+        {"constructor": []},
+        {"transport": "legacy"},
+        {"label": 1},
+        {"connect_timeout_ms": 0},
+        {"connect_timeout_ms": True},
+        {"headers": None},
+        {"headers": {"X-Test": 1}},
+        {"headers_after_construction": {}},
+        {"headers": {}, "headers_after_construction": []},
+        {"peer": {"replies": [], "endpoint_on_connections": []}, "transport": "sse"},
+        {"peer": {"replies": [], "endpoint_on_connections": [1]}, "transport": "sse"},
+        {"peer": {"replies": [], "endpoint_on_connections": [True]}},
+        {"operations": [{"method": "call_tool"}]},
+        {"operations": [{"method": "call_tool", "name": "echo", "arguments": []}]},
     ],
 )
 def test_malformed_host_controls_are_refused(update: dict[str, Any]) -> None:
@@ -176,7 +191,6 @@ async def test_host_result_oracles_reject_extra_fields_and_missing_nulls(mutatio
 @pytest.mark.parametrize(
     "operation",
     [
-        {"method": "connect"},
         {"method": "server_info", "mutate": {"path": ["absent", "child"], "value": True}},
         {"method": "server_info", "mutate": {"path": ["name", "child"], "value": True}},
     ],
@@ -197,3 +211,28 @@ async def test_invalid_observations_are_independent_fixture_failures(
     }
     problems = await Harness(scenario).run()
     assert any("the runner cannot read the call" in problem for problem in problems)
+
+
+async def test_an_unexpected_runtime_error_during_connect_is_a_fixture_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from roomkit.tools import MCPToolProvider
+
+    async def fail(provider: MCPToolProvider) -> MCPToolProvider:
+        raise RuntimeError("unexpected connection refusal")
+
+    monkeypatch.setattr(MCPToolProvider, "__aenter__", fail)
+    scenario = {
+        "steps": [
+            {
+                "call": "mcp_session",
+                "discover": False,
+                "peer": {"replies": []},
+                "operations": [{"method": "connect"}],
+                "expect": {"result": {"results": [{"error": "already_connected"}]}},
+            }
+        ]
+    }
+    problems = await Harness(scenario).run()
+    assert any("the runner cannot read the call" in problem for problem in problems)
+    assert any("unexpected connection refusal" in problem for problem in problems)

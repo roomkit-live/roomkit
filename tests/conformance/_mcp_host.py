@@ -12,7 +12,12 @@ from pydantic import ValidationError
 
 from roomkit.tools import MCPToolProvider
 from tests.conformance._calls import UnreadableError
-from tests.conformance._mcp_peer import MCPPeer
+from tests.conformance._mcp_construction import (
+    construct,
+    peer_for,
+    settle_closed_stream,
+    wire_observation,
+)
 from tests.conformance._mcp_shape import mcp_problems
 
 if TYPE_CHECKING:
@@ -44,6 +49,10 @@ async def _operation(provider: MCPToolProvider, operation: Mapping[str, Any]) ->
         # Keep sent fields, including explicit nulls and extensions, while
         # allowing the public model to perform its normal parsing.
         return result.model_dump(by_alias=True, mode="json", exclude_unset=True)
+    if method == "call_tool":
+        return await provider.call_tool(
+            operation["name"], operation.get("arguments", {}), **options
+        )
     raise UnreadableError(f"Unknown MCP host operation: {method}")
 
 
@@ -57,6 +66,8 @@ async def _observed(provider: MCPToolProvider, operation: Mapping[str, Any]) -> 
     except ValidationError:
         return {"error": "validation_error"}
     except RuntimeError as error:
+        if str(error) == "MCPToolProvider is already connected; exit it before re-entering":
+            return {"error": "already_connected"}
         if str(error) != "MCPToolProvider is not connected. Use 'async with' to connect first.":
             raise UnreadableError(f"Unexpected MCP host error: {error}") from error
         return {"error": "not_connected"}
@@ -81,25 +92,22 @@ async def session(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> di
     """Run the named public operations; fixture mistakes never become success."""
     if problems := mcp_problems(spec, "mcp_session"):
         raise UnreadableError("; ".join(problems))
-    async with MCPPeer(dict(spec["peer"])) as peer:
-        selected = spec.get("tool_filter")
-        provider = MCPToolProvider.from_url(
-            peer.url,
-            discover=spec.get("discover", True),
-            tool_filter=(lambda name: name in selected) if selected is not None else None,
-        )
+    async with peer_for(spec) as peer:
+        provider = construct(spec, peer)
         try:
             results = []
             for operation in spec["operations"]:
                 peer.discovery = operation["method"] == "connect" and spec.get("discover", True)
                 results.append(await _observed(provider, operation))
+                await settle_closed_stream(peer, provider)
         finally:
             peer.discovery = False
             if provider.connected:
                 await provider.__aexit__(None, None, None)
+            await settle_closed_stream(peer, provider)
     if peer.problems:
         raise UnreadableError("; ".join(peer.problems))
-    observed = {"results": results, "requests": peer.requests}
+    observed = {"results": results, "requests": peer.requests} | wire_observation(peer, spec)
     # The general matcher checks partial objects. These exact observations
     # additionally prove field absence and distinguish missing from null.
     return observed | {

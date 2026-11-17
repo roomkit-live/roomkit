@@ -110,3 +110,44 @@ async def test_the_connection_bound_closes_legacy_sse_and_allows_reentry(stage: 
         await asyncio.wait_for(peer.get_closed.wait(), 3)
         assert peer.connections == 2
     assert peer.problems == []
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+async def test_case_distinct_headers_keep_their_values_in_insertion_order(reverse: bool) -> None:
+    pairs = [("x-capture", "first"), ("X-Capture", "second")]
+    if reverse:
+        pairs.reverse()
+    peer = LegacySSEPeer({"replies": [echo()]})
+    async with peer:
+        provider = MCPToolProvider.from_url(
+            peer.url, transport="sse", headers=dict(pairs), discover=False
+        )
+        async with provider:
+            assert await provider.call_tool("echo", {}) == "done"
+        assert peer.raw_headers
+        for headers in peer.raw_headers:
+            assert [
+                (name, value) for name, value in headers if name.lower() == "x-capture"
+            ] == pairs
+    assert peer.problems == []
+
+
+async def test_retained_headers_are_not_revalidated_and_each_connection_copies_them() -> None:
+    peer = LegacySSEPeer({"replies": [echo(), echo()]})
+    async with peer:
+        headers = {"X-Capture": "before"}
+        provider = MCPToolProvider.from_url(
+            peer.url, transport="sse", headers=headers, discover=False
+        )
+        # This size would be refused by RoomKit's constructor; the retained
+        # dictionary is read directly when the SDK builds its HTTP client.
+        headers["X-Late"] = "x" * 8193
+        for value in ["first", "second"]:
+            headers["X-Capture"] = value
+            before = len(peer.headers)
+            async with provider:
+                headers["X-Capture"] = "changed-during-connection"
+                assert await provider.call_tool("echo", {}) == "done"
+            assert all(item.get("x-capture") == value for item in peer.headers[before:])
+            assert all(item.get("x-late") == "x" * 8193 for item in peer.headers[before:])
+    assert peer.problems == []

@@ -69,6 +69,44 @@ def test_direct_construction_is_lazy_and_keeps_accepted_empty_options(
         provider.get_tools()
 
 
+@pytest.mark.parametrize(
+    ("factory", "target", "options"),
+    [
+        ("from_command", "", {}),
+        ("from_url", "invalid", {}),
+        ("from_url", "http://example.test", {"headers": {"Accept": "invalid"}}),
+    ],
+)
+def test_factories_check_the_label_before_the_other_options(
+    factory: str, target: str, options: dict[str, Any]
+) -> None:
+    construct = getattr(MCPToolProvider, factory)
+    with pytest.raises(ValueError, match="cannot name its server"):
+        construct(target, label="bad__label", **options)
+
+
+@pytest.mark.parametrize("direct", [False, True])
+@pytest.mark.parametrize(
+    ("command", "options"),
+    [
+        ("invalid\0command", {}),
+        ("server", {"args": ["invalid\0argument"]}),
+        ("server", {"env": {"": "value"}}),
+        ("server", {"env": {"invalid=key": "value"}}),
+        ("server", {"env": {"key": "invalid\0value"}}),
+    ],
+)
+def test_process_options_are_not_validated_during_construction(
+    direct: bool, command: str, options: dict[str, Any]
+) -> None:
+    provider = (
+        MCPToolProvider(transport="stdio", command=command, **options)
+        if direct
+        else MCPToolProvider.from_command(command, **options)
+    )
+    assert not provider.connected
+
+
 _STDIO_SERVER = textwrap.dedent(
     """\
     import json
@@ -89,6 +127,10 @@ _STDIO_SERVER = textwrap.dedent(
     @server.tool()
     def ignored() -> str:
         return "not listed"
+
+    @server.tool()
+    def empty_env() -> str:
+        return os.environ[""]
 
     server.run()
     """
@@ -127,4 +169,22 @@ async def test_direct_stdio_copies_arguments_and_reads_the_retained_environment_
         assert json.loads(await handler("mcp__capture__probe", {})) == expected
         with pytest.raises(UnservedToolCallError):
             await handler("mcp__another__probe", {})
+    assert not provider.connected
+
+
+@pytest.mark.parametrize("direct", [False, True])
+async def test_an_empty_environment_key_reaches_the_started_process(
+    tmp_path: Path, direct: bool
+) -> None:
+    pytest.importorskip("mcp.server.fastmcp")
+    script = tmp_path / "server.py"
+    script.write_text(_STDIO_SERVER)
+    options = {"args": [str(script)], "env": {"": "kept"}, "connect_timeout": 5}
+    provider = (
+        MCPToolProvider(transport="stdio", command=sys.executable, **options)
+        if direct
+        else MCPToolProvider.from_command(sys.executable, **options)
+    )
+    async with provider:
+        assert await provider.call_tool("empty_env", {}) == "kept"
     assert not provider.connected

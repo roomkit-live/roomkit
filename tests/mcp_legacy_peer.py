@@ -16,28 +16,38 @@ class LegacySSEPeer(MCPPeer):
         super().__init__(spec)
         self.endpoint = endpoint
         self.headers: list[dict[str, str]] = []
+        self.raw_headers: list[list[tuple[str, str]]] = []
         self.targets: list[tuple[str, str]] = []
         self.get_opened = asyncio.Event()
         self.get_closed = asyncio.Event()
         self.connections = 0
+        self.closed_connections = 0
         self._stream: asyncio.StreamWriter | None = None
 
     async def _exchange(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         head = await reader.readuntil(b"\r\n\r\n")
         first, *lines = head.decode("latin-1").split("\r\n")
         verb, target, _version = first.split(" ")
+        self.raw_headers.append(
+            [
+                (name, value.strip())
+                for name, value in (line.split(":", 1) for line in lines if ":" in line)
+            ]
+        )
         headers = {
             name.lower(): value.strip()
             for name, value in (line.split(":", 1) for line in lines if ":" in line)
         }
         self.headers.append(headers)
         self.targets.append((verb, target))
+        if await self._redirect(writer, verb, target):
+            return
         if verb == "GET":
             await self._get(reader, writer)
             return
         if verb != "POST":
             raise AssertionError(f"unexpected legacy SSE verb {verb}")
-        assert target == f"/messages?session={self.connections}"
+        assert target == self._post_target()
         length = int(headers.get("content-length", "0"))
         assert 0 < length <= 4 * 1024 * 1024
         message = json.loads(await reader.readexactly(length))
@@ -56,13 +66,31 @@ class LegacySSEPeer(MCPPeer):
             b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n"
             b"Cache-Control: no-cache\r\n\r\n"
         )
-        if self.endpoint:
-            writer.write(
-                f"event: endpoint\ndata: /messages?session={self.connections}\n\n".encode()
-            )
+        endpoints = self.spec.get("endpoint_on_connections")
+        if endpoints is not None and self.connections > len(endpoints):
+            raise AssertionError("legacy SSE endpoint script exhausted")
+        announce = endpoints[self.connections - 1] if endpoints is not None else self.endpoint
+        if announce:
+            writer.write(f"event: endpoint\ndata: {self._endpoint()}\n\n".encode())
         await writer.drain()
         self.get_opened.set()
         try:
             await reader.read()
         finally:
+            self.closed_connections += 1
             self.get_closed.set()
+
+    def _post_target(self) -> str:
+        return f"/messages?session={self.connections}"
+
+    def _endpoint(self) -> str:
+        return self._post_target()
+
+    async def _redirect(self, writer: asyncio.StreamWriter, verb: str, target: str) -> bool:
+        return False
+
+    async def __aexit__(self, *args: object) -> None:
+        await super().__aexit__(*args)
+        endpoints = self.spec.get("endpoint_on_connections")
+        if endpoints is not None and len(endpoints) != self.connections:
+            self.problems.append("legacy SSE peer has unconsumed endpoint announcements")

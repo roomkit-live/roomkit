@@ -5,7 +5,20 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-MCP_HOST_ARGUMENTS = {"mcp_session": {"peer", "operations", "discover", "tool_filter"}}
+MCP_HOST_ARGUMENTS = {
+    "mcp_session": {
+        "peer",
+        "operations",
+        "discover",
+        "tool_filter",
+        "constructor",
+        "transport",
+        "headers",
+        "headers_after_construction",
+        "label",
+        "connect_timeout_ms",
+    }
+}
 OPERATIONS = {
     "connect": set(),
     "close": set(),
@@ -17,6 +30,7 @@ OPERATIONS = {
     "server_extensions": {"mutate"},
     "request": {"name", "params", "timeout_ms"},
     "read_resource": {"uri", "timeout_ms"},
+    "call_tool": {"name", "arguments", "timeout_ms"},
 }
 
 
@@ -39,7 +53,7 @@ def _operations(values: Any, path: str, found: list[str]) -> None:
             found.append(f"{at}: unknown MCP operation")
             continue
         _object(value, OPERATIONS[method] | {"method"}, at, found)
-        required = {"request": "name", "read_resource": "uri"}.get(method)
+        required = {"request": "name", "read_resource": "uri", "call_tool": "name"}.get(method)
         if required and not isinstance(value.get(required), str):
             found.append(f"{at}.{required}: expected a string")
         if (
@@ -54,6 +68,8 @@ def _operations(values: Any, path: str, found: list[str]) -> None:
             found.append(f"{at}.timeout_ms: expected a positive integer")
         if "mutate" in value:
             _mutation(value["mutate"], f"{at}.mutate", found)
+        if "arguments" in value and not isinstance(value["arguments"], Mapping):
+            found.append(f"{at}.arguments: expected an object")
 
 
 def _mutation(value: Any, path: str, found: list[str]) -> None:
@@ -93,7 +109,15 @@ def _replies(values: Any, path: str, found: list[str]) -> None:
 def _peer(peer: Any, path: str, found: list[str]) -> None:
     if not _object(
         peer,
-        {"server_info", "extensions", "instructions", "replies", "framing", "initializations"},
+        {
+            "server_info",
+            "extensions",
+            "instructions",
+            "replies",
+            "framing",
+            "initializations",
+            "endpoint_on_connections",
+        },
         path,
         found,
     ):
@@ -111,6 +135,14 @@ def _peer(peer: Any, path: str, found: list[str]) -> None:
     if peer.get("framing", "json") not in ("json", "sse"):
         found.append(f"{path}.framing: expected json or sse")
     _replies(peer.get("replies"), path + ".replies", found)
+    if "endpoint_on_connections" in peer:
+        endpoints = peer["endpoint_on_connections"]
+        if (
+            not isinstance(endpoints, list)
+            or not endpoints
+            or any(type(v) is not bool for v in endpoints)
+        ):
+            found.append(f"{path}.endpoint_on_connections: expected a nonempty boolean list")
 
 
 def mcp_problems(spec: Mapping[str, Any], path: str) -> list[str]:
@@ -118,6 +150,7 @@ def mcp_problems(spec: Mapping[str, Any], path: str) -> list[str]:
     found: list[str] = []
     _peer(spec.get("peer"), path + ".peer", found)
     _operations(spec.get("operations"), path + ".operations", found)
+    _construction(spec, path, found)
     if "discover" in spec and type(spec["discover"]) is not bool:
         found.append(f"{path}.discover: expected a boolean")
     if "tool_filter" in spec and (
@@ -126,6 +159,38 @@ def mcp_problems(spec: Mapping[str, Any], path: str) -> list[str]:
     ):
         found.append(f"{path}.tool_filter: expected a string list")
     return found
+
+
+def _construction(spec: Mapping[str, Any], path: str, found: list[str]) -> None:
+    for field, choices in {
+        "constructor": {"direct", "from_url"},
+        "transport": {"sse", "streamable_http"},
+    }.items():
+        if field in spec and (not isinstance(spec[field], str) or spec[field] not in choices):
+            found.append(f"{path}.{field}: unknown choice")
+    if "label" in spec and not isinstance(spec["label"], str):
+        found.append(f"{path}.label: expected a string")
+    if "connect_timeout_ms" in spec and (
+        type(spec["connect_timeout_ms"]) is not int or spec["connect_timeout_ms"] < 1
+    ):
+        found.append(f"{path}.connect_timeout_ms: expected a positive integer")
+    for field in ["headers", "headers_after_construction"]:
+        if field in spec and (
+            not isinstance(spec[field], Mapping)
+            or any(
+                not isinstance(k, str) or not isinstance(v, str) for k, v in spec[field].items()
+            )
+        ):
+            found.append(f"{path}.{field}: expected a string mapping")
+    if "headers_after_construction" in spec and "headers" not in spec:
+        found.append(f"{path}.headers_after_construction: headers are required")
+    peer = spec.get("peer")
+    if (
+        isinstance(peer, Mapping)
+        and "endpoint_on_connections" in peer
+        and spec.get("transport") != "sse"
+    ):
+        found.append(f"{path}.peer.endpoint_on_connections: requires legacy SSE")
 
 
 def _initialization(value: Mapping[str, Any], path: str, found: list[str]) -> None:
