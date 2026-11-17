@@ -52,6 +52,8 @@ from roomkit.providers.sms import WebhookMeta
 from roomkit.tasks import DelegatedTask
 from tests.conformance._acp import scripted_acp_channel
 from tests.conformance._agent import ScriptedAIRouter, scripted_agent
+from tests.conformance._extra_tools import read as read_extra_tools
+from tests.conformance._extra_tools import replace as replace_extra_tool
 from tests.conformance._room_queries import call as room_query
 from tests.conformance._script import (
     ScriptedChannel,
@@ -646,6 +648,8 @@ CALLS: dict[str, Call] = {
     "steer": _steer,
     "acp.cancel": _acp_cancel,
     "acp.close": _acp_close,
+    "agent.extra_tools": read_extra_tools,
+    "agent.replace_extra_tool": replace_extra_tool,
 }
 
 

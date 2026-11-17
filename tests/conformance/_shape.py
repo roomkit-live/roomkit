@@ -534,6 +534,8 @@ CALLS: dict[str, set[str]] = {
     "steer": {"channel_id", "directive", "room_id"},
     "acp.cancel": {"channel_id", "room_id"},
     "acp.close": {"channel_id"},
+    "agent.extra_tools": {"channel_id"},
+    "agent.replace_extra_tool": {"channel_id", "index", "definition"},
     "close": set(),
 }
 CALLS |= STORE_ARGUMENTS | READ_MARKER_ARGUMENTS | TASK_ARGUMENTS | MEMBER_ARGUMENTS

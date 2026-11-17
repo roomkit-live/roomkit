@@ -311,6 +311,7 @@ class ScriptedModel(AIProvider):
                 "tools": {
                     tool.name: position for position, tool in enumerate(context.tools or [])
                 },
+                "tool_names": [tool.name for tool in context.tools or []],
                 "tool_definitions": {
                     tool.name: {"description": tool.description, "parameters": tool.parameters}
                     for tool in context.tools or []
