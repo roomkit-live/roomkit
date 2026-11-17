@@ -64,8 +64,10 @@ class MediaContent(BaseModel):
     a scheme joined by ``+`` (``hls+http``), and so is a reference a path
     reader could follow (a one-letter scheme; a ``..`` segment, a backslash
     or a control character, percent-encoded or not, a ``..`` padded with
-    whitespace or ended by ``?`` or ``#``): some transports read a URL they
-    are handed as a local path, after decoding or trimming it.
+    whitespace or ended by ``?`` or ``#``; a rest after ``://`` that starts
+    with ``~``, a drive letter or a slash only decoding writes): some
+    transports read a URL they are handed as a local path, after decoding or
+    trimming it.
     """
 
     type: Literal["media"] = "media"
@@ -87,7 +89,8 @@ class MediaContent(BaseModel):
             "<scheme>://... (two letters of scheme at least, no part of it "
             "between '+' a scheme a reader fetches, opens or runs, such as file, "
             "ftp, http, smb, sftp, ws or javascript, no '..' segment, backslash "
-            "or control character, even percent-encoded)"
+            "or control character, even percent-encoded, and no rest starting "
+            "with '~', a drive letter or an encoded slash)"
         )
 
 

@@ -25,25 +25,33 @@ _MOST_DECODINGS = 3
 # A percent escape, which a decoding replaces.
 _ESCAPE = re.compile(r"%[0-9A-Fa-f]{2}")
 # A scheme a reader fetches, opens or runs by itself, without the
-# application: files on the machine or on a share, the network protocols
-# generic readers (curl, ffmpeg, GIO) fetch, code to run, and a link's, which
-# a reader that splits a compound scheme on "+" fetches.
+# application: files on the machine, in an archive or on a share, the network
+# protocols generic readers (curl, ffmpeg, GIO) fetch, the wrappers that read
+# through another protocol, a file or a descriptor, code to run, and a link's,
+# which a reader that splits a compound scheme on "+" fetches.
 _REFUSED_SCHEMES = frozenset(
     {
-        # Files, on the machine or on a share.
-        "afp", "cifs", "dav", "davs", "file", "ftp", "ftps", "nfs", "scp",
-        "sftp", "smb", "smbs", "tftp", "webdav",
+        # Files, on the machine, in an archive or on a share.
+        "admin", "afp", "archive", "cifs", "dav", "davs", "file", "ftp",
+        "ftps", "local", "nfs", "phar", "recent", "resource", "scp", "sftp",
+        "smb", "smbs", "tar", "tftp", "trash", "webdav", "zip",
         # Network protocols a generic reader fetches.
-        "dict", "gopher", "gophers", "hls", "http", "https", "icecast",
-        "imap", "imaps", "ipfs", "ipns", "ldap", "ldaps", "mmsh", "mmst",
-        "mqtt", "pop3", "pop3s", "rtmp", "rtmpe", "rtmps", "rtmpt", "rtmpte",
+        "amqp", "dict", "ffrtmpcrypt", "ffrtmphttp", "gopher", "gophers",
+        "hls", "http", "httpproxy", "https", "icecast", "imap", "imaps",
+        "ipfs", "ipns", "ldap", "ldaps", "mmsh", "mmst", "mqtt", "pop3",
+        "pop3s", "rist", "rtmp", "rtmpe", "rtmps", "rtmpt", "rtmpte",
         "rtmpts", "rtp", "rtsp", "rtsps", "sctp", "smtp", "smtps", "srt",
         "srtp", "ssh", "tcp", "telnet", "tls", "udp", "udplite", "unix", "ws",
         "wss", "zmq",
+        # Wrappers that read through another protocol, a file or a descriptor.
+        "async", "bluray", "cache", "concat", "concatf", "crypto", "fd",
+        "pipe", "subfile",
         # Code to run.
-        "jar", "javascript", "vbscript",
+        "expect", "jar", "javascript", "php", "vbscript",
     }
 )  # fmt: skip
+# A drive letter, which a path reader roots a path at.
+_DRIVE = re.compile(r"[A-Za-z]:")
 _TYPE_ALIASES = {"image/jpg": "image/jpeg", "image/pjpeg": "image/jpeg"}
 
 VISION_IMAGE_TYPES = frozenset({"image/png", "image/jpeg", "image/gif", "image/webp"})
@@ -84,8 +92,8 @@ def is_safe_reference(url: str) -> bool:
     included), and nothing a path reader could follow
     once it has percent-decoded the rest, up to three times, the most an
     ordinary reference is encoded: no backslash, no control character, no
-    segment that is ``..`` with the whitespace around it trimmed, and no
-    escape left to decode."""
+    segment that is ``..`` with the whitespace around it trimmed, no escape
+    left to decode, and no start a path reader roots a path at."""
     match = _REFERENCE.match(url)
     if match is None or _refused_scheme(match.group(1)):
         return False
@@ -95,6 +103,7 @@ def is_safe_reference(url: str) -> bool:
         and "\\" not in rest
         and not _holds_control(rest)
         and not _holds_parent(rest)
+        and not _rooted(match.group(2), rest)
     )
 
 
@@ -115,6 +124,18 @@ def _holds_control(text: str) -> bool:
 def _holds_parent(text: str) -> bool:
     """Whether a segment of *text* is ``..`` once trimmed of whitespace."""
     return ".." in text and any(segment.strip() == ".." for segment in _SEGMENT_END.split(text))
+
+
+def _rooted(raw: str, rest: str) -> bool:
+    """Whether *rest*, decoded from *raw*, starts where a path reader roots a
+    path: a home directory (``~``), a drive letter (``C:``), or a slash that
+    only decoding writes (``%2F``). A slash written as such (``app:///a``) is
+    an empty authority, which the application spells as it chooses."""
+    return (
+        rest.startswith("~")
+        or _DRIVE.match(rest) is not None
+        or (rest.startswith("/") and not raw.startswith("/"))
+    )
 
 
 def _decoded(text: str) -> str | None:

@@ -415,6 +415,9 @@ class TestReferenceURL:
             "app-media://photos/%252541.png",
             "x-app://media/1",
             "s3://bucket/key.png",
+            "app-media:///photos/1.png",
+            "app-media://a~b/c.png",
+            "app-media://ab:8080/c.png",
         ],
     )
     def test_a_reference_link_or_data_uri_is_accepted(self, url: str) -> None:
@@ -435,6 +438,15 @@ class TestReferenceURL:
             "jar://host/a.jar",
             "hls+http://host/a.m3u8",
             "crypto+file://a",
+            "cache:///tmp/a.wav",
+            "admin:///etc/shadow",
+            "php://filter/a",
+            # A start a path reader roots a path at, once decoded.
+            "app-media://~root/.ssh/id_rsa",
+            "app-media://%7Eroot/a.png",
+            "app-media://C:/Windows/win.ini",
+            "app-media://%2Fetc/passwd",
+            "app-media://%252Fetc/passwd",
             "/etc/passwd",
             "lamp.png",
             "C://Windows/win.ini",
@@ -479,7 +491,8 @@ class TestReferenceURL:
             "reference <scheme>://... (two letters of scheme at least, no part of it "
             "between '+' a scheme a reader fetches, opens or runs, such as file, ftp, "
             "http, smb, sftp, ws or javascript, no '..' segment, backslash or control "
-            "character, even percent-encoded)"
+            "character, even percent-encoded, and no rest starting with '~', a drive "
+            "letter or an encoded slash)"
         )
 
 

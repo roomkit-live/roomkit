@@ -1391,8 +1391,12 @@ and a scheme a reader fetches, opens or runs by itself (`file:`, `ftp:`, `smb:`,
 `sftp:`, `ws:`, `rtsp:`, `javascript:` and the others the RFC lists, alone or
 joined by `+`, as in `hls+http:`) are refused when the `MediaContent` is built,
 and so is a reference holding a `..` segment, a backslash or a control
-character, percent-encoded or not (`app://a/%2e%2e/b`, `app://a/ ../b`); an
-application's own scheme, `s3:` or `gs:` stays a reference, and a link's or a `data:` URI's scheme is
+character, percent-encoded or not (`app://a/%2e%2e/b`, `app://a/ ../b`), or
+starting after `://`, once decoded, with `~`, a drive letter or a slash only
+decoding writes (`app://~root/x`, `app://C:/x`, `app://%2Fetc/x`); an
+application's own scheme, `app:///photos/1`, `s3:` or `gs:` stays a
+reference. A stored event whose media URL this rule refuses fails its room's
+reads: rewrite such events before upgrading. A link's or a `data:` URI's scheme is
 stored in lower case (`HTTP://…` as `http://…`). A transport channel receives the reference
 as it is: resolve it yourself where a transport needs the media. An AI channel
 takes media whatever its model sees, so the turn reads a live event as it reads
