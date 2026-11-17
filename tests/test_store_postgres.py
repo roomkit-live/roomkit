@@ -1872,6 +1872,53 @@ class TestConnectionTenure:
         finally:
             await other.close()
 
+    async def test_a_timed_out_write_keeps_the_connection_for_the_next_call(
+        self, store, checkouts
+    ) -> None:
+        """Cancel the blocked statement, then keep the same connection and scope."""
+        import asyncpg
+
+        await store.create_room(Room(id="r1"))
+        recorder = checkouts(store)
+        recorder.reset()
+        idle_before = store._pool.get_idle_size()
+        holder = await asyncpg.connect(POSTGRES_DSN)
+        try:
+            async with holder.transaction():
+                await holder.execute("SELECT 1 FROM rooms WHERE id = 'r1' FOR UPDATE")
+                ready: asyncio.Future[asyncio.Timeout] = asyncio.get_running_loop().create_future()
+
+                async def expire_when_blocked() -> None:
+                    deadline = await ready
+                    await _until_blocked_by(holder)
+                    deadline.reschedule(asyncio.get_running_loop().time())
+
+                # Start outside the binding: no child task inherits the held connection.
+                observer = asyncio.create_task(expire_when_blocked())
+                try:
+                    async with asyncio.timeout(2), store.connection():
+                        pid = store._bound().get_server_pid()
+                        with pytest.raises(TimeoutError):
+                            async with asyncio.timeout(None) as deadline:
+                                ready.set_result(deadline)
+                                await store.update_room(Room(id="r1", metadata={"cut": True}))
+                        await observer
+                        room = await store.get_room("r1")
+                        assert room is not None and room.metadata == {}
+                        assert store._bound().get_server_pid() == pid
+                        assert recorder.total == 1
+                        assert await holder.fetchval("SELECT pg_blocking_pids($1)", pid) == []
+                finally:
+                    observer.cancel()
+                    await asyncio.gather(observer, return_exceptions=True)
+            assert store._bound() is None
+            assert store._pool.get_idle_size() == idle_before
+            room = await store.get_room("r1")
+            assert room is not None and room.metadata == {}
+            assert recorder.total == 2
+        finally:
+            await holder.close()
+
 
 class TestContextManager:
     async def test_async_context_manager(self) -> None:
