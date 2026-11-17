@@ -1,0 +1,122 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "mcp-construction/direct-sse-timeout-endpoint",
+  "title": "direct legacy SSE closes a held endpoint and reconnects",
+  "rules": [
+    "§21.2"
+  ],
+  "notes": "Public MCP construction and legacy SSE against a bounded loopback peer. Headers are observed by value and order with case-insensitive wire names; no client SDK method is replaced.",
+  "steps": [
+    {
+      "call": "mcp_session",
+      "constructor": "direct",
+      "transport": "sse",
+      "connect_timeout_ms": 50,
+      "peer": {
+        "replies": [
+          {
+            "method": "tools/list",
+            "result": {
+              "tools": [
+                {
+                  "name": "echo",
+                  "description": "echo",
+                  "inputSchema": {
+                    "type": "object"
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "endpoint_on_connections": [
+          false,
+          true
+        ]
+      },
+      "operations": [
+        {
+          "method": "connect"
+        },
+        {
+          "method": "connected"
+        },
+        {
+          "method": "connect"
+        },
+        {
+          "method": "tool_names"
+        },
+        {
+          "method": "close"
+        }
+      ],
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "error": "timeout"
+            },
+            {
+              "result": false
+            },
+            {
+              "result": null
+            },
+            {
+              "result": [
+                "echo"
+              ]
+            },
+            {
+              "result": null
+            }
+          ],
+          "requests": [
+            {
+              "method": "initialize"
+            },
+            {
+              "method": "tools/list",
+              "params": {}
+            }
+          ],
+          "http": {
+            "connections": 2,
+            "closed_connections": 2,
+            "requests": [
+              {
+                "method": "GET",
+                "target": "/mcp",
+                "headers": []
+              },
+              {
+                "method": "GET",
+                "target": "/mcp",
+                "headers": []
+              },
+              {
+                "method": "POST",
+                "target": "/messages?session=2",
+                "headers": []
+              },
+              {
+                "method": "POST",
+                "target": "/messages?session=2",
+                "headers": []
+              },
+              {
+                "method": "POST",
+                "target": "/messages?session=2",
+                "headers": []
+              }
+            ]
+          },
+          "results_json": "[{\"error\":\"timeout\"},{\"result\":false},{\"result\":null},{\"result\":[\"echo\"]},{\"result\":null}]",
+          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"tools/list\",\"params\":{}}]",
+          "http_json": "{\"closed_connections\":2,\"connections\":2,\"requests\":[{\"headers\":[],\"method\":\"GET\",\"target\":\"/mcp\"},{\"headers\":[],\"method\":\"GET\",\"target\":\"/mcp\"},{\"headers\":[],\"method\":\"POST\",\"target\":\"/messages?session=2\"},{\"headers\":[],\"method\":\"POST\",\"target\":\"/messages?session=2\"},{\"headers\":[],\"method\":\"POST\",\"target\":\"/messages?session=2\"}]}"
+        }
+      }
+    }
+  ]
+}

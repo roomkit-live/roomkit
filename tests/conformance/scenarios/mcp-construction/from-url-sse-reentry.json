@@ -1,0 +1,181 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "mcp-construction/from-url-sse-reentry",
+  "title": "from_url legacy SSE reconnects through a fresh endpoint and catalogue",
+  "rules": [
+    "§21.2"
+  ],
+  "notes": "Public MCP construction and legacy SSE against a bounded loopback peer. Headers are observed by value and order with case-insensitive wire names; no client SDK method is replaced.",
+  "steps": [
+    {
+      "call": "mcp_session",
+      "constructor": "from_url",
+      "transport": "sse",
+      "peer": {
+        "replies": [
+          {
+            "method": "tools/list",
+            "result": {
+              "tools": [
+                {
+                  "name": "echo",
+                  "description": "echo",
+                  "inputSchema": {
+                    "type": "object"
+                  }
+                },
+                {
+                  "name": "hidden",
+                  "description": "hidden",
+                  "inputSchema": {
+                    "type": "object"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "method": "tools/list",
+            "result": {
+              "tools": [
+                {
+                  "name": "fresh",
+                  "description": "fresh",
+                  "inputSchema": {
+                    "type": "object"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "operations": [
+        {
+          "method": "connect"
+        },
+        {
+          "method": "tool_names"
+        },
+        {
+          "method": "connect"
+        },
+        {
+          "method": "close"
+        },
+        {
+          "method": "connected"
+        },
+        {
+          "method": "connect"
+        },
+        {
+          "method": "tool_names"
+        },
+        {
+          "method": "close"
+        }
+      ],
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "result": null
+            },
+            {
+              "result": [
+                "echo",
+                "hidden"
+              ]
+            },
+            {
+              "error": "already_connected"
+            },
+            {
+              "result": null
+            },
+            {
+              "result": false
+            },
+            {
+              "result": null
+            },
+            {
+              "result": [
+                "fresh"
+              ]
+            },
+            {
+              "result": null
+            }
+          ],
+          "requests": [
+            {
+              "method": "initialize"
+            },
+            {
+              "method": "tools/list",
+              "params": {}
+            },
+            {
+              "method": "initialize"
+            },
+            {
+              "method": "tools/list",
+              "params": {}
+            }
+          ],
+          "http": {
+            "connections": 2,
+            "closed_connections": 2,
+            "requests": [
+              {
+                "method": "GET",
+                "target": "/mcp",
+                "headers": []
+              },
+              {
+                "method": "POST",
+                "target": "/messages?session=1",
+                "headers": []
+              },
+              {
+                "method": "POST",
+                "target": "/messages?session=1",
+                "headers": []
+              },
+              {
+                "method": "POST",
+                "target": "/messages?session=1",
+                "headers": []
+              },
+              {
+                "method": "GET",
+                "target": "/mcp",
+                "headers": []
+              },
+              {
+                "method": "POST",
+                "target": "/messages?session=2",
+                "headers": []
+              },
+              {
+                "method": "POST",
+                "target": "/messages?session=2",
+                "headers": []
+              },
+              {
+                "method": "POST",
+                "target": "/messages?session=2",
+                "headers": []
+              }
+            ]
+          },
+          "results_json": "[{\"result\":null},{\"result\":[\"echo\",\"hidden\"]},{\"error\":\"already_connected\"},{\"result\":null},{\"result\":false},{\"result\":null},{\"result\":[\"fresh\"]},{\"result\":null}]",
+          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"tools/list\",\"params\":{}},{\"method\":\"initialize\"},{\"method\":\"tools/list\",\"params\":{}}]",
+          "http_json": "{\"closed_connections\":2,\"connections\":2,\"requests\":[{\"headers\":[],\"method\":\"GET\",\"target\":\"/mcp\"},{\"headers\":[],\"method\":\"POST\",\"target\":\"/messages?session=1\"},{\"headers\":[],\"method\":\"POST\",\"target\":\"/messages?session=1\"},{\"headers\":[],\"method\":\"POST\",\"target\":\"/messages?session=1\"},{\"headers\":[],\"method\":\"GET\",\"target\":\"/mcp\"},{\"headers\":[],\"method\":\"POST\",\"target\":\"/messages?session=2\"},{\"headers\":[],\"method\":\"POST\",\"target\":\"/messages?session=2\"},{\"headers\":[],\"method\":\"POST\",\"target\":\"/messages?session=2\"}]}"
+        }
+      }
+    }
+  ]
+}

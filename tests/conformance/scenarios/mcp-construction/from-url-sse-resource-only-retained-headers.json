@@ -1,0 +1,160 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "mcp-construction/from-url-sse-resource-only-retained-headers",
+  "title": "from_url legacy SSE reads retained headers with discovery False",
+  "rules": [
+    "§21.2"
+  ],
+  "notes": "Public MCP construction and legacy SSE against a bounded loopback peer. Headers are observed by value and order with case-insensitive wire names; no client SDK method is replaced.",
+  "steps": [
+    {
+      "call": "mcp_session",
+      "constructor": "from_url",
+      "transport": "sse",
+      "discover": false,
+      "headers": {
+        "X-Capture": "before"
+      },
+      "headers_after_construction": {
+        "X-Capture": "after"
+      },
+      "label": "capture",
+      "tool_filter": [
+        "echo"
+      ],
+      "peer": {
+        "replies": [
+          {
+            "method": "tools/call",
+            "params": {
+              "name": "echo",
+              "arguments": {}
+            },
+            "result": {
+              "content": [
+                {
+                  "type": "text",
+                  "text": "done"
+                }
+              ],
+              "isError": false
+            }
+          }
+        ]
+      },
+      "operations": [
+        {
+          "method": "connected"
+        },
+        {
+          "method": "connect"
+        },
+        {
+          "method": "connected"
+        },
+        {
+          "method": "tool_names"
+        },
+        {
+          "method": "call_tool",
+          "name": "echo",
+          "arguments": {}
+        },
+        {
+          "method": "close"
+        },
+        {
+          "method": "connected"
+        }
+      ],
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "result": false
+            },
+            {
+              "result": null
+            },
+            {
+              "result": true
+            },
+            {
+              "result": []
+            },
+            {
+              "result": "done"
+            },
+            {
+              "result": null
+            },
+            {
+              "result": false
+            }
+          ],
+          "requests": [
+            {
+              "method": "initialize"
+            },
+            {
+              "method": "tools/call",
+              "params": {
+                "name": "echo",
+                "arguments": {}
+              }
+            }
+          ],
+          "http": {
+            "connections": 1,
+            "closed_connections": 1,
+            "requests": [
+              {
+                "method": "GET",
+                "target": "/mcp",
+                "headers": [
+                  [
+                    "x-capture",
+                    "after"
+                  ]
+                ]
+              },
+              {
+                "method": "POST",
+                "target": "/messages?session=1",
+                "headers": [
+                  [
+                    "x-capture",
+                    "after"
+                  ]
+                ]
+              },
+              {
+                "method": "POST",
+                "target": "/messages?session=1",
+                "headers": [
+                  [
+                    "x-capture",
+                    "after"
+                  ]
+                ]
+              },
+              {
+                "method": "POST",
+                "target": "/messages?session=1",
+                "headers": [
+                  [
+                    "x-capture",
+                    "after"
+                  ]
+                ]
+              }
+            ]
+          },
+          "results_json": "[{\"result\":false},{\"result\":null},{\"result\":true},{\"result\":[]},{\"result\":\"done\"},{\"result\":null},{\"result\":false}]",
+          "requests_json": "[{\"method\":\"initialize\"},{\"method\":\"tools/call\",\"params\":{\"arguments\":{},\"name\":\"echo\"}}]",
+          "http_json": "{\"closed_connections\":1,\"connections\":1,\"requests\":[{\"headers\":[[\"x-capture\",\"after\"]],\"method\":\"GET\",\"target\":\"/mcp\"},{\"headers\":[[\"x-capture\",\"after\"]],\"method\":\"POST\",\"target\":\"/messages?session=1\"},{\"headers\":[[\"x-capture\",\"after\"]],\"method\":\"POST\",\"target\":\"/messages?session=1\"},{\"headers\":[[\"x-capture\",\"after\"]],\"method\":\"POST\",\"target\":\"/messages?session=1\"}]}"
+        }
+      }
+    }
+  ]
+}
