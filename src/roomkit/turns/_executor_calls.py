@@ -58,7 +58,10 @@ class ExecutorCalls:
             room_id=request.room_id,
             entries={
                 owned.tool.name: orchestration_tool(
-                    owned.tool, partial(self._call, owned.tool.name), waits=owned.waits_by_design
+                    owned.tool,
+                    partial(self._call, owned.tool.name),
+                    waits=owned.waits_by_design,
+                    ends_turn=owned.ends_turn,
                 )
                 for owned in request.owner_tools
             },

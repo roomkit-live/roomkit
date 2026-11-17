@@ -109,6 +109,8 @@ class _StreamTurnState:
     started_at: float = field(default_factory=time.monotonic)
     dedup_prefix: str = ""
     saw_tool_call: bool = False
+    # A call of the last round served a tool whose call ends the turn.
+    submitted: bool = False
     # Each round's reasoning, for the turn's ON_AI_RESPONSE.
     thinking: list[str] = field(default_factory=list)
     # The provider error that interrupted the turn after a round (reason
@@ -595,6 +597,12 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
             answered=answered,
         )
         turn.count_round(calls)
+        # A delegation's result tool, served once ON_TOOL_CALL let it
+        # stand, ends the turn (RFC §23.3).
+        turn.submitted = any(
+            part.outcome == "served" and self._ends_turn(part.name, turn.room_id)
+            for part in results
+        )
         handed = self._hand_round_ends(calls, markers, results, turn.room_id, index, duration_ms)
         async with aclosing(handed) as deltas:
             async for delta in deltas:
@@ -803,6 +811,10 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                 ) as deltas:
                     async for delta in deltas:
                         yield delta
+                if turn.submitted:
+                    # The turn handed its result back: nothing is asked after it.
+                    yield _answered_end(context, turn, "completed")
+                    return
                 context, cancelled = self._drain_steering_queue(context, loop_ctx)
                 if cancelled:
                     yield turn.end("cancelled")

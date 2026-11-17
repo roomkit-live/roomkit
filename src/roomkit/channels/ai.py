@@ -488,6 +488,12 @@ class AIChannel(
         names.extend(self._human_input.declared_names)
         return names
 
+    def _ends_turn(self, name: str, room_id: str | None) -> bool:
+        """Whether a served call to *name* in *room_id* ends the turn: a
+        delegation's result tool (RFC §23.3)."""
+        traits = self._registry.traits(name, room_id)
+        return traits is not None and traits.ends_turn
+
     def _in_tool_memory(self, name: str) -> bool:
         """Whether a call to *name* is work the agent did, which later turns
         replay: not a discovery or housekeeping tool of the channel's own."""

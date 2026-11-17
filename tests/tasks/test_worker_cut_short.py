@@ -114,26 +114,6 @@ async def test_a_worker_that_finished_still_completes() -> None:
     await kit.close()
 
 
-@pytest.mark.parametrize("streaming", [False, True], ids=["generates", "streams"])
-async def test_a_result_submitted_before_the_cut_counts(streaming: bool) -> None:
-    submitted = {"status": "completed", "summary": "found it", "data": {}}
-    submit = AIResponse(
-        content="",
-        finish_reason="tool_calls",
-        tool_calls=[AIToolCall(id="s1", name="submit_result", arguments=submitted)],
-    )
-    kit = await _kit([submit, LOOPING, LOOPING], streaming=streaming)
-
-    task = await kit.delegate(
-        "parent", "worker", "Find it.", wait=True, require_structured_result=True
-    )
-
-    assert task.result is not None
-    assert task.result.status == TaskStatus.COMPLETED
-    assert json.loads(task.result.output or "{}")["summary"] == "found it"
-    await kit.close()
-
-
 async def test_a_worker_owing_a_result_fails_when_cut_without_one() -> None:
     kit = await _kit([LOOPING] * 6, streaming=True)
 

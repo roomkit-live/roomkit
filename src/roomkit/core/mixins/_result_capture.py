@@ -48,7 +48,7 @@ def capture_result(
     the capture runs.
     """
     slot = ResultSlot(tool)
-    entry = orchestration_tool(tool.tool, slot.receive)
+    entry = orchestration_tool(tool.tool, slot.receive, ends_turn=True)
     registry.register(entry, room_id=child_room_id, owner=slot)
     try:
         yield slot

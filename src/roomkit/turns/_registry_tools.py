@@ -78,7 +78,11 @@ class RegistryOwnerTools(OwnerTools):
         if registry is None:
             return []
         return [
-            OwnerTool(tool=entry.definition, waits_by_design=entry.traits.waits)
+            OwnerTool(
+                tool=entry.definition,
+                waits_by_design=entry.traits.waits,
+                ends_turn=entry.traits.ends_turn,
+            )
             for entry in registry.owner_entries(room_id)
         ]
 

@@ -110,6 +110,10 @@ class ToolTraits:
     """Waits on another agent or a person by design, under a bound of its own:
     the channel's default call bound does not apply to it (RFC §21.6)."""
 
+    ends_turn: bool = False
+    """Its served call ends the turn: the model is asked nothing after the
+    round that made it, a delegation's result tool (RFC §23.3)."""
+
 
 CHANNEL_TOOL_TRAITS: dict[str, ToolTraits] = {
     TOOL_ACTIVATE_SKILL: ToolTraits(exempt=True, deferrable=False, in_tool_memory=False),

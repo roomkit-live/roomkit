@@ -30,6 +30,8 @@ class OwnerTool(BaseModel):
     tool: AITool
     waits_by_design: bool = False
     """Bounded by its own bound, not the channel's default call bound (RFC §21.6)."""
+    ends_turn: bool = False
+    """Its served call ends the turn, a delegation's result tool (RFC §23.3)."""
 
 
 _SCOPES_KEPT = 32

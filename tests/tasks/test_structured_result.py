@@ -371,3 +371,59 @@ class TestAResultTheHooksBlockedIsNone:
 
     async def test_a_served_call_is_the_result(self) -> None:
         assert "the worker's result" in await self._delegate(block=False)
+
+
+class _RolesSeen(list):
+    """A provider's requests as the model was shown them: the roles of their
+    messages when asked (the loop goes on appending to its context)."""
+
+    def append(self, context: Any) -> None:
+        super().append([message.role for message in context.messages])
+
+
+class TestATurnEndsOnItsServedResult:
+    """A worker's turn ends once its result tool's call is served: the model
+    is asked nothing after it, so an empty answer is never re-prompted
+    (RMK-357, RFC §23.3). A call a hook blocked is no result, and the turn
+    goes on."""
+
+    async def _model_calls(self, *, block: bool, streaming: bool = True) -> list[list[str]]:
+        submitted = {"status": "completed", "summary": "done", "data": {}}
+        provider = MockAIProvider(
+            streaming=streaming,
+            ai_responses=[
+                AIResponse(
+                    content="",
+                    tool_calls=[AIToolCall(id="s1", name="submit_result", arguments=submitted)],
+                ),
+                AIResponse(content=""),
+                AIResponse(content="Submitted."),
+            ],
+        )
+        provider.calls = _RolesSeen()
+        kit = RoomKit()
+        kit.register_channel(Agent("worker", provider=provider))
+        await kit.create_room(room_id="parent")
+        if block:
+
+            @kit.hook(HookTrigger.ON_TOOL_CALL, HookExecution.SYNC)
+            async def refuse(event: ToolCallEvent, ctx: Any) -> HookResult:
+                return HookResult.block("not now")
+
+        task = await kit.delegate(
+            "parent", "worker", "do it", wait=True, require_structured_result=True
+        )
+        await kit.close()
+        assert task.result is not None
+        assert block or json.loads(task.result.output or "{}")["summary"] == "done"
+        return list(provider.calls)
+
+    @pytest.mark.parametrize("streaming", [False, True], ids=["generates", "streams"])
+    async def test_the_model_is_asked_once(self, streaming: bool) -> None:
+        assert len(await self._model_calls(block=False, streaming=streaming)) == 1
+
+    async def test_a_blocked_result_lets_the_turn_go_on(self) -> None:
+        """The same turn asks again, with the blocked call's result, rather
+        than the delegation reminding a turn that ended."""
+        calls = await self._model_calls(block=True)
+        assert calls[1][-1] == "tool"

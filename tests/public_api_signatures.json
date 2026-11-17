@@ -1603,7 +1603,7 @@
     "channel_rows": ["async def", "room_id", "channel_id", "first"]
   },
   "roomkit.OwnerTool": {
-    "__init__": ["def", "*", "tool", "waits_by_design=False"]
+    "__init__": ["def", "*", "tool", "waits_by_design=False", "ends_turn=False"]
   },
   "roomkit.OwnerTools": {
     "declared": ["def", "channel_id", "room_id"],
