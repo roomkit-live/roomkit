@@ -9,8 +9,11 @@ withheld call must not publish what was withheld (RMK-262).
 
 from __future__ import annotations
 
+from dataclasses import FrozenInstanceError
 from typing import Any
 from unittest.mock import AsyncMock
+
+import pytest
 
 from roomkit import (
     ChannelCategory,
@@ -25,6 +28,7 @@ from roomkit import (
     ToolCallVerdict,
 )
 from roomkit.channels.ai import AIChannel
+from roomkit.models import ToolCallVerdict as ModelVerdict
 from roomkit.models.enums import ChannelType, EventType
 from roomkit.providers.ai.base import AIContext, AIMessage, AIResponse, AITool, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
@@ -33,6 +37,31 @@ from tests.test_framework import SimpleChannel
 from tests.tool_loop_modes import run_tool_loop
 
 _COPY = {"contact": "Jane Doe", "salary": 120_000}
+
+
+def test_standalone_verdict_defaults_and_frozen_fields() -> None:
+    assert ModelVerdict is ToolCallVerdict
+    verdict = ToolCallVerdict()
+    assert verdict.result is None
+    assert not verdict.blocked
+    assert not verdict.replaces_structured
+    assert verdict.structured_content is None
+    assert verdict.error_detail is None
+    with pytest.raises(FrozenInstanceError):
+        verdict.blocked = True  # type: ignore[misc]
+
+
+def test_verdict_keeps_its_list_and_the_shared_structured_object() -> None:
+    obj = {"original": 1}
+    parts: list[Any] = [obj]
+    verdict = ToolCallVerdict(result=parts, structured_content=obj)
+    parts.append("late")
+    obj.update({"second": 2, "original": 3})
+    assert verdict.result is parts
+    assert verdict.structured_content is obj
+    assert verdict.result[0] is verdict.structured_content
+    assert verdict.result == [{"original": 3, "second": 2}, "late"]
+    assert list(verdict.structured_content) == ["original", "second"]
 
 
 async def _publishing_handler(name: str, args: dict[str, Any]) -> str:
