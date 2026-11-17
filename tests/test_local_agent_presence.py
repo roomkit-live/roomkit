@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+from datetime import timedelta
 from typing import Any
 
 import pytest
@@ -10,6 +12,7 @@ from roomkit import AIChannel, RoomKit
 from roomkit.core.exceptions import RoomNotFoundError
 from roomkit.models import ChannelCategory, HookTrigger
 from roomkit.providers.ai import MockAIProvider
+from roomkit.realtime import EphemeralEvent, EphemeralEventType
 from tests.test_agent_presence import _heard_all, _published
 from tests.test_framework import SimpleChannel
 
@@ -134,5 +137,36 @@ async def test_local_presence_publication_tracks_attach_hooks_detach_and_room_cl
             ],
             "r2": [],
         }
+    finally:
+        await kit.close()
+
+
+async def test_a_recreated_room_publishes_presence_when_old_hooks_are_forgotten() -> None:
+    """Public store writes model another owner's room recreation; no remote executor."""
+    kit = RoomKit()
+    kit.register_channel(_agent("helper"))
+    kit.register_channel(SimpleChannel("ops"))
+    heard: list[tuple[str, str]] = []
+    online = asyncio.Event()
+
+    async def record(event: EphemeralEvent) -> None:
+        if event.type == EphemeralEventType.PRESENCE_ONLINE:
+            heard.append((event.type.value, event.user_id))
+            online.set()
+
+    try:
+        original = await kit.create_room(room_id="r1")
+        binding = await kit.attach_channel("r1", "helper", category=ChannelCategory.INTELLIGENCE)
+        await kit.enable_room_hook("r1", "old-hook")
+        await kit.store.delete_room("r1")
+        await kit.store.create_room(
+            original.model_copy(update={"created_at": original.created_at + timedelta(seconds=1)})
+        )
+        await kit.store.add_binding(binding)
+        await kit.realtime.subscribe_to_room("r1", record)
+        await kit.attach_channel("r1", "ops")
+        await asyncio.wait_for(online.wait(), 2)
+        assert heard == [("presence_online", "helper")]
+        assert (await kit.agent_presence("r1"))[0].executors == [kit.turn_executor.executor_id]
     finally:
         await kit.close()
