@@ -479,18 +479,6 @@ class TestCompactingMemory:
         assert len(result.messages) == 1
         assert "summary unavailable" in result.messages[0].content
 
-    async def test_close_closes_both(self) -> None:
-        """Closing CompactingMemory closes inner provider and summary provider."""
-        inner = MockMemoryProvider()
-        summary_provider = MockAIProvider()
-        mem = CompactingMemory(
-            inner=inner,
-            provider=summary_provider,
-            max_context_tokens=100_000,
-        )
-        await mem.close()
-        assert inner.closed is True
-
     def test_name_includes_inner(self) -> None:
         inner = MockMemoryProvider()
         summary_provider = MockAIProvider()

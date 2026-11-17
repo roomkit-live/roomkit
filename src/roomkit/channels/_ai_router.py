@@ -53,8 +53,9 @@ class RouteRequest:
 class AIRouter(ABC):
     """Picks the provider of each turn of an :class:`~roomkit.channels.ai.AIChannel`.
 
-    The channel closes its router when it closes; a router closes the
-    providers it holds.
+    The channel's close leaves its router open, and a router's close leaves
+    open the providers it was handed: each is its owner's, who closes it once
+    nothing uses it (RFC §6.4).
     """
 
     @abstractmethod
@@ -73,7 +74,8 @@ class AIRouter(ABC):
         return type(self).__name__
 
     async def close(self) -> None:  # noqa: B027 - optional hook
-        """Release what the router holds: the providers it routes to."""
+        """Release what the router opened itself. The providers it was
+        handed stay their owner's, who closes them (RFC §6.4)."""
 
 
 class FallbackRouter(AIRouter):
@@ -96,10 +98,6 @@ class FallbackRouter(AIRouter):
         if request.reason == "turn":
             return self._primary
         return self._fallback if request.previous is self._primary else self._primary
-
-    async def close(self) -> None:
-        await self._primary.close()
-        await self._fallback.close()
 
 
 def turn_request(event: RoomEvent, room_id: str | None) -> RouteRequest:

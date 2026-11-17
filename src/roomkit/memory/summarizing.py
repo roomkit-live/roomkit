@@ -350,8 +350,8 @@ class SummarizingMemory(_MemoryWrapper):
         self._summary_cache.clear()
 
     async def close(self) -> None:
+        # The summarizing provider it was handed stays its owner's (RFC §20.3).
         await super().close()
-        await self._provider.close()
 
 
 def _kept_within(costs: list[int], budget: int, min_kept: int) -> int:

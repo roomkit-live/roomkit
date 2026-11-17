@@ -929,14 +929,14 @@ class AIChannel(
 
     async def close(self) -> None:
         """Close the channel: its running turns first (their calls cancelled
-        and reported, RFC §9.3), then its provider or router, memory, and
-        executors."""
+        and reported, RFC §9.3), then its memory and executors.
+
+        The provider or the router it was handed stays open: it is its
+        owner's, who may share it with other channels, and closes it once
+        nothing uses it (RFC §6.4)."""
         await self._end_running_turns()
         await self._close_minds()
         await self._human_input.close(self.channel_id)
-        await super().close()
-        if self._router is not None:
-            await self._router.close()
         await self._memory.close()
         if self._script_executor is not None:
             await self._script_executor.close()

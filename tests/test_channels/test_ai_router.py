@@ -175,12 +175,18 @@ async def test_a_loop_run_inside_another_agent_s_turn_runs_on_its_own_provider()
     assert (len(own.calls), len(theirs.calls)) == (1, 0)
 
 
-async def test_the_channel_closes_its_router_and_a_fallback_router_both_providers() -> None:
-    primary, fallback = _Closing(), _Closing()
+async def test_a_close_leaves_open_the_provider_or_router_the_channel_was_handed() -> None:
+    """What a channel or a router was handed is its owner's, who may share
+    it between agents (RFC §6.4): their close leaves it open."""
+    own, primary, fallback = _Closing(), _Closing(), _Closing()
     router = _Picks(MockAIProvider())
 
+    await AIChannel("ai0", provider=own).close()
     await AIChannel("ai1", router=router).close()
-    await AIChannel("ai2", router=FallbackRouter(primary, fallback)).close()
+    fallback_router = FallbackRouter(primary, fallback)
+    await AIChannel("ai2", router=fallback_router).close()
+    await fallback_router.close()
 
-    assert router.closed
-    assert primary.closed and fallback.closed
+    assert not own.closed
+    assert not router.closed
+    assert not primary.closed and not fallback.closed

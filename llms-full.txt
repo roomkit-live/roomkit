@@ -2213,13 +2213,16 @@ class LocalOrHosted(AIRouter):
         hard = len(request.text) > 280 or "```" in request.text
         return self.hosted if loaded or hard else self.local
 
-    async def close(self) -> None:  # the channel closes its router
-        await self.local.close()
-        await self.hosted.close()
 
 
 agent = AIChannel("assistant", router=LocalOrHosted(local, hosted))
 ```
+
+A provider or a router handed to a channel stays its owner's: the channel's
+close, the kit's and an executor's leave it open, as a router's close leaves
+open the providers it was handed, and a memory's the provider it summarizes
+with. One provider may serve every agent of a process; the host closes it
+once nothing uses it (`await provider.close()`).
 
 A router is plain code: rules like these are often enough, and a `Classifier`
 (a model's typed judgment, or a subclass that answers from rules) can decide
@@ -2311,8 +2314,9 @@ await kit.attach_channel(room_id, "meteo")  # an intelligence binding
   `TurnExecutor(max_channels=N)` keeps N built at most, letting go of the one
   used least recently that nothing runs on, as a release does (its next turn
   builds it anew; an ACP session it held reopens). The executor closes each
-  agent it lets go of, and an agent closes its provider: the factory gives
-  each build a provider of its own, never one shared by the agents it builds.
+  agent it lets go of, which leaves open the provider the agent was handed:
+  the factory may hand every build one shared provider, which the host
+  closes once the executor is closed.
   A turn or channel call of an agent the factory builds nothing for
   (it returns `None`) fails with `no_executor` and goes to no other executor;
   the room's next turns go to that executor too while it lives, so every

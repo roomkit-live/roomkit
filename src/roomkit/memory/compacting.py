@@ -184,5 +184,5 @@ class CompactingMemory(_MemoryWrapper):
     async def close(self) -> None:
         self._cache_generation += 1
         self._summary_cache.clear()
+        # The summarizing provider it was handed stays its owner's (RFC §20.3).
         await super().close()
-        await self._provider.close()

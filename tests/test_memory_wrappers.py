@@ -47,6 +47,25 @@ async def test_lifecycle_reaches_inner(wrap: Callable[[MemoryProvider], MemoryPr
     assert inner.closed
 
 
+class _ClosingModel(MockAIProvider):
+    closed = False
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+@pytest.mark.parametrize("memory", [CompactingMemory, SummarizingMemory])
+async def test_close_leaves_open_the_provider_it_summarizes_with(
+    memory: type[CompactingMemory] | type[SummarizingMemory],
+) -> None:
+    """The provider is its owner's, who may share it with the agents (RFC §20.3)."""
+    provider = _ClosingModel()
+
+    await memory(MockMemoryProvider(), provider, 1000).close()
+
+    assert not provider.closed
+
+
 def test_nested_wrappers_preserve_history_window(
     wrap: Callable[[MemoryProvider], MemoryProvider],
 ) -> None:
