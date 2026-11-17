@@ -21,8 +21,8 @@ from roomkit.orchestration._call_room import RoomToolServe, in_call_room
 from roomkit.providers.ai.base import AITool
 from roomkit.tasks.brief import context_block, previous_tasks_block, task_brief
 from roomkit.tasks.cache import CompletedTaskCache
-from roomkit.tasks.handback import MAX_RESULT_CHARS, check_max_result_chars
-from roomkit.tasks.models import DelegatedTask, TaskStatus
+from roomkit.tasks.handback import MAX_RESULT_CHARS, bounded, check_max_result_chars
+from roomkit.tasks.models import DelegatedTask, TaskStatus, task_work
 
 if TYPE_CHECKING:
     from roomkit.channels.ai import AIChannel
@@ -192,6 +192,23 @@ def _asked_conversation(asked: Any, maximum: int) -> int:
     return max(0, min(int(asked), maximum))
 
 
+def _call_answer(task: DelegatedTask, agent_id: str, waited: int | None) -> dict[str, Any]:
+    """What a call that started *task* answers: its receipt; for a task run
+    inline (*waited*, the bound of its result), how it ended and its work,
+    bounded as a relayed result is (RFC §23.3 step 8)."""
+    answer: dict[str, Any] = {
+        "status": "delegated",
+        "task_id": task.id,
+        "child_room_id": task.child_room_id,
+        "agent_id": agent_id,
+    }
+    if waited is not None:
+        ended = task.result
+        answer["status"] = str(ended.status) if ended is not None else str(TaskStatus.FAILED)
+        answer["result"] = bounded(task_work(ended), waited)
+    return answer
+
+
 class DelegateHandler:
     """Processes ``delegate_task`` tool calls by calling ``kit.delegate()``.
 
@@ -222,6 +239,11 @@ class DelegateHandler:
         max_result_chars: How much of the worker's output its result carries
             back to the agent: past it, the output is cut and says so (RFC
             §23.3 step 8).
+        wait_in_task_rooms: Whether a call made from a task's room, by a
+            worker delegating in turn, runs its task inline: the call answers
+            once the task ended, with its result, and cancelling the worker's
+            task cancels it too. ``False``, the default: it starts a
+            background task, as from any room.
 
     Raises:
         ValueError: A *max_conversation* that is no count: negative or no
@@ -240,6 +262,7 @@ class DelegateHandler:
         serialize_per_room: bool = False,
         max_conversation: int = 0,
         max_result_chars: int = MAX_RESULT_CHARS,
+        wait_in_task_rooms: bool = False,
     ) -> None:
         if type(max_conversation) is not int or max_conversation < 0:
             raise ValueError("max_conversation must be an integer, 0 or more")
@@ -254,6 +277,7 @@ class DelegateHandler:
         self._serialize_per_room = serialize_per_room
         self._max_conversation = max_conversation
         self._max_result_chars = max_result_chars
+        self._wait_in_task_rooms = wait_in_task_rooms
         # A room's lock, and how many delegations hold it or wait for it: the
         # last one out drops it, so a room no longer delegating keeps nothing.
         self._room_locks: dict[str, asyncio.Lock] = {}
@@ -335,6 +359,14 @@ class DelegateHandler:
                 return True
         return False
 
+    async def _waits_in(self, room_id: str) -> bool:
+        """Whether a call made from *room_id* runs its task inline: with
+        ``wait_in_task_rooms``, when the room is a task's child room."""
+        if not self._wait_in_task_rooms:
+            return False
+        room = await self._kit._store.get_room(room_id)
+        return room is not None and bool((room.metadata or {}).get("task_id"))
+
     async def _do_delegate(
         self,
         room_id: str,
@@ -365,10 +397,12 @@ class DelegateHandler:
                 conversation = await self._kit._room_conversation(
                     room_id, list(dict.fromkeys((calling_agent_id, notified))), count
                 )
+        wait = await self._waits_in(room_id)
         task = await self._kit.delegate(
             room_id=room_id,
             agent_id=agent_id,
             task=task_text,
+            wait=wait,
             context={**passed, "previous_tasks": recent} if recent else passed,
             share_channels=share_channels,
             notify=notified,
@@ -378,12 +412,7 @@ class DelegateHandler:
             max_result_chars=self._max_result_chars,
         )
 
-        result = {
-            "status": "delegated",
-            "task_id": task.id,
-            "child_room_id": task.child_room_id,
-            "agent_id": agent_id,
-        }
+        result = _call_answer(task, agent_id, self._max_result_chars if wait else None)
 
         # Store in cache when task completes (fire-and-forget)
         if self._cache is not None:

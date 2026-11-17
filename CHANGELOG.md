@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`DelegateHandler(wait_in_task_rooms=True)`: a worker's `delegate_task` waits for the task it starts** (RFC §23.4, RMK-1621). A worker that delegated in turn got the task's receipt and ended its own task; the result came back to its room after that, so it never reached the conversation, and cancelling the worker left its task running. With the option, a call made from a task's room runs its task inline: it answers with the task's status and its result, bounded by `max_result_chars`, and cancelling the worker's task cancels it too. A call from any other room still starts a background task.
+
 ### Changed
 
 - **BREAKING: a Loop reviewer approves only through its `submit_review` verdict** (RFC §19.7.4, RMK-597). A review approved when its text held `APPROVED`, so `Not approved: the intro is missing.`, `DISAPPROVED` or `I cannot mark this APPROVED yet.` ended the loop approved and delivered the rejected work. The reviewer is now handed a `submit_review` tool (`approved`, `feedback`) and reminded when it does not call it, as a supervisor is with `submit_verdict`; a review without an approving verdict approves nothing, its words its feedback. A review task's result is the verdict's JSON payload, and a reviewer must be able to call tools to approve: one whose turns take no owner tools is not given the tool, and its text, even a verdict's JSON, approves nothing.

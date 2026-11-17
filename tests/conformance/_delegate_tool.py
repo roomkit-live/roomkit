@@ -32,6 +32,7 @@ async def _delegate_handler(kit: RoomKit, harness: Harness, spec: Mapping[str, A
             "serialize_per_room",
             "max_conversation",
             "max_result_chars",
+            "wait_in_task_rooms",
         )
         if name in spec
     }
@@ -69,6 +70,7 @@ DELEGATE_TOOL_ARGUMENTS: dict[str, set[str]] = {
         "serialize_per_room",
         "max_conversation",
         "max_result_chars",
+        "wait_in_task_rooms",
     },
     "setup_delegation": {"agent_id", "handler", "targets"},
     "delegate.handle": {"handler", "room_id", "calling_agent_id", "arguments"},

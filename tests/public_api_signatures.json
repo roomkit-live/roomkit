@@ -5387,7 +5387,7 @@
     "recent_context": ["def", "room_id", "limit=5"]
   },
   "roomkit.tasks.DelegateHandler": {
-    "__init__": ["def", "kit", "*", "notify=None", "default_share_channels=None", "delivery_strategy=None", "cache=None", "serialize_per_room=False", "max_conversation=0", "max_result_chars=4000"],
+    "__init__": ["def", "kit", "*", "notify=None", "default_share_channels=None", "delivery_strategy=None", "cache=None", "serialize_per_room=False", "max_conversation=0", "max_result_chars=4000", "wait_in_task_rooms=False"],
     "handle": ["async def", "room_id", "calling_agent_id", "arguments"]
   },
   "roomkit.tasks.DelegatedTask": {

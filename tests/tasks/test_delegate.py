@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -15,7 +16,13 @@ from roomkit.channels.realtime_voice import (
 )
 from roomkit.models.enums import ChannelCategory
 from roomkit.models.event import TextContent
-from roomkit.providers.ai.base import AITool
+from roomkit.providers.ai.base import (
+    AIContext,
+    AIResponse,
+    AITool,
+    AIToolCall,
+    AIToolResultPart,
+)
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.tasks.delegate import (
     DELEGATE_TOOL,
@@ -25,7 +32,7 @@ from roomkit.tasks.delegate import (
     setup_realtime_delegation,
 )
 from roomkit.tasks.handback import MAX_RESULT_CHARS
-from roomkit.tasks.models import DelegatedTask
+from roomkit.tasks.models import DelegatedTask, TaskStatus
 from roomkit.turns._registry_tools import OwnerToolStore
 from roomkit.voice.base import VoiceSession
 from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
@@ -99,6 +106,7 @@ class TestDelegateHandler:
             room_id="room-1",
             agent_id="pr-reviewer",
             task="review PR #42",
+            wait=False,
             context={"repo": "roomkit"},
             share_channels=["email-out"],
             notify="voice-agent",
@@ -137,6 +145,118 @@ class TestDelegateHandler:
     def test_a_maximum_that_is_no_count_is_refused(self, maximum: Any):
         with pytest.raises(ValueError, match="max_conversation"):
             DelegateHandler(MagicMock(), max_conversation=maximum)
+
+
+class TestWaitInTaskRooms:
+    """A worker's ``delegate_task`` call, made from its task's room (RFC §23.4)."""
+
+    @pytest.mark.parametrize(
+        ("waits", "limit", "answer"),
+        [
+            (True, MAX_RESULT_CHARS, {"status": "completed", "result": "Found it."}),
+            (True, 5, {"status": "completed", "result": "Found\n[...truncated]"}),
+            (False, MAX_RESULT_CHARS, {"status": "delegated", "result": None}),
+        ],
+        ids=["inline", "inline-bounded", "background"],
+    )
+    async def test_the_call_answers_with_its_task_s_result_on_the_option(
+        self, waits: bool, limit: int, answer: dict[str, Any]
+    ):
+        kit, researcher = _kit_delegating_in_turn(MockAIProvider(responses=["Found it."]))
+        handler = DelegateHandler(kit, wait_in_task_rooms=waits, max_result_chars=limit)
+        setup_delegation(researcher, handler)
+        await kit.create_room(room_id="call")
+
+        task = await kit.delegate("call", "researcher", "Look it up.")
+        ended = await task.wait(timeout=5)
+
+        (told,) = _tool_results(researcher._provider.calls[1])
+        assert {k: json.loads(told.result).get(k) for k in answer} == answer
+        assert ended.output == "Dug."
+        await kit.close()
+
+    async def test_a_call_from_the_conversation_s_room_starts_a_background_task(self):
+        kit, researcher = _kit_delegating_in_turn(MockAIProvider(responses=["Found it."]))
+        setup_delegation(researcher, DelegateHandler(kit, wait_in_task_rooms=True))
+        await kit.create_room(room_id="call")
+        await kit.attach_channel("call", "researcher", category=ChannelCategory.INTELLIGENCE)
+
+        with owner_tool_call_in(kit, "researcher", "call"):
+            told = json.loads(
+                await researcher._channel_tool_handler(
+                    "delegate_task", {"agent": "digger", "task": "Dig."}
+                )
+            )
+
+        assert told["status"] == "delegated" and "result" not in told
+        await kit.close()
+
+    async def test_cancelling_the_worker_s_task_cancels_the_task_it_waits_for(self):
+        digging = asyncio.Event()
+        kit, researcher = _kit_delegating_in_turn(_Held(digging))
+        setup_delegation(researcher, DelegateHandler(kit, wait_in_task_rooms=True))
+        await kit.create_room(room_id="call")
+
+        task = await kit.delegate("call", "researcher", "Look it up.")
+        await asyncio.wait_for(digging.wait(), 5)
+        assert await kit.cancel_task(task.id)
+        ended = await task.wait(timeout=5)
+
+        (dug,) = await kit.store.find_rooms(metadata_filter={"task_agent_id": "digger"})
+        assert ended.status == TaskStatus.CANCELLED
+        assert dug.metadata["task_status"] == "cancelled"
+        assert len(researcher._provider.calls) == 1
+        await kit.close()
+
+
+class _Held(MockAIProvider):
+    """A model that sets *started* once asked, then answers never."""
+
+    def __init__(self, started: asyncio.Event) -> None:
+        super().__init__()
+        self._started = started
+
+    async def generate(self, context: AIContext) -> Any:
+        self._started.set()
+        await asyncio.Event().wait()
+
+
+def _kit_delegating_in_turn(digger: MockAIProvider) -> tuple[RoomKit, AIChannel]:
+    """A kit whose researcher delegates "Dig." to the digger, answering *digger*,
+    then says "Dug."."""
+    kit = RoomKit()
+    researcher = AIChannel(
+        "researcher",
+        provider=MockAIProvider(
+            ai_responses=[
+                AIResponse(
+                    content="",
+                    finish_reason="tool_calls",
+                    tool_calls=[
+                        AIToolCall(
+                            id="c",
+                            name="delegate_task",
+                            arguments={"agent": "digger", "task": "Dig."},
+                        )
+                    ],
+                ),
+                AIResponse(content="Dug."),
+            ]
+        ),
+    )
+    kit.register_channel(researcher)
+    kit.register_channel(AIChannel("digger", provider=digger))
+    return kit, researcher
+
+
+def _tool_results(context: AIContext) -> list[AIToolResultPart]:
+    return [
+        part
+        for message in context.messages
+        if message.role == "tool" and isinstance(message.content, list)
+        for part in message.content
+        if isinstance(part, AIToolResultPart)
+    ]
 
 
 # -- setup_delegation ---------------------------------------------------------
