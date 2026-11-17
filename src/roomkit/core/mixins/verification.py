@@ -366,20 +366,40 @@ class VerificationMixin(HelpersMixin):
         room_id: str,
         context: RoomContext,
         resolved_identity: Identity | None,
+        deadline: float,
     ) -> RoomEvent | InboundResult:
         """Label an identified sender's message, consume a code, or hold it.
 
         Returns the event to go on with, or the result of a message that stops
-        here before anything of it is stored (a code reply, a block).
+        here before anything of it is stored (a code reply, a block). The
+        read of the sender's verification and the hooks are bounded by the
+        call's pre-commit *deadline* (RFC §13.6); a code's attempt is not: it
+        is a write, and what its completion runs (the release and its answer,
+        §11.7.6) is over before the call returns, whatever the deadline.
         """
         identity = _sender_identity(event, context, resolved_identity)
         if identity is None:
             return event
-        identity_id, organization_id = identity
-        state = await self.verification_of(identity_id, organization_id=organization_id)
+        async with asyncio.timeout_at(deadline):
+            state = await self.verification_of(identity[0], organization_id=identity[1])
         if await self._consume_code(event, room_id, state):
             # Its text is never stored nor broadcast, and no agent reads it.
             return InboundResult(blocked=True, reason="verification_code")
+        async with asyncio.timeout_at(deadline):
+            return await self._label_or_hold(event, room_id, context, state, identity)
+
+    async def _label_or_hold(
+        self,
+        event: RoomEvent,
+        room_id: str,
+        context: RoomContext,
+        state: Verification,
+        identity: tuple[str, str | None],
+    ) -> RoomEvent | InboundResult:
+        """Label *event* with its sender's *state*: an unverified sender's
+        goes through ON_VERIFICATION_REQUIRED, then on, held or refused
+        (RFC §11.7.3)."""
+        identity_id, organization_id = identity
         event = event.model_copy(
             update={"source": event.source.model_copy(update={"verification": state.status})}
         )

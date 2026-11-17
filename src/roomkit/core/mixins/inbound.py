@@ -646,14 +646,15 @@ class InboundMixin(HelpersMixin):
         named: NamedDelivery,
         entry: Entry,
     ) -> tuple[Any, RoomContext, Identity | None, IdentityResult | None] | InboundResult:
-        """RFC §10.1 steps 3-5, under the caller's pre-commit budget; *entry*
+        """RFC §10.1 steps 3-5b, under the caller's pre-commit budget; *entry*
         is what the message is to the room's work (RFC §9.5.1).
 
         Everything here was previously unbounded: a store read that never
         returns during the context build, or a channel's own
         ``handle_inbound`` reaching a provider without a timeout of its own,
         held the caller forever while ``process_timeout`` sat configured and
-        inert.
+        inert. A code reply's attempt at step 5b is the exception: a write,
+        done with what its completion runs whatever the deadline (§11.7.4).
 
         Raises:
             TimeoutError: The budget ran out. Nothing of the event has been
@@ -662,9 +663,19 @@ class InboundMixin(HelpersMixin):
                 deadline (RFC §13.6).
         """
         async with asyncio.timeout_at(deadline):
-            return await self._prepare_event_inner(
+            prepared = await self._prepare_event_inner(
                 message, channel, room_id, room_just_created, telemetry, named, entry
             )
+        if isinstance(prepared, InboundResult) or not self._verification_inbound:
+            return prepared
+        # Identity verification (RFC §10.1 step 5b, §11.7): label, hold, codes.
+        event, context, resolved_identity, pending_id_result = prepared
+        verified = await self._apply_verification(
+            event, room_id, context, resolved_identity, deadline
+        )
+        if isinstance(verified, InboundResult):
+            return verified
+        return verified, context, resolved_identity, pending_id_result
 
     async def _prepare_event_inner(
         self,
@@ -719,13 +730,6 @@ class InboundMixin(HelpersMixin):
             )
         except _IdentityBlockedError as exc:
             return InboundResult(blocked=True, reason=exc.reason)
-
-        # Identity verification (RFC §10.1 step 5b, §11.7): label, hold, codes.
-        if self._verification_inbound:
-            verified = await self._apply_verification(event, room_id, context, resolved_identity)
-            if isinstance(verified, InboundResult):
-                return verified
-            event = verified
 
         return event, context, resolved_identity, pending_id_result
 
