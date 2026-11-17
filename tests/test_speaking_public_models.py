@@ -198,6 +198,32 @@ async def test_mock_classifier_uses_insertion_order_and_repeats_the_last_script(
     ]
 
 
+@pytest.mark.parametrize("in_sequence", [False, True])
+async def test_mock_classifier_keeps_the_supplied_script_mapping_live(in_sequence: bool) -> None:
+    script: dict[str, float] = {"ready": 0.25}
+    questions = {"ready": YesNoQuestion("Ready?")}
+    classifier = MockClassifier([script] if in_sequence else script)
+    assert (await classifier.classify("first", questions)).yes("ready") == 0.25
+    script["ready"] = 0.75
+    assert (await classifier.classify("second", questions)).yes("ready") == 0.75
+    script.clear()
+    assert (await classifier.classify("third", questions)).yes("ready") == 0.0
+
+
+async def test_mock_classifier_copies_the_script_sequence_but_keeps_each_mapping_live() -> None:
+    first, last = {"ready": 0.25}, {"ready": 0.5}
+    scripts = [first, last]
+    classifier = MockClassifier(scripts)
+    scripts.reverse()
+    scripts.append({"ready": 1.0})
+    questions = {"ready": YesNoQuestion("Ready?")}
+    assert (await classifier.classify("first", questions)).yes("ready") == 0.25
+    last["ready"] = 0.75
+    assert (await classifier.classify("second", questions)).yes("ready") == 0.75
+    scripts.clear()
+    assert (await classifier.classify("third", questions)).yes("ready") == 0.75
+
+
 async def test_mock_policy_records_before_failure_and_repeats_the_same_decision() -> None:
     turn, decision = SpeakTurn(_event()), SpeakDecision("offer", reason="a reason")
     policy = MockSpeakPolicy([decision])
