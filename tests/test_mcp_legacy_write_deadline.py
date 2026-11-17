@@ -17,8 +17,9 @@ pytest.importorskip("mcp.client.sse")
 
 
 class BlockedUpload(LegacySSEPeer):
-    def __init__(self) -> None:
+    def __init__(self, early_response: bool = False) -> None:
         super().__init__({"replies": []})
+        self.early_response = early_response
         self.upload_started = asyncio.Event()
         self.release = asyncio.Event()
 
@@ -29,13 +30,17 @@ class BlockedUpload(LegacySSEPeer):
             await super()._post(reader, writer, headers)
             return
         writer.get_extra_info("socket").setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
+        if self.early_response:
+            writer.write(b"HTTP/1.1 202 Accepted\r\nContent-Length: 0\r\n\r\n")
+            await writer.drain()
         self.upload_started.set()
         # The real socket and StreamReader stop draining the body; no SDK method is replaced.
         await self.release.wait()
 
 
+@pytest.mark.parametrize("early_response", [False, True])
 async def test_a_stalled_upload_reaches_the_sdk_write_deadline_then_closes_its_writer(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, early_response: bool
 ) -> None:
     original = httpx.Timeout
     observed: list[dict[str, float | None]] = []
@@ -49,7 +54,7 @@ async def test_a_stalled_upload_reaches_the_sdk_write_deadline_then_closes_its_w
             self.write = 0.04
 
     monkeypatch.setattr(httpx, "Timeout", WriteBudget)
-    async with BlockedUpload() as peer:
+    async with BlockedUpload(early_response) as peer:
         async with MCPToolProvider(peer.url, transport="sse", discover=False) as provider:
             with pytest.raises(TimeoutError):
                 await provider.call_tool("upload", {"body": "x" * (8 * 1024 * 1024)}, timeout=0.3)
