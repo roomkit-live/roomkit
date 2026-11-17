@@ -183,6 +183,11 @@ def test_every_stream_item_crosses_as_a_new_equal_object(item: Any) -> None:
         assert "runtime_record" not in encode_item(item)
 
 
+def test_a_generation_s_own_usage_crosses_as_before() -> None:
+    """``partial`` rides only a partial marker (RMK-369), as Rust writes it."""
+    assert "partial" not in encode_item(UsageMarker(usage={"input_tokens": 5}))
+
+
 def test_a_call_its_turn_left_open_ends_cancelled_as_it_started() -> None:
     """The owner closes it with its arguments and its intent (RFC §6.4)."""
     copies = StreamCopies()

@@ -126,7 +126,13 @@ _ITEM_KINDS = (
     _ItemKind(
         "usage",
         UsageMarker,
-        lambda item, start: dataclasses.asdict(item),
+        # ``partial`` only when true, so a generation's own usage crosses as
+        # it did before RMK-369.
+        lambda item, start: {
+            key: value
+            for key, value in dataclasses.asdict(item).items()
+            if key != "partial" or value
+        },
         lambda data: UsageMarker(
             usage=data["usage"],
             model=data.get("model"),
