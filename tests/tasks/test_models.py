@@ -1,13 +1,38 @@
-"""Tests for DelegatedTask and DelegatedTaskResult models."""
+"""Tests for the public background setup and delegated task models."""
 
 from __future__ import annotations
 
 import asyncio
+from dataclasses import FrozenInstanceError
 
 import pytest
 
 from roomkit.models.enums import TaskStatus
+from roomkit.tasks import BackgroundSetup
 from roomkit.tasks.models import DelegatedTask, DelegatedTaskResult
+
+
+class TestBackgroundSetup:
+    def test_default_worker_and_hand_back(self) -> None:
+        setup = BackgroundSetup()
+        assert setup.worker is None
+        assert setup.hand_back == "relay"
+
+    @pytest.mark.parametrize("worker", ["", " leading", "a,b"])
+    def test_worker_text_is_preserved(self, worker: str) -> None:
+        setup = BackgroundSetup(worker=worker, hand_back="post")
+        assert setup.worker == worker
+        assert setup.hand_back == "post"
+
+    def test_unknown_hand_back_is_rejected_at_construction(self) -> None:
+        with pytest.raises(ValueError) as raised:
+            BackgroundSetup(hand_back="bad")
+        assert str(raised.value) == "hand_back must be one of ('relay', 'post'), not 'bad'"
+
+    def test_setup_is_frozen(self) -> None:
+        setup = BackgroundSetup()
+        with pytest.raises(FrozenInstanceError):
+            setup.worker = "other"  # type: ignore[misc]
 
 
 class TestDelegatedTask:
