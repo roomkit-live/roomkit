@@ -446,6 +446,11 @@ class WebSocketChannel(Channel):
         end event, not even for a stream that hands none (its rows blocked,
         kept out or narrowed away, or no text at all) (RFC Appendix A.8).
 
+        A stream cut from outside ends later, once its text is stored: the
+        framework then calls :meth:`deliver_cut`, which sends the end (RFC
+        §12.2 step 13s). Cancelled by a caller of its own, the stream waits
+        for that call.
+
         A stream sends only to the registrations present when it started,
         checked as each send starts: an id unregistered, evicted or
         registered again since, for any organization or the same one (a

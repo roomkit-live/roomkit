@@ -374,11 +374,15 @@ class InboundStreamingMixin(HelpersMixin):
             # context missing what it already said. Not an error — nobody
             # failed — so ON_ERROR stays silent and the cancellation
             # propagates untouched.
-            row = await writer.end_cancelled(reader, cancel_reason(cut))
-            if reading:
-                # The channel was cut mid-stream: it learns the stream's end,
-                # and the row the stream can no longer carry (RFC §12.2 13s).
-                await _deliver_cut(channel, placeholder, row, binding, context)
+            row = None
+            try:
+                row = await writer.end_cancelled(reader, cancel_reason(cut))
+            finally:
+                if reading and not writer.handed_end:
+                    # The cut found the channel reading its stream: it learns
+                    # the stream's end, and the row the stream can no longer
+                    # carry (RFC §12.2 step 13s), even when storing it failed.
+                    await _deliver_cut(channel, placeholder, row, binding, context)
             raise
         except Exception as exc:
             return exc

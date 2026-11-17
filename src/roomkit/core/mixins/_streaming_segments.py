@@ -309,6 +309,9 @@ class SegmentWriter:
         self.persisted: list[RoomEvent] = []
         # How :meth:`stream` ended: read to its end, or on the response's failure.
         self.read_to_end = False
+        # Whether the channel reading the stream was handed its end: from
+        # there a cut no longer finds it reading (RFC §12.2 step 13s).
+        self.handed_end = False
         self.failure: Exception | None = None
 
     # -- what the stream hands in ------------------------------------------
@@ -495,12 +498,14 @@ class SegmentWriter:
             # The room no longer lets the channel read the response: its
             # stream ends here, the rest read by :meth:`read_rest`.
             self.withdrawn = True
+            self.handed_end = True
             return
         self.read_to_end = True
         if (row := await self.flush_text()) is not None and row.id in self._streamed_rows:
             yield row
         if self._end_marker is not None and not self._stopping:
             yield self._end_marker
+        self.handed_end = True
 
     async def read_rest(self, reader: ResponseReader) -> None:
         """Read on a response the room stopped letting its channel read

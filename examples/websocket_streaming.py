@@ -41,14 +41,16 @@ async def main() -> None:
         elif isinstance(msg, StreamChunk):
             print(f"[{conn_id}] chunk: {msg.delta!r}  (accumulated: {msg.text!r})")
         elif isinstance(msg, StreamEnd):
-            content = msg.event.content
-            final = content.body if isinstance(content, TextContent) else "?"
-            print(f"[{conn_id}] stream ended    final={final!r}")
+            # The end carries no text: the rows came through send_fn, and
+            # without `_segmented` none did, so a client drops its bubble.
+            # Only a stream cut from outside ends with its stored row.
+            handed = bool(msg.event.metadata.get("_segmented"))
+            print(f"[{conn_id}] stream ended    rows handed={handed}")
 
     async def on_event_streaming(conn_id: str, event: RoomEvent) -> None:
-        # Streaming connections won't receive events via this path during
-        # deliver_stream, but they still need a regular send_fn for non-AI
-        # messages (e.g. user chat, system events).
+        # A streaming connection reads through this path the rows a stream
+        # hands, between its chunks, and every other event of the room
+        # (e.g. user chat, system events).
         print(f"[{conn_id}] event: {json.dumps(event.model_dump(), default=str)[:80]}...")
 
     ws.register_connection(

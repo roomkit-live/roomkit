@@ -456,8 +456,8 @@ class Channel(ABC):
     ) -> None:
         """Take the end of a stream cut from outside while this channel read it.
 
-        A delivery cancelled, a steering cut or the kit's close cancels the
-        channel's :meth:`deliver_stream` mid-stream. Once the text it was
+        A delivery cancelled, a steering cut, a held task's cut or the kit's
+        close cancels the channel's :meth:`deliver_stream` mid-stream. Once the text it was
         handed is stored, marked cancelled, the framework calls this with
         *event*, the event that stream was delivered under, and *row*, that
         stored row, or ``None`` when no row is the channel's (a blank text, a

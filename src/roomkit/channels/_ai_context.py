@@ -1231,11 +1231,14 @@ class AIContextMixin(_AIChannelContract):
 
 def _read_as_text(content: EventContent) -> str:
     """What a model reads of a content that is no image: its text, a media
-    by its label, a location and a template by their text form (RFC §6.6).
-    The event a turn answers reaches the AI channel transcoded to that text;
-    the history reads the stored event, so it reads it the same (§6.4)."""
+    by its label, a location and a template by their text form, a nested
+    composite by its parts, one per line (RFC §6.6). The event a turn answers
+    reaches the AI channel transcoded to that text; the history reads the
+    stored event, so it reads it the same (§6.4)."""
     if isinstance(content, LocationContent | TemplateContent):
         return text_form(content)
+    if isinstance(content, CompositeContent):
+        return "\n".join(text for part in content.parts if (text := _read_as_text(part)))
     return content_text(content) or ""
 
 
