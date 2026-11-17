@@ -236,3 +236,30 @@ async def test_an_unexpected_runtime_error_during_connect_is_a_fixture_failure(
     problems = await Harness(scenario).run()
     assert any("the runner cannot read the call" in problem for problem in problems)
     assert any("unexpected connection refusal" in problem for problem in problems)
+
+
+@pytest.mark.parametrize("public_call", [False, True])
+@pytest.mark.parametrize(
+    "meta",
+    [{"progressToken": 0}, {"progressToken": "caller"}, {"progressToken": 0, "caller": True}],
+)
+def test_only_public_call_tool_ignores_the_sdks_numeric_progress_token(
+    public_call: bool, meta: dict[str, Any]
+) -> None:
+    peer = MCPPeer(
+        {
+            "replies": [
+                {"method": "tools/call", "params": {"name": "echo", "arguments": {}}, "result": {}}
+            ]
+        }
+    )
+    peer.tool_call = public_call
+    peer._reply(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": "echo", "arguments": {}, "_meta": meta.copy()},
+        }
+    )
+    assert (not peer.problems) == (public_call and meta == {"progressToken": 0})

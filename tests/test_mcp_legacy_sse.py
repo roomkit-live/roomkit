@@ -151,3 +151,41 @@ async def test_retained_headers_are_not_revalidated_and_each_connection_copies_t
             assert all(item.get("x-capture") == value for item in peer.headers[before:])
             assert all(item.get("x-late") == "x" * 8193 for item in peer.headers[before:])
     assert peer.problems == []
+
+
+class HeldOpeningPeer(LegacySSEPeer):
+    def __init__(self, stage: str) -> None:
+        held = [{"method": "tools/list", "hold": True}] if stage == "listing" else []
+        super().__init__({"replies": held + [listing()]}, endpoint=stage != "endpoint")
+        self.discovery = True
+        self.listing_held = asyncio.Event()
+
+    def _reply(self, message: dict[str, Any]) -> dict[str, Any] | None:
+        reply = super()._reply(message)
+        if message["method"] == "tools/list" and reply is None:
+            self.listing_held.set()
+        return reply
+
+
+@pytest.mark.parametrize("stage", ["endpoint", "listing"])
+async def test_cancelling_opening_closes_the_reader_and_writer_before_reentry(stage: str) -> None:
+    peer = HeldOpeningPeer(stage)
+    async with peer:
+        provider = MCPToolProvider(peer.url, transport="sse", connect_timeout=3)
+        opening = asyncio.create_task(provider.__aenter__())
+        barrier = peer.get_opened if stage == "endpoint" else peer.listing_held
+        await asyncio.wait_for(barrier.wait(), 3)
+        opening.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await opening
+        await asyncio.wait_for(peer.get_closed.wait(), 3)
+        assert not provider.connected
+        assert peer.targets == [("GET", "/mcp")] + (
+            [("POST", "/messages?session=1")] * 3 if stage == "listing" else []
+        )
+        peer.endpoint = True
+        async with provider:
+            assert provider.tool_names == ["echo", "hidden"]
+        await asyncio.wait_for(peer.get_closed.wait(), 3)
+        assert peer.connections == peer.closed_connections == 2
+    assert peer.problems == []

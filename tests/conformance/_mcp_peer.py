@@ -24,6 +24,7 @@ class MCPPeer:
         self._closing = False
         self.url = ""
         self.discovery = False
+        self.tool_call = False
 
     async def __aenter__(self) -> MCPPeer:
         self._closing = False
@@ -115,7 +116,9 @@ class MCPPeer:
             # SDK discovery may omit the empty first-page parameters. Host
             # requests retain their exact presence and value.
             observed["params"] = {}
-        if method == "tools/list" and self.discovery:
+        if (method == "tools/list" and self.discovery) or (
+            method == "tools/call" and self.tool_call
+        ):
             params = observed.get("params")
             meta = params.get("_meta") if isinstance(params, dict) else None
             if isinstance(meta, dict) and type(meta.get("progressToken")) is int:

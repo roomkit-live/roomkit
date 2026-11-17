@@ -98,6 +98,7 @@ async def session(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> di
             results = []
             for operation in spec["operations"]:
                 peer.discovery = operation["method"] == "connect" and spec.get("discover", True)
+                peer.tool_call = operation["method"] == "call_tool"
                 results.append(await _observed(provider, operation))
                 await settle_closed_stream(peer, provider)
         finally:

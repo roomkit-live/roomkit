@@ -86,6 +86,16 @@ def test_factories_check_the_label_before_the_other_options(
 
 
 @pytest.mark.parametrize("direct", [False, True])
+@pytest.mark.parametrize("url", ["http:///mcp", "http://@example.test/mcp"])
+def test_http_construction_refuses_an_absent_host_or_empty_userinfo(
+    direct: bool, url: str
+) -> None:
+    construct = MCPToolProvider if direct else MCPToolProvider.from_url
+    with pytest.raises(ValueError, match="endpoint"):
+        construct(url)
+
+
+@pytest.mark.parametrize("direct", [False, True])
 @pytest.mark.parametrize(
     ("command", "options"),
     [
