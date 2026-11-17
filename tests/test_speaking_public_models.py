@@ -224,6 +224,50 @@ async def test_mock_classifier_copies_the_script_sequence_but_keeps_each_mapping
     assert (await classifier.classify("third", questions)).yes("ready") == 0.75
 
 
+@pytest.mark.parametrize("scripted", [" 0.25 ", "٠.٢٥", "０.２５", "+2_5e-2"])
+async def test_mock_classifier_converts_numeric_text_when_the_question_is_asked(
+    scripted: str,
+) -> None:
+    questions = {"ready": YesNoQuestion("Ready?"), "level": ScoreQuestion("Level?", ("a", "b"))}
+    classifier = MockClassifier({"ready": scripted, "level": scripted})
+    answers = await classifier.classify({}, questions)
+    assert answers.yes("ready") == 0.25 and answers.score("level") == 0.25
+
+
+@pytest.mark.parametrize("scripted", ["_1", "1__0", "1_", "1_e0", "ready"])
+async def test_mock_classifier_keeps_numeric_text_errors_and_records_the_call(
+    scripted: str,
+) -> None:
+    classifier = MockClassifier({"ready": scripted})
+    with pytest.raises(ValueError, match="could not convert string to float"):
+        await classifier.classify({}, {"ready": YesNoQuestion("Ready?")})
+    assert len(classifier.calls) == 1
+
+
+@pytest.mark.parametrize(
+    ("history", "expected"),
+    [(2, ["turn 3", "turn 4"]), (0, []), (-2, ["turn 2", "turn 3", "turn 4"])],
+)
+def test_classifier_history_preserves_signed_slice_semantics(
+    history: int, expected: list[str]
+) -> None:
+    policy = ClassifierSpeakPolicy(MockClassifier(), agent_name="Assistant", history=history)
+    recent = [
+        _event().model_copy(update={"id": f"e{i}", "content": TextContent(body=f"turn {i}")})
+        for i in range(5)
+    ]
+    recent.insert(1, _event().model_copy(update={"content": TextContent(body="")}))
+    state = policy.state(SpeakTurn(_event(), recent=tuple(recent)))
+    assert state["agent"] == {"name": "Assistant"}
+    assert [row["text"] for row in state["recent_turns"]] == expected
+
+
+@pytest.mark.parametrize("proactivity", [0.0, -0.1, 1.1, float("nan")])
+def test_classifier_proactivity_keeps_its_validation_boundary(proactivity: float) -> None:
+    with pytest.raises(ValueError, match=r"proactivity must be in \(0, 1\]"):
+        ClassifierSpeakPolicy(MockClassifier(), agent_name="Assistant", proactivity=proactivity)
+
+
 async def test_mock_policy_records_before_failure_and_repeats_the_same_decision() -> None:
     turn, decision = SpeakTurn(_event()), SpeakDecision("offer", reason="a reason")
     policy = MockSpeakPolicy([decision])
