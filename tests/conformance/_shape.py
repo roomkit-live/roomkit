@@ -220,6 +220,7 @@ MODEL = {
     "deferred_tools",
     "response_schema",
     "response_schema_with_tools",
+    "fails_once_closed",
 }
 MODEL_ROUND = {
     "text",

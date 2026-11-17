@@ -136,8 +136,11 @@ class ScriptedModel(AIProvider):
         response_schema: bool = False,
         response_schema_with_tools: bool = False,
         streaming: bool = True,
+        fails_once_closed: bool = False,
     ) -> None:
         self._anthropic_dialect = chat_dialect == "anthropic"
+        self._fails_once_closed = fails_once_closed
+        self._closed = False
         self._chat_dialect = (
             None
             if chat_dialect is None or self._anthropic_dialect
@@ -194,7 +197,17 @@ class ScriptedModel(AIProvider):
             id=self.model_name, pricing=self._pricing, context_window=self._context_window
         )
 
+    async def close(self) -> None:
+        """Closed for good when the scenario says so, as a client its close
+        released (README, ``model.fails_once_closed``)."""
+        self._closed = self._fails_once_closed
+
+    def _refuse_closed(self) -> None:
+        if self._closed:
+            raise ProviderError("the model was closed", provider=self._provider)
+
     async def generate(self, context: AIContext) -> AIResponse:
+        self._refuse_closed()
         self._refuse_unsupported(context)
         round_ = self._next_round(context, "generate")
         await self._hold(round_)
@@ -227,6 +240,7 @@ class ScriptedModel(AIProvider):
         """The round's events, under a response schema refused before the
         request when the model takes none, and checked before its done event
         (README, ``model.response_schema``)."""
+        self._refuse_closed()
         if not self._streaming:
             stream = super().generate_structured_stream(context)
         else:
@@ -670,6 +684,7 @@ def _scripted_model(
         deferred_tools=spec.get("deferred_tools", False),
         response_schema=bool(spec.get("response_schema", False)),
         response_schema_with_tools=bool(spec.get("response_schema_with_tools", False)),
+        fails_once_closed=bool(spec.get("fails_once_closed", False)),
     )
 
 
