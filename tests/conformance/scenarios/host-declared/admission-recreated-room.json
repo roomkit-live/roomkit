@@ -1,0 +1,99 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "host-declared/admission-recreated-room",
+  "title": "An eligible after-turn callback cannot run for a deleted room or a replacement under its old id",
+  "rules": [
+    "§10.6.5",
+    "§21.4"
+  ],
+  "notes": "Python: tests/test_turns_host.py declared-verb tests; core/_turn_host.py; turns/_owner_calls.py and _call_record.py. The callbacks use public tool-context accessors and calls use current_turn_host().call().",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "after_turn": [
+              {
+                "call": "store.delete_room",
+                "room_id": "r1"
+              },
+              {
+                "call": "store.create_room",
+                "room": {
+                  "id": "r1",
+                  "created_at": "2000-01-01T00:00:00Z",
+                  "organization_id": "another"
+                }
+              },
+              {
+                "call": "host.call",
+                "verb": "app.later",
+                "as": "late"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "declare_host_verb",
+      "name": "app.later",
+      "handler": {
+        "returns": "unreachable",
+        "as": "served"
+      },
+      "between_turns": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "actions": {
+      "served": [],
+      "late": [
+        {
+          "result": {
+            "result": null,
+            "error": {
+              "kind": "builtins:ValueError",
+              "message": "No room 'r1'"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,151 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "host-declared/cancelling-one-call-streaming",
+  "title": "Withdrawing one declared call cancels its owner callback and leaves the other call of the same tool running",
+  "rules": [
+    "§10.6.5",
+    "§21.4"
+  ],
+  "notes": "Python: tests/test_turns_host.py declared-verb tests; core/_turn_host.py; turns/_owner_calls.py and _call_record.py. The callbacks use public tool-context accessors and calls use current_turn_host().call().",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tool_search": false,
+        "tools": [
+          {
+            "name": "lookup",
+            "host_calls": {
+              "calls": [
+                {
+                  "verb": "app.slow",
+                  "cancel_after": "slow"
+                },
+                {
+                  "verb": "app.other"
+                }
+              ],
+              "concurrent": true
+            }
+          }
+        ],
+        "model": {
+          "streaming": true,
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "declare_host_verb",
+      "name": "app.slow",
+      "handler": {
+        "returns": "unreachable",
+        "gate": "slow",
+        "cancelled": "withdrawn",
+        "as": "slow"
+      }
+    },
+    {
+      "call": "declare_host_verb",
+      "name": "app.other",
+      "handler": {
+        "returns": "other",
+        "gate": "other",
+        "as": "other"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "background": true,
+      "as": "turn"
+    },
+    {
+      "wait_for": "withdrawn"
+    },
+    {
+      "wait_for": "other"
+    },
+    {
+      "open": "other"
+    },
+    {
+      "await": "turn"
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "{\"calls\": [{\"error\": {\"kind\": \"cancelled\", \"message\": \"\"}, \"result\": null}, {\"error\": null, \"result\": \"other\"}], \"record\": {}}",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    },
+    "actions": {
+      "slow": [
+        {
+          "result": {
+            "tool_call_id": "c1"
+          }
+        }
+      ],
+      "other": [
+        {
+          "result": {
+            "tool_call_id": "c1"
+          }
+        }
+      ]
+    }
+  }
+}

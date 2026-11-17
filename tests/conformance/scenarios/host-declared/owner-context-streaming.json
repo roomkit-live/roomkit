@@ -1,0 +1,150 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "host-declared/owner-context-streaming",
+  "title": "A declared callback reads its caller room, actor, requester, depth, tool id and catalogue on the owner",
+  "rules": [
+    "§10.6.5",
+    "§21.4"
+  ],
+  "notes": "Python: tests/test_turns_host.py declared-verb tests; core/_turn_host.py; turns/_owner_calls.py and _call_record.py. The callbacks use public tool-context accessors and calls use current_turn_host().call().",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tool_search": false,
+        "tools": [
+          {
+            "name": "lookup",
+            "host_calls": {
+              "calls": [
+                {
+                  "verb": "app.context",
+                  "arguments": {
+                    "page": "/boards"
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "model": {
+          "streaming": true,
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "metadata": {
+          "topic": "support"
+        },
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "ws",
+            "display_name": "Alice"
+          },
+          {
+            "id": "bob",
+            "channel_id": "ws",
+            "display_name": "Bob"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "declare_host_verb",
+      "name": "app.context",
+      "handler": {
+        "returns_context": true,
+        "as": "served"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "{\"calls\": [{\"error\": null, \"result\": {\"actor_id\": \"alice\", \"allowed_names\": [\"lookup\", \"read_stored_result\"], \"arguments\": {\"page\": \"/boards\"}, \"chain_depth\": 1, \"channel_id\": \"agent\", \"has_record\": true, \"has_turn_host\": false, \"organization_id\": null, \"requester\": \"Alice\", \"room_id\": \"r1\", \"room_metadata\": {\"topic\": \"support\"}, \"tool_call_id\": \"c1\"}}], \"record\": {}}",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    },
+    "actions": {
+      "served": [
+        {
+          "result": {
+            "arguments": {
+              "page": "/boards"
+            },
+            "room_id": "r1",
+            "organization_id": null,
+            "room_metadata": {
+              "topic": "support"
+            },
+            "channel_id": "agent",
+            "tool_call_id": "c1",
+            "actor_id": "alice",
+            "requester": "Alice",
+            "chain_depth": 1,
+            "allowed_names": [
+              "lookup",
+              "read_stored_result"
+            ],
+            "has_record": true,
+            "has_turn_host": false
+          }
+        }
+      ]
+    }
+  }
+}

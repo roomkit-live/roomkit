@@ -1,0 +1,93 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "host-declared/between-turns-refused",
+  "title": "Only a callback declared between turns runs after its turn, with fresh room and channel scope",
+  "rules": [
+    "§10.6.5",
+    "§21.4"
+  ],
+  "notes": "Python: tests/test_turns_host.py declared-verb tests; core/_turn_host.py; turns/_owner_calls.py and _call_record.py. The callbacks use public tool-context accessors and calls use current_turn_host().call().",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "after_turn": [
+              {
+                "call": "host.call",
+                "verb": "app.later",
+                "arguments": {
+                  "late": true
+                },
+                "record_keys": [
+                  "old"
+                ],
+                "as": "late"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "declare_host_verb",
+      "name": "app.later",
+      "handler": {
+        "returns_context": true,
+        "as": "served"
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "actions": {
+      "late": [
+        {
+          "result": {
+            "result": null,
+            "error": {
+              "kind": "builtins:ValueError",
+              "message": "'app.later' needs a turn: it is not served between turns"
+            },
+            "record": null
+          }
+        }
+      ],
+      "served": []
+    }
+  }
+}

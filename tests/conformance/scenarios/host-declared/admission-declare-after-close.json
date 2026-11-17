@@ -1,0 +1,43 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "host-declared/admission-declare-after-close",
+  "title": "Kit closure refuses callback declarations before validating their names",
+  "rules": [
+    "§10.6.5",
+    "§21.4"
+  ],
+  "notes": "Python: tests/test_turns_host.py declared-verb tests; core/_turn_host.py; turns/_owner_calls.py and _call_record.py. The callbacks use public tool-context accessors and calls use current_turn_host().call().",
+  "setup": {},
+  "steps": [
+    {
+      "call": "declare_host_verb",
+      "name": "app.later",
+      "handler": {
+        "returns": null
+      }
+    },
+    {
+      "call": "close"
+    },
+    {
+      "call": "declare_host_verb",
+      "name": "app.new",
+      "handler": {
+        "returns": null
+      },
+      "expect": {
+        "error": "kit_closed"
+      }
+    },
+    {
+      "call": "declare_host_verb",
+      "name": "app.later",
+      "handler": {
+        "returns": null
+      },
+      "expect": {
+        "error": "kit_closed"
+      }
+    }
+  ]
+}

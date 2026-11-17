@@ -1,0 +1,112 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "host-declared/builtin-call-refused-non-streaming",
+  "title": "A built-in verb sent through call is refused without changing the room",
+  "rules": [
+    "§10.6.5",
+    "§21.4"
+  ],
+  "notes": "Python: tests/test_turns_host.py declared-verb tests; core/_turn_host.py; turns/_owner_calls.py and _call_record.py. The callbacks use public tool-context accessors and calls use current_turn_host().call().",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tool_search": false,
+        "tools": [
+          {
+            "name": "lookup",
+            "host_calls": {
+              "calls": [
+                {
+                  "verb": "update_room_metadata",
+                  "arguments": {
+                    "room_id": "r1",
+                    "metadata": {
+                      "changed": true
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "model": {
+          "streaming": false,
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "{\"calls\": [{\"error\": {\"kind\": \"builtins:ValueError\", \"message\": \"'update_room_metadata' is a verb of RoomKit's: send it with TurnHost.update_room_metadata\"}, \"result\": null}], \"record\": {}}",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    },
+    "rooms": {
+      "r1": {
+        "metadata": {
+          "changed": {
+            "$absent": true
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,77 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "host-declared/admission-unknown-between-turns",
+  "title": "An unknown after-turn verb is refused by the between-turn admission check",
+  "rules": [
+    "§10.6.5",
+    "§21.4"
+  ],
+  "notes": "Python: tests/test_turns_host.py declared-verb tests; core/_turn_host.py; turns/_owner_calls.py and _call_record.py. The callbacks use public tool-context accessors and calls use current_turn_host().call().",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence",
+        "on_event": [
+          {
+            "after_turn": [
+              {
+                "call": "host.call",
+                "verb": "app.missing",
+                "as": "late"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      }
+    }
+  ],
+  "expect": {
+    "actions": {
+      "late": [
+        {
+          "result": {
+            "result": null,
+            "error": {
+              "kind": "builtins:ValueError",
+              "message": "'app.missing' needs a turn: it is not served between turns"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

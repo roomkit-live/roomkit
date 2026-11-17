@@ -1,0 +1,256 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "host-declared/concurrent-record-merges-non-streaming",
+  "title": "Concurrent host replies merge mapping entries, preserve keys absent from a call snapshot and apply scalars in reply order",
+  "rules": [
+    "§10.6.5",
+    "§21.4"
+  ],
+  "notes": "Python: tests/test_turns_host.py declared-verb tests; core/_turn_host.py; turns/_owner_calls.py and _call_record.py. The callbacks use public tool-context accessors and calls use current_turn_host().call().",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tool_search": false,
+        "tools": [
+          {
+            "name": "lookup",
+            "host_calls": {
+              "calls": [
+                {
+                  "verb": "app.first",
+                  "returned": "first-returned"
+                },
+                {
+                  "verb": "app.last"
+                }
+              ],
+              "concurrent": true,
+              "record_keys": [
+                "names",
+                "old",
+                "new",
+                "choice"
+              ]
+            },
+            "writes_record": {
+              "names": {
+                "a": 1,
+                "stale": 0
+              },
+              "old": true,
+              "choice": "old"
+            }
+          }
+        ],
+        "model": {
+          "streaming": false,
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "lookup",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "declare_host_verb",
+      "name": "app.first",
+      "handler": {
+        "returns": "first",
+        "gate": "first",
+        "as": "first",
+        "record_keys": [
+          "names",
+          "old",
+          "new",
+          "choice"
+        ],
+        "updates_record": {
+          "names": {
+            "b": 2
+          }
+        },
+        "writes_record": {
+          "new": 1,
+          "choice": "first"
+        },
+        "removes_record": [
+          "old"
+        ]
+      }
+    },
+    {
+      "call": "declare_host_verb",
+      "name": "app.last",
+      "handler": {
+        "returns": "last",
+        "gate": "last",
+        "as": "last",
+        "record_keys": [
+          "names",
+          "old",
+          "new",
+          "choice"
+        ],
+        "updates_record": {
+          "names": {
+            "c": 3
+          }
+        },
+        "removes_entries": {
+          "names": [
+            "a",
+            "stale"
+          ]
+        },
+        "writes_record": {
+          "choice": "last"
+        },
+        "removes_record": [
+          "new"
+        ]
+      }
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "go"
+        }
+      },
+      "background": true,
+      "as": "turn"
+    },
+    {
+      "wait_for": "first"
+    },
+    {
+      "wait_for": "last"
+    },
+    {
+      "open": "first"
+    },
+    {
+      "wait_for": "first-returned"
+    },
+    {
+      "open": "last"
+    },
+    {
+      "await": "turn",
+      "expect": {
+        "result": {
+          "response_metadata": {
+            "names": {
+              "b": 2,
+              "c": 3
+            },
+            "old": {
+              "$absent": true
+            },
+            "new": 1,
+            "choice": "last"
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "{\"calls\": [{\"error\": null, \"result\": \"first\"}, {\"error\": null, \"result\": \"last\"}], \"record\": {\"choice\": \"last\", \"names\": {\"b\": 2, \"c\": 3}, \"new\": 1}}",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    },
+    "actions": {
+      "first": [
+        {
+          "result": {
+            "record": {
+              "names": {
+                "a": 1,
+                "stale": 0
+              },
+              "old": true,
+              "choice": "old"
+            },
+            "record_after_gate": {
+              "names": {
+                "a": 1,
+                "stale": 0
+              },
+              "old": true,
+              "choice": "old"
+            }
+          }
+        }
+      ],
+      "last": [
+        {
+          "result": {
+            "record": {
+              "names": {
+                "a": 1,
+                "stale": 0
+              },
+              "old": true,
+              "choice": "old"
+            },
+            "record_after_gate": {
+              "names": {
+                "a": 1,
+                "stale": 0
+              },
+              "old": true,
+              "choice": "old"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
