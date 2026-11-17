@@ -136,11 +136,24 @@ def read_frontmatter_yaml(text: str) -> dict[str, Any]:
     """
     data = _load_bounded_yaml(text)
     try:
-        rendered: dict[str, Any] = json.loads(json.dumps(data, default=str))
+        rendered: dict[str, Any] = json.loads(json.dumps(data, default=_json_value))
     except (OverflowError, TypeError, ValueError) as exc:
         # A date or binary key, an integer past Python's digit limit.
         raise _FrontmatterNotReadError("the frontmatter holds a value JSON cannot hold") from exc
     return rendered
+
+
+def _json_value(value: Any) -> Any:
+    """Sets have no stable display order; the served wire uses canonical arrays."""
+    if isinstance(value, set):
+        items = [json.loads(json.dumps(item, default=_json_value)) for item in value]
+        return sorted(
+            items,
+            key=lambda item: json.dumps(
+                item, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+            ),
+        )
+    return str(value)
 
 
 def _load_bounded_yaml(text: str) -> dict[Any, Any]:
