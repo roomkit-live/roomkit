@@ -1,0 +1,165 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/a-turn-tells-its-tools-who-asked-when-several-people-take-part",
+  "title": "A tool a turn calls reads who asked through current_tool_requester(): the label the conversation gives the turn's author when several people take part, none in a one-to-one conversation",
+  "rules": [
+    "§21.4",
+    "§19.7",
+    "§6.4"
+  ],
+  "notes": "Python: tests/test_task_requester.py::TestATaskBlockNamesWhoAskedForIt::test_a_turn_tells_its_tools_who_asked; channels/_ai_context.py (loop_ctx.requester from _turn_messages), tools/context.py current_tool_requester. Room pair holds Alice and Bob; in room solo one sender speaks with no name.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "who",
+            "description": "Who asked.",
+            "returns_requester": true
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "who",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "Bob asked."
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "who",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "Nobody named."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "pair",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "ws",
+            "display_name": "Alice"
+          },
+          {
+            "id": "bob",
+            "channel_id": "ws",
+            "display_name": "Bob"
+          }
+        ]
+      },
+      {
+        "id": "solo",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "pair",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "bob",
+        "content": {
+          "type": "text",
+          "body": "Refund order 42."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "solo",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Refund order 42."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "\"Bob\""
+            }
+          ]
+        },
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c2",
+              "content": "null"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

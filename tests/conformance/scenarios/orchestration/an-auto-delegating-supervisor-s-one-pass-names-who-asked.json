@@ -1,0 +1,142 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/an-auto-delegating-supervisor-s-one-pass-names-who-asked",
+  "title": "When several people take part, an auto-delegating Supervisor's one pass heads the message it quotes as the task with its author's label: Bob asked",
+  "rules": [
+    "§19.7",
+    "§19.7.3",
+    "§6.4"
+  ],
+  "notes": "Python: tests/test_task_requester.py::TestATaskBlockNamesWhoAskedForIt::test_the_heading_names_the_asker_out_of_the_block; core/_requester.py asking_label, task_heading(asked_by=), orchestration/strategies/supervisor/delegate.py _one_pass_delegate, _one_pass_results. A one-to-one conversation reads The user asked: (an-auto-delegating-supervisor-that-does-not-refine-hands-its-team-the-message).",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Acme, in short."
+            }
+          ]
+        }
+      },
+      {
+        "id": "analyst",
+        "type": "ai",
+        "agent": {
+          "role": "Analyst"
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "Numbers."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "ws",
+            "display_name": "Alice"
+          },
+          {
+            "id": "bob",
+            "channel_id": "ws",
+            "display_name": "Bob"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "analyst"
+          ],
+          "strategy": "parallel",
+          "auto_delegate": true,
+          "refine_task": false
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "bob",
+        "content": {
+          "type": "text",
+          "body": "Look into Acme."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "sup": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Bob: \"Look into Acme.\""
+            },
+            {
+              "role": "user",
+              "text": {
+                "$contains": "Bob asked:\n<task>\nLook into Acme.\n</task>\n\nHere are the results from your workers:"
+              }
+            }
+          ]
+        }
+      ],
+      "analyst": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Look into Acme."
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

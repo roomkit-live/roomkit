@@ -1,0 +1,217 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/a-supervised-team-s-digest-names-who-asked-for-its-task",
+  "title": "When several people take part, the digest a sequential Supervisor's delegate_workers call answers heads the task the supervisor wrote with who asked for it: Requested by Bob, in the delegating agent's words",
+  "rules": [
+    "§19.7",
+    "§19.7.3",
+    "§6.4"
+  ],
+  "notes": "Python: core/_requester.py task_heading, orchestration/strategies/supervisor/prompts.py _format_supervised_digest, _inject_strategy.py _run (the digest is written under the supervisor's tool call, current_tool_requester). The run is a-supervised-team-has-each-step-framed-and-checked's, asked by Bob in a room where Alice takes part too.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "delegate_workers",
+                  "arguments": {
+                    "task": "Acme"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Analyse Acme's numbers."
+            },
+            {
+              "calls": [
+                {
+                  "id": "v1",
+                  "name": "submit_verdict",
+                  "arguments": {
+                    "approved": true,
+                    "feedback": "",
+                    "next_task": "Weigh the risks."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Judged."
+            },
+            {
+              "calls": [
+                {
+                  "id": "v2",
+                  "name": "submit_verdict",
+                  "arguments": {
+                    "approved": true,
+                    "feedback": "",
+                    "next_task": ""
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Judged."
+            },
+            {
+              "text": "Acme, reviewed."
+            }
+          ]
+        }
+      },
+      {
+        "id": "analyst",
+        "type": "ai",
+        "agent": {
+          "role": "Analyst"
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "w1",
+                  "name": "submit_result",
+                  "arguments": {
+                    "status": "completed",
+                    "summary": "Numbers."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        }
+      },
+      {
+        "id": "critic",
+        "type": "ai",
+        "agent": {
+          "description": "Finds risks."
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "w2",
+                  "name": "submit_result",
+                  "arguments": {
+                    "status": "completed",
+                    "summary": "Risks."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          }
+        ],
+        "participants": [
+          {
+            "id": "alice",
+            "channel_id": "ws",
+            "display_name": "Alice"
+          },
+          {
+            "id": "bob",
+            "channel_id": "ws",
+            "display_name": "Bob"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "analyst",
+            "critic"
+          ],
+          "strategy": "sequential"
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "bob",
+        "content": {
+          "type": "text",
+          "body": "Look into Acme."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "sup": [
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": {
+                "$contains": "outcome. Reference any deliverables (published reports/artifacts) by their link.\n\nRequested by Bob, in the delegating agent's words:\n<task>\nAcme\n</task>\n\nReviewed work"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
