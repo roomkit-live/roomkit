@@ -121,3 +121,45 @@ async def test_a_claimed_local_call_keeps_its_end_row_when_cancelled(streaming: 
     assert rows == ["cancelled"]
     assert reports == []
     assert len(retained) == 1 and retained[0]() is False
+
+
+async def test_cancel_observer_keeps_its_turn_claim(streaming: bool) -> None:
+    entered = asyncio.Event()
+    observed: list[tuple[bool, bool | None]] = []
+
+    async def handler(name: str, arguments: dict[str, Any]) -> str:
+        assert turn_report_claim("c1", "ai") is not None
+        entered.set()
+        await asyncio.Event().wait()
+        raise AssertionError("handler cancelled")
+
+    provider = MockAIProvider(
+        streaming=streaming,
+        ai_responses=[AIResponse(content="", tool_calls=[AIToolCall(id="c1", name="lookup")])],
+    )
+    kit, reports = await _room(
+        AIChannel(
+            "ai",
+            provider=provider,
+            tools=[AITool(name="lookup", description="Lookup")],
+            tool_handler=handler,
+        )
+    )
+
+    @kit.hook(HookTrigger.ON_TOOL_CALL, execution=HookExecution.ASYNC)
+    async def observer(event: ToolCallEvent, context: Any) -> None:
+        claim = turn_report_claim(event.tool_call_id, event.channel_id)
+        observed.append((claim is not None, None if claim is None else claim()))
+
+    turn = asyncio.create_task(kit.process_inbound(_message(), room_id="r1"))
+    try:
+        await asyncio.wait_for(entered.wait(), 3)
+        turn.cancel()
+        await asyncio.gather(turn, return_exceptions=True)
+    finally:
+        if not turn.done():
+            turn.cancel()
+        await asyncio.gather(turn, return_exceptions=True)
+        await kit.close()
+    assert len(reports) == 1 and reports[0].cancelled
+    assert observed == [(True, False)]
