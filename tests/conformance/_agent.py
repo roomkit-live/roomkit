@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import json
 from collections.abc import AsyncIterator, Callable, Iterator, Mapping
 from copy import deepcopy
 from typing import TYPE_CHECKING, Any
@@ -65,8 +66,13 @@ from roomkit.providers.minimax.ai import MINIMAX_CHAT
 from roomkit.providers.openai.ai import OpenAIAIProvider
 from roomkit.providers.openai.config import OpenAIConfig
 from roomkit.providers.utils import _aclose_stream
-from roomkit.tasks import CancelTaskTool, TaskStatusTool
-from roomkit.tools import current_response_metadata, current_tool_allowed_names, current_tool_call
+from roomkit.tasks import CancelTaskTool, TaskStatusTool, post_task_progress
+from roomkit.tools import (
+    current_response_metadata,
+    current_tool_allowed_names,
+    current_tool_call,
+    current_tool_requester,
+)
 from roomkit.tools.compose import compose_tool_handlers
 from roomkit.tools.human_input import HumanInputToolHandler
 from roomkit.tools.policy import ToolPolicy
@@ -578,7 +584,7 @@ def _write_record(spec: Mapping[str, Any]) -> None:
         record.update(spec.get("writes_record", {}))
 
 
-def _tool_handler(tools: list[Mapping[str, Any]], gates: Gates) -> Any:
+def _tool_handler(tools: list[Mapping[str, Any]], gates: Gates, kit: RoomKit | None = None) -> Any:
     from tests.conformance._report_claims import ReportClaims
 
     by_name = {tool["name"]: tool for tool in tools}
@@ -592,10 +598,15 @@ def _tool_handler(tools: list[Mapping[str, Any]], gates: Gates) -> Any:
             raise UnservedToolCallError(f"{name} is not this handler's")
         _write_record(tool)
         _write_structured_content(tool)
+        if "posts_progress" in tool:
+            assert kit is not None, "a tool posting progress needs the kit"
+            await post_task_progress(kit, tool["posts_progress"])
         if (gate := tool.get("gate")) is not None:
             await gates.hold(gate)
         if "report_claim_probe" in tool:
             return claims.answer(tool["report_claim_probe"])
+        if tool.get("returns_requester"):
+            return json.dumps(current_tool_requester())
         if "returns" in tool:
             return str(tool["returns"])
         if "returns_json" in tool:
@@ -816,7 +827,7 @@ def scripted_agent(
         kwargs.update(spec["agent"])
     if "router" not in kwargs:
         kwargs["provider"] = model
-    handler = _tool_handler(tools, gates)
+    handler = _tool_handler(tools, gates, kit)
     if mcp:
         handler = compose_tool_handlers(*tool_handlers(mcp), handler)
     channel = build(

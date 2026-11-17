@@ -114,15 +114,26 @@ def _object(expected: dict[str, Any], actual: Any, path: str, names: Names) -> l
             return []
         return [f"{path}: {_short(actual)} contains {expected['$lacks']!r}"]
     if "$contains" in expected:
-        if isinstance(actual, str) and expected["$contains"] in actual:
-            return []
-        return [f"{path}: {_short(actual)} does not contain {expected['$contains']!r}"]
+        return _contains(expected["$contains"], actual, path)
     if not isinstance(actual, dict):
         return [f"{path}: expected an object, got {_short(actual)}"]
     found: list[str] = []
     for key, value in expected.items():
         found.extend(mismatches(value, actual.get(key, MISSING), f"{path}.{key}", names))
     return found
+
+
+def _contains(texts: str | list[str], actual: Any, path: str) -> list[str]:
+    """Whether *actual* is a string holding *texts*: a text, or each text of a
+    list in its order, one after the end of the one before."""
+    at = 0
+    for text in [texts] if isinstance(texts, str) else texts:
+        found = actual.find(text, at) if isinstance(actual, str) else -1
+        if found < 0:
+            after = " after the text before it" if at else ""
+            return [f"{path}: {_short(actual)} does not contain {text!r}{after}"]
+        at = found + len(text)
+    return []
 
 
 def _starts_with(prefix: str, actual: Any, path: str) -> list[str]:
