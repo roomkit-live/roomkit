@@ -336,7 +336,7 @@ async def attach_channel(
         kwargs["category"] = read(lambda: ChannelCategory(binding["category"]))
     if "access" in binding:
         kwargs["access"] = read(lambda: Access(binding["access"]))
-    for key in ("visibility", "muted", "metadata", "participant_id"):
+    for key in ("visibility", "muted", "output_muted", "metadata", "participant_id"):
         if key in binding:
             kwargs[key] = binding[key]
     return await kit.attach_channel(room_id, binding["channel_id"], **kwargs)

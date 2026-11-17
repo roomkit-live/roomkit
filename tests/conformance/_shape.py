@@ -135,6 +135,7 @@ CHANNEL = {
     "deliver_stream",
     "on_room_attached",
     "on_room_detached",
+    "update_binding",
     "model",
     "acp",
     "mcp_servers",
@@ -333,7 +334,16 @@ ROOM = {
     "participants",
     "status",
 }
-BINDING = {"channel_id", "category", "access", "muted", "visibility", "metadata", "participant_id"}
+BINDING = {
+    "channel_id",
+    "category",
+    "access",
+    "muted",
+    "output_muted",
+    "visibility",
+    "metadata",
+    "participant_id",
+}
 HOOK = {
     "name",
     "trigger",
@@ -475,6 +485,7 @@ CALLS: dict[str, set[str]] = {
         "access",
         "visibility",
         "muted",
+        "output_muted",
         "metadata",
         "participant_id",
     },
@@ -766,6 +777,15 @@ def _acp(spec: Mapping[str, Any], path: str, found: list[str]) -> None:
 
 def _channel(channel: Mapping[str, Any], path: str, found: list[str]) -> None:
     _members(channel, CHANNEL, path, found)
+    if "update_binding" in channel:
+        update = channel["update_binding"]
+        _members(update, {"fail"}, f"{path}.update_binding", found)
+        if (
+            isinstance(update, Mapping)
+            and "fail" in update
+            and not isinstance(update["fail"], str)
+        ):
+            found.append(f"{path}.update_binding.fail: expected a string")
     for kind in (
         "parse",
         "on_event",

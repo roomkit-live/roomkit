@@ -222,6 +222,7 @@ class ScriptedChannel(Channel):
         self._deliver_stream = Reactions(spec.get("deliver_stream"))
         self._on_room_attached = Reactions(spec.get("on_room_attached"))
         self._on_room_detached = Reactions(spec.get("on_room_detached"))
+        self._binding_update = spec.get("update_binding")
         self._addresses = spec.get("addresses")
         self._recent_events_window = int(spec.get("recent_events_window", 0))
         self._verbs: Mapping[str, Mapping[str, Any]] = spec.get("verbs", {})
@@ -370,6 +371,14 @@ class ScriptedChannel(Channel):
         if (message := reaction.get("fail")) is not None:
             raise ScriptedFailureError(message)
         return self._side_effects(reaction.get("output", {}), room_id)
+
+    def update_binding(self, room_id: str, binding: ChannelBinding) -> None:
+        """Record the synchronous callback when its fixture is enabled."""
+        if self._binding_update is None:
+            return
+        self._harness.record_room_callback(room_id, self.channel_id, "update_binding", binding)
+        if (failure := self._binding_update.get("fail")) is not None:
+            raise ScriptedFailureError(failure)
 
     async def on_room_attached(self, room_id: str, binding: ChannelBinding) -> None:
         self._harness.record_room_callback(room_id, self.channel_id, "on_room_attached", binding)

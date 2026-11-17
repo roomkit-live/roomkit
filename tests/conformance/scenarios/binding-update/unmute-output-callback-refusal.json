@@ -1,0 +1,126 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "binding-update/unmute-output-callback-refusal",
+  "title": "unmute_output keeps its stored change when notification refuses and refuses again on repetition",
+  "rules": [
+    "§7.2",
+    "§7.5"
+  ],
+  "notes": "Python: tests/test_binding_updates.py::test_a_callback_refusal_keeps_storage_and_stops_records_and_hooks. The first call changes the binding; the second finds it unchanged. Both notify and propagate the failure, neither records nor fires a hook.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "update_binding": {
+          "fail": "binding cache refused"
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room",
+        "bindings": [
+          {
+            "channel_id": "sms",
+            "muted": false,
+            "output_muted": true,
+            "access": "read_write",
+            "visibility": "all",
+            "metadata": {}
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "muted",
+        "trigger": "on_channel_muted",
+        "execution": "async"
+      },
+      {
+        "name": "unmuted",
+        "trigger": "on_channel_unmuted",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "unmute_output",
+      "room_id": "room",
+      "channel_id": "sms",
+      "expect": {
+        "error": "channel_failed"
+      }
+    },
+    {
+      "call": "unmute_output",
+      "room_id": "room",
+      "channel_id": "sms",
+      "expect": {
+        "error": "channel_failed"
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "room": {
+        "sms": {
+          "room_id": "room",
+          "channel_id": "sms",
+          "muted": false,
+          "output_muted": false,
+          "access": "read_write",
+          "visibility": "all",
+          "metadata": {}
+        }
+      }
+    },
+    "room_callbacks": {
+      "room": {
+        "sms": [
+          {
+            "call": "update_binding",
+            "binding": {
+              "room_id": "room",
+              "channel_id": "sms",
+              "muted": false,
+              "output_muted": false,
+              "access": "read_write",
+              "visibility": "all",
+              "metadata": {}
+            }
+          },
+          {
+            "call": "update_binding",
+            "binding": {
+              "room_id": "room",
+              "channel_id": "sms",
+              "muted": false,
+              "output_muted": false,
+              "access": "read_write",
+              "visibility": "all",
+              "metadata": {}
+            }
+          }
+        ]
+      }
+    },
+    "hook_order": [
+      "sms.update_binding",
+      "sms.update_binding"
+    ],
+    "hooks": {
+      "muted": [],
+      "unmuted": []
+    },
+    "lifecycle": {
+      "room": [
+        {
+          "type": "channel_attached"
+        }
+      ]
+    }
+  }
+}
