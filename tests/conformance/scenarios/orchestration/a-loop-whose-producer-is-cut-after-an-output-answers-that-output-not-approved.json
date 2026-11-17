@@ -74,7 +74,19 @@
         "model": {
           "rounds": [
             {
-              "text": "Needs work."
+              "calls": [
+                {
+                  "id": "editor-v1",
+                  "name": "submit_review",
+                  "arguments": {
+                    "approved": false,
+                    "feedback": "Needs work."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Reviewed."
             }
           ]
         }

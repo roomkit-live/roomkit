@@ -1,0 +1,304 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "orchestration/each-revision-of-a-step-starts-from-its-own-task",
+  "title": "Each revision of a supervised step starts from the step's own task: the worker is given that task once, with only its latest output and the supervisor's latest feedback, however many revisions came before",
+  "rules": [
+    "§19.7.3",
+    "§19.7"
+  ],
+  "notes": "Python: tests/test_supervisor.py TestSupervisedSequential::test_rework_on_rejection_then_approve. orchestration/strategies/supervisor/supervised.py _run_step, prompts.py _compose_rework. The first revision is as a-rejected-step-is-done-again-with-the-supervisor-s-feedback gives it; the second starts from the step's task again, never from the first revision. A Loop composes its revision the same way: a-loop-reviewer-s-refusal-approves-nothing.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "sup",
+        "type": "ai",
+        "agent": {
+          "role": "Coordinator"
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "delegate_workers",
+                  "arguments": {
+                    "task": "Acme"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Analyse Acme's numbers."
+            },
+            {
+              "calls": [
+                {
+                  "id": "v1",
+                  "name": "submit_verdict",
+                  "arguments": {
+                    "approved": false,
+                    "feedback": "Add the margins.",
+                    "next_task": ""
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Judged."
+            },
+            {
+              "calls": [
+                {
+                  "id": "v2",
+                  "name": "submit_verdict",
+                  "arguments": {
+                    "approved": false,
+                    "feedback": "Add the costs.",
+                    "next_task": ""
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Judged."
+            },
+            {
+              "calls": [
+                {
+                  "id": "v3",
+                  "name": "submit_verdict",
+                  "arguments": {
+                    "approved": true,
+                    "feedback": "",
+                    "next_task": ""
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Judged."
+            },
+            {
+              "text": "Acme, reviewed."
+            }
+          ]
+        }
+      },
+      {
+        "id": "analyst",
+        "type": "ai",
+        "agent": {
+          "role": "Analyst"
+        },
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "w1",
+                  "name": "submit_result",
+                  "arguments": {
+                    "status": "completed",
+                    "summary": "Revenue."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            },
+            {
+              "calls": [
+                {
+                  "id": "w2",
+                  "name": "submit_result",
+                  "arguments": {
+                    "status": "completed",
+                    "summary": "Revenue and margins."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            },
+            {
+              "calls": [
+                {
+                  "id": "w3",
+                  "name": "submit_result",
+                  "arguments": {
+                    "status": "completed",
+                    "summary": "Revenue, margins and costs."
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "sms"
+          }
+        ]
+      }
+    ],
+    "strategies": [
+      {
+        "id": "team",
+        "supervisor": {
+          "supervisor": "sup",
+          "workers": [
+            "analyst"
+          ],
+          "strategy": "sequential",
+          "max_revisions": 3
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "install_strategy",
+      "room_id": "r1",
+      "strategy": "team"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r1",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "u1",
+        "content": {
+          "type": "text",
+          "body": "Look into Acme."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "r1": [
+        {
+          "source": {
+            "channel_id": "sms"
+          },
+          "content": {
+            "type": "text",
+            "body": "Look into Acme."
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "source": {
+            "channel_id": "sup"
+          },
+          "content": {
+            "type": "tool_call",
+            "tool_name": "delegate_workers"
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "source": {
+            "channel_id": "sup"
+          },
+          "content": {
+            "type": "tool_call",
+            "tool_name": "delegate_workers",
+            "status": "completed"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "sup",
+            "channel_type": "ai"
+          },
+          "content": {
+            "type": "text",
+            "body": "Acme, reviewed."
+          },
+          "responds_to": "r1#0"
+        }
+      ]
+    },
+    "models": {
+      "analyst": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Analyse Acme's numbers."
+            }
+          ]
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "w1",
+              "content": "{\"status\": \"received\"}",
+              "is_error": false
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Your task:\n<task>\nAnalyse Acme's numbers.\n</task>\n\n--- Revision requested by the supervisor ---\nYour previous attempt was NOT accepted. The supervisor's feedback and your previous output (for reference) are set apart below.\n\n[Supervisor feedback]\n<worker_output>\nAdd the margins.\n</worker_output>\n\n[Your previous output]\n<worker_output>\nstatus: completed\nsummary: Revenue.\n</worker_output>\n\nProduce a corrected, complete result that addresses the feedback."
+            }
+          ]
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "w2",
+              "content": "{\"status\": \"received\"}",
+              "is_error": false
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "Your task:\n<task>\nAnalyse Acme's numbers.\n</task>\n\n--- Revision requested by the supervisor ---\nYour previous attempt was NOT accepted. The supervisor's feedback and your previous output (for reference) are set apart below.\n\n[Supervisor feedback]\n<worker_output>\nAdd the costs.\n</worker_output>\n\n[Your previous output]\n<worker_output>\nstatus: completed\nsummary: Revenue and margins.\n</worker_output>\n\nProduce a corrected, complete result that addresses the feedback."
+            }
+          ]
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "w3",
+              "content": "{\"status\": \"received\"}",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
