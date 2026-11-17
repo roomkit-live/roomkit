@@ -14,6 +14,7 @@ from roomkit.providers.ai.base import AIResponse, AITool
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.tools.human_input import HumanInputToolHandler
 from tests.conftest import make_event
+from tests.test_channels.test_ai_router import _Picks
 from tests.test_tool_policy_exemptions import _binding, _calls, _tool_payload, _turn
 from tests.test_tool_timeout import BOUND, LONGER, SLOW, _calling, _Hung
 from tests.tool_loop_modes import LoopRun, respond
@@ -127,8 +128,6 @@ async def test_the_turn_budget_is_validated_before_its_tool_bounds(streaming: bo
 
 
 async def test_the_router_is_asked_before_a_turn_bound_is_refused(streaming: bool) -> None:
-    from tests.test_channels.test_ai_router import _Picks
-
     provider = _calling("slow", streaming)
     router = _Picks(provider)
 
