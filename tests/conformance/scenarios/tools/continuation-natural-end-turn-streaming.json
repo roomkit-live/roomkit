@@ -1,0 +1,179 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "tools/continuation-natural-end-turn-streaming",
+  "title": "Natural end turn",
+  "rules": [
+    "§6.4",
+    "§9.2"
+  ],
+  "notes": "Python: tests/test_continuation_policy.py and tests/test_continuation_policy_boundaries.py. The continuation observer records the exact arguments of the real AIChannel callable.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look it up.",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "found"
+          }
+        ],
+        "continuation": {
+          "prefix": "I will check",
+          "nudge": "You announced a check: run it now."
+        },
+        "model": {
+          "rounds": [
+            {
+              "text": "I will check the run.",
+              "finish_reason": "end_turn"
+            },
+            {
+              "text": "The run finished at noon.",
+              "finish_reason": "stop"
+            }
+          ],
+          "streaming": true
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "report",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "continuations": {
+      "agent": [
+        "I will check the run.",
+        "The run finished at noon."
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$contains": "Go."
+              }
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": {
+                "$contains": "Go."
+              }
+            },
+            {
+              "role": "assistant",
+              "text": "I will check the run."
+            },
+            {
+              "role": "user",
+              "text": "You announced a check: run it now."
+            }
+          ]
+        }
+      ]
+    },
+    "hooks": {
+      "report": [
+        {
+          "response": {
+            "loop_end_reason": "completed"
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "content": {
+            "body": "Go."
+          }
+        },
+        {
+          "index": 1,
+          "source": {
+            "channel_id": "agent"
+          },
+          "content": {
+            "body": "I will check the run."
+          },
+          "metadata": {
+            "loop_end_reason": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "index": 2,
+          "source": {
+            "channel_id": "agent"
+          },
+          "content": {
+            "body": "The run finished at noon."
+          },
+          "metadata": {
+            "loop_end_reason": "completed"
+          }
+        }
+      ]
+    }
+  }
+}
