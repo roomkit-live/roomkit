@@ -13,9 +13,10 @@ from pathlib import Path
 
 import pytest
 
-from roomkit import RoomKit, RunSkillScriptTool
+from roomkit import RoomKit, RunSkillScriptTool, ToolRefusedError
 from roomkit.channels.realtime_voice import RealtimeVoiceChannel
 from roomkit.skills import SkillRegistry
+from roomkit.tools import extract_tools
 from roomkit.voice.realtime.mock import MockRealtimeProvider, MockRealtimeTransport
 from tests.conference.test_conference_realtime import until
 from tests.test_skills import _make_skill_dir_full
@@ -77,3 +78,27 @@ def test_the_tool_declares_the_one_schema_every_channel_declares(tmp_path: Path)
 
     assert tool.definition["name"] == RunSkillScriptTool.name == "run_skill_script"
     assert set(tool.definition["parameters"]["required"]) == {"skill_name", "script_name"}
+
+
+async def test_standalone_tool_serves_the_registry_supplied_by_the_host(tmp_path: Path) -> None:
+    skills = SkillRegistry()
+    executor = MockScriptExecutor()
+    tool = RunSkillScriptTool(skills, executor)
+    definitions, handler = extract_tools([tool])
+    assert [definition.name for definition in definitions] == [tool.name]
+    assert handler is not None
+
+    _make_skill_dir_full(tmp_path, "reports", scripts=["build.py"])
+    skills.discover(tmp_path)
+    arguments = {"skill_name": "reports", "script_name": "build.py", "arguments": {"q": "1"}}
+    answer = await handler(tool.name, arguments)
+    assert isinstance(answer, str)
+    assert json.loads(answer)["stdout"] == "OK"
+
+    with pytest.raises(ToolRefusedError, match="nowhere"):
+        await tool.handler(tool.name, {"skill_name": "nowhere", "script_name": "build.py"})
+    missing_file = await tool.handler(
+        tool.name, {"skill_name": "reports", "script_name": "absent"}
+    )
+    assert "error" in json.loads(missing_file)
+    assert executor.calls == [("reports", "build.py", {"q": "1"})]
