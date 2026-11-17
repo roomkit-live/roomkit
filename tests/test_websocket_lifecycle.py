@@ -379,7 +379,8 @@ class TestStreamingDelivery:
         """A connection that does not stream reads the rows the stream hands
         it, each once, and no event the answer streamed under: not the empty
         one after its rows, nor its text when no row was handed (RFC Appendix
-        A.8, RMK-994); the streaming connection reads its deltas, then the end."""
+        A.8, RMK-994); the streaming connection reads its deltas, then an end
+        that carries no text, none a hook refused (RMK-1760)."""
         kit = RoomKit()
         kit.register_channel(
             AIChannel(
@@ -403,7 +404,7 @@ class TestStreamingDelivery:
             plain.append(event)
 
         async def stream_send(conn_id: str, msg: StreamMessage) -> None:
-            streamed.append(msg.type)
+            streamed.append(f"end {_row(msg.event)!r}" if isinstance(msg, StreamEnd) else msg.type)
 
         ws.register_connection("plain", send, room_id="room-1")
         ws.register_connection(
@@ -422,7 +423,7 @@ class TestStreamingDelivery:
             ]
             assert [_row(event) for event in plain] == rows
             assert [event.id for event in plain] == delivered
-            assert streamed == ["stream_start", *["stream_chunk"] * len(responses), "stream_end"]
+            assert streamed == ["stream_start", *["stream_chunk"] * len(responses), "end ''"]
         finally:
             await kit.close()
 

@@ -421,7 +421,9 @@ class WebSocketChannel(Channel):
         - ``stream_start`` — streaming begins
         - ``stream_chunk`` — text delta (drives the live bubble)
         - ``event`` — persisted event (tool call, text segment)
-        - ``stream_end`` — streaming complete
+        - ``stream_end`` — streaming complete; its event carries no text, the
+          rows having reached the connection inline (``_segmented`` in its
+          metadata) or none having been handed (RFC Appendix A.8)
 
         Non-streaming connections receive the persisted events the stream
         hands via the regular ``send_fn``, each once, and nothing more: no
@@ -468,13 +470,11 @@ class WebSocketChannel(Channel):
         await self._fan_out_stream(streaming_conns, start_msg)
 
         # Stream: text deltas as stream_chunk, RoomEvents as event messages
-        accumulated: list[str] = []
         running_text = ""
         segment_events: list[RoomEvent] = []
         try:
             async for delta in text_stream:
                 if isinstance(delta, str):
-                    accumulated.append(delta)
                     running_text += delta
                     chunk_msg = StreamChunk(
                         room_id=room_id,
@@ -497,23 +497,9 @@ class WebSocketChannel(Channel):
             await self._fan_out_stream(streaming_conns, error_msg)
             raise
 
-        # Build final event — use last text segment if segments exist,
-        # otherwise use the full accumulated text
-        if segment_events:
-            # Segments were delivered inline — stream_end carries no event
-            # (the UI already has all events)
-            segmented_meta = {**event.metadata, "_segmented": True}
-            final_event = event.model_copy(
-                update={"content": TextContent(body=""), "metadata": segmented_meta}
-            )
-        else:
-            # Simple text response — stream_end carries the full text, none
-            # when it is blank, of which the room holds no row (RFC §6.4)
-            body = running_text if running_text.strip() else ""
-            final_event = event.model_copy(update={"content": TextContent(body=body)})
-
         # Send stream_end to streaming connections. The others read the rows
         # the stream handed, and nothing of a row it did not hand (RMK-994)
+        final_event = _end_event(event, handed=bool(segment_events))
         end_msg = StreamEnd(room_id=room_id, stream_id=stream_id, event=final_event)
         await self._fan_out_stream(streaming_conns, end_msg)
 
@@ -583,3 +569,13 @@ class WebSocketChannel(Channel):
                 consecutive,
                 self._MAX_CONSECUTIVE_ERRORS,
             )
+
+
+def _end_event(event: RoomEvent, *, handed: bool) -> RoomEvent:
+    """The event ``stream_end`` carries: no text a handed row does not carry.
+    The rows reached every connection inline (``_segmented`` says so), and a
+    text no row was handed for (blocked, narrowed away, kept out, blank) is
+    none the room holds, so the client drops its bubble (RFC Appendix A.8,
+    RMK-1760)."""
+    metadata = {**event.metadata, "_segmented": True} if handed else event.metadata
+    return event.model_copy(update={"content": TextContent(body=""), "metadata": metadata})
