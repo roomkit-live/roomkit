@@ -60,8 +60,10 @@ class MediaContent(BaseModel):
     holds and resolves for the AI channels (RFC §6.4). A scheme a reader could
     fetch or open itself (``file``, ``ftp``) or run (``javascript``,
     ``vbscript``) is refused, and so is a reference a path reader could follow
-    (a one-letter scheme, a ``..`` segment, a backslash): some transports read
-    a URL they are handed as a local path.
+    (a one-letter scheme; a ``..`` segment, a backslash or a control character,
+    percent-encoded or not, a ``..`` padded with whitespace or ended by ``?``
+    or ``#``): some transports read a URL they are handed as a local path,
+    after decoding or trimming it.
     """
 
     type: Literal["media"] = "media"
@@ -81,7 +83,8 @@ class MediaContent(BaseModel):
         raise ValueError(
             "URL must be a link (http://, https://), a data: URI, or a reference "
             "<scheme>://... (two letters of scheme at least, not file, ftp, "
-            "javascript or vbscript, no '..' segment and no backslash)"
+            "javascript or vbscript, no '..' segment, backslash or control "
+            "character, even percent-encoded)"
         )
 
 

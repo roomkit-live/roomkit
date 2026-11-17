@@ -399,7 +399,21 @@ class TestBudget:
 
 
 class TestReferenceURL:
-    @pytest.mark.parametrize("url", ["app-media://photo-1", "store+v2://bucket/a.png", _PNG])
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "app-media://photo-1",
+            "store+v2://bucket/a.png",
+            _PNG,
+            "https://cdn.example/a/%2e%2e/../b..c.png?name=..",
+            "app-media://photos/a..b.png",
+            "app-media://photos/./.../1.png",
+            "app-media://photos/file%2Ename.png",
+            "app-media://bucket/folder%2Ffile.png",
+            "app-media://photos/My Photo.png?size=large#top",
+            "app-media://photos/100%",
+        ],
+    )
     def test_a_reference_link_or_data_uri_is_accepted(self, url: str) -> None:
         assert MediaContent(url=url, mime_type="image/png").url == url
 
@@ -416,6 +430,24 @@ class TestReferenceURL:
             "app-media://../../etc/passwd",
             "app-media://photos/../../../etc/passwd",
             "app-media://a\\b",
+            # What a reader that percent-decodes, once or more, or trims, follows.
+            "app-media://a/%2e%2e/secret",
+            "app-media://a/%2E%2E%2Fsecret",
+            "app-media://a/.%2E/secret",
+            "app-media://a/%252e%252e/secret",
+            "app-media://a/%25252e%25252E/secret",
+            "app-media://a/..%2fsecret",
+            "app-media://a/..%5Csecret",
+            "app-media://a/ ../secret",
+            "app-media://a/%20..%09/secret",
+            "app-media://a/\u00a0../secret",
+            "app-media://a/..?secret",
+            "app-media://a/b#..",
+            "app-media://a/b\nc",
+            "app-media://a/b%0Ac",
+            "app-media://a/b\x00",
+            "app-media://a/b\x7f",
+            "app-media://a/b\x85",
         ],
     )
     def test_a_url_a_transport_could_read_or_run_is_refused(self, url: str) -> None:
