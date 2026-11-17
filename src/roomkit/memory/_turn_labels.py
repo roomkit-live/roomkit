@@ -3,6 +3,7 @@ and for what a budget counts (RFC §6.4, §20.3)."""
 
 from __future__ import annotations
 
+import functools
 from collections.abc import Mapping, Sequence
 
 from roomkit.channels._speaker import (
@@ -55,6 +56,13 @@ def label_cost(event: RoomEvent, labels: Mapping[str, str] | None) -> int:
     text = extract_event_text(event) if label else ""
     if not label or not text:
         return 0
+    return _labels_tokens(text, label)
+
+
+@functools.lru_cache(maxsize=1024)
+def _labels_tokens(text: str, label: str) -> int:
+    """The tokens *label* adds to *text* sent line by line: cached, since a
+    memory reads the same turns at every turn of a room."""
     return max(0, estimate_tokens(labelled_lines(text, label)) - estimate_tokens(text))
 
 
