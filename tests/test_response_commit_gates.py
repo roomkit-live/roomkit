@@ -23,7 +23,14 @@ from roomkit.core.framework import RoomKit
 from roomkit.models.channel import ChannelBinding, ChannelOutput
 from roomkit.models.context import RoomContext
 from roomkit.models.delivery import InboundMessage
-from roomkit.models.enums import Access, ChannelCategory, ChannelType, EventStatus, HookTrigger
+from roomkit.models.enums import (
+    Access,
+    ChannelCategory,
+    ChannelType,
+    EventStatus,
+    EventType,
+    HookTrigger,
+)
 from roomkit.models.event import EventSource, RoomEvent, TextContent
 from roomkit.models.framework_event import FrameworkEvent
 from roomkit.models.hook import HookResult
@@ -460,6 +467,46 @@ async def test_a_binding_change_during_a_stream_holds_from_its_next_row(
 
     assert _live(ws) == live
     assert [e.type.value for e in other.delivered if e.source.channel_id == "ai1"] == web
+    await kit.close()
+
+
+@pytest.mark.parametrize(
+    ("narrowed", "live", "delivered"),
+    [
+        (EventType.MESSAGE, ["Let me check."], ["tool_call_start", "tool_call_end", "message"]),
+        (
+            EventType.TOOL_CALL_START,
+            ["Let me check.", "message", "tool_call_end", "Done.", "message"],
+            [],
+        ),
+    ],
+    ids=["message", "tool-call-row"],
+)
+async def test_a_row_its_hook_narrows_away_from_the_streaming_target_is_kept_from_it(
+    narrowed: EventType, live: list[str], delivered: list[str]
+) -> None:
+    """RFC §7.3, §7.5 rule 2 (RMK-1007): a streamed row a BEFORE_BROADCAST
+    hook narrows to web never reaches ws, the streaming target, which read
+    its text before the hook ran. A message withdraws the response: ws
+    reads nothing more of the stream and the rows after are delivered to it;
+    a tool-call row is only kept from it, the stream going on."""
+    kit = RoomKit()
+    ws = _StreamingTransport("ws")
+    agent, _ = _tool_turn(kit)
+    await _streaming_room(kit, ws, agent)
+    narrowings = [narrowed]
+
+    @kit.hook(HookTrigger.BEFORE_BROADCAST, name="narrow")
+    async def narrow(event: RoomEvent, ctx: RoomContext) -> HookResult:
+        if event.source.channel_id != "ai1" or event.type not in narrowings:
+            return HookResult.allow()
+        narrowings.clear()
+        return HookResult.modify(event.model_copy(update={"visibility": "web"}))
+
+    await kit.process_inbound(_hi(), room_id="r1")
+
+    assert _live(ws) == live
+    assert [e.type.value for e in ws.delivered if e.source.channel_id == "ai1"] == delivered
     await kit.close()
 
 

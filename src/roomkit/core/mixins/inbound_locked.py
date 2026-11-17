@@ -775,8 +775,8 @@ class InboundLockedMixin(HelpersMixin):
 
         *context* holds the room as it was built: under the lock for an
         inbound event and a commit pass (steps 6 and 12), where only a hook
-        that ran there changes it since; at the start of its stream for a
-        streamed row, whose hooks run off the lock and whose stream reads the
+        that ran there changes it since; off the lock, when the row comes,
+        for a streamed row, whose hooks run there and whose stream reads the
         room's status itself (§5.1). With no hook *ran*, it is the answer.
 
         Once a hook ran under the lock, the room's context is read again, on

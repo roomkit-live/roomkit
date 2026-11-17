@@ -76,6 +76,9 @@ class _TraceSink:
     def reads(self, channel_id: str) -> bool:
         return False
 
+    def shows(self, channel_id: str) -> bool:
+        return False
+
 
 class _ToolRowsOnly:
     """A turn whose text answers no one in its room (a supervisor's first
@@ -92,6 +95,9 @@ class _ToolRowsOnly:
 
     def reads(self, channel_id: str) -> bool:
         return self._rows.reads(channel_id)
+
+    def shows(self, channel_id: str) -> bool:
+        return self._rows.shows(channel_id)
 
 
 class PersistedTurn(NamedTuple):

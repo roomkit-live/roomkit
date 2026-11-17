@@ -348,10 +348,10 @@ class Harness:
         handed: the ids of its events, lifecycle records left out."""
         if not self._recording:
             return
-        events = [event.model_dump(mode="json") for event in context.recent_events]
-        recent = [event["id"] for event in events if not is_lifecycle_record(event)]
         per_room = self.observed.contexts.setdefault(room_id, {})
-        per_room.setdefault(channel_id, []).append({"call": call, "recent_events": recent})
+        per_room.setdefault(channel_id, []).append(
+            {"call": call, "recent_events": _recent_ids(context)}
+        )
 
     def record_streamed(self, room_id: str, channel_id: str, item: dict[str, Any]) -> None:
         """One item a streaming channel's ``deliver_stream`` read, as the
@@ -421,6 +421,7 @@ class Harness:
             "room_id": room_id,
             "event": event,
             "context_room": context.room.model_dump(mode="json"),
+            "recent_events": _recent_ids(context),
         }
         if isinstance(payload, ToolCallEvent):
             call["tool_call"] = tool_call_record(payload)
@@ -1025,3 +1026,10 @@ def _literal_rooms(scenario: Mapping[str, Any]) -> set[str]:
     walk(scenario.get("setup", {}).get("hooks", []))
     walk(scenario.get("setup", {}).get("channels", []))
     return found
+
+
+def _recent_ids(context: RoomContext) -> list[str]:
+    """The ids of *context*'s events, lifecycle records left out: what a
+    delivery and a hook read of the room (README, ``contexts``, ``hooks``)."""
+    events = [event.model_dump(mode="json") for event in context.recent_events]
+    return [event["id"] for event in events if not is_lifecycle_record(event)]

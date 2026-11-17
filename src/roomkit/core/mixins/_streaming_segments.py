@@ -23,11 +23,23 @@ from roomkit.core.mixins.helpers import (
     _source_block_reason,
     _unless_created_again,
 )
-from roomkit.core.mixins.inbound_locked import _Blocked, _Refused, within_answer_scope
+from roomkit.core.mixins.inbound_locked import _Blocked, _Refused, at_index, within_answer_scope
 from roomkit.core.mixins.lane_execution import DeliverySource
 from roomkit.core.task_utils import cancel_reason
-from roomkit.core.visibility import answer_scope, answers_reach, with_committed_visibility
-from roomkit.models.enums import EventDirection, EventStatus, EventType, RoomStatus, Visibility
+from roomkit.core.visibility import (
+    answer_scope,
+    answers_reach,
+    visibility_allows,
+    with_committed_visibility,
+)
+from roomkit.models.enums import (
+    EventDirection,
+    EventStatus,
+    EventType,
+    HookTrigger,
+    RoomStatus,
+    Visibility,
+)
 from roomkit.models.event import EventSource, RoomEvent, TextContent, ToolCallContent
 from roomkit.models.response_metadata import recorded_turn_end
 from roomkit.models.streaming import (
@@ -72,6 +84,11 @@ class RowSink(Protocol):
     def reads(self, channel_id: str) -> bool:
         """Whether *channel_id* may still read the stream, as the last
         commit read the room."""
+        ...
+
+    def shows(self, channel_id: str) -> bool:
+        """Whether *channel_id*, which still reads the stream, is handed the
+        row the last commit stored."""
         ...
 
 
@@ -760,13 +777,14 @@ class SegmentWriter:
     def _hand_to_target(self, stored: RoomEvent | None, target: set[str]) -> None:
         """Whether the channel reading the stream is handed *stored*, a row
         committed for it: it is while the room, as the row's commit read it,
-        still lets it read the response. Once it no longer does (the agent
-        muted, made read-only or detached, the channel made write-only or
-        detached), it reads nothing more of the stream, neither text nor
-        rows, and the rows after are delivered as their plans say (RFC §7.2,
-        §7.5)."""
+        still lets it read the response, and the row reaches it. Once it no
+        longer does (the agent muted, made read-only or detached, the channel
+        made write-only or detached, a message its hooks narrowed away from
+        it), it reads nothing more of the stream, neither text nor rows, and
+        the rows after are delivered as their plans say (RFC §7.2, §7.3,
+        §7.5). A tool-call row so narrowed is only kept from it."""
         if all(self._sink.reads(channel_id) for channel_id in target):
-            if stored is not None:
+            if stored is not None and all(self._sink.shows(channel_id) for channel_id in target):
                 self._streamed_rows.add(stored.id)
             return
         self._streamed_to.clear()
@@ -808,16 +826,23 @@ class LaneSink:
         # refuses it, before its hooks (RFC §5.1, §13.5).
         self._gone = False
         # The channels the room still lets read the stream, as the last
-        # row's commit read it.
+        # row's commit read it, and those of them the row is kept from.
         self._readers: set[str] = set()
+        self._kept_from: set[str] = set()
 
     def reads(self, channel_id: str) -> bool:
         """Whether the room, as the last row's commit read it, still lets
         *channel_id* read the response as it streams (RFC §7.2, §7.5)."""
         return channel_id in self._readers
 
+    def shows(self, channel_id: str) -> bool:
+        """Whether the last row stored reaches *channel_id*: not a tool-call
+        row its hooks narrowed away from it (RFC §7.3)."""
+        return channel_id not in self._kept_from
+
     async def commit(self, event: RoomEvent, *, exclude: set[str] | None) -> RoomEvent | None:
         self._readers = set()
+        self._kept_from = set()
         if self._gone or await self._found_gone() or await self._room_refuses_writes():
             await self._refuse(event)
             return None
@@ -928,8 +953,9 @@ class LaneSink:
         room_id = self._room_id
         # The row carries its cascade's scope (TurnScope), before its hooks.
         scope = event.response_visibility
+        event, context = await self._seen_by_hooks(event)
         decision = await self._kit._gate_commit(
-            room_id, event, self._context, under_lock=False, observed=observed
+            room_id, event, context, under_lock=False, observed=observed
         )
         # The hooks ran without the room lock: a close meanwhile refuses the
         # row, which is then neither committed nor recorded as blocked.
@@ -954,6 +980,23 @@ class LaneSink:
             return None
         return decision.event, decision.sync_result
 
+    async def _seen_by_hooks(self, event: RoomEvent) -> tuple[RoomEvent, RoomContext]:
+        """The row and the room its BEFORE_BROADCAST hooks read: the room as
+        it stands when the row comes, read off the lock, and the row at the
+        room's next index, as its delivery reads them (RFC §9.5, §10.1 step
+        12); its ASYNC observers and a blocked row's record read them too.
+        Read only when a hook or an observer runs: the stream's first
+        context otherwise, and for a room gone meanwhile, which the row's
+        commit refuses."""
+        hooks = self._kit._hook_engine
+        if not hooks.has_hooks_for(self._room_id, HookTrigger.BEFORE_BROADCAST, event):
+            return event, self._context
+        try:
+            context = await self._kit._build_context(self._room_id)
+        except RoomNotFoundError:
+            return event, self._context
+        return at_index(event, context.room.event_count), context
+
     async def _record_blocked(self, decision: _Blocked, observed: Observed) -> None:
         """Store a refused row BLOCKED, announced as ``event_blocked``; what
         its hooks decided still stands, their tasks and observations
@@ -974,6 +1017,23 @@ class LaneSink:
             room_id,
             decision.reason,
         )
+
+    def _keep_from_readers(self, stored: RoomEvent, bindings: list[ChannelBinding]) -> None:
+        """Keep *stored* from the readers its visibility, as its hooks left
+        it, does not reach (RFC §7.3). A message withdraws the response from
+        them: they read nothing more of the stream, and the rows after are
+        delivered to them as their plans say (§7.5 rule 2). A tool-call row
+        is only kept from them, the stream going on."""
+        by_id = {binding.channel_id: binding for binding in bindings}
+        kept = {
+            channel_id
+            for channel_id in self._readers
+            if not visibility_allows(stored.visibility, by_id[channel_id])
+        }
+        if stored.type == EventType.MESSAGE:
+            self._readers -= kept
+        else:
+            self._kept_from = kept
 
     async def _lane(
         self,
@@ -1035,6 +1095,8 @@ class LaneSink:
                 policy_aware=True,
             )
         self._readers = _readers(bindings, event.source.channel_id, scope, exclude)
+        if stored is not None:
+            self._keep_from_readers(stored, bindings)
         if hook_result.injected_events:
             await kit._lane_injected_events(
                 hook_result.injected_events, room_id, self._cascade, cause=stored or event

@@ -28,6 +28,7 @@ from roomkit.models.enums import (
     ChannelType,
     EventStatus,
     EventType,
+    HookExecution,
     HookTrigger,
 )
 from roomkit.models.event import EventSource, RoomEvent, TextContent
@@ -526,5 +527,72 @@ async def test_streamed_tool_call_events_reach_the_streaming_transport_as_events
         assert [e.type for e in copies] == list(_TOOL_EVENTS)
         assert len({e.id for e in copies}) == len(copies), "the same event was delivered twice"
         assert all(e.metadata.get("label") == "Lookup" for e in copies)
+    finally:
+        await kit.close()
+
+
+@pytest.mark.parametrize("execution", [HookExecution.SYNC, HookExecution.ASYNC])
+async def test_a_streamed_row_s_hook_reads_the_room_at_the_row(execution: HookExecution) -> None:
+    """A row's hook, an observer alike, reads the room as it stands when the
+    row comes, at the row's index: the record the room took while the tool
+    ran is in what the answer's hook reads, not the stream's first context
+    (RMK-1297)."""
+    kit = RoomKit()
+    provider = MockAIProvider(
+        streaming=True,
+        ai_responses=[
+            AIResponse(
+                content="Looking.",
+                finish_reason="tool_calls",
+                tool_calls=[AIToolCall(id="tc1", name="lookup", arguments={"q": "x"})],
+            ),
+            AIResponse(content="Found.", finish_reason="stop"),
+        ],
+    )
+
+    async def handler(name: str, args: dict[str, Any]) -> str:
+        news = RoomEvent(
+            room_id="r1",
+            source=EventSource(channel_id="sms1", channel_type=ChannelType.SMS),
+            content=TextContent(body="Any news?"),
+        )
+        await kit.commit_event("r1", news)
+        return "ok"
+
+    kit.register_channel(SimpleChannel("sms1"))
+    kit.register_channel(
+        AIChannel(
+            "ai1",
+            provider=provider,
+            tool_handler=handler,
+            tools=[AITool(name="lookup", description="Look up")],
+        )
+    )
+    await kit.create_room(room_id="r1")
+    await kit.attach_channel("r1", "sms1")
+    await kit.attach_channel("r1", "ai1", category=ChannelCategory.INTELLIGENCE)
+    read: dict[str, tuple[int, list[str]]] = {}
+    answered = asyncio.Event()
+
+    @kit.hook(HookTrigger.BEFORE_BROADCAST, execution=execution, name="reads")
+    async def reads(event: RoomEvent, ctx: RoomContext) -> HookResult:
+        if isinstance(event.content, TextContent) and event.source.channel_id == "ai1":
+            read[event.content.body] = (event.index, [e.content.body for e in ctx.recent_events])
+            if event.content.body == "Found.":
+                answered.set()
+        return HookResult.allow()
+
+    try:
+        await kit.process_inbound(
+            InboundMessage(channel_id="sms1", sender_id="u1", content=TextContent(body="go"))
+        )
+        await asyncio.wait_for(answered.wait(), 1.0)
+        stored = {
+            e.content.body: e.index
+            for e in await kit.store.list_events("r1")
+            if isinstance(e.content, TextContent)
+        }
+        assert read["Found."] == (stored["Found."], ["go", "Looking.", "Any news?"])
+        assert read["Looking."] == (stored["Looking."], ["go"])
     finally:
         await kit.close()
