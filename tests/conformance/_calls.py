@@ -485,6 +485,7 @@ def scripted_channel(
                 continuation_calls=harness.observed.continuations,
                 external_handlers=harness.external_handlers,
                 skills=skills,
+                sandbox_executors=harness.observed.sandbox_executors,
             )
         )
         harness.models.update(models)

@@ -82,6 +82,7 @@ from tests.conformance._continuation import continuation_options
 from tests.conformance._host_verbs import call_from_tool
 from tests.conformance._mcp import Connected, declared_tools, tool_handlers
 from tests.conformance._memory import Compacted, scripted_memory
+from tests.conformance._sandbox import ScriptedSandbox
 from tests.conformance._script_executor import ScriptedScriptExecutor
 from tests.conformance._skills import scripted_skill_registry
 
@@ -722,6 +723,7 @@ def scripted_agent(
     continuation_calls: dict[str, list[str]] | None = None,
     external_handlers: dict[str, ScriptedExternalHandler] | None = None,
     skills: SkillRegistry | None = None,
+    sandbox_executors: dict[str, Any] | None = None,
 ) -> tuple[AIChannel, dict[str, ScriptedModel]]:
     """The AI channel of a scripted agent, and its models by the name
     ``expect.models`` gives them: its own under its id, its memory's
@@ -784,6 +786,11 @@ def scripted_agent(
             raise AssertionError("script_executor: no observation sink")
         record = script_executors.setdefault(spec["id"], {"calls": [], "closes": 0})
         kwargs["script_executor"] = ScriptedScriptExecutor(spec["script_executor"], record)
+    if "sandbox" in spec:
+        if sandbox_executors is None:
+            raise AssertionError("sandbox: no observation sink")
+        record = sandbox_executors.setdefault(spec["id"], {"calls": [], "closes": 0})
+        kwargs["sandbox"] = ScriptedSandbox(spec["sandbox"], record)
     if "skills_in_prompt" in spec:
         kwargs["skills_in_prompt"] = spec["skills_in_prompt"]
     if "turn_budget_usd" in spec:

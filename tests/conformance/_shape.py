@@ -168,6 +168,7 @@ CHANNEL = {
     "skills_requires_match",
     "skills_in_prompt",
     "script_executor",
+    "sandbox",
     "thinking_budget",
     "enable_thinking",
     "thinking_coalesce_ms",
@@ -455,6 +456,7 @@ EXPECT = {
     "session_audit",
     "executors",
     "script_executors",
+    "sandbox_executors",
     "continuations",
     "external_handlers",
 }
@@ -879,6 +881,8 @@ def _channel_settings(channel: Mapping[str, Any], path: str, found: list[str]) -
         else:
             _turn_config(config or {}, path_of, found)
     _skills(channel.get("skills", []), f"{path}.skills", found)
+    if "sandbox" in channel:
+        _sandbox(channel["sandbox"], f"{path}.sandbox", found)
     if "script_executor" in channel:
         executor = channel["script_executor"]
         _members(executor, {"result", "raises"}, f"{path}.script_executor", found)
@@ -893,6 +897,43 @@ def _channel_settings(channel: Mapping[str, Any], path: str, found: list[str]) -
         _members(human, HUMAN_INPUT, f"{path}.human_input", found)
         for index, tool in enumerate(human.get("tools", [])):
             _members(tool, HUMAN_TOOL, f"{path}.human_input.tools[{index}]", found)
+
+
+def _sandbox(value: Any, path: str, found: list[str]) -> None:
+    _members(value, {"tools", "result", "raises"}, path, found)
+    if not isinstance(value, Mapping):
+        return
+    tools = value.get("tools", [])
+    if not isinstance(tools, list):
+        found.append(f"{path}.tools: not an array")
+    else:
+        for index, tool in enumerate(tools):
+            place = f"{path}.tools[{index}]"
+            _members(tool, {"name", "description", "parameters"}, place, found)
+            if not isinstance(tool, Mapping):
+                continue
+            if not isinstance(tool.get("name"), str):
+                found.append(f"{place}.name: not a string")
+            for key, kind in (("description", str), ("parameters", Mapping)):
+                if key in tool and not isinstance(tool[key], kind):
+                    found.append(f"{place}.{key}: invalid type")
+    for key, allowed in {
+        "result": {"exit_code", "output", "error", "metadata"},
+        "raises": {"kind", "message"},
+    }.items():
+        if key in value:
+            _members(value[key], allowed, f"{path}.{key}", found)
+    if isinstance(value.get("raises"), Mapping):
+        for key in ("kind", "message"):
+            if not isinstance(value["raises"].get(key), str):
+                found.append(f"{path}.raises.{key}: not a string")
+    if isinstance(value.get("result"), Mapping):
+        result = value["result"]
+        if type(result.get("exit_code")) is not int:
+            found.append(f"{path}.result.exit_code: not an integer")
+        for key, kind in (("output", str), ("error", str), ("metadata", Mapping)):
+            if key in result and not isinstance(result[key], kind):
+                found.append(f"{path}.result.{key}: invalid type")
 
 
 def _turn_config(config: Mapping[str, Any], path: str, found: list[str]) -> None:
