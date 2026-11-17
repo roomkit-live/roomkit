@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -81,5 +83,21 @@ async def test_unknown_fixture_objects_are_not_sdk_refusals(
     scenario = {
         "steps": [{"call": "skill_registry_session", "servers": {}, "operations": operations}]
     }
+    problems = await Harness(scenario).run()
+    assert any("the runner cannot read the call" in problem for problem in problems)
+
+
+async def test_a_refusal_cannot_pass_as_an_expected_null_result() -> None:
+    path = Path(__file__).parent / "scenarios/served-skills/only-full-copies-fetch-unlisted.json"
+    scenario = json.loads(path.read_text())
+    scenario["steps"][0]["expect"]["result"]["results"][3] = {"status": "ok", "result": None}
+    problems = await Harness(scenario).run()
+    assert any("status" in problem for problem in problems)
+
+
+async def test_a_sanitized_load_error_cannot_hide_a_wrong_resource_request() -> None:
+    path = Path(__file__).parent / "scenarios/served-skills/load-refuses-size.json"
+    scenario = json.loads(path.read_text())
+    scenario["steps"][0]["servers"]["remote"]["replies"][1]["method"] = "wrong/read"
     problems = await Harness(scenario).run()
     assert any("the runner cannot read the call" in problem for problem in problems)

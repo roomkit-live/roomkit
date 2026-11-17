@@ -111,14 +111,14 @@ class RegistrySession:
             if inspect.isawaitable(value):
                 value = await value
         except SkillError as error:
-            return {"error": type(error).__name__, "message": str(error)}
+            return {"status": "error", "error": type(error).__name__, "message": str(error)}
         except KeyError as error:
             if method != "read_file" or error.args != (name,):
                 raise
-            return {"error": "KeyError", "message": name}
+            return {"status": "error", "error": "KeyError", "message": name}
         if method in {"get_skill", "load_skill"}:
             value = _skill(value)
-        return {"result": value}
+        return {"status": "ok", "result": value}
 
 
 async def session(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> dict[str, Any]:
