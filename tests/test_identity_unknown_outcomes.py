@@ -131,7 +131,7 @@ class TestTheUnknownHookCanChallenge:
         assert "hello" not in [getattr(e.content, "body", None) for e in timeline]
 
 
-class TestTheUnknownHookCanPend:
+class TestAnIdentityHookCanPend:
     @pytest.mark.parametrize(
         ("resolver", "trigger"),
         [
@@ -158,6 +158,7 @@ class TestTheUnknownHookCanPend:
         assert len(participants) == 1
         assert participants[0].identification is IdentificationStatus.PENDING
         assert participants[0].display_name == "Maybe Alice"
+        await kit.close()
 
     async def test_the_hooks_candidates_are_carried(self) -> None:
         """A hook that pends with candidates is naming who it might be."""

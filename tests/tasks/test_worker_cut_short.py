@@ -5,8 +5,8 @@ ended, its output the worker's last narration and its metadata the
 ``loop_end_reason``; streamed or buffered, inline or in the background, with
 a transport shared into the child room or not, whether the turn wrote text or
 none. An ACP worker whose prompt stopped on any reason but ``end_turn`` is cut
-too (RMK-418). A worker that owes a result and submitted it before the cut
-keeps it.
+too (RMK-418). A worker that owes a result and is cut without it fails,
+never re-prompted.
 """
 
 from __future__ import annotations

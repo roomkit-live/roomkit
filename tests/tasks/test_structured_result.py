@@ -23,11 +23,13 @@ from roomkit.models.channel import ChannelOutput
 from roomkit.models.enums import ChannelType, EventType
 from roomkit.models.event import EventSource, RoomEvent, TextContent, ToolCallContent
 from roomkit.models.room import Room
-from roomkit.models.tool_call import ToolCallEvent
+from roomkit.models.steering import Cancel, InjectMessage
+from roomkit.models.tool_call import ToolCallEvent, ToolRoundEvent
 from roomkit.orchestration.result import is_submit_result, normalize_result, orchestration_fail
 from roomkit.orchestration.strategies.supervisor.prompts import SUBMIT_VERDICT
-from roomkit.providers.ai.base import AIResponse, AIToolCall
+from roomkit.providers.ai.base import AIResponse, AITool, AIToolCall
 from roomkit.providers.ai.mock import MockAIProvider
+from roomkit.tools.context import current_tool_room_id
 from roomkit.turns._registry_tools import OwnerToolStore
 from tests.tool_room import owner_tools_in, room_tool_names
 
@@ -329,26 +331,52 @@ class TestAnotherResultTool:
         assert found == {"approved": False, "feedback": "add sources", "next_task": None}
 
 
-class TestAResultTheHooksBlockedIsNone:
-    """The result tool served in the loop is read once ON_TOOL_CALL judged the
-    call: a call a hook blocked is no result (RMK-396, RFC §23.3)."""
+class _RolesSeen(list):
+    """A provider's requests as the model was shown them: the roles of their
+    messages when asked (the loop goes on appending to its context)."""
 
-    async def _delegate(self, *, block: bool) -> str:
+    def append(self, context: Any) -> None:
+        super().append([message.role for message in context.messages])
+
+
+class TestTheWorkersResultCall:
+    """The result tool served in the loop is read once ON_TOOL_CALL judged the
+    call: a call a hook blocked is no result, and its turn goes on (RMK-396).
+    A served call ends the worker's turn: the model is asked nothing after its
+    round, unless the round gave it something to read, a steered message or
+    an AFTER_TOOL_ROUND one; a Cancel steered in then cancels it (RMK-357,
+    RFC §23.3, §21.3)."""
+
+    async def _delegate(
+        self,
+        *,
+        block: bool = False,
+        streaming: bool = True,
+        steer: InjectMessage | Cancel | None = None,
+        after_round: str | None = None,
+    ) -> tuple[Any, list[list[str]]]:
         submitted = {"status": "completed", "summary": "the worker's result", "data": {}}
+        calls = [AIToolCall(id="s1", name="submit_result", arguments=submitted)]
+        if steer is not None:
+            calls.append(AIToolCall(id="w1", name="wait_a_bit", arguments={}))
+        provider = MockAIProvider(
+            streaming=streaming,
+            ai_responses=[AIResponse(content="", tool_calls=calls)]
+            + [AIResponse(content="ok")] * 6,
+        )
+        provider.calls = _RolesSeen()
+        worker: Agent
+
+        async def wait_a_bit(name: str, arguments: dict[str, Any]) -> str:
+            assert steer is not None
+            worker.steer(steer, room_id=current_tool_room_id())
+            return "waited"
+
         worker = Agent(
             "worker",
-            provider=MockAIProvider(
-                ai_responses=[
-                    AIResponse(
-                        content="",
-                        tool_calls=[
-                            AIToolCall(id="s1", name="submit_result", arguments=submitted)
-                        ],
-                    ),
-                    AIResponse(content="ok"),
-                ]
-                * 3
-            ),
+            provider=provider,
+            tools=[AITool(name="wait_a_bit", description="Wait.", parameters={"type": "object"})],
+            tool_handler=wait_a_bit,
         )
         kit = RoomKit()
         kit.register_channel(worker)
@@ -359,71 +387,42 @@ class TestAResultTheHooksBlockedIsNone:
             async def refuse(event: ToolCallEvent, ctx: Any) -> HookResult:
                 return HookResult.block("not now")
 
-        task = await kit.delegate(
-            "parent", "worker", "do it", wait=True, require_structured_result=True
-        )
-        await kit.close()
-        assert task.result is not None
-        return json.dumps(task.result.model_dump(mode="json"))
+        if after_round is not None:
 
-    async def test_a_blocked_call_is_no_result(self) -> None:
-        assert "the worker's result" not in await self._delegate(block=True)
-
-    async def test_a_served_call_is_the_result(self) -> None:
-        assert "the worker's result" in await self._delegate(block=False)
-
-
-class _RolesSeen(list):
-    """A provider's requests as the model was shown them: the roles of their
-    messages when asked (the loop goes on appending to its context)."""
-
-    def append(self, context: Any) -> None:
-        super().append([message.role for message in context.messages])
-
-
-class TestATurnEndsOnItsServedResult:
-    """A worker's turn ends once its result tool's call is served: the model
-    is asked nothing after it, so an empty answer is never re-prompted
-    (RMK-357, RFC §23.3). A call a hook blocked is no result, and the turn
-    goes on."""
-
-    async def _model_calls(self, *, block: bool, streaming: bool = True) -> list[list[str]]:
-        submitted = {"status": "completed", "summary": "done", "data": {}}
-        provider = MockAIProvider(
-            streaming=streaming,
-            ai_responses=[
-                AIResponse(
-                    content="",
-                    tool_calls=[AIToolCall(id="s1", name="submit_result", arguments=submitted)],
-                ),
-                AIResponse(content=""),
-                AIResponse(content="Submitted."),
-            ],
-        )
-        provider.calls = _RolesSeen()
-        kit = RoomKit()
-        kit.register_channel(Agent("worker", provider=provider))
-        await kit.create_room(room_id="parent")
-        if block:
-
-            @kit.hook(HookTrigger.ON_TOOL_CALL, HookExecution.SYNC)
-            async def refuse(event: ToolCallEvent, ctx: Any) -> HookResult:
-                return HookResult.block("not now")
+            @kit.hook(HookTrigger.AFTER_TOOL_ROUND)
+            async def remind(event: ToolRoundEvent, ctx: Any) -> HookResult:
+                event.messages.append(after_round)
+                return HookResult.allow()
 
         task = await kit.delegate(
             "parent", "worker", "do it", wait=True, require_structured_result=True
         )
         await kit.close()
         assert task.result is not None
-        assert block or json.loads(task.result.output or "{}")["summary"] == "done"
-        return list(provider.calls)
+        return task.result, list(provider.calls)
+
+    async def test_a_blocked_call_is_no_result_and_its_turn_goes_on(self) -> None:
+        result, calls = await self._delegate(block=True)
+        assert "the worker's result" not in json.dumps(result.model_dump(mode="json"))
+        # The same turn asks again, the blocked call's result in hand, rather
+        # than the delegation reminding a turn that ended.
+        assert calls[1][-1] == "tool"
 
     @pytest.mark.parametrize("streaming", [False, True], ids=["generates", "streams"])
-    async def test_the_model_is_asked_once(self, streaming: bool) -> None:
-        assert len(await self._model_calls(block=False, streaming=streaming)) == 1
+    async def test_a_served_call_is_the_result_and_ends_the_turn(self, streaming: bool) -> None:
+        result, calls = await self._delegate(streaming=streaming)
+        assert json.loads(result.output or "{}")["summary"] == "the worker's result"
+        assert len(calls) == 1
 
-    async def test_a_blocked_result_lets_the_turn_go_on(self) -> None:
-        """The same turn asks again, with the blocked call's result, rather
-        than the delegation reminding a turn that ended."""
-        calls = await self._model_calls(block=True)
-        assert calls[1][-1] == "tool"
+    @pytest.mark.parametrize("given", ["steered", "after_tool_round"])
+    async def test_a_message_its_round_gives_the_model_is_read(self, given: str) -> None:
+        if given == "steered":
+            _, calls = await self._delegate(steer=InjectMessage(role="user", content="One more."))
+        else:
+            _, calls = await self._delegate(after_round="One more.")
+        assert [roles[-1] for roles in calls] == ["user", "user"]
+
+    async def test_a_cancel_steered_in_its_round_cancels_the_turn(self) -> None:
+        result, calls = await self._delegate(steer=Cancel(reason="stop"))
+        assert len(calls) == 1
+        assert result.metadata["turns"]["worker"]["loop_end_reason"] == "cancelled"

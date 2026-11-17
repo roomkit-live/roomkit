@@ -599,7 +599,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         turn.count_round(calls)
         # A delegation's result tool, served once ON_TOOL_CALL let it
         # stand, ends the turn (RFC §23.3).
-        turn.submitted = any(
+        served = any(
             part.outcome == "served" and self._ends_turn(part.name, turn.room_id)
             for part in results
         )
@@ -607,7 +607,9 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         async with aclosing(handed) as deltas:
             async for delta in deltas:
                 yield delta
-        await self._after_tool_round(context, calls, results, answered, turn, index)
+        asked = await self._after_tool_round(context, calls, results, answered, turn, index)
+        # A message AFTER_TOOL_ROUND adds is for the next round to read.
+        turn.submitted = served and not asked
         await self._compact_after_round(context, turn.room_id, turn.last_usage)
 
     async def _hand_round_ends(
@@ -672,13 +674,14 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         answered: list[AIToolResultPart],
         turn: _StreamTurnState,
         index: int,
-    ) -> None:
+    ) -> bool:
         """Hand the round the channel just ran to AFTER_TOOL_ROUND and apply
         what its hooks asked: withdrawals for the rest of the turn, messages
-        the next round reads after the results (RFC §6.4)."""
+        the next round reads after the results (RFC §6.4). Whether they
+        added any."""
         hook = self._after_tool_round_hook
         if hook is None:
-            return
+            return False
         event = ToolRoundEvent(
             channel_id=self.channel_id,
             room_id=turn.room_id,
@@ -697,6 +700,7 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
         context.messages.extend(
             AIMessage(role="user", content=without_mark_copies(text)) for text in event.messages
         )
+        return bool(event.messages)
 
     async def _stream_generation(
         self, round_: _StreamRound, context: AIContext, turn: _StreamTurnState, index: int
@@ -811,13 +815,15 @@ class AIStreamingMixin(AIToolLoopRulesMixin):
                 ) as deltas:
                     async for delta in deltas:
                         yield delta
-                if turn.submitted:
-                    # The turn handed its result back: nothing is asked after it.
-                    yield _answered_end(context, turn, "completed")
-                    return
+                read = (len(context.messages), context.system_prompt)
                 context, cancelled = self._drain_steering_queue(context, loop_ctx)
                 if cancelled:
                     yield turn.end("cancelled")
+                    return
+                if turn.submitted and read == (len(context.messages), context.system_prompt):
+                    # The turn handed its result back, and nothing steered in
+                    # asks the model more: nothing is asked after it (RFC §23.3).
+                    yield _answered_end(context, turn, "completed")
                     return
 
             # An empty-response retry can consume the final generation slot.

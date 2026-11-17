@@ -11,6 +11,7 @@ whether a transport is shared. The failure is logged as its error is.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import tempfile
 from pathlib import Path
@@ -181,6 +182,52 @@ async def test_a_buffered_worker_turn_failed_after_it_began_keeps_its_end(shared
     assert (result.error, result.output) == ("mock (400): upstream 400", "Still checking.")
     assert result.metadata["loop_end_reason"] == "error"
     assert completed == ["error"]
+    await kit.close()
+
+
+GATEWAY_SUBMIT = "mcp__gateway__submit_result"
+
+
+class _SubmitsThroughTheGatewayThenFails(MockAIProvider):
+    """Submits through the gateway's result tool, which the owner does not
+    serve, so the turn goes on; its next generation fails."""
+
+    async def generate(self, context: AIContext) -> AIResponse:
+        self.calls.append(context)
+        if len(self.calls) == 1:
+            submitted = {"status": "completed", "summary": "found it", "data": {}}
+            return AIResponse(
+                content="Submitting.",
+                finish_reason="tool_calls",
+                tool_calls=[AIToolCall(id="s1", name=GATEWAY_SUBMIT, arguments=submitted)],
+            )
+        raise ProviderError("overloaded 529", provider="mock", status_code=529)
+
+
+async def _received(name: str, arguments: dict[str, Any]) -> str:
+    return json.dumps({"status": "received"})
+
+
+async def test_a_result_submitted_before_the_failure_still_counts() -> None:
+    kit = RoomKit()
+    gateway = AITool(name=GATEWAY_SUBMIT, description="Submit.", parameters={"type": "object"})
+    provider = _SubmitsThroughTheGatewayThenFails(streaming=True)
+    kit.register_channel(
+        Agent(
+            "worker",
+            provider=provider,
+            tools=[gateway],
+            tool_handler=_received,
+            tool_search=False,
+        )
+    )
+    await kit.create_room(room_id="p")
+
+    result, _ = await _delegate(kit, "worker", require_structured_result=True)
+
+    assert len(provider.calls) == 2
+    assert result.status == "completed"
+    assert json.loads(result.output)["summary"] == "found it"
     await kit.close()
 
 
