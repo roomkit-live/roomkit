@@ -10,21 +10,39 @@ the run first shows them.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from roomkit import RoomKit
 from roomkit.models.pending_input import PendingInputEvent
-from tests.conformance._calls import Call
+from tests.conformance._calls import Call, _org
 
 if TYPE_CHECKING:
     from tests.conformance._harness import Harness
 
 # Each call's arguments, beside `call` and `organization_id`.
 INPUT_ARGUMENTS: dict[str, set[str]] = {
+    "input_request": {"request_id"},
+    "await_input_request": {"request_id"},
     "answer_input": {"request_id", "value"},
     "reject_input": {"request_id", "reason"},
 }
+
+
+async def _input_request(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
+    request = kit.input_request(spec["request_id"], **_org(spec))
+    if request is None:
+        return None
+    return request_record(request) | {"timestamp": request.timestamp.isoformat()}
+
+
+async def _await_input_request(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
+    """Wait for the owner's record, which may arrive after the executor's hook."""
+    async with asyncio.timeout(2):
+        while kit.input_request(spec["request_id"], **_org(spec)) is None:
+            await asyncio.sleep(0.001)
+    return True
 
 
 async def _answer_input(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> Any:
@@ -36,6 +54,8 @@ async def _reject_input(kit: RoomKit, harness: Harness, spec: Mapping[str, Any])
 
 
 INPUT_CALLS: dict[str, Call] = {
+    "input_request": _input_request,
+    "await_input_request": _await_input_request,
     "answer_input": _answer_input,
     "reject_input": _reject_input,
 }

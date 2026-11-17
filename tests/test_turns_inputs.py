@@ -11,10 +11,13 @@ the request.
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
+import roomkit.models.pending_input as pending_model
 from roomkit import RoomKit
 from roomkit.channels.ai import AIChannel
 from roomkit.models.delivery import InboundMessage
@@ -112,17 +115,27 @@ async def test_the_owner_answers_a_turns_request() -> None:
     await kit.close()
 
 
-async def test_the_owner_reads_an_open_request_as_its_hook_did() -> None:
+async def test_the_owner_reads_an_open_request_as_its_hook_did(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """A door answering a request tells who was asked first: the owner reads
     the request by its id, its room, channel, tool call and the actor of its
     turn, until it is answered (RFC §10.6.5)."""
-    kit, _, _, asked, _ = await _kit()
+    created = datetime(2026, 11, 17, tzinfo=UTC)
+    notified = created + timedelta(seconds=5)
+    instants = iter((created, notified))
+    monkeypatch.setattr(
+        pending_model, "datetime", SimpleNamespace(now=lambda _zone: next(instants))
+    )
+    kit, _, human, asked, _ = await _kit()
     turn = _say(kit)
     pending_id = await _asked(asked)
 
     read = await _held(kit, pending_id)
 
     hooked = asked[0]
+    assert read.timestamp == human.handler.pending[pending_id].created_at == created
+    assert hooked.timestamp == notified
     for field in ("pending_id", "tool_name", "arguments", "room_id", "tool_call_id"):
         assert getattr(read, field) == getattr(hooked, field), field
     assert (read.channel_id, read.channel_type, read.actor_id) == (
@@ -130,6 +143,10 @@ async def test_the_owner_reads_an_open_request_as_its_hook_did() -> None:
         hooked.channel_type,
         hooked.actor_id,
     )
+    read.arguments["question"] = "Changed by the reader"
+    fresh = kit.input_request(pending_id)
+    assert fresh is not None
+    assert fresh.arguments == {"question": "Color?"}
     assert await kit.answer_input(pending_id, "Blue") is True
     assert kit.input_request(pending_id) is None
     await asyncio.wait_for(turn, 5)
@@ -144,6 +161,9 @@ async def test_an_open_request_is_read_within_its_organization_only() -> None:
     await _held(kit, pending_id, organization_id="org-a")
     assert kit.input_request(pending_id, organization_id="org-b") is None
     assert kit.input_request("no-such-request") is None
+    other = RoomKit()
+    assert other.input_request(pending_id) is None
+    await other.close()
     assert await kit.answer_input(pending_id, "Blue") is True
     await asyncio.wait_for(turn, 5)
     await kit.close()
@@ -162,6 +182,24 @@ async def test_the_channels_handler_answers_where_the_tool_waits_first_come_firs
 
     [report] = reports
     assert report.result == "Green"
+    assert kit.input_request(pending_id) is None
+    await kit.close()
+
+
+@pytest.mark.parametrize("outcome", ["reject", "release"])
+async def test_a_request_settled_by_its_handler_is_no_longer_read(outcome: str) -> None:
+    kit, _, human, asked, _ = await _kit()
+    turn = _say(kit)
+    pending_id = await _asked(asked)
+    await _held(kit, pending_id)
+
+    if outcome == "reject":
+        assert human.handler.reject(pending_id, "Not now")
+    else:
+        assert human.handler.release(pending_id)
+    await asyncio.wait_for(turn, 5)
+
+    assert kit.input_request(pending_id) is None
     await kit.close()
 
 
@@ -264,6 +302,7 @@ async def test_a_request_still_open_when_its_turn_ends_is_withdrawn() -> None:
     # answers it no more.
     assert outcomes == ["Released before an answer arrived"]
     assert await kit.answer_input(asked[0], "Too late") is False
+    assert kit.input_request(asked[0]) is None
     await kit.close()
 
 
@@ -296,6 +335,7 @@ async def test_a_detached_request_a_turn_raised_outlives_the_turn() -> None:
 
     # The owner's record went with the turn; the creator's way answers it.
     assert await kit.answer_input(raised[0], "From the kit") is False
+    assert kit.input_request(raised[0]) is None
     assert human.resolve(raised[0], "yes")
     assert await human.wait(raised[0], timeout=1) == "yes"
     await kit.close()
@@ -351,6 +391,7 @@ async def test_a_rejection_reaches_the_tool_as_a_refusal() -> None:
     [report] = reports
     assert report.is_error
     assert "Not now" in str(report.result)
+    assert kit.input_request(pending_id) is None
     await kit.close()
 
 
@@ -364,6 +405,7 @@ async def test_a_request_no_one_answers_in_time_is_closed_on_the_owner() -> None
     [report] = reports
     assert report.is_error
     assert await kit.answer_input(pending_id, "Too late") is False
+    assert kit.input_request(pending_id) is None
     await kit.close()
 
 
@@ -383,6 +425,7 @@ async def test_a_request_a_hook_blocks_is_closed_on_the_owner() -> None:
     [pending_id] = denied
     # Settled on the executor: the owner takes no answer for it.
     assert await kit.answer_input(pending_id, "Too late") is False
+    assert kit.input_request(pending_id) is None
     await kit.close()
 
 
