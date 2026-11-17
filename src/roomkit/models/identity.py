@@ -60,7 +60,9 @@ class IdentityHookResult(BaseModel):
         display_name: str | None = None,
         candidates: list[Identity] | None = None,
     ) -> IdentityHookResult:
-        """Pending - create participant with status=pending. Advisor resolves later."""
+        """Pending - create participant with status=pending, named *display_name*.
+
+        Advisor resolves later."""
         return cls(
             status=IdentificationStatus.PENDING,
             display_name=display_name,

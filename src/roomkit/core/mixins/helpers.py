@@ -155,6 +155,14 @@ IdentityHookFn = Callable[
 ]
 
 
+class PendingSender(IdentityResult):
+    """The resolver's result for a sender an identity hook left pending, with
+    the name the hook's ``pending()`` gave them: the pending record's name
+    (RFC §11.3)."""
+
+    display_name: str | None = None
+
+
 @runtime_checkable
 class FrameworkHelpers(Protocol):
     """Contract: capabilities a host class must provide for HelpersMixin.
@@ -648,6 +656,7 @@ class HelpersMixin:
             id=participant_id,
             room_id=room_id,
             channel_id=channel_id,
+            display_name=id_result.display_name if isinstance(id_result, PendingSender) else None,
             connected_via=[channel_id],
             identification=IdentificationStatus.PENDING,
             candidates=candidate_ids,

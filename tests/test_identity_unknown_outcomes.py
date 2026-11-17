@@ -12,6 +12,8 @@ dispatch that had no branch for it at all.
 
 from __future__ import annotations
 
+import pytest
+
 from roomkit.core.framework import RoomKit
 from roomkit.identity.base import IdentityResolver
 from roomkit.models.context import RoomContext
@@ -28,6 +30,16 @@ class UnknownResolver(IdentityResolver):
 
     async def resolve(self, message: InboundMessage, context: RoomContext) -> IdentityResult:
         return IdentityResult(status=IdentificationStatus.UNKNOWN)
+
+
+class AmbiguousResolver(IdentityResolver):
+    """Finds two identities the sender may be."""
+
+    async def resolve(self, message: InboundMessage, context: RoomContext) -> IdentityResult:
+        return IdentityResult(
+            status=IdentificationStatus.AMBIGUOUS,
+            candidates=[Identity(id="id1"), Identity(id="id2")],
+        )
 
 
 class ChallengingResolver(IdentityResolver):
@@ -120,10 +132,20 @@ class TestTheUnknownHookCanChallenge:
 
 
 class TestTheUnknownHookCanPend:
-    async def test_a_pending_participant_is_created(self) -> None:
-        kit = await _room(UnknownResolver())
+    @pytest.mark.parametrize(
+        ("resolver", "trigger"),
+        [
+            (UnknownResolver(), HookTrigger.ON_IDENTITY_UNKNOWN),
+            (AmbiguousResolver(), HookTrigger.ON_IDENTITY_AMBIGUOUS),
+        ],
+    )
+    async def test_a_pending_participant_is_created_under_the_hooks_name(
+        self, resolver: IdentityResolver, trigger: HookTrigger
+    ) -> None:
+        """The name a hook gives ``pending()`` is the pending record's (RFC §11.3)."""
+        kit = await _room(resolver)
 
-        @kit.identity_hook(HookTrigger.ON_IDENTITY_UNKNOWN)
+        @kit.identity_hook(trigger)
         async def pend(
             event: RoomEvent, ctx: RoomContext, id_result: IdentityResult
         ) -> IdentityHookResult:
@@ -135,6 +157,7 @@ class TestTheUnknownHookCanPend:
         assert result.blocked is False
         assert len(participants) == 1
         assert participants[0].identification is IdentificationStatus.PENDING
+        assert participants[0].display_name == "Maybe Alice"
 
     async def test_the_hooks_candidates_are_carried(self) -> None:
         """A hook that pends with candidates is naming who it might be."""

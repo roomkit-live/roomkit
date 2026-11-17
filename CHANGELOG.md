@@ -35,6 +35,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A pending sender's record takes the name an identity hook's `pending()` gives** (RFC §11.3, RMK-357). `IdentityHookResult.pending(display_name="SMS User")`, the guide's own example, created the pending participant without a name, on `ON_IDENTITY_UNKNOWN` and `ON_IDENTITY_AMBIGUOUS` alike; the record now carries it.
+
 - **A shared location and a template read in a model's later history as its turn read them** (RFC §6.4, §6.6, RMK-1743). The turn a location started read it as `[Location: Head office (45.5, -73.6)]`, then the turns after dropped it from their history, a template and a composite's location part alike: the history reads the stored event, which no text reader took. They now read by their text form, as the turn did.
 
 - Cancelling a worker waits for its inline delegation to finish within the existing cancellation deadline; normal completion keeps its previous behavior (RFC §23.3, §23.4).

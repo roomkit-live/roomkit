@@ -7,9 +7,9 @@ import logging
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from roomkit.core._authors import People
-from roomkit.core.mixins.helpers import HelpersMixin
+from roomkit.core.mixins.helpers import HelpersMixin, PendingSender
 from roomkit.models.enums import HookTrigger, IdentificationStatus
-from roomkit.models.identity import Identity, IdentityResult
+from roomkit.models.identity import Identity, IdentityHookResult, IdentityResult
 from roomkit.models.participant import own_record_id
 
 if TYPE_CHECKING:
@@ -301,6 +301,9 @@ class InboundIdentityMixin(HelpersMixin):
             raise _IdentityBlockedError("identity_challenge_sent")
         if hook_result and hook_result.status == IdentificationStatus.REJECTED:
             raise _IdentityBlockedError(hook_result.reason or "identity_rejected")
+        if hook_result and hook_result.status == IdentificationStatus.PENDING:
+            # The record keeps the resolver's candidates and takes the hook's name.
+            return event, None, _pending(id_result, hook_result, id_result.candidates)
         # No hook resolved it — mark for pending creation
         return event, None, id_result
 
@@ -355,19 +358,26 @@ class InboundIdentityMixin(HelpersMixin):
             # The hook asked for a pending participant, so the resolver's
             # UNKNOWN verdict is superseded by what the hook knows — carry the
             # hook's own display name and candidates into the pending record.
-            return (
-                event,
-                None,
-                id_result.model_copy(
-                    update={
-                        "status": IdentificationStatus.PENDING,
-                        "candidates": hook_result.candidates or id_result.candidates,
-                    }
-                ),
-            )
+            candidates = hook_result.candidates or id_result.candidates
+            return event, None, _pending(id_result, hook_result, candidates)
         if id_result.status == IdentificationStatus.REJECTED:
             raise _IdentityBlockedError(id_result.message or "identity_rejected")
         return event, None, None
+
+
+def _pending(
+    id_result: IdentityResult, hook_result: IdentityHookResult, candidates: list[Identity]
+) -> PendingSender:
+    """*id_result* as a hook's ``pending()`` leaves it: PENDING, with
+    *candidates* and the name the hook gave (RFC §11.2, §11.3)."""
+    return PendingSender.model_validate(
+        {
+            **dict(id_result),
+            "status": IdentificationStatus.PENDING,
+            "candidates": candidates,
+            "display_name": hook_result.display_name,
+        }
+    )
 
 
 def _as_own_sender(event: Any, context: RoomContext) -> Any:
