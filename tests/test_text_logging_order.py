@@ -64,7 +64,9 @@ async def run(
             provider=model,
             tools=[
                 AITool(
-                    name="lookup", description="Synthetic lookup", parameters={"type": "object"}
+                    name="lookup",
+                    description="Synthetic lookup",
+                    parameters={"type": "object", "properties": {"query": {"type": "string"}}},
                 )
             ],
             tool_handler=handler,
@@ -280,3 +282,33 @@ async def test_gate_diagnostics_are_once_at_their_source_level(caplog, streaming
     matches = [record for record in lines(caplog) if record.getMessage() == expected]
     assert len(matches) == 1
     assert matches[0].levelno == (logging.INFO if gate == "before" else logging.WARNING)
+
+
+async def test_rewritten_argument_diagnostic_uses_the_reason_without_a_json_envelope(
+    caplog, streaming
+):
+    async def before(event, context):
+        return HookResult(action="allow", metadata={"arguments": {"query": 42}})
+
+    ran = []
+
+    async def handler(name, arguments):
+        ran.append(name)
+        return "synthetic-result"
+
+    parts = await run(
+        streaming,
+        handler,
+        arguments={"query": "synthetic-input"},
+        hooks=[(HookTrigger.BEFORE_TOOL_USE, before)],
+    )
+    assert not ran and parts[0].is_error
+    matches = [
+        record for record in lines(caplog) if "Invalid rewritten arguments" in record.getMessage()
+    ]
+    assert len(matches) == 1 and matches[0].levelno == logging.WARNING
+    assert (
+        matches[0]
+        .getMessage()
+        .startswith("Tool lookup: Invalid rewritten arguments for 'lookup':")
+    )
