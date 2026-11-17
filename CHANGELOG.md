@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Reject a malformed or out-of-range port in `validate_public_url`, including offline checks and IP literals.
+
 - Changes to nested tool declaration parameters no longer modify the source schema or another declaration.
 
 - `RunSkillScriptTool.definition` returns an independent schema, including its nested parameters.

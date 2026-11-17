@@ -170,6 +170,9 @@ def validate_public_url(
     if parsed.scheme not in allowed_schemes:
         raise ValueError(f"URL scheme must be one of {allowed_schemes}, got {parsed.scheme!r}")
 
+    # Read the property even for literals and offline checks: urllib validates
+    # the port lazily, and callers can reuse the URL without resolving here.
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
     hostname = parsed.hostname
     # Strip the trailing-dot DNS form: ``localhost.`` resolves identically
     # to ``localhost`` but bypasses literal-string blocklists.
@@ -203,7 +206,6 @@ def validate_public_url(
     if not resolve_dns:
         return url
 
-    port = parsed.port or (443 if parsed.scheme == "https" else 80)
     addrs = _resolve_hostname(hostname, port)
     if not addrs:
         raise ValueError(f"URL host {hostname!r} did not resolve to any address")
