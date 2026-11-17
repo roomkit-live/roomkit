@@ -18,6 +18,7 @@ class LegacySSEPeer(MCPPeer):
         self.headers: list[dict[str, str]] = []
         self.raw_headers: list[list[tuple[str, str]]] = []
         self.targets: list[tuple[str, str]] = []
+        self.messages: list[dict[str, Any]] = []
         self.get_opened = asyncio.Event()
         self.get_closed = asyncio.Event()
         self.connections = 0
@@ -51,6 +52,7 @@ class LegacySSEPeer(MCPPeer):
         length = int(headers.get("content-length", "0"))
         assert 0 < length <= 4 * 1024 * 1024
         message = json.loads(await reader.readexactly(length))
+        self.messages.append(message)
         reply = self._reply(message) if "id" in message else None
         await self._send(writer, 202, b"")
         if reply is not None:
