@@ -1,0 +1,108 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "ai-context/no-outgoing-transport-keeps-targets-absent-non-streaming",
+  "title": "No outgoing transport keeps targets absent (non-streaming)",
+  "rules": [
+    "§6.7",
+    "§5.8",
+    "§4.2"
+  ],
+  "notes": "The real provider request observes the public AIContext. Media capabilities are metadata only; no media execution is exercised.",
+  "setup": {
+    "channels": [
+      {
+        "id": "source",
+        "type": "websocket",
+        "direction": "inbound",
+        "capabilities": {
+          "media_types": [
+            "location"
+          ],
+          "max_length": 1
+        }
+      },
+      {
+        "id": "listener",
+        "type": "ai",
+        "category": "intelligence",
+        "capabilities": {
+          "media_types": [
+            "location"
+          ],
+          "max_length": 1
+        }
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "streaming": false,
+          "rounds": [
+            {
+              "text": "Done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room",
+        "metadata": {
+          "topic": "support"
+        },
+        "bindings": [
+          {
+            "channel_id": "source"
+          },
+          {
+            "channel_id": "listener",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "room": {
+            "room": {
+              "id": "room",
+              "metadata": {
+                "topic": "support"
+              }
+            },
+            "history_start_index": 0
+          },
+          "target_capabilities": null,
+          "target_media_types": {
+            "$unordered": []
+          }
+        }
+      ]
+    }
+  }
+}

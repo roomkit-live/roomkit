@@ -1,0 +1,197 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "ai-context/a-single-bidirectional-transport-supplies-all-capabilities-streaming",
+  "title": "A single bidirectional transport supplies all capabilities (streaming)",
+  "rules": [
+    "§6.7",
+    "§5.8",
+    "§4.2"
+  ],
+  "notes": "The real provider request observes the public AIContext. Media capabilities are metadata only; no media execution is exercised.",
+  "setup": {
+    "channels": [
+      {
+        "id": "source",
+        "type": "websocket",
+        "direction": "inbound",
+        "capabilities": {
+          "media_types": [
+            "location"
+          ],
+          "max_length": 1
+        }
+      },
+      {
+        "id": "listener",
+        "type": "ai",
+        "category": "intelligence",
+        "capabilities": {
+          "media_types": [
+            "location"
+          ],
+          "max_length": 1
+        }
+      },
+      {
+        "id": "out",
+        "type": "websocket",
+        "direction": "bidirectional",
+        "capabilities": {
+          "supports_threading": true,
+          "supports_reactions": true,
+          "supports_edit": true,
+          "supports_delete": true,
+          "supports_read_receipts": true,
+          "supports_typing": true,
+          "supports_templates": true,
+          "supports_rich_text": true,
+          "supports_buttons": true,
+          "supports_cards": true,
+          "supports_quick_replies": true,
+          "supports_media": true,
+          "supports_audio": true,
+          "supports_video": true,
+          "max_length": null,
+          "max_buttons": null,
+          "max_media_size_bytes": null,
+          "max_audio_duration_seconds": null,
+          "max_video_duration_seconds": null,
+          "media_types": [
+            "text",
+            "rich",
+            "media"
+          ],
+          "supported_media_types": [
+            "image/png"
+          ],
+          "supported_audio_formats": [
+            "wav"
+          ],
+          "supported_video_formats": [
+            "mp4"
+          ],
+          "custom": {
+            "owner": "first"
+          }
+        }
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "streaming": true,
+          "rounds": [
+            {
+              "text": "Done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room",
+        "metadata": {
+          "topic": "support"
+        },
+        "bindings": [
+          {
+            "channel_id": "source"
+          },
+          {
+            "channel_id": "listener",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "out"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "room": {
+            "room": {
+              "id": "room",
+              "metadata": {
+                "topic": "support"
+              }
+            },
+            "history_start_index": 0
+          },
+          "target_capabilities": {
+            "supports_threading": true,
+            "supports_reactions": true,
+            "supports_edit": true,
+            "supports_delete": true,
+            "supports_read_receipts": true,
+            "supports_typing": true,
+            "supports_templates": true,
+            "supports_rich_text": true,
+            "supports_buttons": true,
+            "supports_cards": true,
+            "supports_quick_replies": true,
+            "supports_media": true,
+            "supports_audio": true,
+            "supports_video": true,
+            "max_length": null,
+            "max_buttons": null,
+            "max_media_size_bytes": null,
+            "max_audio_duration_seconds": null,
+            "max_video_duration_seconds": null,
+            "media_types": {
+              "$unordered": [
+                "text",
+                "rich",
+                "media"
+              ]
+            },
+            "supported_media_types": [
+              "image/png"
+            ],
+            "supported_audio_formats": [
+              "wav"
+            ],
+            "supported_video_formats": [
+              "mp4"
+            ],
+            "custom": {
+              "owner": "first"
+            }
+          },
+          "target_media_types": {
+            "$unordered": [
+              "text",
+              "rich",
+              "media"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

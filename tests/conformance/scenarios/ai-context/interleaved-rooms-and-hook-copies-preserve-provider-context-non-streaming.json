@@ -1,0 +1,702 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "ai-context/interleaved-rooms-and-hook-copies-preserve-provider-context-non-streaming",
+  "title": "Interleaved rooms and hook copies preserve provider context (non-streaming)",
+  "rules": [
+    "§6.7",
+    "§5.8",
+    "§4.2"
+  ],
+  "notes": "The real provider request observes the public AIContext. Media capabilities are metadata only; no media execution is exercised.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "direction": "inbound"
+      },
+      {
+        "id": "console",
+        "type": "websocket",
+        "capabilities": {
+          "supports_threading": true,
+          "supports_reactions": true,
+          "supports_edit": true,
+          "supports_delete": true,
+          "supports_read_receipts": true,
+          "supports_typing": true,
+          "supports_templates": true,
+          "supports_rich_text": true,
+          "supports_buttons": true,
+          "supports_cards": true,
+          "supports_quick_replies": true,
+          "supports_media": true,
+          "supports_audio": true,
+          "supports_video": true,
+          "max_length": null,
+          "max_buttons": null,
+          "max_media_size_bytes": null,
+          "max_audio_duration_seconds": null,
+          "max_video_duration_seconds": null,
+          "media_types": [
+            "text",
+            "rich",
+            "media"
+          ],
+          "supported_media_types": [
+            "image/png"
+          ],
+          "supported_audio_formats": [
+            "wav"
+          ],
+          "supported_video_formats": [
+            "mp4"
+          ],
+          "custom": {
+            "owner": "first"
+          }
+        }
+      },
+      {
+        "id": "console-owner",
+        "type": "websocket",
+        "capabilities": {
+          "media_types": [
+            "text"
+          ],
+          "max_length": 53,
+          "custom": {
+            "owner": "second-room"
+          }
+        }
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tool_search": false,
+        "audit": "tool_auditor",
+        "tools": [
+          {
+            "name": "inspect",
+            "parameters": {
+              "type": "object"
+            },
+            "returns_allowed_names": true
+          },
+          {
+            "name": "refund",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "refund ran"
+          }
+        ],
+        "tool_policy": {
+          "allow": [
+            "inspect"
+          ],
+          "deny": [
+            "refund"
+          ],
+          "role_overrides": {
+            "owner": {
+              "mode": "replace"
+            }
+          }
+        },
+        "model": {
+          "streaming": false,
+          "rounds": [
+            {
+              "gate": "observer-held",
+              "calls": [
+                {
+                  "id": "observer-inspect",
+                  "name": "inspect",
+                  "arguments": {
+                    "turn": "observer"
+                  }
+                },
+                {
+                  "id": "observer-refund",
+                  "name": "refund",
+                  "arguments": {
+                    "turn": "observer"
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "owner-inspect",
+                  "name": "inspect",
+                  "arguments": {
+                    "turn": "owner"
+                  }
+                },
+                {
+                  "id": "owner-refund",
+                  "name": "refund",
+                  "arguments": {
+                    "turn": "owner"
+                  }
+                }
+              ]
+            },
+            {
+              "gate": "owner-finished",
+              "text": "Owner done."
+            },
+            {
+              "text": "Observer done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "observer-room",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "console"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "observer",
+            "channel_id": "ws",
+            "role": "observer",
+            "identity_id": null,
+            "joined_at": "2026-01-01T00:00:00Z",
+            "room_id": "observer-room"
+          }
+        ],
+        "metadata": {
+          "owner": "observer-room"
+        }
+      },
+      {
+        "id": "owner-room",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "console-owner"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ],
+        "participants": [
+          {
+            "id": "owner",
+            "channel_id": "ws",
+            "role": "owner",
+            "identity_id": null,
+            "joined_at": "2026-01-01T00:00:00Z",
+            "room_id": "owner-room"
+          }
+        ],
+        "metadata": {
+          "owner": "owner-room"
+        }
+      }
+    ],
+    "hooks": [
+      {
+        "name": "generation",
+        "trigger": "before_ai_generation",
+        "reactions": [
+          {
+            "result": {
+              "action": "modify",
+              "event": {
+                "system_prompt": "Keep context."
+              }
+            },
+            "repeat": true
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "observer-room",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "observer",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "defer_delivery": true,
+      "as": "observer_turn"
+    },
+    {
+      "wait_for": "observer-held"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "owner-room",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "owner",
+        "content": {
+          "type": "text",
+          "body": "Go."
+        }
+      },
+      "defer_delivery": true,
+      "as": "owner_turn"
+    },
+    {
+      "wait_for": "owner-finished"
+    },
+    {
+      "open": "owner-finished"
+    },
+    {
+      "call": "delivery.wait",
+      "of": "owner_turn"
+    },
+    {
+      "open": "observer-held"
+    },
+    {
+      "call": "delivery.wait",
+      "of": "observer_turn"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "system_prompt": "Keep context.",
+          "room": {
+            "room": {
+              "id": "observer-room",
+              "metadata": {
+                "owner": "observer-room"
+              }
+            },
+            "bindings": {
+              "$unordered": [
+                {
+                  "channel_id": "ws",
+                  "direction": "inbound"
+                },
+                {
+                  "channel_id": "console"
+                },
+                {
+                  "channel_id": "agent",
+                  "category": "intelligence"
+                }
+              ]
+            },
+            "participants": [
+              {
+                "id": "observer",
+                "role": "observer"
+              }
+            ],
+            "history_start_index": 0
+          },
+          "target_capabilities": {
+            "supports_threading": true,
+            "supports_reactions": true,
+            "supports_edit": true,
+            "supports_delete": true,
+            "supports_read_receipts": true,
+            "supports_typing": true,
+            "supports_templates": true,
+            "supports_rich_text": true,
+            "supports_buttons": true,
+            "supports_cards": true,
+            "supports_quick_replies": true,
+            "supports_media": true,
+            "supports_audio": true,
+            "supports_video": true,
+            "max_length": null,
+            "max_buttons": null,
+            "max_media_size_bytes": null,
+            "max_audio_duration_seconds": null,
+            "max_video_duration_seconds": null,
+            "media_types": {
+              "$unordered": [
+                "text",
+                "rich",
+                "media"
+              ]
+            },
+            "supported_media_types": [
+              "image/png"
+            ],
+            "supported_audio_formats": [
+              "wav"
+            ],
+            "supported_video_formats": [
+              "mp4"
+            ],
+            "custom": {
+              "owner": "first"
+            }
+          },
+          "target_media_types": {
+            "$unordered": [
+              "text",
+              "rich",
+              "media"
+            ]
+          }
+        },
+        {
+          "system_prompt": "Keep context.",
+          "room": {
+            "room": {
+              "id": "owner-room",
+              "metadata": {
+                "owner": "owner-room"
+              }
+            },
+            "bindings": {
+              "$unordered": [
+                {
+                  "channel_id": "ws",
+                  "direction": "inbound"
+                },
+                {
+                  "channel_id": "console-owner"
+                },
+                {
+                  "channel_id": "agent",
+                  "category": "intelligence"
+                }
+              ]
+            },
+            "participants": [
+              {
+                "id": "owner",
+                "role": "owner"
+              }
+            ],
+            "history_start_index": 0
+          },
+          "target_capabilities": {
+            "media_types": [
+              "text"
+            ],
+            "max_length": 53,
+            "supports_buttons": false,
+            "custom": {
+              "owner": "second-room"
+            }
+          },
+          "target_media_types": [
+            "text"
+          ]
+        },
+        {
+          "system_prompt": "Keep context.",
+          "room": {
+            "room": {
+              "id": "owner-room",
+              "metadata": {
+                "owner": "owner-room"
+              }
+            },
+            "bindings": {
+              "$unordered": [
+                {
+                  "channel_id": "ws",
+                  "direction": "inbound"
+                },
+                {
+                  "channel_id": "console-owner"
+                },
+                {
+                  "channel_id": "agent",
+                  "category": "intelligence"
+                }
+              ]
+            },
+            "participants": [
+              {
+                "id": "owner",
+                "role": "owner"
+              }
+            ],
+            "history_start_index": 0
+          },
+          "target_capabilities": {
+            "media_types": [
+              "text"
+            ],
+            "max_length": 53,
+            "supports_buttons": false,
+            "custom": {
+              "owner": "second-room"
+            }
+          },
+          "target_media_types": [
+            "text"
+          ]
+        },
+        {
+          "system_prompt": "Keep context.",
+          "room": {
+            "room": {
+              "id": "observer-room",
+              "metadata": {
+                "owner": "observer-room"
+              }
+            },
+            "bindings": {
+              "$unordered": [
+                {
+                  "channel_id": "ws",
+                  "direction": "inbound"
+                },
+                {
+                  "channel_id": "console"
+                },
+                {
+                  "channel_id": "agent",
+                  "category": "intelligence"
+                }
+              ]
+            },
+            "participants": [
+              {
+                "id": "observer",
+                "role": "observer"
+              }
+            ],
+            "history_start_index": 0
+          },
+          "target_capabilities": {
+            "supports_threading": true,
+            "supports_reactions": true,
+            "supports_edit": true,
+            "supports_delete": true,
+            "supports_read_receipts": true,
+            "supports_typing": true,
+            "supports_templates": true,
+            "supports_rich_text": true,
+            "supports_buttons": true,
+            "supports_cards": true,
+            "supports_quick_replies": true,
+            "supports_media": true,
+            "supports_audio": true,
+            "supports_video": true,
+            "max_length": null,
+            "max_buttons": null,
+            "max_media_size_bytes": null,
+            "max_audio_duration_seconds": null,
+            "max_video_duration_seconds": null,
+            "media_types": {
+              "$unordered": [
+                "text",
+                "rich",
+                "media"
+              ]
+            },
+            "supported_media_types": [
+              "image/png"
+            ],
+            "supported_audio_formats": [
+              "wav"
+            ],
+            "supported_video_formats": [
+              "mp4"
+            ],
+            "custom": {
+              "owner": "first"
+            }
+          },
+          "target_media_types": {
+            "$unordered": [
+              "text",
+              "rich",
+              "media"
+            ]
+          }
+        }
+      ]
+    },
+    "tool_audit": {
+      "$unordered": [
+        {
+          "tool_name": "inspect",
+          "arguments": {
+            "turn": "observer"
+          },
+          "status": "ok"
+        },
+        {
+          "tool_name": "inspect",
+          "arguments": {
+            "turn": "owner"
+          },
+          "status": "ok"
+        },
+        {
+          "tool_name": "refund",
+          "arguments": {
+            "turn": "owner"
+          },
+          "status": "ok"
+        }
+      ]
+    },
+    "hooks": {
+      "generation": [
+        {
+          "generation": {
+            "room": {
+              "room": {
+                "id": "observer-room",
+                "metadata": {
+                  "owner": "observer-room"
+                }
+              },
+              "bindings": {
+                "$unordered": [
+                  {
+                    "channel_id": "ws",
+                    "direction": "inbound"
+                  },
+                  {
+                    "channel_id": "console"
+                  },
+                  {
+                    "channel_id": "agent",
+                    "category": "intelligence"
+                  }
+                ]
+              },
+              "participants": [
+                {
+                  "id": "observer",
+                  "role": "observer"
+                }
+              ],
+              "history_start_index": 0
+            },
+            "target_capabilities": {
+              "supports_threading": true,
+              "supports_reactions": true,
+              "supports_edit": true,
+              "supports_delete": true,
+              "supports_read_receipts": true,
+              "supports_typing": true,
+              "supports_templates": true,
+              "supports_rich_text": true,
+              "supports_buttons": true,
+              "supports_cards": true,
+              "supports_quick_replies": true,
+              "supports_media": true,
+              "supports_audio": true,
+              "supports_video": true,
+              "max_length": null,
+              "max_buttons": null,
+              "max_media_size_bytes": null,
+              "max_audio_duration_seconds": null,
+              "max_video_duration_seconds": null,
+              "media_types": {
+                "$unordered": [
+                  "text",
+                  "rich",
+                  "media"
+                ]
+              },
+              "supported_media_types": [
+                "image/png"
+              ],
+              "supported_audio_formats": [
+                "wav"
+              ],
+              "supported_video_formats": [
+                "mp4"
+              ],
+              "custom": {
+                "owner": "first"
+              }
+            },
+            "target_media_types": {
+              "$unordered": [
+                "text",
+                "rich",
+                "media"
+              ]
+            }
+          }
+        },
+        {
+          "generation": {
+            "room": {
+              "room": {
+                "id": "owner-room",
+                "metadata": {
+                  "owner": "owner-room"
+                }
+              },
+              "bindings": {
+                "$unordered": [
+                  {
+                    "channel_id": "ws",
+                    "direction": "inbound"
+                  },
+                  {
+                    "channel_id": "console-owner"
+                  },
+                  {
+                    "channel_id": "agent",
+                    "category": "intelligence"
+                  }
+                ]
+              },
+              "participants": [
+                {
+                  "id": "owner",
+                  "role": "owner"
+                }
+              ],
+              "history_start_index": 0
+            },
+            "target_capabilities": {
+              "media_types": [
+                "text"
+              ],
+              "max_length": 53,
+              "supports_buttons": false,
+              "custom": {
+                "owner": "second-room"
+              }
+            },
+            "target_media_types": [
+              "text"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

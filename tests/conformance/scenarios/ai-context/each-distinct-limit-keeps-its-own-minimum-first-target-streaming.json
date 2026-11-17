@@ -1,0 +1,240 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "ai-context/each-distinct-limit-keeps-its-own-minimum-first-target-streaming",
+  "title": "Each distinct limit keeps its own minimum (first target, streaming)",
+  "rules": [
+    "§6.7",
+    "§5.8",
+    "§4.2"
+  ],
+  "notes": "The real provider request observes the public AIContext. Media capabilities are metadata only; no media execution is exercised.",
+  "setup": {
+    "channels": [
+      {
+        "id": "source",
+        "type": "websocket",
+        "direction": "inbound",
+        "capabilities": {
+          "media_types": [
+            "location"
+          ],
+          "max_length": 1
+        }
+      },
+      {
+        "id": "listener",
+        "type": "ai",
+        "category": "intelligence",
+        "capabilities": {
+          "media_types": [
+            "location"
+          ],
+          "max_length": 1
+        }
+      },
+      {
+        "id": "a",
+        "type": "websocket",
+        "direction": "bidirectional",
+        "capabilities": {
+          "supports_threading": true,
+          "supports_reactions": false,
+          "supports_edit": true,
+          "supports_delete": false,
+          "supports_read_receipts": true,
+          "supports_typing": false,
+          "supports_templates": true,
+          "supports_rich_text": false,
+          "supports_buttons": true,
+          "supports_cards": false,
+          "supports_quick_replies": true,
+          "supports_media": false,
+          "supports_audio": true,
+          "supports_video": false,
+          "max_length": 11,
+          "max_buttons": 12,
+          "max_media_size_bytes": 13,
+          "max_audio_duration_seconds": 14,
+          "max_video_duration_seconds": 15,
+          "media_types": [
+            "text",
+            "rich",
+            "media"
+          ],
+          "supported_media_types": [
+            "image/png"
+          ],
+          "supported_audio_formats": [
+            "wav"
+          ],
+          "supported_video_formats": [
+            "mp4"
+          ],
+          "custom": {
+            "owner": "first"
+          }
+        }
+      },
+      {
+        "id": "b",
+        "type": "websocket",
+        "direction": "bidirectional",
+        "capabilities": {
+          "supports_threading": false,
+          "supports_reactions": true,
+          "supports_edit": false,
+          "supports_delete": true,
+          "supports_read_receipts": false,
+          "supports_typing": true,
+          "supports_templates": false,
+          "supports_rich_text": true,
+          "supports_buttons": false,
+          "supports_cards": true,
+          "supports_quick_replies": false,
+          "supports_media": true,
+          "supports_audio": false,
+          "supports_video": true,
+          "max_length": 41,
+          "max_buttons": 42,
+          "max_media_size_bytes": 43,
+          "max_audio_duration_seconds": 44,
+          "max_video_duration_seconds": 45,
+          "media_types": [
+            "rich",
+            "text"
+          ],
+          "supported_media_types": [
+            "image/jpeg"
+          ],
+          "supported_audio_formats": [
+            "opus"
+          ],
+          "supported_video_formats": [
+            "webm"
+          ],
+          "custom": {
+            "owner": "second"
+          }
+        }
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "streaming": true,
+          "rounds": [
+            {
+              "text": "Done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room",
+        "metadata": {
+          "topic": "support"
+        },
+        "bindings": [
+          {
+            "channel_id": "source"
+          },
+          {
+            "channel_id": "listener",
+            "category": "intelligence"
+          },
+          {
+            "channel_id": "a"
+          },
+          {
+            "channel_id": "b"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room",
+      "message": {
+        "channel_id": "source",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Hello."
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "room": {
+            "room": {
+              "id": "room",
+              "metadata": {
+                "topic": "support"
+              }
+            },
+            "history_start_index": 0
+          },
+          "target_capabilities": {
+            "supports_threading": false,
+            "supports_reactions": false,
+            "supports_edit": false,
+            "supports_delete": false,
+            "supports_read_receipts": false,
+            "supports_typing": false,
+            "supports_templates": false,
+            "supports_rich_text": false,
+            "supports_buttons": false,
+            "supports_cards": false,
+            "supports_quick_replies": false,
+            "supports_media": false,
+            "supports_audio": false,
+            "supports_video": false,
+            "max_length": 11,
+            "max_buttons": 12,
+            "max_media_size_bytes": 13,
+            "max_audio_duration_seconds": 14,
+            "max_video_duration_seconds": 15,
+            "media_types": {
+              "$unordered": [
+                "text",
+                "rich"
+              ]
+            },
+            "supported_media_types": [
+              "image/png"
+            ],
+            "supported_audio_formats": [
+              "wav"
+            ],
+            "supported_video_formats": [
+              "mp4"
+            ],
+            "custom": {
+              "owner": "first"
+            }
+          },
+          "target_media_types": {
+            "$unordered": [
+              "text",
+              "rich"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}
