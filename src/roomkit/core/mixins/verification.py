@@ -15,6 +15,7 @@ import hashlib
 import hmac
 import logging
 import secrets
+from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from uuid import uuid4
@@ -23,6 +24,7 @@ from roomkit.core._authors import People
 from roomkit.core._changes import withdrawn
 from roomkit.core.exceptions import VerificationRefusedError
 from roomkit.core.mixins.helpers import HelpersMixin
+from roomkit.core.task_utils import run_to_its_end
 from roomkit.core.visibility import committed_visibility, visibility_allows
 from roomkit.models.delivery import InboundResult
 from roomkit.models.enums import (
@@ -375,17 +377,27 @@ class VerificationMixin(HelpersMixin):
         read of the sender's verification and the hooks are bounded by the
         call's pre-commit *deadline* (RFC §13.6); a code's attempt is not: it
         is a write, and what its completion runs (the release and its answer,
-        §11.7.6) is over before the call returns, whatever the deadline.
+        §11.7.6) is over before the call returns, whatever the deadline and
+        whatever becomes of the caller, as a room step 2 creates is.
+
+        Raises:
+            _VerificationDeadlineError: the deadline passed in a bounded part.
         """
         identity = _sender_identity(event, context, resolved_identity)
         if identity is None:
             return event
-        async with asyncio.timeout_at(deadline):
-            state = await self.verification_of(identity[0], organization_id=identity[1])
-        if await self._consume_code(event, room_id, state):
+        identity_id, organization_id = identity
+        async with _bounded_by(deadline):
+            state = await self.verification_of(identity_id, organization_id=organization_id)
+        attempted = run_to_its_end(
+            self._consume_code(event, room_id, state),
+            held=self._decided_writes,
+            name=f"roomkit-code-attempt-{room_id}",
+        )
+        if await attempted:
             # Its text is never stored nor broadcast, and no agent reads it.
             return InboundResult(blocked=True, reason="verification_code")
-        async with asyncio.timeout_at(deadline):
+        async with _bounded_by(deadline):
             return await self._label_or_hold(event, room_id, context, state, identity)
 
     async def _label_or_hold(
@@ -969,6 +981,23 @@ def _forget_timer(
     """Drop a finished timer, unless a newer one took its key."""
     if timers.get(key) is done:
         del timers[key]
+
+
+class _VerificationDeadlineError(Exception):
+    """The call's pre-commit deadline passed in a bounded part of step 5b,
+    told apart from a timeout a code's attempt raises, which carries no
+    deadline and is that attempt's own failure (RFC §13.6)."""
+
+
+@contextlib.asynccontextmanager
+async def _bounded_by(deadline: float) -> AsyncGenerator[None]:
+    """A part of step 5b under the call's *deadline*: its expiry raises
+    :class:`_VerificationDeadlineError`."""
+    try:
+        async with asyncio.timeout_at(deadline):
+            yield
+    except TimeoutError as error:
+        raise _VerificationDeadlineError from error
 
 
 def _sender_identity(

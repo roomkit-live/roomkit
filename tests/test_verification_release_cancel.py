@@ -217,6 +217,47 @@ async def test_a_cancel_during_the_released_answer_cuts_it() -> None:
     await kit.close()
 
 
+class _GatedAgent(MockAIProvider):
+    """An agent whose answer waits for *go*."""
+
+    def __init__(self) -> None:
+        super().__init__(responses=["answer"] * 20)
+        self.started = asyncio.Event()
+        self.go = asyncio.Event()
+
+    async def generate(self, context: AIContext) -> AIResponse:
+        self.started.set()
+        await self.go.wait()
+        return await super().generate(context)
+
+
+async def test_a_code_reply_whose_caller_goes_still_answers_its_release() -> None:
+    """The code's attempt, the release and its answer are writes past the
+    reply's decision (RFC §11.7.4, §13.6): its caller stopping while the
+    agent answers the released message cuts none of them, as a room step 2
+    creates is completed whatever becomes of its caller."""
+    agent = _GatedAgent()
+    kit, _, _ = _kit(ai=agent)
+    held = await kit.process_inbound(_message("Did my transfer go through?", key=None))
+    _, code = await kit.request_verification(
+        _identity(ALICE),
+        room_id=held.event.room_id,
+        channel_id="sms",
+        method="code",
+        window_start=held.event.created_at,
+    )
+    reply = asyncio.create_task(kit.process_inbound(_message(code, key=None)))
+    await asyncio.wait_for(agent.started.wait(), 2)
+
+    reply.cancel()
+    agent.go.set()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(reply, 2)
+
+    assert [e.content.body for e in await _replies(kit, held.event.room_id)] == ["answer"]
+    await kit.close()
+
+
 @pytest.fixture(params=["memory", "sqlite", "postgres"])
 async def two_stores(
     request: pytest.FixtureRequest, tmp_path: Path

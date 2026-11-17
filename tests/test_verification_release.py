@@ -170,6 +170,38 @@ async def test_a_code_reply_releases_too() -> None:
     await kit.close()
 
 
+async def test_a_timeout_in_a_code_reply_s_release_is_its_own_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The attempt and its release carry no deadline (RFC §13.6): a timeout
+    they raise, a store's, fails the call as any failure of theirs does,
+    never read as the call's process_timeout."""
+    kit, _, _ = _kit()
+    asked = await _text(kit, "What's my balance?")
+    _, code = await kit.request_verification(
+        "id-alice",
+        room_id=asked.event.room_id,
+        channel_id="sms",
+        method="code",
+        window_start=asked.event.created_at,
+    )
+    timeouts: list[Any] = []
+
+    @kit.on("process_timeout")
+    async def timed_out(event: Any) -> None:
+        timeouts.append(event)
+
+    async def store_times_out(event: Any) -> Any:
+        raise TimeoutError
+
+    monkeypatch.setattr(kit.store, "update_event", store_times_out)
+    with pytest.raises(TimeoutError):
+        await _text(kit, code)
+
+    assert timeouts == []
+    await kit.close()
+
+
 async def test_only_the_requests_window_is_released() -> None:
     """Written during a request that failed (the phone's holder, say), then the
     real customer's own request: only what was written in the second is answered."""

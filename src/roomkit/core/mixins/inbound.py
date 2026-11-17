@@ -44,7 +44,7 @@ from roomkit.core.locks import collecting_release_failures, failed_release
 from roomkit.core.mixins.channel_ops import is_channel_detached
 from roomkit.core.mixins.helpers import _REFUSING_STATUSES, HelpersMixin
 from roomkit.core.mixins.inbound_identity import _IdentityBlockedError
-from roomkit.core.mixins.verification import HELD_KEY
+from roomkit.core.mixins.verification import HELD_KEY, _VerificationDeadlineError
 from roomkit.core.task_utils import run_to_its_end
 from roomkit.models.delivery import (
     STANDALONE,
@@ -573,12 +573,9 @@ class InboundMixin(HelpersMixin):
         entry = self._entry_after_routing(room_id, room_just_created, opening, charged)
         if entry is None:
             return _past_the_cap(room_id, message)
-        try:
-            prepared = await self._prepare_event(
-                message, channel, room_id, room_just_created, deadline, telemetry, named, entry
-            )
-        except TimeoutError:
-            return await self._refuse_on_timeout(room_id, channel_id=message.channel_id)
+        prepared = await self._prepare_event(
+            message, channel, room_id, room_just_created, deadline, telemetry, named, entry
+        )
         if isinstance(prepared, InboundResult):
             return prepared
         event, context, resolved_identity, pending_id_result = prepared
@@ -653,26 +650,30 @@ class InboundMixin(HelpersMixin):
         returns during the context build, or a channel's own
         ``handle_inbound`` reaching a provider without a timeout of its own,
         held the caller forever while ``process_timeout`` sat configured and
-        inert. A code reply's attempt at step 5b is the exception: a write,
-        done with what its completion runs whatever the deadline (§11.7.4).
-
-        Raises:
-            TimeoutError: The budget ran out. Nothing of the event has been
-                written at this point — a room routing created stays, as the
-                room's state, which its creation completes whatever the
-                deadline (RFC §13.6).
+        inert. Past the budget the call is refused ``process_timeout``,
+        nothing of the event written — a room routing created stays, as the
+        room's state, which its creation completes whatever the deadline
+        (RFC §13.6). A code reply's attempt at step 5b is the exception: a
+        write, done with what its completion runs whatever the deadline
+        (§11.7.4), whose own timeout is raised as its failure.
         """
-        async with asyncio.timeout_at(deadline):
-            prepared = await self._prepare_event_inner(
-                message, channel, room_id, room_just_created, telemetry, named, entry
-            )
+        try:
+            async with asyncio.timeout_at(deadline):
+                prepared = await self._prepare_event_inner(
+                    message, channel, room_id, room_just_created, telemetry, named, entry
+                )
+        except TimeoutError:
+            return await self._refuse_on_timeout(room_id, channel_id=message.channel_id)
         if isinstance(prepared, InboundResult) or not self._verification_inbound:
             return prepared
         # Identity verification (RFC §10.1 step 5b, §11.7): label, hold, codes.
         event, context, resolved_identity, pending_id_result = prepared
-        verified = await self._apply_verification(
-            event, room_id, context, resolved_identity, deadline
-        )
+        try:
+            verified = await self._apply_verification(
+                event, room_id, context, resolved_identity, deadline
+            )
+        except _VerificationDeadlineError:
+            return await self._refuse_on_timeout(room_id, channel_id=message.channel_id)
         if isinstance(verified, InboundResult):
             return verified
         return verified, context, resolved_identity, pending_id_result
