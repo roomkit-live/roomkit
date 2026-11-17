@@ -22,6 +22,8 @@ _SEGMENT_END = re.compile(r"[/?#]")
 # The percent-decodings a reference is read through; one still encoded after
 # them is refused.
 _MOST_DECODINGS = 3
+# A percent escape, which a decoding replaces.
+_ESCAPE = re.compile(r"%[0-9A-Fa-f]{2}")
 # A scheme a reader fetches, opens or runs by itself, without the
 # application: files on the machine or on a share, the network protocols
 # generic readers (curl, ffmpeg, GIO) fetch, code to run, and a link's, which
@@ -121,11 +123,11 @@ def _decoded(text: str) -> str | None:
     decodes twice); None when it still changes after
     :data:`_MOST_DECODINGS`, a nesting no reference holds and whose cost
     would grow with the square of its length."""
-    for _ in range(_MOST_DECODINGS + 1):
-        if "%" not in text or (decoded := unquote(text)) == text:
+    for _ in range(_MOST_DECODINGS):
+        if _ESCAPE.search(text) is None:
             return text
-        text = decoded
-    return None
+        text = unquote(text)
+    return text if _ESCAPE.search(text) is None else None
 
 
 def media_type(mime_type: str) -> str:

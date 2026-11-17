@@ -469,6 +469,19 @@ class TestReferenceURL:
         with pytest.raises(ValueError, match="reference"):
             MediaContent(url=url, mime_type="image/png")
 
+    def test_the_refusal_says_what_a_url_may_be(self) -> None:
+        # roomkit-rs gives the same message.
+        with pytest.raises(ValueError) as refused:
+            MediaContent(url="smb://host/a.png", mime_type="image/png")
+
+        assert refused.value.errors()[0]["msg"] == (
+            "Value error, URL must be a link (http://, https://), a data: URI, or a "
+            "reference <scheme>://... (two letters of scheme at least, no part of it "
+            "between '+' a scheme a reader fetches, opens or runs, such as file, ftp, "
+            "http, smb, sftp, ws or javascript, no '..' segment, backslash or control "
+            "character, even percent-encoded)"
+        )
+
 
 class _Scripted(MockAIProvider):
     """Answers each request with the next step: a response, or an error raised."""
