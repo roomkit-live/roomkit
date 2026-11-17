@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable, Mapping, Sequence
+from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -19,7 +20,8 @@ from roomkit.providers.ai.base import AITool, ProviderError
 def declared_parameters(parameters: Mapping[str, Any] | None) -> dict[str, Any]:
     """The schema a tool is declared with: its own, its root an object, or for
     a tool that takes no parameters an object with none, which every vendor
-    accepts.
+    accepts. A caller may edit the returned schema independently, including
+    its nested fields.
 
     An empty map is not one: Anthropic refuses it, and Anthropic and Mistral
     refuse a declaration without a schema (measured 2026-10-02). A root
@@ -28,9 +30,10 @@ def declared_parameters(parameters: Mapping[str, Any] | None) -> dict[str, Any]:
     """
     if not parameters:
         return {"type": "object", "properties": {}}
-    if parameters.get("type") is None:
-        return {**parameters, "type": "object"}
-    return dict(parameters)
+    schema = deepcopy(dict(parameters))
+    if schema.get("type") is None:
+        schema["type"] = "object"
+    return schema
 
 
 def chat_tool_declarations(tools: Sequence[AITool]) -> list[dict[str, Any]]:

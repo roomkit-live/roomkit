@@ -65,6 +65,21 @@ class TestDeclaredParameters:
         """Anthropic and OpenAI refuse it untyped (RMK-398, measured)."""
         assert declared_parameters(schema) == {**schema, "type": "object"}
 
+    def test_returned_schemas_own_nested_fields(self) -> None:
+        tool = AITool(
+            name="lookup", description="d", parameters={"properties": {"q": ["original"]}}
+        )
+        projected = declared_parameters(tool.parameters)
+        [declaration] = chat_tool_declarations([tool])
+        projected["properties"]["q"].append("projection")
+        declaration["function"]["parameters"]["properties"]["q"].append("declaration")
+        assert tool.parameters == {"properties": {"q": ["original"]}}
+        assert projected["properties"]["q"] == ["original", "projection"]
+        assert declaration["function"]["parameters"]["properties"]["q"] == [
+            "original",
+            "declaration",
+        ]
+
     def test_the_chat_declaration_carries_it(self) -> None:
         [declaration] = chat_tool_declarations([AITool(name="now", description="d")])
         assert declaration == {
