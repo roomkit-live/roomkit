@@ -1,6 +1,6 @@
 {
   "roomkit.ACPChannel": {
-    "__init__": ["def", "channel_id", "command=None", "*", "transport=None", "cwd", "additional_directories=None", "env=None", "inherit_env=None", "mcp_servers=None", "session_config=None", "publish_thinking_text=False", "authentication_method=None", "external_tool_handler=None", "room_history=20", "context_contributor=None", "name=None", "role=None", "description=None", "instructions=None"],
+    "__init__": ["def", "channel_id", "command=None", "*", "transport=None", "cwd", "additional_directories=None", "env=None", "inherit_env=None", "mcp_servers=None", "session_config=None", "publish_thinking_text=False", "publish_tool_call_text=False", "authentication_method=None", "external_tool_handler=None", "room_history=20", "context_contributor=None", "name=None", "role=None", "description=None", "instructions=None"],
     "active_turns": ["property"],
     "cancel": ["async def", "room_id"],
     "capabilities": ["def"],

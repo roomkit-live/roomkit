@@ -70,6 +70,8 @@ def test_directory_fixture_rejects_malformed_lists(directories: Any) -> None:
     [
         {"publish_thinking_text": "false"},
         {"publish_thinking_text": None},
+        {"publish_tool_call_text": None},
+        {"publish_tool_call_text": "false"},
         {"agent": {"prompts": [{"after_updates_gate": True}]}},
         {"agent": {"prompts": [{"after_updates_gate": None}]}},
     ],

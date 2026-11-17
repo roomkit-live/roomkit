@@ -67,6 +67,18 @@ class _ToolEnd:
     """How the call ended, as every channel names it (RFC §6.4)."""
 
 
+def _tool_progress_payload(update: Any, publish_text: bool) -> dict[str, Any]:
+    """Select what a room subscriber may read from a nonterminal ACP update."""
+    if publish_text:
+        return _model_dump(update)
+    data = {"sessionUpdate": update.session_update, "toolCallId": update.tool_call_id}
+    for field in ("kind", "status"):
+        value = getattr(update, field, None)
+        if value is not None:
+            data[field] = value
+    return data
+
+
 def _end_outcome(tool: _ToolState, status: str, *, interrupted: bool) -> ToolCallOutcome:
     """The outcome of an ACP call: RoomKit's decision on its permission when
     the call did not run (refused, or failed when a handler raised deciding
@@ -286,6 +298,7 @@ class ACPEventsMixin:
     _turns: dict[str, _TurnState]
     _session_rooms: dict[str, str]
     _publish_thinking_text: bool
+    _publish_tool_call_text: bool
     _session_options: dict[str, list[Any]]
     # Implemented by the other mixins; annotations, so they shadow nothing.
     _is_room_session: Callable[[str], bool]
@@ -481,7 +494,7 @@ class ACPEventsMixin:
                 {
                     "type": "acp_tool_progress",
                     "session_id": session_id,
-                    "tool_call": _model_dump(update),
+                    "tool_call": _tool_progress_payload(update, self._publish_tool_call_text),
                 },
             )
 
@@ -546,19 +559,11 @@ class ACPEventsMixin:
                 )
             )
         if room_id is not None:
+            call: dict[str, Any] = {"id": tool.tool_id, "name": tool.name}
+            if self._publish_tool_call_text:
+                call["arguments"] = tool.arguments
             await self._publish(
-                room_id,
-                EphemeralEventType.TOOL_CALL_START,
-                {
-                    "tool_calls": [
-                        {
-                            "id": tool.tool_id,
-                            "name": tool.name,
-                            "arguments": tool.arguments,
-                        }
-                    ],
-                    "round": 0,
-                },
+                room_id, EphemeralEventType.TOOL_CALL_START, {"tool_calls": [call], "round": 0}
             )
 
     async def _close_open_tools(
@@ -663,21 +668,13 @@ class ACPEventsMixin:
             await self._report_agent_call(room_id, tool, end)
 
     async def _publish_tool_end(self, room_id: str, tool: _ToolState, end: _ToolEnd) -> None:
+        call = {"id": tool.tool_id, "name": tool.name, "status": end.status}
+        if self._publish_tool_call_text:
+            call["result"] = (end.error or _result_text(end.result))[:500]
         await self._publish(
             room_id,
             EphemeralEventType.TOOL_CALL_END,
-            {
-                "tool_calls": [
-                    {
-                        "id": tool.tool_id,
-                        "name": tool.name,
-                        "result": (end.error or _result_text(end.result))[:500],
-                        "status": end.status,
-                    }
-                ],
-                "round": 0,
-                "duration_ms": end.duration_ms,
-            },
+            {"tool_calls": [call], "round": 0, "duration_ms": end.duration_ms},
         )
 
     async def _report_agent_call(

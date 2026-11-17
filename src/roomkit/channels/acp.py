@@ -148,6 +148,9 @@ class ACPChannel(ACPConnectionMixin, ACPSessionsMixin, ACPTurnMixin, ACPEventsMi
             the session is released, never prompted (RFC §6.4, ACP agent
             channel, *Session setup*). The mode matters most, since it decides what
             the agent asks ``external_tool_handler`` before acting.
+        publish_tool_call_text: Include tool arguments and a result preview of up to
+            500 characters in the room subscriber's tool events, and the full intermediate
+            ACP progress update. Defaults to false.
         authentication_method: Optional ACP authentication method identifier.
         external_tool_handler: Permission policy and tool observability bridge.
             Without a handler, every permission request is rejected.
@@ -227,6 +230,7 @@ class ACPChannel(ACPConnectionMixin, ACPSessionsMixin, ACPTurnMixin, ACPEventsMi
         mcp_servers: Sequence[Any] | MCPServersForRoom | None = None,
         session_config: Mapping[str, str | bool] | None = None,
         publish_thinking_text: bool = False,
+        publish_tool_call_text: bool = False,
         authentication_method: str | None = None,
         external_tool_handler: ExternalToolHandler | None = None,
         room_history: int = _DEFAULT_ROOM_HISTORY,
@@ -291,6 +295,7 @@ class ACPChannel(ACPConnectionMixin, ACPSessionsMixin, ACPTurnMixin, ACPEventsMi
         # The agent's reasoning reaches a room's subscribers as its length; its
         # text only when the host asks: the channel has no visibility gate.
         self._publish_thinking_text = publish_thinking_text
+        self._publish_tool_call_text = publish_tool_call_text
         self._session_options: dict[str, list[Any]] = {}
         self._prompted_index: dict[str, int] = {}
         # Rooms whose session was sent a labelled request (RFC §6.4).

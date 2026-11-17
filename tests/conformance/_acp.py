@@ -291,6 +291,7 @@ def scripted_acp_channel(
             mcp_servers=mcp.source(),
             session_config=spec.get("session_config"),
             publish_thinking_text=spec.get("publish_thinking_text", False),
+            publish_tool_call_text=spec.get("publish_tool_call_text", False),
             external_tool_handler=handler,
             room_history=spec.get("room_history", 20),
             context_contributor=context,

@@ -95,7 +95,7 @@ def workspace() -> Path:
     return root
 
 
-async def build() -> RoomKit:
+async def build(*, console: bool = False) -> RoomKit:
     kit = RoomKit()
     kit.register_channel(WebSocketChannel("oncall"))
     dev = ACPChannel(
@@ -105,6 +105,7 @@ async def build() -> RoomKit:
         inherit_env=["HOME", "PATH", "USER", "XDG_CONFIG_HOME"],
         # RoomKit's gate: the policy, then BEFORE_TOOL_USE, each call reported.
         external_tool_handler=PolicyExternalToolHandler(policy=READ_ONLY),
+        publish_tool_call_text=console,
         # Claude Code's own mode decides what it asks before acting: under a
         # user's "auto" mode it acts without asking, and RoomKit's gate never
         # hears of it. "default" asks before any action that is not a read. Set
@@ -185,7 +186,7 @@ async def main() -> None:
     args = parser.parse_args()
     if shutil.which("npx") is None:
         raise SystemExit("npx is needed to run Claude Code over ACP (Node.js 22+)")
-    kit = await build()
+    kit = await build(console=args.console)
     try:
         if args.console:
             await DiscussionConsole(

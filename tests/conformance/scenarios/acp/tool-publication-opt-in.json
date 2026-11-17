@@ -1,0 +1,252 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "acp/tool-publication-opt-in",
+  "title": "An opted-in room subscriber receives the ACP tool input, progress and result preview",
+  "rules": [
+    "§8.4",
+    "Appendix A.9.1"
+  ],
+  "notes": "RMK-1747. The subscriber observes a call on a real ACP turn. The private values are test fixtures.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "claude",
+        "type": "ai",
+        "acp": {
+          "cwd": "/srv/project",
+          "agent": {
+            "prompts": [
+              {
+                "updates": [
+                  {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "inspect-1",
+                    "title": "Inspect",
+                    "kind": "read",
+                    "status": "in_progress",
+                    "rawInput": {
+                      "path": "README.md"
+                    }
+                  },
+                  {
+                    "sessionUpdate": "tool_call_update",
+                    "toolCallId": "inspect-1",
+                    "status": "in_progress",
+                    "rawInput": {
+                      "path": "step.example"
+                    },
+                    "rawOutput": "intermediate output",
+                    "content": [
+                      {
+                        "type": "content",
+                        "content": {
+                          "type": "text",
+                          "text": "progress text"
+                        }
+                      }
+                    ],
+                    "locations": [
+                      {
+                        "path": "step.example",
+                        "line": 3
+                      }
+                    ],
+                    "title": "Reading step.example",
+                    "kind": "read",
+                    "_meta": {
+                      "example.org/detail": "intermediate text"
+                    }
+                  },
+                  {
+                    "sessionUpdate": "tool_call_update",
+                    "toolCallId": "inspect-1",
+                    "status": "completed",
+                    "rawOutput": "Read."
+                  }
+                ]
+              }
+            ],
+            "initialize": {
+              "agent_info": {
+                "name": "scripted-agent",
+                "version": "1.0.0"
+              }
+            }
+          },
+          "publish_tool_call_text": true
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "claude",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "tool_report",
+        "trigger": "on_tool_call",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "first"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "custom_events": {
+      "room-1": [
+        {
+          "room_id": "room-1",
+          "channel_id": "claude",
+          "data": {
+            "type": "acp_config_options",
+            "values": {}
+          }
+        },
+        {
+          "room_id": "room-1",
+          "channel_id": "claude",
+          "data": {
+            "type": "acp_tool_progress",
+            "session_id": "session-1",
+            "tool_call": {
+              "sessionUpdate": "tool_call_update",
+              "toolCallId": "$e1",
+              "status": "in_progress",
+              "rawInput": {
+                "path": "step.example"
+              },
+              "rawOutput": "intermediate output",
+              "content": [
+                {
+                  "type": "content",
+                  "content": {
+                    "type": "text",
+                    "text": "progress text"
+                  }
+                }
+              ],
+              "locations": [
+                {
+                  "path": "step.example",
+                  "line": 3
+                }
+              ],
+              "kind": "read",
+              "title": "Reading step.example",
+              "_meta": {
+                "example.org/detail": "intermediate text"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "tool_events": {
+      "room-1": [
+        {
+          "type": "tool_call_start",
+          "channel_id": "claude",
+          "round": 0,
+          "tool_calls": [
+            {
+              "id": "$e1",
+              "name": "Inspect",
+              "arguments": {
+                "path": "README.md"
+              }
+            }
+          ]
+        },
+        {
+          "type": "tool_call_end",
+          "channel_id": "claude",
+          "round": 0,
+          "tool_calls": [
+            {
+              "id": "$e1",
+              "name": "Reading step.example",
+              "status": "completed",
+              "result": "Read."
+            }
+          ],
+          "duration_ms": {
+            "$present": true
+          }
+        }
+      ]
+    },
+    "hooks": {
+      "tool_report": [
+        {
+          "room_id": "room-1",
+          "tool_call": {
+            "name": "Reading step.example",
+            "arguments": {
+              "path": "step.example"
+            },
+            "result": "Read."
+          }
+        }
+      ]
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "content": {
+            "type": "text",
+            "body": "first"
+          }
+        },
+        {
+          "type": "tool_call_start",
+          "content": {
+            "type": "tool_call",
+            "tool_name": "Inspect",
+            "arguments": {
+              "path": "README.md"
+            }
+          }
+        },
+        {
+          "type": "tool_call_end",
+          "content": {
+            "type": "tool_call",
+            "tool_name": "Reading step.example",
+            "result": "Read.",
+            "status": "completed"
+          }
+        }
+      ]
+    }
+  }
+}

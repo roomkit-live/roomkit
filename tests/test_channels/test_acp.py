@@ -816,7 +816,12 @@ class TestACPChannel:
         assert connection.permission_responses[0].outcome.option_id == "allow-once"
         assert handler.results[0]["name"] == "Read file"
         assert any(event.data.get("type") == "acp_plan_update" for event in ephemeral)
-        assert any(event.data.get("type") == "acp_tool_progress" for event in ephemeral)
+        progress = next(e for e in ephemeral if e.data.get("type") == "acp_tool_progress")
+        assert progress.data["tool_call"] == {
+            "sessionUpdate": "tool_call_update",
+            "toolCallId": "tool-1",
+            "status": "in_progress",
+        }
 
         second = await channel.on_event(make_event(body="Continue"), _binding(), context)
         _ = [chunk async for chunk in second.response_stream]
@@ -1368,7 +1373,11 @@ class TestACPChannel:
             and event.data["tool_calls"][0]["id"] == "tool-1"
         ]
         assert len(ephemeral_ends) == 1
-        assert ephemeral_ends[0].data["tool_calls"][0]["status"] == "failed"
+        public_call = ephemeral_ends[0].data["tool_calls"][0]
+        assert public_call["status"] == "failed"
+        assert "result" not in public_call
+        start = next(e for e in ephemeral if e.type is EphemeralEventType.TOOL_CALL_START)
+        assert "arguments" not in start.data["tool_calls"][0]
         await channel.close()
         await realtime.close()
 

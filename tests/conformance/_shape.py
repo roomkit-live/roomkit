@@ -719,8 +719,9 @@ def _acp_directories(spec: Mapping[str, Any], path: str, found: list[str]) -> No
 
 
 def _acp_thinking(spec: Mapping[str, Any], path: str, found: list[str]) -> None:
-    if "publish_thinking_text" in spec and not isinstance(spec["publish_thinking_text"], bool):
-        found.append(f"{path}.publish_thinking_text: expected a boolean")
+    for key in ("publish_thinking_text", "publish_tool_call_text"):
+        if key in spec and not isinstance(spec[key], bool):
+            found.append(f"{path}.{key}: expected a boolean")
     for index, prompt in enumerate(spec.get("agent", {}).get("prompts", [])):
         for gate in ("after_updates_gate", "before_reply_gate"):
             if gate in prompt and not isinstance(prompt[gate], str):
@@ -752,6 +753,7 @@ def _acp(spec: Mapping[str, Any], path: str, found: list[str]) -> None:
             "additional_directories",
             "mcp_servers",
             "publish_thinking_text",
+            "publish_tool_call_text",
             "external_tool_handler",
             "room_history",
             "context_contributor",

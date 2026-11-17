@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **BREAKING** (RMK-1747). Room subscribers now receive ACP tool arguments, result previews and full intermediate progress only when the host sets `ACPChannel(publish_tool_call_text=True)`. The default publishes each call's identity and status. Stored tool rows and hook payloads retain their full contents.
+
 - **A delegated agent's turn ends once its result tool's call is served** (RFC §23.3, RMK-357). After `submit_result`, `submit_verdict` or `submit_review`, the turn asked its model once more, and re-prompted it when it said nothing, as models often do after a submit: a supervised review cost three calls where one does. Nothing is asked after the served call now; a call an `ON_TOOL_CALL` hook blocks is no result and the turn goes on. `OwnerTool.ends_turn` carries it to an executor.
 
 - **BREAKING: closing a room takes its strategy back out** (RFC §19.7, §5.1, RMK-341). What a strategy set up for a room, its room hooks, the tools and turn runners kept for its agents, the agents it attached and its state, stayed after `close_room`, after the room's timers closed it and after `archive_room` archived it still open, so a kit with a default orchestration kept 14 to 17 KB per closed room for its whole life, and a reopened room still ran the old install. Its close or its archiving now uninstalls it as `uninstall_strategy` does, once the close is written and announced (`room_closed` comes before the agents' detach events), the timeline kept. `install_strategy` refuses a CLOSED or ARCHIVED room with `RoomClosedError`; a reopened room holds no strategy until its host installs one again.

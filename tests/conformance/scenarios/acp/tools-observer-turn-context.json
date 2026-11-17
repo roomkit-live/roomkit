@@ -26,6 +26,7 @@
         "id": "claude",
         "type": "ai",
         "acp": {
+          "publish_tool_call_text": true,
           "cwd": "/srv/project",
           "agent": {
             "prompts": [
