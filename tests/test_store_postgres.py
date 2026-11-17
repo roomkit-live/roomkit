@@ -1913,7 +1913,7 @@ class TestConnectionTenure:
         body_error = ValueError("body sentinel")
         released: list[int] = []
 
-        async def failed_reset(connection) -> None:
+        async def failed_reset(connection: Any) -> None:
             released.append(connection.get_server_pid())
             raise cleanup_error
 
@@ -1928,7 +1928,9 @@ class TestConnectionTenure:
         try:
             with pytest.raises(RuntimeError, match="release sentinel") as caught:
                 async with scoped.connection():
-                    pid = scoped._bound().get_server_pid()
+                    bound = scoped._bound()
+                    assert bound is not None
+                    pid = bound.get_server_pid()
                     await scoped.create_room(Room(id="before-release"))
                     if body_fails:
                         raise body_error
