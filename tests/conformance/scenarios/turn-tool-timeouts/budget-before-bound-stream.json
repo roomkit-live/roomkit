@@ -1,0 +1,122 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-tool-timeouts/budget-before-bound-stream",
+  "title": "The turn budget is refused before its invalid per-tool bound (stream)",
+  "rules": [
+    "§6.4",
+    "§21.6",
+    "Appendix A.9"
+  ],
+  "notes": "Python: tests/test_turn_tool_timeouts.py::test_the_turn_budget_is_validated_before_its_tool_bounds. Routing and budget validation precede per-turn tool bound validation, and no model generation occurs.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "report",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "The report took too long."
+            }
+          ],
+          "streaming": true
+        },
+        "tools": [
+          {
+            "name": "report",
+            "description": "Build the report",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "hangs": true
+          }
+        ],
+        "config_provider": {
+          "room-1": {
+            "tool_timeouts_ms": {
+              "report": 0
+            }
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence",
+            "metadata": {
+              "turn_budget_tokens": 0
+            }
+          }
+        ]
+      }
+    ],
+    "hooks": []
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Run the report."
+        }
+      },
+      "expect": {
+        "result": {
+          "delivery_results": {
+            "agent": {
+              "status": "failed",
+              "error": {
+                "code": "ValueError",
+                "message": {
+                  "$contains": "turn_budget_tokens must be a positive"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": []
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message"
+        }
+      ]
+    }
+  }
+}

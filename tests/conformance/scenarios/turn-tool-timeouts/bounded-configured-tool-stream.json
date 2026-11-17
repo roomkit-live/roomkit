@@ -1,0 +1,156 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-tool-timeouts/bounded-configured-tool-stream",
+  "title": "A turn-declared tool carries its finite override beside its handler (stream)",
+  "rules": [
+    "§21.6",
+    "Appendix A.9"
+  ],
+  "notes": "Python: channels/_ai_context.py::_given_turn_timeouts and tools/timeout.py::ToolTimeouts.overridden. A finite bound supplied with the turn-declared tool cuts its pending handler while the channel default is unbounded.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "report",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "The report took too long."
+            }
+          ],
+          "streaming": true
+        },
+        "tool_timeout_ms": null,
+        "config_provider": {
+          "room-1": {
+            "tools": [
+              {
+                "name": "report",
+                "description": "Build the report",
+                "parameters": {
+                  "type": "object",
+                  "properties": {}
+                }
+              }
+            ],
+            "tool_handler": [
+              {
+                "name": "report",
+                "description": "Build the report",
+                "parameters": {
+                  "type": "object",
+                  "properties": {}
+                },
+                "hangs": true
+              }
+            ],
+            "tool_timeouts_ms": {
+              "report": 30
+            }
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": []
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Run the report."
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message"
+        },
+        {
+          "index": 1,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 2,
+          "type": "tool_call_end",
+          "content": {
+            "type": "tool_call",
+            "tool_name": "report",
+            "tool_id": "c1",
+            "outcome": "failed",
+            "result": "{\"error\": \"Tool 'report' failed (ToolTimeoutError)\"}"
+          }
+        },
+        {
+          "index": 3,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "The report took too long."
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "tool_results": []
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "{\"error\": \"Tool 'report' failed (ToolTimeoutError)\"}",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

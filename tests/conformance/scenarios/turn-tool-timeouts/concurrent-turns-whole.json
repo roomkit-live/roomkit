@@ -1,0 +1,206 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-tool-timeouts/concurrent-turns-whole",
+  "title": "Two simultaneous turns keep independent bounds on the same channel (whole)",
+  "rules": [
+    "§21.6",
+    "Appendix A.9"
+  ],
+  "notes": "Python: tests/test_turn_tool_timeouts.py::test_simultaneous_turns_keep_independent_bounds. Gates establish call ordering without a sleep-based oracle.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "report",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c2",
+                  "name": "report",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "Bounded done."
+            },
+            {
+              "text": "Unbounded done."
+            }
+          ],
+          "streaming": false
+        },
+        "tool_timeout_ms": null,
+        "config_provider": {
+          "room-1": {
+            "tools": [
+              {
+                "name": "report",
+                "description": "Build the report",
+                "parameters": {
+                  "type": "object"
+                }
+              }
+            ],
+            "tool_handler": [
+              {
+                "name": "report",
+                "description": "Build the report",
+                "parameters": {
+                  "type": "object"
+                },
+                "gate": "unbounded-started",
+                "returns": "ready"
+              }
+            ],
+            "tool_timeouts_ms": {
+              "report": null
+            }
+          },
+          "room-2": {
+            "tools": [
+              {
+                "name": "report",
+                "description": "Build the report",
+                "parameters": {
+                  "type": "object"
+                }
+              }
+            ],
+            "tool_handler": [
+              {
+                "name": "report",
+                "description": "Build the report",
+                "parameters": {
+                  "type": "object"
+                },
+                "hangs": true
+              }
+            ],
+            "tool_timeouts_ms": {
+              "report": 30
+            }
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": []
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Run the report."
+        }
+      },
+      "background": true,
+      "as": "unbounded"
+    },
+    {
+      "wait_for": "unbounded-started"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Run the report."
+        }
+      },
+      "background": true,
+      "as": "bounded"
+    },
+    {
+      "await": "bounded"
+    },
+    {
+      "open": "unbounded-started"
+    },
+    {
+      "await": "unbounded"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tool_results": []
+        },
+        {
+          "tool_results": []
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c2",
+              "content": "{\"error\": \"Tool 'report' failed (ToolTimeoutError)\"}",
+              "is_error": true
+            }
+          ]
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "c1",
+              "content": "ready",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

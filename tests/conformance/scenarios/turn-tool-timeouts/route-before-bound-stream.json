@@ -1,0 +1,134 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-tool-timeouts/route-before-bound-stream",
+  "title": "The router is asked before an invalid per-turn tool bound is refused (stream)",
+  "rules": [
+    "§6.4",
+    "§21.6",
+    "Appendix A.9"
+  ],
+  "notes": "Python: tests/test_turn_tool_timeouts.py::test_the_router_is_asked_before_a_turn_bound_is_refused. Routing and budget validation precede per-turn tool bound validation, and no model generation occurs.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "report",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "The report took too long."
+            }
+          ],
+          "streaming": true
+        },
+        "tools": [
+          {
+            "name": "report",
+            "description": "Build the report",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "hangs": true
+          }
+        ],
+        "config_provider": {
+          "room-1": {
+            "tool_timeouts_ms": {
+              "report": 0
+            }
+          }
+        },
+        "router": {
+          "turns": [
+            "agent"
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": []
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Run the report."
+        }
+      },
+      "expect": {
+        "result": {
+          "delivery_results": {
+            "agent": {
+              "status": "failed",
+              "error": {
+                "code": "ValueError",
+                "message": {
+                  "$contains": "tool timeout for 'report' must be positive or None"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": []
+    },
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message"
+        }
+      ]
+    },
+    "ai_routes": {
+      "agent": [
+        {
+          "reason": "turn",
+          "text": "Run the report.",
+          "previous": null,
+          "failed": null
+        }
+      ]
+    }
+  }
+}

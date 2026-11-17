@@ -1,0 +1,186 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "turn-tool-timeouts/null-map-stream",
+  "title": "A turn preserves the channel bound of names it does not override (stream)",
+  "rules": [
+    "§21.6",
+    "Appendix A.9"
+  ],
+  "notes": "Python: tests/test_turn_tool_timeouts.py::test_absent_names_keep_the_channel_per_tool_bound. Gates establish call ordering without a sleep-based oracle.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "c1",
+                  "name": "report",
+                  "arguments": {}
+                },
+                {
+                  "id": "c2",
+                  "name": "ping",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ],
+          "streaming": true
+        },
+        "tools": [
+          {
+            "name": "report",
+            "description": "Build the report",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "returns": "report ready",
+            "gate": "report"
+          },
+          {
+            "name": "ping",
+            "description": "Ping",
+            "parameters": {
+              "type": "object",
+              "properties": {}
+            },
+            "hangs": true
+          }
+        ],
+        "tool_timeout_ms": 30,
+        "tool_timeouts_ms": {
+          "report": null
+        },
+        "config_provider": {
+          "room-1": {
+            "tool_timeouts_ms": null
+          }
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "watch",
+        "trigger": "on_tool_call",
+        "execution": "async",
+        "reactions": [
+          {
+            "gate": "ping-ended"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Run the report."
+        }
+      },
+      "background": true,
+      "as": "inbound"
+    },
+    {
+      "wait_for": "ping-ended"
+    },
+    {
+      "open": "report"
+    },
+    {
+      "open": "ping-ended"
+    },
+    {
+      "await": "inbound",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "index": 0,
+          "type": "message"
+        },
+        {
+          "index": 1,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 2,
+          "type": "tool_call_start"
+        },
+        {
+          "index": 3,
+          "type": "tool_call_end",
+          "content": {
+            "type": "tool_call",
+            "tool_name": "report",
+            "tool_id": "c1",
+            "outcome": "served",
+            "result": "report ready"
+          }
+        },
+        {
+          "index": 4,
+          "type": "tool_call_end",
+          "content": {
+            "type": "tool_call",
+            "tool_name": "ping",
+            "tool_id": "c2",
+            "outcome": "failed",
+            "result": "{\"error\": \"Tool 'ping' failed (ToolTimeoutError)\"}"
+          }
+        },
+        {
+          "index": 5,
+          "type": "message",
+          "content": {
+            "type": "text",
+            "body": "Done."
+          }
+        }
+      ]
+    }
+  }
+}
