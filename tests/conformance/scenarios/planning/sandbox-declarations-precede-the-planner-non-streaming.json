@@ -1,0 +1,90 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "planning/sandbox-declarations-precede-the-planner-non-streaming",
+  "title": "Sandbox declarations precede the planner (non-streaming)",
+  "rules": [
+    "§6.4",
+    "§9.3",
+    "§21.1"
+  ],
+  "notes": "Python: AIChannel public model request with sandbox and enable_planning; _ai_context._add_sandbox precedes the planner. The provider tool_names observation preserves declaration order.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "system_prompt": "Host instructions.",
+        "sandbox": {
+          "tools": [
+            {
+              "name": "sandbox_bash"
+            }
+          ]
+        },
+        "model": {
+          "streaming": false,
+          "rounds": [
+            {
+              "text": "done"
+            }
+          ]
+        },
+        "enable_planning": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Read"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "sandbox_executors": {
+      "agent": {
+        "calls": [],
+        "closes": 1
+      }
+    },
+    "models": {
+      "agent": [
+        {
+          "tool_names": [
+            "sandbox_bash",
+            "plan_tasks",
+            "read_stored_result"
+          ]
+        }
+      ]
+    }
+  }
+}

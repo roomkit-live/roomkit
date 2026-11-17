@@ -1,0 +1,131 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "planning/unknown-top-level-argument-is-refused-before-the-planner-streaming",
+  "title": "Unknown top level argument is refused before the planner streaming",
+  "rules": [
+    "§6.4",
+    "§9.2",
+    "§9.3",
+    "§10.6.3"
+  ],
+  "notes": "Python: tests/test_task_planner.py; tests/test_turn_notes.py; tests/test_tool_policy_exemptions.py. Real plan_tasks calls, model requests, tool reports, plan hooks and CUSTOM events are observed independently.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "enable_planning": true,
+        "system_prompt": "Be brief.",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "p1",
+                  "name": "plan_tasks",
+                  "arguments": {
+                    "tasks": [],
+                    "ignored": true
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            }
+          ],
+          "streaming": true
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "plans",
+        "trigger": "on_plan_updated",
+        "execution": "async"
+      },
+      {
+        "name": "audit",
+        "trigger": "on_tool_call",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Plan it."
+        }
+      },
+      "expect": {
+        "result": {
+          "error": null,
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "plans": [],
+      "audit": [
+        {
+          "tool_call": {
+            "name": "plan_tasks",
+            "tool_call_id": "p1",
+            "result": "{\"error\": \"Invalid arguments for 'plan_tasks': unknown argument 'ignored' (this tool accepts: tasks)\"}",
+            "is_error": true,
+            "refused": true,
+            "cancelled": false
+          }
+        }
+      ]
+    },
+    "custom_events": {
+      "r": []
+    },
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "name": "plan_tasks",
+              "content": "{\"error\": \"Invalid arguments for 'plan_tasks': unknown argument 'ignored' (this tool accepts: tasks)\"}",
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

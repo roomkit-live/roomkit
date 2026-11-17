@@ -1,0 +1,193 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "planning/tool-search-always-declares-the-planner-before-and-after-use-non-streaming",
+  "title": "Tool search always declares the planner before and after use non streaming",
+  "rules": [
+    "§6.4",
+    "§9.2",
+    "§9.3",
+    "§10.6.3"
+  ],
+  "notes": "Python: tests/test_task_planner.py; tests/test_turn_notes.py; tests/test_tool_policy_exemptions.py. Real plan_tasks calls, model requests, tool reports, plan hooks and CUSTOM events are observed independently.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "enable_planning": true,
+        "system_prompt": "Be brief.",
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "p1",
+                  "name": "plan_tasks",
+                  "arguments": {
+                    "tasks": [
+                      {
+                        "title": "Keep",
+                        "status": "pending"
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            },
+            {
+              "text": "Again."
+            }
+          ],
+          "streaming": false
+        },
+        "tool_search": true,
+        "tools": [
+          {
+            "name": "lookup",
+            "description": "Look up records",
+            "parameters": {
+              "type": "object"
+            },
+            "returns": "unused"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "plans",
+        "trigger": "on_plan_updated",
+        "execution": "async"
+      },
+      {
+        "name": "audit",
+        "trigger": "on_tool_call",
+        "execution": "async"
+      },
+      {
+        "name": "response",
+        "trigger": "on_ai_response",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "r",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Plan it."
+        }
+      },
+      "expect": {
+        "result": {
+          "error": null,
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "r",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Continue."
+        }
+      },
+      "expect": {
+        "result": {
+          "error": null,
+          "blocked": false
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "hooks": {
+      "response": [
+        {
+          "response": {
+            "declared_tools": {
+              "plan_tasks": {
+                "origin": "always"
+              }
+            }
+          }
+        },
+        {
+          "response": {
+            "declared_tools": {
+              "plan_tasks": {
+                "origin": "always"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "plan_tasks": {
+              "$present": true
+            },
+            "lookup": {
+              "$absent": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "plan_tasks": {
+              "$present": true
+            }
+          }
+        },
+        {
+          "tools": {
+            "plan_tasks": {
+              "$present": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}
