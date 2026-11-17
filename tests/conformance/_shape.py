@@ -254,6 +254,7 @@ TOOL = {
     "declared",
     "returns_json",
     "returns_allowed_names",
+    "report_claim_probe",
     "writes_record",
     "writes_structured_content",
     "returns_parts",

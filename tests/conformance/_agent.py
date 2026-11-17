@@ -564,7 +564,10 @@ def _write_record(spec: Mapping[str, Any]) -> None:
 
 
 def _tool_handler(tools: list[Mapping[str, Any]], gates: Gates) -> Any:
+    from tests.conformance._report_claims import ReportClaims
+
     by_name = {tool["name"]: tool for tool in tools}
+    claims = ReportClaims()
 
     async def handler(name: str, arguments: dict[str, Any]) -> Any:
         tool = by_name.get(name)
@@ -576,6 +579,8 @@ def _tool_handler(tools: list[Mapping[str, Any]], gates: Gates) -> Any:
         _write_structured_content(tool)
         if (gate := tool.get("gate")) is not None:
             await gates.hold(gate)
+        if "report_claim_probe" in tool:
+            return claims.answer(tool["report_claim_probe"])
         if "returns" in tool:
             return str(tool["returns"])
         if "returns_json" in tool:
