@@ -79,6 +79,7 @@ from roomkit.tools.human_input import HumanInputToolHandler
 from roomkit.tools.policy import ToolPolicy
 from tests.conformance._acp_handler import ScriptedExternalHandler
 from tests.conformance._continuation import continuation_options
+from tests.conformance._host_verbs import call_from_tool
 from tests.conformance._mcp import Connected, declared_tools, tool_handlers
 from tests.conformance._memory import Compacted, scripted_memory
 from tests.conformance._script_executor import ScriptedScriptExecutor
@@ -611,6 +612,8 @@ def _tool_handler(tools: list[Mapping[str, Any]], gates: Gates, kit: RoomKit | N
             await gates.hold(gate)
         if "report_claim_probe" in tool:
             return claims.answer(tool["report_claim_probe"])
+        if "host_calls" in tool:
+            return await call_from_tool(tool["host_calls"], gates)
         if tool.get("returns_requester"):
             return json.dumps(current_tool_requester(), ensure_ascii=False)
         if "returns" in tool:

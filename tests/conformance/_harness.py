@@ -74,6 +74,7 @@ from tests.conformance._discussion import (
 )
 from tests.conformance._executors import EXECUTOR_CALLS, Executors
 from tests.conformance._handoff import HANDOFF_CALLS
+from tests.conformance._host_verbs import HOST_CALLS
 from tests.conformance._identity import kit_options, register_identity_hook
 from tests.conformance._inputs import INPUT_CALLS, request_record
 from tests.conformance._kit_executor import KIT_EXECUTOR_CALLS
@@ -732,6 +733,7 @@ class Harness:
         calls |= VERIFICATION_CALLS | ROUTING_CALLS | HANDOFF_CALLS | DISCUSSION_CALLS
         calls |= MCP_HOST_CALLS
         calls |= SKILL_REGISTRY_CALLS
+        calls |= HOST_CALLS
         calls |= SUBSCRIPTION_CALLS
         call = (calls | DELEGATE_TOOL_CALLS | EXECUTOR_CALLS | KIT_EXECUTOR_CALLS)[spec["call"]]
         try:

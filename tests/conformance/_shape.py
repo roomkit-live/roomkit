@@ -30,6 +30,12 @@ from tests.conformance._discussion import (
 )
 from tests.conformance._executors import EXECUTOR_ARGUMENTS
 from tests.conformance._handoff import HANDOFF_ARGUMENTS
+from tests.conformance._host_verbs import (
+    HOST_ARGUMENTS,
+    HOST_CALL,
+    HOST_CALLS_SCRIPT,
+    HOST_HANDLER,
+)
 from tests.conformance._inputs import INPUT_ARGUMENTS
 from tests.conformance._kit_executor import KIT_EXECUTOR_ARGUMENTS
 from tests.conformance._mcp_shape import MCP_HOST_ARGUMENTS
@@ -264,6 +270,7 @@ TOOL = {
     "returns_requester",
     "posts_progress",
     "report_claim_probe",
+    "host_calls",
     "writes_record",
     "writes_structured_content",
     "returns_parts",
@@ -572,6 +579,7 @@ CALLS |= DISCUSSION_ARGUMENTS
 CALLS |= EXECUTOR_ARGUMENTS | KIT_EXECUTOR_ARGUMENTS
 CALLS |= MCP_HOST_ARGUMENTS
 CALLS |= SKILL_REGISTRY_ARGUMENTS
+CALLS |= HOST_ARGUMENTS
 STEPS = {"await": {"await", "expect"}, "concurrent": {"concurrent"}, "wait_for": {"wait_for"}}
 STEPS |= {"open": {"open"}, "idle": {"idle"}, "wait_for_lock": {"wait_for_lock", "waiters"}}
 STEPS |= {"lock_releases": {"lock_releases"}}
@@ -820,6 +828,8 @@ def _channel(channel: Mapping[str, Any], path: str, found: list[str]) -> None:
         _members(channel["retry_policy"], RETRY_POLICY, f"{path}.retry_policy", found)
     for index, tool in enumerate(channel.get("tools", [])):
         _members(tool, TOOL, f"{path}.tools[{index}]", found)
+        if "host_calls" in tool:
+            _host_calls(tool["host_calls"], f"{path}.tools[{index}].host_calls", found)
         if "raises" in tool:
             _members(tool["raises"], RAISES, f"{path}.tools[{index}].raises", found)
     if "tool_policy" in channel:
@@ -892,6 +902,8 @@ def _turn_config(config: Mapping[str, Any], path: str, found: list[str]) -> None
         _members(tool, TURN_TOOL, f"{path}.tools[{index}]", found)
     for index, tool in enumerate(config.get("tool_handler", [])):
         _members(tool, TOOL, f"{path}.tool_handler[{index}]", found)
+        if "host_calls" in tool:
+            _host_calls(tool["host_calls"], f"{path}.tool_handler[{index}].host_calls", found)
     _skills(config.get("skills", []), f"{path}.skills", found)
 
 
@@ -1125,6 +1137,11 @@ def _call(call: Mapping[str, Any], extra: set[str], path: str, found: list[str])
                     found.append(f"{path}: a registry session cannot nest itself")
                 else:
                     _call(operation["action"], set(), f"{path}.operations[{index}].action", found)
+    if name == "declare_host_verb":
+        handler = call.get("handler", {})
+        _members(handler, HOST_HANDLER, f"{path}.handler", found)
+        if "raises" in handler:
+            _members(handler["raises"], RAISES, f"{path}.handler.raises", found)
     if "expect" in call:
         _outcome(call["expect"], f"{path}.expect", found)
     if name == "create_room":
@@ -1149,6 +1166,14 @@ def _call(call: Mapping[str, Any], extra: set[str], path: str, found: list[str])
     if name == "save_conversation_state":
         for index, transition in enumerate(call.get("transitions", [])):
             _members(transition, TRANSITION, f"{path}.transitions[{index}]", found)
+
+
+def _host_calls(script: Mapping[str, Any], path: str, found: list[str]) -> None:
+    _members(script, HOST_CALLS_SCRIPT, path, found)
+    if not isinstance(script, Mapping):
+        return
+    for index, call in enumerate(script.get("calls", [])):
+        _members(call, HOST_CALL, f"{path}.calls[{index}]", found)
 
 
 def _outcome(outcome: Any, path: str, found: list[str]) -> None:
