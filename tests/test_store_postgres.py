@@ -1901,6 +1901,45 @@ class TestConnectionTenure:
         finally:
             await other.close()
 
+    @pytest.mark.parametrize("body_fails", [False, True])
+    async def test_release_failure_takes_precedence_and_closes_the_connection(
+        self, store, body_fails: bool
+    ) -> None:
+        import asyncpg
+
+        from roomkit.store.postgres import PostgresStore
+
+        cleanup_error = RuntimeError("release sentinel")
+        body_error = ValueError("body sentinel")
+        released: list[int] = []
+
+        async def failed_reset(connection) -> None:
+            released.append(connection.get_server_pid())
+            raise cleanup_error
+
+        pool = await asyncpg.create_pool(
+            POSTGRES_DSN,
+            min_size=1,
+            max_size=1,
+            init=PostgresStore._init_connection,
+            reset=failed_reset,
+        )
+        scoped = PostgresStore(pool=pool)
+        try:
+            with pytest.raises(RuntimeError, match="release sentinel") as caught:
+                async with scoped.connection():
+                    pid = scoped._bound().get_server_pid()
+                    await scoped.create_room(Room(id="before-release"))
+                    if body_fails:
+                        raise body_error
+            assert caught.value is cleanup_error
+            assert released == [pid]
+            assert scoped._bound() is None
+            assert pool.get_size() == 0
+            assert await store.room_exists("before-release")
+        finally:
+            await pool.close()
+
     async def test_cancelling_acquisition_leaves_the_pool_available(self, store) -> None:
         async with contextlib.AsyncExitStack() as held:
             for _ in range(store._pool.get_max_size()):
