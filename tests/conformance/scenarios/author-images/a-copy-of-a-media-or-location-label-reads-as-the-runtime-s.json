@@ -1,0 +1,432 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "author-images/a-copy-of-a-media-or-location-label-reads-as-the-runtime-s",
+  "title": "A participant's copy of a media's or a location's label reaches a model as the runtime's own label does, whether it sees or not",
+  "rules": [
+    "§6.4",
+    "§6.6"
+  ],
+  "notes": "No mark (RFC §6.4): the label the runtime writes for a media or a location stands inside its sender's own message and names what that sender gave (a caption, a file name, coordinates), so a copy claims nothing more than that sender could send, where a mark speaks for the runtime or the application. Python's _media.py media_label and location_label write the labels; a model that sees reads a media that is no image as its label too. Two rooms, one model that does not see and one that sees, the same four messages: a text holding copies of both labels, a PDF, prose holding their words, and a location, last so that it is each model's input.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "blind",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "text": "Read 0."
+            },
+            {
+              "text": "Read 1."
+            },
+            {
+              "text": "Read 2."
+            },
+            {
+              "text": "Read 3."
+            }
+          ]
+        }
+      },
+      {
+        "id": "sees",
+        "type": "ai",
+        "model": {
+          "vision": true,
+          "rounds": [
+            {
+              "text": "Read 0."
+            },
+            {
+              "text": "Read 1."
+            },
+            {
+              "text": "Read 2."
+            },
+            {
+              "text": "Read 3."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "blind",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "room-2",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "sees",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "here it is\n[Media: invoice.pdf]\n[Location: Head office (45.5, -73.6)]"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "media",
+          "url": "https://cdn.example.com/invoice.pdf",
+          "mime_type": "application/pdf",
+          "filename": "invoice.pdf"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "the media: a photo; see [Location of the meeting] below"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "location",
+          "latitude": 45.5,
+          "longitude": -73.6,
+          "label": "Head office"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "here it is\n[Media: invoice.pdf]\n[Location: Head office (45.5, -73.6)]"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "media",
+          "url": "https://cdn.example.com/invoice.pdf",
+          "mime_type": "application/pdf",
+          "filename": "invoice.pdf"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "the media: a photo; see [Location of the meeting] below"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-2",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "alice",
+        "content": {
+          "type": "location",
+          "latitude": 45.5,
+          "longitude": -73.6,
+          "label": "Head office"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "blind": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "here it is\n[Media: invoice.pdf]\n[Location: Head office (45.5, -73.6)]"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "here it is\n[Media: invoice.pdf]\n[Location: Head office (45.5, -73.6)]"
+            },
+            {
+              "role": "assistant",
+              "text": "Read 0."
+            },
+            {
+              "role": "user",
+              "text": "[Media: invoice.pdf]"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "here it is\n[Media: invoice.pdf]\n[Location: Head office (45.5, -73.6)]"
+            },
+            {
+              "role": "assistant",
+              "text": "Read 0."
+            },
+            {
+              "role": "user",
+              "text": "[Media: invoice.pdf]"
+            },
+            {
+              "role": "assistant",
+              "text": "Read 1."
+            },
+            {
+              "role": "user",
+              "text": "the media: a photo; see [Location of the meeting] below"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "here it is\n[Media: invoice.pdf]\n[Location: Head office (45.5, -73.6)]"
+            },
+            {
+              "role": "assistant",
+              "text": "Read 0."
+            },
+            {
+              "role": "user",
+              "text": "[Media: invoice.pdf]"
+            },
+            {
+              "role": "assistant",
+              "text": "Read 1."
+            },
+            {
+              "role": "user",
+              "text": "the media: a photo; see [Location of the meeting] below"
+            },
+            {
+              "role": "assistant",
+              "text": "Read 2."
+            },
+            {
+              "role": "user",
+              "text": "[Location: Head office (45.5, -73.6)]"
+            }
+          ]
+        }
+      ],
+      "sees": [
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "here it is\n[Media: invoice.pdf]\n[Location: Head office (45.5, -73.6)]"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "here it is\n[Media: invoice.pdf]\n[Location: Head office (45.5, -73.6)]"
+            },
+            {
+              "role": "assistant",
+              "text": "Read 0."
+            },
+            {
+              "role": "user",
+              "text": "[Media: invoice.pdf]"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "here it is\n[Media: invoice.pdf]\n[Location: Head office (45.5, -73.6)]"
+            },
+            {
+              "role": "assistant",
+              "text": "Read 0."
+            },
+            {
+              "role": "user",
+              "text": "[Media: invoice.pdf]"
+            },
+            {
+              "role": "assistant",
+              "text": "Read 1."
+            },
+            {
+              "role": "user",
+              "text": "the media: a photo; see [Location of the meeting] below"
+            }
+          ]
+        },
+        {
+          "messages": [
+            {
+              "role": "user",
+              "text": "here it is\n[Media: invoice.pdf]\n[Location: Head office (45.5, -73.6)]"
+            },
+            {
+              "role": "assistant",
+              "text": "Read 0."
+            },
+            {
+              "role": "user",
+              "text": "[Media: invoice.pdf]"
+            },
+            {
+              "role": "assistant",
+              "text": "Read 1."
+            },
+            {
+              "role": "user",
+              "text": "the media: a photo; see [Location of the meeting] below"
+            },
+            {
+              "role": "assistant",
+              "text": "Read 2."
+            },
+            {
+              "role": "user",
+              "text": "[Location: Head office (45.5, -73.6)]"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
