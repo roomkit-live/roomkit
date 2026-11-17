@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import AsyncMock
 
+import pytest
+
 from roomkit.memory._summary import is_summary, summary_message
 from roomkit.memory.base import MemoryProvider, MemoryResult
 from roomkit.memory.summarizing import SummarizingMemory
@@ -498,15 +500,17 @@ class TestTier2Cut:
         """The next read gives the summary, then the turns after those it
         covers, with no call while they fit under tier 2; past it, the
         summarizer reads the prior summary and the new turns alone, the
-        covered turns out of the window still summarized (RMK-363)."""
+        covered turns, still in the room's history, out of the window still
+        summarized (RMK-363)."""
+        room = Room(id="room-1")
         inner = StubInnerMemory(events=[*_pair(0), *_pair(1)])
         sm = _chained(inner, "S1.", "S2.")
-        await sm.retrieve("room-1", _make_event("current"), _make_context())
+        await sm.retrieve("room-1", _make_event("current"), _history(room, 2))
 
         inner._events = [*_pair(0), *_pair(1), *_pair(2, words=1)]
-        fits = await sm.retrieve("room-1", _make_event("current"), _make_context())
+        fits = await sm.retrieve("room-1", _make_event("current"), _history(room, 3))
         inner._events = [*_pair(1), *_pair(2, words=1), *_pair(3)]
-        passes = await sm.retrieve("room-1", _make_event("current"), _make_context())
+        passes = await sm.retrieve("room-1", _make_event("current"), _history(room, 4))
 
         calls = sm._provider.calls
         assert len(calls) == 2
@@ -517,6 +521,47 @@ class TestTier2Cut:
         assert "Question 1:" in second and "Question 0:" not in second
         assert [str(m.content) for m in passes.messages] == [str(summary_message("S2.").content)]
         assert [e.id for e in passes.events] == ["q2", "a2", "q3", "a3"]
+
+    @pytest.mark.parametrize(
+        "change",
+        ["deleted", "edited", "gone", "created-again"],
+    )
+    async def test_a_summary_ends_once_a_turn_it_covers_changed(self, change: str) -> None:
+        """A turn the summary covers deleted (its content withheld, RFC
+        §10.3), edited or gone from the room's history, or the room created
+        again under its id: the summary no longer stands, and the read starts
+        from the window again, never handing what it said (RMK-363)."""
+        room = Room(id="room-1")
+        inner = StubInnerMemory(events=[*_pair(0), *_pair(1)])
+        sm = _chained(inner, "S1.", "S2.")
+        await sm.retrieve("room-1", _make_event("current"), _history(room, 2))
+
+        context = _history(room, 2)
+        first = context.recent_events[0]
+        if change == "deleted":
+            withheld = first.content.model_copy(update={"body": ""})
+            context.recent_events[0] = first.model_copy(update={"content": withheld})
+        elif change == "edited":
+            edited = first.content.model_copy(update={"body": "Question 0: changed"})
+            context.recent_events[0] = first.model_copy(update={"content": edited})
+        elif change == "gone":
+            del context.recent_events[0]
+        else:
+            again = [*_pair(7), *_pair(8)]
+            context = RoomContext(room=Room(id="room-1"), recent_events=again)
+        inner._events = list(context.recent_events)
+        result = await sm.retrieve("room-1", _make_event("current"), context)
+
+        later = [str(call.messages[0].content) for call in sm._provider.calls[1:]]
+        read = [str(m.content) for m in result.messages]
+        assert all("S1." not in text for text in [*read, *later])
+
+
+def _history(room: Room, pairs: int) -> RoomContext:
+    """The room's history as the channel reads it: its first *pairs*
+    questions and answers."""
+    events = [event for n in range(pairs) for event in _pair(n)]
+    return RoomContext(room=room, recent_events=events)
 
 
 # -- Tests: Tier 2 keep_from==0 (all recent, no summarization) ---------------

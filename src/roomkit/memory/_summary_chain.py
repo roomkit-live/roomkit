@@ -4,29 +4,51 @@ from it rather than from the window alone."""
 
 from __future__ import annotations
 
+import hashlib
 from collections import OrderedDict
 from dataclasses import dataclass, replace
+from datetime import datetime
 
 from roomkit.memory._summary import is_summary, summary_message
 from roomkit.memory.base import MemoryResult
+from roomkit.memory.token_estimator import extract_event_text
+from roomkit.models.context import RoomContext
 from roomkit.models.event import RoomEvent
 
 
 @dataclass(frozen=True)
 class SummaryChain:
-    """The summary of a room's turns up to *through*, the event at *index*,
-    and the labels its lines named participants by (*speakers*)."""
+    """The summary of a room's turns, for the room created at *room*: the
+    turns it *covers*, each by its id and the fingerprint of what it said
+    when summarized, and the labels its lines named participants by
+    (*speakers*)."""
 
     summary: str
-    through: str
-    index: int
+    room: datetime | None
+    covers: tuple[tuple[str, str], ...]
     speakers: tuple[str, ...] = ()
 
+    def holds(self, context: RoomContext) -> bool:
+        """Whether the summary still stands for the room of *context*: the
+        room it was built for, not one created again under its id, and each
+        turn it covers still in the room's history as the channel reads it,
+        saying what it said. A turn deleted, edited or whose content is
+        withheld since (RFC §10.3), or gone out of the history, where the
+        memory can no longer tell, ends it."""
+        if context.room.created_at != self.room:
+            return False
+        said = {event.id: fingerprint(event) for event in context.recent_events}
+        return all(said.get(event_id) == print_ for event_id, print_ in self.covers)
+
     def after(self, prior: SummaryChain | None) -> SummaryChain:
-        """This chain, built on *prior*: the speakers both named."""
+        """This chain, built on *prior*: the turns and speakers both cover."""
         if prior is None:
             return self
-        return replace(self, speakers=tuple(sorted({*prior.speakers, *self.speakers})))
+        return replace(
+            self,
+            covers=(*prior.covers, *self.covers),
+            speakers=tuple(sorted({*prior.speakers, *self.speakers})),
+        )
 
     def carried(self, result: MemoryResult) -> MemoryResult:
         """*result* read after the summary: its events past the ones the
@@ -41,12 +63,34 @@ class SummaryChain:
         )
 
     def _after(self, events: list[RoomEvent]) -> list[RoomEvent]:
-        """*events* after the last one the summary covers: those after it
-        where the window still holds it, else those indexed after it."""
-        for at, event in enumerate(events):
-            if event.id == self.through:
-                return events[at + 1 :]
-        return [event for event in events if event.index > self.index]
+        """*events* after the last one the summary covers; all of them when
+        it covers none, which then all came after it."""
+        covered = {event_id for event_id, _ in self.covers}
+        last = max((at for at, event in enumerate(events) if event.id in covered), default=-1)
+        return events[last + 1 :]
+
+
+def chain_for(
+    summary: str,
+    summarized: list[RoomEvent],
+    speakers: list[str],
+    context: RoomContext,
+) -> SummaryChain | None:
+    """The chain for *summary* of the *summarized* turns, each fingerprinted
+    as the room's history in *context* holds it; ``None`` when one is not
+    there, a turn the memory could never check again."""
+    held = {event.id: event for event in context.recent_events}
+    if any(event.id not in held for event in summarized):
+        return None
+    covers = tuple((event.id, fingerprint(held[event.id])) for event in summarized)
+    return SummaryChain(summary, context.room.created_at, covers, tuple(speakers))
+
+
+def fingerprint(event: RoomEvent) -> str:
+    """What *event* says as the channel reads it, digested: its text, which
+    is empty for a deleted event whose content is withheld (RFC §10.3)."""
+    text = extract_event_text(event)
+    return hashlib.sha256(text.encode()).hexdigest()
 
 
 class SummaryChains:
@@ -84,6 +128,10 @@ class SummaryChains:
         self._chains.move_to_end(key)
         while len(self._chains) > self._limit:
             self._chains.popitem(last=False)
+
+    def drop(self, room_id: str, channel_id: str | None) -> None:
+        """Forget the chain of *room_id* for *channel_id*'s agent."""
+        self._chains.pop((room_id, channel_id), None)
 
     def forget(self, room_id: str) -> None:
         """Forget every chain of *room_id*."""

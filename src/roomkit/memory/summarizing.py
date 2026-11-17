@@ -22,7 +22,7 @@ from roomkit.memory._summary import (
     summary_message,
     summary_request,
 )
-from roomkit.memory._summary_chain import SummaryChain, SummaryChains
+from roomkit.memory._summary_chain import SummaryChains, chain_for
 from roomkit.memory._turn_budget import history_event_costs, turn_history_budget
 from roomkit.memory._turn_labels import labels_sent
 from roomkit.memory._wrapper import _MemoryWrapper
@@ -124,6 +124,10 @@ class SummarizingMemory(_MemoryWrapper):
         # turns it covers, which the read goes on from (RFC §20.3).
         now = asyncio.get_running_loop().time()
         chain = self._chains.get(room_id, channel_id, now)
+        if chain is not None and not chain.holds(context):
+            # A room created again, or a turn it covers deleted or changed.
+            self._chains.drop(room_id, channel_id)
+            chain = None
         result = chain.carried(inner_result) if chain is not None else inner_result
         events = result.events
 
@@ -144,7 +148,8 @@ class SummarizingMemory(_MemoryWrapper):
         if total_tokens > tier2_threshold and len(events) > self._min_events:
             lines = SummaryLines(context, current_event, channel_id)
             cut = _Cut(tier2_threshold - self._summary_max_tokens, labels)
-            result, built = await self._apply_tier2(room_id, result, cut, lines)
+            result, summarized = await self._apply_tier2(room_id, result, cut, lines)
+            built = chain_for(*summarized, context) if summarized is not None else None
             if built is not None:
                 self._chains.put(room_id, channel_id, built.after(chain), now)
         return self._enforce_budget(result, budget, labels)
@@ -230,13 +235,14 @@ class SummarizingMemory(_MemoryWrapper):
 
     async def _apply_tier2(
         self, room_id: str, result: MemoryResult, cut: _Cut, lines: SummaryLines
-    ) -> tuple[MemoryResult, SummaryChain | None]:
+    ) -> tuple[MemoryResult, tuple[str, list[RoomEvent], list[str]] | None]:
         """Summarize *result*'s older events, a prior summary among its
         messages carried into the new one, and keep the latest that fit
         *cut*, ``min_events`` of them at least; the event that passes it is
         summarized, never kept for the final cut to drop unsummarized.
         *result*'s other messages and notes are kept as they are. Also gives
-        the chain the room's next read goes on from, when it summarized."""
+        what it summarized, for the chain the room's next read goes on from:
+        the summary, the turns it covers and the speakers its lines named."""
         events = result.events
         keep_from = _kept_within(
             history_event_costs(events, cut.labels), cut.budget, self._min_events
@@ -256,8 +262,7 @@ class SummarizingMemory(_MemoryWrapper):
             events=kept,
             speakers=sorted({*result.speakers, *named}),
         )
-        last = trimmed[-1]
-        return summarized, SummaryChain(summary, last.id, last.index, tuple(named))
+        return summarized, (summary, trimmed, named)
 
     async def _summary(
         self, room_id: str, event_texts: list[str], prior_summary: str | None, count: int
