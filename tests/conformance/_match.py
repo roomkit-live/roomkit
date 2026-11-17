@@ -125,10 +125,16 @@ def _object(expected: dict[str, Any], actual: Any, path: str, names: Names) -> l
 
 def _contains(texts: str | list[str], actual: Any, path: str) -> list[str]:
     """Whether *actual* is a string holding *texts*: a text, or each text of a
-    list in its order, one after the end of the one before."""
+    non-empty list of texts in its order, one after the end of the one before;
+    any other *texts* is a scenario's mistake."""
+    wanted = [texts] if isinstance(texts, str) else texts
+    if not isinstance(wanted, list) or not wanted or not all(isinstance(t, str) for t in wanted):
+        return [f"{path}: $contains takes a text or a non-empty list of texts"]
+    if not isinstance(actual, str):
+        return [f"{path}: {_short(actual)} is not a string"]
     at = 0
-    for text in [texts] if isinstance(texts, str) else texts:
-        found = actual.find(text, at) if isinstance(actual, str) else -1
+    for text in wanted:
+        found = actual.find(text, at)
         if found < 0:
             after = " after the text before it" if at else ""
             return [f"{path}: {_short(actual)} does not contain {text!r}{after}"]

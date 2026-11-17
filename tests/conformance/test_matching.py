@@ -39,6 +39,11 @@ def test_contains_a_list_holds_each_text_in_its_order(actual: object, matches: b
     assert (not mismatches(expected, actual)) is matches
 
 
+@pytest.mark.parametrize("malformed", [[], ["a", 1], 1])
+def test_contains_refuses_what_is_no_text_nor_list_of_texts(malformed: object) -> None:
+    assert mismatches({"$contains": malformed}, "anything")
+
+
 def test_acp_option_ids_are_not_event_ids() -> None:
     options = [
         {"id": "model", "type": "select", "currentValue": "opus"},

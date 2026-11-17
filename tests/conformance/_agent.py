@@ -606,7 +606,7 @@ def _tool_handler(tools: list[Mapping[str, Any]], gates: Gates, kit: RoomKit | N
         if "report_claim_probe" in tool:
             return claims.answer(tool["report_claim_probe"])
         if tool.get("returns_requester"):
-            return json.dumps(current_tool_requester())
+            return json.dumps(current_tool_requester(), ensure_ascii=False)
         if "returns" in tool:
             return str(tool["returns"])
         if "returns_json" in tool:
