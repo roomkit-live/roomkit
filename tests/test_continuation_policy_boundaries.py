@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from roomkit import AIChannel, ChannelBinding, ChannelCategory, ChannelType, Room, RoomContext
+from roomkit.models.steering import Cancel
 from roomkit.providers.ai.base import AIResponse, AITool, AIToolCall, ServedCall
 from roomkit.providers.ai.mock import MockAIProvider
 from tests.conftest import make_event
@@ -152,3 +153,36 @@ async def test_policy_exceptions_keep_the_original_error(
     assert caught.value is error
     assert read == ["I will check."]
     assert len(provider.calls) == (2 if after_call else 1)
+
+
+async def test_a_policy_can_cancel_before_its_nudge_spends_a_retry(streaming: bool) -> None:
+    read: list[str] = []
+
+    def policy(text: str) -> str:
+        read.append(text)
+        channel.steer(Cancel(reason="Stop from the policy"), room_id="room")
+        return "Continue."
+
+    provider = MockAIProvider(
+        streaming=streaming,
+        ai_responses=[AIResponse(content="I will check.", finish_reason="stop")],
+    )
+    channel = AIChannel("agent", provider=provider, tools=[LOOKUP], continuation=policy)
+    binding = ChannelBinding(
+        room_id="room",
+        channel_id="agent",
+        channel_type=ChannelType.AI,
+        category=ChannelCategory.INTELLIGENCE,
+    )
+    try:
+        run = await respond(
+            channel,
+            make_event(body="Go", channel_id="member"),
+            binding,
+            RoomContext(room=Room(id="room")),
+        )
+    finally:
+        await channel.close()
+    assert read == ["I will check."]
+    assert len(provider.calls) == 1
+    assert run.reason == "unfinished"
