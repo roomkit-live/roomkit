@@ -1,7 +1,7 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "binding-update/mute-output-changed",
-  "title": "mute_output notifies only when it changes a gate",
+  "title": "mute_output notifies after its stored gate change",
   "rules": [
     "§7.2",
     "§7.5"

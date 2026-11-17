@@ -1,7 +1,7 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "binding-update/update-binding-metadata-changed",
-  "title": "update_binding_metadata notifies only when it changes a gate",
+  "title": "update_binding_metadata changes storage without notifying the channel",
   "rules": [
     "§7.2",
     "§7.5"

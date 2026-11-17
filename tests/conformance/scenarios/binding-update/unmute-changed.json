@@ -1,7 +1,7 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "binding-update/unmute-changed",
-  "title": "unmute notifies only when it changes a gate",
+  "title": "unmute notifies after its stored gate change",
   "rules": [
     "§7.2",
     "§7.5"

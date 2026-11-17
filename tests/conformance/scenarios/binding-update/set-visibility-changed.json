@@ -1,7 +1,7 @@
 {
   "$schema": "../../scenario.schema.json",
   "id": "binding-update/set-visibility-changed",
-  "title": "set_visibility notifies only when it changes a gate",
+  "title": "set_visibility changes storage without notifying the channel",
   "rules": [
     "§7.2",
     "§7.5"
