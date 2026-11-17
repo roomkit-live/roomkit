@@ -16,6 +16,10 @@ from tests.conformance._skill_registry_shape import registry_problems
     "update",
     [
         {"servers": []},
+        *[
+            {"servers": {"remote": {"replies": [], "approvals": value}}}
+            for value in [None, True, [1], [{}], [{"error": 1}], [{"error": "x", "extra": 1}]]
+        ],
         {"servers": {"remote": {"replies": [], "reply": {}}}},
         {"servers": {"remote": {"replies": [], "extensions": {"skills": None}}}},
         {"servers": {"remote": {"replies": [{"method": "skills/list", "result": {}}]}}},
@@ -103,5 +107,13 @@ async def test_a_sanitized_load_error_cannot_hide_a_wrong_resource_request() -> 
     path = Path(__file__).parent / "scenarios/served-skills/load-refuses-size.json"
     scenario = json.loads(path.read_text())
     scenario["steps"][0]["servers"]["remote"]["replies"][1]["method"] = "wrong/read"
+    problems = await Harness(scenario).run()
+    assert any("the runner cannot read the call" in problem for problem in problems)
+
+
+async def test_approval_exhaustion_cannot_hide_behind_an_execution_refusal() -> None:
+    path = Path(__file__).parent / "scenarios/served-skills/execution-absent-approval.json"
+    scenario = json.loads(path.read_text())
+    scenario["steps"][0]["servers"]["remote"]["approvals"] = []
     problems = await Harness(scenario).run()
     assert any("the runner cannot read the call" in problem for problem in problems)

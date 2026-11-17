@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import copy
 from collections.abc import Mapping
-from typing import Any
+from dataclasses import asdict
+from typing import TYPE_CHECKING, Any
 
 from roomkit.skills.mcp import SKILLS_EXTENSION
+
+if TYPE_CHECKING:
+    from roomkit.skills import SkillExecutionRequest
 
 
 class ScriptedSkillServer:
@@ -18,6 +22,8 @@ class ScriptedSkillServer:
         self.requests: list[dict[str, Any]] = []
         self.problems: list[str] = []
         self._position = 0
+        self.approval_answers = spec.get("approvals")
+        self.approvals: list[dict[str, Any]] = []
 
     async def request(
         self, method: str, params: Mapping[str, Any] | None = None
@@ -26,6 +32,17 @@ class ScriptedSkillServer:
 
     async def read_resource(self, uri: str) -> Any:
         return self._reply("resources/read", {"uri": uri})
+
+    async def approve(self, request: SkillExecutionRequest) -> bool:
+        self.approvals.append(asdict(request))
+        position = len(self.approvals) - 1
+        if self.approval_answers is None or position >= len(self.approval_answers):
+            self.problems.append("approval fixture exhausted")
+            raise RuntimeError("approval fixture exhausted")
+        answer = self.approval_answers[position]
+        if isinstance(answer, Mapping):
+            raise RuntimeError(answer["error"])
+        return answer
 
     def _reply(self, method: str, params: Any) -> Any:
         self.requests.append({"method": method, "params": copy.deepcopy(params)})
@@ -44,6 +61,8 @@ class ScriptedSkillServer:
         return copy.deepcopy(reply["result"])
 
     def finish(self) -> list[str]:
+        if self.approval_answers is not None and len(self.approvals) != len(self.approval_answers):
+            self.problems.append("scripted approvals were not consumed")
         if self._position != len(self.replies):
             self.problems.append(
                 f"{len(self.replies) - self._position} scripted replies were not read"

@@ -75,13 +75,25 @@ def _operations(values: Any, path: str, found: list[str]) -> None:
 
 
 def _server(spec: Any, path: str, found: list[str]) -> None:
-    if not _object(spec, {"extensions", "replies"}, path, found):
+    if not _object(spec, {"extensions", "replies", "approvals"}, path, found):
         return
     extensions = spec.get("extensions", {})
     if not isinstance(extensions, Mapping) or not all(
         isinstance(value, Mapping) for value in extensions.values()
     ):
         found.append(f"{path}.extensions: expected extension objects")
+    if "approvals" in spec:
+        answers = spec["approvals"]
+        if not isinstance(answers, list) or not all(
+            type(answer) is bool
+            or (
+                isinstance(answer, Mapping)
+                and set(answer) == {"error"}
+                and isinstance(answer["error"], str)
+            )
+            for answer in answers
+        ):
+            found.append(f"{path}.approvals: expected booleans or error objects")
     replies = spec.get("replies")
     if not isinstance(replies, list):
         found.append(f"{path}.replies: expected a list")

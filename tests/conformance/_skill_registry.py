@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import inspect
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import asdict
 from typing import TYPE_CHECKING, Any
 
@@ -103,12 +103,17 @@ class RegistrySession:
         if method == "add_mcp_server" and operation["server"] not in self.servers:
             raise UnreadableError("unknown skill server")
         name = operation.get("name", "")
-        calls = {
+        calls: dict[str, Callable[[], Any]] = {
             "add_mcp_server": lambda: registry.add_mcp_server(
                 self.servers[operation["server"]],
                 operation["label"],
                 allow_dynamic=operation.get("allow_dynamic", False),
                 execution_tools=operation.get("execution_tools", []),
+                approve_execution=(
+                    self.servers[operation["server"]].approve
+                    if self.servers[operation["server"]].approval_answers is not None
+                    else None
+                ),
             ),
             "load_skill": lambda: registry.load_skill(name),
             "get_skill": lambda: registry.get_skill(name),
@@ -151,6 +156,7 @@ async def session(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> di
     return {
         "results": results,
         "requests": {name: server.requests for name, server in state.servers.items()},
+        "approvals": {name: server.approvals for name, server in state.servers.items()},
     }
 
 
