@@ -49,6 +49,11 @@ class LegacySSEPeer(MCPPeer):
         if verb != "POST":
             raise AssertionError(f"unexpected legacy SSE verb {verb}")
         assert target == self._post_target()
+        await self._post(reader, writer, headers)
+
+    async def _post(
+        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter, headers: dict[str, str]
+    ) -> None:
         length = int(headers.get("content-length", "0"))
         assert 0 < length <= 4 * 1024 * 1024
         message = json.loads(await reader.readexactly(length))
