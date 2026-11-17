@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A revision starts from the original task, with only the latest output and feedback** (RFC §19.7, RMK-598). A supervised step's rework was composed from the previous rework, so the worker's prompt nested one `Revision requested` section per pass, each with every earlier output and feedback (423, 825, 1,227 characters after 1, 2, 3 revisions of a one-line task). Each rework now starts from the step's own task. A Loop's revision, which carried no task at all, now opens with the producer's original task in a `<task>` block.
+
 - A retained `turn_report_claim` callback no longer consumes another turn's report when it reuses the same call id; each turn keeps its `ON_TOOL_CALL` observation (RFC §9.3).
 
 - **A streamed row's BEFORE_BROADCAST hooks read the room at the row** (RFC §9.5, RMK-1297). A row's hooks, its observers and a blocked row's record read the stream's first context, with the row at index 0: the hook of the answer after a tool call did not see a message the room took while the tool ran. The room is now read when the row comes, off the lock as before, and only when a hook or an observer runs for the row: one read of the room's context per row then; a room that read finds gone refuses the row before its hooks.

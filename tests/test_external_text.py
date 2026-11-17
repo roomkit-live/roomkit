@@ -373,7 +373,15 @@ ORCHESTRATION: dict[str, tuple[str, Callable[[str], str]]] = {
     "sequential input, task": ("task", lambda t: _compose_sequential_input(t, [("r", "o")])),
     "loop revision": (
         "worker_output",
-        lambda t: _revision_prompt("prior", [{"reviewer": "r", "approved": False, "feedback": t}]),
+        lambda t: _revision_prompt(
+            "task", "prior", [{"reviewer": "r", "approved": False, "feedback": t}]
+        ),
+    ),
+    "loop revision, task": (
+        "task",
+        lambda t: _revision_prompt(
+            t, "prior", [{"reviewer": "r", "approved": False, "feedback": "f"}]
+        ),
     ),
     "loop review": ("worker_output", _review_prompt),
     "loop sequential feedback": ("worker_output", lambda t: _with_feedback("review it", "r", t)),

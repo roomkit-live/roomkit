@@ -44,7 +44,7 @@ from roomkit.orchestration.strategies.supervisor import (
     _two_pass_delegate,
     _worker_label,
 )
-from roomkit.orchestration.strategies.supervisor.prompts import SUBMIT_VERDICT
+from roomkit.orchestration.strategies.supervisor.prompts import SUBMIT_VERDICT, _compose_rework
 from roomkit.orchestration.strategies.supervisor.supervised import _supervisor_review
 from roomkit.providers.ai.mock import MockAIProvider
 from roomkit.tasks.handback import RESULT_TURN_NOTE
@@ -777,11 +777,14 @@ class TestSupervisedSequential:
         assert "delegate_workers" not in [t.name for t in owner_tool_definitions(kit, "boss")]
 
     async def test_rework_on_rejection_then_approve(self) -> None:
+        # Each rework starts from the step's own task, with only the latest
+        # output and feedback: never from the previous rework (RMK-598).
         kit = _make_mock_kit(Room(id="r1"))
         boss = _make_agent("boss")
         w1 = _make_agent("w1", role="Researcher")
         verdicts = [
             {"approved": False, "feedback": "too vague, add sources", "next_task": ""},
+            {"approved": False, "feedback": "cite the 2024 figures", "next_task": ""},
             {"approved": True, "feedback": "", "next_task": ""},
         ]
         delegate, calls = _supervised_delegate_router("boss", verdicts)
@@ -792,8 +795,12 @@ class TestSupervisedSequential:
         )
 
         w1_tasks = [t for cid, t in calls if cid == "w1"]
-        assert len(w1_tasks) == 2  # original + one rework
-        assert "add sources" in w1_tasks[1]  # feedback carried into the rework
+        first = "framed task for the first worker"
+        assert w1_tasks == [
+            first,
+            _compose_rework(first, "worker output", "too vague, add sources"),
+            _compose_rework(first, "worker output", "cite the 2024 figures"),
+        ]
         assert steps[0]["approved"] is True
 
     async def test_max_revisions_exhausted_flags_unvalidated(self) -> None:

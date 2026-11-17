@@ -53,6 +53,7 @@ from roomkit.orchestration.strategies._loop_verdict import SUBMIT_REVIEW, read_r
 from roomkit.orchestration.strategies.supervisor import WorkerStrategy
 from roomkit.tasks.handback import bounded, result_text, worker_block
 from roomkit.tasks.models import task_cut_reason, task_work
+from roomkit.tools.fence import fence
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -590,7 +591,7 @@ async def _execute_loop(
             outcome.approved, outcome.stopped = True, "approved"
             logger.info("[loop] All reviewers approved at iteration %d", iteration)
             break
-        current_input = _revision_prompt(producer_output, review_results)
+        current_input = _revision_prompt(task_desc, producer_output, review_results)
 
     await _save_loop_state(kit, room_id, outcome)
     return outcome
@@ -626,15 +627,17 @@ def _iteration_ended(produced: WorkerOutcome) -> WorkerEnd:
     return WorkerEnd(StatusLevel.FAILED, _failed_task_text(produced.result).capitalize() + ".")
 
 
-def _revision_prompt(producer_output: str, review_results: list[dict[str, Any]]) -> str:
-    """The producer's next task: its output, with the feedback of every
-    reviewer who did not approve it."""
+def _revision_prompt(task: str, producer_output: str, review_results: list[dict[str, Any]]) -> str:
+    """The producer's next task: its original *task*, its latest output, and
+    the latest feedback of every reviewer who did not approve it, as a
+    supervisor's rework is composed."""
     combined_feedback = "\n\n".join(
         worker_block(f"Feedback from {r['reviewer']}", r["feedback"])
         for r in review_results
         if not r["approved"]
     )
     return (
+        f"Your task:\n{fence('task', task)}\n\n"
         "Revise your previous work based on the reviewers' feedback. Your previous "
         "output and their feedback are set apart below.\n\n"
         f"{worker_block('Your previous output', producer_output)}\n\n"

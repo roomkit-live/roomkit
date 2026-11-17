@@ -307,7 +307,10 @@ async def _run_step(
         revisions += 1
         if revisions >= max_revisions:
             break
-        task = _compose_rework(task, rendered, verdict["feedback"])
+        # Each rework starts from the step's own task, never from the
+        # previous rework: the worker reads its task once, with only its
+        # latest output and the supervisor's latest feedback.
+        task = _compose_rework(first_task, rendered, verdict["feedback"])
     step = {
         "worker": worker.channel_id,
         "role": _worker_label(worker),

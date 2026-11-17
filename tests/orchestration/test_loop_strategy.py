@@ -382,13 +382,17 @@ class TestExecuteLoop:
         assert result.iteration == 1
 
     async def test_revision_cycle(self) -> None:
-        """Reviewer rejects first, approves second."""
+        """Reviewer rejects twice, then approves. Each revision starts from
+        the producer's original task, with only its latest output and the
+        latest feedback (RMK-598)."""
         kit = _make_mock_kit(Room(id="r1"))
         call_seq = [
             _delegated_task_with_output("Draft 1"),  # producer iter 1
             _delegated_task_with_output("Needs work"),  # reviewer iter 1 (reject)
             _delegated_task_with_output("Draft 2"),  # producer iter 2
-            _delegated_task_with_output(APPROVAL),  # reviewer iter 2 (approve)
+            _delegated_task_with_output("Still thin"),  # reviewer iter 2 (reject)
+            _delegated_task_with_output("Draft 3"),  # producer iter 3
+            _delegated_task_with_output(APPROVAL),  # reviewer iter 3 (approve)
         ]
         kit.delegate = AsyncMock(side_effect=call_seq)
 
@@ -403,8 +407,18 @@ class TestExecuteLoop:
         )
 
         assert result.approved is True
-        assert result.iteration == 2
-        assert result.output == "Draft 2"
+        assert result.iteration == 3
+        assert result.output == "Draft 3"
+        tasks = [c.args[2] for c in kit.delegate.call_args_list if c.args[1] == "writer"]
+        assert tasks[0] == "Write"
+        for revision, (output, feedback) in zip(
+            tasks[1:], [("Draft 1", "Needs work"), ("Draft 2", "Still thin")], strict=True
+        ):
+            assert revision.startswith("Your task:\n<task>\nWrite\n</task>\n\n")
+            assert revision.count("Write") == 1
+            assert f"<worker_output>\n{output}\n</worker_output>" in revision
+            assert f"<worker_output>\n{feedback}\n</worker_output>" in revision
+        assert "Draft 1" not in tasks[2] and "Needs work" not in tasks[2]
 
     async def test_max_iterations_reached(self) -> None:
         """When max iterations hit, returns last output as not approved."""
