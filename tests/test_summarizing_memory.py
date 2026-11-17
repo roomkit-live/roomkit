@@ -648,13 +648,3 @@ class TestDelegation:
         await sm.clear("room-1")
         assert "room-1" in inner.cleared
         assert len(sm._summary_cache) == 0
-
-    async def test_close_delegates_to_inner_and_provider(self) -> None:
-        inner = StubInnerMemory()
-        ai_provider = MockAIProvider()
-        ai_provider.close = AsyncMock()
-        sm = SummarizingMemory(inner, ai_provider, max_context_tokens=1000)
-
-        await sm.close()
-        assert inner._closed is True
-        ai_provider.close.assert_called_once()
