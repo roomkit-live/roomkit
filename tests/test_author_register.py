@@ -618,7 +618,7 @@ class TestTheStoreKeepsItApart:
         await _say(kit, "p-bob", None, "second")
 
         _said, notes = split_turn_notes(str(provider.calls[-1].messages[-1].content))
-        assert people_note(("Alice (2)", "Bob")) in notes
+        assert people_note(("Alice (2)", "Bob"), ["Bob"]) in notes
         await kit.close()
 
     async def test_a_room_from_before_keeps_its_ranks_once_its_register_moved(self) -> None:

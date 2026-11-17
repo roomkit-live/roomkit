@@ -1752,7 +1752,7 @@ def test_the_classifier_reads_the_people_by_the_same_names() -> None:
     person = Participant(id="p1", room_id="test-room", channel_id="ch1", display_name=HOSTILE)
     context = RoomContext(room=Room(id="test-room"), bindings=_ACP_BINDINGS, participants=[person])
 
-    (name,) = _people(context, (), {}, "acp")
+    (name,) = _people(context, (), {}, "acp", {})
 
     assert name == speaker_label(make_event(participant_id="p1"), context).split(" · ")[0]
     assert not set(name) & set('\n[]:“”"')
