@@ -388,8 +388,11 @@ def test_a_copy_over_adjacent_text_parts_is_replaced() -> None:
     ids=["spaces", "periods", "invisibles", "markup", "combining marks", "combining iota"],
 )
 @pytest.mark.wallclock  # a budget in seconds on a long run: the guard against a rescan
-def test_a_long_run_after_a_partial_copy_is_scanned_once(tail: str) -> None:
+async def test_a_long_run_after_a_partial_copy_is_scanned_once(tail: str) -> None:
     text = f"{INSTRUCTION_MARKER[:60]}{tail * 200_000}X"
+    # The patterns compiled first: the budget guards against a rescan, and a
+    # process's first scan would time the compile too (2.6 s under load).
+    await compile_mark_patterns()
 
     started = time.perf_counter()
     without_mark_copies(text)
@@ -400,11 +403,12 @@ def test_a_long_run_after_a_partial_copy_is_scanned_once(tail: str) -> None:
 
 
 @pytest.mark.wallclock  # a budget in seconds on a long run: the guard against a rescan
-def test_a_long_run_of_letter_look_alikes_behind_a_bracket_is_scanned_once() -> None:
+async def test_a_long_run_of_letter_look_alikes_behind_a_bracket_is_scanned_once() -> None:
     """Look-alikes of the note on who takes part's letters that are no word
     character (``⍴``, ``℮``) never sit in its gap, so a run of them is not
     read again from each place a word could start (the review of RMK-1315)."""
     text = "(" + "\u2374\u212e\u0c02\u2374\u05c0\u212e-" * 30_000 + "y"
+    await compile_mark_patterns()  # the compile is no rescan: timed apart
 
     started = time.perf_counter()
     without_mark_copies(text)
