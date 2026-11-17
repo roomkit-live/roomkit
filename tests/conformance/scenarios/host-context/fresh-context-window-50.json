@@ -1,0 +1,190 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "host-context/fresh-context-window-50",
+  "title": "The host rereads room, bindings, participants and history during its local turn",
+  "rules": [
+    "§10.6.5"
+  ],
+  "notes": "Python: tests/test_local_host_context.py; core/_turn_host.py KitHost._room_context; turns/host.py TurnHost.room_context. Fresh JSON read through a real local turn; native AI witnesses additionally cover both provider modes and detached nested result ownership.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ops",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "late",
+        "type": "sms",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "category": "intelligence",
+        "recent_events_window": 50,
+        "on_event": [
+          {
+            "when": {
+              "text": "go"
+            },
+            "do": [
+              {
+                "call": "host.room_context",
+                "expect": {
+                  "result": {
+                    "room": {
+                      "id": "r1",
+                      "metadata": {
+                        "version": "before"
+                      }
+                    },
+                    "bindings": [
+                      {
+                        "channel_id": "ops"
+                      },
+                      {
+                        "channel_id": "agent"
+                      }
+                    ],
+                    "participants": [],
+                    "recent_events": [
+                      {
+                        "content": {
+                          "body": "earlier"
+                        }
+                      },
+                      {
+                        "content": {
+                          "body": "go"
+                        }
+                      }
+                    ],
+                    "history_start_index": 0
+                  }
+                }
+              },
+              {
+                "call": "update_room_metadata",
+                "room_id": "r1",
+                "metadata": {
+                  "version": "after"
+                }
+              },
+              {
+                "call": "attach_channel",
+                "room_id": "r1",
+                "channel_id": "late"
+              },
+              {
+                "call": "add_member",
+                "room_id": "r1",
+                "channel_id": "ops",
+                "participant_id": "bob",
+                "display_name": "Bob"
+              },
+              {
+                "call": "host.send_event",
+                "room_id": "r1",
+                "channel_id": "agent",
+                "content": {
+                  "type": "text",
+                  "body": "during"
+                }
+              },
+              {
+                "call": "host.room_context",
+                "expect": {
+                  "result": {
+                    "room": {
+                      "id": "r1",
+                      "metadata": {
+                        "version": "after"
+                      }
+                    },
+                    "bindings": [
+                      {
+                        "channel_id": "ops"
+                      },
+                      {
+                        "channel_id": "agent"
+                      },
+                      {
+                        "channel_id": "late"
+                      }
+                    ],
+                    "participants": [
+                      {
+                        "id": "bob",
+                        "display_name": "Bob"
+                      }
+                    ],
+                    "recent_events": [
+                      {
+                        "content": {
+                          "body": "earlier"
+                        }
+                      },
+                      {
+                        "content": {
+                          "body": "go"
+                        }
+                      },
+                      {
+                        "content": {
+                          "body": "during"
+                        }
+                      }
+                    ],
+                    "history_start_index": 0
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "metadata": {
+          "version": "before"
+        },
+        "bindings": [
+          {
+            "channel_id": "ops"
+          },
+          {
+            "channel_id": "agent"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "ops",
+      "content": {
+        "type": "text",
+        "body": "earlier"
+      },
+      "addressed_to": []
+    },
+    {
+      "call": "send_event",
+      "room_id": "r1",
+      "channel_id": "ops",
+      "content": {
+        "type": "text",
+        "body": "go"
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {}
+}

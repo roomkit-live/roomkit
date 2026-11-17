@@ -1,0 +1,135 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "local-presence/room-hooks-and-executor-close",
+  "title": "Local presence follows required hook definitions in its room and the kit executor closure",
+  "rules": [
+    "§10.6.7"
+  ],
+  "notes": "Python: tests/test_local_agent_presence.py; tests/test_agent_presence.py (local branch only).",
+  "setup": {
+    "channels": [
+      {
+        "id": "helper",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "helper"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "helper"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "kit_executor.executor_id",
+      "expect": {
+        "result": {
+          "$as": "own"
+        }
+      }
+    },
+    {
+      "call": "enable_room_hook",
+      "room_id": "r1",
+      "name": "audit"
+    },
+    {
+      "call": "agent_presence",
+      "room_id": "r1",
+      "expect": {
+        "result": [
+          {
+            "channel_id": "helper",
+            "online": false,
+            "executors": []
+          }
+        ]
+      }
+    },
+    {
+      "call": "agent_presence",
+      "room_id": "r2",
+      "expect": {
+        "result": [
+          {
+            "channel_id": "helper",
+            "online": true,
+            "executors": [
+              {
+                "$as": "own"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "call": "kit_executor.room_hook",
+      "hook": {
+        "name": "audit",
+        "trigger": "before_tool_use"
+      }
+    },
+    {
+      "call": "agent_presence",
+      "room_id": "r1",
+      "expect": {
+        "result": [
+          {
+            "channel_id": "helper",
+            "online": true,
+            "executors": [
+              {
+                "$as": "own"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "call": "kit_executor.close"
+    },
+    {
+      "call": "agent_presence",
+      "room_id": "r1",
+      "expect": {
+        "result": [
+          {
+            "channel_id": "helper",
+            "online": false,
+            "executors": []
+          }
+        ]
+      }
+    },
+    {
+      "call": "agent_presence",
+      "room_id": "r2",
+      "expect": {
+        "result": [
+          {
+            "channel_id": "helper",
+            "online": false,
+            "executors": []
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {}
+}

@@ -1,0 +1,86 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "local-presence/tenant-none",
+  "title": "Presence reads the requested room and organization without leaking another tenant",
+  "rules": [
+    "§10.6.7"
+  ],
+  "notes": "Python: tests/test_local_agent_presence.py; tests/test_agent_presence.py (local branch only).",
+  "setup": {
+    "channels": [
+      {
+        "id": "helper",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "helper"
+          }
+        ],
+        "organization_id": null
+      },
+      {
+        "id": "empty",
+        "organization_id": null
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "kit_executor.executor_id",
+      "expect": {
+        "result": {
+          "$as": "own"
+        }
+      }
+    },
+    {
+      "call": "agent_presence",
+      "room_id": "r1",
+      "organization_id": null,
+      "expect": {
+        "result": [
+          {
+            "channel_id": "helper",
+            "online": true,
+            "executors": [
+              {
+                "$as": "own"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "call": "agent_presence",
+      "room_id": "r1",
+      "organization_id": "other-tenant",
+      "expect": {
+        "error": "room_not_found"
+      }
+    },
+    {
+      "call": "agent_presence",
+      "room_id": "missing",
+      "organization_id": null,
+      "expect": {
+        "error": "room_not_found"
+      }
+    },
+    {
+      "call": "agent_presence",
+      "room_id": "empty",
+      "organization_id": null,
+      "expect": {
+        "result": []
+      }
+    }
+  ],
+  "expect": {}
+}

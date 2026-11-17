@@ -1,0 +1,90 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "local-presence/agents-are-sorted-and-filtered",
+  "title": "Local presence is sorted by channel id and includes only intelligence bindings",
+  "rules": [
+    "§10.6.7"
+  ],
+  "notes": "Python: tests/test_local_agent_presence.py; tests/test_agent_presence.py (local branch only).",
+  "setup": {
+    "channels": [
+      {
+        "id": "zulu",
+        "type": "ai",
+        "category": "intelligence"
+      },
+      {
+        "id": "alpha",
+        "type": "ai",
+        "category": "intelligence"
+      },
+      {
+        "id": "other",
+        "type": "ai",
+        "category": "intelligence"
+      },
+      {
+        "id": "ops",
+        "type": "sms",
+        "category": "transport"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "zulu"
+          },
+          {
+            "channel_id": "alpha"
+          },
+          {
+            "channel_id": "other",
+            "category": "transport"
+          },
+          {
+            "channel_id": "ops"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "kit_executor.executor_id",
+      "expect": {
+        "result": {
+          "$as": "own"
+        }
+      }
+    },
+    {
+      "call": "agent_presence",
+      "room_id": "r1",
+      "expect": {
+        "result": [
+          {
+            "channel_id": "alpha",
+            "online": true,
+            "executors": [
+              {
+                "$as": "own"
+              }
+            ]
+          },
+          {
+            "channel_id": "zulu",
+            "online": true,
+            "executors": [
+              {
+                "$as": "own"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "expect": {}
+}

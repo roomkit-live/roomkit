@@ -1,0 +1,101 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "local-presence/automatic-publications-follow-local-changes",
+  "title": "Attach, hook coverage, detach and room close maintain automatic local presence publications",
+  "rules": [
+    "§10.6.7"
+  ],
+  "notes": "Python: tests/test_local_agent_presence.py; tests/test_agent_presence.py (local branch only).",
+  "setup": {
+    "channels": [
+      {
+        "id": "helper",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": []
+      },
+      {
+        "id": "r2",
+        "bindings": []
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "attach_channel",
+      "room_id": "r1",
+      "channel_id": "helper",
+      "category": "intelligence"
+    },
+    {
+      "call": "enable_room_hook",
+      "room_id": "r1",
+      "name": "missing-hook"
+    },
+    {
+      "call": "disable_room_hook",
+      "room_id": "r1",
+      "name": "missing-hook"
+    },
+    {
+      "call": "detach_channel",
+      "room_id": "r1",
+      "channel_id": "helper"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "r1",
+      "channel_id": "helper",
+      "category": "intelligence"
+    },
+    {
+      "call": "close_room",
+      "room_id": "r1"
+    },
+    {
+      "call": "reopen_room",
+      "room_id": "r1"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "r1",
+      "channel_id": "helper",
+      "category": "intelligence"
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "presence_events": {
+      "r1": [
+        {
+          "type": "presence_online",
+          "user_id": "helper"
+        },
+        {
+          "type": "presence_offline",
+          "user_id": "helper"
+        },
+        {
+          "type": "presence_online",
+          "user_id": "helper"
+        },
+        {
+          "type": "presence_online",
+          "user_id": "helper"
+        },
+        {
+          "type": "presence_online",
+          "user_id": "helper"
+        }
+      ],
+      "r2": []
+    }
+  }
+}

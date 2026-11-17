@@ -1,0 +1,54 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "local-presence/the-kit-executor-is-not-listed",
+  "title": "The kit excludes its own executor from the public list, before and after its closure",
+  "rules": [
+    "§10.6.7"
+  ],
+  "notes": "Python: tests/test_local_agent_presence.py; tests/test_agent_presence.py (local branch only).",
+  "setup": {
+    "channels": [
+      {
+        "id": "helper",
+        "type": "ai",
+        "category": "intelligence"
+      }
+    ],
+    "rooms": [
+      {
+        "id": "r1",
+        "bindings": [
+          {
+            "channel_id": "helper"
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "bindings": [
+          {
+            "channel_id": "helper"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "executors",
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "call": "kit_executor.close"
+    },
+    {
+      "call": "executors",
+      "expect": {
+        "result": []
+      }
+    }
+  ],
+  "expect": {}
+}
