@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 from roomkit.skills import MCPSkill, Skill, SkillError, SkillRegistry
 from roomkit.skills.mcp import ServedOrigin
-from tests.conformance._calls import UnreadableError
+from tests.conformance._calls import UnreadableError, register_channel
 from tests.conformance._skill_registry_shape import registry_problems
 from tests.conformance._skill_server import ScriptedSkillServer
 
@@ -81,11 +81,25 @@ class RegistrySession:
             operation.get("names"), marks=operation.get("marks", True)
         )
 
-    async def operation(self, operation: Mapping[str, Any]) -> dict[str, Any]:
+    async def operation(
+        self,
+        operation: Mapping[str, Any],
+        kit: RoomKit | None = None,
+        harness: Harness | None = None,
+    ) -> dict[str, Any]:
         registry = self.registries.get(operation.get("registry", "main"))
         if registry is None:
             raise UnreadableError("unknown skill registry")
         method = operation["method"]
+        if method in {"install_channel", "room_call"}:
+            if kit is None or harness is None:
+                raise UnreadableError("channel operation requires the scenario runtime")
+            if method == "install_channel":
+                register_channel(kit, harness, operation["channel"], skills=registry)
+                return {"status": "ok", "result": None}
+            result = await harness.invoke(operation["action"], {})
+            await harness.idle()
+            return {"status": "ok", "result": result}
         if method == "add_mcp_server" and operation["server"] not in self.servers:
             raise UnreadableError("unknown skill server")
         name = operation.get("name", "")
@@ -127,7 +141,9 @@ async def session(kit: RoomKit, harness: Harness, spec: Mapping[str, Any]) -> di
         raise UnreadableError("; ".join(problems))
     state = RegistrySession(spec["servers"])
     try:
-        results = [await state.operation(operation) for operation in spec["operations"]]
+        results = [
+            await state.operation(operation, kit, harness) for operation in spec["operations"]
+        ]
     finally:
         problems = [problem for server in state.servers.values() for problem in server.finish()]
         if problems:

@@ -34,6 +34,10 @@ from tests.conformance._skill_registry_shape import registry_problems
         {"operations": [{"method": "copy", "target": "copy", "marks": 1}]},
         {"operations": [{"method": "copy", "target": "copy", "names": "all"}]},
         {"operations": [{"method": "snapshot", "hidden": True}]},
+        {"operations": [{"method": "install_channel", "channel": None}]},
+        {"operations": [{"method": "install_channel", "channel": {"id": "agent"}}]},
+        {"operations": [{"method": "install_channel", "channel": {"model": {}, "skills": []}}]},
+        {"operations": [{"method": "room_call", "action": None}]},
     ],
 )
 def test_malformed_registry_controls_are_refused(update: dict[str, Any]) -> None:

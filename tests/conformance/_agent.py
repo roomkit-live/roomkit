@@ -89,6 +89,7 @@ if TYPE_CHECKING:
     from roomkit.core.framework import RoomKit
     from roomkit.models.channel import ChannelBinding
     from roomkit.models.context import RoomContext
+    from roomkit.skills import SkillRegistry
     from tests.conformance._audits import Auditors
     from tests.conformance._script import Gates
 
@@ -717,6 +718,7 @@ def scripted_agent(
     mcp: Connected = (),
     continuation_calls: dict[str, list[str]] | None = None,
     external_handlers: dict[str, ScriptedExternalHandler] | None = None,
+    skills: SkillRegistry | None = None,
 ) -> tuple[AIChannel, dict[str, ScriptedModel]]:
     """The AI channel of a scripted agent, and its models by the name
     ``expect.models`` gives them: its own under its id, its memory's
@@ -768,6 +770,8 @@ def scripted_agent(
             kwargs[setting] = spec[setting]
     if "config_provider" in spec:
         kwargs["config_provider"] = _config_provider(spec["config_provider"], gates)
+    if skills is not None:
+        kwargs["skills"] = skills
     if "skills" in spec:
         kwargs["skills"] = scripted_skill_registry(
             spec["skills"], spec.get("skills_requires_match", "exact")

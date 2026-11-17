@@ -65,6 +65,7 @@ from tests.conformance._script import (
 from tests.conformance._strategies import room_orchestration
 
 if TYPE_CHECKING:
+    from roomkit.skills import SkillRegistry
     from tests.conformance._harness import Harness
 
 _CONTENT = TypeAdapter(EventContent)
@@ -428,16 +429,26 @@ async def _register_channel(kit: RoomKit, harness: Harness, spec: Mapping[str, A
 
 
 def register_channel(
-    kit: RoomKit, harness: Harness, channel: Mapping[str, Any], *, process: bool = False
+    kit: RoomKit,
+    harness: Harness,
+    channel: Mapping[str, Any],
+    *,
+    process: bool = False,
+    skills: SkillRegistry | None = None,
 ) -> None:
     """Registers *channel* on *kit*, by its declaration alone when the setup
     runs it on executors of their own (README, ``executors``)."""
-    built = scripted_channel(kit, harness, channel, process=process)
+    built = scripted_channel(kit, harness, channel, process=process, skills=skills)
     kit.register_channel(built.declaration() if channel.get("declared") else built)
 
 
 def scripted_channel(
-    kit: RoomKit, harness: Harness, channel: Mapping[str, Any], *, process: bool = False
+    kit: RoomKit,
+    harness: Harness,
+    channel: Mapping[str, Any],
+    *,
+    process: bool = False,
+    skills: SkillRegistry | None = None,
 ) -> Channel:
     """The channel the scenario describes; in a *process* of the setup or on
     an executor, a scripted agent answers from the model the run's kit's agent
@@ -473,6 +484,7 @@ def scripted_channel(
                 harness.mcp.by_channel.get(channel["id"], ()),
                 continuation_calls=harness.observed.continuations,
                 external_handlers=harness.external_handlers,
+                skills=skills,
             )
         )
         harness.models.update(models)

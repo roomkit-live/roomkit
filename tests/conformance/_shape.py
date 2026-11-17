@@ -1111,6 +1111,20 @@ def _call(call: Mapping[str, Any], extra: set[str], path: str, found: list[str])
         found.extend(host_mcp_problems(call, path))
     if name == "skill_registry_session":
         found.extend(registry_problems(call, path))
+        for index, operation in enumerate(call.get("operations", [])):
+            if not isinstance(operation, Mapping):
+                continue
+            if operation.get("method") == "install_channel" and isinstance(
+                operation.get("channel"), Mapping
+            ):
+                _channel(operation["channel"], f"{path}.operations[{index}].channel", found)
+            if operation.get("method") == "room_call" and isinstance(
+                operation.get("action"), Mapping
+            ):
+                if operation["action"].get("call") == "skill_registry_session":
+                    found.append(f"{path}: a registry session cannot nest itself")
+                else:
+                    _call(operation["action"], set(), f"{path}.operations[{index}].action", found)
     if "expect" in call:
         _outcome(call["expect"], f"{path}.expect", found)
     if name == "create_room":

@@ -17,6 +17,8 @@ OPERATIONS = {
     "mark_unavailable": {"name", "reason"},
     "mark_unlisted": {"name"},
     "snapshot": set(),
+    "install_channel": {"channel"},
+    "room_call": {"action"},
 }
 _REQUIRED = {
     "add_mcp_server": {"server", "label"},
@@ -44,6 +46,18 @@ def _operations(values: Any, path: str, found: list[str]) -> None:
         if not isinstance(method, str) or method not in OPERATIONS:
             found.append(f"{at}: unknown registry operation")
             continue
+        if method in {"install_channel", "room_call"}:
+            key = "channel" if method == "install_channel" else "action"
+            if not isinstance(value.get(key), Mapping):
+                found.append(f"{at}.{key}: expected an object")
+            if (
+                method == "install_channel"
+                and isinstance(value.get("channel"), Mapping)
+                and (
+                    "model" not in value.get("channel", {}) or "skills" in value.get("channel", {})
+                )
+            ):
+                found.append(f"{at}: install requires a model and its selected registry")
         _object(value, {"method", "registry"} | OPERATIONS[method], at, found)
         required = _REQUIRED.get(method, {"name"} if "name" in OPERATIONS[method] else set())
         for key in required | ({"registry"} if "registry" in value else set()):
