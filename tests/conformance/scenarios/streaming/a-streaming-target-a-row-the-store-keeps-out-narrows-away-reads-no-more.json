@@ -1,0 +1,206 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-streaming-target-a-row-the-store-keeps-out-narrows-away-reads-no-more",
+  "title": "A streamed message the persistence policy keeps out of the timeline, which its BEFORE_BROADCAST hook narrows away from the streaming target, withdraws the response from that target as a stored one does",
+  "rules": [
+    "§7.3",
+    "§7.5 rule 2",
+    "§9.5",
+    "§12.2 step 14s"
+  ],
+  "notes": "The kit stores no message. A BEFORE_BROADCAST hook narrows the agent's first text row to web: unstored, it is still the row the room commits, and ws, the streaming target, is handed nothing more of the stream; the rows after are delivered to it as their plans say.",
+  "setup": {
+    "channels": [
+      {
+        "id": "web",
+        "type": "webhook",
+        "category": "transport"
+      },
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport",
+        "streams": true
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "model": {
+          "rounds": [
+            {
+              "deltas": [
+                "Let me ",
+                "check."
+              ],
+              "calls": [
+                {
+                  "id": "call-1",
+                  "name": "lookup_order",
+                  "arguments": {
+                    "order": "42"
+                  }
+                }
+              ]
+            },
+            {
+              "deltas": [
+                "Order 42 ",
+                "shipped."
+              ]
+            }
+          ]
+        },
+        "tools": [
+          {
+            "name": "lookup_order",
+            "description": "Find an order by its number",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "order": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "order"
+              ]
+            },
+            "returns": "shipped"
+          }
+        ]
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "web"
+          },
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "narrow",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "Let me check."
+            },
+            "result": {
+              "action": "modify",
+              "event": {
+                "visibility": "web"
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "kit": {
+      "persistence_policy": {
+        "exclude_types": [
+          "message"
+        ]
+      }
+    }
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "web",
+        "sender_id": "alice",
+        "content": {
+          "type": "text",
+          "body": "Where is order 42?"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    }
+  ],
+  "expect": {
+    "timeline": {
+      "room-1": [
+        {
+          "type": "tool_call_start"
+        },
+        {
+          "type": "tool_call_end"
+        }
+      ]
+    },
+    "streamed": {
+      "room-1": {
+        "ws": [
+          {
+            "text": "Let me "
+          },
+          {
+            "text": "check."
+          }
+        ]
+      }
+    },
+    "deliveries": {
+      "room-1": {
+        "ws": [
+          {
+            "type": "message",
+            "content": {
+              "body": "Where is order 42?"
+            }
+          },
+          {
+            "type": "tool_call_start"
+          },
+          {
+            "type": "tool_call_end"
+          },
+          {
+            "type": "message",
+            "content": {
+              "body": "Order 42 shipped."
+            }
+          }
+        ],
+        "web": [
+          {
+            "type": "message",
+            "content": {
+              "body": "Let me check."
+            },
+            "visibility": "web"
+          },
+          {
+            "type": "tool_call_start"
+          },
+          {
+            "type": "tool_call_end"
+          },
+          {
+            "type": "message",
+            "content": {
+              "body": "Order 42 shipped."
+            }
+          }
+        ]
+      }
+    }
+  }
+}
