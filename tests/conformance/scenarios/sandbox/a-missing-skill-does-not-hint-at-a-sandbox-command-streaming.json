@@ -1,0 +1,119 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "sandbox/a-missing-skill-does-not-hint-at-a-sandbox-command-streaming",
+  "title": "A missing skill does not suggest a sandbox command (streaming)",
+  "rules": [
+    "§21.1",
+    "§24.3",
+    "§6.4",
+    "§9.3"
+  ],
+  "notes": "Python: AIChannel._handle_activate_skill excludes its exact _channel_tool_names, including sandbox commands, from skill-miss hints. Search and policy remain independent.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "skills": [
+          {
+            "name": "local",
+            "description": "Build locally",
+            "instructions": "Local rules."
+          }
+        ],
+        "model": {
+          "streaming": true,
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "s1",
+                  "name": "activate_skill",
+                  "arguments": {
+                    "name": "sandbox"
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        },
+        "sandbox": {
+          "tools": [
+            {
+              "name": "sandbox_bash"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Build"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "sandbox_bash": {
+              "$present": true
+            }
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "s1",
+              "name": "activate_skill",
+              "content": {
+                "$lacks": "tools_hint"
+              },
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    },
+    "sandbox_executors": {
+      "agent": {
+        "calls": [],
+        "closes": 1
+      }
+    }
+  }
+}

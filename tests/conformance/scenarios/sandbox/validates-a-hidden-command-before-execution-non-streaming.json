@@ -1,0 +1,159 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "sandbox/validates-a-hidden-command-before-execution-non-streaming",
+  "title": "A hidden sandbox command is validated before execution (non-streaming)",
+  "rules": [
+    "§6.4",
+    "§9.3",
+    "§21.1"
+  ],
+  "notes": "Python: tests/test_sandbox_contract.py and tests/test_tool_policy_exemptions.py. The host fixture records invocations; it starts no process and applies no framework guards.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "system_prompt": "Host instructions.",
+        "sandbox": {
+          "tools": [
+            {
+              "name": "sandbox_bash",
+              "description": "Run a command.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "command": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "command"
+                ],
+                "additionalProperties": false
+              }
+            }
+          ]
+        },
+        "model": {
+          "streaming": false,
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "s1",
+                  "name": "sandbox_bash",
+                  "arguments": {
+                    "cmd": 42
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        },
+        "tool_search": true
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "audit",
+        "trigger": "on_tool_call",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Read"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "sandbox_executors": {
+      "agent": {
+        "calls": [],
+        "closes": 1
+      }
+    },
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "sandbox_bash": {
+              "$absent": true
+            },
+            "find_tools": {
+              "$present": true
+            }
+          },
+          "system_prompt": {
+            "$contains": "Do not assume it is isolated from the host machine."
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "s1",
+              "name": "sandbox_bash",
+              "content": {
+                "$contains": "missing required argument 'command'"
+              },
+              "is_error": true
+            }
+          ]
+        }
+      ]
+    },
+    "hooks": {
+      "audit": [
+        {
+          "trigger": "on_tool_call",
+          "room_id": "room-1",
+          "tool_call": {
+            "name": "sandbox_bash",
+            "tool_call_id": "s1",
+            "arguments": {
+              "cmd": 42
+            },
+            "result": {
+              "$contains": "missing required argument 'command'"
+            },
+            "is_error": true,
+            "cancelled": false
+          }
+        }
+      ]
+    }
+  }
+}

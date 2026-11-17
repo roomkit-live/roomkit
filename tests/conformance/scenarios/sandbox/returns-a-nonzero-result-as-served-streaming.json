@@ -1,0 +1,166 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "sandbox/returns-a-nonzero-result-as-served-streaming",
+  "title": "A nonzero sandbox result remains a served call (streaming)",
+  "rules": [
+    "§6.4",
+    "§9.3",
+    "§21.1"
+  ],
+  "notes": "Python: tests/test_sandbox_contract.py and tests/test_tool_policy_exemptions.py. The host fixture records invocations; it starts no process and applies no framework guards.",
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "system_prompt": "Host instructions.",
+        "sandbox": {
+          "tools": [
+            {
+              "name": "sandbox_bash",
+              "description": "Run a command.",
+              "parameters": {
+                "type": "object"
+              }
+            }
+          ],
+          "result": {
+            "exit_code": 7,
+            "output": "résultat",
+            "error": "Unknown tool: frobnicate",
+            "metadata": {
+              "attempt": 2
+            }
+          }
+        },
+        "model": {
+          "streaming": true,
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "s1",
+                  "name": "sandbox_bash",
+                  "arguments": {
+                    "path": "../outside",
+                    "nested": {
+                      "n": 2
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "text": "done"
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room-1",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ],
+    "hooks": [
+      {
+        "name": "audit",
+        "trigger": "on_tool_call",
+        "execution": "async"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "ada",
+        "content": {
+          "type": "text",
+          "body": "Read"
+        }
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "sandbox_executors": {
+      "agent": {
+        "calls": [
+          {
+            "command": "bash",
+            "arguments": {
+              "path": "../outside",
+              "nested": {
+                "n": 2
+              }
+            }
+          }
+        ],
+        "closes": 1
+      }
+    },
+    "models": {
+      "agent": [
+        {
+          "tools": {
+            "sandbox_bash": {
+              "$present": true
+            }
+          },
+          "system_prompt": {
+            "$contains": "Do not assume it is isolated from the host machine."
+          }
+        },
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "s1",
+              "name": "sandbox_bash",
+              "content": "{\"exit_code\":7,\"output\":\"résultat\",\"error\":\"Unknown tool: frobnicate\",\"metadata\":{\"attempt\":2},\"success\":false}",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    },
+    "hooks": {
+      "audit": [
+        {
+          "trigger": "on_tool_call",
+          "room_id": "room-1",
+          "tool_call": {
+            "name": "sandbox_bash",
+            "tool_call_id": "s1",
+            "arguments": {
+              "path": "../outside",
+              "nested": {
+                "n": 2
+              }
+            },
+            "result": "{\"exit_code\":7,\"output\":\"résultat\",\"error\":\"Unknown tool: frobnicate\",\"metadata\":{\"attempt\":2},\"success\":false}",
+            "is_error": false,
+            "cancelled": false
+          }
+        }
+      ]
+    }
+  }
+}
