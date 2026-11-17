@@ -1,0 +1,155 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "served-skills/first-uri-wins-across-pages",
+  "title": "A malformed first occurrence stays refused while another page remains usable",
+  "rules": [
+    "§24.7"
+  ],
+  "steps": [
+    {
+      "call": "skill_registry_session",
+      "servers": {
+        "remote": {
+          "replies": [
+            {
+              "method": "skills/list",
+              "params": {},
+              "result": {
+                "skills": [
+                  {
+                    "uri": "skill://guide/SKILL.md",
+                    "frontmatter": {
+                      "name": "guide",
+                      "description": "Read the guide"
+                    },
+                    "resources": null
+                  }
+                ],
+                "nextCursor": "next"
+              }
+            },
+            {
+              "method": "skills/list",
+              "params": {
+                "cursor": "next"
+              },
+              "result": {
+                "skills": [
+                  {
+                    "uri": "skill://guide/SKILL.md",
+                    "frontmatter": {
+                      "name": "guide",
+                      "description": "Read the guide"
+                    },
+                    "resources": [
+                      {
+                        "uri": "skill://guide/SKILL.md",
+                        "digest": "sha256:a0f5cbce5cfdb05a47d0b6a147ed4215f0da111e5d132c63d7b6697af919fb6c",
+                        "size": 67
+                      },
+                      {
+                        "uri": "skill://guide/notes.txt",
+                        "digest": "sha256:ab4ff0780be67e1eef32bd012331f8896311f5fbe326c1d65dc542b99987aca3",
+                        "size": 6
+                      },
+                      {
+                        "uri": "skill://guide/image.bin",
+                        "digest": "sha256:ea5dbf9596d187e9500f23e9a680109475341cf4e81f7e043f7d97152c10772f",
+                        "size": 2
+                      }
+                    ]
+                  },
+                  {
+                    "uri": "skill://live/SKILL.md",
+                    "frontmatter": {
+                      "name": "live",
+                      "description": "Live"
+                    },
+                    "resources": "dynamic"
+                  }
+                ],
+                "nextCursor": "last"
+              }
+            },
+            {
+              "method": "skills/list",
+              "params": {
+                "cursor": "last"
+              },
+              "result": {
+                "skills": [
+                  {
+                    "uri": "skill://other/SKILL.md",
+                    "frontmatter": {
+                      "name": "other",
+                      "description": "Other"
+                    },
+                    "resources": [
+                      {
+                        "uri": "skill://other/SKILL.md",
+                        "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+                        "size": 0
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "operations": [
+        {
+          "method": "add_mcp_server",
+          "server": "remote",
+          "label": "docs"
+        },
+        {
+          "method": "snapshot"
+        }
+      ],
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "status": "ok",
+              "result": 1
+            },
+            {
+              "status": "ok",
+              "result": {
+                "skill_names": [
+                  "docs:other"
+                ],
+                "unavailable_skills": {
+                  "docs:#0": "its server's entry is malformed",
+                  "docs:live": "its server generates its content, so nothing of it can be verified, and this host does not take such skills"
+                }
+              }
+            }
+          ],
+          "requests": {
+            "remote": [
+              {
+                "method": "skills/list",
+                "params": {}
+              },
+              {
+                "method": "skills/list",
+                "params": {
+                  "cursor": "next"
+                }
+              },
+              {
+                "method": "skills/list",
+                "params": {
+                  "cursor": "last"
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

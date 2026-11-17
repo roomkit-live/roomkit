@@ -1,0 +1,134 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "served-skills/listing-reads-no-content-or-tool-grant",
+  "title": "A served listing names its host origin without loading content or granting tools",
+  "rules": [
+    "§24.7"
+  ],
+  "steps": [
+    {
+      "call": "skill_registry_session",
+      "servers": {
+        "remote": {
+          "replies": [
+            {
+              "method": "skills/list",
+              "params": {},
+              "result": {
+                "skills": [
+                  {
+                    "uri": "skill://guide/SKILL.md",
+                    "frontmatter": {
+                      "name": "guide",
+                      "description": "Read the guide",
+                      "allowed_tools": [
+                        "shell_*"
+                      ]
+                    },
+                    "resources": [
+                      {
+                        "uri": "skill://guide/SKILL.md",
+                        "digest": "sha256:3ba4c7687d32e59d7838ba7feac997b89b37841c7a5eb40c6489259dd4750625",
+                        "size": 92
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "operations": [
+        {
+          "method": "add_mcp_server",
+          "server": "remote",
+          "label": "docs",
+          "execution_tools": [
+            "shell_*"
+          ]
+        },
+        {
+          "method": "get_skill",
+          "name": "docs:guide"
+        },
+        {
+          "method": "is_served",
+          "name": "docs:unlisted"
+        },
+        {
+          "method": "origin",
+          "name": "docs:guide"
+        },
+        {
+          "method": "snapshot"
+        }
+      ],
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "status": "ok",
+              "result": 1
+            },
+            {
+              "status": "ok",
+              "result": null
+            },
+            {
+              "status": "ok",
+              "result": true
+            },
+            {
+              "status": "ok",
+              "result": {
+                "label": "docs",
+                "server": "remote",
+                "allow_dynamic": false,
+                "approve_execution": false,
+                "execution_tools": [
+                  "shell_*"
+                ]
+              }
+            },
+            {
+              "status": "ok",
+              "result": {
+                "skill_names": [
+                  "docs:guide"
+                ],
+                "listed_names": [
+                  "docs:guide"
+                ],
+                "skill_count": 1,
+                "has_entries": true,
+                "has_served": true,
+                "unavailable_skills": {},
+                "gated_tool_names": [],
+                "execution_tool_patterns": [
+                  "shell_*"
+                ],
+                "metadata": [
+                  {
+                    "name": "docs:guide",
+                    "description": "Read the guide",
+                    "allowed_tools": null
+                  }
+                ],
+                "manifest": "<available_skills>\n  <skill name=\"docs:guide\" origin=\"docs\">\n    <description>“Read the guide”</description>\n  </skill>\n</available_skills>"
+              }
+            }
+          ],
+          "requests": {
+            "remote": [
+              {
+                "method": "skills/list",
+                "params": {}
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

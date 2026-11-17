@@ -1,0 +1,112 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "served-skills/frontmatter-accepts-nested-sets",
+  "title": "YAML nested sets normalize as canonical JSON arrays",
+  "rules": [
+    "§24.7"
+  ],
+  "steps": [
+    {
+      "call": "skill_registry_session",
+      "servers": {
+        "remote": {
+          "replies": [
+            {
+              "method": "skills/list",
+              "params": {},
+              "result": {
+                "skills": [
+                  {
+                    "uri": "skill://guide/SKILL.md",
+                    "frontmatter": {
+                      "name": "guide",
+                      "description": "Read the guide",
+                      "meta": {
+                        "empty": [],
+                        "numeric": [
+                          1,
+                          2
+                        ]
+                      }
+                    },
+                    "resources": [
+                      {
+                        "uri": "skill://guide/SKILL.md",
+                        "digest": "sha256:97dddfb4ee4c220713ea8889169ae9517e99e8c50247597d40da9dbbf583ccca",
+                        "size": 149
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "method": "resources/read",
+              "params": {
+                "uri": "skill://guide/SKILL.md"
+              },
+              "result": {
+                "contents": [
+                  {
+                    "uri": "skill://guide/SKILL.md",
+                    "text": "---\nname: guide\ndescription: Read the guide\nmeta: {empty: !!set {}, numeric: !!set {1: null, true: null, 1.0: null, 2: null}}\n---\n\nFollow the steps.\n"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "operations": [
+        {
+          "method": "add_mcp_server",
+          "server": "remote",
+          "label": "docs"
+        },
+        {
+          "method": "load_skill",
+          "name": "docs:guide"
+        }
+      ],
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "status": "ok",
+              "result": 1
+            },
+            {
+              "status": "ok",
+              "result": {
+                "instructions": "Follow the steps.",
+                "origin": "docs",
+                "uri": "skill://guide/SKILL.md",
+                "has_scripts": false,
+                "references": [],
+                "read_total": 149,
+                "files": {
+                  "skill://guide/SKILL.md": "2d2d2d0a6e616d653a2067756964650a6465736372697074696f6e3a2052656164207468652067756964650a6d6574613a207b656d7074793a202121736574207b7d2c206e756d657269633a202121736574207b313a206e756c6c2c20747275653a206e756c6c2c20312e303a206e756c6c2c20323a206e756c6c7d7d0a2d2d2d0a0a466f6c6c6f77207468652073746570732e0a"
+                },
+                "retirements": 0
+              }
+            }
+          ],
+          "requests": {
+            "remote": [
+              {
+                "method": "skills/list",
+                "params": {}
+              },
+              {
+                "method": "resources/read",
+                "params": {
+                  "uri": "skill://guide/SKILL.md"
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

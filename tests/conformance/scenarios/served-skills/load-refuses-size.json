@@ -1,0 +1,170 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "served-skills/load-refuses-size",
+  "title": "A size mismatch exposes no body and refreshes the entry before another load",
+  "rules": [
+    "§24.7"
+  ],
+  "steps": [
+    {
+      "call": "skill_registry_session",
+      "servers": {
+        "remote": {
+          "replies": [
+            {
+              "method": "skills/list",
+              "params": {},
+              "result": {
+                "skills": [
+                  {
+                    "uri": "skill://guide/SKILL.md",
+                    "frontmatter": {
+                      "name": "guide",
+                      "description": "Read the guide"
+                    },
+                    "resources": [
+                      {
+                        "uri": "skill://guide/SKILL.md",
+                        "digest": "sha256:a0f5cbce5cfdb05a47d0b6a147ed4215f0da111e5d132c63d7b6697af919fb6c",
+                        "size": 67
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "method": "resources/read",
+              "params": {
+                "uri": "skill://guide/SKILL.md"
+              },
+              "result": {
+                "contents": [
+                  {
+                    "uri": "skill://guide/SKILL.md",
+                    "text": "---\nname: guide\ndescription: Read the guide\n---\n\nFollow the steps.\nextra"
+                  }
+                ]
+              }
+            },
+            {
+              "method": "skills/get",
+              "params": {
+                "uri": "skill://guide/SKILL.md"
+              },
+              "result": {
+                "skill": {
+                  "uri": "skill://guide/SKILL.md",
+                  "frontmatter": {
+                    "name": "guide",
+                    "description": "Read the guide"
+                  },
+                  "resources": [
+                    {
+                      "uri": "skill://guide/SKILL.md",
+                      "digest": "sha256:043eeef83580c3a5f3bcfb5e0e7d4db34acc8414de4ff023ecd823763ec276b0",
+                      "size": 63
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "method": "resources/read",
+              "params": {
+                "uri": "skill://guide/SKILL.md"
+              },
+              "result": {
+                "contents": [
+                  {
+                    "uri": "skill://guide/SKILL.md",
+                    "text": "---\nname: guide\ndescription: Read the guide\n---\n\nCurrent body.\n"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "operations": [
+        {
+          "method": "add_mcp_server",
+          "server": "remote",
+          "label": "docs"
+        },
+        {
+          "method": "load_skill",
+          "name": "docs:guide"
+        },
+        {
+          "method": "get_skill",
+          "name": "docs:guide"
+        },
+        {
+          "method": "load_skill",
+          "name": "docs:guide"
+        }
+      ],
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "status": "ok",
+              "result": 1
+            },
+            {
+              "error": "SkillVerificationError",
+              "message": "Skill 'docs:guide' changed on its server or could not be verified",
+              "status": "error"
+            },
+            {
+              "status": "ok",
+              "result": null
+            },
+            {
+              "status": "ok",
+              "result": {
+                "instructions": "Current body.",
+                "origin": "docs",
+                "uri": "skill://guide/SKILL.md",
+                "has_scripts": false,
+                "references": [],
+                "read_total": 63,
+                "files": {
+                  "skill://guide/SKILL.md": "2d2d2d0a6e616d653a2067756964650a6465736372697074696f6e3a2052656164207468652067756964650a2d2d2d0a0a43757272656e7420626f64792e0a"
+                },
+                "retirements": 0
+              }
+            }
+          ],
+          "requests": {
+            "remote": [
+              {
+                "method": "skills/list",
+                "params": {}
+              },
+              {
+                "method": "resources/read",
+                "params": {
+                  "uri": "skill://guide/SKILL.md"
+                }
+              },
+              {
+                "method": "skills/get",
+                "params": {
+                  "uri": "skill://guide/SKILL.md"
+                }
+              },
+              {
+                "method": "resources/read",
+                "params": {
+                  "uri": "skill://guide/SKILL.md"
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

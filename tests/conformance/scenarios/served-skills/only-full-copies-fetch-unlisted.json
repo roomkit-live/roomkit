@@ -1,0 +1,171 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "served-skills/only-full-copies-fetch-unlisted",
+  "title": "A narrowed copy never fetches an unlisted skill but a full copy may load it invisibly",
+  "rules": [
+    "§24.7"
+  ],
+  "steps": [
+    {
+      "call": "skill_registry_session",
+      "servers": {
+        "remote": {
+          "replies": [
+            {
+              "method": "skills/list",
+              "params": {},
+              "result": {
+                "skills": []
+              }
+            },
+            {
+              "method": "skills/get",
+              "params": {
+                "uri": "skill://guide/SKILL.md"
+              },
+              "result": {
+                "skill": {
+                  "uri": "skill://guide/SKILL.md",
+                  "frontmatter": {
+                    "name": "guide",
+                    "description": "Read the guide"
+                  },
+                  "resources": [
+                    {
+                      "uri": "skill://guide/SKILL.md",
+                      "digest": "sha256:a0f5cbce5cfdb05a47d0b6a147ed4215f0da111e5d132c63d7b6697af919fb6c",
+                      "size": 67
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "method": "resources/read",
+              "params": {
+                "uri": "skill://guide/SKILL.md"
+              },
+              "result": {
+                "contents": [
+                  {
+                    "uri": "skill://guide/SKILL.md",
+                    "text": "---\nname: guide\ndescription: Read the guide\n---\n\nFollow the steps.\n"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "operations": [
+        {
+          "method": "add_mcp_server",
+          "server": "remote",
+          "label": "docs"
+        },
+        {
+          "method": "copy",
+          "target": "narrow",
+          "names": []
+        },
+        {
+          "method": "copy",
+          "target": "full"
+        },
+        {
+          "method": "load_skill",
+          "name": "docs:guide",
+          "registry": "narrow"
+        },
+        {
+          "method": "load_skill",
+          "name": "docs:guide",
+          "registry": "full"
+        },
+        {
+          "method": "snapshot",
+          "registry": "full"
+        },
+        {
+          "method": "snapshot"
+        }
+      ],
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "status": "ok",
+              "result": 0
+            },
+            {
+              "status": "ok",
+              "result": null
+            },
+            {
+              "status": "ok",
+              "result": null
+            },
+            {
+              "error": "SkillValidationError",
+              "message": "Skill 'docs:guide' not found",
+              "status": "error"
+            },
+            {
+              "status": "ok",
+              "result": {
+                "instructions": "Follow the steps.",
+                "origin": "docs",
+                "uri": "skill://guide/SKILL.md",
+                "has_scripts": false,
+                "references": [],
+                "read_total": 67,
+                "files": {
+                  "skill://guide/SKILL.md": "2d2d2d0a6e616d653a2067756964650a6465736372697074696f6e3a2052656164207468652067756964650a2d2d2d0a0a466f6c6c6f77207468652073746570732e0a"
+                },
+                "retirements": 0
+              }
+            },
+            {
+              "status": "ok",
+              "result": {
+                "skill_names": [
+                  "docs:guide"
+                ],
+                "listed_names": [],
+                "manifest": ""
+              }
+            },
+            {
+              "status": "ok",
+              "result": {
+                "skill_names": [],
+                "listed_names": [],
+                "manifest": ""
+              }
+            }
+          ],
+          "requests": {
+            "remote": [
+              {
+                "method": "skills/list",
+                "params": {}
+              },
+              {
+                "method": "skills/get",
+                "params": {
+                  "uri": "skill://guide/SKILL.md"
+                }
+              },
+              {
+                "method": "resources/read",
+                "params": {
+                  "uri": "skill://guide/SKILL.md"
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

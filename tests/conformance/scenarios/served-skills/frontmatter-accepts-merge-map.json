@@ -1,0 +1,109 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "served-skills/frontmatter-accepts-merge-map",
+  "title": "Verified loading compares merge map after safe YAML normalization",
+  "rules": [
+    "§24.7"
+  ],
+  "steps": [
+    {
+      "call": "skill_registry_session",
+      "servers": {
+        "remote": {
+          "replies": [
+            {
+              "method": "skills/list",
+              "params": {},
+              "result": {
+                "skills": [
+                  {
+                    "uri": "skill://guide/SKILL.md",
+                    "frontmatter": {
+                      "name": "guide",
+                      "description": "Read the guide",
+                      "metadata": {
+                        "a": 1,
+                        "b": 3
+                      }
+                    },
+                    "resources": [
+                      {
+                        "uri": "skill://guide/SKILL.md",
+                        "digest": "sha256:e631d5dcc2f3cbe6a37d388075d1dfe4fc7a285455fe33797dbedc94997711df",
+                        "size": 103
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "method": "resources/read",
+              "params": {
+                "uri": "skill://guide/SKILL.md"
+              },
+              "result": {
+                "contents": [
+                  {
+                    "uri": "skill://guide/SKILL.md",
+                    "text": "---\nname: guide\ndescription: Read the guide\nmetadata:\n  <<: {a: 1, b: 2}\n  b: 3\n---\n\nFollow the steps.\n"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "operations": [
+        {
+          "method": "add_mcp_server",
+          "server": "remote",
+          "label": "docs"
+        },
+        {
+          "method": "load_skill",
+          "name": "docs:guide"
+        }
+      ],
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "status": "ok",
+              "result": 1
+            },
+            {
+              "status": "ok",
+              "result": {
+                "instructions": "Follow the steps.",
+                "origin": "docs",
+                "uri": "skill://guide/SKILL.md",
+                "has_scripts": false,
+                "references": [],
+                "read_total": 103,
+                "files": {
+                  "skill://guide/SKILL.md": "2d2d2d0a6e616d653a2067756964650a6465736372697074696f6e3a2052656164207468652067756964650a6d657461646174613a0a20203c3c3a207b613a20312c20623a20327d0a2020623a20330a2d2d2d0a0a466f6c6c6f77207468652073746570732e0a"
+                },
+                "retirements": 0
+              }
+            }
+          ],
+          "requests": {
+            "remote": [
+              {
+                "method": "skills/list",
+                "params": {}
+              },
+              {
+                "method": "resources/read",
+                "params": {
+                  "uri": "skill://guide/SKILL.md"
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,133 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "served-skills/frontmatter-refuses-legacy-set-text",
+  "title": "A legacy Python set display string never equals a normalized YAML set",
+  "rules": [
+    "§24.7"
+  ],
+  "steps": [
+    {
+      "call": "skill_registry_session",
+      "servers": {
+        "remote": {
+          "replies": [
+            {
+              "method": "skills/list",
+              "params": {},
+              "result": {
+                "skills": [
+                  {
+                    "uri": "skill://guide/SKILL.md",
+                    "frontmatter": {
+                      "name": "guide",
+                      "description": "Read the guide",
+                      "meta": "{'alpha', 'beta'}"
+                    },
+                    "resources": [
+                      {
+                        "uri": "skill://guide/SKILL.md",
+                        "digest": "sha256:ab59133d987076d1db67e3618bb61dca3d15b371d34bca2fc51bbe9a0b0d7c39",
+                        "size": 105
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "method": "resources/read",
+              "params": {
+                "uri": "skill://guide/SKILL.md"
+              },
+              "result": {
+                "contents": [
+                  {
+                    "uri": "skill://guide/SKILL.md",
+                    "text": "---\nname: guide\ndescription: Read the guide\nmeta: !!set {alpha: null, beta: null}\n---\n\nFollow the steps.\n"
+                  }
+                ]
+              }
+            },
+            {
+              "method": "skills/get",
+              "params": {
+                "uri": "skill://guide/SKILL.md"
+              },
+              "result": {
+                "skill": {
+                  "uri": "skill://guide/SKILL.md",
+                  "frontmatter": {
+                    "name": "guide",
+                    "description": "Read the guide",
+                    "meta": "{'alpha', 'beta'}"
+                  },
+                  "resources": [
+                    {
+                      "uri": "skill://guide/SKILL.md",
+                      "digest": "sha256:ab59133d987076d1db67e3618bb61dca3d15b371d34bca2fc51bbe9a0b0d7c39",
+                      "size": 105
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      },
+      "operations": [
+        {
+          "method": "add_mcp_server",
+          "server": "remote",
+          "label": "docs"
+        },
+        {
+          "method": "load_skill",
+          "name": "docs:guide"
+        },
+        {
+          "method": "get_skill",
+          "name": "docs:guide"
+        }
+      ],
+      "expect": {
+        "result": {
+          "results": [
+            {
+              "status": "ok",
+              "result": 1
+            },
+            {
+              "error": "SkillVerificationError",
+              "message": "Skill 'docs:guide' changed on its server or could not be verified",
+              "status": "error"
+            },
+            {
+              "status": "ok",
+              "result": null
+            }
+          ],
+          "requests": {
+            "remote": [
+              {
+                "method": "skills/list",
+                "params": {}
+              },
+              {
+                "method": "resources/read",
+                "params": {
+                  "uri": "skill://guide/SKILL.md"
+                }
+              },
+              {
+                "method": "skills/get",
+                "params": {
+                  "uri": "skill://guide/SKILL.md"
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}
