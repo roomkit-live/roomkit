@@ -15,7 +15,7 @@ import hashlib
 import hmac
 import logging
 import secrets
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Coroutine
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from uuid import uuid4
@@ -24,7 +24,7 @@ from roomkit.core._authors import People
 from roomkit.core._changes import withdrawn
 from roomkit.core.exceptions import VerificationRefusedError
 from roomkit.core.mixins.helpers import HelpersMixin
-from roomkit.core.task_utils import run_to_its_end
+from roomkit.core.task_utils import run_to_its_end, start_named
 from roomkit.core.visibility import committed_visibility, visibility_allows
 from roomkit.models.delivery import InboundResult
 from roomkit.models.enums import (
@@ -369,16 +369,17 @@ class VerificationMixin(HelpersMixin):
         context: RoomContext,
         resolved_identity: Identity | None,
         deadline: float,
+        *,
+        defer: bool = False,
     ) -> RoomEvent | InboundResult:
         """Label an identified sender's message, consume a code, or hold it.
 
         Returns the event to go on with, or the result of a message that stops
         here before anything of it is stored (a code reply, a block). The
         read of the sender's verification and the hooks are bounded by the
-        call's pre-commit *deadline* (RFC §13.6); a code's attempt is not: it
-        is a write, and what its completion runs (the release and its answer,
-        §11.7.6) is over before the call returns, whatever the deadline and
-        whatever becomes of the caller, as a room step 2 creates is.
+        call's pre-commit *deadline* (RFC §13.6); a code's attempt is not
+        (:meth:`_attempt_code`), and the call of a deferred one (*defer*)
+        returns once the reply is known for one.
 
         Raises:
             _VerificationDeadlineError: the deadline passed in a bounded part.
@@ -389,12 +390,9 @@ class VerificationMixin(HelpersMixin):
         identity_id, organization_id = identity
         async with _bounded_by(deadline):
             state = await self.verification_of(identity_id, organization_id=organization_id)
-        attempted = run_to_its_end(
-            self._consume_code(event, room_id, state),
-            held=self._decided_writes,
-            name=f"roomkit-code-attempt-{room_id}",
-        )
-        if await attempted:
+        reply = await self._code_reply(event, room_id, state)
+        if reply is not None:
+            await self._attempt_code(*reply, defer=defer)
             # Its text is never stored nor broadcast, and no agent reads it.
             return InboundResult(blocked=True, reason="verification_code")
         async with _bounded_by(deadline):
@@ -432,13 +430,17 @@ class VerificationMixin(HelpersMixin):
             return InboundResult(blocked=True, reason="verification_required")
         return _held(event, context, identity_id, organization_id)
 
-    async def _consume_code(self, event: RoomEvent, room_id: str, state: Verification) -> bool:
-        """Whether *event* is a reply to the sender's open code request here, attempted."""
+    async def _code_reply(
+        self, event: RoomEvent, room_id: str, state: Verification
+    ) -> tuple[VerificationRequest, str] | None:
+        """The sender's open code request in this room and the code, when
+        *event* replies to it with a code's form (RFC §11.7.4); ``None`` for
+        any other message."""
         if state.request_id is None or not isinstance(event.content, TextContent):
-            return False
+            return None
         text = event.content.body.strip()
         if not text.isdigit() or len(text) != self._verification_policy.code_length:
-            return False
+            return None
         request = await self._store.get_verification_request(state.request_id)
         if (
             request is None
@@ -446,13 +448,33 @@ class VerificationMixin(HelpersMixin):
             or request.status != VerificationRequestStatus.OPEN
             or request.room_id != room_id
         ):
-            return False
-        # A wrong code counts as an attempt and is consumed all the same.
+            return None
+        return request, text
+
+    async def _attempt_code(self, request: VerificationRequest, code: str, *, defer: bool) -> None:
+        """Attempt *code* against *request*: a write past the reply's decision,
+        done with what its completion runs (the release and its answer,
+        §11.7.6) whatever the deadline and whatever becomes of the caller, as
+        a room step 2 creates is (RFC §11.7.4, §13.6). A deferred reply's
+        call does not wait for it: the attempt goes on as a decided write of
+        the kit, which its close gives its grace, its failure logged."""
+        attempt = self._complete_with_code(request, code)
+        name = f"roomkit-code-attempt-{request.room_id}"
+        if not defer:
+            await run_to_its_end(attempt, held=self._decided_writes, name=name)
+            return
+        # A context of its own: it outlives the call and what the call holds.
+        task = start_named(_logged_attempt(attempt), name=name, context=contextvars.Context())
+        self._decided_writes.add(task)
+        task.add_done_callback(self._decided_writes.discard)
+
+    async def _complete_with_code(self, request: VerificationRequest, code: str) -> None:
+        """Complete *request* with *code*: a wrong code counts as an attempt
+        and is consumed all the same."""
         with contextlib.suppress(VerificationRefusedError):
             await self.complete_verification(
-                request.id, text, organization_id=request.organization_id
+                request.id, code, organization_id=request.organization_id
             )
-        return True
 
     # -- releasing held messages (RFC §11.7.6) ----------------------------------
 
@@ -987,6 +1009,14 @@ class _VerificationDeadlineError(Exception):
     """The call's pre-commit deadline passed in a bounded part of step 5b,
     told apart from a timeout a code's attempt raises, which carries no
     deadline and is that attempt's own failure (RFC §13.6)."""
+
+
+async def _logged_attempt(attempt: Coroutine[Any, Any, None]) -> None:
+    """A deferred code reply's attempt, its failure logged: no caller reads it."""
+    try:
+        await attempt
+    except Exception:
+        logger.exception("A deferred code reply's attempt failed")
 
 
 @contextlib.asynccontextmanager

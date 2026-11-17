@@ -574,7 +574,15 @@ class InboundMixin(HelpersMixin):
         if entry is None:
             return _past_the_cap(room_id, message)
         prepared = await self._prepare_event(
-            message, channel, room_id, room_just_created, deadline, telemetry, named, entry
+            message,
+            channel,
+            room_id,
+            room_just_created,
+            deadline,
+            telemetry,
+            named,
+            entry,
+            defer_delivery=defer_delivery,
         )
         if isinstance(prepared, InboundResult):
             return prepared
@@ -642,9 +650,13 @@ class InboundMixin(HelpersMixin):
         telemetry: Any,
         named: NamedDelivery,
         entry: Entry,
+        *,
+        defer_delivery: bool,
     ) -> tuple[Any, RoomContext, Identity | None, IdentityResult | None] | InboundResult:
         """RFC §10.1 steps 3-5b, under the caller's pre-commit budget; *entry*
         is what the message is to the room's work (RFC §9.5.1).
+        *defer_delivery* is the call's: a deferred code reply returns before
+        its attempt (§11.7.4).
 
         Everything here was previously unbounded: a store read that never
         returns during the context build, or a channel's own
@@ -670,7 +682,7 @@ class InboundMixin(HelpersMixin):
         event, context, resolved_identity, pending_id_result = prepared
         try:
             verified = await self._apply_verification(
-                event, room_id, context, resolved_identity, deadline
+                event, room_id, context, resolved_identity, deadline, defer=defer_delivery
             )
         except _VerificationDeadlineError:
             return await self._refuse_on_timeout(room_id, channel_id=message.channel_id)

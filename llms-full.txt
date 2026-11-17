@@ -7031,7 +7031,10 @@ fire when it happens; a timer ends a verification at its expiry, and a
 request left unanswered at its own (the identity then has none open, so the
 next message asks again); `async with RoomKit(...)` re-arms the verifications'
 timers from the store. A code reply
-(`method="code"`) is consumed, never stored.
+(`method="code"`) is consumed, never stored: its `process_inbound` returns
+`verification_code` once the released message is answered, whatever
+`process_timeout`; with `defer_delivery=True` it returns at once and the
+release goes on as the kit's own work.
 
 ## Realtime Ephemeral Events
 
