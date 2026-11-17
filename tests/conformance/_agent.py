@@ -39,6 +39,7 @@ from roomkit.providers.ai import (
     AIToolCall,
     ModelInfo,
     ModelPricing,
+    ServedCall,
     chat_messages,
 )
 from roomkit.providers.ai.base import (
@@ -396,6 +397,7 @@ def _tool_call(call: Mapping[str, Any], labelled: Callable[[Any], Any] | None) -
         name=call["name"],
         arguments=written(dict(call.get("arguments", {}))),
         metadata=dict(call.get("metadata", {})),
+        served=None if call.get("served") is None else ServedCall(**call["served"]),
         partial=bool(call.get("cut", False)),
     )
 

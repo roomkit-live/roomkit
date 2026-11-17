@@ -127,7 +127,11 @@ def test_a_call_survives_streaming_and_back() -> None:
     ran = AIToolCall(
         id="b1",
         name="Bash",
+        arguments={"cmd": "ls"},
+        metadata={"signature": "provider-owned"},
         served=ServedCall(result="a.txt", is_error=True),
+        partial=True,
+        garbled=True,
         intent="I list the files.",
     )
 

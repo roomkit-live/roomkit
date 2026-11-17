@@ -126,6 +126,14 @@ def tool_round_record(payload: ToolRoundEvent) -> dict[str, Any]:
             }
             for result in payload.results
         ],
+        "answered": [
+            {
+                "tool_call_id": result.tool_call_id,
+                "content": result_content(result.result),
+                "is_error": result.is_error,
+            }
+            for result in payload.answered
+        ],
         "tools": list(payload.tools),
     }
 

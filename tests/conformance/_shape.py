@@ -236,7 +236,7 @@ MODEL_ROUND = {
 REFUSES = {"status", "message", "context_overflow", "provider", "retryable"}
 AI_ROUTER = {"models", "turns", "retries"}
 RETRY_POLICY = {"max_retries", "base_delay_ms", "max_delay_ms", "exponential_base"}
-MODEL_CALL = {"id", "name", "arguments", "cut", "metadata"}
+MODEL_CALL = {"id", "name", "arguments", "cut", "metadata", "served"}
 TOOL = {
     "name",
     "description",
@@ -919,8 +919,30 @@ def _model(model: Mapping[str, Any], path: str, found: list[str]) -> None:
                 found.append(f"{path}.rounds[{index}]: whole_response cannot also fail")
         if "refuses" in round_:
             _members(round_["refuses"], REFUSES, f"{path}.rounds[{index}].refuses", found)
-        for position, call in enumerate(round_.get("calls", [])):
-            _members(call, MODEL_CALL, f"{path}.rounds[{index}].calls[{position}]", found)
+        _model_calls(round_, f"{path}.rounds[{index}]", found)
+
+
+def _model_calls(round_: Mapping[str, Any], path: str, found: list[str]) -> None:
+    for position, call in enumerate(round_.get("calls", [])):
+        _model_call(call, f"{path}.calls[{position}]", found)
+    for position, event in enumerate(round_.get("stream", [])):
+        if "call" in event:
+            _model_call(event["call"], f"{path}.stream[{position}].call", found)
+
+
+def _model_call(call: Mapping[str, Any], path: str, found: list[str]) -> None:
+    _members(call, MODEL_CALL, path, found)
+    served = call.get("served")
+    if served is None:
+        return
+    if not isinstance(served, Mapping):
+        found.append(f"{path}.served: expected an object or null")
+        return
+    _members(served, {"result", "is_error"}, f"{path}.served", found)
+    if "result" in served and not isinstance(served["result"], str):
+        found.append(f"{path}.served.result: expected a string")
+    if "is_error" in served and not isinstance(served["is_error"], bool):
+        found.append(f"{path}.served.is_error: expected a boolean")
 
 
 def _hook(hook: Mapping[str, Any], path: str, found: list[str], members: set[str] = HOOK) -> None:
