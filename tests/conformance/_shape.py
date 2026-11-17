@@ -267,6 +267,7 @@ MCP_SERVER = {"label", "gate_discovery", "declare", "tools"}
 MCP_TOOL = {"name", "description", "input_schema", "returns"}
 HUMAN_INPUT = {"tool_names", "timeout_ms", "tools"}
 TURN_CONFIG = {
+    "tool_timeouts_ms",
     "system_prompt",
     "thinking_budget",
     "enable_thinking",
@@ -874,11 +875,23 @@ def _channel_settings(channel: Mapping[str, Any], path: str, found: list[str]) -
 
 def _turn_config(config: Mapping[str, Any], path: str, found: list[str]) -> None:
     _members(config, TURN_CONFIG, path, found)
+    _turn_tool_bounds(config.get("tool_timeouts_ms"), f"{path}.tool_timeouts_ms", found)
     for index, tool in enumerate(config.get("tools") or []):
         _members(tool, TURN_TOOL, f"{path}.tools[{index}]", found)
     for index, tool in enumerate(config.get("tool_handler", [])):
         _members(tool, TOOL, f"{path}.tool_handler[{index}]", found)
     _skills(config.get("skills", []), f"{path}.skills", found)
+
+
+def _turn_tool_bounds(bounds: Any, path: str, found: list[str]) -> None:
+    if bounds is None:
+        return
+    if not isinstance(bounds, Mapping):
+        found.append(f"{path}: expected an object or null")
+        return
+    for name, bound in bounds.items():
+        if bound is not None and (type(bound) is not int or bound < 0):
+            found.append(f"{path}.{name}: expected nonnegative integer milliseconds or null")
 
 
 def _skills(skills: list[Mapping[str, Any]], path: str, found: list[str]) -> None:

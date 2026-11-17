@@ -880,9 +880,12 @@ def _config_provider(by_room: Mapping[str, Any], gates: Gates) -> ConfigProvider
         settings = {
             key: value
             for key, value in spec.items()
-            if key not in ("tools", "tool_handler", "skills", "skills_requires_match")
+            if key
+            not in ("tools", "tool_handler", "skills", "skills_requires_match", "tool_timeouts_ms")
         }
         config = AIChannelTurnConfig(**settings)
+        if (bounds := spec.get("tool_timeouts_ms")) is not None:
+            config.tool_timeouts = {name: _seconds(bound) for name, bound in bounds.items()}
         if "skills" in spec:
             config.skills = scripted_skill_registry(
                 spec["skills"], spec.get("skills_requires_match", "exact")
