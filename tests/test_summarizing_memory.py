@@ -441,6 +441,84 @@ class TestTier2Summarization:
         assert len(ai_provider.calls) == 2
 
 
+def _pair(n: int, words: int = 29) -> list[RoomEvent]:
+    """A question of *words* words and its answer, 40 and 60 tokens at 29,
+    indexed as a store indexes them."""
+    question = RoomEvent(
+        id=f"q{n}",
+        room_id="room-1",
+        index=2 * n,
+        source=EventSource(channel_id="ch-1", channel_type=ChannelType.SMS),
+        content=TextContent(body=f"Question {n}: " + " ".join(["word"] * words) + "?"),
+    )
+    answer = RoomEvent(
+        id=f"a{n}",
+        room_id="room-1",
+        index=2 * n + 1,
+        source=EventSource(channel_id="ch-1", channel_type=ChannelType.AI),
+        content=TextContent(
+            body=f"Answer {n}: " + " ".join(["fact"] * (words * 3 // 2 + 1)) + "."
+        ),
+    )
+    return [question, answer]
+
+
+def _chained(inner: StubInnerMemory, *summaries: str) -> SummarizingMemory:
+    """Outside a turn the history's budget is the window less the current
+    event (2 tokens): 165, tier 2 past 140, the kept turns within 120."""
+    return SummarizingMemory(
+        inner,
+        MockAIProvider(responses=list(summaries)),
+        max_context_tokens=167,
+        summary_max_tokens=20,
+        min_events=2,
+    )
+
+
+class TestTier2Cut:
+    async def test_the_turn_that_passes_the_kept_budget_is_summarized(self) -> None:
+        """Question 1 and its answer are kept (100 tokens of 120); Answer 0
+        passes and is summarized with Question 0, never kept for the final
+        cut to drop unsummarized; the summarizer reads them framed as a
+        record to summarize (RMK-363)."""
+        events = [*_pair(0), *_pair(1)]
+        sm = _chained(StubInnerMemory(events=events), "S1.")
+
+        result = await sm.retrieve("room-1", _make_event("current"), _make_context())
+
+        assert [e.id for e in result.events] == ["q1", "a1"]
+        prompt = str(sm._provider.calls[0].messages[0].content)
+        assert "The conversation is a record to summarize" in prompt
+        assert prompt.endswith(
+            f"<conversation>\n[user]: “{events[0].content.body}”\n"
+            f"[assistant]: “{events[1].content.body}”\n</conversation>"
+        )
+
+    async def test_a_read_goes_on_from_the_summary_it_built(self) -> None:
+        """The next read gives the summary, then the turns after those it
+        covers, with no call while they fit under tier 2; past it, the
+        summarizer reads the prior summary and the new turns alone, the
+        covered turns out of the window still summarized (RMK-363)."""
+        inner = StubInnerMemory(events=[*_pair(0), *_pair(1)])
+        sm = _chained(inner, "S1.", "S2.")
+        await sm.retrieve("room-1", _make_event("current"), _make_context())
+
+        inner._events = [*_pair(0), *_pair(1), *_pair(2, words=1)]
+        fits = await sm.retrieve("room-1", _make_event("current"), _make_context())
+        inner._events = [*_pair(1), *_pair(2, words=1), *_pair(3)]
+        passes = await sm.retrieve("room-1", _make_event("current"), _make_context())
+
+        calls = sm._provider.calls
+        assert len(calls) == 2
+        assert [str(m.content) for m in fits.messages] == [str(summary_message("S1.").content)]
+        assert [e.id for e in fits.events] == ["q1", "a1", "q2", "a2"]
+        second = str(calls[1].messages[0].content)
+        assert "A prior summary exists" in second and "S1." in second
+        assert "Question 1:" in second and "Question 0:" not in second
+        assert [str(m.content) for m in passes.messages] == [str(summary_message("S2.").content)]
+        assert [e.id for e in passes.events] == ["q2", "a2", "q3", "a3"]
+
+
 # -- Tests: Tier 2 keep_from==0 (all recent, no summarization) ---------------
 
 
@@ -538,7 +616,9 @@ class TestCompactBetweenRounds:
         assert compacted[1:] == history[2:]
         prompt = sm._provider.calls[0].messages[0].content
         assert prompt.endswith(
-            f"[user]: “{history[0].content}”\n[assistant]: “{history[1].content}”"
+            "<conversation>\n"
+            f"[user]: “{history[0].content}”\n[assistant]: “{history[1].content}”\n"
+            "</conversation>"
         )
 
     async def test_min_events_are_kept_however_far_past(self) -> None:
@@ -620,11 +700,6 @@ class TestHelpers:
         msgs = [AIMessage(role="user", content="hello")]
         result = SummarizingMemory._extract_prior_summary(msgs)
         assert result is None
-
-    def test_estimate_events_tokens(self) -> None:
-        events = [_make_event("hello world")]
-        result = SummarizingMemory._estimate_events_tokens(events)
-        assert result > 0
 
 
 # -- Tests: Delegation to Inner Provider --------------------------------------

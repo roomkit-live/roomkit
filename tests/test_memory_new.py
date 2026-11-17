@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import pytest
+
+from roomkit.channels._speaker import labelled_lines
 from roomkit.memory.budget_aware import BudgetAwareMemory
 from roomkit.memory.compacting import CompactingMemory
 from roomkit.memory.mock import MockMemoryProvider
@@ -383,6 +386,36 @@ class TestBudgetAwareMemory:
         # Each event is ~1001 tokens (4000 chars // 4 + 1).
         # Budget = 10000 * 0.85 = 8500.  8 events = 8008 tokens (fits), 9 = 9009 (over).
         assert len(result.events) == 8
+
+    @pytest.mark.parametrize(
+        ("names", "kept"),
+        [(("Alice", "Brian"), 2), (("Alice", "Alice"), 3)],
+        ids=["labelled", "one-to-one"],
+    )
+    async def test_a_turn_counts_as_it_is_sent(self, names: tuple[str, str], kept: int) -> None:
+        """Where the turns hold two speakers each line is sent after its
+        author's label as a JSON string, and is counted so, the current turn
+        too: the window that holds three pastes as typed holds two as sent
+        (RMK-636). A one-to-one conversation is sent and counted as typed."""
+        paste = "".join(f'"item_{k}": {{"sku": "A-{k}", "qty": {k}}},\n' for k in range(8))
+        senders = [names[k % 2] for k in range(4)]
+        events = [
+            make_event(body=paste, participant_id=name, metadata={"sender_name": name})
+            for name in senders
+        ]
+        typed = estimate_tokens(paste)
+        sent = estimate_tokens(labelled_lines(paste, "Alice"))
+        assert 4 * typed <= 3 * sent  # three pastes as sent pass what holds four as typed
+        mem = BudgetAwareMemory(
+            inner=MockMemoryProvider(events=events[:3]),
+            max_context_tokens=3 * sent + 1,
+            safety_margin_ratio=0.0,
+            min_events=1,
+        )
+
+        result = await mem.retrieve("r1", events[3], RoomContext(room=Room(id="r1")))
+
+        assert result.events == events[3 - kept : 3]
 
 
 class TestCompactingMemory:

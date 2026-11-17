@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from bisect import bisect_left
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
+from roomkit.memory._turn_labels import label_cost
 from roomkit.memory.base import MemoryResult
 from roomkit.memory.token_estimator import (
     estimate_event_tokens,
@@ -22,6 +23,7 @@ def turn_history_budget(
     current_event: RoomEvent,
     reserved_tokens: int = 0,
     carried: MemoryResult | None = None,
+    labels: Mapping[str, str] | None = None,
 ) -> int:
     """:func:`~roomkit.memory.token_estimator.history_budget` for the turn
     whose memory reads the room (RFC §20).
@@ -32,7 +34,10 @@ def turn_history_budget(
     margin and the turn's reply budget. *carried* is what a wrapped memory
     returned: its messages and its notes occupy the window and no trimming
     cuts them. Outside a turn nothing is measured, and the window less the
-    margin, *reserved_tokens*, *carried* and the current event is left.
+    margin, *reserved_tokens*, *carried* and the current event is left. The
+    current event is counted as it is sent: with its label when *labels*,
+    the conversation's (:func:`~roomkit.memory._turn_labels.labels_sent`),
+    give it one.
     """
     footprint = current_turn_footprint()
     measured = footprint.input_tokens if footprint is not None else 0
@@ -40,14 +45,16 @@ def turn_history_budget(
     return history_budget(
         max_context_tokens=max_context_tokens,
         safety_margin_ratio=safety_margin_ratio,
-        reserved_tokens=max(reserved_tokens, measured) + notes,
+        reserved_tokens=max(reserved_tokens, measured) + notes + label_cost(current_event, labels),
         messages=carried.messages if carried is not None else None,
         current_event=current_event,
         reply_tokens=footprint.reply_tokens if footprint is not None else 0,
     )
 
 
-def history_event_costs(events: Sequence[RoomEvent]) -> list[int]:
+def history_event_costs(
+    events: Sequence[RoomEvent], labels: Mapping[str, str] | None = None
+) -> list[int]:
     """What each of *events*, a history oldest first, costs the window with
     what the turn's history replays with it (RFC §20): its own tokens, and
     each earlier round of tool calls and instruction the AI channel measured
@@ -58,8 +65,12 @@ def history_event_costs(events: Sequence[RoomEvent]) -> list[int]:
     answer, which an instruction and its rounds read before), else after the
     last event before it; one charged to no event (its turn and its place
     out of *events*) is not replayed, and costs nothing.
+
+    A participant's turn is counted as it is sent: with the label and the
+    JSON string each of its lines carries when *labels*, the conversation's
+    (:func:`~roomkit.memory._turn_labels.labels_sent`), give it one.
     """
-    costs = [estimate_event_tokens(event) for event in events]
+    costs = [estimate_event_tokens(event) + label_cost(event, labels) for event in events]
     footprint = current_turn_footprint()
     if footprint is None or not footprint.replayed or not events:
         return costs

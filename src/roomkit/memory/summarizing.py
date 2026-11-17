@@ -13,10 +13,18 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
-from roomkit.memory._summary import SummaryLines, is_summary, message_lines, summary_message
+from roomkit.memory._summary import (
+    SummaryLines,
+    is_summary,
+    message_lines,
+    summary_message,
+    summary_request,
+)
+from roomkit.memory._summary_chain import SummaryChain, SummaryChains
 from roomkit.memory._turn_budget import history_event_costs, turn_history_budget
+from roomkit.memory._turn_labels import labels_sent
 from roomkit.memory._wrapper import _MemoryWrapper
 from roomkit.memory.base import MemoryProvider, MemoryResult, _without_current_event
 from roomkit.memory.token_estimator import (
@@ -30,6 +38,12 @@ from roomkit.providers.ai.base import BILLED_USAGE_COUNTERS, AIContext, AIMessag
 logger = logging.getLogger("roomkit.memory.summarizing")
 
 _MAX_CACHE_ENTRIES = 200
+
+_INSTRUCTION = (
+    "Summarize this conversation concisely. Focus on: decisions made, "
+    "key findings, tool results, errors encountered, and current task state. "
+    "Be specific about names, error messages, and action outcomes."
+)
 
 
 class SummarizingMemory(_MemoryWrapper):
@@ -84,6 +98,7 @@ class SummarizingMemory(_MemoryWrapper):
         self._min_events = min_events
         self._cache_ttl = summary_cache_ttl_seconds
         self._summary_cache: dict[str, tuple[float, str]] = {}
+        self._chains = SummaryChains(summary_cache_ttl_seconds, _MAX_CACHE_ENTRIES)
 
     @property
     def name(self) -> str:
@@ -101,30 +116,38 @@ class SummarizingMemory(_MemoryWrapper):
             room_id, current_event, context, channel_id=channel_id
         )
         inner_result = _without_current_event(inner_result, current_event)
-        events = inner_result.events
-        budget = self._history_budget(current_event)
+        # Each turn counted as it is sent, with its label where the
+        # conversation labels it (RFC §20.3).
+        labels = labels_sent(context, inner_result.events, current_event, channel_id)
+        budget = self._history_budget(current_event, labels)
+        # The summary this memory last built for the room stands for the
+        # turns it covers, which the read goes on from (RFC §20.3).
+        now = asyncio.get_running_loop().time()
+        chain = self._chains.get(room_id, channel_id, now)
+        result = chain.carried(inner_result) if chain is not None else inner_result
+        events = result.events
 
         # What the inner provider injects occupies the window: its messages
         # and the turn's notes, which no tier can cut.
-        msg_tokens = self._injected_tokens(inner_result)
-        event_tokens = self._estimate_events_tokens(events)
-        total_tokens = msg_tokens + event_tokens
+        msg_tokens = self._injected_tokens(result)
+        total_tokens = msg_tokens + self._estimate_events_tokens(events, labels)
 
         # Tier 1: proactive truncation of old event bodies (no LLM call)
         tier1_threshold = int(budget * self._tier1_ratio)
         if total_tokens > tier1_threshold and len(events) > 1:
             events = self._apply_tier1(events)
-            event_tokens = self._estimate_events_tokens(events)
-            total_tokens = msg_tokens + event_tokens
+            total_tokens = msg_tokens + self._estimate_events_tokens(events, labels)
 
         # Tier 2: LLM-based summarization
         tier2_threshold = int(budget * self._tier2_ratio)
+        result = replace(result, events=events)
         if total_tokens > tier2_threshold and len(events) > self._min_events:
             lines = SummaryLines(context, current_event, channel_id)
-            result = await self._apply_tier2(room_id, events, inner_result, tier2_threshold, lines)
-            return self._enforce_budget(result, budget)
-
-        return self._enforce_budget(replace(inner_result, events=events), budget)
+            cut = _Cut(tier2_threshold - self._summary_max_tokens, labels)
+            result, built = await self._apply_tier2(room_id, result, cut, lines)
+            if built is not None:
+                self._chains.put(room_id, channel_id, built.after(chain), now)
+        return self._enforce_budget(result, budget, labels)
 
     async def compact(
         self,
@@ -161,15 +184,17 @@ class SummarizingMemory(_MemoryWrapper):
         summary = await self._summary(room_id, texts, prior_summary, len(summarized))
         return [summary_message(summary), *history[keep_from:]]
 
-    def _history_budget(self, current_event: RoomEvent) -> int:
+    def _history_budget(self, current_event: RoomEvent, labels: dict[str, str]) -> int:
         """What the history may take of the window in *current_event*'s turn:
         ``max_context_tokens`` less the input the AI channel measured, the
-        turn's reply budget and the current event (RFC §20). The tiers'
-        thresholds are fractions of it, and the result is kept within it."""
+        turn's reply budget and the current event, with its label (RFC §20).
+        The tiers' thresholds are fractions of it, and the result is kept
+        within it."""
         return turn_history_budget(
             max_context_tokens=self._max_context_tokens,
             safety_margin_ratio=0.0,
             current_event=current_event,
+            labels=labels,
         )
 
     # -- Tier 1: truncation -----------------------------------------------------
@@ -204,51 +229,35 @@ class SummarizingMemory(_MemoryWrapper):
     # -- Tier 2: summarization --------------------------------------------------
 
     async def _apply_tier2(
-        self,
-        room_id: str,
-        events: list[RoomEvent],
-        inner: MemoryResult,
-        budget: int,
-        lines: SummaryLines,
-    ) -> MemoryResult:
-        """Summarize older events, keeping recent ones at full fidelity, and
-        *inner*'s messages and notes as they are."""
-        prior_messages = inner.messages
-        event_costs = history_event_costs(events)
-
-        # Reserve space for the summary message in the kept-events budget
-        event_budget = budget - self._summary_max_tokens
-
-        # Find cutoff: accumulate recent events until budget is reached,
-        # ensuring at least min_events are kept.
-        keep_from = 0
-        running = 0
-        for i in range(len(events) - 1, -1, -1):
-            running += event_costs[i]
-            kept_count = len(events) - i
-            if running > event_budget and kept_count >= self._min_events:
-                keep_from = i
-                break
-
+        self, room_id: str, result: MemoryResult, cut: _Cut, lines: SummaryLines
+    ) -> tuple[MemoryResult, SummaryChain | None]:
+        """Summarize *result*'s older events, a prior summary among its
+        messages carried into the new one, and keep the latest that fit
+        *cut*, ``min_events`` of them at least; the event that passes it is
+        summarized, never kept for the final cut to drop unsummarized.
+        *result*'s other messages and notes are kept as they are. Also gives
+        the chain the room's next read goes on from, when it summarized."""
+        events = result.events
+        keep_from = _kept_within(
+            history_event_costs(events, cut.labels), cut.budget, self._min_events
+        )
         if keep_from == 0:
-            return replace(inner, events=events)
-
+            return result, None
         trimmed = events[:keep_from]
         kept = events[keep_from:]
         lines = replace(lines, kept=tuple(kept))
-
-        # Extract any prior summary text for chaining
-        prior_summary = self._extract_prior_summary(prior_messages)
+        prior_summary = self._extract_prior_summary(result.messages)
         summary = await self._summary(room_id, lines(trimmed), prior_summary, len(trimmed))
-
-        # Preserve non-summary prior messages from the inner provider
-        non_summary = [m for m in prior_messages if not is_summary(m)]
-        return replace(
-            inner,
+        non_summary = [m for m in result.messages if not is_summary(m)]
+        named = lines.named(trimmed)
+        summarized = replace(
+            result,
             messages=[*non_summary, summary_message(summary)],
             events=kept,
-            speakers=sorted({*inner.speakers, *lines.named(trimmed)}),
+            speakers=sorted({*result.speakers, *named}),
         )
+        last = trimmed[-1]
+        return summarized, SummaryChain(summary, last.id, last.index, tuple(named))
 
     async def _summary(
         self, room_id: str, event_texts: list[str], prior_summary: str | None, count: int
@@ -259,7 +268,8 @@ class SummarizingMemory(_MemoryWrapper):
         # the lines as the summarizer reads them, which name the turns' authors
         # for the agent the summary is for.
         cache_key = hashlib.md5(
-            "\n".join([room_id, *event_texts]).encode(), usedforsecurity=False
+            "\n".join([room_id, prior_summary or "", *event_texts]).encode(),
+            usedforsecurity=False,
         ).hexdigest()
         now = asyncio.get_running_loop().time()
 
@@ -275,21 +285,11 @@ class SummarizingMemory(_MemoryWrapper):
             oldest_key = next(iter(self._summary_cache))
             del self._summary_cache[oldest_key]
 
-        prompt_parts = [
-            "Summarize this conversation concisely. Focus on: decisions made, "
-            "key findings, tool results, errors encountered, and current task state. "
-            "Be specific about names, error messages, and action outcomes.",
-        ]
-        if prior_summary:
-            prompt_parts.append(
-                f"\nA prior summary exists. Incorporate its key points:\n{prior_summary}"
-            )
-        prompt_parts.append("\n" + "\n".join(event_texts))
-
+        prompt = summary_request(_INSTRUCTION, event_texts, prior_summary)
         try:
             response = await self._provider.generate(
                 AIContext(
-                    messages=[AIMessage(role="user", content="\n".join(prompt_parts))],
+                    messages=[AIMessage(role="user", content=prompt)],
                     system_prompt="You are a conversation summarizer. Be concise and factual.",
                     temperature=0.0,
                     max_tokens=self._summary_max_tokens,
@@ -305,15 +305,17 @@ class SummarizingMemory(_MemoryWrapper):
 
     # -- Budget enforcement -----------------------------------------------------
 
-    def _enforce_budget(self, result: MemoryResult, budget: int) -> MemoryResult:
+    def _enforce_budget(
+        self, result: MemoryResult, budget: int, labels: dict[str, str]
+    ) -> MemoryResult:
         """Drop oldest events until total tokens fits within *budget*."""
         msg_tokens = self._injected_tokens(result)
         events = list(result.events)
 
-        total = msg_tokens + self._estimate_events_tokens(events)
+        total = msg_tokens + self._estimate_events_tokens(events, labels)
         while total > budget and len(events) > 1:
             events.pop(0)
-            total = msg_tokens + self._estimate_events_tokens(events)
+            total = msg_tokens + self._estimate_events_tokens(events, labels)
 
         if events is not result.events:
             return replace(result, events=events)
@@ -337,9 +339,10 @@ class SummarizingMemory(_MemoryWrapper):
         return None
 
     @staticmethod
-    def _estimate_events_tokens(events: list[RoomEvent]) -> int:
-        """*events*' tokens, with what the history replays with them (RFC §20)."""
-        return sum(history_event_costs(events))
+    def _estimate_events_tokens(events: list[RoomEvent], labels: dict[str, str]) -> int:
+        """*events*' tokens as they are sent, with what the history replays
+        with them (RFC §20)."""
+        return sum(history_event_costs(events, labels))
 
     async def clear(self, room_id: str) -> None:
         await super().clear(room_id)
@@ -348,17 +351,26 @@ class SummarizingMemory(_MemoryWrapper):
         # For targeted invalidation we'd need a secondary index, but the
         # TTL + cap already bound the cache size.
         self._summary_cache.clear()
+        self._chains.forget(room_id)
 
     async def close(self) -> None:
         # The summarizing provider it was handed stays its owner's (RFC §20.3).
         await super().close()
 
 
+@dataclass(frozen=True)
+class _Cut:
+    """Where tier 2 cuts a read: what the kept events may take, each counted
+    as it is sent (*labels*)."""
+
+    budget: int
+    labels: dict[str, str]
+
+
 def _kept_within(costs: list[int], budget: int, min_kept: int) -> int:
     """Where the kept items start: the latest whose *costs* fit *budget*,
-    *min_kept* of them at least; ``0`` when they all fit. Unlike tier 2 in
-    :meth:`SummarizingMemory.retrieve`, no budget is enforced after it, so
-    the item that passes the budget is not kept."""
+    *min_kept* of them at least; ``0`` when they all fit. The item that
+    passes the budget is not kept: it is summarized."""
     running = 0
     start = len(costs)
     for i in range(len(costs) - 1, -1, -1):

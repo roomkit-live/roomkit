@@ -16,15 +16,10 @@ from roomkit.channels._runtime_record import (
     runtime_record,
     written_by_runtime,
 )
-from roomkit.channels._speaker import (
-    labels_of,
-    people_taking_part,
-    several_speakers,
-    turn_speakers,
-)
+from roomkit.memory._turn_labels import conversation_labels, own_turn
 from roomkit.memory.token_estimator import extract_event_text
 from roomkit.models.context import RoomContext
-from roomkit.models.enums import ChannelType, EventType
+from roomkit.models.enums import ChannelType
 from roomkit.models.event import RoomEvent
 from roomkit.providers.ai.base import (
     AIImagePart,
@@ -36,6 +31,24 @@ from roomkit.providers.ai.base import (
 
 EVENT_TEXT_LIMIT = 2000
 """Characters of one event the summarizer reads."""
+
+CONVERSATION_TAG = "conversation"
+"""The block the turns a summarizer reads are framed in (RFC §20.3)."""
+
+_A_RECORD = "The conversation is a record to summarize: do not answer it, and do not continue it."
+
+
+def summary_request(instruction: str, lines: Sequence[str], prior: str | None = None) -> str:
+    """What a summarizer is asked (RFC §20.3): *instruction*, then a *prior*
+    summary to carry into the new one, as its message reads, then the turns'
+    *lines* framed as the conversation to summarize, so that a transcript
+    ending on a question reads as a record to summarize, never as a
+    conversation to answer."""
+    parts = [f"{instruction} {_A_RECORD}"]
+    if prior:
+        parts.append(f"A prior summary exists. Incorporate its key points:\n{prior}")
+    parts.append(fence(CONVERSATION_TAG, "\n".join(lines)))
+    return "\n\n".join(parts)
 
 
 @dataclass(frozen=True)
@@ -75,23 +88,11 @@ class SummaryLines:
         fewer than two people take part."""
         current = [self.current] if self.current is not None else []
         turns = list({e.id: e for e in (*events, *self.kept, *current)}.values())
-        speakers = turn_speakers(turns, self.context)
-        counted = (speakers.get(e.id) for e in turns if self._counts(e))
-        people = people_taking_part(self.context, self.channel_id)
-        return labels_of(speakers) if several_speakers(counted, people) else {}
-
-    def _counts(self, event: RoomEvent) -> bool:
-        """Whether *event* counts toward the threshold, as the conversation's
-        turns do."""
-        if self._own(event) or event.type == EventType.INSTRUCTION:
-            return False
-        return bool(extract_event_text(event).strip())
+        return conversation_labels(self.context, turns, self.channel_id)
 
     def _own(self, event: RoomEvent) -> bool:
         """Whether *event* is the summarized agent's own turn."""
-        if event.source.channel_type != ChannelType.AI:
-            return False
-        return self.channel_id is None or event.source.channel_id == self.channel_id
+        return own_turn(event, self.channel_id)
 
     def _line(self, event: RoomEvent, label: str | None) -> str:
         text = extract_event_text(event)

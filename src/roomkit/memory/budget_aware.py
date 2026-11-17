@@ -6,6 +6,7 @@ import logging
 from dataclasses import replace
 
 from roomkit.memory._turn_budget import history_event_costs, turn_history_budget
+from roomkit.memory._turn_labels import labels_sent
 from roomkit.memory._wrapper import _MemoryWrapper
 from roomkit.memory.base import MemoryProvider, MemoryResult, _without_current_event
 from roomkit.memory.token_estimator import estimate_event_tokens
@@ -79,23 +80,29 @@ class BudgetAwareMemory(_MemoryWrapper):
             room_id, current_event, context, channel_id=channel_id
         )
         inner_result = _without_current_event(inner_result, current_event)
+        # Each turn counted as it is sent, with its label where the
+        # conversation labels it (RFC §20.3).
+        labels = labels_sent(context, inner_result.events, current_event, channel_id)
         budget = turn_history_budget(
             max_context_tokens=self._max_context_tokens,
             safety_margin_ratio=self._safety_margin_ratio,
             current_event=current_event,
             reserved_tokens=self._reserved_tokens,
             carried=inner_result,
+            labels=labels,
         )
-        trimmed_events = self._trim_events_to_budget(inner_result.events, budget)
+        trimmed_events = self._trim_events_to_budget(inner_result.events, budget, labels)
         return replace(inner_result, events=trimmed_events)
 
-    def _trim_events_to_budget(self, events: list[RoomEvent], budget: int) -> list[RoomEvent]:
+    def _trim_events_to_budget(
+        self, events: list[RoomEvent], budget: int, labels: dict[str, str] | None = None
+    ) -> list[RoomEvent]:
         if not events:
             return events
 
         # Each event with what the history replays with it: a turn is kept or
         # cut whole, its rounds of tool calls with it (RFC §20).
-        event_costs = history_event_costs(events)
+        event_costs = history_event_costs(events, labels)
 
         # Keep from most recent, working backward
         total = 0

@@ -8,8 +8,9 @@ import logging
 from collections import OrderedDict
 from dataclasses import replace
 
-from roomkit.memory._summary import SummaryLines, summary_message
+from roomkit.memory._summary import SummaryLines, summary_message, summary_request
 from roomkit.memory._turn_budget import history_event_costs, turn_history_budget
+from roomkit.memory._turn_labels import labels_sent
 from roomkit.memory._wrapper import _MemoryWrapper
 from roomkit.memory.base import MemoryProvider, MemoryResult, _without_current_event
 from roomkit.models.context import RoomContext
@@ -19,6 +20,12 @@ from roomkit.providers.ai.base import AIContext, AIMessage, AIProvider
 logger = logging.getLogger("roomkit.memory.compacting")
 
 _MAX_CACHE_ENTRIES = 200
+
+_INSTRUCTION = (
+    "Summarize this conversation concisely. Focus on: decisions made, "
+    "key findings, tool results, errors encountered, and current task state. "
+    "Be specific about file names, error messages, and action outcomes."
+)
 
 
 class CompactingMemory(_MemoryWrapper):
@@ -78,18 +85,22 @@ class CompactingMemory(_MemoryWrapper):
         # What the inner provider carries besides its events (its messages,
         # and the notes that ride the turn's input) is not compacted: it is
         # paid for first, with the rest of the turn.
+        events = inner_result.events
+        # Each turn counted as it is sent, with its label where the
+        # conversation labels it (RFC §20.3).
+        labels = labels_sent(context, events, current_event, channel_id)
         budget = turn_history_budget(
             max_context_tokens=self._max_context_tokens,
             safety_margin_ratio=self._safety_margin_ratio,
             current_event=current_event,
             carried=inner_result,
+            labels=labels,
         )
 
-        events = inner_result.events
         # An image costs what the provider bills for its pixels, never its
         # URL's or its base64's length (RMK-589); an event, what the history
         # replays with it too (RFC §20).
-        event_costs = history_event_costs(events)
+        event_costs = history_event_costs(events, labels)
         total_cost = sum(event_costs)
 
         if total_cost <= budget:
@@ -134,12 +145,7 @@ class CompactingMemory(_MemoryWrapper):
         # Generate summary
         event_texts = lines(events)
 
-        prompt = (
-            "Summarize this conversation concisely. Focus on: decisions made, "
-            "key findings, tool results, errors encountered, and current task state. "
-            "Be specific about file names, error messages, and action outcomes.\n\n"
-            + "\n".join(event_texts)
-        )
+        prompt = summary_request(_INSTRUCTION, event_texts)
 
         key = (room_id, channel_id)
         digest = hashlib.sha256(prompt.encode()).hexdigest()
