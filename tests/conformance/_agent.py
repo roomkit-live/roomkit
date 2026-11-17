@@ -77,6 +77,7 @@ from roomkit.tools import (
 from roomkit.tools.compose import compose_tool_handlers
 from roomkit.tools.human_input import HumanInputToolHandler
 from roomkit.tools.policy import ToolPolicy
+from tests.conformance._acp_handler import ScriptedExternalHandler
 from tests.conformance._continuation import continuation_options
 from tests.conformance._mcp import Connected, declared_tools, tool_handlers
 from tests.conformance._memory import Compacted, scripted_memory
@@ -715,6 +716,7 @@ def scripted_agent(
     script_executors: dict[str, Any] | None = None,
     mcp: Connected = (),
     continuation_calls: dict[str, list[str]] | None = None,
+    external_handlers: dict[str, ScriptedExternalHandler] | None = None,
 ) -> tuple[AIChannel, dict[str, ScriptedModel]]:
     """The AI channel of a scripted agent, and its models by the name
     ``expect.models`` gives them: its own under its id, its memory's
@@ -732,6 +734,7 @@ def scripted_agent(
     models = {spec["id"]: model}
     tools = spec.get("tools", [])
     kwargs = continuation_options(spec, continuation_calls)
+    kwargs.update(_external_handler_options(spec, external_handlers))
     if "tool_policy" in spec:
         kwargs["tool_policy"] = _tool_policy(spec["tool_policy"])
     if "max_tool_rounds" in spec:
@@ -995,3 +998,15 @@ def tool_call_record(payload: ToolCallEvent) -> dict[str, Any]:
 def patched_tool_call(payload: ToolCallEvent, patch: Mapping[str, Any]) -> ToolCallEvent:
     """A modify's ``event`` read as a patch on a tool hook's payload."""
     return dataclasses.replace(payload, **dict(patch))
+
+
+def _external_handler_options(
+    spec: Mapping[str, Any], handlers: dict[str, ScriptedExternalHandler] | None
+) -> dict[str, Any]:
+    if "external_tool_handler" not in spec:
+        return {}
+    if handlers is None:
+        raise ValueError("external_tool_handler: an observation sink is required")
+    handler = ScriptedExternalHandler(spec["external_tool_handler"])
+    handlers[spec["id"]] = handler
+    return {"external_tool_handler": handler}

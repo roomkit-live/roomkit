@@ -250,6 +250,7 @@ class Harness:
         self.ai_routers: dict[str, ScriptedAIRouter] = {}
         self.acp_agents: dict[str, ScriptedACPAgent] = {}
         self.acp_handlers: dict[str, ScriptedExternalHandler] = {}
+        self.external_handlers: dict[str, ScriptedExternalHandler] = {}
         self.acp_mcp: dict[str, ScriptedMCPServers] = {}
         self.acp_context: dict[str, ScriptedContextContributor] = {}
         self.acp_transports: dict[str, ScriptedACPTransport] = {}
@@ -970,6 +971,7 @@ class Harness:
         self.observed.acp_prompts = {
             channel_id: list(agent.attempts) for channel_id, agent in self.acp_agents.items()
         }
+        self._collect_external_handlers()
         self._collect_acp_permissions()
         self._collect_acp_mcp()
         self._collect_acp_context()
@@ -979,6 +981,14 @@ class Harness:
         tools, sessions, problems = self.auditors.observe()
         self.observed.tool_audit, self.observed.session_audit = tools, sessions
         self._problems.extend(problems)
+
+    def _collect_external_handlers(self) -> None:
+        self.observed.external_handlers = {
+            channel_id: list(handler.calls)
+            for channel_id, handler in self.external_handlers.items()
+        }
+        for handler in self.external_handlers.values():
+            self._problems.extend(handler.problems)
 
     def _collect_acp_permissions(self) -> None:
         self.observed.acp_handlers = {

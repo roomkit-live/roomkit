@@ -145,6 +145,7 @@ CHANNEL = {
     "max_tool_rounds",
     "max_empty_retries",
     "continuation",
+    "external_tool_handler",
     "max_context_events",
     "tool_timeout_ms",
     "tool_timeouts_ms",
@@ -447,6 +448,7 @@ EXPECT = {
     "executors",
     "script_executors",
     "continuations",
+    "external_handlers",
 }
 NEW_ROOM = {"id", "organization_id", "metadata", "timers"}
 
@@ -832,6 +834,10 @@ def _channel(channel: Mapping[str, Any], path: str, found: list[str]) -> None:
         _memory(channel["memory"], f"{path}.memory", found)
     _channel_settings(channel, path, found)
     found.extend(continuation_problems(channel, path))
+    if "external_tool_handler" in channel:
+        found.extend(
+            handler_problems(channel["external_tool_handler"], f"{path}.external_tool_handler")
+        )
 
 
 def _tool_policy(policy: Any, path: str, found: list[str]) -> None:

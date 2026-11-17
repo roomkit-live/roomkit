@@ -144,6 +144,7 @@ class _Comparison:
             self._check(expected, actual, f"ai_routes.{channel_id}")
         self.acp()
         self.continuations()
+        self.external_handlers()
         for executor_id, expected in self.expect.get("executors", {}).items():
             actual = self.observed.executors.get(executor_id, [])
             self._check(expected, actual, f"executors.{executor_id}")
@@ -153,6 +154,11 @@ class _Comparison:
         for kind in ("tool_audit", "session_audit"):
             if kind in self.expect:
                 self._check(self.expect[kind], getattr(self.observed, kind), kind)
+
+    def external_handlers(self) -> None:
+        for channel_id, expected in self.expect.get("external_handlers", {}).items():
+            actual = self.observed.external_handlers.get(channel_id, MISSING)
+            self._check(expected, actual, f"external_handlers.{channel_id}")
 
     def continuations(self) -> None:
         for channel_id, expected in self.expect.get("continuations", {}).items():

@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 
 from tests.conformance._acp_handler import ScriptedExternalHandler, handler_problems
+from tests.conformance._shape import unknown_members
 
 
 @pytest.mark.parametrize(
@@ -27,6 +28,10 @@ from tests.conformance._acp_handler import ScriptedExternalHandler, handler_prob
 )
 def test_handler_fixture_rejects_malformed_controls(spec: Any) -> None:
     assert handler_problems(spec, "handler")
+    scenario = {
+        "setup": {"channels": [{"id": "agent", "type": "ai", "external_tool_handler": spec}]}
+    }
+    assert any("external_tool_handler" in problem for problem in unknown_members(scenario))
 
 
 async def test_handler_fixture_records_exhaustion_separately_from_a_decision_failure() -> None:

@@ -472,6 +472,7 @@ def scripted_channel(
                 harness.observed.script_executors,
                 harness.mcp.by_channel.get(channel["id"], ()),
                 continuation_calls=harness.observed.continuations,
+                external_handlers=harness.external_handlers,
             )
         )
         harness.models.update(models)
