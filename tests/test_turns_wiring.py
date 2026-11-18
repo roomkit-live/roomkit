@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from typing import Any
 
 import pytest
@@ -756,10 +758,11 @@ async def test_a_turn_runs_the_room_hooks_its_request_named_and_a_disable_holds(
     await kit.close()
 
 
-async def test_wiring_an_unregistered_agent_activates_its_generation_and_response_hooks() -> None:
-    """Calling a wired channel directly fires its executor's hooks without a turn host."""
-    from roomkit.turns.host import current_turn_host
-
+@asynccontextmanager
+async def _directly_wired(
+    agent: AIChannel,
+) -> AsyncIterator[tuple[TurnExecutor, Callable[[], Awaitable[None]]]]:
+    """Run this channel with the executor's actual wiring and without taking a turn."""
     kit = RoomKit()
     room = await kit.create_room(room_id="r1")
     binding = ChannelBinding(
@@ -776,30 +779,16 @@ async def test_wiring_an_unregistered_agent_activates_its_generation_and_respons
     )
     executor = TurnExecutor(lambda _: None)
     executor.use_wiring(kit.turn_executor.wiring.env)
-    seen: list[tuple[str, str]] = []
-    ended = asyncio.Event()
 
-    @executor.hook(HookTrigger.BEFORE_AI_GENERATION)
-    async def before(_: Any, fresh: RoomContext) -> HookResult:
-        assert current_turn_host() is None
-        seen.append(("before", fresh.room.id))
-        return HookResult.allow()
-
-    @executor.hook(HookTrigger.ON_AI_RESPONSE, execution=HookExecution.ASYNC)
-    async def after(_: Any, fresh: RoomContext) -> None:
-        assert current_turn_host() is None
-        seen.append(("after", fresh.room.id))
-        ended.set()
-
-    agent = _agent(calls=False)
-    try:
-        executor.wire(agent)
+    async def call() -> None:
         output = await agent.on_event(event, binding, context)
         if output.response_stream is not None:
             async for _ in output.response_stream:
                 pass
-        await asyncio.wait_for(ended.wait(), timeout=2)
-        assert seen == [("before", room.id), ("after", room.id)]
+
+    try:
+        executor.wire(agent)
+        yield executor, call
     finally:
         await agent.close()
         await executor.close()
@@ -852,3 +841,126 @@ async def test_an_ordinary_tool_on_a_directly_wired_agent_reports_its_refusal() 
         await executor.close()
         await kit.close()
     assert reports == [("c1", True)]
+
+
+async def test_wiring_an_unregistered_agent_activates_its_generation_and_response_hooks() -> None:
+    """Calling a wired channel directly fires its executor's hooks without a turn host."""
+    from roomkit.turns.host import current_turn_host
+
+    async with _directly_wired(_agent(calls=False)) as (executor, call):
+        seen: list[tuple[str, str]] = []
+        ended = asyncio.Event()
+
+        @executor.hook(HookTrigger.BEFORE_AI_GENERATION)
+        async def before(_: Any, fresh: RoomContext) -> HookResult:
+            assert current_turn_host() is None
+            seen.append(("before", fresh.room.id))
+            return HookResult.allow()
+
+        @executor.hook(HookTrigger.ON_AI_RESPONSE, execution=HookExecution.ASYNC)
+        async def after(_: Any, fresh: RoomContext) -> None:
+            assert current_turn_host() is None
+            seen.append(("after", fresh.room.id))
+            ended.set()
+
+        await call()
+        await asyncio.wait_for(ended.wait(), timeout=2)
+        assert seen == [("before", "r1"), ("after", "r1")]
+
+
+async def test_a_directly_wired_speaking_gate_silences_the_model_and_observes_its_thought() -> (
+    None
+):
+    from roomkit.speaking import AlwaysSpeak, MockThinker, Thought
+
+    provider = MockAIProvider()
+    agent = AIChannel(
+        "agent",
+        provider=provider,
+        speak_policy=AlwaysSpeak(),
+        thinker=MockThinker([Thought(text="listening")]),
+        think_wait=2,
+    )
+    seen: asyncio.Queue[str] = asyncio.Queue()
+    async with _directly_wired(agent) as (executor, call):
+
+        @executor.hook(HookTrigger.ON_SPEAK_DECISION, name="listening")
+        async def hold(event: Any, context: RoomContext) -> HookResult:
+            return HookResult.block("listen")
+
+        @executor.hook(HookTrigger.ON_SPEAK_DECISION, execution=HookExecution.ASYNC)
+        async def standing(event: Any, context: RoomContext) -> None:
+            assert context.room.id == "r1"
+            seen.put_nowait(event.decision.reason)
+
+        @executor.hook(HookTrigger.ON_THOUGHT, execution=HookExecution.ASYNC)
+        async def thought(event: Any, context: RoomContext) -> None:
+            assert context.room.id == "r1"
+            seen.put_nowait(event.thought.text)
+
+        await call()
+        assert provider.calls == []
+        assert sorted([await asyncio.wait_for(seen.get(), 2) for _ in range(2)]) == [
+            "blocked by listening",
+            "listening",
+        ]
+
+
+async def test_directly_wired_thinking_and_plan_updates_reach_the_executor() -> None:
+    tasks = [{"title": "write plan", "status": "pending"}]
+    provider = MockAIProvider(
+        streaming=True,
+        ai_responses=[
+            AIResponse(
+                content="",
+                thinking="take stock",
+                tool_calls=[AIToolCall(id="p1", name="plan_tasks", arguments={"tasks": tasks})],
+            ),
+            AIResponse(content="done"),
+        ],
+    )
+    agent = AIChannel("agent", provider=provider, enable_planning=True)
+    seen: asyncio.Queue[str] = asyncio.Queue()
+    async with _directly_wired(agent) as (executor, call):
+        published: asyncio.Queue[EphemeralEvent] = asyncio.Queue()
+        backend = executor.wiring.env.realtime()
+        assert backend is not None
+
+        async def record(event: EphemeralEvent) -> None:
+            published.put_nowait(event)
+
+        await backend.subscribe("room:r1", record)
+
+        @executor.hook(HookTrigger.ON_AI_THINKING, execution=HookExecution.ASYNC)
+        async def thinking(event: Any, context: RoomContext) -> None:
+            assert context.room.id == "r1"
+            seen.put_nowait(event.thinking)
+
+        @executor.hook(HookTrigger.ON_PLAN_UPDATED, execution=HookExecution.ASYNC)
+        async def planned(event: Any, context: RoomContext) -> None:
+            assert context.room.id == "r1"
+            seen.put_nowait(event.tasks[0]["title"])
+
+        await call()
+        assert len(provider.calls) == 2
+        assert sorted([await asyncio.wait_for(seen.get(), 2) for _ in range(2)]) == [
+            "take stock",
+            "write plan",
+        ]
+        expected = [
+            EphemeralEventType.THINKING_START,
+            EphemeralEventType.THINKING_DELTA,
+            EphemeralEventType.THINKING_END,
+            EphemeralEventType.CUSTOM,
+        ]
+        observed = []
+        while len(observed) < len(expected):
+            event = await asyncio.wait_for(published.get(), 2)
+            if event.type in expected:
+                assert event.room_created_at is not None
+                assert event.channel_id == "agent"
+                assert "thinking" not in event.data
+                if event.type == EphemeralEventType.CUSTOM:
+                    assert event.data["type"] == "plan_updated"
+                observed.append(event.type)
+        assert observed == expected
