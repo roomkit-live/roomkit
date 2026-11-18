@@ -90,6 +90,13 @@ UPDATE rooms SET metadata = metadata - $2::text WHERE id = $1 AND metadata ? $2:
 """
 """A key of a room's private state removed, with its metadata's copy."""
 
+# Read the index property itself. Quoted identifiers and predicates can contain
+# "UNIQUE" even on a non-unique index.
+_INDEX_UNIQUE = (
+    "SELECT indisunique FROM pg_catalog.pg_index "
+    "WHERE indexrelid = to_regclass(format('%I.%I', current_schema(), $1::text))"
+)
+
 # The definition of an index of the schema this session writes to: through
 # search_path, another deployment's namesake would be read for ours.
 _INDEX_DEF = (
@@ -781,8 +788,8 @@ class PostgresStore(ConversationStore):
             # Surface the degraded state in the app's logs: if the events index
             # could not be made UNIQUE (pre-existing duplicate (room_id, index)
             # rows), multi-process index safety is not enforced.
-            idxdef = await conn.fetchval(_INDEX_DEF, "idx_events_room_index")
-            if isinstance(idxdef, str) and "UNIQUE" not in idxdef:
+            unique = await conn.fetchval(_INDEX_UNIQUE, "idx_events_room_index")
+            if unique is False:
                 logger.warning(
                     "idx_events_room_index is not UNIQUE — duplicate (room_id, index) "
                     "rows exist, so multi-process event-index safety is NOT enforced. "
@@ -842,8 +849,7 @@ class PostgresStore(ConversationStore):
 
     @staticmethod
     async def _events_index_is_unique(conn: Any) -> bool:
-        idxdef = await conn.fetchval(_INDEX_DEF, "idx_events_room_index")
-        return isinstance(idxdef, str) and "UNIQUE" in idxdef
+        return await conn.fetchval(_INDEX_UNIQUE, "idx_events_room_index") is True
 
     async def dedupe_event_indices(self, *, dry_run: bool = True) -> dict[str, Any]:
         """Repair duplicate event indices, then enforce UNIQUE(room_id, index).

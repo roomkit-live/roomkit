@@ -125,10 +125,11 @@ SCHEMA = "".join(
 DO $$
 BEGIN
     IF EXISTS (
-        SELECT 1 FROM pg_indexes
-        WHERE schemaname = current_schema()
-        AND indexname = 'idx_participants_channel'
-        AND indexdef LIKE '%UNIQUE%'
+        SELECT 1 FROM pg_catalog.pg_index
+        WHERE indexrelid = to_regclass(
+            format('%I.%I', current_schema(), 'idx_participants_channel')
+        )
+        AND indisunique
     ) THEN
         EXECUTE format('DROP INDEX %I.%I', current_schema(), 'idx_participants_channel');
         EXECUTE format(
@@ -149,10 +150,11 @@ END $$;
 DO $$
 BEGIN
     IF EXISTS (
-        SELECT 1 FROM pg_indexes
-        WHERE schemaname = current_schema()
-        AND indexname = 'idx_events_room_index'
-        AND indexdef NOT LIKE '%UNIQUE%'
+        SELECT 1 FROM pg_catalog.pg_index
+        WHERE indexrelid = to_regclass(
+            format('%I.%I', current_schema(), 'idx_events_room_index')
+        )
+        AND NOT indisunique
     ) THEN
         BEGIN
             EXECUTE format('DROP INDEX %I.%I', current_schema(), 'idx_events_room_index');

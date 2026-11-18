@@ -3171,6 +3171,47 @@ async def second_schema(store) -> Any:
             await conn.execute(f'DROP SCHEMA "{tenant}" CASCADE')
 
 
+@pytest.mark.parametrize("table", ["participants", "events"])
+async def test_init_never_locks_another_schemas_index_table(
+    store, second_schema, table: str
+) -> None:
+    """Inspecting uniqueness in an empty schema must not open a namesake's table."""
+    import asyncpg
+
+    from roomkit.store.postgres import PostgresStore
+
+    _, tenant, _ = second_schema
+    pool = await asyncpg.create_pool(
+        POSTGRES_DSN,
+        min_size=1,
+        max_size=1,
+        server_settings={"search_path": tenant, "lock_timeout": "500ms"},
+    )
+    try:
+        async with store._pool.acquire() as conn, conn.transaction():
+            await conn.execute(f"LOCK TABLE {table} IN ACCESS EXCLUSIVE MODE")
+            await PostgresStore(pool=pool).init()
+    finally:
+        await pool.close()
+
+
+async def test_index_uniqueness_ignores_unique_in_the_predicate(second_schema) -> None:
+    from roomkit.store.postgres import PostgresStore
+
+    _, _, pool = second_schema
+    store = PostgresStore(pool=pool)
+    await store.init()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "DROP INDEX idx_events_room_index;"
+            "CREATE INDEX idx_events_room_index ON events(room_id, index) "
+            "WHERE room_id <> 'UNIQUE'"
+        )
+    assert (await store.dedupe_event_indices())["now_unique"] is False
+    await store.init()
+    assert (await store.dedupe_event_indices())["now_unique"] is True
+
+
 async def test_init_in_a_second_schema_keeps_each_schema_its_own_indexes(
     store, second_schema, caplog: pytest.LogCaptureFixture
 ) -> None:
