@@ -28,6 +28,7 @@ from roomkit import (
     RoomKit,
     TaskCutShortError,
     TaskTurnFailedError,
+    TurnCutShortError,
 )
 from roomkit.channels.agent import Agent
 from roomkit.core._failure_log import log_failure
@@ -230,6 +231,42 @@ async def test_a_result_submitted_before_the_failure_still_counts() -> None:
     assert result.status == "completed"
     assert json.loads(result.output)["summary"] == "found it"
     await kit.close()
+
+
+@pytest.mark.parametrize("submit", [False, True], ids=["no-submission", "submitted"])
+async def test_a_base_turn_cut_keeps_only_a_previously_submitted_result(submit: bool) -> None:
+    class CutAfterRound(_SubmitsThroughTheGatewayThenFails):
+        async def generate(self, context: AIContext) -> AIResponse:
+            if not self.calls and submit:
+                return await super().generate(context)
+            self.calls.append(context)
+            if len(self.calls) == 1:
+                return LOOPING
+            raise TurnCutShortError("app cut", "operator")
+
+    provider = CutAfterRound(streaming=True)
+    gateway = AITool(name=GATEWAY_SUBMIT, description="Submit.", parameters={"type": "object"})
+    async with RoomKit() as kit:
+        kit.register_channel(
+            Agent(
+                "worker",
+                provider=provider,
+                tools=[gateway, LOOKUP],
+                tool_handler=_received,
+                tool_search=False,
+            )
+        )
+        await kit.create_room(room_id="p")
+        result, _ = await _delegate(kit, "worker", require_structured_result=True)
+        assert len(provider.calls) == 2
+        if submit:
+            assert result.status == "completed"
+            assert json.loads(result.output)["summary"] == "found it"
+        else:
+            assert result.status == "failed"
+            assert isinstance(result.exception, TurnCutShortError)
+            assert result.exception.reason == "operator"
+            assert result.output is None and result.error == "app cut"
 
 
 class _FailsBeforeAnyEnd(AILikeChannel):

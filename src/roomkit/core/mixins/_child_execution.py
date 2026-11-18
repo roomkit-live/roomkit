@@ -761,7 +761,7 @@ async def _owed_result(
     submitted before, and fails the task without one (RFC §23.3)."""
     try:
         text = await _broadcast_and_collect(kit, child_room_id, message, turns=turns)
-    except (TaskCutShortError, TaskTurnFailedError):
+    except (TurnCutShortError, TaskTurnFailedError):
         submitted = await _scan_for_submitted_result(kit, child_room_id, worker_id, tool)
         if submitted is None:
             raise
