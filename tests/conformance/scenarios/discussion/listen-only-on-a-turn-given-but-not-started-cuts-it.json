@@ -3,15 +3,42 @@
   "id": "discussion/listen-only-on-a-turn-given-but-not-started-cuts-it",
   "title": "listen_only on an agent whose turn was given and has not started cuts it before it runs: the agent says nothing",
   "rules": [
-    "§19.7.5 rule 12"
+    "§19.7.5 rule 12",
+    "§10.2"
   ],
-  "notes": "Python: test_discussion_edges.py test_listen_only_on_a_turn_given_but_not_started_cuts_it. The hook's second call is the turn given; a Cancel reaches no loop yet, so the turn is abandoned (_driver.py cut).",
+  "notes": "The transport holds the room's delivery lane while the strategy gives agent a its turn. The queue identifies the speaking agent before the transport calls listen_only from the preceding delivery. The agent's model receives no call.",
   "setup": {
     "channels": [
       {
         "id": "ops",
         "type": "websocket",
         "category": "transport"
+      },
+      {
+        "id": "observer",
+        "type": "websocket",
+        "category": "transport",
+        "deliver": [
+          {
+            "when": {
+              "text": "@a go"
+            },
+            "gate": "hold-delivery",
+            "do": [
+              {
+                "call": "listen_only",
+                "room_id": "r1",
+                "channel_ids": [
+                  "a"
+                ],
+                "as": "held",
+                "expect": {
+                  "result": null
+                }
+              }
+            ]
+          }
+        ]
       },
       {
         "id": "a",
@@ -31,6 +58,9 @@
         "bindings": [
           {
             "channel_id": "ops"
+          },
+          {
+            "channel_id": "observer"
           }
         ]
       }
@@ -47,22 +77,13 @@
     ],
     "hooks": [
       {
-        "name": "hold",
+        "name": "given",
         "trigger": "on_speak_queue",
         "execution": "async",
         "reactions": [
           {},
           {
-            "do": [
-              {
-                "call": "listen_only",
-                "room_id": "r1",
-                "channel_ids": [
-                  "a"
-                ],
-                "as": "held"
-              }
-            ]
+            "gate": "turn-given"
           }
         ]
       }
@@ -85,6 +106,33 @@
           "body": "@a go"
         }
       },
+      "background": true,
+      "as": "inbound"
+    },
+    {
+      "wait_for": "hold-delivery"
+    },
+    {
+      "wait_for": "turn-given"
+    },
+    {
+      "call": "speak_queue",
+      "room_id": "r1",
+      "expect": {
+        "result": {
+          "speaking": "a",
+          "listening": []
+        }
+      }
+    },
+    {
+      "open": "hold-delivery"
+    },
+    {
+      "open": "turn-given"
+    },
+    {
+      "await": "inbound",
       "expect": {
         "result": {
           "blocked": false,
@@ -125,6 +173,9 @@
       "r1": {
         "ops": []
       }
+    },
+    "models": {
+      "a": []
     }
   }
 }
