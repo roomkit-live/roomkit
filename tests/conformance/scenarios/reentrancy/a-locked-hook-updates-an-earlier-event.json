@@ -7,6 +7,10 @@
     "§10.3 A direct change from the room's work",
     "§13.5"
   ],
+  "requirements": [
+    "RK-10.3-054",
+    "RK-10.3-055"
+  ],
   "reentrancy": [
     "change@locked"
   ],

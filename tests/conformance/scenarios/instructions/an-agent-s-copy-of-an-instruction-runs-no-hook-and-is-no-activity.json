@@ -7,6 +7,10 @@
     "§10.5",
     "§5.1"
   ],
+  "requirements": [
+    "RK-10.5-047",
+    "RK-10.5-048"
+  ],
   "notes": "Python: core/mixins/_streaming_segments.py instruction_read writes the row through commit_event. Written as the turn's other rows, BEFORE_BROADCAST read and could rewrite it, and it moved last_activity_at, which an instruction never does (RFC §10.1.1 step 5; HITL 4ffcc5e0, RMK-1407). The instruction itself passes the room's hooks as any instruction.",
   "setup": {
     "channels": [

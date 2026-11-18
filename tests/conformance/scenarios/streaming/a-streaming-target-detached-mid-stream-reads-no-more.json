@@ -7,6 +7,9 @@
     "§10.2",
     "§12.2 step 14s"
   ],
+  "requirements": [
+    "RK-10.2-009"
+  ],
   "notes": "A tool-call hook detaches ws, the streaming target, while the agent streams to it. At each row the room is read again for the target: once it is no longer bound, it is handed nothing more of the stream, neither text nor rows, and the rows after the change are delivered as their plans say, to web.",
   "setup": {
     "channels": [

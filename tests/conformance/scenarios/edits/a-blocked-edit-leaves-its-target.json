@@ -7,6 +7,10 @@
     "§10.1 step 12",
     "§10.3 Mutation triggers"
   ],
+  "requirements": [
+    "RK-10.3-028",
+    "RK-10.3-046"
+  ],
   "setup": {
     "channels": [
       {

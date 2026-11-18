@@ -6,6 +6,9 @@
     "§20.3",
     "§10.3"
   ],
+  "requirements": [
+    "RK-10.3-029"
+  ],
   "notes": "As a-summary-ends-once-a-turn-it-covers-is-deleted, Python's SummarizingMemory over an 11-event window: at the fourth question Question 1 to Answer 2 are summarized (Summary 1). Alice then edits Question 1 (an inbound edit, from its sender). The turn no longer says what the summary read, so at the fifth question the summary no longer stands: the summarizer reads the window again, Question 1 as corrected, with no prior summary (Summary 2).",
   "setup": {
     "channels": [

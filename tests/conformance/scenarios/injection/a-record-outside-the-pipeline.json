@@ -6,6 +6,12 @@
     "§10.5 A record outside the pipeline",
     "§5.1"
   ],
+  "requirements": [
+    "RK-10.5-042",
+    "RK-10.5-047",
+    "RK-10.5-048",
+    "RK-10.5-049"
+  ],
   "reentrancy": [
     "commit@outside"
   ],

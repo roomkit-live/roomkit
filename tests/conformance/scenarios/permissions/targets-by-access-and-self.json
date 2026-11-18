@@ -8,6 +8,9 @@
     "§10.2 step 2",
     "§10.2 step 4"
   ],
+  "requirements": [
+    "RK-10.2-003"
+  ],
   "setup": {
     "channels": [
       {

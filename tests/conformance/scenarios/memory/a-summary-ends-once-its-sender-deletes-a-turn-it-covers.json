@@ -6,6 +6,9 @@
     "§20.3",
     "§10.3"
   ],
+  "requirements": [
+    "RK-10.3-039"
+  ],
   "notes": "As a-summary-ends-once-a-turn-it-covers-is-deleted, with a soft delete: Alice deletes Question 1 (an inbound delete, from its sender). The channel's history holds the turn with its content withheld (RFC §10.3), so it no longer says what the summary read: at the fifth question the summarizer reads the window again, the deleted turn an empty line, with no prior summary (Summary 2), and nothing of what Question 1 said.",
   "setup": {
     "channels": [

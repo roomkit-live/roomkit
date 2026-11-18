@@ -7,6 +7,13 @@
     "§10.1 step 8a",
     "§10.3 Validation rule 7"
   ],
+  "requirements": [
+    "RK-10.3-009",
+    "RK-10.3-016",
+    "RK-10.3-022",
+    "RK-10.3-023",
+    "RK-10.3-046"
+  ],
   "setup": {
     "channels": [
       {

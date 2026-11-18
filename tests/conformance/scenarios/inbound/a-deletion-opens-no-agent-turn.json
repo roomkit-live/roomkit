@@ -6,6 +6,10 @@
     "§10.3",
     "§6.4"
   ],
+  "requirements": [
+    "RK-10.3-067",
+    "RK-10.3-070"
+  ],
   "notes": "An edit or a delete is no message a turn may answer (RFC §10.3; Python's withdrawn()). The agent answers the next message, its history without the message deleted. Python answered the DELETE's notice ('[Message deleted]') until RMK-1226, the maintainer's choice.",
   "setup": {
     "channels": [

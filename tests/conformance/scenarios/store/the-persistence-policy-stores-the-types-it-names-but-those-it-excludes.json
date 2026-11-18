@@ -7,6 +7,9 @@
     "§8.1",
     "§10.2"
   ],
+  "requirements": [
+    "RK-10.2-010"
+  ],
   "notes": "Python: tests/test_latest_index.py::TestAnEmptyRoom::test_delivers_its_first_stored_message_after_an_unstored_event and test_takes_its_first_event_s_index_as_latest; tests/test_store_activity.py::TestPersistencePolicy::test_exclude_overrides_persist (models/store_filter.py PersistencePolicy.should_persist: excluded first, then the types named). The channels' lifecycle records are not stored either: the policy names no lifecycle type.",
   "setup": {
     "kit": {

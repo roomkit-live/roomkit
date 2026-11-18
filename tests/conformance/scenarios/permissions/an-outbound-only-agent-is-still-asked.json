@@ -6,6 +6,9 @@
     "§4.2",
     "§10.2 step 3d"
   ],
+  "requirements": [
+    "RK-10.2-003"
+  ],
   "notes": "Python: tests/test_visibility_rules.py::TestDirection::test_direction_does_not_filter_an_agent. A binding's direction says whether a transport is delivered to (§10.2 step 3d); an intelligence channel is asked whatever its binding's direction.",
   "setup": {
     "channels": [

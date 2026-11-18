@@ -10,6 +10,10 @@
     "§7.5 rule 3",
     "§7.5 rule 5"
   ],
+  "requirements": [
+    "RK-10.5-005",
+    "RK-10.5-017"
+  ],
   "notes": "Python: tests/test_rfc_conformance.py::TestSourceWritePermission::test_non_writable_source_event_blocked; tests/test_conformance_level0.py::TestPermissionEnforcement::test_non_writable_source_is_blocked; tests/test_router.py::TestAccessFiltering, TestMuteBlocking, TestSideEffects, TestOnEventVsDeliver. Every access is crossed with both mute values; the source reaction is a sentinel for a forbidden self-read. This scenario does not cover response reentry, streaming changes or visibility.",
   "setup": {
     "channels": [

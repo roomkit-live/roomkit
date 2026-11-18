@@ -6,6 +6,9 @@
     "§10.5",
     "§5.12"
   ],
+  "requirements": [
+    "RK-10.5-014"
+  ],
   "notes": "Python: tests/test_response_visibility.py::TestResponseVisibilityOnSendEvent::test_send_event_default_response_visibility. Each list expectation is exact; object expectations select the stated contract fields.",
   "setup": {
     "channels": [

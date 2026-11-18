@@ -6,6 +6,9 @@
     "§5.1",
     "§10.5 A record outside the pipeline"
   ],
+  "requirements": [
+    "RK-10.5-045"
+  ],
   "setup": {
     "channels": [
       {

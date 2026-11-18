@@ -8,6 +8,9 @@
     "§14.3",
     "§5.1"
   ],
+  "requirements": [
+    "RK-10.3-051"
+  ],
   "notes": "The deleted event leaves the timeline, so its id reads $e1.",
   "setup": {
     "channels": [

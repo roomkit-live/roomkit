@@ -6,6 +6,10 @@
     "§10.5",
     "§10.2 An unregistered channel"
   ],
+  "requirements": [
+    "RK-10.2-015",
+    "RK-10.5-010"
+  ],
   "notes": "Unregistering a channel leaves its bindings in their rooms (§10.2); the injection names a channel that is not registered, which §10.5 refuses.",
   "setup": {
     "channels": [

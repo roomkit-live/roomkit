@@ -7,6 +7,9 @@
     "§9.5.1 Reentrance",
     "§13.4"
   ],
+  "requirements": [
+    "RK-10.5-009"
+  ],
   "reentrancy": [
     "inject@locked"
   ],

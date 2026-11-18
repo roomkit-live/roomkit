@@ -5,6 +5,12 @@
   "rules": [
     "§10.5 The host's own voice"
   ],
+  "requirements": [
+    "RK-10.5-011",
+    "RK-10.5-027",
+    "RK-10.5-028",
+    "RK-10.5-036"
+  ],
   "setup": {
     "channels": [
       {

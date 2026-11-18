@@ -6,6 +6,10 @@
     "§8.3",
     "§9.5.1"
   ],
+  "requirements": [
+    "RK-10.5-007",
+    "RK-10.5-009"
+  ],
   "notes": "Python: tests/test_reentrance.py::TestAnInjectionMadeFromTheRoomsOwnWork::test_a_hook_that_injects_on_every_event_stops_at_the_cap. This invokes the public send_event entry point, not HookResult injections. Twenty scripted calls bound a broken loop above the expected ten passes.",
   "setup": {
     "kit": {

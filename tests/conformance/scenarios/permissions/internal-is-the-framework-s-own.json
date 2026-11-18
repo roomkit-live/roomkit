@@ -5,6 +5,9 @@
   "rules": [
     "§7.3 Who writes `internal`"
   ],
+  "requirements": [
+    "RK-10.5-010"
+  ],
   "setup": {
     "channels": [
       {

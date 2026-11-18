@@ -7,6 +7,10 @@
     "§10.1 step 8a",
     "§10.3"
   ],
+  "requirements": [
+    "RK-10.3-012",
+    "RK-10.3-022"
+  ],
   "notes": "One process. `Hello` is stored at index 0. The `eraser` hook, run on an edit of `Hello`, deletes `Hello` and allows the edit with the task `Edited` and an observation. Read again after the hook, the target is gone: the edit is refused `target_event_not_found`, and neither the task nor the observation is stored; ON_TASK_CREATED does not fire. Python: core/mixins/inbound_locked.py `_gate_commit` returns `_Refused(change.refusal)` before any side effect is kept.",
   "setup": {
     "channels": [

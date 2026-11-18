@@ -6,6 +6,12 @@
     "§10.5",
     "§10.3 Validation rule 7"
   ],
+  "requirements": [
+    "RK-10.3-010",
+    "RK-10.3-022",
+    "RK-10.3-023",
+    "RK-10.5-016"
+  ],
   "setup": {
     "channels": [
       {

@@ -8,6 +8,10 @@
     "§10.1 step 16",
     "§9.5.1 The room's work outside the lock"
   ],
+  "requirements": [
+    "RK-10.5-008",
+    "RK-10.5-009"
+  ],
   "notes": "A call from an ASYNC hook's body draws one of the cascade's 10 x max_chain_depth hook calls and is one deeper than the hook's event.",
   "setup": {
     "channels": [

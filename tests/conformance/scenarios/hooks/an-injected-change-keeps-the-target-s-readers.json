@@ -5,6 +5,11 @@
   "rules": [
     "§9.4 Injected events"
   ],
+  "requirements": [
+    "RK-10.3-032",
+    "RK-10.3-035",
+    "RK-10.3-036"
+  ],
   "setup": {
     "channels": [
       {

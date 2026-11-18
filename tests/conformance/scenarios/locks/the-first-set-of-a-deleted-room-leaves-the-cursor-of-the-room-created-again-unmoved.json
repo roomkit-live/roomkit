@@ -7,6 +7,9 @@
     "§10.2",
     "§5.1"
   ],
+  "requirements": [
+    "RK-10.2-010"
+  ],
   "notes": "One process. `one`, the room's first message, is held at `held` in its delivery; `two` is committed behind it. The room is then deleted and created again under the same id, its bindings attached again. The new room's cursor stands where the deleted room's stood before `one`: a cursor write the deleted room's set made would succeed there. Once `one` is let go, `one` and `two` are delivered and write nothing: the new room's messages, sent once `two` is over, are each delivered, none read as delivered or skipped. Indexes are read without lifecycle records. The gap timeout is the implementation's default, far above the run: nothing is skipped.",
   "setup": {
     "channels": [

@@ -8,6 +8,10 @@
     "§9.5.1 Past the cap",
     "§10.5"
   ],
+  "requirements": [
+    "RK-10.5-008",
+    "RK-10.5-009"
+  ],
   "reentrancy": [
     "inject@cascade"
   ],

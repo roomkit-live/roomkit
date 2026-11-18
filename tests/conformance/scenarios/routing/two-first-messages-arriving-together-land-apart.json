@@ -1,0 +1,198 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "routing/two-first-messages-arriving-together-land-apart",
+  "title": "Two first messages routed together to a free room land apart: the first to take the room's lock is recorded there, the other is routed again and opens a room of its own",
+  "rules": [
+    "§10.1 step 2",
+    "§10.4"
+  ],
+  "requirements": [
+    "RK-10.4-022",
+    "RK-10.4-024",
+    "RK-10.4-039",
+    "RK-10.4-040",
+    "RK-10.4-042",
+    "RK-10.4-064"
+  ],
+  "notes": "Python: tests/test_shared_channel_routing.py::TestARoomTheHostOpened::test_two_first_messages_arriving_together_land_apart. The host's message on the desk channel holds the free room's lock in its before_broadcast hook while Alice's and Bob's first messages are routed: the default router admits both off the lock, and both wait for it. Which of them takes the lock first is left open, so the room each lands in is compared by $as: two rooms, the one named on the free room's binding being the one whose message is stored there.",
+  "setup": {
+    "channels": [
+      {
+        "id": "sms",
+        "type": "sms",
+        "category": "transport",
+        "recipient_key": "phone_number",
+        "addresses": {}
+      },
+      {
+        "id": "desk",
+        "type": "websocket",
+        "category": "transport"
+      }
+    ],
+    "hooks": [
+      {
+        "name": "hold",
+        "trigger": "before_broadcast",
+        "reactions": [
+          {
+            "when": {
+              "text": "hold the room"
+            },
+            "gate": "held"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "create_room",
+      "room": {
+        "id": "free"
+      }
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "free",
+      "channel_id": "sms"
+    },
+    {
+      "call": "attach_channel",
+      "room_id": "free",
+      "channel_id": "desk"
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "free",
+      "message": {
+        "channel_id": "desk",
+        "sender_id": "host",
+        "content": {
+          "type": "text",
+          "body": "hold the room"
+        }
+      },
+      "background": true,
+      "as": "desk"
+    },
+    {
+      "wait_for": "held"
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000001",
+        "content": {
+          "type": "text",
+          "body": "alice: hi"
+        }
+      },
+      "background": true,
+      "as": "alice"
+    },
+    {
+      "call": "process_inbound",
+      "message": {
+        "channel_id": "sms",
+        "sender_id": "+15550000002",
+        "content": {
+          "type": "text",
+          "body": "bob: hi"
+        }
+      },
+      "background": true,
+      "as": "bob"
+    },
+    {
+      "wait_for_lock": "free",
+      "waiters": 2
+    },
+    {
+      "open": "held"
+    },
+    {
+      "await": "desk",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": "free"
+          }
+        }
+      }
+    },
+    {
+      "await": "alice",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": {
+              "$as": "alice-room"
+            }
+          }
+        }
+      }
+    },
+    {
+      "await": "bob",
+      "expect": {
+        "result": {
+          "blocked": false,
+          "event": {
+            "room_id": {
+              "$as": "bob-room"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": {
+    "bindings": {
+      "free": {
+        "sms": {
+          "participant_id": {
+            "$as": "recorded"
+          }
+        }
+      },
+      "$r1": {
+        "sms": {
+          "participant_id": {
+            "$as": "routed-again"
+          }
+        }
+      }
+    },
+    "timeline": {
+      "free": [
+        {
+          "content": {
+            "body": "hold the room"
+          }
+        },
+        {
+          "source": {
+            "channel_id": "sms",
+            "participant_id": {
+              "$as": "recorded"
+            }
+          }
+        }
+      ],
+      "$r1": [
+        {
+          "source": {
+            "channel_id": "sms",
+            "participant_id": {
+              "$as": "routed-again"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

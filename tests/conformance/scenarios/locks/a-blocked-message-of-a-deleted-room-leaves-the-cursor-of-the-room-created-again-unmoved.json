@@ -7,6 +7,9 @@
     "§10.2",
     "§5.1"
   ],
+  "requirements": [
+    "RK-10.2-010"
+  ],
   "notes": "One process. `held`, the room's first message, is held at `held` in its delivery; `blocked`, which a hook blocks, is stored `blocked` behind it: its index has no delivery set and waits for the cursor behind `held`'s. The room is then deleted and created again under the same id, its bindings attached again. Once `held` is let go, neither its index nor `blocked`'s is written to the new room's cursor. In the new room, a record committed outside the pipeline takes the first index and moves the cursor to it; once the kit is idle, `again 1` takes the next index and is delivered, read neither as delivered nor as skipped. Indexes are read without lifecycle records. The gap timeout is the implementation's default, far above the run: nothing is skipped.",
   "setup": {
     "channels": [

@@ -7,6 +7,10 @@
     "§10.3 Validation rule 3",
     "§10.3 Validation rule 4"
   ],
+  "requirements": [
+    "RK-10.3-014",
+    "RK-10.3-016"
+  ],
   "notes": "A channel that reads its own output back off its wire (an echo) parses it OUTBOUND. The direction stands: the event is the channel's own, whatever participant it names, so a sender's delete it carries holds no authorship of that participant's messages.",
   "setup": {
     "channels": [

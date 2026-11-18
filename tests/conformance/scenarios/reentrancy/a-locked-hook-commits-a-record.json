@@ -7,6 +7,9 @@
     "§10.5 A record outside the pipeline",
     "§10.1 step 9a"
   ],
+  "requirements": [
+    "RK-10.5-047"
+  ],
   "reentrancy": [
     "commit@locked"
   ],

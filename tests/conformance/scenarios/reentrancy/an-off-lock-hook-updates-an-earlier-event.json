@@ -6,6 +6,9 @@
     "§10.3 A direct change from the room's work",
     "§9.5.1"
   ],
+  "requirements": [
+    "RK-10.3-054"
+  ],
   "reentrancy": [
     "change@admitted"
   ],

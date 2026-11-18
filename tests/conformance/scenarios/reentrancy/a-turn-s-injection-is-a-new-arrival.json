@@ -8,6 +8,9 @@
     "§10.1 step 18",
     "§10.5"
   ],
+  "requirements": [
+    "RK-10.5-008"
+  ],
   "reentrancy": [
     "inject@cascade"
   ],

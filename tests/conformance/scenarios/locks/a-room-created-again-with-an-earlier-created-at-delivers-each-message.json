@@ -7,6 +7,9 @@
     "§10.2",
     "§5.1"
   ],
+  "requirements": [
+    "RK-10.2-010"
+  ],
   "notes": "One process. `zero` is delivered; `held` is held at `held` in its delivery while the room is deleted, then written again to the store under the same id with a `created_at` years before the deleted room's (a record restored, or a process whose clock runs behind), its bindings attached again. A record committed outside the pipeline and `again 1` are committed in the new room while `held` still runs. Once `held` is let go, it is delivered, then `again 1`, which the new room's cursor reaches: none of the new room's indexes is filed as the deleted room's. Indexes are read without lifecycle records. The gap timeout is the implementation's default, far above the run: nothing is skipped.",
   "setup": {
     "channels": [

@@ -6,6 +6,9 @@
     "§9.5.1 Reentrance",
     "§10.5"
   ],
+  "requirements": [
+    "RK-10.5-006"
+  ],
   "reentrancy": [
     "inject@admitted"
   ],

@@ -7,6 +7,9 @@
     "§10.2",
     "§6.1"
   ],
+  "requirements": [
+    "RK-10.2-012"
+  ],
   "notes": "The room is read for a context of the largest window its channels declare, 3 here, before the event is committed; the delivery set's context is that window with the committed event as its newest, so a reader declaring 3 is handed 4 events. The first deliveries' windows may hold the attaches' lifecycle records, which the expectation leaves out and does not count.",
   "setup": {
     "channels": [

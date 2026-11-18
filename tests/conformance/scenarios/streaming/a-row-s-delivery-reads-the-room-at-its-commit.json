@@ -7,6 +7,10 @@
     "§10.2",
     "§12.2 step 14s"
   ],
+  "requirements": [
+    "RK-10.2-012",
+    "RK-10.2-013"
+  ],
   "notes": "reader and the agent read a window of one event, and no hook is registered, so the room's context holds one event of its conversation (tool-call rows are no part of it) before the commit. Each row's delivery set reads the room at its commit: the latest message, then itself, not the stream's first window with every row since.",
   "setup": {
     "channels": [

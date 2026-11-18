@@ -7,6 +7,9 @@
     "§10.1.1 rule 7",
     "§10.5"
   ],
+  "requirements": [
+    "RK-10.5-010"
+  ],
   "notes": "The caller's metadata rides the instruction, but standalone is the typed field's word: an instruction that does not stand alone carries no such key, whatever the caller's metadata held, on a message and on a direct injection alike. Translates roomkit tests/test_instruction_events.py::test_an_instruction_without_standalone_reads_the_room and tests/test_instruction_fingerprint.py, whose instruction carries no standalone key.",
   "setup": {
     "channels": [

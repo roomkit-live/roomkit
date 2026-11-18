@@ -7,6 +7,9 @@
     "§10.2",
     "§10.6.8"
   ],
+  "requirements": [
+    "RK-10.2-003"
+  ],
   "notes": "The agent's turn raises the provider's refusal, code E42, not retryable: the trigger's delivery result for the agent is failed with that code, its words and retryable false, the message id it named not kept, as roomkit reads it across its turn backend; ON_ERROR names the refusal's class, ProviderDeliveryError, as its error_type, not its code.",
   "setup": {
     "channels": [

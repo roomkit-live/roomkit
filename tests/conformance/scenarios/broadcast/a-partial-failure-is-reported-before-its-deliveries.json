@@ -7,6 +7,9 @@
     "§8.2",
     "§26.1"
   ],
+  "requirements": [
+    "RK-10.2-005"
+  ],
   "notes": "The RFC orders none of a delivery set's framework events; roomkit emits the partial failure first, then the deliveries that succeeded, then those that failed, and event_processed once the set's AFTER_BROADCAST hooks ended. A handler of the kit's framework events observes that order. Its total counts the deliveries that succeeded or failed: the agent's turn is none.",
   "setup": {
     "channels": [

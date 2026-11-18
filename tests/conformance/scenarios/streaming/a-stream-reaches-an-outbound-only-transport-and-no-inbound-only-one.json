@@ -7,6 +7,9 @@
     "§10.2 step 3d",
     "§4.2"
   ],
+  "requirements": [
+    "RK-10.2-003"
+  ],
   "notes": "Python: tests/test_visibility_rules.py::TestALiveStream::test_reaches_no_inbound_only_transport and test_reaches_an_outbound_only_transport. The inbound-only transport is bound first and sorts first, so it would be the stream's target were direction not read.",
   "setup": {
     "channels": [
