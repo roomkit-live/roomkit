@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from types import SimpleNamespace
 
 import pytest
 
 from roomkit import (
     ChannelBinding,
     ChannelOutput,
+    DeliveryResult,
+    FrameworkEvent,
     InboundMessage,
     NoRecipientError,
     ProviderDeliveryError,
@@ -18,6 +22,7 @@ from roomkit import (
     TextContent,
 )
 from roomkit.channels import WebSocketChannel
+from roomkit.core import circuit_breaker
 from roomkit.models import RetryPolicy
 
 
@@ -88,5 +93,63 @@ async def test_application_recipient_refusal_and_provider_answer_have_distinct_b
             ]
             assert len(warnings) == 6
             assert all(r.levelno == logging.WARNING and r.exc_info is None for r in warnings)
+    finally:
+        await kit.close()
+
+
+async def test_missing_recipient_releases_the_probe_for_the_next_send(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = 100.0
+    monkeypatch.setattr(circuit_breaker, "time", SimpleNamespace(monotonic=lambda: now))
+    transitions: list[str] = []
+
+    async def note_transition(event: FrameworkEvent) -> None:
+        transitions.append(event.type)
+
+    class RecoveringChannel(WebSocketChannel):
+        attempts = 0
+
+        async def deliver(
+            self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
+        ) -> ChannelOutput:
+            self.attempts += 1
+            if self.attempts <= 5:
+                raise ProviderDeliveryError(NoRecipientError("app", "customer").provider_result)
+            if self.attempts == 6:
+                raise NoRecipientError("app", "customer")
+            return ChannelOutput.empty()
+
+    kit = RoomKit()
+    application = RecoveringChannel("app")
+    kit.register_channel(WebSocketChannel("source"))
+    kit.register_channel(application)
+    for name in ("circuit_breaker_opened", "circuit_breaker_closed"):
+        kit.on(name)(note_transition)
+    await kit.create_room(room_id="support")
+    await kit.attach_channel("support", "source")
+    await kit.attach_channel("support", "app")
+
+    async def send(text: str) -> DeliveryResult:
+        message = InboundMessage(
+            channel_id="source", sender_id="alice", content=TextContent(body=text)
+        )
+        result = await kit.process_inbound(message, room_id="support")
+        return result.delivery_results["app"]
+
+    try:
+        for i in range(5):
+            assert (await send(str(i))).status == "failed"
+
+        now += 60
+        refused = await send("missing recipient")
+        assert refused.provider_result == NoRecipientError("app", "customer").provider_result
+        await asyncio.sleep(0)
+        assert transitions == ["circuit_breaker_opened"]
+
+        assert (await send("deliver immediately")).status == "sent"
+        await asyncio.sleep(0)
+        assert transitions == ["circuit_breaker_opened", "circuit_breaker_closed"]
+        assert application.attempts == 7
     finally:
         await kit.close()

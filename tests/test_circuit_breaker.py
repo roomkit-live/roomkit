@@ -95,3 +95,23 @@ class TestHalfOpenProbe:
             assert cb.is_half_open
             assert cb.allow_request() is True
             assert cb.allow_request() is False
+
+    def test_late_refusal_can_only_release_its_own_probe(self) -> None:
+        transitions: list[str] = []
+        cb = CircuitBreaker(1, 0, on_state_change=transitions.append)
+        allowed, ordinary = cb._acquire_request()
+        assert allowed
+        cb.record_failure()
+        _, earlier = cb._acquire_request()
+        cb.record_failure()
+        _, active = cb._acquire_request()
+        assert earlier is not None and active is not None
+        for stale in (ordinary, earlier):
+            cb._release_probe(stale)
+            assert not cb.allow_request()
+        cb._release_probe(active)
+        assert cb._failure_count == 2
+        assert cb.is_half_open and cb.allow_request()
+        assert transitions == ["open"]
+        cb.record_success()
+        assert transitions == ["open", "closed"]

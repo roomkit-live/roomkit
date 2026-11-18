@@ -773,7 +773,8 @@ class EventRouter:
 
                     breaker = self._get_breaker(binding.channel_id)
 
-                    if not breaker.allow_request():
+                    allowed, probe = breaker._acquire_request()
+                    if not allowed:
                         tr.error = "circuit_breaker_open"
                         logger.warning(
                             "Circuit breaker open for %s — skipping delivery",
@@ -806,10 +807,9 @@ class EventRouter:
                         except (Exception, asyncio.CancelledError) as exc:
                             if _leaves_no_result(exc, binding):
                                 raise
-                            if not isinstance(exc, NoRecipientError):
-                                # A binding with no recipient says nothing
-                                # about the provider; it must not trip the
-                                # breaker every room on the channel shares.
+                            if isinstance(exc, NoRecipientError):
+                                breaker._release_probe(probe)
+                            else:
                                 breaker.record_failure()
                             tr.error = str(exc)
                             tr.error_exc = exc

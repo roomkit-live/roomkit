@@ -31,7 +31,7 @@ class CircuitBreaker:
         self._recovery_timeout = recovery_timeout
         self._failure_count: int = 0
         self._opened_at: float | None = None
-        self._half_open_probe_sent: bool = False
+        self._half_open_probe: object | None = None
         # RFC §13.1 MUST: opening (and closing again) is an observable
         # transition, not a private detail. The breaker reports the edge; the
         # owner decides how to publish it.
@@ -65,12 +65,23 @@ class CircuitBreaker:
 
     def allow_request(self) -> bool:
         """Return True if a request should be attempted."""
+        allowed, _ = self._acquire_request()
+        return allowed
+
+    def _acquire_request(self) -> tuple[bool, object | None]:
+        """Admit the request and identify any half-open probe it owns."""
         if self.is_closed:
-            return True
-        if self.is_half_open and not self._half_open_probe_sent:
-            self._half_open_probe_sent = True
-            return True
-        return False
+            return True, None
+        if self.is_half_open and self._half_open_probe is None:
+            probe = object()
+            self._half_open_probe = probe
+            return True, probe
+        return False, None
+
+    def _release_probe(self, probe: object | None) -> None:
+        """A request refused before sending gives its own probe back."""
+        if probe is not None and probe is self._half_open_probe:
+            self._half_open_probe = None
 
     # -- Recording --
 
@@ -79,7 +90,7 @@ class CircuitBreaker:
         was_tripped = self._opened_at is not None
         self._failure_count = 0
         self._opened_at = None
-        self._half_open_probe_sent = False
+        self._half_open_probe = None
         if was_tripped:
             self._notify("closed")
 
@@ -89,7 +100,7 @@ class CircuitBreaker:
         if self._failure_count >= self._failure_threshold:
             was_tripped = self._opened_at is not None
             self._opened_at = time.monotonic()
-            self._half_open_probe_sent = False
+            self._half_open_probe = None
             if not was_tripped:
                 self._notify("open")
 
@@ -99,4 +110,4 @@ class CircuitBreaker:
         """Manually close the breaker."""
         self._failure_count = 0
         self._opened_at = None
-        self._half_open_probe_sent = False
+        self._half_open_probe = None

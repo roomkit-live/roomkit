@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- A channel that reports a missing recipient during circuit breaker recovery immediately frees its probe for the next delivery.
+
 - Keep raw tool argument text when it contains a non-finite number, including an exponent that overflows. Such calls are marked partial and do not execute.
 
 - Tool calls and stream events converted with `stream_call_of` or `tool_call_of` now own their nested arguments, metadata, and provider-served result.
