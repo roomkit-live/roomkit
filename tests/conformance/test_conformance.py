@@ -119,6 +119,7 @@ _ON_EACH_STORE = (
 # and every scenario with other processes, whose kits each open their own store and
 # advisory lock manager there.
 _ON_POSTGRES = (
+    "streaming/a-directly-wired-prompt-rechecks-its-room-audience",
     "idempotency/",
     "routing/",
     "delivery/",
