@@ -754,3 +754,53 @@ async def test_a_turn_runs_the_room_hooks_its_request_named_and_a_disable_holds(
     assert seen == ["audit"]  # the turn ran what its request named
     assert executor.hooks.room_hook_names("r1") == []  # the room's set stays off
     await kit.close()
+
+
+async def test_wiring_an_unregistered_agent_activates_its_generation_and_response_hooks() -> None:
+    """Calling a wired channel directly fires its executor's hooks without a turn host."""
+    from roomkit.turns.host import current_turn_host
+
+    kit = RoomKit()
+    room = await kit.create_room(room_id="r1")
+    binding = ChannelBinding(
+        channel_id="agent",
+        room_id=room.id,
+        channel_type=ChannelType.AI,
+        category=ChannelCategory.INTELLIGENCE,
+    )
+    context = RoomContext(room=room, bindings=[binding])
+    event = RoomEvent(
+        room_id=room.id,
+        source=EventSource(channel_id="ops", channel_type=ChannelType.SMS),
+        content=TextContent(body="go"),
+    )
+    executor = TurnExecutor(lambda _: None)
+    executor.use_wiring(kit.turn_executor.wiring.env)
+    seen: list[tuple[str, str]] = []
+    ended = asyncio.Event()
+
+    @executor.hook(HookTrigger.BEFORE_AI_GENERATION)
+    async def before(_: Any, fresh: RoomContext) -> HookResult:
+        assert current_turn_host() is None
+        seen.append(("before", fresh.room.id))
+        return HookResult.allow()
+
+    @executor.hook(HookTrigger.ON_AI_RESPONSE, execution=HookExecution.ASYNC)
+    async def after(_: Any, fresh: RoomContext) -> None:
+        assert current_turn_host() is None
+        seen.append(("after", fresh.room.id))
+        ended.set()
+
+    agent = _agent(calls=False)
+    try:
+        executor.wire(agent)
+        output = await agent.on_event(event, binding, context)
+        if output.response_stream is not None:
+            async for _ in output.response_stream:
+                pass
+        await asyncio.wait_for(ended.wait(), timeout=2)
+        assert seen == [("before", room.id), ("after", room.id)]
+    finally:
+        await agent.close()
+        await executor.close()
+        await kit.close()
