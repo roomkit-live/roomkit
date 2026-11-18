@@ -131,7 +131,7 @@ def build_provider(name: str) -> AIProvider:
         )
     if name == "openai":
         env = require_env("OPENAI_API_KEY")
-        return OpenAIAIProvider(OpenAIConfig(api_key=env["OPENAI_API_KEY"], model="gpt-5.6-sol"))
+        return OpenAIAIProvider(OpenAIConfig(api_key=env["OPENAI_API_KEY"], model="gpt-6.2-sol"))
     if name == "ollama":
         return OllamaAIProvider(OllamaConfig())
     # One scripted answer per call, in the order the sections make them.
@@ -150,7 +150,8 @@ def build_vision(name: str) -> VisionProvider | None:
             OpenAIVisionConfig(
                 api_key=env["OPENAI_API_KEY"],
                 base_url="https://api.openai.com/v1",
-                model="gpt-5.6-sol",
+                model="gpt-6.2-sol",
+                max_tokens=25000,
             )
         )
     if name == "ollama":

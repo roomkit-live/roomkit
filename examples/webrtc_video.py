@@ -118,8 +118,8 @@ vision = OpenAIVisionProvider(
     config=OpenAIVisionConfig(
         api_key=env["OPENAI_API_KEY"],
         base_url="https://api.openai.com/v1",
-        model="gpt-4.1-mini",
-        max_tokens=150,
+        model="gpt-6.2-sol",
+        max_tokens=25000,
     )
 )
 

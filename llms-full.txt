@@ -2149,7 +2149,7 @@ Provider notes:
   precedence, and a custom `base_url` keeps conservative legacy behavior.
 
 - **Gemini on Vertex AI** (`roomkit.providers.gemini.vertex`) — subclass of `GeminiAIProvider` serving the same Gemini models through a Google Cloud project with a pinned region (`GeminiVertexConfig` requires `project` and `location`, e.g. `"northamerica-northeast1"`; no API key — the identity is `impersonate_service_account`, else `service_account_json`, else ADC). Use it when data residency matters (Québec Law 25 / PIPEDA). Generation, streaming, thinking, and the model catalog are inherited; the one addition is billing labels: `GeminiVertexConfig.labels` (`{"tenant": "acme"}`) rides every request as `GenerateContentConfig.labels`, so Cloud Billing splits one project's spend per tenant or partner: metadata only, 24 to 48 h behind in the report, never a source of truth; Google's label rules (64 labels, 63 characters, lowercase letters, digits, `_`, `-`, a key starts with a letter) are enforced when the config is built, and the field is Vertex-only because the Developer API refuses it.
-- **OpenRouter** (`roomkit.providers.openrouter`) — subclass of `OpenAIAIProvider` pointed at `https://openrouter.ai/api/v1`; `OpenRouterConfig` subclasses `OpenAIConfig` (adds `site_url`/`app_name` attribution headers) and `model` is a required slug like `"anthropic/claude-sonnet-4.5"`. Reasoning is forwarded to any upstream model via OpenRouter's unified `reasoning` object. Model-listing nuance: OpenRouter's `/models` items omit the `object`/`owned_by` fields the OpenAI SDK expects, so `list_models()` reads the raw JSON instead.
+- **OpenRouter** (`roomkit.providers.openrouter`) — subclass of `OpenAIAIProvider` pointed at `https://openrouter.ai/api/v1`; `OpenRouterConfig` subclasses `OpenAIConfig` (adds `site_url`/`app_name` attribution headers) and `model` is a required slug like `"anthropic/claude-sonnet-5"`. Reasoning is forwarded to any upstream model via OpenRouter's unified `reasoning` object. Model-listing nuance: OpenRouter's `/models` items omit the `object`/`owned_by` fields the OpenAI SDK expects, so `list_models()` reads the raw JSON instead.
 - **LiteLLM proxy** (`roomkit.providers.litellm`) — subclass of `OpenAIAIProvider` pointed at a self-hosted LiteLLM gateway (default `http://localhost:4000`); the extra installs the `openai` SDK, deliberately **not** the `litellm` package (the gateway keeps keys/budgets/routing server-side). `model` is the deployment's public alias and `api_key` a virtual or master key, both required. Reasoning rides LiteLLM's cross-provider normalisation: `reasoning_effort` passes through, `thinking_budget>0` maps to a `thinking` token budget, and the trace comes back in `reasoning_content`; `thinking_budget=0` sends no reasoning params at all (LiteLLM has no disable token every upstream translator accepts — force-off belongs in the proxy's per-model config or `extra_body`). `available_models()` is empty (the model list is the operator's config); `list_models()` reads the proxy's `/model/info` — context window, vision flag, and per-token costs per alias, with a load-balanced group merged into the one entry every deployment can honour (smallest window, vision and price only when unanimous) and LiteLLM's `0`-for-unknown costs mapped to "unpriced" rather than free.
 - **Outbound policy** (`transport=`) — `OpenAIAIProvider(config, transport=...)`, and every provider built on it (`AzureAIProvider`, `OpenRouterAIProvider`, `create_vllm_provider(config, transport=...)`, the inherited xAI, DeepSeek, Qwen, LiteLLM, Cerebras, Meta), sends every request through an `httpx.AsyncBaseTransport` placed inside the SDK's own default client (redirects followed, each hop through the transport; per-request timeout kept). The transport owns its connection pool and limits, and httpx reads no environment proxy beside a transport. The seam for a policy that judges the address actually dialled when users name the endpoint, or a `MockTransport` in a test; closed with the provider. LiteLLM's and OpenRouter's `list_models()` go through it too. The image and vision clients on the `openai` SDK take the same `transport=` keyword: `OpenAIImageProvider`, `AzureImageProvider`, `XAIImageProvider`, `MetaImageProvider` (edits included) and `OpenAIVisionProvider(config, transport=...)`, whose client is built on first use and closes with it; so does `OpenRouterImageProvider`, on httpx alone. `OpenAIClassifier` takes a `client=` of the caller's instead. See `examples/openai_outbound_policy.py`.
 - **xAI (Grok)** (`roomkit.providers.xai`) — subclass of `OpenAIAIProvider` pointed at `https://api.x.ai/v1`; defaults to `max_completion_tokens` and stream usage. `XAIRealtimeProvider` (Grok speech-to-speech) is a separate import from `roomkit.providers.xai.realtime`.
@@ -2161,7 +2161,7 @@ Pick **Ollama** over the OpenAI-compat shim (`OpenAIAIProvider` pointed at `http
 # OpenAI
 from roomkit.providers.openai import OpenAIAIProvider, OpenAIConfig
 
-provider = OpenAIAIProvider(OpenAIConfig(api_key="sk-...", model="gpt-4o"))
+provider = OpenAIAIProvider(OpenAIConfig(api_key="sk-...", model="gpt-6.2-sol"))
 
 # Gemini
 from roomkit.providers.gemini import GeminiAIProvider, GeminiConfig
@@ -2532,7 +2532,7 @@ from roomkit.providers.openai import OpenAIAIProvider, OpenAIConfig
 
 ai = AIChannel(
     "ai-assistant",
-    provider=OpenAIAIProvider(OpenAIConfig(api_key="sk-...", model="gpt-4o")),
+    provider=OpenAIAIProvider(OpenAIConfig(api_key="sk-...", model="gpt-6-sol")),
     system_prompt="You help users check the weather.",
     tools=[
         {
@@ -5542,11 +5542,13 @@ from roomkit.video import OpenAIVisionConfig, OpenAIVisionProvider
 # Defaults target Ollama: base_url="http://localhost:11434/v1", model="qwen3.5"
 vision = OpenAIVisionProvider(OpenAIVisionConfig(
     api_key="sk-...", base_url="https://api.openai.com/v1",
-    model="gpt-4o", detail="low", max_tokens=100,
+    model="gpt-6.2-sol", detail="low", max_tokens=25000,
 ))  # transport=httpx.AsyncBaseTransport: every request goes through it, for a
     # policy on a user-named base_url (as on OpenAIAIProvider)
 # GeminiVisionProvider(GeminiVisionConfig(api_key="AIza...", model="gemini-3.8-flash"))
 ```
+
+On OpenAI's own endpoint `OpenAIVisionProvider` sends the cap as `max_completion_tokens` from GPT-4.1 and on the o-series, and leaves the temperature out from GPT-5 and on the o-series, as `OpenAIConfig` profiles those models; another server gets `max_tokens` and `temperature` as set. A reasoning model counts its reasoning in the cap, and an answer cut before any visible output is empty: OpenAI suggests reserving 25,000 tokens to start with.
 
 `await provider.analyze_frame(frame, prompt=None)` returns `VisionResult(description, labels, confidence, faces, text, metadata)` — `text` is OCR, `faces` are `FaceDetection` boxes. Results are cached per session (`channel.get_last_vision_result(session_id)`), emitted as `video_vision_result` framework events, and read by every `AIChannel` of the room in its turn's notes as a `<vision>` block (its system prompt and binding never change with the camera; the view ends with its video session). For realtime voice, `setup_realtime_vision(kit, room_id, voice_channel_id)` injects the same block via `inject_text(silent=True)`. On-demand tools: `DescribeWebcamTool`, `DescribeScreenTool`, `ListWebcamsTool`.
 

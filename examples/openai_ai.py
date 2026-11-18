@@ -31,7 +31,7 @@ async def main() -> None:
     # --- Configuration -------------------------------------------------------
     env = require_env("OPENAI_API_KEY")
 
-    config = OpenAIConfig(api_key=env["OPENAI_API_KEY"], model="gpt-5.6-sol")
+    config = OpenAIConfig(api_key=env["OPENAI_API_KEY"], model="gpt-6.2-sol")
     provider = OpenAIAIProvider(config)
 
     # --- RoomKit setup -------------------------------------------------------

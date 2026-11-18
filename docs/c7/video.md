@@ -100,11 +100,13 @@ from roomkit.video import OpenAIVisionConfig, OpenAIVisionProvider
 # Defaults target Ollama: base_url="http://localhost:11434/v1", model="qwen3.5"
 vision = OpenAIVisionProvider(OpenAIVisionConfig(
     api_key="sk-...", base_url="https://api.openai.com/v1",
-    model="gpt-4o", detail="low", max_tokens=100,
+    model="gpt-6.2-sol", detail="low", max_tokens=25000,
 ))  # transport=httpx.AsyncBaseTransport: every request goes through it, for a
     # policy on a user-named base_url (as on OpenAIAIProvider)
 # GeminiVisionProvider(GeminiVisionConfig(api_key="AIza...", model="gemini-3.8-flash"))
 ```
+
+On OpenAI's own endpoint `OpenAIVisionProvider` sends the cap as `max_completion_tokens` from GPT-4.1 and on the o-series, and leaves the temperature out from GPT-5 and on the o-series, as `OpenAIConfig` profiles those models; another server gets `max_tokens` and `temperature` as set. A reasoning model counts its reasoning in the cap, and an answer cut before any visible output is empty: OpenAI suggests reserving 25,000 tokens to start with.
 
 `await provider.analyze_frame(frame, prompt=None)` returns `VisionResult(description, labels, confidence, faces, text, metadata)` — `text` is OCR, `faces` are `FaceDetection` boxes. Results are cached per session (`channel.get_last_vision_result(session_id)`), emitted as `video_vision_result` framework events, and read by every `AIChannel` of the room in its turn's notes as a `<vision>` block (its system prompt and binding never change with the camera; the view ends with its video session). For realtime voice, `setup_realtime_vision(kit, room_id, voice_channel_id)` injects the same block via `inject_text(silent=True)`. On-demand tools: `DescribeWebcamTool`, `DescribeScreenTool`, `ListWebcamsTool`.
 

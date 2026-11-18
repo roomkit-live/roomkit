@@ -47,7 +47,7 @@ Environment variables:
     GEMINI_VISION_MODEL  Vision model (default: gemini-3.8-flash)
     OPENAI_MODEL         OpenAI speech model (default: the provider's own default)
     OPENAI_VOICE         OpenAI voice preset (default: alloy)
-    OPENAI_VISION_MODEL  OpenAI tool model (default: gpt-4o)
+    OPENAI_VISION_MODEL  OpenAI tool model (default: gpt-6.2-sol)
     SCALE                Capture scale 0.0-1.0 (default: 0.75)
     AEC                  Echo cancellation: webrtc | 0 (default: webrtc)
     DENOISE              Noise suppression: 1 | 0 (default: 1)

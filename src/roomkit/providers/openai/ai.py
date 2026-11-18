@@ -310,8 +310,9 @@ class OpenAIAIProvider(AIProvider):
     def _turn_effort(self, context: AIContext) -> str | None:
         """The turn's effort over the configured one; where the turn states
         off, the least effort OpenAI's catalogue says the model takes: ``none``
-        from GPT-5.1, ``minimal`` on GPT-5, ``low`` on o3 (RFC §6.7). A model
-        that does not reason, or one behind a ``base_url``, has no floor."""
+        from GPT-5.1, ``minimal`` on GPT-5, ``low`` on o3, GPT-6 Astra, GPT-6.1
+        Sol and GPT-6.2 (RFC §6.7). A model that does not reason, or one behind
+        a ``base_url``, has no floor."""
         floor = reasoning_floor(self.catalog_entry()) if self._is_openai_endpoint else None
         return floored_effort(context, self._config.reasoning_effort, floor)
 

@@ -24,8 +24,8 @@ def build_vision_provider(
             OpenAIVisionConfig(
                 api_key=os.environ.get("OPENAI_API_KEY", ""),
                 base_url="https://api.openai.com/v1",
-                model=os.environ.get("OPENAI_VISION_MODEL", "gpt-4o"),
-                max_tokens=4096,
+                model=os.environ.get("OPENAI_VISION_MODEL", "gpt-6.2-sol"),
+                max_tokens=25000,
                 detail="high",
             )
         )

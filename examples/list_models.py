@@ -118,7 +118,7 @@ def show_what_a_turn_costs() -> None:
     for provider_cls, model_id in (
         (GeminiAIProvider, "gemini-3.8-flash"),
         (AnthropicAIProvider, "claude-opus-5"),
-        (OpenAIAIProvider, "gpt-5.6-sol"),
+        (OpenAIAIProvider, "gpt-6.2-sol"),
     ):
         entry = next(m for m in provider_cls.available_models() if m.id == model_id)
         if entry.pricing is None:
@@ -139,7 +139,7 @@ async def show_live_openai() -> None:
 
     from roomkit.providers.openai import OpenAIConfig
 
-    provider = OpenAIAIProvider(OpenAIConfig(api_key=api_key, model="gpt-5.6-sol"))
+    provider = OpenAIAIProvider(OpenAIConfig(api_key=api_key, model="gpt-6.2-sol"))
     try:
         live = await provider.list_models()
         print(f"\nOpenAI live — {len(live)} models reported by the API")
