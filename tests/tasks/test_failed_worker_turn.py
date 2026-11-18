@@ -306,7 +306,10 @@ def test_a_failure_with_no_end_or_a_completed_one_or_a_cut_is_raised_as_it_is() 
 
 
 @pytest.mark.parametrize("with_end", [False, True])
-async def test_a_streaming_worker_that_raises_an_already_wrapped_failure(with_end: bool) -> None:
+@pytest.mark.parametrize("buffered", [False, True], ids=["stream", "buffered"])
+async def test_a_worker_that_returns_an_already_wrapped_failure(
+    with_end: bool, buffered: bool
+) -> None:
     original = ProviderError("upstream detail", provider="mock", status_code=503)
 
     class WrappedWorker(AILikeChannel):
@@ -316,16 +319,17 @@ async def test_a_streaming_worker_that_raises_an_already_wrapped_failure(with_en
             if event.source.channel_id != "system":
                 return ChannelOutput.empty()
 
+            failure = TaskTurnFailedError(original, "interrupted", "Given narration")
+            record = ResponseMetadata({"loop_end_reason": "error"} if with_end else {})
+            if buffered:
+                return ChannelOutput(responded=True, error=failure, response_metadata=record)
+
             async def stream() -> AsyncIterator[str]:
                 yield "Looking."
-                raise TaskTurnFailedError(original, "interrupted", "Given narration")
+                raise failure
 
             return ChannelOutput(
-                responded=True,
-                response_stream=stream(),
-                response_metadata=ResponseMetadata(
-                    {"loop_end_reason": "error"} if with_end else {}
-                ),
+                responded=True, response_stream=stream(), response_metadata=record
             )
 
     async with RoomKit() as kit:
@@ -334,7 +338,8 @@ async def test_a_streaming_worker_that_raises_an_already_wrapped_failure(with_en
         result, _ = await _delegate(kit, "worker")
 
     if with_end:
-        assert result.metadata["loop_end_reason"] == "error" and result.output == "Looking."
+        assert result.metadata["loop_end_reason"] == "error"
+        assert result.output == (None if buffered else "Looking.")
         assert isinstance(result.exception, TaskTurnFailedError)
         assert (result.exception.reason, result.exception.narration) == (
             "interrupted",
