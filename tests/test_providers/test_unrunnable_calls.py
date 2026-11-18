@@ -55,7 +55,7 @@ _FRAGMENT = '{"path": "/tmp/a", "content": "hel'
 
 class TestTheRule:
     @pytest.mark.parametrize("number", ["NaN", "Infinity", "-Infinity", "1e900", "-1e900"])
-    def test_nonfinite_text_arguments_preserve_the_wire_input_and_never_run(
+    def test_nonfinite_text_arguments_preserve_the_wire_input_and_are_classified_partial(
         self, number: str
     ) -> None:
         raw = f'{{"record": [{{"amount": {number}}}]}}'

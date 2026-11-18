@@ -1,0 +1,20 @@
+[
+  {
+    "id": "non-json-constant",
+    "arguments": "{\"amount\":NaN}",
+    "handler_arguments": [],
+    "model_result": {"error": "Tool call arguments unreadable", "tool": "search"}
+  },
+  {
+    "id": "numeric-overflow",
+    "arguments": "{\"amount\":1e900}",
+    "handler_arguments": [],
+    "model_result": {"error": "Tool call arguments unreadable", "tool": "search"}
+  },
+  {
+    "id": "finite-number",
+    "arguments": "{\"amount\":1e300}",
+    "handler_arguments": [{"amount": 1e300}],
+    "model_result": {"handled": true}
+  }
+]

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -36,9 +37,14 @@ def _chunk(delta: dict, finish: str | None = None) -> dict:
     }
 
 
-def _provider(replies: list[list[dict]]) -> OpenAIAIProvider:
+def _provider(
+    replies: list[list[dict]], requests: list[dict[str, Any]] | None = None
+) -> OpenAIAIProvider:
     def answer(request: httpx.Request) -> httpx.Response:
-        assert json.loads(request.content)["stream"] is True
+        payload = json.loads(request.content)
+        assert payload["stream"] is True
+        if requests is not None:
+            requests.append(payload)
         body = "".join(f"data: {json.dumps(chunk)}\n\n" for chunk in replies.pop(0))
         return httpx.Response(
             200, text=body + "data: [DONE]\n\n", headers={"content-type": "text/event-stream"}
@@ -304,3 +310,42 @@ async def test_wire_composition_reaches_the_bus_before_execution() -> None:
         assert all(e.type.value != "tool_call_delta" for e in history)
     finally:
         await kit.close()
+
+
+# Canonical source for the Rust roomkit-openai agent test's checked-in oracle.
+_NONFINITE_TURNS = json.loads(Path(__file__).with_name("nonfinite_tool_turns.json").read_text())
+
+
+@pytest.mark.parametrize("case", _NONFINITE_TURNS, ids=[case["id"] for case in _NONFINITE_TURNS])
+async def test_argument_text_controls_execution_and_the_next_model_request(
+    case: dict[str, Any],
+) -> None:
+    requests: list[dict[str, Any]] = []
+    seen: list[dict[str, Any]] = []
+
+    async def search(name: str, arguments: dict[str, Any]) -> str:
+        assert name == "search"
+        seen.append(arguments)
+        return json.dumps({"handled": True})
+
+    replies = [
+        [
+            _chunk({"tool_calls": [_fragment(0, "tool1", "search", case["arguments"])]}),
+            _chunk({}, "tool_calls"),
+        ],
+        [_chunk({"content": "Done."}), _chunk({}, "stop")],
+    ]
+    provider = _provider(replies, requests)
+    async with RoomKit() as kit:
+        try:
+            await _run_turn(kit, AIChannel("ai1", provider=provider, tool_handler=search))
+        finally:
+            await provider.close()
+
+    assert seen == case["handler_arguments"]
+    assert len(requests) == 2
+    [reply] = [message for message in requests[1]["messages"] if message["role"] == "tool"]
+    assert reply["tool_call_id"] == "tool1"
+    content = json.loads(reply["content"])
+    content.pop("hint", None)
+    assert content == case["model_result"]
