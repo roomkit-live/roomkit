@@ -11,7 +11,7 @@
       "call": "mcp_session",
       "constructor": "direct",
       "transport": "sse",
-      "connect_timeout_ms": 50,
+      "connect_timeout_ms": 1000,
       "peer": {
         "replies": [
           {
