@@ -1,0 +1,236 @@
+{
+  "$schema": "../../scenario.schema.json",
+  "id": "streaming/a-directly-wired-prompt-rechecks-its-room-audience",
+  "title": "A directly wired prompt publishes tool activity only while its answer can reach the whole room",
+  "rules": [
+    "§8.4"
+  ],
+  "requirements": [
+    "RK-8.4-002"
+  ],
+  "setup": {
+    "channels": [
+      {
+        "id": "ws",
+        "type": "websocket",
+        "category": "transport"
+      },
+      {
+        "id": "agent",
+        "type": "ai",
+        "tools": [
+          {
+            "name": "lookup",
+            "returns": "found"
+          }
+        ],
+        "model": {
+          "rounds": [
+            {
+              "calls": [
+                {
+                  "id": "open",
+                  "name": "lookup",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            },
+            {
+              "calls": [
+                {
+                  "id": "private",
+                  "name": "lookup",
+                  "arguments": {}
+                }
+              ]
+            },
+            {
+              "text": "Done."
+            },
+            {
+              "calls": [
+                {
+                  "id": "revoked",
+                  "name": "lookup",
+                  "arguments": {}
+                }
+              ],
+              "gate": "before-tool"
+            },
+            {
+              "text": "Done."
+            }
+          ]
+        }
+      }
+    ],
+    "rooms": [
+      {
+        "id": "open",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "private",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      },
+      {
+        "id": "revoked",
+        "bindings": [
+          {
+            "channel_id": "ws"
+          },
+          {
+            "channel_id": "agent",
+            "category": "intelligence"
+          }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "call": "agent.direct_prompt",
+      "room_id": "open",
+      "channel_id": "agent",
+      "event": {
+        "source": {
+          "channel_id": "ws",
+          "channel_type": "websocket"
+        },
+        "content": {
+          "type": "text",
+          "body": "Check."
+        }
+      },
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "agent.direct_prompt",
+      "room_id": "private",
+      "channel_id": "agent",
+      "event": {
+        "source": {
+          "channel_id": "ws",
+          "channel_type": "websocket"
+        },
+        "content": {
+          "type": "text",
+          "body": "Check."
+        },
+        "response_visibility": "intelligence"
+      },
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "call": "agent.direct_prompt",
+      "room_id": "revoked",
+      "channel_id": "agent",
+      "event": {
+        "source": {
+          "channel_id": "ws",
+          "channel_type": "websocket"
+        },
+        "content": {
+          "type": "text",
+          "body": "Check."
+        }
+      },
+      "background": true,
+      "as": "in_flight"
+    },
+    {
+      "wait_for": "before-tool"
+    },
+    {
+      "call": "set_visibility",
+      "room_id": "revoked",
+      "channel_id": "agent",
+      "visibility": "intelligence"
+    },
+    {
+      "open": "before-tool"
+    },
+    {
+      "await": "in_flight",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "idle": true
+    }
+  ],
+  "expect": {
+    "tool_events": {
+      "open": [
+        {
+          "type": "tool_call_start",
+          "channel_id": "agent"
+        },
+        {
+          "type": "tool_call_end",
+          "channel_id": "agent"
+        }
+      ],
+      "private": [],
+      "revoked": []
+    },
+    "models": {
+      "agent": [
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "open",
+              "content": "found",
+              "is_error": false
+            }
+          ]
+        },
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "private",
+              "content": "found",
+              "is_error": false
+            }
+          ]
+        },
+        {},
+        {
+          "tool_results": [
+            {
+              "tool_call_id": "revoked",
+              "content": "found",
+              "is_error": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
