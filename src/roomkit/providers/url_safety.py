@@ -27,6 +27,7 @@ for a config-time helper; a caller that needs it hands its own transport
 from __future__ import annotations
 
 import ipaddress
+import re
 import socket
 from urllib.parse import urlparse
 
@@ -39,11 +40,45 @@ _LOCALHOST_NAMES = frozenset(
 )
 
 
+# The special-purpose ranges that changed in supported CPython patch releases.
+_V4_PROTOCOLS = ipaddress.IPv4Network("192.0.0.0/24")
+_V4_PUBLIC_PROTOCOLS = {ipaddress.IPv4Address("192.0.0.9"), ipaddress.IPv4Address("192.0.0.10")}
+_V6_PROTOCOLS = ipaddress.IPv6Network("2001::/23")
+_V6_PUBLIC_PROTOCOLS = tuple(
+    ipaddress.IPv6Network(prefix)
+    for prefix in (
+        "2001:1::1/128",
+        "2001:1::2/128",
+        "2001:3::/32",
+        "2001:4:112::/48",
+        "2001:20::/27",
+    )
+)
+_V6_NON_PUBLIC = tuple(
+    ipaddress.IPv6Network(prefix) for prefix in ("64:ff9b:1::/48", "2002::/16", "3fff::/20")
+)
+
+
+def _is_private_destination(addr: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """Use the same special-purpose table on older Python patch releases."""
+    if isinstance(addr, ipaddress.IPv4Address):
+        if addr in _V4_PROTOCOLS:
+            return addr not in _V4_PUBLIC_PROTOCOLS
+    else:
+        if addr in _V6_PROTOCOLS:
+            return not any(addr in net for net in _V6_PUBLIC_PROTOCOLS)
+        if any(addr in net for net in _V6_NON_PUBLIC):
+            return True
+    return addr.is_private
+
+
 def _is_blocked_address(addr: ipaddress.IPv4Address | ipaddress.IPv6Address) -> str | None:
     """Return a reason string if *addr* is non-public, else None."""
+    if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped is not None:
+        addr = addr.ipv4_mapped
     if addr.is_loopback:
         return "loopback"
-    if addr.is_private:
+    if _is_private_destination(addr):
         return "private"
     if addr.is_link_local:
         return "link-local"
@@ -140,6 +175,32 @@ def validate_api_base_url(url: str) -> str:
     )
 
 
+_PUBLIC_AUTHORITY = re.compile(r"[A-Za-z][A-Za-z0-9.+-]*://([^/?#]*)")
+_DNS_HOST = re.compile(r"[A-Za-z0-9._-]+")
+_IPV6_HOST = re.compile(r"\[([A-Fa-f0-9:.]+)\](?::[0-9]*)?")
+
+
+def _check_public_authority(url: str) -> None:
+    """Check the raw authority before a URL parser normalizes the hostname."""
+    match = _PUBLIC_AUTHORITY.match(url.lstrip(" \t\r\n"))
+    if not match or not (authority := match[1]):
+        raise ValueError("URL must have a scheme and host")
+    if "\\" in authority or any(ord(char) <= 32 or ord(char) == 127 for char in authority):
+        raise ValueError("Invalid URL authority")
+    if authority.count("@") > 1:
+        raise ValueError("Invalid URL authority")
+    host_port = authority.rpartition("@")[2]
+    if host_port.startswith("["):
+        literal = _IPV6_HOST.fullmatch(host_port)
+        if not literal:
+            raise ValueError("Invalid IPv6 host or port in URL authority")
+        ipaddress.IPv6Address(literal[1])
+        return
+    host = host_port.partition(":")[0]
+    if not _DNS_HOST.fullmatch(host) or not host.rstrip("."):
+        raise ValueError("URL host must be an ASCII DNS name or IP address")
+
+
 def validate_public_url(
     url: str,
     *,
@@ -147,6 +208,9 @@ def validate_public_url(
     resolve_dns: bool = True,
 ) -> str:
     """Validate that *url* points to a public host.
+
+    Supply internationalized DNS names as ASCII (Punycode) and IPv6 addresses
+    without a zone identifier. Paths and queries can contain Unicode.
 
     Args:
         url: The URL to validate.
@@ -163,6 +227,7 @@ def validate_public_url(
         ValueError: With a human-readable reason describing what was
             rejected (scheme, IP class, DNS resolution).
     """
+    _check_public_authority(url)
     parsed = urlparse(url)
     if not parsed.scheme or not parsed.hostname:
         raise ValueError("URL must have a scheme and host")

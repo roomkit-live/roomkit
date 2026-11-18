@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Tool calls and stream events converted with `stream_call_of` or `tool_call_of` now own their nested arguments, metadata, and provider-served result.
 
-- Reject a malformed or out-of-range port in `validate_public_url`, including offline checks and IP literals.
+- Require an unambiguous authority, an ASCII DNS name (Punycode for internationalized domains), and an unscoped IP literal in `validate_public_url`. Malformed and out-of-range ports are rejected before resolution, including offline checks.
 
 - Changes to nested tool declaration parameters no longer modify the source schema or another declaration.
 
