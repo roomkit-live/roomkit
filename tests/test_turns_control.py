@@ -643,21 +643,50 @@ class _AckedLate(InMemoryTurnBackend):
         return link
 
 
-async def test_a_steer_reaches_a_turn_still_being_handed_over() -> None:
-    channel = Steerable()
-    channels = {channel.channel_id: channel}
+@pytest.mark.parametrize("ready", [False, True], ids=["before-channel-build", "channel-running"])
+async def test_a_steer_reaches_a_turn_still_being_handed_over(ready: bool) -> None:
+    allow_build, running, steering_started = asyncio.Event(), asyncio.Event(), asyncio.Event()
+
+    class Observed(Steerable):
+        async def on_event(
+            self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
+        ) -> ChannelOutput:
+            running.set()
+            return await super().on_event(event, binding, context)
+
+    channel = Observed()
+
+    async def build(channel_id: str) -> Channel | None:
+        await allow_build.wait()
+        return channel if channel_id == channel.channel_id else None
+
     backend = _AckedLate()
-    client = TurnClient(backend, executor=TurnExecutor(channels.get, hosts=channels.__contains__))
-    output = asyncio.ensure_future(_start(client))
-    await asyncio.wait_for(backend.handed.wait(), 2)  # handed over, not yet acknowledged
+    executor = TurnExecutor(build, hosts={channel.channel_id}, owns_channels=False)
+    client = TurnClient(backend, executor=executor)
+    directive = InjectMessage(content="x")
 
-    steering = asyncio.ensure_future(client.steer("room", "agent", InjectMessage(content="x")))
-    for _ in range(5):  # the steer under way while the handover waits
-        await asyncio.sleep(0)
-    backend.acked.set()
-    reached = await asyncio.wait_for(steering, 2)
+    async def steer() -> int:
+        steering_started.set()
+        return await client.steer("room", "agent", directive)
 
-    assert reached == 1
-    channel.release.set()
-    await output
-    await client.close()
+    output = asyncio.create_task(_start(client))
+    try:
+        await asyncio.wait_for(backend.handed.wait(), 2)
+        if ready:
+            allow_build.set()
+            await asyncio.wait_for(running.wait(), 2)
+
+        steering = asyncio.create_task(steer())
+        await asyncio.wait_for(steering_started.wait(), 2)
+        assert not steering.done()
+        backend.acked.set()
+
+        reached = await asyncio.wait_for(steering, 2)
+        assert reached == int(ready)
+        assert [item for item, _ in channel.steered] == ([directive] if ready else [])
+    finally:
+        backend.acked.set()
+        allow_build.set()
+        channel.release.set()
+        await asyncio.wait_for(output, 2)
+        await client.close()
