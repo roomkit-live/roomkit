@@ -146,3 +146,47 @@ async def test_a_callback_child_keeps_its_turns_narrow_answer_scope(tmp_path: Pa
     finally:
         await kit.close()
     assert [event for _, event in realtime.published if event.type.value == "custom"] == []
+
+
+@pytest.mark.parametrize("publish_text", [False, True])
+async def test_a_directly_wired_acp_prompt_publishes_thinking_and_tools_in_order(
+    tmp_path: Path, publish_text: bool
+) -> None:
+    from roomkit.realtime import EphemeralEventType as Kind
+    from tests.test_turns_wiring import _directly_wired
+
+    agent, _, _ = _channel(
+        tmp_path, publish_thinking_text=publish_text, publish_tool_call_text=publish_text
+    )
+    async with _directly_wired(agent) as (executor, call):
+        backend = executor.wiring.env.realtime()
+        assert backend is not None
+        published: asyncio.Queue[EphemeralEvent] = asyncio.Queue()
+
+        async def record(event: EphemeralEvent) -> None:
+            published.put_nowait(event)
+
+        await backend.subscribe("room:r1", record)
+        await call()
+        expected = [
+            Kind.THINKING_START,
+            Kind.THINKING_DELTA,
+            Kind.TOOL_CALL_START,
+            Kind.TOOL_CALL_END,
+            Kind.THINKING_END,
+        ]
+        observed = []
+        while len(observed) < len(expected):
+            event = await asyncio.wait_for(published.get(), timeout=2)
+            if event.type not in expected:
+                continue
+            assert event.room_created_at is not None
+            assert event.channel_id == agent.channel_id
+            if event.type == Kind.THINKING_DELTA:
+                assert ("thinking" in event.data) is publish_text
+            elif event.type == Kind.TOOL_CALL_START:
+                assert ("arguments" in event.data["tool_calls"][0]) is publish_text
+            elif event.type == Kind.TOOL_CALL_END:
+                assert ("result" in event.data["tool_calls"][0]) is publish_text
+            observed.append(event.type)
+        assert observed == expected

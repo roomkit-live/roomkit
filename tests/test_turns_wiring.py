@@ -18,7 +18,7 @@ from typing import Any
 
 import pytest
 
-from roomkit import HookResult, RoomKit
+from roomkit import Channel, HookResult, RoomKit
 from roomkit.channels.agent import Agent
 from roomkit.channels.ai import AIChannel
 from roomkit.core.exceptions import TurnLinkError
@@ -760,17 +760,13 @@ async def test_a_turn_runs_the_room_hooks_its_request_named_and_a_disable_holds(
 
 @asynccontextmanager
 async def _directly_wired(
-    agent: AIChannel,
+    agent: Channel,
 ) -> AsyncIterator[tuple[TurnExecutor, Callable[[], Awaitable[None]]]]:
     """Run this channel with the executor's actual wiring and without taking a turn."""
     kit = RoomKit()
     room = await kit.create_room(room_id="r1")
-    binding = ChannelBinding(
-        channel_id="agent",
-        room_id=room.id,
-        channel_type=ChannelType.AI,
-        category=ChannelCategory.INTELLIGENCE,
-    )
+    kit.register_channel(agent.declaration())
+    binding = await kit.attach_channel(room.id, agent.channel_id)
     context = RoomContext(room=room, bindings=[binding])
     event = RoomEvent(
         room_id=room.id,
@@ -951,7 +947,9 @@ async def test_directly_wired_thinking_and_plan_updates_reach_the_executor() -> 
             EphemeralEventType.THINKING_START,
             EphemeralEventType.THINKING_DELTA,
             EphemeralEventType.THINKING_END,
+            EphemeralEventType.TOOL_CALL_START,
             EphemeralEventType.CUSTOM,
+            EphemeralEventType.TOOL_CALL_END,
         ]
         observed = []
         while len(observed) < len(expected):
@@ -960,6 +958,10 @@ async def test_directly_wired_thinking_and_plan_updates_reach_the_executor() -> 
                 assert event.room_created_at is not None
                 assert event.channel_id == "agent"
                 assert "thinking" not in event.data
+                if event.type == EphemeralEventType.TOOL_CALL_START:
+                    assert "arguments" not in event.data["tool_calls"][0]
+                if event.type == EphemeralEventType.TOOL_CALL_END:
+                    assert "result" not in event.data["tool_calls"][0]
                 if event.type == EphemeralEventType.CUSTOM:
                     assert event.data["type"] == "plan_updated"
                 observed.append(event.type)

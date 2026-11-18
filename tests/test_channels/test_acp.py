@@ -399,6 +399,8 @@ def _channel(
     *,
     handler: ExternalToolHandler | None = None,
     emit_updates: bool = True,
+    publish_thinking_text: bool = False,
+    publish_tool_call_text: bool = False,
     room_history: int | None = None,
     context_contributor: ACPContextContributor | None = None,
 ) -> tuple[ACPChannel, _FakeACPConnection, _FakeTransport]:
@@ -411,6 +413,8 @@ def _channel(
         transport=transport,
         cwd=tmp_path,
         external_tool_handler=handler,
+        publish_thinking_text=publish_thinking_text,
+        publish_tool_call_text=publish_tool_call_text,
         context_contributor=context_contributor,
         **window,  # type: ignore[arg-type]
     )
