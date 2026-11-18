@@ -50,9 +50,10 @@ _CTX_1M = 1_050_000
 # What a turn that switches reasoning off sends (``reasoning_floor_<level>``,
 # read by ``roomkit.providers.ai.reasoning.reasoning_floor``): ``none`` where
 # the model takes it, else its lowest level. Checked on the wire 2026-10-04:
-# GPT-5.1 and later take ``none``; GPT-5 and its mini and nano answer 400 to
-# it and take ``minimal``; o3 takes neither and starts at ``low``, with
-# function tools as without. An entry without the tag is sent nothing.
+# GPT-5.1 and later take ``none``, save GPT-6 Astra, GPT-6.1 Sol and GPT-6.2
+# (below); GPT-5 and its mini and nano answer 400 to it and take ``minimal``;
+# o3 takes neither and starts at ``low``, with function tools as without. An
+# entry without the tag is sent nothing.
 _TOOLS_REASONING_EFFORT_OFF = ["tools_reasoning_effort", "reasoning_floor_none"]
 _TOOLS_REASONING_EFFORT_MINIMAL = ["tools_reasoning_effort", "reasoning_floor_minimal"]
 _TOOLS_REASONING_EFFORT_LOW = ["tools_reasoning_effort", "reasoning_floor_low"]
@@ -62,13 +63,16 @@ _TOOLS_REASONING_NONE = ["tools_reasoning_none", "reasoning_floor_none"]
 # GPT-6.1 Sol refuse function tools there whatever the effort (400, checked on
 # the wire 2026-10-02: ``none`` and ``minimal`` are not values they take, and
 # any other is refused with tools); the ``-pro`` models are served by the
-# Responses API only (404 "not a chat model", 2026-10-02).
-_CHAT_TOOLS_REFUSED = ["chat_tools_refused"]
-# GPT-6.2 Astra and Sol, read from OpenAI's pages on 2026-11-18, not checked on
-# the wire: "tool calling requires Responses" (Using GPT-6.2), and the API
-# rejects ``none``, effort ranging from ``low`` to ``max`` (model pages and
-# models page), so a turn that switches reasoning off is sent ``low``.
-_GPT_6_2 = [*_CHAT_TOOLS_REFUSED, "reasoning_floor_low"]
+# Responses API only (404 "not a chat model", 2026-10-02). GPT-6.2 Astra and
+# Sol, read from OpenAI's pages on 2026-11-18, not checked on the wire: "tool
+# calling requires Responses" (Using GPT-6.2).
+#
+# None of the four takes ``none``, so a turn that switches reasoning off is
+# sent ``low``, where their effort starts: OpenAI's reasoning guide
+# (2026-11-18) says GPT-6 Astra "does not support ``none``" (HTTP 400), GPT-6.1
+# Sol "does not support ``none`` or ``minimal``", and GPT-6.2 Astra and Sol
+# "reject requests that set" it; their model pages list ``low`` to ``max``.
+_CHAT_TOOLS_REFUSED_LOW = ["chat_tools_refused", "reasoning_floor_low"]
 _RESPONSES_ONLY = ["responses_only"]
 _VERIFIED = date(2026, 8, 5)
 
@@ -94,7 +98,7 @@ MODELS: list[ModelInfo] = [
     ModelInfo(
         id="gpt-6.2-astra",
         display_name="GPT-6.2 Astra",
-        capabilities=_GPT_6_2,
+        capabilities=_CHAT_TOOLS_REFUSED_LOW,
         context_window=_CTX_1M,
         supports_vision=True,
         pricing=ModelPricing(
@@ -111,7 +115,7 @@ MODELS: list[ModelInfo] = [
     ModelInfo(
         id="gpt-6.2-sol",
         display_name="GPT-6.2 Sol",
-        capabilities=_GPT_6_2,
+        capabilities=_CHAT_TOOLS_REFUSED_LOW,
         context_window=_CTX_1M,
         supports_vision=True,
         pricing=ModelPricing(
@@ -128,7 +132,7 @@ MODELS: list[ModelInfo] = [
     ModelInfo(
         id="gpt-6.1-sol",
         display_name="GPT-6.1 Sol",
-        capabilities=_CHAT_TOOLS_REFUSED,
+        capabilities=_CHAT_TOOLS_REFUSED_LOW,
         context_window=_CTX_1M,
         supports_vision=True,
         pricing=ModelPricing(
@@ -161,7 +165,7 @@ MODELS: list[ModelInfo] = [
     ModelInfo(
         id="gpt-6-astra",
         display_name="GPT-6 Astra",
-        capabilities=_CHAT_TOOLS_REFUSED,
+        capabilities=_CHAT_TOOLS_REFUSED_LOW,
         context_window=_CTX_1M,
         supports_vision=True,
         pricing=ModelPricing(
