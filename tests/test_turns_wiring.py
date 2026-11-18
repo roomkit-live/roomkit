@@ -966,3 +966,50 @@ async def test_directly_wired_thinking_and_plan_updates_reach_the_executor() -> 
                     assert event.data["type"] == "plan_updated"
                 observed.append(event.type)
         assert observed == expected
+
+
+async def test_application_can_call_the_generation_round_and_input_hooks_directly() -> None:
+    from roomkit.models.pending_input import PendingInputEvent
+    from roomkit.models.tool_call import AIGenerationEvent, ToolRoundEvent
+    from roomkit.providers.ai.base import AIContext
+
+    async with RoomKit() as kit:
+        room = await kit.create_room(room_id="r1")
+        wiring = kit.turn_executor.wiring
+        gate = wiring.build_before_generation_hook("callback-owner")
+        without_room = await gate(AIGenerationEvent(ai_context=AIContext(), channel_id="agent"))
+        assert without_room.allowed and without_room.event is None
+
+        @kit.hook(HookTrigger.BEFORE_AI_GENERATION, name="policy")
+        async def policy(event: AIGenerationEvent, context: RoomContext) -> HookResult:
+            assert context.room.id == room.id
+            return HookResult.block("needs review").model_copy(
+                update={"metadata": {"tag": "held"}}
+            )
+
+        generation = AIGenerationEvent(ai_context=AIContext(), channel_id="agent", room_id=room.id)
+        denied = await gate(generation)
+        assert (denied.allowed, denied.reason, denied.blocked_by) == (
+            False,
+            "needs review",
+            "policy",
+        )
+        assert denied.metadata == {"tag": "held"}
+
+        @kit.hook(HookTrigger.AFTER_TOOL_ROUND)
+        async def update(event: ToolRoundEvent, context: RoomContext) -> HookResult:
+            event.withdraw("lookup")
+            event.add_message("use the collected answer")
+            return HookResult.allow()
+
+        completed = ToolRoundEvent("agent", room.id, 0, [], [])
+        await wiring.build_after_tool_round_hook()(completed)
+        assert completed.withdrawn == {"lookup"}
+        assert completed.messages == ["use the collected answer"]
+
+        @kit.hook(HookTrigger.ON_USER_INPUT_REQUIRED)
+        async def reject(event: PendingInputEvent, context: RoomContext) -> HookResult:
+            return HookResult.block("not available")
+
+        request = PendingInputEvent("request", "ask", {}, room.id, "call", "", ChannelType.AI)
+        assert await wiring.build_on_user_input_required_hook("agent")(request) is False
