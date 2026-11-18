@@ -15,6 +15,7 @@ from roomkit.realtime.memory import InMemoryRealtime
 from roomkit.store.memory import InMemoryStore
 from roomkit.turns import (
     AgentPresence,
+    ExecutorInfo,
     InMemoryTurnBackend,
     TurnBackend,
     TurnExecutor,
@@ -362,6 +363,23 @@ class _Unlisting(InMemoryTurnBackend):
     """A backend that does not list its executors, as a custom one may not."""
 
     executors = TurnBackend.executors  # type: ignore[assignment]
+
+
+class _EmptyCatalogue(_Unlisting):
+    async def executors(self) -> list[ExecutorInfo]:
+        return []
+
+
+async def test_only_an_authoritative_empty_catalogue_announces_offline() -> None:
+    for backend, expected in [(_Unlisting(), []), (_EmptyCatalogue(), [("offline", "agent")])]:
+        async with RoomKit(turn_backend=backend) as kit:
+            kit.register_channel(ChannelDeclaration(channel_id="agent"))
+            await _rooms(kit, "room")
+            heard = await _published(kit, "room")
+            await kit.attach_channel("room", "agent", category=ChannelCategory.INTELLIGENCE)
+            await _heard_all(kit)
+            assert await kit.executors() == []
+            assert heard["room"] == expected
 
 
 async def test_a_backend_that_does_not_list_its_executors_publishes_no_declared_agent() -> None:
