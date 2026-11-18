@@ -1090,22 +1090,19 @@ async def test_a_provider_failure_mid_reasoning_closes_the_thinking_window() -> 
     await kit.close()
 
 
-async def _start_turn(ai: AIChannel, *, tools: bool) -> Any:
+async def _start_turn(kit: RoomKit, ai: AIChannel, *, tools: bool) -> Any:
     """Hand one turn to ``on_event`` directly and return its stream, unconsumed.
 
     ``process_inbound`` absorbs a stream's error and its cancellation; the
     tests below need to see both, so they consume the stream themselves.
     """
+    binding = await kit.attach_channel(
+        "r1", ai.channel_id, metadata={"tools": _TOOLS} if tools else {}
+    )
     output = await ai.on_event(
         make_event(room_id="r1", body="go", channel_id="sms1"),
-        ChannelBinding(
-            channel_id="ai1",
-            room_id="r1",
-            channel_type=ChannelType.AI,
-            category=ChannelCategory.INTELLIGENCE,
-            metadata={"tools": _TOOLS} if tools else {},
-        ),
-        RoomContext(room=Room(id="r1")),
+        binding,
+        RoomContext(room=await kit.get_room("r1"), bindings=[binding]),
     )
     assert output.response_stream is not None
     return output.response_stream
@@ -1133,7 +1130,7 @@ async def test_a_provider_failure_mid_reasoning_still_reaches_the_consumer() -> 
     )
     kit.register_channel(ai)
     await kit.create_room(room_id="r1")
-    stream = await _start_turn(ai, tools=True)
+    stream = await _start_turn(kit, ai, tools=True)
 
     with pytest.raises(ProviderError, match="upstream stopped"):
         async for _ in stream:
@@ -1178,7 +1175,7 @@ async def test_a_consumer_closing_the_stream_mid_reasoning_closes_the_window() -
         received.append(ev)
 
     await kit.realtime.subscribe_to_room("r1", on_event)
-    stream = await _start_turn(ai, tools=True)
+    stream = await _start_turn(kit, ai, tools=True)
 
     async for item in stream:
         if isinstance(item, ThinkingDeltaMarker):
@@ -1230,7 +1227,7 @@ async def _turn_count_after_a_re_cancelled_consumer(*, tools: bool) -> int:
     )
     kit.register_channel(ai)
     await kit.create_room(room_id="r1")
-    stream = await _start_turn(ai, tools=tools)
+    stream = await _start_turn(kit, ai, tools=tools)
 
     async def consume() -> None:
         async for _ in stream:
