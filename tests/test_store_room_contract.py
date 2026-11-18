@@ -5,8 +5,7 @@ is an event ``index``)."""
 from __future__ import annotations
 
 import copy
-import os
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -31,29 +30,7 @@ from roomkit.models.store_filter import EventFilter
 from roomkit.models.task import Task
 from roomkit.store.base import ConversationStore
 from roomkit.store.memory import InMemoryStore
-from roomkit.store.sqlite import SQLiteStore
 from tests.conftest import make_event
-
-
-@pytest.fixture(params=["memory", "sqlite", "postgres"])
-async def contract_store(request: pytest.FixtureRequest) -> AsyncIterator[ConversationStore]:
-    store: ConversationStore
-    if request.param == "memory":
-        store = InMemoryStore()
-    elif request.param == "sqlite":
-        store = SQLiteStore(":memory:")
-    else:
-        dsn = os.environ.get("POSTGRES_DSN")
-        if not dsn:
-            pytest.skip("POSTGRES_DSN not set")
-        from roomkit.store.postgres import PostgresStore
-
-        store = PostgresStore(dsn=dsn)
-        await store.init(min_size=1, max_size=2)
-    try:
-        yield store
-    finally:
-        await store.close()
 
 
 async def test_a_room_is_created_once(contract_store: ConversationStore) -> None:

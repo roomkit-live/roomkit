@@ -24,7 +24,9 @@ from roomkit.models.event import (
 )
 from roomkit.models.event import EventContent as EventContentType
 from roomkit.models.room import Room
+from roomkit.store.base import ConversationStore
 from roomkit.store.memory import InMemoryStore
+from roomkit.store.sqlite import SQLiteStore
 from roomkit.turns import InMemoryTurnBackend
 from roomkit.turns.base import TurnBackend
 from roomkit.turns.redis import RedisTurnBackend
@@ -70,6 +72,27 @@ def cut_unwind(monkeypatch: pytest.MonkeyPatch) -> float:
     monkeypatch.setattr(framework, "CUT_UNWIND_S", unwind)
     monkeypatch.setattr(task_utils, "CUT_UNWIND_S", unwind)
     return unwind
+
+
+@pytest.fixture(params=["memory", "sqlite", "postgres"])
+async def contract_store(request: pytest.FixtureRequest) -> AsyncIterator[ConversationStore]:
+    store: ConversationStore
+    if request.param == "memory":
+        store = InMemoryStore()
+    elif request.param == "sqlite":
+        store = SQLiteStore(":memory:")
+    else:
+        dsn = os.environ.get("POSTGRES_DSN")
+        if not dsn:
+            pytest.skip("POSTGRES_DSN not set")
+        from roomkit.store.postgres import PostgresStore
+
+        store = PostgresStore(dsn=dsn)
+        await store.init(min_size=1, max_size=2)
+    try:
+        yield store
+    finally:
+        await store.close()
 
 
 @pytest.fixture
