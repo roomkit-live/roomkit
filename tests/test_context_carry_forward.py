@@ -20,6 +20,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from roomkit.channels.base import Channel
 from roomkit.core.framework import RoomKit
 from roomkit.models.channel import ChannelBinding, ChannelOutput
@@ -349,3 +351,48 @@ async def test_a_room_with_no_reader_costs_no_history_read() -> None:
         await kit.close()
 
     assert store.history_reads == 0
+
+
+@pytest.mark.parametrize("change", ["transfer", "recreate"])
+async def test_public_tool_wiring_reuses_history_only_for_the_same_room_incarnation(
+    change: str,
+) -> None:
+    from roomkit.models.tool_call import ToolCallEvent
+
+    store = CountingStore()
+    kit = RoomKit(store=store)
+    room = await kit.create_room(room_id="carry", organization_id="first")
+    event = ToolCallEvent("tool", ChannelType.AI, "id", "lookup", {}, room_id=room.id)
+
+    @kit.hook(HookTrigger.ON_TOOL_CALL)
+    async def read(call: ToolCallEvent, ctx: RoomContext) -> HookResult:
+        return HookResult.allow()
+
+    tools = kit.turn_executor.wiring.tools
+
+    async def context(carrying: RoomContext | None = None) -> RoomContext:
+        ran = await tools.run_tool_call_chain(event, room.id, carrying=carrying)
+        assert ran is not None and ran[1] is not None
+        return ran[1]
+
+    try:
+        carried = await context()
+        store.history_reads = 0
+        assert (await context(carried)).room == carried.room
+        assert store.history_reads == 0
+
+        if change == "transfer":
+            await store.update_room(room.model_copy(update={"organization_id": "second"}))
+        else:
+            assert await store.delete_room(room.id)
+            await kit.create_room(room_id=room.id, organization_id="first")
+        store.history_reads = 0
+        fresh = await context(carried)
+        assert fresh.room.event_count == carried.room.event_count
+        assert (fresh.room.created_at != carried.room.created_at) == (change == "recreate")
+        assert (fresh.room.organization_id != carried.room.organization_id) == (
+            change == "transfer"
+        )
+        assert store.history_reads == 1
+    finally:
+        await kit.close()

@@ -1035,13 +1035,18 @@ class HelpersMixin:
         compares against the window *carrying*'s own bindings derive, which is
         why it must have been built without an explicit ``recent_limit``.
 
-        The room check is not paranoia: handing one room's history to another
-        room's hooks would leak a conversation, and a mismatch is a caller bug
-        no read would catch.
+        The id, creation time and organization identify the room whose
+        history was read. Recreating or transferring a room invalidates a
+        carried context even when the event counter still matches.
         """
         if carrying is None:
             return None
-        if carrying.room.id != room.id or carrying.room.event_count != room.event_count:
+        if (
+            carrying.room.id != room.id
+            or carrying.room.created_at != room.created_at
+            or carrying.room.organization_id != room.organization_id
+            or carrying.room.event_count != room.event_count
+        ):
             return None
         if recent_limit > self._resolve_recent_events_limit(carrying.bindings):
             return None
