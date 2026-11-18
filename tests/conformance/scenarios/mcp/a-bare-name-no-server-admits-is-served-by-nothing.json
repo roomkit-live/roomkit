@@ -7,6 +7,9 @@
     "§21.2",
     "§21.4"
   ],
+  "requirements": [
+    "RK-9.3-089"
+  ],
   "notes": "Both labelled servers serve delete_records, the CRM's tools declared bare; the policy keeps both servers out by their aliases and leaves the bare name: each handler declines, and the call is served by nothing.",
   "setup": {
     "channels": [

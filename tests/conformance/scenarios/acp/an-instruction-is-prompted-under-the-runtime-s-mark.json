@@ -6,6 +6,10 @@
     "§6.4",
     "§10.1.1 step 6"
   ],
+  "requirements": [
+    "RK-10.1.1-022",
+    "RK-10.1.1-039"
+  ],
   "notes": "Python: src/roomkit/channels/acp.py on_event, mark_instruction (tests/test_channels/test_acp_instruction.py covers the rest of the instruction's cases, stream L's lot 8). The prompt's text is matched as holding the mark and the instruction: the catch-up before it is lot 8's.",
   "setup": {
     "channels": [

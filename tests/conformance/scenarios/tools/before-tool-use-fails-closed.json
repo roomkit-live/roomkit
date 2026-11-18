@@ -6,6 +6,15 @@
     "§9.3",
     "§21.1"
   ],
+  "requirements": [
+    "RK-9.3-020",
+    "RK-9.3-022",
+    "RK-9.3-023",
+    "RK-9.3-024",
+    "RK-9.3-025",
+    "RK-9.3-026",
+    "RK-9.3-072"
+  ],
   "notes": "BEFORE_TOOL_USE fails closed (§9.3): an error or a timeout refuses the call. The model reads the fixed refusal, never the hook's error, which reaches the observers on error_detail with the hook's name. One call per round, so the hook's reactions are used in the rounds' order.",
   "setup": {
     "channels": [

@@ -7,6 +7,9 @@
     "§9.3",
     "§6.4"
   ],
+  "requirements": [
+    "RK-9.3-034"
+  ],
   "notes": "Python repairs the model's own call only (repair_tool_arguments before the hooks, rewritten_arguments_error after them): a hook is the integrator's code, and repairing it would hide its bug.",
   "setup": {
     "channels": [

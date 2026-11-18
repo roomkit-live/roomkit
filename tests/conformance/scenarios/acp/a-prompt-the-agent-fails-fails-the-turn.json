@@ -5,6 +5,11 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-9.2-034",
+    "RK-9.2-101",
+    "RK-9.2-103"
+  ],
   "notes": "Python: tests/test_channels/test_acp.py::TestACPChannel::test_a_turn_that_never_returned_is_marked_interrupted, test_a_failed_turn_is_not_a_response.",
   "setup": {
     "channels": [

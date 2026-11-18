@@ -6,6 +6,10 @@
     "§6.4",
     "§10.1.1 step 7"
   ],
+  "requirements": [
+    "RK-10.1.1-037",
+    "RK-9.2-070"
+  ],
   "notes": "Review regression: complete prompt and text; retain only the session/close answer. The response observer must run before release, as Python _turn_stream finalization precedes _prompt_stream session cleanup.",
   "setup": {
     "kit": {

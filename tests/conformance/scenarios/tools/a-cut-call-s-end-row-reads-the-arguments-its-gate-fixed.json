@@ -7,6 +7,13 @@
     "§10.6.4",
     "§12.4"
   ],
+  "requirements": [
+    "RK-10.6.4-013",
+    "RK-9.3-033",
+    "RK-9.3-048",
+    "RK-9.3-069",
+    "RK-9.3-072"
+  ],
   "notes": "Python: turns/_executor_changes.py report sends tool_args before the turn's end; RFC §10.6.4, a call's arguments are its tool_args frame's when it has one.",
   "setup": {
     "channels": [

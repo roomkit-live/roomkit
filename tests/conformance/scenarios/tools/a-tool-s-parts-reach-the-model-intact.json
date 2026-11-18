@@ -7,6 +7,9 @@
     "§9.3",
     "§21.4"
   ],
+  "requirements": [
+    "RK-9.3-057"
+  ],
   "notes": "Python's ToolResult is str | list[AITextPart | AIImagePart]: AIToolResultPart.result keeps the list (tests/test_channels/test_multimodal_tool_result.py::test_a_part_list_result_reaches_the_provider_intact, test_streaming_loop_carries_the_part_list_too), the end row stores it (call_end_marker) and ToolCallEvent.result carries it.",
   "setup": {
     "channels": [

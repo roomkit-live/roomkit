@@ -6,6 +6,9 @@
     "§6.4",
     "§10.6.3"
   ],
+  "requirements": [
+    "RK-10.6.2-040"
+  ],
   "notes": "Python: tests/test_channels/test_acp.py::TestACPChannel::test_set_config_option_opens_a_session_when_needed. Sequential room-session contract; standalone turns, recovery and notifications are separate lots.",
   "setup": {
     "channels": [

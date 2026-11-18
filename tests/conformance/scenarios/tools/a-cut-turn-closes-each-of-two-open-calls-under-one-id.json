@@ -6,6 +6,11 @@
     "§9.3",
     "§12.4"
   ],
+  "requirements": [
+    "RK-10.6.4-014",
+    "RK-9.3-048",
+    "RK-9.3-072"
+  ],
   "notes": "Python: tests/test_turn_calls_per_call.py::test_a_cut_turn_closes_each_of_two_open_calls_under_one_id, the second's end row's outcome left out: a call's end known before a cut is its own card.",
   "setup": {
     "channels": [

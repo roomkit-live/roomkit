@@ -8,6 +8,10 @@
     "Appendix A.9.1",
     "§8.3"
   ],
+  "requirements": [
+    "RK-9.5.1-045",
+    "RK-9.5.1-060"
+  ],
   "notes": "Python: tests/test_channels/test_acp.py::test_an_observer_posting_per_tool_call_the_agent_answers_stops[before_tool_use]. In-process owner/executor context only, as the source marker requires; the captured kit does not claim this across Redis. Each of the first 20 prompts stays active until its observer post reaches BEFORE_BROADCAST, after budget charging; the final prompt stays active until its observer receives the cap refusal. A successful post may wait for its queued delivery, so its return is not used to release its own originating prompt. Barriers establish the live-delivery precondition in RFC §8.3; no scheduler ordering or delay is assumed.",
   "setup": {
     "channels": [

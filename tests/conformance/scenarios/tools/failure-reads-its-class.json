@@ -6,6 +6,11 @@
     "§9.3",
     "§21.6"
   ],
+  "requirements": [
+    "RK-9.3-082",
+    "RK-9.3-083",
+    "RK-9.3-084"
+  ],
   "notes": "The raised error's message, which here holds a password, is on the observers' error_detail and nowhere the model or the room reads: not in the stored TOOL_CALL_END, not in the result the next round carries (§9.3, ON_TOOL_CALL, where the call was refused or failed).",
   "setup": {
     "channels": [

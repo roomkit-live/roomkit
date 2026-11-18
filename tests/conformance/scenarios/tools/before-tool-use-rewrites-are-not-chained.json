@@ -5,6 +5,10 @@
   "rules": [
     "§9.3"
   ],
+  "requirements": [
+    "RK-9.3-033",
+    "RK-9.3-090"
+  ],
   "notes": "Two BEFORE_TOOL_USE hooks rewrite call-1's arguments under metadata[\"arguments\"]: the second reads the model's, and the call runs with the second's. call-2's tool declines it, so nothing served it: the SYNC ON_TOOL_CALL hook serves it, and the model reads the hook's result. Each call is its own round, so each hook's reactions apply in order.",
   "setup": {
     "channels": [

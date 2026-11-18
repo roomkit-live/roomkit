@@ -6,6 +6,10 @@
     "§9.1",
     "§9.3"
   ],
+  "requirements": [
+    "RK-9.1-002",
+    "RK-9.1-007"
+  ],
   "notes": "On a trigger a turn fires, `channel_ids` reads the turn's agent (§9.1): a gate that blocks and a fail-closed hook that withholds, both filtered to `billing`, never run on `agent`'s call, which is served.",
   "setup": {
     "channels": [

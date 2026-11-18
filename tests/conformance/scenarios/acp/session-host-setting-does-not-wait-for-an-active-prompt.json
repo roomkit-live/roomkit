@@ -6,6 +6,9 @@
     "§6.4",
     "§10.6.3"
   ],
+  "requirements": [
+    "RK-10.6.2-040"
+  ],
   "notes": "Python: tests/test_channels/test_acp_session_setup.py::TestOneOpeningAtATime::test_a_host_call_and_a_first_prompt_open_one_session. Gates and a closed transport pipe establish the ordering; no session state is changed by the runner. Authorized invalidation/rebuild, standalone and notifications are separate contracts.",
   "setup": {
     "channels": [

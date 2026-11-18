@@ -8,6 +8,12 @@
     "§12.2",
     "§12.4"
   ],
+  "requirements": [
+    "RK-10.6.4-014",
+    "RK-10.6.4-015",
+    "RK-9.3-048",
+    "RK-9.3-072"
+  ],
   "notes": "Python: tests/test_turn_calls_per_call.py::test_a_cut_turn_closes_each_of_two_open_calls_under_one_id, its end rows' outcomes; the refused call's end is set on its start as soon as it is refused (ToolCallStartMarker.ended), which the cut closes it with (RMK-1362).",
   "setup": {
     "channels": [

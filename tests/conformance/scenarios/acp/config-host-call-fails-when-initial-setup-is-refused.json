@@ -6,6 +6,9 @@
     "§6.4",
     "§10.6.3"
   ],
+  "requirements": [
+    "RK-10.6.2-040"
+  ],
   "notes": "Python: tests/test_channels/test_acp_session_setup.py::TestARefusedValueFailsClosed::test_set_config_option_fails_when_it_opens_the_session. Sequential room-session contract; standalone turns, recovery and notifications are separate lots.",
   "setup": {
     "channels": [

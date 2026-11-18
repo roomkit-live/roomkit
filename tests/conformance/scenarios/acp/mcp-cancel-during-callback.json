@@ -5,6 +5,9 @@
   "rules": [
     "§6.4"
   ],
+  "requirements": [
+    "RK-10.6.8-039"
+  ],
   "notes": "Python: tests/test_channels/test_acp_session_setup.py::TestMCPServersPerRoom::test_a_function_gives_each_room_its_servers (cancellation boundary). Exact callback inputs and ordered session/new descriptors are observed through public APIs. Standalone is a separate contract.",
   "setup": {
     "channels": [

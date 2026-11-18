@@ -8,6 +8,10 @@
     "§8.2",
     "§9.4"
   ],
+  "requirements": [
+    "RK-9.2-068",
+    "RK-9.4-008"
+  ],
   "notes": "Python reads a modify's event as the generation's (RMK-565, _ai_generation.py _fire_before_generation_hook): a redaction hook's replacement is what the provider sees, and the hooks after it read it in chain order.",
   "setup": {
     "channels": [

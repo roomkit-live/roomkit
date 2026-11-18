@@ -7,6 +7,9 @@
     "§9.2",
     "§21.1"
   ],
+  "requirements": [
+    "RK-9.2-068"
+  ],
   "notes": "Python's _adopt_hook_toolset: the hook's definition replaces the tool's in the turn's base toolset (tests/test_hook_tool_restrictions.py test_a_tool_the_hook_edited_keeps_its_edit); the call's arguments are then checked against it (RFC §21.1).",
   "setup": {
     "channels": [

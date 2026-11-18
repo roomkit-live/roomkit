@@ -6,6 +6,9 @@
     "§6.4",
     "§6.7"
   ],
+  "requirements": [
+    "RK-9.2-068"
+  ],
   "notes": "Python: channels/_ai_generation.py _fire_before_generation_hook returns the event's ai_context, which the generation reads whole. The agent's budget is 2048; room-1's hook leaves a false beside it, room-2's a budget of 0, room-3's no budget and a true.",
   "setup": {
     "channels": [

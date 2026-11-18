@@ -7,6 +7,9 @@
     "§9.2",
     "§21.1"
   ],
+  "requirements": [
+    "RK-9.2-068"
+  ],
   "notes": "Python's _adopt_hook_toolset (channels/_ai_generation.py): what the hook left is the turn's base toolset; a tool it adds is declared at every round and its calls go to the tool handler (tests/test_hook_tool_restrictions.py test_a_tool_the_hook_added_stays_declared).",
   "setup": {
     "channels": [

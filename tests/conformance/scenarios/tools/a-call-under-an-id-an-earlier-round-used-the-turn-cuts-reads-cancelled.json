@@ -6,6 +6,11 @@
     "§9.3",
     "§12.4"
   ],
+  "requirements": [
+    "RK-10.6.4-014",
+    "RK-9.3-048",
+    "RK-9.3-072"
+  ],
   "notes": "Python: tests/test_turn_calls_per_call.py::test_a_reused_id_call_the_turn_cuts_is_reported_cancelled.",
   "setup": {
     "channels": [

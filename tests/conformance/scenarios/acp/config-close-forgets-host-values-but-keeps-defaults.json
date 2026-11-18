@@ -6,6 +6,9 @@
     "§6.4",
     "§10.6.3"
   ],
+  "requirements": [
+    "RK-10.6.2-040"
+  ],
   "notes": "Python: tests/test_channels/test_acp_session_setup.py::TestSessionConfig::test_close_session_forgets_what_the_host_set. Sequential room-session contract; standalone turns, recovery and notifications are separate lots.",
   "setup": {
     "channels": [

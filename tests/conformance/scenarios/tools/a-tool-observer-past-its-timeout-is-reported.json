@@ -8,6 +8,11 @@
     "§8.2",
     "§26.1"
   ],
+  "requirements": [
+    "RK-9.1-002",
+    "RK-9.3-035",
+    "RK-9.3-040"
+  ],
   "notes": "An ASYNC hook observes and decides nothing (§9.3): the call runs and the model reads its result whatever its observers do. Each timeout is reported as for any hook (§8.2, §9.1), in the turn's room. The observers run in the background of the turn, so the framework events are not ordered.",
   "setup": {
     "channels": [

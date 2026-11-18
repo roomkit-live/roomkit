@@ -7,6 +7,10 @@
     "§9.2",
     "§8.2"
   ],
+  "requirements": [
+    "RK-9.2-068",
+    "RK-9.3-046"
+  ],
   "notes": "Python makes what the hook left the turn's base toolset (_ai_generation.py _adopt_hook_toolset): a tool it removed is withdrawn for the turn (§6.4, What the generation hooks see).",
   "setup": {
     "channels": [

@@ -7,6 +7,9 @@
     "§12.2 step 13s",
     "§12.4"
   ],
+  "requirements": [
+    "RK-10.6.4-015"
+  ],
   "notes": "Python: turns/_executor_changes.py ChannelChanges.report sends each call's end the channel set on its start (ToolCallStartMarker.ended) before the next item, and core/mixins/_response_reader.py closes the calls still open at a reader's stop with that end; tests/test_turns_backend.py::test_a_call_that_ended_before_a_close_keeps_its_end (RMK-1509).",
   "setup": {
     "channels": [

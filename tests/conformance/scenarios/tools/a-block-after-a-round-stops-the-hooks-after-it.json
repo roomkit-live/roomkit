@@ -7,6 +7,10 @@
     "§9.2",
     "§9.4"
   ],
+  "requirements": [
+    "RK-9.2-072",
+    "RK-9.3-004"
+  ],
   "notes": "Python runs the room's SYNC hooks on the round's event (turns/_wiring.py build_after_tool_round_hook): a block stops the chain and changes nothing of the round.",
   "setup": {
     "channels": [

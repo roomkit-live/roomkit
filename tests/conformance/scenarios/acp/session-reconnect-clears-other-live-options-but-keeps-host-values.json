@@ -6,6 +6,10 @@
     "§6.4",
     "§10.6.3"
   ],
+  "requirements": [
+    "RK-10.6.2-030",
+    "RK-10.6.2-040"
+  ],
   "notes": "Python: tests/test_channels/test_acp_session_setup.py::TestSessionConfig::test_the_hosts_values_are_per_room; tests/test_channels/test_acp.py::TestACPChannel::test_a_dead_transport_reconnects_and_drops_sessions. Gates and a closed transport pipe establish the ordering; no session state is changed by the runner. Authorized invalidation/rebuild, standalone and notifications are separate contracts.",
   "setup": {
     "channels": [

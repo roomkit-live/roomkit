@@ -7,6 +7,9 @@
     "§9.3",
     "§6.4"
   ],
+  "requirements": [
+    "RK-9.3-068"
+  ],
   "notes": "Python's fold_hoisted_arguments (roomkit tools/validation.py): a closed schema declaring a params object of no shape of its own, an undeclared root key, and params absent or empty. The start row keeps the model's arguments; the hooks, the tool and the end row get the folded ones.",
   "setup": {
     "channels": [

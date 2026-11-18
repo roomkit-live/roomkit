@@ -8,6 +8,9 @@
     "Appendix A.9.1",
     "§8.3"
   ],
+  "requirements": [
+    "RK-9.5.1-053"
+  ],
   "notes": "Python: tests/test_reentrance.py::test_work_a_turn_began_starts_fresh_once_the_turn_is_over; tests/test_channels/test_acp.py::test_an_observer_posting_per_tool_call_the_agent_answers_stops. RFC §8.3 RK-8.3-006: per-tool observers run as work the turn starts. Each post is released only after its originating delivery ended; 25 posts exceed one cascade budget of 20 without consuming it. In-process context only.",
   "setup": {
     "channels": [

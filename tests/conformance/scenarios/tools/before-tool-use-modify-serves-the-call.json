@@ -5,6 +5,9 @@
   "rules": [
     "§9.3"
   ],
+  "requirements": [
+    "RK-9.3-032"
+  ],
   "notes": "The first BEFORE_TOOL_USE hook answers MODIFY with the call's arguments patched; the second reads them, and the call runs with them, as with an edit in place.",
   "setup": {
     "channels": [

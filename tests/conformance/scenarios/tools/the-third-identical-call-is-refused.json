@@ -6,6 +6,10 @@
     "§6.4",
     "§9.3"
   ],
+  "requirements": [
+    "RK-9.3-072",
+    "RK-9.3-078"
+  ],
   "notes": "Python: channels/_ai_tools.py _repeated_call_guard, _reject_call, _channel_tool_handler; tests/test_tool_repeat_guard.py test_third_identical_call_is_refused.",
   "setup": {
     "channels": [

@@ -8,6 +8,11 @@
     "§12.2",
     "§12.4"
   ],
+  "requirements": [
+    "RK-10.6.4-015",
+    "RK-9.3-048",
+    "RK-9.3-072"
+  ],
   "notes": "Python: tests/test_turn_calls_per_call.py::test_a_call_that_ended_before_its_round_was_cut_keeps_its_outcome; each call's end is set on its start as soon as it ends (ToolCallStartMarker.ended), which the cut closes it with (RMK-1362).",
   "setup": {
     "channels": [

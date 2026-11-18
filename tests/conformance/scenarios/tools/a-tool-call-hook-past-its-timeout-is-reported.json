@@ -8,6 +8,11 @@
     "§8.2",
     "§26.1"
   ],
+  "requirements": [
+    "RK-9.1-002",
+    "RK-9.3-005",
+    "RK-9.3-020"
+  ],
   "notes": "ON_TOOL_CALL fails open by default (§9.3): a hook past its timeout is skipped, and the model reads the result the tool served. The timeout is reported as for any hook (§8.2, §9.1), in the turn's room. The turn runs after the message's own processing may have ended, so the two framework events are not ordered.",
   "setup": {
     "channels": [

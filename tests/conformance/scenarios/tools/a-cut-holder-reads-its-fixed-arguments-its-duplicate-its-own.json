@@ -7,6 +7,14 @@
     "§10.6.4",
     "§12.4"
   ],
+  "requirements": [
+    "RK-10.6.4-013",
+    "RK-10.6.4-014",
+    "RK-9.3-033",
+    "RK-9.3-068",
+    "RK-9.3-069",
+    "RK-9.3-072"
+  ],
   "notes": "Python: turns/_executor_changes.py report works per start; RFC §10.6.4, §12.4.",
   "setup": {
     "channels": [

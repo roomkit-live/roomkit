@@ -7,6 +7,9 @@
     "§10.6.5",
     "§23.4"
   ],
+  "requirements": [
+    "RK-10.6.5-007"
+  ],
   "notes": "Python: channels/_tool_registry.py ChannelRegistry.entries and owner_entries, each in the order they were registered; turns/_executor_calls.py TurnOwnerTools built from the request's owner_tools in their order. tasks/delegate.py _served_entry sets delegate_task up as waiting by design (waits=True); core/mixins/background.py setup_background and setup_task_tools set theirs up as bounded. A bounded tool on each side of the waiting one: an order grouped by kind, whichever comes first, is not this one.",
   "setup": {
     "channels": [

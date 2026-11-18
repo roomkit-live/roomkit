@@ -8,6 +8,13 @@
     "§8.2",
     "§26.1"
   ],
+  "requirements": [
+    "RK-9.1-002",
+    "RK-9.3-020",
+    "RK-9.3-022",
+    "RK-9.3-023",
+    "RK-9.3-025"
+  ],
   "notes": "BEFORE_TOOL_USE fails closed (§9.3): the timeout refuses the call with the fixed text. The timeout is reported as for any hook (§8.2, §9.1), in the turn's room. The turn runs after the message's own processing may have ended, so the two framework events are not ordered.",
   "setup": {
     "channels": [

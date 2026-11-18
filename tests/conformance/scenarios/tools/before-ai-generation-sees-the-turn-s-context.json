@@ -7,6 +7,10 @@
     "§9.2",
     "§8.2"
   ],
+  "requirements": [
+    "RK-9.2-007",
+    "RK-9.2-068"
+  ],
   "notes": "Python fires the room's hooks through the turn's before-generation callback (turns/_wiring.py build_before_generation_hook), which emits before_ai_generation with allowed and blocked_by (§8.2). Its tools are the turn's toolset as the tool policy leaves it (§6.4, What the generation hooks see).",
   "setup": {
     "channels": [

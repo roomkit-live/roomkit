@@ -7,6 +7,10 @@
     "§9.3",
     "§6.4"
   ],
+  "requirements": [
+    "RK-9.3-067",
+    "RK-9.3-072"
+  ],
   "notes": "The round's last call is cut: the response ran out of room (length) over its arguments, so it never runs (§6.4). admin_wipe is declared by the host and denied by the policy, so the policy refuses it before its arguments, which do not fit its schema, are read (§21.1, One refusal per cause). A refused call fires ON_TOOL_CALL's ASYNC observers only, marked refused (§9.3).",
   "setup": {
     "channels": [

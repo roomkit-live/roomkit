@@ -6,6 +6,10 @@
     "§6.4",
     "§10.6.3"
   ],
+  "requirements": [
+    "RK-10.6.2-030",
+    "RK-10.6.2-040"
+  ],
   "notes": "Python: tests/test_channels/test_acp_session_setup.py::TestSessionConfig::test_the_hosts_values_are_per_room. Sequential room-session contract; standalone turns, recovery and notifications are separate lots.",
   "setup": {
     "channels": [
