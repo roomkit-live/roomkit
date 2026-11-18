@@ -6,6 +6,12 @@
     "§5.7",
     "§10.1 step 2"
   ],
+  "requirements": [
+    "RK-10.4-012",
+    "RK-10.4-027",
+    "RK-10.4-042",
+    "RK-10.4-059"
+  ],
   "notes": "Python: tests/test_transport_recipient.py::test_a_stored_recipient_names_its_correspondent_when_claimed.",
   "setup": {
     "kit": {

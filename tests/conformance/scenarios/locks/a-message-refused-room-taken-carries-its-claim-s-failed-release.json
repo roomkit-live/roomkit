@@ -7,6 +7,11 @@
     "§10.1 step 2",
     "§10.4"
   ],
+  "requirements": [
+    "RK-10.4-012",
+    "RK-10.4-041",
+    "RK-10.4-042"
+  ],
   "notes": "Python: src/roomkit/core/mixins/inbound.py, _claim_room returns False on a normal exit of the lock, whose failed release is collected, and _process_inbound_inner makes the call's first failed release the error of a result that carries none, a refusal included. Found by the light review of RMK-1443.",
   "setup": {
     "kit": {

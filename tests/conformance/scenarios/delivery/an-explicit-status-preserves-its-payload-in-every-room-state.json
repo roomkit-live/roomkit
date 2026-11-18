@@ -5,6 +5,11 @@
   "rules": [
     "§10.4 A delivery status follows its message"
   ],
+  "requirements": [
+    "RK-10.4-047",
+    "RK-10.4-049",
+    "RK-10.4-050"
+  ],
   "setup": {
     "hooks": [
       {

@@ -6,6 +6,10 @@
     "§10.1 step 2",
     "§10.4"
   ],
+  "requirements": [
+    "RK-10.4-029",
+    "RK-10.4-042"
+  ],
   "notes": "Python: tests/test_shared_channel_routing.py::TestTheLockChecksTheRoomAgain::test_someone_heard_on_the_channel_since_the_route_keeps_the_sender_out (bob). The router's answer is held at a gate while Carol writes into the room by its id; under the lock the room is checked again. A scripted router answers the free room each time it is asked, where Python's default router answers no room the second time; either gives the message a new room.",
   "setup": {
     "kit": {

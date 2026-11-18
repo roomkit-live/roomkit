@@ -6,6 +6,10 @@
     "§10.1 step 2",
     "§10.4"
   ],
+  "requirements": [
+    "RK-10.4-037",
+    "RK-10.4-038"
+  ],
   "notes": "HITL 474148bb, option 1. The router answers room-1, whose binding names no one. Before: the message entered and the next sender read it. It was routing/a-message-with-no-address-stays-in-a-room-that-heard-no-one.",
   "setup": {
     "kit": {

@@ -6,6 +6,9 @@
     "§10.4 A delivery status follows its message",
     "§5.7"
   ],
+  "requirements": [
+    "RK-10.4-045"
+  ],
   "notes": "The binding names no participant: its recipient, alice's number, is its correspondent, so bob's status is not the room's.",
   "setup": {
     "channels": [

@@ -6,6 +6,10 @@
     "§10.1 step 2",
     "§10.4"
   ],
+  "requirements": [
+    "RK-10.4-033",
+    "RK-10.4-034"
+  ],
   "notes": "The refusal comes before the router and whatever it answers. The same message naming the room is the host's, and enters.",
   "setup": {
     "kit": {

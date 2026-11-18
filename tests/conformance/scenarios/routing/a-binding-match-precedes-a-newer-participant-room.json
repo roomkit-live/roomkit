@@ -7,6 +7,9 @@
     "§10.4",
     "§17.2"
   ],
+  "requirements": [
+    "RK-10.4-014"
+  ],
   "notes": "Complements tests/test_inbound_routing_ambiguity.py::TestParticipantRuleWins: RFC §10.4 step 1 tries bindings before participants, and status does not exclude a participant record.",
   "setup": {
     "channels": [

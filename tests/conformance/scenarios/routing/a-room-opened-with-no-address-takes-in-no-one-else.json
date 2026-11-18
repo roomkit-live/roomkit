@@ -7,6 +7,11 @@
     "§10.1 step 2",
     "§10.4"
   ],
+  "requirements": [
+    "RK-10.4-037",
+    "RK-10.4-038",
+    "RK-10.4-062"
+  ],
   "notes": "A message with no address records no one, and counts as no one heard. Its room's binding names system, the name no sender is: unnamed, it would pass step 3 for Bob. No recipient is written, so its deliveries stay refused until the integrator names one (routing/a-room-opened-with-no-address-is-named-by-the-integrator). Two such messages no longer share a room.",
   "setup": {
     "channels": [

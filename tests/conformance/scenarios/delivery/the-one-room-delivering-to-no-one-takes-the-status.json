@@ -6,6 +6,9 @@
     "§10.4 A delivery status follows its message",
     "§5.7"
   ],
+  "requirements": [
+    "RK-10.4-045"
+  ],
   "notes": "A blank string is no value: the binding delivers to no one and names no one, so the one room is the status's.",
   "setup": {
     "channels": [

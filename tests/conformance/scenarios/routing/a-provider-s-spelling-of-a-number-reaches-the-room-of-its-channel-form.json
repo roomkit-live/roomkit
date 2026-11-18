@@ -6,6 +6,9 @@
     "§10.4",
     "§5.7"
   ],
+  "requirements": [
+    "RK-10.4-015"
+  ],
   "notes": "Python: tests/test_transport_recipient.py::test_a_provider_spelling_reaches_the_e164_room. The channel's normalize_address writes each spelling as the number; the spellings an SMS or WhatsApp channel reads are each implementation's own tests.",
   "setup": {
     "channels": [

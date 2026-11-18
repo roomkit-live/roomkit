@@ -6,6 +6,10 @@
     "§10.1 step 2",
     "§10.4"
   ],
+  "requirements": [
+    "RK-10.4-032",
+    "RK-10.4-034"
+  ],
   "notes": "The other side of routing/a-routed-message-under-the-framework-s-name-is-refused: no routing here, and a routed sender is admitted as to any room that heard no one.",
   "setup": {
     "channels": [

@@ -7,6 +7,12 @@
     "§10.4",
     "§17.2"
   ],
+  "requirements": [
+    "RK-10.4-009",
+    "RK-10.4-038",
+    "RK-10.4-058",
+    "RK-10.4-064"
+  ],
   "notes": "Python: tests/test_shared_channel_routing.py::TestAMessageWithNoAddress::test_a_router_is_told_no_address_as_none. The count is exact and every request has a fresh room.",
   "setup": {
     "kit": {

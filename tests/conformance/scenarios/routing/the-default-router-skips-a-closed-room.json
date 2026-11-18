@@ -5,6 +5,11 @@
   "rules": [
     "§10.4"
   ],
+  "requirements": [
+    "RK-10.4-022",
+    "RK-10.4-023",
+    "RK-10.4-055"
+  ],
   "notes": "Python: tests/test_inbound_routing.py::TestDefaultInboundRoomRouter::test_skips_closed_rooms, tests/test_inbound_routing_ambiguity.py::TestAmbiguityIsRefused::test_a_closed_room_does_not_make_it_ambiguous.",
   "setup": {
     "channels": [

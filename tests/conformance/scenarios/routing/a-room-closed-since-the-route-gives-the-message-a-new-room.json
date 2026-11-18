@@ -7,6 +7,9 @@
     "§10.4",
     "§5.1"
   ],
+  "requirements": [
+    "RK-10.4-042"
+  ],
   "notes": "Python: tests/test_shared_channel_routing.py::TestTheLockChecksTheRoomAgain::test_a_room_closed_since_the_route_gives_the_message_a_new_room. A routed message is never refused room_closed at step 2. A scripted router answers the free room each time it is asked, where Python's default router answers no room the second time; either gives the message a new room.",
   "setup": {
     "kit": {

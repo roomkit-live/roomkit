@@ -9,6 +9,10 @@
     "§10.4",
     "Appendix B.3"
   ],
+  "requirements": [
+    "RK-10.4-027",
+    "RK-10.4-053"
+  ],
   "notes": "The binding names no participant: its recipient, bob's number, is its correspondent (§5.7). Resolving alice, a member the host added on sms, identifies her and leaves the binding as it was, so her message is no more the room's than before.",
   "setup": {
     "identities": [

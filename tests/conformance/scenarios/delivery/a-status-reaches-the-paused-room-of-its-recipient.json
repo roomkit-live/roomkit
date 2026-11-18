@@ -6,6 +6,10 @@
     "§10.4 A delivery status follows its message",
     "§5.1"
   ],
+  "requirements": [
+    "RK-10.4-045",
+    "RK-10.4-047"
+  ],
   "notes": "A status is no activity: its room stays PAUSED, with no framework event. The room's inactivity timer is 0 seconds: the attach's section applies it first, so the room is PAUSED before the channel is attached.",
   "setup": {
     "channels": [

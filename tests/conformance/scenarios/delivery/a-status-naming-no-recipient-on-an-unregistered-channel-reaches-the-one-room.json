@@ -5,6 +5,10 @@
   "rules": [
     "§10.4 A delivery status follows its message"
   ],
+  "requirements": [
+    "RK-10.4-045",
+    "RK-10.4-046"
+  ],
   "notes": "No recipient to compare: the one room bound to the channel is the status's, the channel registered or not (delivery/a-status-naming-no-recipient-reaches-the-one-room).",
   "setup": {
     "channels": [

@@ -7,6 +7,9 @@
     "§22.2",
     "§10.4"
   ],
+  "requirements": [
+    "RK-10.4-032"
+  ],
   "notes": "With no channel named, the room's first transport carries it; the transport, its source, is not delivered to (§7.5), any other is. The agent is handed the message, and the outcome names the committed event.",
   "setup": {
     "channels": [

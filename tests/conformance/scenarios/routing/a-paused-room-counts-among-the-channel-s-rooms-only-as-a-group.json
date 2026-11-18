@@ -6,6 +6,11 @@
     "§5.1",
     "§10.4"
   ],
+  "requirements": [
+    "RK-10.4-022",
+    "RK-10.4-023",
+    "RK-10.4-055"
+  ],
   "notes": "Python: tests/test_shared_channel_routing.py::TestAPausedConversation::test_a_paused_room_counts_among_the_channels_rooms_when_group_only.",
   "setup": {
     "channels": [

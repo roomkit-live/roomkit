@@ -6,6 +6,9 @@
     "§10.4 A delivery status follows its message",
     "§5.7"
   ],
+  "requirements": [
+    "RK-10.4-045"
+  ],
   "notes": "The channel writes its numbers in E.164 by its own normalize_address: the recipients as the provider wrote them name the rooms their bindings name in that form.",
   "setup": {
     "channels": [

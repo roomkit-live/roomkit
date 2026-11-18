@@ -6,6 +6,10 @@
     "§10.4",
     "§5.7"
   ],
+  "requirements": [
+    "RK-10.4-020",
+    "RK-10.4-027"
+  ],
   "notes": "Python: tests/test_chat_conversations.py::test_a_room_prepared_for_a_chat_takes_no_one_else.",
   "setup": {
     "channels": [

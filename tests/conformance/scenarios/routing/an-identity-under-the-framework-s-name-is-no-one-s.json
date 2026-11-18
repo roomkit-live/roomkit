@@ -5,6 +5,9 @@
   "rules": [
     "§10.4"
   ],
+  "requirements": [
+    "RK-10.4-035"
+  ],
   "notes": "No sender is known by that name, not through an identity either. Only a host can create such an identity. Found by the review of RMK-1339.",
   "setup": {
     "identities": [

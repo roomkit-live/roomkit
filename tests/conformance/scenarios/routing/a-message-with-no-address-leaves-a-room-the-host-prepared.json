@@ -6,6 +6,12 @@
     "§10.1 step 2",
     "§10.4"
   ],
+  "requirements": [
+    "RK-10.4-037",
+    "RK-10.4-038",
+    "RK-10.4-055",
+    "RK-10.4-061"
+  ],
   "notes": "HITL 474148bb, option 1. desk binds sms and names no one. A client writes with no id: it opens a closed room of its own, so the channel is bound to two rooms and step 3 does not guess: Bob gets a room of his own too. desk stays empty, as it would once a first stranger took it.",
   "setup": {
     "channels": [

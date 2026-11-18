@@ -6,6 +6,9 @@
     "§10.4",
     "§22.2"
   ],
+  "requirements": [
+    "RK-10.4-032"
+  ],
   "notes": "The other side of routing/a-routed-message-under-the-framework-s-name-is-refused: the same sender on the stored event, and no routing: the framework never relied on the name to enter a room. The router answers room-2, which holds nothing.",
   "setup": {
     "kit": {

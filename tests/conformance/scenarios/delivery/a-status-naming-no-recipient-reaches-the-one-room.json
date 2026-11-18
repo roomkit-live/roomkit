@@ -5,6 +5,9 @@
   "rules": [
     "§10.4 A delivery status follows its message"
   ],
+  "requirements": [
+    "RK-10.4-045"
+  ],
   "setup": {
     "channels": [
       {

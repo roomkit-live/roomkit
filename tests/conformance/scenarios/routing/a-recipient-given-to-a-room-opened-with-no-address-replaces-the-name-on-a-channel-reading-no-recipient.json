@@ -7,6 +7,9 @@
     "§10.1 step 2",
     "§10.4"
   ],
+  "requirements": [
+    "RK-10.4-063"
+  ],
   "notes": "RFC 10.4: a recipient the integrator gives replaces the name. Compare routing/a-room-opened-with-no-address-is-named-by-the-integrator, on a channel that reads it. Found by the review of RMK-1129.",
   "setup": {
     "channels": [

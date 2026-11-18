@@ -5,6 +5,13 @@
   "rules": [
     "§10.4"
   ],
+  "requirements": [
+    "RK-10.4-025",
+    "RK-10.4-026",
+    "RK-10.4-028",
+    "RK-10.4-029",
+    "RK-10.4-032"
+  ],
   "notes": "Python: tests/test_inbound_routing_ambiguity.py::TestStepThreeAdmitsOneConversation::test_a_binding_naming_another_sender_refuses, test_a_participant_joined_through_the_channel_refuses, test_a_participant_joined_through_another_channel_does_not, test_a_message_naming_no_one_or_blocked_does_not, test_a_group_binding_admits_everyone, test_the_frameworks_own_messages_do_not. The router itself: the lock's own check would refuse each room anyway. One channel per case.",
   "setup": {
     "channels": [

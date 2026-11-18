@@ -6,6 +6,11 @@
     "§10.4 A delivery status follows its message",
     "§17.2"
   ],
+  "requirements": [
+    "RK-10.4-045",
+    "RK-10.4-050",
+    "RK-10.4-051"
+  ],
   "notes": "Both organizations' rooms bind the shared number to alice. The webhook's status, acting for acme, reaches acme's room, never globex's; a status naming globex's room while acting for acme finds no room.",
   "setup": {
     "channels": [

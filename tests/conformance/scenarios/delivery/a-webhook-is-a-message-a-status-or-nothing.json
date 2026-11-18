@@ -7,6 +7,9 @@
     "§13.4",
     "§10.1"
   ],
+  "requirements": [
+    "RK-10.4-051"
+  ],
   "notes": "The message the webhook carries is keyed by the provider's message id and carries the provider, the recipient and the timestamp in its metadata (the Python implementation's WebhookMeta.to_inbound). An outbound webhook of an event type that is no delivery status (message.queued) is neither.",
   "setup": {
     "channels": [

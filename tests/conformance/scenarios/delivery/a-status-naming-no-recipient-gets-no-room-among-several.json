@@ -5,6 +5,10 @@
   "rules": [
     "§10.4 A delivery status follows its message"
   ],
+  "requirements": [
+    "RK-10.4-045",
+    "RK-10.4-048"
+  ],
   "notes": "Never the oldest of several rooms: on a number shared by many correspondents, it is another customer's.",
   "setup": {
     "channels": [

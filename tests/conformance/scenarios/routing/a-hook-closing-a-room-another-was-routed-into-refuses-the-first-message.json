@@ -6,6 +6,9 @@
     "§7.5 rule 7",
     "§10.1 step 2"
   ],
+  "requirements": [
+    "RK-10.4-041"
+  ],
   "notes": "Review probe. Found by the review of RMK-1396.",
   "setup": {
     "kit": {

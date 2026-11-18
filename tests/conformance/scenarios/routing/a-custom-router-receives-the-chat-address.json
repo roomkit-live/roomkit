@@ -7,6 +7,11 @@
     "§10.4",
     "§17.2"
   ],
+  "requirements": [
+    "RK-10.4-009",
+    "RK-10.4-020",
+    "RK-10.4-058"
+  ],
   "notes": "Complements routing/a-message-is-routed-by-the-channel-s-conversation: observes the custom strategy input itself, while the stored event still names its author.",
   "setup": {
     "kit": {

@@ -5,6 +5,11 @@
   "rules": [
     "§10.4"
   ],
+  "requirements": [
+    "RK-10.4-015",
+    "RK-10.4-028",
+    "RK-10.4-029"
+  ],
   "notes": "Python: tests/test_inbound_routing_ambiguity.py::TestStepThreeAdmitsOneConversation::test_what_names_the_senders_identity_is_their_own.",
   "setup": {
     "channels": [

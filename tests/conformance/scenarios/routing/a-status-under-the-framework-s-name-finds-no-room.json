@@ -5,6 +5,9 @@
   "rules": [
     "§10.4"
   ],
+  "requirements": [
+    "RK-10.4-035"
+  ],
   "notes": "The room a message with no address opened binds the name and delivers to no one, so no status is ever its own. Found by the review of RMK-1339.",
   "setup": {
     "channels": [

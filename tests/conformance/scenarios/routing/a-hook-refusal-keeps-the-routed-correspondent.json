@@ -7,6 +7,12 @@
     "§10.4",
     "§17.2"
   ],
+  "requirements": [
+    "RK-10.4-022",
+    "RK-10.4-039",
+    "RK-10.4-040",
+    "RK-10.4-044"
+  ],
   "notes": "Python: tests/test_shared_channel_routing.py::TestWhatTheBindingRetains::test_a_refused_first_message_still_routes_its_sender. Routing decides the conversation before the hook decides the event.",
   "setup": {
     "channels": [

@@ -5,6 +5,9 @@
   "rules": [
     "§10.4"
   ],
+  "requirements": [
+    "RK-10.4-035"
+  ],
   "notes": "A message under the name is refused before any router is asked: this is the router's own answer, as a host may call it. Translates the python step_three_admits guard and its twin in rules/routing.rs.",
   "setup": {
     "channels": [

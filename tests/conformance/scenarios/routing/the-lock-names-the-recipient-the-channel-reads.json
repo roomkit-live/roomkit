@@ -7,6 +7,10 @@
     "§10.1 step 2",
     "§10.4"
   ],
+  "requirements": [
+    "RK-10.4-027",
+    "RK-10.4-059"
+  ],
   "notes": "Bob writes; the router answers the room whose binding delivers to him by the channel's recipient_address, under a key the declaration does not name. The room is his conversation: the record names him, and his reply metadata goes under the declared key.",
   "setup": {
     "kit": {

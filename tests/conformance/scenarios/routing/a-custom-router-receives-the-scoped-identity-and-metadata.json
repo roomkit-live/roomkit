@@ -7,6 +7,10 @@
     "§10.4",
     "§17.2"
   ],
+  "requirements": [
+    "RK-10.4-009",
+    "RK-10.4-058"
+  ],
   "notes": "Python: tests/test_room_org_scoping.py::TestScopedInbound::test_the_router_is_given_the_organization_and_the_identity. The scripted router returns null deliberately, so every request creates a separate room.",
   "setup": {
     "kit": {

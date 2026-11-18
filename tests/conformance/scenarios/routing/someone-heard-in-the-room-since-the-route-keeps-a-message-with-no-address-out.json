@@ -7,6 +7,10 @@
     "§10.4",
     "§5.7"
   ],
+  "requirements": [
+    "RK-10.4-037",
+    "RK-10.4-042"
+  ],
   "notes": "Python: tests/test_shared_channel_routing.py::TestTheLockChecksTheRoomAgain::test_someone_heard_on_the_channel_since_the_route_keeps_the_sender_out (no-address). A message with no address is held to step 3's conditions under the lock as any sender is. The refusal of a message with no address into a room whose binding is not group holds the outcome alone; Carol's message shows the check of who was heard would hold it too. Python's own case never makes Carol write: its hook compares the router's participant_id, None for a message with no address, with the sender, an empty string. A scripted router answers the free room each time it is asked, where Python's default router answers no room to a message with no address; either gives the message a new room.",
   "setup": {
     "kit": {

@@ -6,6 +6,10 @@
     "§10.1 step 2",
     "§10.4"
   ],
+  "requirements": [
+    "RK-10.4-029",
+    "RK-10.4-042"
+  ],
   "notes": "The router answers room-1 for every message. Bob wrote on sms into room-1 by name, which records no one, then 55 messages came on ws. Alice's routed message finds the binding naming no one, but the room heard Bob on sms: the check under the lock reads the channel's whole history, as the router's step 3 does, so room-1 is not hers. Routed again to room-1, the second answer is not hers either, and she gets a new room.",
   "setup": {
     "kit": {

@@ -6,6 +6,11 @@
     "§5.7",
     "§10.4"
   ],
+  "requirements": [
+    "RK-10.4-037",
+    "RK-10.4-038",
+    "RK-10.4-062"
+  ],
   "notes": "HITL cdec52d7: a blank identifies no one, as under a recipient key (§5.7). Same as an empty id: routing/a-room-opened-with-no-address-takes-in-no-one-else.",
   "setup": {
     "channels": [

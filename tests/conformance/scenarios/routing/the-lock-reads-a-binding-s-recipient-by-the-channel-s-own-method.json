@@ -7,6 +7,10 @@
     "§10.1 step 2",
     "§10.4"
   ],
+  "requirements": [
+    "RK-10.4-027",
+    "RK-10.4-042"
+  ],
   "notes": "A router answers room-1 for every message. The binding names no participant and the channel's recipient_address reads Bob: roomkit's still_the_messages takes him as the correspondent, so Alice is routed once more, then given a room of her own, and nothing is written on the binding.",
   "setup": {
     "kit": {

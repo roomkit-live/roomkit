@@ -6,6 +6,9 @@
     "§10.1 step 2",
     "§10.4"
   ],
+  "requirements": [
+    "RK-10.4-033"
+  ],
   "notes": "The framework names the room it writes to and is never routed, so this is a sender borrowing the name, on a channel whose senders choose their id. The router would answer room-1, which Carol wrote in. Translates tests/test_shared_channel_routing.py::TestTheFrameworksOwnSender::test_a_borrowed_name_is_refused_before_the_router_is_asked.",
   "setup": {
     "kit": {

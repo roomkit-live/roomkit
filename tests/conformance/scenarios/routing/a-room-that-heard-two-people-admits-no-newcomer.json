@@ -5,6 +5,9 @@
   "rules": [
     "§10.4"
   ],
+  "requirements": [
+    "RK-10.4-029"
+  ],
   "notes": "Python: tests/test_shared_channel_routing.py::TestARoomTheHostOpened::test_a_room_that_already_heard_two_people_admits_no_newcomer.",
   "setup": {
     "channels": [

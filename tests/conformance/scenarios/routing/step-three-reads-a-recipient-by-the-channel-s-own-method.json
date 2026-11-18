@@ -6,6 +6,9 @@
     "§5.7",
     "§10.4"
   ],
+  "requirements": [
+    "RK-10.4-027"
+  ],
   "notes": "The channel declares phone_number and its recipient_address reads reached_at. The room's binding holds Bob under reached_at: the room delivers to him, so Alice gets a room of her own, whether step 3 or the lock refuses her. What only the router's read shows: routing/the-channel-s-answer-naming-the-sender-admits-her-whatever-the-key-holds. Translates roomkit core/inbound_router.py routed_recipient.",
   "setup": {
     "channels": [

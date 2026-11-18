@@ -6,6 +6,10 @@
     "§10.1 step 2",
     "§10.4"
   ],
+  "requirements": [
+    "RK-10.4-028",
+    "RK-10.4-042"
+  ],
   "notes": "Python: tests/test_shared_channel_routing.py::TestTheLockChecksTheRoomAgain::test_a_member_added_on_the_channel_since_the_route_keeps_the_sender_out. Carol's landing there shows the binding did not name Bob. A scripted router answers the free room each time it is asked, where Python's default router answers no room the second time; either gives the message a new room. Here Carol lands in the free room through the lock, which admits a member; Python's default router finds her as a member at step 1, which routing/a-member-is-found-past-a-newer-binding-of-another-number covers.",
   "setup": {
     "kit": {

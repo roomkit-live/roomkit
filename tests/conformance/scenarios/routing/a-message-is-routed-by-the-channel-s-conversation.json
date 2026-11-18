@@ -7,6 +7,9 @@
     "§5.7",
     "§10.1 step 2"
   ],
+  "requirements": [
+    "RK-10.4-020"
+  ],
   "notes": "A chat channel names a message's conversation by the chat it was posted in (conversation_address), and replies there (reply_metadata). Two members of one chat reach the chat's room; a member of another chat gets a room of its own. The binding names the chat, as its correspondent and its recipient; each event names its author.",
   "setup": {
     "channels": [

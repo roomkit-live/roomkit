@@ -6,6 +6,11 @@
     "§10.1 step 2",
     "§10.4"
   ],
+  "requirements": [
+    "RK-10.4-029",
+    "RK-10.4-037",
+    "RK-10.4-042"
+  ],
   "notes": "The router answers room-1 for every message. Carol wrote there by name, which records no one. A message with no address names no correspondent to record, yet the check still reads who the room heard: room-1 is not the message's, routed again it is not either, and it gets a new room. Translates tests/test_shared_channel_routing.py::TestTheLockChecksTheRoomAgain::test_someone_heard_on_the_channel_since_the_route_keeps_the_sender_out[no-address].",
   "setup": {
     "kit": {

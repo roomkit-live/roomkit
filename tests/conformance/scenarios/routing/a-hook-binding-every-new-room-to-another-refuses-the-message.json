@@ -7,6 +7,10 @@
     "§10.1 step 2",
     "§10.4"
   ],
+  "requirements": [
+    "RK-10.4-041",
+    "RK-10.4-042"
+  ],
   "notes": "The hook binds each new room of the channel to Bob. Routed once more, then given a new room, then a last one: none is the message's. Maintainer's decision, HITL ef0ef858. The rooms stay as the hook left them.",
   "setup": {
     "channels": [

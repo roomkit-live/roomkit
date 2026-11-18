@@ -6,6 +6,10 @@
     "§10.1 step 2",
     "§10.4"
   ],
+  "requirements": [
+    "RK-10.4-028",
+    "RK-10.4-041"
+  ],
   "notes": "step 3's conditions under the lock read the member. Found by the review of RMK-1396.",
   "setup": {
     "channels": [

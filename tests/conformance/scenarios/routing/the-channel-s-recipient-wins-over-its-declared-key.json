@@ -7,6 +7,11 @@
     "§10.1 step 2",
     "§10.4"
   ],
+  "requirements": [
+    "RK-10.4-015",
+    "RK-10.4-027",
+    "RK-10.4-042"
+  ],
   "notes": "reached_at holds Bob, the declared key Carol. Step 1 reads the declared key and finds Carol the room; under the lock the channel's answer names Bob, so she is routed once more, then given a room of her own, the binding as it was.",
   "setup": {
     "channels": [

@@ -6,6 +6,11 @@
     "§10.4 A router MUST NOT guess",
     "§10.4"
   ],
+  "requirements": [
+    "RK-10.4-008",
+    "RK-10.4-024",
+    "RK-10.4-055"
+  ],
   "setup": {
     "channels": [
       {

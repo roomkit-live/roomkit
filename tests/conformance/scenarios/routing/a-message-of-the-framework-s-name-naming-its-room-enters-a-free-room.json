@@ -6,6 +6,10 @@
     "§10.1 step 2",
     "§10.4"
   ],
+  "requirements": [
+    "RK-10.4-032",
+    "RK-10.4-034"
+  ],
   "notes": "Python: tests/test_shared_channel_routing.py::TestTheFrameworksOwnSender::test_a_message_naming_its_room_is_the_host_s_and_enters. It is not routed, so nothing of the refusal of a routed `system` applies.",
   "setup": {
     "channels": [

@@ -7,6 +7,10 @@
     "§10.1 step 2",
     "§10.4"
   ],
+  "requirements": [
+    "RK-10.4-027",
+    "RK-10.4-042"
+  ],
   "notes": "A router answers room-1 for every message. Alice is routed once more, then given a room of her own, nothing written on the binding; Bob, whose number is under the key, stays and is recorded.",
   "setup": {
     "kit": {

@@ -6,6 +6,9 @@
     "§10.4 A delivery status follows its message",
     "§5.7"
   ],
+  "requirements": [
+    "RK-10.4-045"
+  ],
   "notes": "Python: tests/test_shared_channel_routing.py::TestADeliveryStatus::test_its_recipient_is_found_as_step_one_finds_a_sender. The room `stored` is bound through the store, its binding holding the recipient and naming no correspondent; carol's room is opened by an attach, which names her.",
   "setup": {
     "channels": [

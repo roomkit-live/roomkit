@@ -5,6 +5,10 @@
   "rules": [
     "§10.4"
   ],
+  "requirements": [
+    "RK-10.4-029",
+    "RK-10.4-037"
+  ],
   "notes": "Python: tests/test_inbound_routing_ambiguity.py::TestStepThreeAdmitsOneConversation::test_a_message_received_from_another_sender_refuses, test_a_sender_with_no_address_is_admitted_through_a_group_binding_only. The router itself: the lock's own check would refuse the room anyway.",
   "setup": {
     "channels": [

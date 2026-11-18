@@ -6,6 +6,9 @@
     "§10.1 step 2",
     "§5.7"
   ],
+  "requirements": [
+    "RK-10.4-064"
+  ],
   "notes": "Recording a sender writes the channel's reply_metadata where the binding holds no value, whatever the channel's recipient key: a channel that keeps the default reply_metadata, which names nothing, records the sender as the binding's correspondent and no recipient.",
   "setup": {
     "channels": [

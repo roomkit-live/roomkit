@@ -5,6 +5,9 @@
   "rules": [
     "§10.4"
   ],
+  "requirements": [
+    "RK-10.4-035"
+  ],
   "notes": "The name is no sender's: a binding naming it is closed to everyone, the name included, and the framework names the room it writes to. A participant the host added under the name changes nothing.",
   "setup": {
     "channels": [

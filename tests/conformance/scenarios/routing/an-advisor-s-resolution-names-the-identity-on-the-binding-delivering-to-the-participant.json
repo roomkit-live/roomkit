@@ -8,6 +8,10 @@
     "§10.4",
     "Appendix B.3"
   ],
+  "requirements": [
+    "RK-10.4-015",
+    "RK-10.4-031"
+  ],
   "notes": "The binding names no participant and delivers to alice's number: it is her conversation, so resolving her writes the identity on it, as for a binding delivering to no one (members/resolve-participant-identifies-a-pending-record).",
   "setup": {
     "identities": [

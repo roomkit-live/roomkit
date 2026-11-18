@@ -9,6 +9,9 @@
     "§10.4",
     "Appendix B.3"
   ],
+  "requirements": [
+    "RK-10.4-053"
+  ],
   "notes": "The binding names bob, its correspondent and recipient. Resolving alice, a member the host added on sms, leaves it naming him: bob's next message is the room's, alice's opens another.",
   "setup": {
     "identities": [

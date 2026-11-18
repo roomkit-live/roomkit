@@ -7,6 +7,10 @@
     "§5.7",
     "§10.1 step 2"
   ],
+  "requirements": [
+    "RK-10.4-027",
+    "RK-10.4-036"
+  ],
   "notes": "Python: tests/test_shared_channel_routing.py::TestAnIdentifiedCorrespondent::test_a_member_known_by_no_address_does_not_hide_the_recipient. The member's id says nothing of the number; the binding's recipient does.",
   "setup": {
     "channels": [

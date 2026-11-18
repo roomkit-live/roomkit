@@ -6,6 +6,9 @@
     "§10.4 A delivery status follows its message",
     "§5.7"
   ],
+  "requirements": [
+    "RK-10.4-045"
+  ],
   "notes": "The recipient is under a key the declaration does not name, so the status is read by the one room's rule, not by step 1's.",
   "setup": {
     "channels": [

@@ -9,6 +9,10 @@
     "§10.4",
     "Appendix B.3"
   ],
+  "requirements": [
+    "RK-10.4-027",
+    "RK-10.4-053"
+  ],
   "notes": "With sms not registered, nothing reads the binding's recipient, bob's number: naming no participant, the binding is read as someone else's and is not written (§5.5). Once sms is registered again, alice's message is no more the room's than before.",
   "setup": {
     "identities": [

@@ -7,6 +7,9 @@
     "§10.1 step 2",
     "§10.4"
   ],
+  "requirements": [
+    "RK-10.4-063"
+  ],
   "notes": "The other side of routing/a-room-opened-with-no-address-takes-in-no-one-else: no routing here.",
   "setup": {
     "channels": [

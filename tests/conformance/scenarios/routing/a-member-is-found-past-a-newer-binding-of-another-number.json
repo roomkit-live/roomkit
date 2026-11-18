@@ -5,6 +5,11 @@
   "rules": [
     "§10.4"
   ],
+  "requirements": [
+    "RK-10.4-014",
+    "RK-10.4-052",
+    "RK-10.4-053"
+  ],
   "notes": "Python: tests/test_shared_channel_routing.py::TestTwoNumbersOnOneKit::test_a_member_is_found_past_a_newer_binding_of_another_number. Step 1 reads the members as well as the bindings.",
   "setup": {
     "channels": [

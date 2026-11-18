@@ -7,6 +7,10 @@
     "§10.1 step 2",
     "§10.4"
   ],
+  "requirements": [
+    "RK-10.4-038",
+    "RK-10.4-042"
+  ],
   "notes": "room-1 is Bob's. The router answers it twice, the lock refuses it twice, and the message's new room names no sender.",
   "setup": {
     "kit": {

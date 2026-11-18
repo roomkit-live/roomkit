@@ -6,6 +6,9 @@
     "§10.4 A delivery status follows its message",
     "§5.7"
   ],
+  "requirements": [
+    "RK-10.4-045"
+  ],
   "notes": "The binding's recipient is its correspondent, read under the key when the channel's method answers none.",
   "setup": {
     "channels": [

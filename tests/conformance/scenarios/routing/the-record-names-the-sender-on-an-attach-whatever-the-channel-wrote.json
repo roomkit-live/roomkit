@@ -6,6 +6,10 @@
     "§5.7",
     "§10.1 step 2"
   ],
+  "requirements": [
+    "RK-10.4-012",
+    "RK-10.4-059"
+  ],
   "notes": "A router answers room-1, which does not bind the channel; on_room_attached writes true under the key. The binding names the sender, the value kept. Found by the review of RMK-1129: Python's record wrote the unreadable value's object.",
   "setup": {
     "kit": {

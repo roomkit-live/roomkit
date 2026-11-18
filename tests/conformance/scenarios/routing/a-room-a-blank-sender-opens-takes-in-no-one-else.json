@@ -6,6 +6,11 @@
     "§5.7",
     "§10.4"
   ],
+  "requirements": [
+    "RK-10.4-037",
+    "RK-10.4-038",
+    "RK-10.4-062"
+  ],
   "notes": "Python: tests/test_shared_channel_routing.py::TestAMessageWithNoAddress::test_a_room_it_opens_takes_in_no_one_else (blank); the empty case is routing/a-room-opened-with-no-address-takes-in-no-one-else.",
   "setup": {
     "channels": [

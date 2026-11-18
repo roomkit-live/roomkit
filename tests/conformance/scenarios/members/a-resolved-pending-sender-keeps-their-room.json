@@ -8,6 +8,11 @@
     "§11.6",
     "Appendix B.3"
   ],
+  "requirements": [
+    "RK-10.4-015",
+    "RK-10.4-030",
+    "RK-10.4-031"
+  ],
   "setup": {
     "kit": {
       "identity_resolver": {

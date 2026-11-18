@@ -6,6 +6,9 @@
     "§10.4",
     "§5.7"
   ],
+  "requirements": [
+    "RK-10.4-020"
+  ],
   "notes": "Python: tests/test_chat_conversations.py::test_a_group_message_is_answered_in_the_group_after_a_private_chat, test_a_private_message_is_answered_in_private_after_a_group, test_a_groups_members_share_its_room_and_their_private_chats_stay_apart. A private chat's id is its user's. Each answer is delivered in its room, whose binding names the chat it replies to.",
   "setup": {
     "channels": [

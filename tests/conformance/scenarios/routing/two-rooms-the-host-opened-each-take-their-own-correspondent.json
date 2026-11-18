@@ -6,6 +6,10 @@
     "§10.4",
     "§5.7"
   ],
+  "requirements": [
+    "RK-10.4-014",
+    "RK-10.4-015"
+  ],
   "notes": "Python: tests/test_transport_recipient.py::test_each_correspondent_reaches_the_room_prepared_for_them.",
   "setup": {
     "channels": [

@@ -6,6 +6,10 @@
     "§10.4",
     "§10.1 step 2"
   ],
+  "requirements": [
+    "RK-10.4-028",
+    "RK-10.4-054"
+  ],
   "notes": "Python: tests/test_shared_channel_routing.py::TestARoomTheHostOpened::test_a_member_on_the_channel_holds_the_room_before_writing.",
   "setup": {
     "channels": [

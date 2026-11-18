@@ -6,6 +6,10 @@
     "§5.7",
     "§10.4"
   ],
+  "requirements": [
+    "RK-10.4-015",
+    "RK-10.4-059"
+  ],
   "notes": "Python: tests/test_shared_channel_routing.py::TestEitherNameFindsTheNewestRoom::test_a_binding_stored_with_a_recipient_alone_names_its_recipient.",
   "setup": {
     "channels": [
