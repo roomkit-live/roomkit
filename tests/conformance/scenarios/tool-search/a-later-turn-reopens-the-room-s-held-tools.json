@@ -1,11 +1,11 @@
 {
   "$schema": "../../scenario.schema.json",
-  "id": "anthropic/a-failed-held-tool-is-not-referenced-or-reported",
-  "title": "A failed hidden call remains held without a reference or a reported declaration",
+  "id": "tool-search/a-later-turn-reopens-the-room-s-held-tools",
+  "title": "A later turn keeps the room declaration and reopens its previously revealed tools before its input",
   "rules": [
     "§6.4"
   ],
-  "notes": "Python: channels/_ai_tools.py::_serve_gated_call (no references on failed outcomes). RMK-1306.",
+  "notes": "Python: tests/test_tool_reopen.py, _tool_reopen.py. RMK-1306.",
   "setup": {
     "channels": [
       {
@@ -26,10 +26,7 @@
           {
             "name": "track_shipment",
             "description": "Track a shipment.",
-            "raises": {
-              "kind": "RuntimeError",
-              "message": "cannot reach parcel service"
-            }
+            "returns": "ok"
           },
           {
             "name": "refund",
@@ -44,12 +41,27 @@
               "calls": [
                 {
                   "id": "c0",
+                  "name": "find_tools",
+                  "arguments": {
+                    "query": "track shipment",
+                    "max_results": 1
+                  }
+                }
+              ]
+            },
+            {
+              "calls": [
+                {
+                  "id": "c1",
                   "name": "track_shipment"
                 }
               ]
             },
             {
               "text": "Done."
+            },
+            {
+              "text": "Again."
             }
           ]
         },
@@ -71,13 +83,6 @@
             "category": "intelligence"
           }
         ]
-      }
-    ],
-    "hooks": [
-      {
-        "name": "report",
-        "trigger": "on_ai_response",
-        "execution": "async"
       }
     ]
   },
@@ -102,42 +107,43 @@
     },
     {
       "idle": true
+    },
+    {
+      "call": "process_inbound",
+      "room_id": "room-1",
+      "message": {
+        "channel_id": "ws",
+        "sender_id": "dev",
+        "content": {
+          "type": "text",
+          "body": "again"
+        }
+      },
+      "expect": {
+        "result": {
+          "blocked": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "idle": true
     }
   ],
   "expect": {
     "models": {
       "agent": [
-        {
-          "deferred_tools": [
-            "track_shipment",
-            "refund"
-          ]
-        },
+        {},
+        {},
+        {},
         {
           "deferred_tools": [
             "track_shipment",
             "refund"
           ],
-          "tool_results": [
-            {
-              "name": "track_shipment",
-              "references": [],
-              "is_error": true
-            }
+          "reopened_tools": [
+            "track_shipment"
           ]
-        }
-      ]
-    },
-    "hooks": {
-      "report": [
-        {
-          "response": {
-            "declared_tools": {
-              "track_shipment": {
-                "$absent": true
-              }
-            }
-          }
         }
       ]
     }

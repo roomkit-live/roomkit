@@ -1,7 +1,7 @@
 {
   "$schema": "../../scenario.schema.json",
-  "id": "anthropic/signed-blocks-and-tool-results-replay-in-order",
-  "title": "Anthropic replays each signed or redacted block in order beside calls and native tool results",
+  "id": "reasoning/signed-blocks-and-tool-results-replay-in-order",
+  "title": "A vendor with signed reasoning blocks receives each signed or redacted block in order beside calls and native tool results",
   "rules": [
     "§6.4"
   ],

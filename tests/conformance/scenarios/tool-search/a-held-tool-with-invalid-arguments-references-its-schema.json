@@ -1,11 +1,11 @@
 {
   "$schema": "../../scenario.schema.json",
-  "id": "anthropic/a-fallback-receives-referenced-tools-without-deferred-loading",
-  "title": "A fallback without deferred loading receives revealed tools plainly and no native references",
+  "id": "tool-search/a-held-tool-with-invalid-arguments-references-its-schema",
+  "title": "An invalid call references its held schema so the next round can correct it",
   "rules": [
     "§6.4"
   ],
-  "notes": "Python: tests/test_deferred_tools.py::test_a_fallback_that_cannot_hold_receives_what_the_turn_shows. RMK-1306.",
+  "notes": "Python: tests/test_tool_search_called_declaration.py::test_a_held_tool_with_invalid_arguments_references_its_schema. RMK-1306.",
   "setup": {
     "channels": [
       {
@@ -26,7 +26,18 @@
           {
             "name": "track_shipment",
             "description": "Track a shipment.",
-            "returns": "ok"
+            "returns": "ok",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "count": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "count"
+              ]
+            }
           },
           {
             "name": "refund",
@@ -41,37 +52,22 @@
               "calls": [
                 {
                   "id": "c0",
-                  "name": "find_tools",
+                  "name": "track_shipment",
                   "arguments": {
-                    "query": "track shipment",
-                    "max_results": 1
+                    "count": "invalid"
                   }
                 }
               ]
             },
             {
-              "refuses": {
-                "status": 529,
-                "retryable": true,
-                "message": "overloaded"
-              }
+              "text": "Done."
             }
           ]
         },
         "tool_search": true,
         "tool_search_pinned": [
           "lookup"
-        ],
-        "retry_policy": {
-          "max_retries": 0
-        },
-        "fallback_model": {
-          "rounds": [
-            {
-              "text": "Done."
-            }
-          ]
-        }
+        ]
       }
     ],
     "rooms": [
@@ -114,21 +110,25 @@
   ],
   "expect": {
     "models": {
-      "agent/fallback": [
+      "agent": [
         {
-          "deferred_tools": [],
-          "tools": {
-            "track_shipment": {
-              "$present": true
-            },
-            "refund": {
-              "$absent": true
-            }
-          },
+          "deferred_tools": [
+            "track_shipment",
+            "refund"
+          ]
+        },
+        {
+          "deferred_tools": [
+            "track_shipment",
+            "refund"
+          ],
           "tool_results": [
             {
-              "name": "find_tools",
-              "references": []
+              "name": "track_shipment",
+              "references": [
+                "track_shipment"
+              ],
+              "is_error": true
             }
           ]
         }

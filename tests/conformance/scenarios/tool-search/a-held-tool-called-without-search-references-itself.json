@@ -1,11 +1,11 @@
 {
   "$schema": "../../scenario.schema.json",
-  "id": "anthropic/a-held-tool-with-invalid-arguments-references-its-schema",
-  "title": "An invalid call references its held schema so the next round can correct it",
+  "id": "tool-search/a-held-tool-called-without-search-references-itself",
+  "title": "A held tool recovered by exact name references itself once its call answers",
   "rules": [
     "§6.4"
   ],
-  "notes": "Python: tests/test_tool_search_called_declaration.py::test_a_held_tool_with_invalid_arguments_references_its_schema. RMK-1306.",
+  "notes": "Python: tests/test_deferred_tools.py::test_a_held_tool_called_without_a_search_references_itself. RMK-1306.",
   "setup": {
     "channels": [
       {
@@ -26,18 +26,7 @@
           {
             "name": "track_shipment",
             "description": "Track a shipment.",
-            "returns": "ok",
-            "parameters": {
-              "type": "object",
-              "properties": {
-                "count": {
-                  "type": "integer"
-                }
-              },
-              "required": [
-                "count"
-              ]
-            }
+            "returns": "ok"
           },
           {
             "name": "refund",
@@ -52,10 +41,7 @@
               "calls": [
                 {
                   "id": "c0",
-                  "name": "track_shipment",
-                  "arguments": {
-                    "count": "invalid"
-                  }
+                  "name": "track_shipment"
                 }
               ]
             },
@@ -127,8 +113,7 @@
               "name": "track_shipment",
               "references": [
                 "track_shipment"
-              ],
-              "is_error": true
+              ]
             }
           ]
         }

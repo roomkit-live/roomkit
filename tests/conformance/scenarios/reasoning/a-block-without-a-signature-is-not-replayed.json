@@ -1,7 +1,7 @@
 {
   "$schema": "../../scenario.schema.json",
-  "id": "anthropic/unsigned-reasoning-is-not-sent",
-  "title": "Anthropic omits unsigned reasoning and preserves the text and native tool calls",
+  "id": "reasoning/a-block-without-a-signature-is-not-replayed",
+  "title": "A vendor with signed reasoning blocks receives no unsigned reasoning, and the text and native tool calls stay",
   "rules": [
     "§6.4"
   ],

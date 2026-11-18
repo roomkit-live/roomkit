@@ -1,6 +1,6 @@
 {
   "$schema": "../../scenario.schema.json",
-  "id": "anthropic/a-failed-call-composition-can-be-retried",
+  "id": "resilience/a-generation-that-only-streamed-call-arguments-before-its-refusal-is-tried-again",
   "title": "Tool argument fragments alone do not spend the retry budget as delivered output",
   "rules": [
     "§6.4"

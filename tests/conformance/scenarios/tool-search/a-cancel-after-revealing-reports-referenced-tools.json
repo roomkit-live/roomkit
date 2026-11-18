@@ -1,6 +1,6 @@
 {
   "$schema": "../../scenario.schema.json",
-  "id": "anthropic/a-cancel-after-revealing-reports-referenced-tools",
+  "id": "tool-search/a-cancel-after-revealing-reports-referenced-tools",
   "title": "A tool referenced by a served call is reported even if cancellation prevents the next generation",
   "rules": [
     "§6.4"

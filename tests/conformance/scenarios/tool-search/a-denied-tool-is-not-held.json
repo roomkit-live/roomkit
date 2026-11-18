@@ -1,6 +1,6 @@
 {
   "$schema": "../../scenario.schema.json",
-  "id": "anthropic/a-denied-tool-is-not-held",
+  "id": "tool-search/a-denied-tool-is-not-held",
   "title": "A policy-denied tool is absent even from deferred definitions",
   "rules": [
     "§6.4"

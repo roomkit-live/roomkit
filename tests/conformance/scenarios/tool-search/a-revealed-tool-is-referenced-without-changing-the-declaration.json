@@ -1,6 +1,6 @@
 {
   "$schema": "../../scenario.schema.json",
-  "id": "anthropic/a-revealed-tool-is-referenced-without-changing-the-declaration",
+  "id": "tool-search/a-revealed-tool-is-referenced-without-changing-the-declaration",
   "title": "A provider holding tools receives one stable declaration and each revealed tool as a result reference",
   "rules": [
     "§6.4"
