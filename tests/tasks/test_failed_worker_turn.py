@@ -14,6 +14,7 @@ import asyncio
 import json
 import logging
 import tempfile
+from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
@@ -302,3 +303,47 @@ def test_a_failure_with_no_end_or_a_completed_one_or_a_cut_is_raised_as_it_is() 
     assert _turn_failure(cut, "text", "error") is cut
     wrapped = _turn_failure(error, "text", "error")
     assert isinstance(wrapped, TaskTurnFailedError) and wrapped.__cause__ is error
+
+
+@pytest.mark.parametrize("with_end", [False, True])
+async def test_a_streaming_worker_that_raises_an_already_wrapped_failure(with_end: bool) -> None:
+    original = ProviderError("upstream detail", provider="mock", status_code=503)
+
+    class WrappedWorker(AILikeChannel):
+        async def on_event(
+            self, event: RoomEvent, binding: ChannelBinding, context: RoomContext
+        ) -> ChannelOutput:
+            if event.source.channel_id != "system":
+                return ChannelOutput.empty()
+
+            async def stream() -> AsyncIterator[str]:
+                yield "Looking."
+                raise TaskTurnFailedError(original, "interrupted", "Given narration")
+
+            return ChannelOutput(
+                responded=True,
+                response_stream=stream(),
+                response_metadata=ResponseMetadata(
+                    {"loop_end_reason": "error"} if with_end else {}
+                ),
+            )
+
+    async with RoomKit() as kit:
+        kit.register_channel(WrappedWorker("worker"))
+        await kit.create_room(room_id="p")
+        result, _ = await _delegate(kit, "worker")
+
+    if with_end:
+        assert result.metadata["loop_end_reason"] == "error" and result.output == "Looking."
+        assert isinstance(result.exception, TaskTurnFailedError)
+        assert (result.exception.reason, result.exception.narration) == (
+            "interrupted",
+            "Given narration",
+        )
+        cause = result.exception.__cause__
+    else:
+        assert result.metadata["loop_end_reason"] == "interrupted"
+        assert result.output == "Given narration"
+        cause = result.exception
+    assert isinstance(cause, ProviderError)
+    assert (cause.provider, cause.status_code, str(cause)) == ("mock", 503, str(original))
