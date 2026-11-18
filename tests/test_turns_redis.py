@@ -254,6 +254,19 @@ async def test_a_local_host_predicate_belongs_to_its_serving_node(prefix: str) -
         await elsewhere.close()
 
 
+async def test_a_closed_backend_refuses_registry_reads_and_presence_claims(
+    prefix: str, redis_client: Any
+) -> None:
+    backend = _backend(prefix)
+    await backend.close()
+    with pytest.raises(TurnLinkError) as read:
+        await backend.executors()
+    with pytest.raises(TurnLinkError) as claim:
+        await backend.claim_presence("agent", "room", True)
+    assert read.value.reason == claim.value.reason == "backend_closed"
+    assert not await redis_client.exists(f"{prefix}:presence:room:agent")
+
+
 @pytest.mark.wallclock
 async def test_an_executor_whose_process_died_goes_offline_at_the_heartbeat_timeout(
     prefix: str, redis_client: Any, database: Path
