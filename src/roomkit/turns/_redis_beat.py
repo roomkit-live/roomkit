@@ -16,6 +16,7 @@ import logging
 import threading
 import time
 from collections.abc import Callable
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 
 from roomkit.turns._hosting import Hosted
@@ -26,6 +27,14 @@ if TYPE_CHECKING:
     from roomkit.turns.executor import TurnExecutor
 
 logger = logging.getLogger("roomkit.turns")
+
+
+@dataclass(frozen=True)
+class _Served:
+    generation: int = 0
+    executors: tuple[TurnExecutor, ...] = ()
+    closing: bool = False
+    withdrawn: frozenset[str] = frozenset()
 
 
 class BeatPayload:
@@ -41,34 +50,60 @@ class BeatPayload:
         # The executors it beats for and whether the process closes, numbered
         # each time they change: a beat built from an older state never
         # undoes one built from a newer.
-        self._served: tuple[int, tuple[TurnExecutor, ...], bool] = (0, (), False)
+        self._served = _Served()
         self._declared: dict[str, str] = {}
 
     @property
     def executors(self) -> tuple[TurnExecutor, ...]:
-        return self._served[1]
+        return self._served.executors
 
-    @executors.setter
-    def executors(self, executors: tuple[TurnExecutor, ...]) -> None:
-        # Replaced whole, never changed, so the beat thread reads it whole.
-        generation, _, closing = self._served
-        self._served = (generation + 1, executors, closing)
+    @property
+    def generation(self) -> int:
+        return self._served.generation
+
+    def serve(self, executor: TurnExecutor) -> bool:
+        """Update this node's advertised set. Withdrawals travel in the same
+        numbered beat as the declarations, including after a failed write."""
+        previous = self._served
+        kept = tuple(
+            e for e in previous.executors if e.executor_id != executor.executor_id and not e.closed
+        )
+        if executor.hosted is not None:
+            kept = (*kept, executor)
+        elif kept == previous.executors and not previous.withdrawn:
+            return False
+        advertised = {e.executor_id for e in kept}
+        removed = {e.executor_id for e in previous.executors} - advertised
+        self._served = replace(
+            previous,
+            generation=previous.generation + 1,
+            executors=kept,
+            withdrawn=(previous.withdrawn | removed) - advertised,
+        )
+        return True
+
+    def written(self, generation: int) -> None:
+        """Acknowledge only the withdrawals in the snapshot Redis accepted."""
+        if self.generation == generation and self._served.withdrawn:
+            self._served = replace(self._served, withdrawn=frozenset())
 
     def close(self) -> None:
         """Beat from now without declaring the executors."""
-        generation, executors, _ = self._served
-        self._served = (generation + 1, executors, True)
+        self._served = replace(self._served, generation=self.generation + 1, closing=True)
 
     @property
     def members(self) -> list[str]:
-        return [member_of(self._node, executor.executor_id) for executor in self.executors]
+        served = self._served
+        ids = served.withdrawn | {executor.executor_id for executor in served.executors}
+        return [member_of(self._node, id_) for id_ in ids]
 
     def __call__(self) -> str:
-        generation, executors, closing = self._served
+        served = self._served
+        executors = served.executors
         serving = [member_of(self._node, e.executor_id) for e in executors if not e.closed]
         declared = (
             {}
-            if closing
+            if served.closing
             else {
                 member_of(self._node, e.executor_id): self._declaration(e)
                 for e in executors
@@ -78,11 +113,12 @@ class BeatPayload:
         # A closed executor's member another of its id now serves stays.
         closed = (member_of(self._node, e.executor_id) for e in executors if e.closed)
         gone = [member for member in closed if member not in serving]
+        gone.extend(member_of(self._node, eid) for eid in served.withdrawn)
         payload = {
             "node": self._node,
-            "generation": generation,
+            "generation": served.generation,
             "declared": declared,
-            "undeclared": serving if closing else [],
+            "undeclared": serving if served.closing else [],
             "gone": gone,
             "running": sorted(self._routes.running),
             "owner": self._routes.owner is not None,

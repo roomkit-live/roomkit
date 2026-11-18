@@ -36,7 +36,7 @@ from roomkit.turns._redis_clients import call_bound, read_block, redis_clients
 from roomkit.turns._redis_inbox import Envelope, Inbox
 from roomkit.turns._redis_outbox import Failed, Outbox, Written
 from roomkit.turns._redis_placement import Elsewhere, Placement
-from roomkit.turns._redis_presence import Keys, Registry, member_of
+from roomkit.turns._redis_presence import Keys, Registry
 from roomkit.turns._redis_routes import REFUSED, Routes
 from roomkit.turns.base import TurnBackend, TurnTimeouts
 from roomkit.turns.memory import InMemoryTurnBackend
@@ -207,8 +207,10 @@ class RedisTurnBackend(TurnBackend):
             )
         if self._loop_back or executor.hosted is not None:
             self._routes.shared[executor.executor_id] = executor
-        if executor.hosted is not None:
-            await self._beat_for(executor)
+        else:
+            self._routes.shared.pop(executor.executor_id, None)
+        if self._payload.serve(executor):
+            await self._beat_now()
         # Work a turn began reaches the owner of that turn, here or elsewhere.
         executor.reach_owner(self._routes.port)
         # The owner's own executor covers nothing kit.executors() lists.
@@ -418,7 +420,7 @@ class RedisTurnBackend(TurnBackend):
     async def _undeclare(self, bound: Callable[[float], float]) -> None:
         """Beat from now without declaring this process's executors."""
         self._payload.close()
-        if not self._payload.executors and self._routes.owner is None:
+        if not self._payload.members and self._routes.owner is None:
             return  # it never beat
         try:
             async with asyncio.timeout(bound(self._timeouts.cancel)):
@@ -435,19 +437,11 @@ class RedisTurnBackend(TurnBackend):
         except Exception:
             logger.debug("Withdrawing this process from Redis failed", exc_info=True)
 
-    async def _beat_for(self, executor: TurnExecutor) -> None:
-        """Beat for *executor* from now, in place of one of its id served
-        before; the executors that closed are withdrawn, then let go."""
-        others = _others(self._payload.executors, executor)
-        closed = [member_of(self.node_id, e.executor_id) for e in others if e.closed]
-        if closed:
-            await self._registry.withdraw(closed)
-        self._payload.executors = (*(e for e in others if not e.closed), executor)
-        await self._beat_now()
-
     async def _beat_now(self) -> None:
         """Beat once from this task (alive from now), then from the thread."""
+        generation = self._payload.generation
         await self._registry.beat(self.node_id, self._payload(), self._ttl_ms)
+        self._payload.written(generation)
         self._beat.start()
 
     def _route(self, envelope: Envelope) -> None:

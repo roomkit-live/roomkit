@@ -1358,6 +1358,49 @@ async def test_an_executor_served_again_under_its_id_takes_the_turns(
         await second.close()
 
 
+@pytest.mark.parametrize("predicate", [True, False], ids=["predicate", "undeclared"])
+async def test_a_local_only_replacement_withdraws_only_its_own_declaration(
+    prefix: str, redis_client: Any, predicate: bool
+) -> None:
+    host, other, reader = (_backend(prefix) for _ in range(3))
+    old = TurnExecutor(lambda _: None, hosts={"alpha"}, executor_id="worker", timeouts=TIMEOUTS)
+    peer = TurnExecutor(lambda _: None, hosts={"gamma"}, executor_id="worker", timeouts=TIMEOUTS)
+    local = TurnExecutor(
+        lambda _: None,
+        hosts=(lambda channel: channel == "beta") if predicate else None,
+        executor_id="worker",
+        timeouts=TIMEOUTS,
+    )
+    try:
+        await host.serve(old)
+        await other.serve(peer)
+        initial = await other.executors()
+        assert {(row.node, row.hosts) for row in initial} == {
+            (host.node_id, frozenset({"alpha"})),
+            (other.node_id, frozenset({"gamma"})),
+        }
+        delayed_beat = host._payload()
+        await host.serve(local)
+        # A beat built before the replacement can finish after the withdrawal.
+        await host._registry.beat(host.node_id, delayed_beat, host._ttl_ms)
+        # A fresh node reads the registry immediately, independently of any cached view.
+        seen = await reader.executors()
+        assert [(row.node, row.executor_id, row.hosts) for row in seen] == [
+            (other.node_id, "worker", frozenset({"gamma"}))
+        ]
+        assert any(
+            row.node == host.node_id and row.covers("beta") for row in await host.executors()
+        )
+        assert (
+            "worker" not in host._routes.shared
+        )  # a handover already routed to its old declaration
+    finally:
+        for node in (reader, other, host):
+            await node.close()
+        for worker in (old, peer, local):
+            await worker.close()
+
+
 async def test_a_turn_s_end_still_queued_when_its_executor_s_process_closes_reaches_its_owner(
     prefix: str, redis_client: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
