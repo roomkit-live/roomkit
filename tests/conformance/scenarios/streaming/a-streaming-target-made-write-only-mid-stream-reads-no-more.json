@@ -9,7 +9,9 @@
   ],
   "requirements": [
     "RK-10.2-003",
-    "RK-10.2-009"
+    "RK-10.2-009",
+    "RK-7.5-013",
+    "RK-7.5-014"
   ],
   "notes": "A tool-call hook makes ws, the streaming target, write-only while the agent streams to it. At each row the room is read again for the target: once it may no longer read, it is handed nothing more of the stream, neither text nor rows, and the rows after the change are delivered as their plans say, to web.",
   "setup": {

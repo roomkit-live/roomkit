@@ -7,7 +7,8 @@
     "§10.3"
   ],
   "requirements": [
-    "RK-10.3-039"
+    "RK-10.3-039",
+    "RK-7.5-029"
   ],
   "notes": "Python's with_attached_media returns a deleted event as it is, its content withheld (tests/test_attached_media.py::test_a_deleted_message_s_media_stays_withheld, host.asked == []); the event is marked deleted by a direct update, which opens no turn.",
   "setup": {

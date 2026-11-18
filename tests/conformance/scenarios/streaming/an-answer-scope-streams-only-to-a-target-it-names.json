@@ -7,6 +7,11 @@
     "§5.12",
     "§7.3 An event's visibility"
   ],
+  "requirements": [
+    "RK-7.3-024",
+    "RK-7.3-025",
+    "RK-7.5-020"
+  ],
   "notes": "Python: tests/test_response_visibility.py::TestResponseVisibilitySingleChannel::test_streaming_only_to_targeted_channel (room-1), TestResponseVisibilityCommaSeparated::test_comma_separated_streaming_targets (room-2), TestResponseVisibilityStoredEvent::test_stored_event_has_visibility (the stored answer takes the scope).",
   "setup": {
     "channels": [

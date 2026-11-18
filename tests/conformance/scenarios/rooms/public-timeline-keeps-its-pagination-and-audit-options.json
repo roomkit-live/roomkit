@@ -6,6 +6,9 @@
     "§5.1",
     "§14.1"
   ],
+  "requirements": [
+    "RK-7.5-028"
+  ],
   "notes": "Python: tests/test_framework_queries.py::TestGetTimeline and TestGetTimelineCursorPagination. Store commits seed four rows including one refused row. Public get_timeline must exclude it by default and include it for audit.",
   "setup": {
     "rooms": [

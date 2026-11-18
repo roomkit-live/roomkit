@@ -9,7 +9,9 @@
   ],
   "requirements": [
     "RK-10.2-003",
-    "RK-10.2-009"
+    "RK-10.2-009",
+    "RK-7.5-002",
+    "RK-7.5-013"
   ],
   "notes": "A tool-call hook makes web write-only while the agent streams to ws. Each row is planned with the bindings read at its commit: web is delivered the rows committed before the change, none after it; ws, still bound and reading, streams the whole answer.",
   "setup": {

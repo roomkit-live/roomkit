@@ -6,6 +6,11 @@
     "§7.3 An event's visibility",
     "§7.5 rule 8"
   ],
+  "requirements": [
+    "RK-7.3-037",
+    "RK-7.5-026",
+    "RK-7.5-036"
+  ],
   "notes": "Python: tests/test_context_visibility.py::TestHiddenEventsStayHidden::test_a_detached_source_does_not_erase_its_history. With no binding left to read, the visibility stored on each event is the whole answer.",
   "setup": {
     "channels": [

@@ -6,6 +6,9 @@
     "§7.3",
     "§7.3 Grammar"
   ],
+  "requirements": [
+    "RK-7.3-006"
+  ],
   "steps": [
     {
       "call": "register_channel",

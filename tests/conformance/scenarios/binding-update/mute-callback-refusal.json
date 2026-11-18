@@ -6,6 +6,10 @@
     "§7.2",
     "§7.5"
   ],
+  "requirements": [
+    "RK-7.2-007",
+    "RK-7.2-010"
+  ],
   "notes": "Python: tests/test_binding_updates.py::test_a_callback_refusal_keeps_storage_and_stops_records_and_hooks. The first call changes the binding; the second finds it unchanged. Both notify and propagate the failure, neither records nor fires a hook.",
   "setup": {
     "channels": [

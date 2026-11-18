@@ -9,6 +9,10 @@
   "requirements": [
     "RK-10.1-062",
     "RK-10.1-085",
+    "RK-7.5-003",
+    "RK-7.5-005",
+    "RK-7.5-008",
+    "RK-7.5-011",
     "RK-9.6-006"
   ],
   "notes": "Python: tests/test_response_commit_gates.py::test_a_non_writable_agent_regenerated_answer_is_blocked (read-only).",

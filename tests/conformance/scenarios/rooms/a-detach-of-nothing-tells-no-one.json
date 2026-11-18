@@ -6,6 +6,9 @@
     "§6.1",
     "§7.2"
   ],
+  "requirements": [
+    "RK-7.2-009"
+  ],
   "notes": "Translates roomkit tests/test_channel_attach_contract.py::TestDetach::test_detaching_nothing_tells_no_one.",
   "setup": {
     "channels": [

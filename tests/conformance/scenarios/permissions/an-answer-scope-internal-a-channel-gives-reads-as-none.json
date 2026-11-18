@@ -6,6 +6,9 @@
     "§7.3 Who writes `internal`",
     "§8.5"
   ],
+  "requirements": [
+    "RK-7.3-020"
+  ],
   "notes": "Python: tests/test_visibility_rules.py::TestOnlyTheFrameworkWritesInternal::test_an_answer_scope_its_channel_gives_reads_as_none (its warning is not compared).",
   "setup": {
     "channels": [

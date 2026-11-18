@@ -6,6 +6,11 @@
     "§12.2 step 11s",
     "§5.12"
   ],
+  "requirements": [
+    "RK-7.3-024",
+    "RK-7.3-025",
+    "RK-7.5-020"
+  ],
   "notes": "Python: tests/test_response_visibility.py::TestResponseVisibilityNone::test_none_skips_all_streaming.",
   "setup": {
     "channels": [

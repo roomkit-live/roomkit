@@ -9,7 +9,8 @@
   ],
   "requirements": [
     "RK-10.3-040",
-    "RK-10.3-042"
+    "RK-10.3-042",
+    "RK-7.5-029"
   ],
   "notes": "Python: tests/orchestration/test_discussion_dispatch.py test_the_recent_conversation_withholds_what_a_delete_removed, the delete its sender's own in place of a moderation hook's system delete: either keeps the message in place, its text withheld. RFC §7.5 rule 8, §10.3.",
   "setup": {

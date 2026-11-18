@@ -5,6 +5,9 @@
   "rules": [
     "§14.1"
   ],
+  "requirements": [
+    "RK-7.5-028"
+  ],
   "notes": "Python: tests/test_store_activity.py::TestEventFilterInMemoryStore. Each result is an exact-length ordered list; negative controls exclude mismatching rows.",
   "steps": [
     {

@@ -7,6 +7,10 @@
     "§6.4",
     "§7.5"
   ],
+  "requirements": [
+    "RK-7.3-037",
+    "RK-7.5-026"
+  ],
   "notes": "Python: tests/tasks/test_delegation_brief_and_hand_back.py::test_the_worker_reads_the_brief_and_the_hand_back_names_the_task, test_without_a_brief_the_worker_reads_the_task, test_the_worker_is_handed_the_last_messages_quoted_as_data, test_the_conversation_holds_only_what_the_notified_channel_may_read, test_no_conversation_by_default; core/mixins/delegation.py _room_conversation; tasks/brief.py conversation_block, worker_description. A negative conversation is refused by Python's ValueError; roomkit-rs's count is unsigned (an int limit is a u64), so no scenario writes one.",
   "setup": {
     "channels": [

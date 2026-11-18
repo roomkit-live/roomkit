@@ -6,6 +6,11 @@
     "§12.2 step 11s",
     "§7.3 An event's visibility"
   ],
+  "requirements": [
+    "RK-7.3-024",
+    "RK-7.3-025",
+    "RK-7.5-020"
+  ],
   "notes": "Python: tests/test_visibility_rules.py::TestALiveStream::test_reaches_no_transport_the_agent_s_binding_excludes. The excluded transport is bound first and sorts first, so it would be the stream's target were the binding not read.",
   "setup": {
     "channels": [

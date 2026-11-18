@@ -7,6 +7,11 @@
     "§23.3 step 5",
     "§7.5"
   ],
+  "requirements": [
+    "RK-7.5-010",
+    "RK-7.5-022",
+    "RK-7.5-023"
+  ],
   "notes": "Python: tests/tasks/test_child_room_trace.py::test_a_muted_worker_answer_is_committed_once; core/mixins/delegation.py _open_child_room (a shared binding keeps its muted), core/event_router.py (a muted channel's buffered answer re-enters, never stored by the router itself), core/mixins/_child_execution.py _collect_answer (_buffered_outcome commits each buffered answer once). The Python test mutes the delegated agent itself through the private _broadcast_and_collect; the public form mutes an agent shared into the room. The timeline holds BLOCKED records: the observer's answer is one row, whatever its status.",
   "setup": {
     "channels": [

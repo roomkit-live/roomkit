@@ -6,6 +6,9 @@
     "§5.7",
     "§7.2"
   ],
+  "requirements": [
+    "RK-7.2-010"
+  ],
   "notes": "The naming runs before the comparison: the merged binding, written in the channel's form, equals the stored one, so nothing is written and no lifecycle record is committed (RFC 7.2: an update that changes nothing writes nothing).",
   "setup": {
     "channels": [

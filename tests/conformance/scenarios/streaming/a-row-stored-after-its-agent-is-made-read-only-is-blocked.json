@@ -8,7 +8,12 @@
     "§12.2 step 14s"
   ],
   "requirements": [
-    "RK-10.1-062"
+    "RK-10.1-062",
+    "RK-7.5-003",
+    "RK-7.5-005",
+    "RK-7.5-011",
+    "RK-7.5-013",
+    "RK-7.5-014"
   ],
   "notes": "The agent is bound read-write when its turn starts and given read-only access by a tool-call hook while it streams. Each row reads its source's binding at its own commit, whether a BEFORE_BROADCAST hook runs or not: the rows stored before the change are delivered, those stored after it are stored BLOCKED and delivered to no one.",
   "setup": {

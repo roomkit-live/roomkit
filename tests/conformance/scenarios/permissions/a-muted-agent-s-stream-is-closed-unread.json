@@ -7,7 +7,9 @@
     "§10.6.4"
   ],
   "requirements": [
-    "RK-10.6.4-004"
+    "RK-10.6.4-004",
+    "RK-7.2-004",
+    "RK-7.5-012"
   ],
   "notes": "Python: core/event_router.py (binding.muted: _aclose_stream); tests/test_router.py::test_muted_target_streaming_response_suppressed. RFC §7.5 rule 2, §10.6.4.",
   "setup": {

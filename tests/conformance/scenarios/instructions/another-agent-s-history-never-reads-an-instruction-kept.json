@@ -8,7 +8,9 @@
   ],
   "requirements": [
     "RK-10.1.1-043",
-    "RK-10.1.1-044"
+    "RK-10.1.1-044",
+    "RK-7.3-037",
+    "RK-7.5-026"
   ],
   "notes": "Python: core/mixins/_streaming_segments.py instruction_read writes the row visible to its agent alone, and a history reads only its own channel's rows (RMK-1407). a answers the instruction, b answers a and a answers b, as agents of a room ask each other (§19.3.1); the chain stops there.",
   "setup": {

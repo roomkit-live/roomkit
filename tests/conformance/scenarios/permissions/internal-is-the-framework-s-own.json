@@ -6,7 +6,8 @@
     "§7.3 Who writes `internal`"
   ],
   "requirements": [
-    "RK-10.5-010"
+    "RK-10.5-010",
+    "RK-7.3-020"
   ],
   "setup": {
     "channels": [

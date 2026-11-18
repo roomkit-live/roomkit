@@ -6,6 +6,10 @@
     "§7.2",
     "§7.5"
   ],
+  "requirements": [
+    "RK-7.2-008",
+    "RK-7.2-010"
+  ],
   "notes": "Python: tests/test_lifecycle_hooks.py::test_a_binding_change_that_changes_nothing_writes_and_fires_nothing; tests/test_binding_updates.py::test_a_gate_change_notifies_after_storage_before_its_hook. Callback arguments preserve the stored room and binding.",
   "setup": {
     "channels": [

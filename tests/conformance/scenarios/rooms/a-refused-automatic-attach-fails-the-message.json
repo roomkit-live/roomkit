@@ -7,7 +7,8 @@
     "§10.1"
   ],
   "requirements": [
-    "RK-10.1-017"
+    "RK-10.1-017",
+    "RK-7.5-024"
   ],
   "notes": "Translates roomkit tests/test_channel_attach_contract.py::TestInboundAutoAttach (test_on_the_existing_room_path, test_on_the_named_but_unknown_room_path: the room is created, the channel not bound; test_a_room_already_attached_is_not_asked_again).",
   "setup": {

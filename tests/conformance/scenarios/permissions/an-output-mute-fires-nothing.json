@@ -7,6 +7,9 @@
     "§7.2",
     "§17.2"
   ],
+  "requirements": [
+    "RK-7.2-008"
+  ],
   "notes": "output_muted mutes a channel's speech output (§5.7): events still arrive. It is no mute of §7.2, which blocks the channel's responses: neither ON_CHANNEL_MUTED nor ON_CHANNEL_UNMUTED fires, and no lifecycle record is written. A channel the room does not bind, or a room of another organization, refuses the call.",
   "setup": {
     "channels": [
