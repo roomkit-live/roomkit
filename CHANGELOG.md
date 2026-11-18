@@ -53,6 +53,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Direct calls to wired AI and ACP text channels check the triggering event's audience and the room's current binding before each live publication. Restricting a binding during generation stops subsequent room notifications.
+
+- Replacing a Redis worker with a local-only worker withdraws its advertisement. Same-node turns keep the owner's reserved channels when another worker uses the same executor ID.
+
 - **Each row of a streamed answer is judged when it comes** (RFC §5.1, §7.3, §7.5, §9.5, RMK-1007, RMK-1297, RMK-1711): its `BEFORE_BROADCAST` hooks and observers read the room at that row, not at the stream's start, and a room gone by then refuses it before them; a message row narrowed away from the streaming channel withdraws the response from it (a tool-call row is only kept from it); a row a closed or archived room refuses is announced by `room_refused_event`, not silently dropped.
 
 - **Cancelling a turn waits for the owner-served calls it cut** (RFC §10.6.8, §23.4), an inline delegation's task included, within `TurnTimeouts.cancel`, and logs an incomplete drainage past it; a turn that ends normally is unchanged.
