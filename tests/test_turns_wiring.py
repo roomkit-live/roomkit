@@ -804,3 +804,51 @@ async def test_wiring_an_unregistered_agent_activates_its_generation_and_respons
         await agent.close()
         await executor.close()
         await kit.close()
+
+
+async def test_an_ordinary_tool_on_a_directly_wired_agent_reports_its_refusal() -> None:
+    from roomkit.turns.host import current_turn_host
+
+    kit = RoomKit()
+    room = await kit.create_room(room_id="r1")
+    binding = ChannelBinding(
+        channel_id="agent",
+        room_id=room.id,
+        channel_type=ChannelType.AI,
+        category=ChannelCategory.INTELLIGENCE,
+    )
+    context = RoomContext(room=room, bindings=[binding])
+    event = RoomEvent(
+        room_id=room.id,
+        source=EventSource(channel_id="ops", channel_type=ChannelType.SMS),
+        content=TextContent(body="go"),
+    )
+    executor = TurnExecutor(lambda _: None)
+    executor.use_wiring(kit.turn_executor.wiring.env)
+    reports: list[tuple[str, bool]] = []
+    observed = asyncio.Event()
+
+    @executor.hook(HookTrigger.BEFORE_TOOL_USE)
+    async def gate(call: ToolCallEvent, fresh: RoomContext) -> HookResult:
+        assert current_turn_host() is None
+        assert call.name == "lookup" and fresh.room.id == room.id
+        return HookResult.block("requires approval")
+
+    @executor.hook(HookTrigger.ON_TOOL_CALL, execution=HookExecution.ASYNC)
+    async def ended(call: ToolCallEvent, _: RoomContext) -> None:
+        reports.append((call.tool_call_id, call.refused))
+        observed.set()
+
+    agent = _agent()
+    try:
+        executor.wire(agent)
+        output = await agent.on_event(event, binding, context)
+        if output.response_stream is not None:
+            async for _ in output.response_stream:
+                pass
+        await asyncio.wait_for(observed.wait(), timeout=2)
+    finally:
+        await agent.close()
+        await executor.close()
+        await kit.close()
+    assert reports == [("c1", True)]
