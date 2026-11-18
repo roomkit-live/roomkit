@@ -5,6 +5,9 @@
     "§6.4",
     "§12.4"
   ],
+  "requirements": [
+    "RK-9.3-043"
+  ],
   "setup": {
     "channels": [
       {

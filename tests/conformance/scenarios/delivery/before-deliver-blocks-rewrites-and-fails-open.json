@@ -7,6 +7,10 @@
     "§9.3",
     "§9.4"
   ],
+  "requirements": [
+    "RK-9.3-005",
+    "RK-9.3-030"
+  ],
   "notes": "BEFORE_DELIVER is SYNC and fails open (§9.3): a broken moderation hook does not swallow the caller's message.",
   "setup": {
     "channels": [

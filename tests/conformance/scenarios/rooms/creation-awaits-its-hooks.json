@@ -8,6 +8,9 @@
     "§26.1",
     "§8.2"
   ],
+  "requirements": [
+    "RK-9.3-036"
+  ],
   "notes": "The message names its room, which does not bind sms: step 2 attaches it at its declaration's defaults and, the room not routed, names no correspondent. The RFC does not order an integrator's room_created against what its creation hooks did.",
   "setup": {
     "channels": [

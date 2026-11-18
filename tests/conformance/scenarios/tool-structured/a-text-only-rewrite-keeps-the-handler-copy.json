@@ -7,6 +7,9 @@
     "§9.3",
     "§21.4"
   ],
+  "requirements": [
+    "RK-9.3-059"
+  ],
   "notes": "Python: tests/test_tool_context.py::TestCurrentToolCall and tests/test_tool_call_structured_copy.py; the handler writes the actual current_tool_call record before the result hook reads it.",
   "setup": {
     "channels": [

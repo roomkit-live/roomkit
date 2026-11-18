@@ -6,6 +6,10 @@
     "§10.6.5",
     "§9.3"
   ],
+  "requirements": [
+    "RK-9.3-112",
+    "RK-9.3-114"
+  ],
   "notes": "Python: tests/test_turns_inputs.py::test_a_request_no_one_answers_in_time_is_closed_on_the_owner. A request nobody answered in time is a failure (§9.3), its words the model's to read; the handler's own timeout bounds it (§21.6). Python: tests/test_human_input_doors.py::test_the_handler_s_timeout_bounds_the_call_not_the_channel_s. The handler gets its own 100 ms even though the channel default is 20 ms.",
   "setup": {
     "channels": [

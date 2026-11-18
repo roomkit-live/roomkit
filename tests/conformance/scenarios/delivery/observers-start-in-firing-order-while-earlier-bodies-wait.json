@@ -8,7 +8,8 @@
     "§9.3"
   ],
   "requirements": [
-    "RK-10.4-049"
+    "RK-10.4-049",
+    "RK-9.3-035"
   ],
   "notes": "Python: tests/test_hook_observers.py::TestTheRoomGoesOn::test_a_trigger_of_this_implementation_alone_holds_nothing_up; HookEngine._start_async_hooks starts the bodies in creation order and does not wait for their completion. The second body must start while the first is held (RMK-1550).",
   "setup": {

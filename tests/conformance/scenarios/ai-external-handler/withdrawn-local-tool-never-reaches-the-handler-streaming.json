@@ -6,6 +6,11 @@
     "§6.4",
     "§9.3"
   ],
+  "requirements": [
+    "RK-9.3-046",
+    "RK-9.3-070",
+    "RK-9.3-072"
+  ],
   "notes": "Python: tests/test_external_call_routing.py::test_a_tool_the_hook_withdrew_stays_the_channels_to_refuse. A declared local tool removed by BEFORE_AI_GENERATION remains local to refuse; no external callback or local execution occurs.",
   "setup": {
     "channels": [

@@ -6,6 +6,9 @@
     "§23.3 step 8",
     "§9.3"
   ],
+  "requirements": [
+    "RK-9.3-086"
+  ],
   "notes": "Python: tests/tasks/test_delegation_brief_and_hand_back.py::test_a_failed_task_posts_that_it_failed_without_its_error, test_a_completed_task_with_nothing_to_say_posts_nothing, test_a_cancelled_task_posts_that_it_was_cancelled; tasks/posting.py posted_text (the output stripped: nothing left posts nothing). counter's turn is held at a gate while the host cancels its task.",
   "setup": {
     "channels": [

@@ -8,6 +8,10 @@
     "§24.4",
     "§21.1"
   ],
+  "requirements": [
+    "RK-9.3-072",
+    "RK-9.3-086"
+  ],
   "notes": "Python: skills/models.py::missing_required_tools and channels/_ai_tools.py::_execute_single_tool_call: a host matcher exception is a failed call, never activation.",
   "setup": {
     "channels": [

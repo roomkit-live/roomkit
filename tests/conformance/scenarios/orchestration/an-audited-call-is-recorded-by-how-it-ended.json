@@ -7,6 +7,11 @@
     "§21.6",
     "§9.3"
   ],
+  "requirements": [
+    "RK-9.3-082",
+    "RK-9.3-084",
+    "RK-9.3-089"
+  ],
   "notes": "Python's audit_tool_handler (orchestration/tool_audit.py) and its tests (tests/orchestration/test_tool_audit.py: records, detects_failed, error, declined, the channel's bound cut as cancelled).",
   "setup": {
     "channels": [

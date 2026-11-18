@@ -6,6 +6,9 @@
     "§6.4",
     "§9.3"
   ],
+  "requirements": [
+    "RK-9.3-060"
+  ],
   "notes": "Python: tests/test_find_tools_judged.py::TestText::test_a_blocked_search_reveals_nothing_this_turn_or_the_next.",
   "setup": {
     "channels": [

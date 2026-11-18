@@ -7,6 +7,10 @@
     "§9.3",
     "§12.4"
   ],
+  "requirements": [
+    "RK-9.3-047",
+    "RK-9.3-067"
+  ],
   "notes": "Python: the turn call registry resets round holders; channels/_ai_stream_external_tools.py::_announce preserves each occurrence. This exercises the actual external consumer, local neighbor and exact next-model results through two rounds reusing both wire IDs.",
   "setup": {
     "channels": [

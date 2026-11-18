@@ -6,6 +6,10 @@
     "§10.6.5",
     "§9.3"
   ],
+  "requirements": [
+    "RK-9.3-005",
+    "RK-9.3-104"
+  ],
   "notes": "Python: tests/test_human_input.py::test_callback_error_leaves_the_request_answerable; core/hooks.py run_sync_hooks (a hook that raises is logged, the next ones run). The raising hook comes first: the answer is given after it raised.",
   "setup": {
     "channels": [

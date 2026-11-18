@@ -12,6 +12,9 @@
     "§8.3",
     "§26.1"
   ],
+  "requirements": [
+    "RK-9.3-036"
+  ],
   "setup": {
     "channels": [
       {

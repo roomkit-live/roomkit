@@ -6,6 +6,10 @@
     "§6.4",
     "§9.3"
   ],
+  "requirements": [
+    "RK-9.3-048",
+    "RK-9.3-072"
+  ],
   "notes": "Python: tests/test_external_call_cut.py::test_a_call_cut_before_its_handler_is_asked_is_reported_cancelled. The transport ends its stream on the first actual tool row, before a pending external decision; one cancellation callback reaches ASYNC observers.",
   "setup": {
     "channels": [

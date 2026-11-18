@@ -8,6 +8,9 @@
     "§9.3",
     "§8.2"
   ],
+  "requirements": [
+    "RK-9.3-005"
+  ],
   "notes": "Python: src/roomkit/core/mixins/verification.py (_apply_verification), src/roomkit/core/hooks.py (run_sync_hooks): a SYNC hook's timeout emits hook_timeout and the chain goes on, ON_VERIFICATION_REQUIRED failing open (RMK-1172, the area's review).",
   "setup": {
     "kit": {

@@ -6,6 +6,9 @@
     "§10.6.5",
     "§9.3"
   ],
+  "requirements": [
+    "RK-9.3-114"
+  ],
   "notes": "Python: tests/test_human_input_doors.py::test_a_name_the_host_declares_is_served_by_the_person. §9.3: the channel serves the human-input tools itself, before the host's handler.",
   "setup": {
     "channels": [

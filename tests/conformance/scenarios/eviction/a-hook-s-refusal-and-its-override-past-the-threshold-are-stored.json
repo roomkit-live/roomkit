@@ -6,6 +6,11 @@
     "§21.5",
     "§9.3"
   ],
+  "requirements": [
+    "RK-9.3-024",
+    "RK-9.3-057",
+    "RK-9.3-081"
+  ],
   "notes": "Python: tests/test_channels/test_tool_result_bound.py::test_an_oversized_override_is_evicted_and_the_hook_input_is_unchanged.",
   "setup": {
     "channels": [

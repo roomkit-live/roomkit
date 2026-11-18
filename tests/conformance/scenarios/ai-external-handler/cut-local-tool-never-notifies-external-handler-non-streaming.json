@@ -6,6 +6,11 @@
     "§6.4",
     "§9.3"
   ],
+  "requirements": [
+    "RK-9.3-048",
+    "RK-9.3-069",
+    "RK-9.3-072"
+  ],
   "notes": "Python: tests/test_external_call_cut.py::test_a_local_call_cut_is_reported_by_the_channel_not_the_handler. A real local handler reaches a held gate before cancellation; an external handler configured beside it receives no callback.",
   "setup": {
     "channels": [

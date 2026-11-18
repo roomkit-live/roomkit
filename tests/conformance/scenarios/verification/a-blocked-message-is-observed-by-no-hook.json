@@ -7,6 +7,9 @@
     "§11.7.3",
     "§9.3"
   ],
+  "requirements": [
+    "RK-9.3-004"
+  ],
   "notes": "Python: src/roomkit/core/mixins/verification.py (_apply_verification), src/roomkit/core/hooks.py (run_sync_hooks): a block returns before the ASYNC observers are started (RMK-1172, the area's review).",
   "setup": {
     "kit": {

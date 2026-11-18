@@ -8,6 +8,10 @@
     "§8.2",
     "§26.1"
   ],
+  "requirements": [
+    "RK-9.3-035",
+    "RK-9.3-041"
+  ],
   "notes": "Every hook of an ASYNC trigger runs, concurrently (§9.2, §9.3): `slow` is held until its timeout, `broken` raises, and `audit` is called all the same. A raising observer is logged; only the timeout is a framework event (§8.2).",
   "setup": {
     "channels": [

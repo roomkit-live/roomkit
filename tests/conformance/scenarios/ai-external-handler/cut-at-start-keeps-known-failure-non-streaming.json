@@ -6,6 +6,9 @@
     "§6.4",
     "§9.3"
   ],
+  "requirements": [
+    "RK-9.3-051"
+  ],
   "notes": "Python: tests/test_external_call_cut.py::test_a_call_the_provider_ran_keeps_its_outcome_when_cut (handler=True). A provider result is already known and reported before START; stopping on START does not manufacture a cancellation or another callback.",
   "setup": {
     "channels": [

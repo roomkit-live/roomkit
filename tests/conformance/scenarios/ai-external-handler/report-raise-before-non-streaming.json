@@ -6,6 +6,9 @@
     "§6.4",
     "§9.3"
   ],
+  "requirements": [
+    "RK-9.3-074"
+  ],
   "notes": "Python: tests/test_external_call_routing.py, tests/test_served_call_marker.py, tests/test_handler_report_raise.py and channels/_ai_stream_external_tools.py. A real external handler records callbacks; local results, hook observations, stored rows and model request counts are independent product observations.",
   "setup": {
     "channels": [

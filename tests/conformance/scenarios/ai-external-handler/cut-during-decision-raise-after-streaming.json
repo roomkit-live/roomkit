@@ -6,6 +6,11 @@
     "§6.4",
     "§9.3"
   ],
+  "requirements": [
+    "RK-9.3-048",
+    "RK-9.3-072",
+    "RK-9.3-074"
+  ],
   "notes": "Python: tests/test_external_call_cut.py and tests/test_handler_report_raise.py; the real handler or real SYNC hook holds at a deterministic gate. No sleep or guessed report.",
   "setup": {
     "channels": [

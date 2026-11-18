@@ -7,6 +7,10 @@
     "§9.3",
     "§12.4"
   ],
+  "requirements": [
+    "RK-9.3-070",
+    "RK-9.3-072"
+  ],
   "notes": "Python: channels/_ai_stream_external_tools.py::_settle checks the announced occurrence duplicate before closing or partial arguments. The external handler receives only the first decision and result; the second occurrence has its own refusal report.",
   "setup": {
     "channels": [

@@ -6,6 +6,10 @@
     "§6.4",
     "§9.3"
   ],
+  "requirements": [
+    "RK-9.3-070",
+    "RK-9.3-072"
+  ],
   "notes": "Python: tests/test_refused_reports.py::test_a_call_the_external_door_cut_is_the_channel_s_to_report. The documented generic cut fixture represents the final call whose arguments never arrived whole under finish_reason=length; no external callback or SYNC report occurs. Unreadable supplied arguments are a separate native witness.",
   "setup": {
     "channels": [

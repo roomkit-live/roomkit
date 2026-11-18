@@ -5,6 +5,10 @@
   "rules": [
     "§21.5"
   ],
+  "requirements": [
+    "RK-9.3-043",
+    "RK-9.3-047"
+  ],
   "notes": "Source checklist: tests/test_served_call_marker.py, test_external_call_routing.py, test_provider_result_bound.py, test_turn_calls_per_call.py, test_external_call_cut.py. The marker is provider data; writes_record witnesses real local execution.",
   "setup": {
     "channels": [

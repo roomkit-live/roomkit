@@ -6,6 +6,9 @@
     "§9.3",
     "§10.1 step 2"
   ],
+  "requirements": [
+    "RK-9.3-035"
+  ],
   "notes": "The hook waits at a gate no step opens before the call returned. The greeting's own hook is awaited, and session_started is emitted once it is over.",
   "setup": {
     "channels": [

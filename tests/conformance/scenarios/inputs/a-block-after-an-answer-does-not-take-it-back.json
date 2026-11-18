@@ -6,6 +6,10 @@
     "§10.6.5",
     "§9.3"
   ],
+  "requirements": [
+    "RK-9.3-107",
+    "RK-9.3-109"
+  ],
   "notes": "Python: tests/test_turns_inputs.py::test_a_block_after_an_answer_does_not_take_it_back, test_the_kits_door_says_true_only_for_an_answer_the_tool_reads. §9.3: a BLOCK does not retract an answer already recorded.",
   "setup": {
     "channels": [

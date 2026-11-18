@@ -6,6 +6,9 @@
     "§6.7",
     "§9.3"
   ],
+  "requirements": [
+    "RK-9.3-030"
+  ],
   "notes": "Python: channels/_ai_generation.py returns the hook's ai_context, which the turn runs on (_ai_streaming.py), its response_schema with it; tests/test_response_schema.py TestAIContextField::test_refuses_it_on_assignment_as_a_hook_would_set_it.",
   "setup": {
     "channels": [

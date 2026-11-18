@@ -6,6 +6,10 @@
     "§9.1",
     "§9.3"
   ],
+  "requirements": [
+    "RK-9.3-018",
+    "RK-9.3-019"
+  ],
   "notes": "`kit-tie` is registered after `room-last` and shares its priority: it still runs first, the kit's hooks preceding the room's at equal priority whatever their registration order.",
   "setup": {
     "channels": [

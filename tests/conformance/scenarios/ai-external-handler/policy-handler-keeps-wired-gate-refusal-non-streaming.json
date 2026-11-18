@@ -6,6 +6,11 @@
     "§6.4",
     "§9.3"
   ],
+  "requirements": [
+    "RK-9.3-027",
+    "RK-9.3-070",
+    "RK-9.3-072"
+  ],
   "notes": "Python: tests/test_external_tool_handler.py and tests/test_refused_reports.py. The real policy handler observes a wired BEFORE_TOOL_USE block and reports a refusal to ASYNC observers only.",
   "setup": {
     "channels": [

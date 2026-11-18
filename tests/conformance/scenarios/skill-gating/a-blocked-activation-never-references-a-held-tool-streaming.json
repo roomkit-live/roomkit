@@ -7,6 +7,9 @@
     "§24.4",
     "§21.1"
   ],
+  "requirements": [
+    "RK-9.3-060"
+  ],
   "notes": "Python: tests/test_deferred_tools.py::test_a_blocked_activation_references_nothing. The skill exists; an unknown-skill Tool Search hint is a separate branch.",
   "setup": {
     "channels": [

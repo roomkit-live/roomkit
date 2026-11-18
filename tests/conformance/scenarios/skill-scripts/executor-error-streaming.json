@@ -8,6 +8,10 @@
     "§6.4",
     "§9.3"
   ],
+  "requirements": [
+    "RK-9.3-083",
+    "RK-9.3-086"
+  ],
   "notes": "Python: tests/test_skills_integration.py, tests/test_skill_reference_unknown_skill.py, tests/test_tool_policy_exemptions.py and tests/skills/test_script_executor.py. The fixture records actual host invocations; no process is executed.",
   "setup": {
     "channels": [

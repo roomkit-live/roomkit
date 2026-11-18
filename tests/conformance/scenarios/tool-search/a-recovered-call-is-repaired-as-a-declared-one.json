@@ -6,6 +6,9 @@
     "§6.4",
     "§21.1"
   ],
+  "requirements": [
+    "RK-9.3-068"
+  ],
   "notes": "Python: tests/test_quoted_primitive_arguments.py::test_a_tool_recovered_at_call_time_reads_a_quoted_integer.",
   "setup": {
     "channels": [

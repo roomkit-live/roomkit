@@ -6,6 +6,10 @@
     "§6.4",
     "§9.3"
   ],
+  "requirements": [
+    "RK-9.3-055",
+    "RK-9.3-056"
+  ],
   "notes": "Python: tests/test_tool_call_hook_chain.py::test_an_external_report_s_observers_see_the_provider_s_outcome. A complete AI turn additionally proves that the original external outcome survives the SYNC hook in observers and stored END rows.",
   "setup": {
     "channels": [

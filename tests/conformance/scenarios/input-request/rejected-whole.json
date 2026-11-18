@@ -7,6 +7,9 @@
     "§17.2",
     "§9.3"
   ],
+  "requirements": [
+    "RK-9.3-112"
+  ],
   "notes": "Python: tests/test_turns_inputs.py. input_request reads the owner record while open, preserves request fields, and returns None after settlement. Original creation time is checked with a controlled clock in the native reference; these reads also pin a stable timestamp.",
   "setup": {
     "channels": [

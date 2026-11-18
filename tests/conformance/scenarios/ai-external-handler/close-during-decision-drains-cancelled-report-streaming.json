@@ -6,6 +6,11 @@
     "§6.4",
     "§9.3"
   ],
+  "requirements": [
+    "RK-9.3-048",
+    "RK-9.3-049",
+    "RK-9.3-072"
+  ],
   "notes": "Python: tests/test_external_call_cut.py cancellation contract plus kit.close observer draining. The real decision reaches a held gate; close cancels the active turn and drains its single cancellation report. No preliminary delivery.cancel is used.",
   "setup": {
     "channels": [

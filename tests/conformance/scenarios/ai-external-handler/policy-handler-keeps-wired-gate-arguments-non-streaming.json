@@ -6,6 +6,10 @@
     "§6.4",
     "§9.3"
   ],
+  "requirements": [
+    "RK-9.3-032",
+    "RK-9.3-068"
+  ],
   "notes": "Python: tests/test_external_tool_handler.py and channels/_ai_stream_external_tools.py::_decide. The real PolicyExternalToolHandler receives the wired gate rewrite; reports and END retain it.",
   "setup": {
     "channels": [
